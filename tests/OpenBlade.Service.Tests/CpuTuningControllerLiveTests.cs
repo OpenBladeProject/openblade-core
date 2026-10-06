@@ -282,6 +282,118 @@ public sealed class CpuTuningControllerLiveTests
     }
 
     [Fact]
+    public async Task CurveOnlyApplyAndRestoreBindFreshReadOnlyPowerPeerWithoutPowerAuthority()
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        var original = fixture.Curve.Values.ToArray();
+        fixture.Power.Admit = (_, _) => throw new InvalidOperationException("Read-only PPT has no write authority.");
+        bool Admit(CpuTuningFeatures features) => !features.HasFlag(CpuTuningFeatures.PowerLimit);
+        // A previous successful Observe is not the peer baseline for this apply.
+        await controller.ObserveLiveAsync(Admit, default);
+        fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(91023, 80765);
+        var applied = await controller.MutateLiveAsync(new(null, new(true, -2)), false, Admit, default);
+        Assert.Equal(ControlOperationStatus.Stored, applied.Status);
+        Assert.Equal(CpuTuningFeatures.CurveOptimizer, applied.CpuTuning!.LiveRecovery!.Features);
+        Assert.Equal(12, fixture.Curve.Peers.Count);
+        Assert.All(fixture.Curve.Peers, peer => { Assert.Equal(fixture.Power.Pair, peer.Expected); Assert.Null(peer.Original); });
+        // Unowned PPT may change between separate operations; restore samples it afresh.
+        fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(92034, 81765);
+        fixture.Curve.Peers.Clear();
+        var restored = await fixture.Controller().MutateLiveAsync(null, true, Admit, default);
+        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.Equal(original, fixture.Curve.Values);
+        Assert.Equal(CpuTuningFeatures.None, restored.CpuTuning!.LiveRecovery!.Features);
+        Assert.Equal(12, fixture.Curve.Peers.Count);
+        Assert.All(fixture.Curve.Peers, peer => { Assert.Equal(fixture.Power.Pair, peer.Expected); Assert.Null(peer.Original); });
+        Assert.Empty(fixture.Power.Admissions); Assert.Empty(fixture.Power.Sent);
+        Assert.Null(fixture.PowerStore.Journal); Assert.Equal(0, fixture.PowerStore.Writes);
+    }
+
+    [Theory]
+    [InlineData(false, "missing")]
+    [InlineData(true, "missing")]
+    [InlineData(false, "unavailable")]
+    [InlineData(true, "unavailable")]
+    [InlineData(false, "drift")]
+    [InlineData(true, "drift")]
+    public async Task CurveOnlyPeerLossFailsClosedOnApplyAndRestore(bool restoring, string fault)
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        if (restoring)
+        {
+            Assert.Equal(ControlOperationStatus.Stored,
+                (await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default)).Status);
+        }
+        fixture.Curve.Sent.Clear(); fixture.Curve.Peers.Clear();
+        if (fault == "missing")
+        {
+            controller = new(new UnusedSource(), curveBackend: fixture.Curve, curveStore: fixture.CurveStore);
+        }
+        else
+        {
+            // Lose the peer after preparation, at the backend submission boundary.
+            fixture.Curve.CheckPeer = peer =>
+            {
+                Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
+                Assert.Null(peer.Original);
+                if (fault == "unavailable") { fixture.Power.Unavailable = true; }
+                else { fixture.Power.Pair = fixture.Power.Pair with { StapmRawBits = 0 }; }
+                return !fixture.Power.Unavailable && peer.Expected == fixture.Power.Pair;
+            };
+        }
+        var result = await controller.MutateLiveAsync(restoring ? null : new(null, new(true, -2)), restoring, _ => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent); Assert.Empty(fixture.Power.Admissions);
+        Assert.Null(fixture.PowerStore.Journal);
+        Assert.False(result.CpuTuning!.LiveRecovery!.Features.HasFlag(CpuTuningFeatures.PowerLimit));
+        if (fault != "missing")
+        {
+            Assert.Single(fixture.Curve.Peers);
+            Assert.NotEqual(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CurveOnlyUnavailablePowerPreparationCannotReachSetter(bool restoring)
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        if (restoring)
+        {
+            Assert.Equal(ControlOperationStatus.Stored,
+                (await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default)).Status);
+        }
+        fixture.Curve.Sent.Clear(); fixture.Curve.Peers.Clear(); fixture.Power.Unavailable = true;
+        var result = await controller.MutateLiveAsync(restoring ? null : new(null, new(true, -2)), restoring, _ => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Curve.Peers); Assert.Empty(fixture.Power.Sent);
+        Assert.Null(fixture.PowerStore.Journal);
+    }
+
+    [Fact]
+    public async Task ReadOnlyPeerDriftDoesNotReopenHistoricalRestoredPowerOwnership()
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await controller.MutateLiveAsync(new(45, null), false, _ => true, default)).Status);
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await controller.MutateLiveAsync(null, true, _ => true, default)).Status);
+        Assert.Equal(CpuLivePowerOwnershipState.Restored, fixture.PowerStore.Journal!.State);
+        int writes = fixture.PowerStore.Writes;
+        fixture.Power.Sent.Clear(); fixture.Power.Admissions.Clear();
+        fixture.Curve.AfterSend = () => fixture.Power.Pair = fixture.Power.Pair with { StapmRawBits = 0 };
+        var result = await controller.MutateLiveAsync(new(null, new(true, -2)), false,
+            features => !features.HasFlag(CpuTuningFeatures.PowerLimit), default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(CpuTuningFeatures.CurveOptimizer, result.CpuTuning!.LiveRecovery!.Features);
+        Assert.Equal(CpuLiveCurveOwnershipState.Blocked, fixture.CurveStore.Journal!.State);
+        Assert.Equal(CpuLivePowerOwnershipState.Restored, fixture.PowerStore.Journal.State);
+        Assert.Equal(writes, fixture.PowerStore.Writes);
+        Assert.Empty(fixture.Power.Sent); Assert.Empty(fixture.Power.Admissions);
+    }
+
+    [Fact]
     public async Task CombinedApplyPreparesBothJournalsBeforeFirstSendAndRestoresAcrossRestart()
     {
         var fixture = new Fixture();

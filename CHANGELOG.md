@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Require a fresh read-only PPT peer for voltage-only live apply and restoration, and verify that peer after native voltage readback without granting power-limit write authority. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Accept the admitted CPU Voltage Optimizer ReadWrite capability in firmware smoke baselines while retaining its exact range and enable/disable checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Retain the first failed live CPU power query and distinguish rejected request state, PCI echo or mailbox response, including its status, without changing native commands or admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

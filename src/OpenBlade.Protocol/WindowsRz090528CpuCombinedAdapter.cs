@@ -36,7 +36,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             wire.Run(adapter, token);
             EndRead();
             CheckFinal();
-            verified = wire.Complete && CpuLiveCurveNativeRequest.Equal(wire.CurveAfter, request.After);
+            verified = wire.Complete && CpuLiveCurveNativeRequest.Equal(wire.CurveAfter, request.After)
+                && wire.After?.Pair == request.PowerPeer!.Expected;
             failure = verified ? CpuLiveCurveNativeFailure.None : CpuLiveCurveNativeFailure.ReadbackDrift;
         }
         catch (CpuPowerAdmissionException) { failure = CpuLiveCurveNativeFailure.AdmissionDenied; }

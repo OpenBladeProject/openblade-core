@@ -191,6 +191,8 @@ public sealed partial class CpuTuningRuntimeTests
     private sealed class ValidationCurveBackend(short original) : ICpuLiveCurveBackend, IDisposable
     {
         internal readonly CpuLiveCurveTuningTransactionTests.MemoryStore Store = new();
+        private readonly CpuLivePowerTuningTransactionTests.MemoryStore powerStore = new();
+        private readonly CpuLivePowerPair powerPeer = CpuLivePowerTuningTransactionTests.PairFixture();
         internal readonly CpuLiveCoreOffset[] Values = CpuLiveCurveTuningTransactionTests.ValuesFixture()
             .Select(core => new CpuLiveCoreOffset(core.PhysicalCoreId, original)).ToArray();
         internal WindowsCpuLiveTuningTrustedNativeProvider? Provider;
@@ -208,7 +210,20 @@ public sealed partial class CpuTuningRuntimeTests
                 () => UsbPresent ? new("RZ09-0528", 0x1532, 0x02C6, "Unknown") : null,
                 _ => new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 42),
                 new WindowsCpuLiveCurveRangeMetadata(_ => { MetadataReads++; return new ValidationMetadata(this); }));
-            return controller = new(source, curveBackend: this, curveStore: Store);
+            var power = new CpuLivePowerTuningTransactionTests.FakeBackend(powerStore)
+            {
+                Admit = (_, _) => throw new InvalidOperationException("Read-only PPT must not request write authority."),
+                ObserveResult = token =>
+                {
+                    var context = Provider.ReadFreshContext(token);
+                    var peerContext = context is null ? null : new CpuLivePowerContext(context.Identity,
+                        context.EnabledCoreMask, context.PmVersion, context.PmTableLength, context.Backend, context.BootSequence)
+                    { RuntimeLifetime = context.RuntimeLifetime };
+                    return Task.FromResult(new CpuLivePowerBackendObservation(peerContext,
+                        CpuLivePowerTuningTransactionTests.Raw(powerPeer), null, null, null));
+                },
+            };
+            return controller = new(source, curveBackend: this, curveStore: Store, powerBackend: power, powerStore: powerStore);
         }
 
         public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token)
@@ -225,11 +240,17 @@ public sealed partial class CpuTuningRuntimeTests
             Task.FromResult(Provider!.CheckWriteAdmission(context, command, purpose, token));
 
         public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
-            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token)
+            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token) =>
+            throw new InvalidOperationException("CO must carry its PPT peer.");
+
+        public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
+            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token)
         {
             Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, Store.Journal!.State);
             Assert.Equal(Values, expectedBefore.CoreOffsets);
-            var request = new CpuLiveCurveNativeRequest(new(), command, purpose, expectedBefore);
+            Assert.NotNull(peer); Assert.Equal(powerPeer, peer.Expected); Assert.Null(peer.Original);
+            Assert.Null(powerStore.Journal);
+            var request = new CpuLiveCurveNativeRequest(new(), command, purpose, expectedBefore, peer);
             var proof = Provider!.CreateWriteProof(context, request, token);
             if (proof is null || !proof.Consume(request))
             { return Task.FromResult(CpuLiveCurveSubmission.NotSubmitted); }

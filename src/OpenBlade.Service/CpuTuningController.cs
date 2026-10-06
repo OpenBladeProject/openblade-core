@@ -388,21 +388,24 @@ internal sealed class CpuTuningController
         CpuLivePowerTuningTransaction.PreparedOperation? powerOperation = null;
         CpuLiveCurveSnapshot? curve = null;
         CpuLivePowerPair? power = null;
+        CpuTuningFeatures required = CpuTuningFeatures.None;
         bool uncertain = false;
         bool confirmedPeerLoss = false;
         try
         {
             var ownership = await ReadLiveOwnershipAsync(token).ConfigureAwait(false);
             if (restoring) { requested = ownership.Features; }
-            CpuTuningFeatures required = requested | ownership.Features;
+            required = requested | ownership.Features;
             lease.Require(required);
             if (ownership.Blocked || requested == CpuTuningFeatures.None
                 || required.HasFlag(CpuTuningFeatures.CurveOptimizer) && liveCurve is null
-                || required.HasFlag(CpuTuningFeatures.PowerLimit) && livePower is null
+                || livePower is null
                 || !lease.Allows(required)) { return await FinishAsync(false).ConfigureAwait(false); }
 
             // Both complete plans are durably prepared before either sends. A
             // peer owned by a prior edit is retained and validated without edits.
+            // CO also requires a fresh read-only PPT peer; this does not add PPT
+            // to the required write features or create restoration ownership.
             if (restoring)
             {
                 if (!await PrepareCurveAsync().ConfigureAwait(false) || !await PreparePowerAsync().ConfigureAwait(false))
@@ -436,10 +439,10 @@ internal sealed class CpuTuningController
             }
             async Task<bool> PreparePowerAsync()
             {
-                if (!required.HasFlag(CpuTuningFeatures.PowerLimit)) { return true; }
                 if (!lease.Allows(required)) { return false; }
-                var prepared = restoring ? await livePower!.PrepareRestoreAsync(token).ConfigureAwait(false)
-                    : await livePower!.PrepareApplyAsync(settings!.PowerLimitWatts is { } watts
+                var prepared = restoring && required.HasFlag(CpuTuningFeatures.PowerLimit)
+                    ? await livePower!.PrepareRestoreAsync(token).ConfigureAwait(false)
+                    : await livePower!.PrepareApplyAsync(!restoring && settings?.PowerLimitWatts is { } watts
                         ? [new(CpuLivePowerLimit.Fast, watts), new(CpuLivePowerLimit.Slow, watts)] : [], token).ConfigureAwait(false);
                 RecordPower(prepared.Result); powerOperation = prepared.Operation;
                 return powerOperation is not null && lease.Allows(required);
@@ -504,7 +507,9 @@ internal sealed class CpuTuningController
             {
                 if (curveOperation is not null)
                 { RetainUncertainty(await liveCurve!.RejectPreparedAsync(curveOperation).ConfigureAwait(false)); }
-                if (powerOperation is not null)
+                // An unowned read-only peer may have a historical Restored journal;
+                // drift must not reopen that completed PPT obligation.
+                if (powerOperation is not null && required.HasFlag(CpuTuningFeatures.PowerLimit))
                 { RetainUncertainty(await livePower!.RejectPreparedAsync(powerOperation).ConfigureAwait(false)); }
                 completed = false;
             }
@@ -515,7 +520,7 @@ internal sealed class CpuTuningController
                 : completed ? CpuTuningRecoveryState.RestoreReady : CpuTuningRecoveryState.Blocked;
             string message = completed ? restoring ? "The original live CPU settings were restored and verified." : "The requested live CPU settings were verified."
                     : uncertain ? "Live CPU submission or readback is uncertain. Further live commands are blocked."
-                    : confirmedPeerLoss ? "Confirmed live CPU state changed outside this operation. Ownership is blocked for both participating families."
+                    : confirmedPeerLoss ? "Confirmed live CPU state changed outside this operation. Existing ownership is blocked."
                     : "The live CPU operation stopped before completion; verified changes and recovery data were retained.";
             if (!completed && diagnostic.FirstFailure is { } rejection) { message += " First rejection: " + rejection + "."; }
             if (!completed) { message += diagnostic.LiveObservationTimeoutContext; }

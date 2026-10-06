@@ -11,10 +11,11 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     [InlineData(true)]
     public async Task NativeGetterPowerConsensusIsBoundedAndNeverSharedWithCommands(bool mutation)
     {
-        var live = new LiveFixture(curve: true, power: false);
+        var live = new LiveFixture(curve: true, power: true);
         CpuTuningController? controller = null;
         var context = await CreateContextAsync(live: live, controllerFactory: source =>
-            controller = new(source, curveBackend: live.Curve, curveStore: live.CurveStore));
+            controller = new(source, curveBackend: live.Curve, curveStore: live.CurveStore,
+                powerBackend: live.Power, powerStore: live.PowerStore));
         context.Power.Power = PowerSource.ExternalUnknown;
         int samples = 0, getters = 0;
         context.Device.ReadAdapterPower = _ =>
@@ -151,7 +152,7 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     [InlineData(true, AdapterPowerState.FullPower330W)]
     public async Task ExternalPowerRequiresFreshBarrelConsensusForSavedAndLive(bool liveTarget, AdapterPowerState adapter)
     {
-        var live = liveTarget ? new LiveFixture(curve: true, power: false) : null;
+        var live = liveTarget ? new LiveFixture(curve: true, power: true) : null;
         var context = await CreateContextAsync(admittedSavedBackend: !liveTarget, live: live);
         context.Power.Power = PowerSource.ExternalUnknown;
         int samples = 0;
@@ -179,7 +180,7 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     [InlineData("usb", true)]
     public async Task CachedFullPowerCannotAdmitFreshBatteryUsbOrUnclassifiedPower(string failure, bool liveTarget)
     {
-        var live = liveTarget ? new LiveFixture(curve: true, power: false) : null;
+        var live = liveTarget ? new LiveFixture(curve: true, power: true) : null;
         var context = await CreateContextAsync(admittedSavedBackend: !liveTarget, live: live);
         Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
         context.Power.Power = failure == "battery" ? PowerSource.Battery : PowerSource.ExternalUnknown;
@@ -828,12 +829,12 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     [Fact]
     public async Task LiveCurveUsesRetainedOwnershipAndRestoresWithoutPowerAuthority()
     {
-        var live = new LiveFixture(curve: true, power: false);
+        var live = new LiveFixture(curve: true, power: true);
         var context = await CreateContextAsync(powerAdmitted: false, live: live);
         var first = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default);
         Assert.Equal(ControlOperationStatus.Stored, first.Status);
         Assert.Equal(-2, first.CpuTuning!.LiveState!.UniformCurveOptimizerValue);
-        Assert.Null(first.CpuTuning.LiveState.PowerLimits);
+        Assert.Equal(new(null, live.Power!.Pair.Fast.Milliwatts, live.Power.Pair.Slow.Milliwatts), first.CpuTuning.LiveState.PowerLimits);
         Assert.Equal(new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer), first.CpuTuning.LiveRecovery);
         var original = live.CurveStore!.Journal!.OriginalBaseline;
         await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -3)), () => true, default);
@@ -844,6 +845,7 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
         Assert.Equal(CpuTuningRecoveryState.None, restored.CpuTuning.LiveRecovery!.State);
         Assert.False(restored.CpuTuning.RestorePending);
         Assert.True(restored.CpuTuning.Live.CanWrite);
+        Assert.Empty(live.Power.Admissions); Assert.Empty(live.Power.Sent); Assert.Null(live.PowerStore!.Journal);
         Assert.Equal(0, context.Source.Calls);
     }
 
@@ -988,7 +990,7 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     [Fact]
     public async Task SavedAndLiveRecoveryRemainSeparateWhenEitherTargetChanges()
     {
-        var live = new LiveFixture(curve: true, power: false);
+        var live = new LiveFixture(curve: true, power: true);
         var context = await CreateContextAsync(admittedSavedBackend: true, live: live);
         await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot, new(null, new(false, -1)), () => true, default);
         var applied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default);

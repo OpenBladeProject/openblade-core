@@ -413,11 +413,13 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         Assert.True((await worker).Verified);
     }
 
-    [Fact]
-    public void CombinedCurveReadsPowerAfterCurveMetadataWithinOneLeaseAndNeverReenters()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CombinedCurveReadsPowerAfterCurveMetadataWithinOneLeaseAndNeverReenters(bool restoring)
     {
         var platform = new Platform { Capability = 6 };
-        var request = CurveRequest(platform);
+        var request = CurveRequest(platform, restoring ? CpuLiveCurveCommandPurpose.Restore : CpuLiveCurveCommandPurpose.Forward);
         platform.AtFirstCopy = () => AssertCurveBusy(platform);
         var proof = new CurveProof(request)
         {
@@ -426,7 +428,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact);
         Assert.True(result.Verified); Assert.Equal(CpuLiveCurveNativeDisposition.Acknowledged, result.Disposition);
         Assert.Equal(1, platform.Opens); Assert.Equal(1, platform.Releases);
-        Assert.Equal(1, platform.Copies); Assert.Equal(1, platform.Setters);
+        Assert.Equal(2, platform.Copies); Assert.Equal(1, platform.Setters);
         Assert.Equal(24, platform.Commands.Count(command => command == 0x5E));
         Assert.DoesNotContain(0x32u, platform.Commands); Assert.DoesNotContain(0x33u, platform.Commands);
         Assert.Equal(request.PowerPeer!.Expected, platform.Pair);
@@ -454,6 +456,35 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
             Assert.Equal(1, platform.Copies);
             Assert.Equal(CpuLiveCurveNativeFailure.AdmissionDenied, result.Failure);
         }
+    }
+
+    [Theory]
+    [InlineData(false, "fast")]
+    [InlineData(true, "fast")]
+    [InlineData(false, "slow")]
+    [InlineData(true, "slow")]
+    [InlineData(false, "stapm")]
+    [InlineData(true, "stapm")]
+    [InlineData(false, "copy-length")]
+    [InlineData(true, "copy-length")]
+    public void CombinedCurvePowerReadbackLossRetainsSubmissionWithoutCompensation(bool restoring, string fault)
+    {
+        var platform = new Platform { Capability = 6 };
+        var request = CurveRequest(platform, restoring ? CpuLiveCurveCommandPurpose.Restore : CpuLiveCurveCommandPurpose.Forward);
+        platform.AtSetter = () =>
+        {
+            if (fault == "fast") { platform.Pair = Pair(84000, 80000); }
+            if (fault == "slow") { platform.Pair = Pair(85000, 79000); }
+            if (fault == "stapm") { platform.Pair = platform.Pair with { StapmRawBits = 0 }; }
+            if (fault == "copy-length") { platform.Fault = fault; }
+        };
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, new CurveProof(request), () => Exact);
+        Assert.Equal(CpuLiveCurveNativeDisposition.Acknowledged, result.Disposition);
+        Assert.False(result.Verified); Assert.True(result.CleanupComplete);
+        Assert.Equal(1, platform.Setters); Assert.Equal(2, platform.Copies);
+        Assert.Equal(1, platform.Opens); Assert.Equal(1, platform.Releases);
+        Assert.DoesNotContain(0x32u, platform.Commands); Assert.DoesNotContain(0x33u, platform.Commands);
+        if (fault != "copy-length") { Assert.Equal(CpuLiveCurveNativeFailure.ReadbackDrift, result.Failure); }
     }
 
     [Fact]
@@ -486,10 +517,10 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         Assert.False(result.Verified); Assert.Equal(1, platform.Setters);
     }
 
-    private static CpuLiveCurveNativeRequest CurveRequest(Platform platform)
+    private static CpuLiveCurveNativeRequest CurveRequest(Platform platform, CpuLiveCurveCommandPurpose purpose = CpuLiveCurveCommandPurpose.Forward)
     {
         Assert.True(CpuLiveCurveCommand.TryCreate(0, -2, 0xFF55, out var command));
-        return new(new(), command, CpuLiveCurveCommandPurpose.Forward, CurveSnapshot(), new(platform.Pair, null));
+        return new(new(), command, purpose, CurveSnapshot(), new(platform.Pair, null));
     }
     private static CpuLiveCurveSnapshot CurveSnapshot() => CpuLiveCurveSnapshot.TryCreate(new(0xFF55, 0x005D000B, 0xD50,
         Enumerable.Range(0, 16).Where(CpuLiveCurveSnapshot.IsEnabled).Select(id => new CpuLiveCoreOffset(id, -1)).ToArray()))!;

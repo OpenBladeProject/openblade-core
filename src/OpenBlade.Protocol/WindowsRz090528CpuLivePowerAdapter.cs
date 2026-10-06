@@ -220,6 +220,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
             ReadCaps();
             Mailbox(CpuLiveCurveCommand.Message, curve.Command.EncodeArgument(), null, setter: true);
             CurveSnapshot(curve.After, after: true);
+            Snapshot(before: false); // Prove the complete PPT peer remained unchanged.
         }
         else if (request is { } power)
         {
