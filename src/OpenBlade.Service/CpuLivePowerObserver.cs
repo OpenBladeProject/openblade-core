@@ -33,11 +33,14 @@ internal sealed class CpuLivePowerObserver(ICpuLivePowerBackend backend, ICpuLiv
         internal CpuLivePowerPeerState State => new(Expected, null);
     }
 
-    internal async Task<(CpuLivePowerObservationResult Result, Peer? Peer)> PreparePeerAsync(CancellationToken token)
+    internal async Task<(CpuLivePowerObservationResult Result, Peer? Peer)> PreparePeerAsync(CancellationToken token,
+        CpuSavedAdmissionDiagnostic? diagnostic = null, CpuLivePowerRecoveryTicket? recovery = null)
     {
         var loaded = await LoadAsync(token).ConfigureAwait(false);
         if (JournalRejection(loaded) is { } rejected) { return (rejected, null); }
-        var observed = await ObserveBackendAsync(token).ConfigureAwait(false);
+        var observed = await ObserveBackendAsync(token, diagnostic, recovery).ConfigureAwait(false);
+        if (recovery is null && observed is { Context: null, Observation: null, RecoveryTicket: { } ticket })
+        { return (new(CpuLivePowerBlockReason.ObservationUnavailable, null) { RecoveryTicket = ticket }, null); }
         if (!Valid(observed, out var pair)) { return (new(CpuLivePowerBlockReason.ObservationUnavailable, null), null); }
         return (new(CpuLivePowerBlockReason.None, pair), new(observed!.Context!, pair!, loaded.Sha256));
     }
