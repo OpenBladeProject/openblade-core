@@ -222,21 +222,9 @@ public sealed class CpuVoltageReadOnlyCleanupTests
         internal Fixture(ControlOperationStatus status)
         {
             Child = new(321, Now.UtcDateTime.ToFileTimeUtc(), @"C:\fixed\firmware-smoke\OpenBlade.FirmwareSmoke.exe", new string('D', 64));
-            Records["evidence/cpu-voltage-optimizer.json"] = JsonSerializer.SerializeToElement(new
-            {
-                mode = "ObserveOnly",
-                outcome = "ObservationRecorded",
-                phase = "Observation",
-                expectedServiceVersion = Enrollment.ServiceVersion,
-                applyAttempted = false,
-                restoreAttempted = false,
-                originalVerified = false,
-                baseline = (object?)null,
-                forward = (object?)null,
-                final = (object?)null,
-                responseReceivedAtUtc = Now,
-                controlResponse = new ControlOperationResult(status, "actual response"),
-            }, CpuVoltageSessionProtocol.Json);
+            Records["evidence/cpu-voltage-optimizer.json"] = JsonSerializer.SerializeToElement(
+                CpuVoltageObservationEvidence.Create(Enrollment.ServiceVersion, Now,
+                    new ControlOperationResult(status, "actual response")), CpuVoltageSessionProtocol.Json);
             Records["control/voltage-context.json"] = JsonSerializer.SerializeToElement(new
             {
                 run = Run,

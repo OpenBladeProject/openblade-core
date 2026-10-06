@@ -351,21 +351,8 @@ public sealed class CpuVoltageSessionTests
         var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Unavailable);
         var cpu = new CpuTuningStatus(null, null, unavailable, new(writable ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly,
             CpuTuningBackendAvailability.Available), CpuTuningPendingBoot.Unknown, false);
-        var result = new
-        {
-            mode = "ObserveOnly",
-            outcome = "ObservationRecorded",
-            phase = "Observation",
-            expectedServiceVersion = enrollment.ServiceVersion,
-            applyAttempted = false,
-            restoreAttempted = false,
-            originalVerified = false,
-            baseline = (object?)null,
-            forward = (object?)null,
-            final = (object?)null,
-            responseReceivedAtUtc = now,
-            controlResponse = new ControlOperationResult(operation, "actual reason") { CpuTuning = cpu },
-        };
+        var result = CpuVoltageObservationEvidence.Create(enrollment.ServiceVersion, now,
+            new ControlOperationResult(operation, "actual reason") { CpuTuning = cpu });
         var receipt = new
         {
             Run = run,

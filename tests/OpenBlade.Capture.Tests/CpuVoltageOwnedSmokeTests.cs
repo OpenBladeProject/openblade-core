@@ -267,21 +267,9 @@ public sealed class CpuVoltageOwnedSmokeTests
         Assert.Throws<InvalidDataException>(() => Verify((data.Baseline, JsonSerializer.SerializeToUtf8Bytes(result))));
     }
 
-    private static byte[] ObservationEvidence(ControlOperationStatus status) => JsonSerializer.SerializeToUtf8Bytes(new
-    {
-        Mode = "ObserveOnly",
-        Outcome = "ObservationRecorded",
-        Phase = "Observation",
-        ExpectedServiceVersion = Version,
-        ApplyAttempted = false,
-        RestoreAttempted = false,
-        OriginalVerified = false,
-        Baseline = (CpuLiveState?)null,
-        Forward = (CpuLiveState?)null,
-        Final = (CpuLiveState?)null,
-        ResponseReceivedAtUtc = Started.AddSeconds(1),
-        ControlResponse = new ControlOperationResult(status, "actual CPU diagnostic response"),
-    }, Json);
+    private static byte[] ObservationEvidence(ControlOperationStatus status) => JsonSerializer.SerializeToUtf8Bytes(
+        CpuVoltageObservationEvidence.Create(Version, Started.AddSeconds(1),
+            new ControlOperationResult(status, "actual CPU diagnostic response")), Json);
     [Theory]
     [InlineData(0, false)]
     [InlineData(3, false)]

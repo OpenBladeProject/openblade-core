@@ -29,8 +29,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     public void MetadataRequiresPresentBooleanTrueAcknowledgement()
     {
         foreach (object? ack in new object?[] { false, null, 1u, "true" })
-        { Assert.Null(ReadDValues(Envelope(DValues(), ack)).Value); }
-        Assert.Null(ReadDValues(new Object([Pair("pack", DValues())])).Value);
+        { Assert.Null(ReadMinMax(Envelope(MinMax(), ack)).Value); }
         Assert.Null(ReadMinMax(new Object([Pair("pack", MinMax())])).Value);
     }
 
@@ -38,30 +37,22 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     public void RawAcknowledgementDistinguishesAbsentBooleanWrongTypeAndUnreadable()
     {
         Assert.Equal(CpuLivePowerRangeReturnValueState.Absent,
-            ReadDValues(new Object([Pair("pack", DValues())])).Raw!.ReturnValueState);
-        var falseAck = ReadDValues(Envelope(DValues(), false));
+            ReadMinMax(new Object([Pair("pack", MinMax())])).Raw!.ReturnValueState);
+        var falseAck = ReadMinMax(Envelope(MinMax(), false));
         Assert.Equal(CpuLivePowerRangeReturnValueState.PresentBoolean, falseAck.Raw!.ReturnValueState);
         Assert.False(falseAck.Raw.ReturnValue);
         Assert.Equal(CpuLivePowerRangeReturnValueState.WrongType,
-            ReadDValues(Envelope(DValues(), null)).Raw!.ReturnValueState);
+            ReadMinMax(Envelope(MinMax(), null)).Raw!.ReturnValueState);
         Assert.Equal(CpuLivePowerRangeReturnValueState.WrongType,
-            ReadDValues(Envelope(DValues(), 1u)).Raw!.ReturnValueState);
+            ReadMinMax(Envelope(MinMax(), 1u)).Raw!.ReturnValueState);
         Assert.Equal(CpuLivePowerRangeReturnValueState.Unreadable,
-            ReadDValues(Envelope(DValues()) with { FailRead = "ReturnValue" }).Raw!.ReturnValueState);
+            ReadMinMax(Envelope(MinMax()) with { FailRead = "ReturnValue" }).Raw!.ReturnValueState);
         Assert.Equal(CpuLivePowerRangeReturnValueState.Absent,
             ReadVersion(new Object([Pair("version", 7u)])).Raw!.ReturnValueState);
     }
     [Fact]
-    public void ZeroValuesArePreservedAndArraysAreCopied()
+    public void ZeroValuesArePreserved()
     {
-        uint[] values = [0, 85000, 80000];
-        var result = ReadDValues(Envelope(DValues(values)));
-        Assert.Equal(CpuLivePowerRangeMetadataStatus.Complete, result.Status);
-        Assert.Equal(0u, result.Value!.Current);
-        Assert.Equal(values, result.Value.CopyValues());
-        values[1] = 1;
-        var copy = result.Value.CopyValues(); copy[2] = 1;
-        Assert.Equal(new uint[] { 0, 85000, 80000 }, result.Value.CopyValues());
         var minmax = ReadMinMax(Envelope(MinMax())).Value!;
         Assert.Equal(0u, minmax.Current); Assert.Equal(0u, minmax.Min); Assert.Equal(0u, minmax.Stepping);
         Assert.False(minmax.MissingReturnValueCompatibility);
@@ -73,33 +64,13 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         Object[] failures =
         [
             new([Pair("ReturnValue", true)]),
-            new([Pair("ReturnValue", true), Pair("pack", DValues()), Pair("other", 0u)]),
+            new([Pair("ReturnValue", true), Pair("pack", MinMax()), Pair("other", 0u)]),
             new([Pair("ReturnValue", true), Pair("ReturnValue", true)]),
-            new([Pair("ReturnValue", true), Pair("Pack", DValues())]),
+            new([Pair("ReturnValue", true), Pair("Pack", MinMax())]),
             new([Pair("ReturnValue", true), Pair("pack", 0u)]),
-            Envelope(DValues()) with { FailRead = "pack" },
+            Envelope(MinMax()) with { FailRead = "pack" },
         ];
-        foreach (var failure in failures) { Assert.Null(ReadDValues(failure).Value); }
-    }
-
-    [Fact]
-    public void DValuesRejectsEveryMalformedField()
-    {
-        foreach (string name in new[] { "Current", "ID", "Length", "DValuesBuffer" })
-        {
-            Assert.Null(ReadDValues(Envelope(DValues() with { Omit = name })).Value);
-            Assert.Null(ReadDValues(Envelope(DValues() with { FailRead = name })).Value);
-            var fields = DValues().Fields.Select(field => field.Key == name ? Pair(name, null) : field).ToArray();
-            Assert.Null(ReadDValues(Envelope(new Object(fields))).Value);
-        }
-        Assert.Null(ReadDValues(Envelope(DValues() with { Fields = [Pair("Current", 0u), Pair("ID", 0x50002u), Pair("Length", 0u), Pair("DValuesBuffer", Array.Empty<uint>())] })).Value);
-        Assert.Null(ReadDValues(Envelope(DValues(new uint[101]))).Value);
-        Assert.Null(ReadDValues(Envelope(new Object([Pair("Current", 0u), Pair("ID", 0x50001u), Pair("Length", 1u), Pair("DValuesBuffer", Array.Empty<uint>())]))).Value);
-        Assert.Null(ReadDValues(Envelope(DValues() with { Fields = [Pair("Current", 0u), Pair("ID", 0x50001u), Pair("Length", 0u), Pair("DValuesBuffer", Array.Empty<int>())] })).Value);
-        Assert.Null(ReadDValues(Envelope(DValues() with { Duplicate = "ID" })).Value);
-        Assert.Null(ReadDValues(Envelope(DValues() with { Extra = "Unexpected" })).Value);
-        Assert.NotNull(ReadDValues(Envelope(DValues(Array.Empty<uint>()))).Value);
-        Assert.NotNull(ReadDValues(Envelope(DValues(new uint[100]))).Value);
+        foreach (var failure in failures) { Assert.Null(ReadMinMax(failure).Value); }
     }
 
     [Fact]
@@ -121,9 +92,9 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     [Fact]
     public void DisposalFailureRetainsDecodedTypedValueAndSanitizedHresult()
     {
-        var output = Envelope(DValues()) with { FailDispose = true };
+        var output = Envelope(MinMax()) with { FailDispose = true };
         var session = new Session(output);
-        var result = new WindowsCpuLivePowerRangeMetadata(_ => session).GetDValues(() => { });
+        var result = new WindowsCpuLivePowerRangeMetadata(_ => session).GetMinMaxSteppingValues(() => { });
         Assert.NotNull(result.Value);
         Assert.Equal(CpuLivePowerRangeMetadataStatus.DisposalFailed, result.Status);
         Assert.NotNull(result.HResult);
@@ -135,11 +106,11 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     [Fact]
     public void PostInvocationAdmissionFailureStillDisposesResources()
     {
-        var output = Envelope(DValues());
+        var output = Envelope(MinMax());
         var session = new Session(output);
         bool fail = false;
         session.AfterInvoke = () => fail = true;
-        var result = new WindowsCpuLivePowerRangeMetadata(_ => session).GetDValues(() =>
+        var result = new WindowsCpuLivePowerRangeMetadata(_ => session).GetMinMaxSteppingValues(() =>
         { if (fail) { throw new OperationCanceledException(); } });
         Assert.Equal(CpuLivePowerRangeMetadataStatus.NativeFailure, result.Status);
         Assert.True(result.Stages.HasFlag(CpuLivePowerRangeMetadataStages.InvocationReturned));
@@ -166,9 +137,9 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     [Fact]
     public void BoundaryFailureAfterDecodedOutputRetainsValueAndCompletesCleanup()
     {
-        var output = Envelope(DValues());
+        var output = Envelope(MinMax());
         var session = new Session(output);
-        var result = new WindowsCpuLivePowerRangeMetadata(_ => session).GetDValues(() =>
+        var result = new WindowsCpuLivePowerRangeMetadata(_ => session).GetMinMaxSteppingValues(() =>
         { if (output.Disposed) { throw new Exception("private admission failure"); } });
         Assert.Equal(CpuLivePowerRangeMetadataStatus.NativeFailure, result.Status);
         Assert.NotNull(result.Value); Assert.NotNull(result.Raw);
@@ -182,8 +153,8 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         var methods = new List<(string, uint?)>();
         var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(new Object([Pair("version", 7u)]))
         { OnInvoke = (method, id) => methods.Add((method, id)) });
-        reader.QueryVersion(() => { }); reader.GetDValues(() => { }); reader.GetMinMaxSteppingValues(() => { });
-        Assert.Equal(new (string, uint?)[] { ("QueryVersion", null), ("Getdvalues", 0x50001), ("GetMinMaxSteppingValues", 0x50001) }, methods);
+        reader.QueryVersion(() => { }); Assert.Throws<NotSupportedException>(() => reader.GetDValues(() => { })); reader.GetMinMaxSteppingValues(() => { });
+        Assert.Equal(new (string, uint?)[] { ("QueryVersion", null), ("GetMinMaxSteppingValues", 0x50001) }, methods);
     }
 
     [Theory]
@@ -246,7 +217,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(opens++ == 0 && fault != "no-version" ? version : output),
             fault == "no-identity" ? null : () => ExactHost(sku: fault == "sku" ? "wrong" : "RZ09-05289EN4"));
         if (fault != "no-version") { reader.QueryVersion(() => { }); }
-        if (fault == "intervening") { reader.GetDValues(() => { }); }
+        if (fault == "intervening") { Assert.Throws<NotSupportedException>(() => reader.GetDValues(() => { })); }
         var result = reader.GetMinMaxSteppingValues(() =>
         { if (fault == "post-revocation" && output.Disposed) { throw new OperationCanceledException(); } });
         Assert.Null(result.Value); Assert.NotEqual(CpuLivePowerRangeMetadataStatus.Complete, result.Status);
@@ -276,15 +247,11 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
 
     private static CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> ReadVersion(Object value) =>
         new WindowsCpuLivePowerRangeMetadata(_ => new Session(value)).QueryVersion(() => { });
-    private static CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> ReadDValues(Object value) =>
-        new WindowsCpuLivePowerRangeMetadata(_ => new Session(value)).GetDValues(() => { });
     private static CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> ReadMinMax(Object value) =>
         new WindowsCpuLivePowerRangeMetadata(_ => new Session(value)).GetMinMaxSteppingValues(() => { });
     private static KeyValuePair<string, object?> Pair(string name, object? value) => new(name, value);
     private static Object Envelope(Object pack) => Envelope(pack, true);
     private static Object Envelope(Object pack, object? ack) => new([Pair("ReturnValue", ack), Pair("pack", pack)]);
-    private static Object DValues(uint[]? values = null) => new([Pair("Current", 0u), Pair("ID", 0x50001u),
-        Pair("Length", (uint)(values?.Length ?? 2)), Pair("DValuesBuffer", values ?? [85000u, 80000u])]);
     private static Object MinMax() => new([Pair("Current", 0u), Pair("Max", 125000u), Pair("Min", 0u), Pair("Stepping", 0u), Pair("Value", 0x50001u)]);
 
     private sealed record Object(KeyValuePair<string, object?>[] Fields) : IWindowsCpuRangeWmiObject

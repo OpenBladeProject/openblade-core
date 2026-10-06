@@ -50,7 +50,7 @@ internal sealed class WindowsCpuLivePowerRangeMetadata : IRz090528CpuLivePowerRa
         lock (sequenceGate)
         {
             completedVersion = false;
-            return Read("Getdvalues", 0x50001, WindowsCpuRangeMetadataDecoder.DValues, checkpoint);
+            throw new NotSupportedException("The admitted PPT profile uses continuous range metadata.");
         }
     }
     // Local checkpoints and actual cleanup only. The engine separately stamps
@@ -260,15 +260,6 @@ internal static class WindowsCpuRangeMetadataDecoder
             || fields.TryGetValue("ReturnValue", out var ack) && ack is not true) { return null; }
         return new(version, !fields.ContainsKey("ReturnValue"));
     }
-    internal static CpuLivePowerRangeDValues? DValues(IWindowsCpuRangeWmiObject output, Action checkpoint)
-    {
-        var pack = Package(output, ["Current", "ID", "Length", "DValuesBuffer"], checkpoint);
-        if (pack is null || pack["Current"] is not uint current || pack["ID"] is not uint id || id != 0x50001
-            || pack["Length"] is not uint length || pack["DValuesBuffer"] is not uint[] values
-            || values.GetType() != typeof(uint[])
-            || values.Length > 100 || length != values.Length) { return null; }
-        return new(id, current, length, values);
-    }
     internal static CpuLivePowerRangeMinMax? MinMax(IWindowsCpuRangeWmiObject output, Action checkpoint, bool completedVersion)
     {
         var pack = PackageFields(output, ["Current", "Max", "Min", "Stepping", "Value"], checkpoint);
@@ -279,12 +270,6 @@ internal static class WindowsCpuRangeMetadataDecoder
             && min <= max && stepping > 0 && current >= min && current <= max;
         return output.Raw is { ReturnValueState: CpuLivePowerRangeReturnValueState.PresentBoolean, ReturnValue: true }
             || compatible ? new(value, current, min, max, stepping, compatible) : null;
-    }
-    private static Dictionary<string, object?>? Package(IWindowsCpuRangeWmiObject output, string[] expected, Action checkpoint)
-    {
-        var decoded = PackageFields(output, expected, checkpoint);
-        return output.Raw is { ReturnValueState: CpuLivePowerRangeReturnValueState.PresentBoolean, ReturnValue: true }
-            ? decoded : null;
     }
     private static Dictionary<string, object?>? PackageFields(IWindowsCpuRangeWmiObject output, string[] expected, Action checkpoint)
     {
