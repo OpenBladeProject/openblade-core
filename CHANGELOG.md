@@ -25,7 +25,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
-- Give live voltage submissions a separate bounded deadline from individual reads and report complete operation timing when they expire. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Give live voltage submissions a separate bounded deadline from individual reads and retain exact getter rejection causes and complete operation timing. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Require fresh read-only Fast/Slow/STAPM power peers before and after voltage-only live apply and restoration; missing or changed evidence and unresolved historical PPT ownership block further mutation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Recover an explicit installed power-peer observation once from the exact sampling prerequisite with separately admitted bounded getters, while retaining first-failure diagnostics and excluding retries from mutation preparation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Preserve live CPU boot identity on reviewed Windows builds 26200 and 26300, separate BIOS provenance from model/SKU admission, and resolve identity dependencies before CPU pipe impersonation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
