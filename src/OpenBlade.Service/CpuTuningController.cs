@@ -281,6 +281,7 @@ internal sealed class CpuTuningController
                     && liveCurve is not null && livePower is not null && powerStore is not null)
                 {
                     var reconciled = await liveCurve.ReconcileAfterBootAsync(livePower, powerStore, readRecoveryBoot,
+                        readToken => ObservePowerSequenceCoreAsync(readToken, diagnostic, preparePeer: true),
                         lease.Lifetime, () => recoveryWorkerIdle() && lease.Allows(CpuTuningFeatures.None, token), token, diagnostic).ConfigureAwait(false);
                     RetainUncertainty(reconciled.Curve);
                     if (reconciled.Curve is { Outcome: CpuLiveCurveOutcome.Verified, Observation: { } original })
@@ -332,6 +333,10 @@ internal sealed class CpuTuningController
     // also includes the gap, admission, queueing and terminal scope cleanup.
     private async Task<CpuLivePowerObservationResult> ObservePowerSequenceAsync(CancellationToken caller,
         CpuSavedAdmissionDiagnostic? diagnostic)
+        => (await ObservePowerSequenceCoreAsync(caller, diagnostic, preparePeer: false).ConfigureAwait(false)).Result;
+
+    private async Task<(CpuLivePowerObservationResult Result, CpuLivePowerObserver.Peer? Peer)> ObservePowerSequenceCoreAsync(
+        CancellationToken caller, CpuSavedAdmissionDiagnostic? diagnostic, bool preparePeer)
     {
         using var sequence = CancellationTokenSource.CreateLinkedTokenSource(caller);
         diagnostic?.SetPowerSequenceCaller(caller);
@@ -341,13 +346,14 @@ internal sealed class CpuTuningController
         string? firstTiming = null;
         long gapStarted = 0, gapMilliseconds = 0;
         bool gapComplete = false;
+        CpuLivePowerObserver.Peer? peer = null;
         try
         {
-            var first = await livePower!.ObserveAsync(sequence.Token, diagnostic).ConfigureAwait(false);
+            var first = await ObserveNextAsync(null).ConfigureAwait(false);
             sequence.Token.ThrowIfCancellationRequested();
             if (first.Reason != CpuLivePowerBlockReason.ObservationUnavailable || first.RecoveryTicket is not { } candidate
                 || liveUncertainty != CpuTuningFeatures.None || diagnostic?.FirstFailure is not null
-                || sequence.IsCancellationRequested || !candidate.TryConsume()) { return first with { RecoveryTicket = null }; }
+                || sequence.IsCancellationRequested || !candidate.TryConsume()) { return (first with { RecoveryTicket = null }, peer); }
             ticket = candidate;
             if (diagnostic is not null) { diagnostic.TakePowerEmptyWindowDetail(); }
             firstTiming = diagnostic?.TakePowerTimingSummary();
@@ -357,7 +363,7 @@ internal sealed class CpuTuningController
             gapMilliseconds = (long)System.Diagnostics.Stopwatch.GetElapsedTime(gapStarted).TotalMilliseconds;
             gapComplete = true;
             sequence.Token.ThrowIfCancellationRequested();
-            var second = await livePower.ObserveAsync(sequence.Token, diagnostic, ticket).ConfigureAwait(false);
+            var second = await ObserveNextAsync(ticket).ConfigureAwait(false);
             sequence.Token.ThrowIfCancellationRequested();
             bool recovered = second.Reason == CpuLivePowerBlockReason.None && second.Observation is not null
                 && !sequence.IsCancellationRequested;
@@ -368,7 +374,7 @@ internal sealed class CpuTuningController
                     + "; first getter" + firstTiming + $"; recovery wait {gapMilliseconds} ms"
                     + (diagnostic.TakePowerTimingSummary() is { } next ? "; replacement getter" + next : string.Empty);
             }
-            return second with { RecoveryTicket = null };
+            return (second with { RecoveryTicket = null }, peer);
         }
         catch (OperationCanceledException)
         {
@@ -379,7 +385,17 @@ internal sealed class CpuTuningController
                     + "; first getter" + firstTiming
                     + $"; recovery wait {(gapComplete ? gapMilliseconds : (long)System.Diagnostics.Stopwatch.GetElapsedTime(gapStarted).TotalMilliseconds)} ms";
             }
-            return new(CpuLivePowerBlockReason.ObservationUnavailable, null);
+            return (new(CpuLivePowerBlockReason.ObservationUnavailable, null), null);
+        }
+
+        async Task<CpuLivePowerObservationResult> ObserveNextAsync(CpuLivePowerRecoveryTicket? recovery)
+        {
+            // Ordinary Observe keeps its existing observation path. Only the
+            // explicit post-boot recovery retains a prepared read-only peer.
+            if (!preparePeer) { return await livePower!.ObserveAsync(sequence.Token, diagnostic, recovery).ConfigureAwait(false); }
+            var prepared = await livePower!.PreparePeerAsync(sequence.Token, diagnostic, recovery).ConfigureAwait(false);
+            peer = prepared.Peer;
+            return prepared.Result;
         }
     }
 

@@ -90,6 +90,7 @@ internal sealed class CpuLiveCurveTuningTransaction
     // original worker cannot still run; it never establishes the current values.
     internal async Task<CpuLiveCurvePostBootResult> ReconcileAfterBootAsync(CpuLivePowerObserver power,
         ICpuLivePowerOwnershipJournalStore powerStore, Func<CancellationToken, CpuLiveCurveBootSequence?> readBoot,
+        Func<CancellationToken, Task<(CpuLivePowerObservationResult Result, CpuLivePowerObserver.Peer? Peer)>> preparePeer,
         CpuLiveRuntimeLifetime lifetime, Func<bool> admitted, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
@@ -106,7 +107,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             if (boot is not { IsWellFormed: true } || boot == prior.Context.BootSequence
                 || !await CurrentAsync().ConfigureAwait(false))
             { return new(Blocked(CpuLiveCurveBlockReason.ContextMismatch), null); }
-            var prepared = await power.PreparePeerAsync(token).ConfigureAwait(false);
+            var prepared = await preparePeer(token).ConfigureAwait(false);
             if (prepared.Peer is not { JournalHash: null } peer || prepared.Result.Reason != CpuLivePowerBlockReason.None
                 || !await CurrentAsync().ConfigureAwait(false))
             { return new(Blocked(CpuLiveCurveBlockReason.ObservationUnavailable), null); }
