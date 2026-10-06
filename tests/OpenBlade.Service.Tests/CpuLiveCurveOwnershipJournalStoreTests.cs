@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
@@ -10,6 +11,209 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "OpenBladeLiveCurveJournalTests", Guid.NewGuid().ToString("N"));
     private string JournalPath => Path.Combine(directory, "live-co.json");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public async Task ExplicitPostBootObservationArchivesExactPendingBytesAndClosesOnlyVerifiedOriginal()
+    {
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath);
+        byte[] previous = await File.ReadAllBytesAsync(JournalPath);
+        string previousHash = (await fixture.Store.LoadAsync(default)).Sha256!;
+        Assert.Equal(ControlOperationStatus.Blocked, (await fixture.Controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default)).Status);
+        Assert.Equal(ControlOperationStatus.Blocked, (await fixture.Controller.MutateLiveAsync(null, true, _ => true, default)).Status);
+        Assert.Equal(0, fixture.BootReads); Assert.Equal(0, fixture.Curve.Reads); Assert.Equal(0, fixture.Power.Reads);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var result = await fixture.Controller.ObserveLiveAsync(_ => fixture.Admitted, default, diagnostic: diagnostic);
+        Assert.False(result.RestorePending); Assert.Equal(CpuTuningRecoveryState.None, result.LiveRecovery!.State);
+        Assert.Equal(CpuTuningFeatures.None, result.LiveRecovery.Features); Assert.False(result.Live.CanWrite);
+        Assert.Equal(fixture.Prior.OriginalBaseline.Select(core => (int)core.Offset), result.LiveState!.CoreValues.Select(core => core.Value));
+        Assert.Contains("original live CO observed after boot", diagnostic.LiveObservationReason);
+        Assert.Equal(2, fixture.Curve.Reads); Assert.Equal(2, fixture.Power.Reads);
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Curve.Admissions);
+        var settled = await new CpuLiveCurveOwnershipJournalStore(JournalPath).LoadAsync(default);
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, settled.Journal!.State);
+        Assert.Equal(fixture.Prior.TransactionId, settled.Journal.TransactionId);
+        Assert.Equal(fixture.Prior.Context, settled.Journal.Context);
+        Assert.Equal(fixture.Prior.OriginalBaseline, settled.Journal.OriginalBaseline);
+        string archive = Assert.Single(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+        Assert.Equal(previous, await File.ReadAllBytesAsync(Path.Combine(archive, "original.json")));
+        var receipt = JsonSerializer.Deserialize<CpuLiveCurvePostBootReceipt>(await File.ReadAllTextAsync(Path.Combine(archive, "receipt.json")), JsonOptions)!;
+        Assert.Equal("PreSettlement", receipt.State); Assert.Equal("OriginalObservedAfterBoot", receipt.Basis);
+        Assert.Equal(previousHash, receipt.PreviousSha256); Assert.Equal(settled.Sha256, receipt.ProposedSha256);
+        Assert.True(receipt.Observation.Matches(fixture.Prior));
+        Assert.Equal(fixture.Boot, receipt.Observation.Context.BootSequence);
+        Assert.NotEqual(fixture.Prior.Context.RuntimeLifetime, receipt.Observation.Context.RuntimeLifetime);
+    }
+
+    [Theory]
+    [InlineData("same-boot")]
+    [InlineData("unknown-boot")]
+    [InlineData("disabled")]
+    [InlineData("worker")]
+    [InlineData("admission")]
+    [InlineData("ppt-restored")]
+    [InlineData("ppt-invalid")]
+    [InlineData("malformed")]
+    public async Task PostBootReconciliationRejectsUnsafeEntryBeforeNativeReads(string fault)
+    {
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, enabled: fault != "disabled");
+        if (fault == "same-boot") { fixture.Boot = fixture.Prior.Context.BootSequence; }
+        if (fault == "unknown-boot") { fixture.Boot = null; }
+        if (fault == "worker") { fixture.Idle = false; }
+        if (fault == "admission") { fixture.Admitted = false; }
+        if (fault == "ppt-restored") { fixture.PowerStore.Journal = CpuPowerTestData.Legacy(CpuLivePowerOwnershipState.Restored); }
+        if (fault == "ppt-invalid") { fixture.PowerStore.Invalid = true; }
+        if (fault == "malformed") { await File.WriteAllTextAsync(JournalPath, "{invalid"); }
+        byte[] previous = await File.ReadAllBytesAsync(JournalPath);
+        var result = await fixture.Controller.ObserveLiveAsync(_ => fixture.Admitted, default);
+        Assert.True(result.RestorePending); Assert.Equal(CpuTuningRecoveryState.Blocked, result.LiveRecovery!.State);
+        Assert.Equal(previous, await File.ReadAllBytesAsync(JournalPath));
+        Assert.Equal(0, fixture.Curve.Reads); Assert.Equal(0, fixture.Power.Reads); Assert.Empty(fixture.Curve.Sent);
+        Assert.Empty(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+    }
+
+    [Theory]
+    [InlineData("curve-drift")]
+    [InlineData("curve-incomplete")]
+    [InlineData("curve-context")]
+    [InlineData("power-unavailable")]
+    [InlineData("peer-drift")]
+    [InlineData("boot-drift")]
+    [InlineData("runtime-drift")]
+    [InlineData("cancel")]
+    public async Task PostBootReconciliationNeverSettlesUnprovenReadings(string fault)
+    {
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath);
+        using var cancellation = new CancellationTokenSource();
+        if (fault == "curve-drift") { fixture.Curve.Values[0] = new(0, 0); }
+        if (fault == "curve-incomplete") { fixture.Curve.Values = fixture.Curve.Values[..^1]; }
+        if (fault == "curve-context") { fixture.Curve.Context = fixture.Curve.Context with { BootSequence = fixture.Prior.Context.BootSequence }; }
+        if (fault == "power-unavailable") { fixture.Power.Unavailable = true; }
+        var beforePower = fixture.Power.OnObserve!;
+        fixture.Power.OnObserve = () =>
+        {
+            beforePower();
+            if (fixture.Power.Reads != 2) { return; }
+            if (fault == "peer-drift") { fixture.Power.Pair = CpuPowerTestData.PairFixture(45000); }
+            if (fault == "boot-drift") { fixture.Boot = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 44); }
+            if (fault == "runtime-drift") { fixture.Admitted = false; }
+            if (fault == "cancel") { cancellation.Cancel(); }
+        };
+        byte[] previous = await File.ReadAllBytesAsync(JournalPath);
+        var result = await fixture.Controller.ObserveLiveAsync(_ => fixture.Admitted, cancellation.Token);
+        Assert.True(result.RestorePending); Assert.Equal(CpuTuningRecoveryState.Blocked, result.LiveRecovery!.State);
+        Assert.Equal(previous, await File.ReadAllBytesAsync(JournalPath)); Assert.Empty(fixture.Curve.Sent);
+        Assert.Empty(fixture.Curve.Admissions); Assert.Empty(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+    }
+
+    [Fact]
+    public async Task CurveDriftDuringPeerValidationCannotSettleEarlierOriginalObservation()
+    {
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath);
+        var beforePower = fixture.Power.OnObserve!;
+        fixture.Power.OnObserve = () =>
+        {
+            beforePower();
+            if (fixture.Power.Reads == 2)
+            {
+                Assert.Equal(1, fixture.Curve.Reads);
+                Assert.Equal(fixture.Prior.OriginalBaseline, fixture.Curve.Values);
+                fixture.Curve.Values[0] = new(0, 0);
+            }
+        };
+        byte[] previous = await File.ReadAllBytesAsync(JournalPath);
+        var result = await fixture.Controller.ObserveLiveAsync(_ => true, default);
+        Assert.True(result.RestorePending); Assert.Equal(CpuTuningRecoveryState.Blocked, result.LiveRecovery!.State);
+        Assert.Equal(2, fixture.Curve.Reads); Assert.Equal(2, fixture.Power.Reads);
+        Assert.Equal(previous, await File.ReadAllBytesAsync(JournalPath));
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, (await fixture.Store.LoadAsync(default)).Journal!.State);
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Curve.Admissions);
+        Assert.Empty(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+    }
+
+    [Theory]
+    [InlineData("cas")]
+    [InlineData("admission")]
+    [InlineData("persistence")]
+    public async Task PostBootAuditAttemptCannotClaimSettlementAfterFinalFailure(string fault)
+    {
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath);
+        var loaded = await fixture.Store.LoadAsync(default);
+        byte[] previous = await File.ReadAllBytesAsync(JournalPath);
+        var evidence = fixture.Evidence();
+        int checks = 0;
+        FileStream? held = null;
+        try
+        {
+            string? result = await fixture.Store.TryReconcileAfterBootAsync(loaded.Sha256!, evidence, async () =>
+            {
+                if (++checks == 2)
+                {
+                    if (fault == "cas") { await File.WriteAllTextAsync(JournalPath, "{} "); }
+                    if (fault == "admission") { return false; }
+                    if (fault == "persistence") { held = new FileStream(JournalPath, FileMode.Open, FileAccess.Read, FileShare.Read); }
+                }
+                return true;
+            }, default);
+            Assert.Null(result);
+        }
+        finally { held?.Dispose(); }
+        Assert.Equal(fault == "cas" ? "{} " : System.Text.Encoding.UTF8.GetString(previous), await File.ReadAllTextAsync(JournalPath));
+        string archive = Assert.Single(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+        Assert.Equal(previous, await File.ReadAllBytesAsync(Path.Combine(archive, "original.json")));
+        var receipt = JsonSerializer.Deserialize<CpuLiveCurvePostBootReceipt>(await File.ReadAllTextAsync(Path.Combine(archive, "receipt.json")), JsonOptions)!;
+        Assert.Equal("PreSettlement", receipt.State);
+        Assert.NotEqual(receipt.ProposedSha256, (await fixture.Store.LoadAsync(default)).Sha256);
+    }
+
+    private sealed class RecoveryFixture
+    {
+        internal readonly CpuLiveCurveOwnershipJournalStore Store;
+        internal readonly CpuPowerTestData.MemoryStore PowerStore = new();
+        internal readonly CpuLiveCurveTuningTransactionTests.FakeBackend Curve = new(new());
+        internal readonly CpuPowerTestData.FakeBackend Power = new();
+        internal readonly CpuTuningController Controller;
+        internal readonly CpuLiveCurveOwnershipJournal Prior;
+        internal CpuLiveCurveBootSequence? Boot = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 43);
+        internal bool Idle = true, Admitted = true;
+        internal int BootReads;
+        private RecoveryFixture(string path, bool enabled)
+        {
+            Store = new(path);
+            Prior = Create(CpuLiveCurveTuningTransactionTests.ContextFixture() with
+            { RuntimeLifetime = new(Guid.NewGuid(), 0, 1) }).Progress(CpuLiveCurveOwnershipState.PossibleSubmission, 0, false);
+            Controller = new(new UnusedSource(), curveBackend: Curve, curveStore: Store, powerBackend: Power, powerStore: PowerStore,
+                readRecoveryBoot: enabled ? ReadBoot : null,
+                recoveryWorkerIdle: enabled ? () => Idle : null);
+            Curve.Context = Prior.Context with { BootSequence = Boot! };
+            Curve.Values = Prior.OriginalBaseline.ToArray();
+            Curve.OnObserve = _ =>
+            {
+                Curve.Context = Curve.Context with { RuntimeLifetime = Controller.CaptureLiveRuntimeLifetime() };
+                return Task.FromResult(new CpuLiveCurveBackendObservation(Curve.Context, new(0xFF55, 0x005D000B, 0xD50, Curve.Values.ToArray())));
+            };
+            Power.Context = Power.Context with { BootSequence = Boot! };
+            Power.OnObserve = () => Power.Context = Power.Context with { RuntimeLifetime = Controller.CaptureLiveRuntimeLifetime() };
+        }
+        private CpuLiveCurveBootSequence? ReadBoot(CancellationToken token) { BootReads++; return Boot; }
+        internal static async Task<RecoveryFixture> CreateAsync(string path, bool enabled = true)
+        {
+            var result = new RecoveryFixture(path, enabled);
+            Assert.NotNull(await result.Store.TryWriteAsync(null, result.Prior, default)); return result;
+        }
+        internal CpuLiveCurvePostBootObservation Evidence()
+        {
+            var current = Curve.Context with { RuntimeLifetime = new(Guid.NewGuid(), 0, 1) };
+            return new(current, Prior.OriginalBaseline, Power.Context with { RuntimeLifetime = current.RuntimeLifetime },
+                CpuLivePowerStoredPair.From(Power.Pair), CpuLivePowerStoredPair.From(Power.Pair), DateTimeOffset.UtcNow);
+        }
+    }
+
+    private sealed class UnusedSource : ICpuTuningObservationSource
+    {
+        public DeviceIdentity? ReadIdentity() => throw new InvalidOperationException("Recovery cannot use saved identity.");
+        public SavedCpuFirmwareReadResult ReadSaved(DeviceIdentity identity) => throw new InvalidOperationException();
+        public CpuTuningBackendStatus InspectInstalled(DeviceIdentity identity, bool useInstalledBackend) => throw new InvalidOperationException();
+    }
 
     [Theory]
     [InlineData(0u)]

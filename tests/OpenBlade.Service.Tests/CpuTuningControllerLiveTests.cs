@@ -81,6 +81,29 @@ public sealed class CpuTuningControllerLiveTests
     }
 
     [Fact]
+    public async Task TerminalUnknownCannotEnterPostBootRecoveryOnTheUncertainController()
+    {
+        var fixture = new Fixture(); int bootReads = 0;
+        var controller = new CpuTuningController(new UnusedSource(), curveBackend: fixture.Curve,
+            curveStore: fixture.CurveStore, powerBackend: fixture.Power, powerStore: fixture.PowerStore,
+            readRecoveryBoot: _ => { bootReads++; return new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 43); },
+            recoveryWorkerIdle: () => true);
+        using var cancellation = new CancellationTokenSource();
+        var completion = new TaskCompletionSource<CpuLiveCurveSubmission>();
+        fixture.Curve.OnSend = _ => { cancellation.Cancel(); return completion.Task; };
+        var stopped = await controller.MutateLiveAsync(new(null, new(false, -1)), false, _ => true, cancellation.Token);
+        Assert.True(stopped.CpuTuning!.RestorePending);
+        await Task.Run(() => completion.SetResult(CpuLiveCurveSubmission.Unknown));
+        var prior = fixture.CurveStore.Journal;
+        int curveReads = fixture.Curve.Reads, powerReads = fixture.Power.Reads;
+        var observed = await controller.ObserveLiveAsync(_ => true, default);
+        Assert.True(observed.RestorePending); Assert.Equal(CpuTuningRecoveryState.Blocked, observed.LiveRecovery!.State);
+        Assert.Same(prior, fixture.CurveStore.Journal);
+        Assert.Equal(0, bootReads); Assert.Equal(curveReads, fixture.Curve.Reads); Assert.Equal(powerReads, fixture.Power.Reads);
+        Assert.Single(fixture.Curve.Sent);
+    }
+
+    [Fact]
     public async Task CancelledObservationDoesNotReplaceIndependentRestorationAdmission()
     {
         var fixture = new Fixture(); var controller = fixture.Controller();
