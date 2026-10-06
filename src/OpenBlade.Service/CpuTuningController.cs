@@ -27,6 +27,8 @@ internal sealed class CpuTuningController
     private readonly AsyncLocal<LiveAdmission?> liveAdmission = new();
     private readonly Guid serviceInstance = Guid.NewGuid();
     private readonly TimeSpan powerObservationTimeout;
+    private readonly Func<CancellationToken, CpuLiveCurveBootSequence?>? readRecoveryBoot;
+    private readonly Func<bool>? recoveryWorkerIdle;
     // A failed CAS may leave no readable marker. Retain that uncertainty across
     // both families for this controller lifetime; disk absence cannot clear it.
     private CpuTuningFeatures liveUncertainty;
@@ -39,7 +41,8 @@ internal sealed class CpuTuningController
         Func<Func<DeviceIdentity, CpuSavedTuningCommand, bool>, ICpuSavedTuningBackend>? backendFactory = null,
         ICpuLiveCurveBackend? curveBackend = null, ICpuLiveCurveOwnershipJournalStore? curveStore = null,
         ICpuLivePowerBackend? powerBackend = null, ICpuLivePowerOwnershipJournalStore? powerStore = null,
-        TimeSpan? powerObservationTimeout = null)
+        TimeSpan? powerObservationTimeout = null,
+        Func<CancellationToken, CpuLiveCurveBootSequence?>? readRecoveryBoot = null, Func<bool>? recoveryWorkerIdle = null)
     {
         this.powerObservationTimeout = powerObservationTimeout ?? TimeSpan.FromSeconds(21);
         if (this.powerObservationTimeout <= TimeSpan.Zero || this.powerObservationTimeout > TimeSpan.FromSeconds(21))
@@ -48,6 +51,7 @@ internal sealed class CpuTuningController
         { throw new ArgumentException("Each live backend requires its durable ownership store."); }
         this.source = source; this.journalStore = journalStore; this.backendFactory = backendFactory;
         this.curveStore = curveStore; this.powerStore = powerStore;
+        this.readRecoveryBoot = readRecoveryBoot; this.recoveryWorkerIdle = recoveryWorkerIdle;
         // Retain transaction state across requests, including uncertain persistence.
         // These wrappers add runtime rejection checks; they grant no native proof.
         // A concrete native provider must additionally capture this operation's
@@ -273,8 +277,20 @@ internal sealed class CpuTuningController
             var ownership = await ReadLiveOwnershipAsync(token).ConfigureAwait(false);
             if (ownership.Blocked)
             {
+                if (liveUncertainty == CpuTuningFeatures.None && readRecoveryBoot is not null && recoveryWorkerIdle is not null
+                    && liveCurve is not null && livePower is not null && powerStore is not null)
+                {
+                    var reconciled = await liveCurve.ReconcileAfterBootAsync(livePower, powerStore, readRecoveryBoot,
+                        lease.Lifetime, () => recoveryWorkerIdle() && lease.Allows(CpuTuningFeatures.None, token), token, diagnostic).ConfigureAwait(false);
+                    RetainUncertainty(reconciled.Curve);
+                    if (reconciled.Curve is { Outcome: CpuLiveCurveOutcome.Verified, Observation: { } original })
+                    {
+                        if (diagnostic is not null) { diagnostic.LiveObservationReason = "original live CO observed after boot; prior journal archived"; }
+                        return LiveStatus(original, reconciled.Power, CpuTuningRecoveryState.None, CpuTuningFeatures.None);
+                    }
+                }
                 if (diagnostic is not null) { diagnostic.LiveObservationReason = "ownership blocked: " + ownership.Features; }
-                return LiveStatus(null, null, CpuTuningRecoveryState.Blocked, ownership.Features);
+                return LiveStatus(null, null, CpuTuningRecoveryState.Blocked, ownership.Features | liveUncertainty);
             }
             CpuLiveCurveTransactionResult? curve = liveCurve is null ? null
                 : await liveCurve.ObserveOwnershipAsync(token, diagnostic).ConfigureAwait(false);

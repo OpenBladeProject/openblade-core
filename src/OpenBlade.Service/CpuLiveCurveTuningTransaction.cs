@@ -51,6 +51,7 @@ internal enum CpuLiveCurveBlockReason
 }
 internal sealed record CpuLiveCurveTransactionResult(CpuLiveCurveOutcome Outcome,
     CpuLiveCurveRecovery Recovery, CpuLiveCurveBlockReason Reason, CpuLiveCurveSnapshot? Observation);
+internal sealed record CpuLiveCurvePostBootResult(CpuLiveCurveTransactionResult Curve, CpuLivePowerPair? Power);
 
 // Each owned edit replaces only the bounded operation; the original baseline
 // remains immutable until every owned core is verified back at its original.
@@ -82,6 +83,67 @@ internal sealed class CpuLiveCurveTuningTransaction
             { _ = pending.Completion.Exception; return false; }
             return await SettleNotSubmittedAsync(pending.Prior, pending.PendingHash, pending.Operation).ConfigureAwait(false);
         }
+        finally { gate.Release(); }
+    }
+
+    // Explicit Observe only. A changed trusted kernel boot establishes that the
+    // original worker cannot still run; it never establishes the current values.
+    internal async Task<CpuLiveCurvePostBootResult> ReconcileAfterBootAsync(CpuLivePowerObserver power,
+        ICpuLivePowerOwnershipJournalStore powerStore, Func<CancellationToken, CpuLiveCurveBootSequence?> readBoot,
+        CpuLiveRuntimeLifetime lifetime, Func<bool> admitted, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
+    {
+        await gate.WaitAsync(token).ConfigureAwait(false);
+        bool persisting = false;
+        try
+        {
+            var loaded = await LoadAsync(token).ConfigureAwait(false);
+            if (pendingSubmission is not null || currentPrepared is not null || loaded.Invalid
+                || loaded.Journal is not { State: CpuLiveCurveOwnershipState.PossibleSubmission } prior
+                || loaded.Sha256 is not { } hash || prior.Context.RuntimeLifetime is not { } oldLifetime
+                || oldLifetime.ServiceInstance == Guid.Empty || oldLifetime.ServiceInstance == lifetime.ServiceInstance)
+            { return new(Blocked(CpuLiveCurveBlockReason.PendingSubmission), null); }
+            var boot = readBoot(token);
+            if (boot is not { IsWellFormed: true } || boot == prior.Context.BootSequence
+                || !await CurrentAsync().ConfigureAwait(false))
+            { return new(Blocked(CpuLiveCurveBlockReason.ContextMismatch), null); }
+            var prepared = await power.PreparePeerAsync(token).ConfigureAwait(false);
+            if (prepared.Peer is not { JournalHash: null } peer || prepared.Result.Reason != CpuLivePowerBlockReason.None
+                || !await CurrentAsync().ConfigureAwait(false))
+            { return new(Blocked(CpuLiveCurveBlockReason.ObservationUnavailable), null); }
+            var observed = await ObserveAsync(token, diagnostic).ConfigureAwait(false);
+            if (!Valid(observed, out var snapshot) || observed!.Context!.BootSequence != boot
+                || observed.Context.RuntimeLifetime != lifetime || !await CurrentAsync().ConfigureAwait(false))
+            { return new(Blocked(CpuLiveCurveBlockReason.ObservationUnavailable), null); }
+            if (!snapshot!.CoreOffsets.SequenceEqual(prior.OriginalBaseline))
+            { return new(Blocked(CpuLiveCurveBlockReason.StateChanged), null); }
+            var checkedPeer = await power.ValidatePeerAsync(peer, token).ConfigureAwait(false);
+            if (checkedPeer.Reason != CpuLivePowerBlockReason.None || checkedPeer.Observation is not { } after)
+            { return new(Blocked(CpuLiveCurveBlockReason.StateChanged), null); }
+            var finalObserved = await ObserveAsync(token, diagnostic).ConfigureAwait(false);
+            if (!Valid(finalObserved, out var finalSnapshot)
+                || !finalObserved!.Context!.MatchesHardwareContext(observed.Context)
+                || !finalSnapshot!.CoreOffsets.SequenceEqual(prior.OriginalBaseline)
+                || !await CurrentAsync().ConfigureAwait(false))
+            { return new(Blocked(CpuLiveCurveBlockReason.StateChanged), null); }
+            var evidence = new CpuLiveCurvePostBootObservation(finalObserved.Context, finalSnapshot.CoreOffsets, peer.Context,
+                CpuLivePowerStoredPair.From(peer.Expected), CpuLivePowerStoredPair.From(after), DateTimeOffset.UtcNow);
+            if (!evidence.Matches(prior) || !await CurrentAsync().ConfigureAwait(false))
+            { return new(Blocked(CpuLiveCurveBlockReason.StateChanged), null); }
+            persisting = true;
+            string? settled = await store.TryReconcileAfterBootAsync(hash, evidence, CurrentAsync, token).ConfigureAwait(false);
+            return settled is null ? new(Blocked(CpuLiveCurveBlockReason.JournalUnavailable), null)
+                : new(new(CpuLiveCurveOutcome.Verified, CpuLiveCurveRecovery.None, CpuLiveCurveBlockReason.None, finalSnapshot), after);
+
+            async Task<bool> CurrentAsync()
+            {
+                if (token.IsCancellationRequested || !admitted() || readBoot(token) != boot) { return false; }
+                var ppt = await powerStore.LoadAsync(token).ConfigureAwait(false);
+                return !ppt.Invalid && ppt.Journal is null && ppt.Sha256 is null
+                    && !token.IsCancellationRequested && admitted() && readBoot(token) == boot;
+            }
+        }
+        catch (Exception)
+        { return new(Blocked(persisting ? CpuLiveCurveBlockReason.JournalUnavailable : CpuLiveCurveBlockReason.ObservationUnavailable), null); }
         finally { gate.Release(); }
     }
 

@@ -7,6 +7,104 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
     [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 2)]
+    public async Task ContextWrapperChecksPreparedReadOnceAndKeepsUnpreparedFallback(bool prepared, int expectedChecks)
+    {
+        using var fixture = new Fixture();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted, continuity: _ => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var request = Request(-2);
+            using var source = prepared ? fixture.Provider.CreatePreparedWriteProof(context, request, fixture.OperationToken)!
+                : fixture.Provider.CreateWriteProof(context, request, fixture.OperationToken)!;
+            Assert.True(source.Consume(request));
+            var backend = new CpuLiveCurveNativeBackend(fixture.Platform, fixture.Provider);
+            using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source, backend, context, fixture.OperationToken);
+            Assert.True(bound.Consume(request));
+            using (var read = bound.BeginRead(request))
+            {
+                Assert.NotNull(read);
+                // Exercise consecutive pre/post checkpoints, without sharing a result.
+                for (int boundary = 0; boundary < 2; boundary++)
+                {
+                    int before = fixture.ControllerReads;
+                    Assert.True(bound.ReadCurrent(request));
+                    Assert.Equal(expectedChecks, fixture.ControllerReads - before);
+                }
+                Assert.False(bound.Current(request)); // Read continuity grants no setter authority.
+                if (prepared)
+                {
+                    var joint = Assert.IsAssignableFrom<ICpuLiveCurveContextBoundReadProof>(source);
+                    Assert.False(joint.ReadCurrentWithContext(request, context with { EnabledCoreMask = 1 }));
+                    Assert.False(joint.ReadCurrentWithContext(request, context with { RuntimeLifetime = null }));
+                    Assert.False(joint.ReadCurrentWithContext(Request(-2), context));
+                }
+                Assert.True(bound.CompleteRead(request));
+            }
+            Assert.True(bound.Current(request));
+            fixture.Admitted = false;
+            Assert.False(bound.Current(request));
+        });
+    }
+
+    [Theory]
+    [InlineData("controllers")]
+    [InlineData("usb")]
+    [InlineData("backend")]
+    [InlineData("boot")]
+    [InlineData("runtime")]
+    public async Task ContextWrapperResamplesPreparedReadAndNeverFallsBackAfterDrift(string drift)
+    {
+        using var fixture = new Fixture();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted, continuity: _ => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var request = Request(-2);
+            using var source = fixture.Provider.CreatePreparedWriteProof(context, request, fixture.OperationToken)!;
+            Assert.True(source.Consume(request));
+            var backend = new CpuLiveCurveNativeBackend(fixture.Platform, fixture.Provider);
+            using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source, backend, context, fixture.OperationToken);
+            Assert.True(bound.Consume(request));
+            using var read = bound.BeginRead(request);
+            Assert.True(bound.ReadCurrent(request));
+            var usb = fixture.Usb; var boot = fixture.Boot;
+            if (drift == "controllers") { fixture.ControllerCurrent = false; }
+            if (drift == "usb") { fixture.Usb = null; }
+            if (drift == "backend") { fixture.Platform.Running = false; }
+            if (drift == "boot") { fixture.Boot = boot with { Sequence = 43 }; }
+            if (drift == "runtime") { fixture.Admitted = false; }
+            Assert.False(bound.ReadCurrent(request));
+            fixture.ControllerCurrent = true; fixture.Usb = usb; fixture.Platform.Running = true;
+            fixture.Boot = boot; fixture.Admitted = true;
+            Assert.False(bound.ReadCurrent(request));
+            Assert.False(bound.Current(request));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ContextWrapperChecksItsCallerCancellationAroundJointRead(bool duringRead)
+    {
+        using var fixture = new Fixture(); using var cancellation = new CancellationTokenSource();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted, continuity: _ => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var request = Request(-2);
+            using var source = fixture.Provider.CreatePreparedWriteProof(context, request, fixture.OperationToken)!;
+            Assert.True(source.Consume(request));
+            var backend = new CpuLiveCurveNativeBackend(fixture.Platform, fixture.Provider);
+            using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source, backend, context, cancellation.Token);
+            Assert.True(bound.Consume(request));
+            using var read = bound.BeginRead(request);
+            if (duringRead) { fixture.OnBoot = cancellation.Cancel; }
+            else { cancellation.Cancel(); }
+            Assert.Throws<OperationCanceledException>(() => bound.ReadCurrent(request));
+        });
+    }
+
+    [Theory]
     [InlineData("scope", "provider getter scope active")]
     [InlineData("cancel", "provider getter cancellation")]
     [InlineData("admission", "provider getter admission before continuity")]

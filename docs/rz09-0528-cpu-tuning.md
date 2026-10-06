@@ -171,6 +171,14 @@ submission remains journaled. These serialized reads are not physically atomic.
 The peer correction in [issue #697](https://github.com/OpenBladeProject/openblade-core/issues/697)
 has focused source/fake coverage and has not been physically validated.
 
+An uncertain live submission keeps further writes blocked. An explicit Observe
+may reconcile its ownership after a trusted new boot only when fresh complete
+core measurements equal every captured original and complete current power
+peers remain unchanged during the observation. The failed journal and readback
+evidence are preserved before guarded settlement. Reboot or saved settings alone
+cannot close the obligation, and this path submits no setter or restoration.
+This recovery path has source coverage; installed validation remains pending.
+
 Historical PPT recovery journals are retained as read-only compatibility data.
 Invalid or non-Restored records block live voltage apply and restoration.
 A completed Restored record permits read-only observation; no record is rewritten
