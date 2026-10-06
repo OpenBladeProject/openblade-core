@@ -86,6 +86,48 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task MutationGetterRetainsInnerRejectionInTypedResponse(bool restoring, bool cancelGetter)
+    {
+        var live = new LiveFixture(curve: true, power: true);
+        CpuTuningController? controller = null; bool controlsSession = true;
+        var context = await CreateContextAsync(live: live, controllerFactory: source =>
+            controller = new(source, curveBackend: live.Curve, curveStore: live.CurveStore,
+                powerBackend: live.Power, powerStore: live.PowerStore));
+        if (restoring)
+        {
+            Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.SetCpuTuningAsync(
+                CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default)).Status);
+        }
+        int sent = live.Curve!.Sent.Count;
+        live.Curve.OnObserve = token =>
+        {
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+            using var getter = controller!.BeginLiveGetter(cancellation.Token);
+            Assert.NotNull(getter); Assert.True(getter.Allows());
+            if (cancelGetter) { cancellation.Cancel(); }
+            else { controlsSession = false; }
+            Assert.False(getter.Allows());
+            controlsSession = true;
+            Assert.False(getter.Allows());
+            // A provider's outer rejection must not replace the exact inner cause.
+            controller.CaptureLiveObservationDiagnostic()!.Check(false, "provider getter admission after continuity");
+            return Task.FromResult(new CpuLiveCurveBackendObservation(null, null));
+        };
+        var result = restoring
+            ? await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => controlsSession, default)
+            : await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => controlsSession, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.NotNull(result.CpuTuning);
+        Assert.Contains("First rejection: " + (cancelGetter ? "getter cancellation" : "runtime controlling session") + ".", result.Message);
+        Assert.DoesNotContain("provider getter admission after continuity", result.Message);
+        Assert.Equal(sent, live.Curve.Sent.Count); Assert.Equal(0, context.Source.Submissions);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task UnavailableLiveObservationRetainsTransactionReasonInTypedResponseWithoutExtraQueries(bool outerRejected)
