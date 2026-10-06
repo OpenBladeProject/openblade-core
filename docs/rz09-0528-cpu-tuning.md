@@ -182,11 +182,16 @@ core measurements equal every captured original and complete current power
 peers remain unchanged during the observation. The failed journal and readback
 evidence are preserved before guarded settlement. Reboot or saved settings alone
 cannot close the obligation, and this path submits no setter or restoration.
-Installed validation verified this recovery after a restart: all twelve offsets
-equaled the captured −1 originals and complete power peers remained unchanged.
-The original failed journal was archived before settlement, with zero setters or
-restoration requests. Independent review of the actual evidence passed. This
-proves originals observed after boot; the earlier failed cycle remains failed.
+Historical installed validation verified this recovery for an earlier failed
+journal: all twelve offsets equaled the captured −1 originals and complete power
+peers remained unchanged. The journal was archived before settlement, with zero
+setters or restoration requests, and independent evidence review passed. That
+proof does not settle the subsequent uncertain cycle. Its post-boot read rejected
+provider getter controller continuity before returning live measurements; the
+journal remains unchanged and further writes are blocked. Getter continuity now
+preserves a bounded rejection detail through the initiating diagnostic, without
+changing admission or publishing process/service names, as tracked in
+[issue #708](https://github.com/OpenBladeProject/openblade-core/issues/708).
 
 Historical PPT recovery journals are retained as read-only compatibility data.
 Invalid or non-Restored records block live voltage apply and restoration.

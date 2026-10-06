@@ -227,6 +227,32 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         }, diagnostic);
     }
 
+    [Theory]
+    [InlineData(false, "provider getter controller continuity")]
+    [InlineData(true, "provider getter controller continuity: Getter service identity changed.")]
+    public async Task GetterControllerDetailPrecedesGenericFallbackAndRemainsFirstFailure(bool detail, string expected)
+    {
+        using var fixture = new Fixture();
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted);
+        if (detail)
+        {
+            fixture.ControllerCapture = rejection => Rz090528CpuControllerPresence.CaptureGetterContinuity(() => [], () => [],
+                _ => fixture.ControllerCurrent ? [] : throw new IOException("Getter service identity changed."), rejection);
+        }
+        await fixture.RunRaw(_ =>
+        {
+            using var getter = fixture.Provider.BeginGetter(fixture.OperationToken)!;
+            var context = fixture.Provider.ReadFreshContext(fixture.OperationToken)!;
+            var approval = fixture.Provider.CreateInstalledQueryApproval(context, fixture.OperationToken)!;
+            int boots = fixture.BootReads;
+            fixture.ControllerCurrent = false; Assert.False(approval.IsCurrent());
+            Assert.Equal(expected, diagnostic.FirstFailure); Assert.Equal(boots, fixture.BootReads);
+            fixture.ControllerCurrent = true; Assert.False(approval.IsCurrent());
+            Assert.Equal(expected, diagnostic.FirstFailure);
+        }, diagnostic);
+    }
+
     [Fact]
     public async Task PreparedProofSharesOnlyExactReadPrefixAndRequiresFreshSetterAuthority()
     {
@@ -786,6 +812,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         internal bool ControllerCurrent = true;
         internal bool ThrowControllers, ThrowBoot;
         internal int ControllerReads, BootReads;
+        internal Func<Action<string>, Func<bool>?>? ControllerCapture;
         internal Action? OnBoot;
         internal CpuLiveCurveBootSequence Boot = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 42);
         internal uint Minimum, Maximum = 50;
@@ -803,8 +830,13 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
                 _ => { BootReads++; OnBoot?.Invoke(); if (ThrowBoot) { throw new IOException("private"); } return Boot; },
                 new WindowsCpuLiveCurveRangeMetadata(_ => { MetadataOpens++; return new Metadata(this); }),
                 () => new CpuGetterUsbContinuity(() => new(Usb is null ? null : @"USB\VID_1532&PID_02C6\test", 8, 0),
-                    @"USB\VID_1532&PID_02C6\test", () => { }), () => () =>
-                    { ControllerReads++; if (ThrowControllers) { throw new IOException("private"); } return ControllerCurrent; });
+                    @"USB\VID_1532&PID_02C6\test", () => { }), () =>
+                    {
+                        var diagnostic = captured?.CaptureLiveObservationDiagnostic();
+                        return ControllerCapture is { } capture ? capture(reason =>
+                            diagnostic?.Check(false, "provider getter controller continuity: " + reason)) : () =>
+                            { ControllerReads++; if (ThrowControllers) { throw new IOException("private"); } return ControllerCurrent; };
+                    });
             controller = captured = new(new Source(), curveBackend: backend,
                 curveStore: new CpuLiveCurveTuningTransactionTests.MemoryStore());
         }

@@ -29,7 +29,12 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         Func<CpuTuningController?> controller, ICpuTuningObservationSource source)
         : this(session, controller, source, Rz090528CpuFreshUsbIdentity.Read, new WindowsCpuBootSequenceReader().Read,
             new WindowsCpuLiveCurveRangeMetadata(), Rz090528CpuFreshUsbIdentity.CaptureGetter,
-            Rz090528CpuControllerPresence.CaptureGetterContinuity)
+            () =>
+            {
+                var diagnostic = controller()?.CaptureLiveObservationDiagnostic();
+                return Rz090528CpuControllerPresence.CaptureGetterContinuity(reason =>
+                    diagnostic?.Check(false, "provider getter controller continuity: " + reason));
+            })
     { }
 
     internal WindowsCpuLiveTuningTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
