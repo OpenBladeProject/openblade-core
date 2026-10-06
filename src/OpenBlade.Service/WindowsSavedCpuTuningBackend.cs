@@ -11,6 +11,36 @@ internal sealed class CpuSavedAdmissionDiagnostic
     private ActiveStage? activeStage;
     private string? liveObservationTimeoutContext;
     private CpuQueryProgress? nativeQuery;
+    private readonly object observationSync = new();
+    private CpuPowerObservationTiming? powerObservation;
+    private bool powerObservationReported;
+    private string? powerTimingSummary;
+    internal string? PowerTimingSummary => Volatile.Read(ref powerTimingSummary);
+    internal string? TakePowerTimingSummary()
+    {
+        lock (observationSync)
+        {
+            string? summary = liveObservationTimeoutContext is null ? powerTimingSummary : null;
+            powerTimingSummary = null; return summary;
+        }
+    }
+    internal CpuPowerObservationTiming? BeginPowerObservation()
+    {
+        lock (observationSync)
+        {
+            if (liveObservationTimeoutContext is not null) { return null; }
+            powerObservationReported = false; powerTimingSummary = null; return powerObservation = new();
+        }
+    }
+    internal void CompletePowerObservation(CpuPowerObservationTiming? timing)
+    {
+        lock (observationSync)
+        {
+            timing?.Dispose();
+            if (timing is not null && ReferenceEquals(timing, powerObservation) && liveObservationTimeoutContext is null && !powerObservationReported)
+            { powerObservationReported = true; Volatile.Write(ref powerTimingSummary, timing.Snapshot()); }
+        }
+    }
     internal CpuQueryProgress? BeginNativeQuery()
     {
         if (LiveObservationTimeoutContext is not null) { return null; }
@@ -22,11 +52,16 @@ internal sealed class CpuSavedAdmissionDiagnostic
 
     internal void RecordObservationCancellation(bool callerCancelled, bool powerObservation = false)
     {
-        string family = powerObservation ? "power" : "curve";
-        string detail = family + (callerCancelled ? " observation caller cancellation" : " observation operation timeout")
-            + ActiveStageDetail() + (powerObservation ? null : Volatile.Read(ref nativeQuery)?.Snapshot(freeze: true));
-        Interlocked.CompareExchange(ref liveObservationTimeoutContext, "; " + detail, null);
-        Check(false, detail);
+        lock (observationSync)
+        {
+            if (liveObservationTimeoutContext is not null) { return; }
+            string family = powerObservation ? "power" : "curve";
+            string detail = family + (callerCancelled ? " observation caller cancellation" : " observation operation timeout")
+                + ActiveStageDetail() + (powerObservation ? this.powerObservation?.Snapshot(freeze: true)
+                    : Volatile.Read(ref nativeQuery)?.Snapshot(freeze: true));
+            Interlocked.CompareExchange(ref liveObservationTimeoutContext, "; " + detail, null);
+            Check(false, detail);
+        }
     }
 
     internal void RecordCurveOperationCancellation(bool callerCancelled, string operation)
@@ -81,6 +116,60 @@ internal sealed class CpuSavedAdmissionDiagnostic
             ActiveStage? previous = parent;
             while (previous is not null && Volatile.Read(ref previous.disposed) != 0) { previous = previous.parent; }
             Interlocked.CompareExchange(ref owner.activeStage, previous, this);
+        }
+    }
+}
+
+internal enum CpuPowerObservationPhase { InitialContext, FirstNative, RecoveryAdmission, ReplacementNative, PostRange, CompleteGetter }
+
+// Six sequential, code-owned phases for one operation. No samples, device data,
+// authority or cross-operation cache; the first cancellation freezes the text.
+internal sealed class CpuPowerObservationTiming(Func<TimeSpan>? elapsed = null) : IDisposable
+{
+    private static readonly string[] Names = ["initial getter/context", "first native observation", "recovery wait/admission",
+        "replacement native observation", "post-range checks", "CompleteGetter"];
+    private readonly object sync = new();
+    private readonly long started = System.Diagnostics.Stopwatch.GetTimestamp();
+    private readonly long?[] completed = new long?[Names.Length];
+    private int active;
+    private long phaseStarted, lastElapsed;
+    private string? frozen;
+    internal void MoveTo(CpuPowerObservationPhase phase)
+    {
+        lock (sync)
+        {
+            int next = (int)phase;
+            if (frozen is not null || active < 0 || next <= active || next >= Names.Length) { return; }
+            long now = Elapsed();
+            completed[active] = now - phaseStarted;
+            active = next; phaseStarted = now;
+        }
+    }
+    private long Elapsed() => lastElapsed = Math.Max(lastElapsed, Math.Clamp(
+        (long)(elapsed?.Invoke() ?? System.Diagnostics.Stopwatch.GetElapsedTime(started)).TotalMilliseconds, 0L, 600000L));
+    internal string Snapshot(bool freeze = false)
+    {
+        lock (sync)
+        {
+            if (frozen is not null) { return frozen; }
+            long now = active < 0 ? lastElapsed : Elapsed();
+            var phases = new List<string>(Names.Length);
+            for (int index = 0; index < Names.Length; index++)
+            {
+                if (completed[index] is long duration) { phases.Add($"{Names[index]}={duration} ms completed"); }
+                else if (index == active) { phases.Add($"{Names[index]}={now - phaseStarted} ms active"); }
+            }
+            string value = $"; power phases total {now} ms: " + string.Join(", ", phases);
+            if (freeze) { frozen = value; }
+            return value;
+        }
+    }
+    public void Dispose()
+    {
+        lock (sync)
+        {
+            if (frozen is not null || active < 0) { return; }
+            completed[active] = Elapsed() - phaseStarted; active = -1;
         }
     }
 }

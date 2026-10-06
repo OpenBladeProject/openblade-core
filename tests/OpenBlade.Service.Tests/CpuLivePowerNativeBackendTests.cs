@@ -24,6 +24,11 @@ public sealed class CpuLivePowerNativeBackendTests
             Assert.Equal(recovered ? null : EmptyWindowFailure, diagnostic.FirstFailure);
             Assert.Contains(EmptyWindowFailure, diagnostic.LiveObservationReason!);
             Assert.Contains(recovered ? "recovery succeeded" : "recovery rejected", diagnostic.LiveObservationReason!);
+            Assert.Contains("power phases total ", diagnostic.PowerTimingSummary!);
+            foreach (string phase in new[] { "initial getter/context", "first native observation", "recovery wait/admission", "replacement native observation", "post-range checks" })
+            { Assert.Contains(phase + "=", diagnostic.PowerTimingSummary!); }
+            Assert.Equal(recovered, diagnostic.PowerTimingSummary!.Contains("CompleteGetter=", StringComparison.Ordinal));
+            Assert.DoesNotContain(" ms active", diagnostic.PowerTimingSummary!);
             if (secondResponse == 2) { Assert.Contains("recovery rejected: power native observation Refresh/NativeFailure; native failure WireReplyRejected; operation 0x81112F24; wire rejection MailboxResponseNotSuccessful; mailbox status 0x00000002", diagnostic.LiveObservationReason!); }
             Assert.Equal(new uint[] { 2, 0x82, 6, 0x65, 2, 0x82, 6, 0x65 }.Concat(recovered ? new uint[] { 6 } : []), platform.Commands);
             Assert.Equal(1, platform.Opens); Assert.Equal(2, platform.Duplicates); Assert.Equal(0, platform.Arms);

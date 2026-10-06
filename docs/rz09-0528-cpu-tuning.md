@@ -50,8 +50,16 @@ retained lease is not yet proved; the timeout remains under investigation.
 The installed PM getter now reuses the backend snapshot validated by the same
 boundary's continuity check, removing an adjacent duplicate backend read. Each
 later boundary still reads and validates a new snapshot. This preserves the
-original deadline and final context admission; its physical timing benefit is
-not yet measured.
+original deadline and final context admission. A subsequent read still reached
+the operation timeout during controller continuity, with recovery incomplete.
+It preserved all twelve offsets and the saved journal and completed cleanup.
+The timing benefit and dominant earlier cost remain unproved. Power-read
+diagnostics now report elapsed time for six fixed phases: initial context,
+first native observation, recovery wait/admission, replacement observation,
+post-range checks and final getter admission. A timeout freezes these timings
+before late worker completion. The timings add no native calls and do not
+change admission or the deadline. A normal read can measure the baseline cost
+without another restart; successful first-read recovery remains unproved.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original

@@ -7,6 +7,41 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerLiveTests
 {
     [Theory]
+    [InlineData("context", "power transaction ContextMismatch")]
+    [InlineData("state", "power transaction StateChanged")]
+    [InlineData("none", "power observation")]
+    public async Task CompletedPowerTimingsPreserveOwnershipClassification(string drift, string expectedReason)
+    {
+        var fixture = new Fixture();
+        var transaction = new CpuLivePowerTuningTransaction(fixture.Power, fixture.PowerStore);
+        Assert.Equal(CpuLivePowerOutcome.Verified,
+            (await transaction.ApplySelectiveAsync([new(CpuLivePowerLimit.Fast, 90)], default)).Outcome);
+        if (drift == "context")
+        { fixture.Power.Context = fixture.Power.Context with { BootSequence = fixture.Power.Context.BootSequence with { Sequence = 43 } }; }
+        if (drift == "state") { fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(91000, 80765); }
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        fixture.Power.OnObserve = () =>
+        {
+            var timing = diagnostic.BeginPowerObservation()!;
+            timing.MoveTo(CpuPowerObservationPhase.FirstNative);
+            timing.MoveTo(CpuPowerObservationPhase.PostRange);
+            timing.MoveTo(CpuPowerObservationPhase.CompleteGetter);
+            diagnostic.CompletePowerObservation(timing);
+            Assert.Null(diagnostic.LiveObservationReason);
+        };
+        int writes = fixture.Power.Sent.Count;
+        var status = await fixture.Controller().ObserveLiveAsync(_ => true, default, diagnostic: diagnostic);
+        Assert.Equal(drift == "none" ? CpuTuningRecoveryState.RestoreReady : CpuTuningRecoveryState.Blocked, status.LiveRecovery!.State);
+        string reason = Assert.IsType<string>(diagnostic.LiveObservationReason);
+        Assert.StartsWith(expectedReason + "; power phases total ", reason);
+        Assert.Contains("CompleteGetter=", reason);
+        Assert.Equal(2, reason.Split("power phases total", StringSplitOptions.None).Length);
+        Assert.Null(diagnostic.TakePowerTimingSummary()); Assert.Equal(reason, diagnostic.LiveObservationReason);
+        Assert.Equal(writes, fixture.Power.Sent.Count);
+        if (drift != "none") { Assert.Equal(CpuLivePowerOwnershipState.Blocked, fixture.PowerStore.Journal!.State); }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task LateNonSubmissionSettlesThroughRuntimeWrapperOnlyAfterSuccessfulCas(bool failSettlement)

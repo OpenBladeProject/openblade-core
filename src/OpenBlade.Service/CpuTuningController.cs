@@ -288,6 +288,8 @@ internal sealed class CpuTuningController
             if (diagnostic is not null && diagnostic.LiveObservationReason is null && power?.Reason is { } powerReason
                 && powerReason != CpuLivePowerBlockReason.None)
             { diagnostic.LiveObservationReason = "power transaction " + powerReason + diagnostic.LiveObservationTimeoutContext; }
+            if (diagnostic?.TakePowerTimingSummary() is { } timings)
+            { diagnostic.LiveObservationReason = (diagnostic.LiveObservationReason ?? "power observation") + timings; }
             var recovery = liveUncertainty != CpuTuningFeatures.None
                 || curve?.Recovery == CpuLiveCurveRecovery.Blocked || power?.Recovery == CpuLivePowerRecovery.Blocked
                 ? CpuTuningRecoveryState.Blocked : ownership.Features == CpuTuningFeatures.None
