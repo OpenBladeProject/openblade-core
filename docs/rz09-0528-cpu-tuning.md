@@ -11,7 +11,10 @@ reads never start or provision a driver. Production composition admits live CO
 on the exact model/SKU after complete observation, fresh safety checks and
 resolved ownership. A saved value does not prove running state or activation
 after restart. Installed tests have verified saved Off activation and restored −1
-activation across two restarts. AC/battery/AC admission and lock/unlock recovery
+activation across two restarts. The installed all-core live −1 → 0 → −1 cycle
+also completed with exact twelve-core readback/restoration and owned-resource
+cleanup. That proof predates the setter-time peer correction below.
+AC/battery/AC admission and lock/unlock recovery
 passed. A sleep/wake failure was followed by a comparison with all twelve running
 offsets independently measured at zero. The user reports repeated wake failures
 with the cooling pad connected and successful Off sleep/wake when disconnected.
@@ -22,82 +25,35 @@ same boot, with saved −1 intact and no recovery pending. A read-only post-wake
 observation confirmed all twelve running offsets at −1 and verified cleanup of
 its owned temporary driver. The power-peer query was unavailable, so live-write
 admission remained blocked; this read did not change CPU settings.
-Power-peer diagnostics now retain the first rejected PM wire condition and the
-already-read mailbox response status. This distinguishes request-state and PCI
-echo failures from a rejected refresh response without adding native traffic or
-relaxing the power-peer gate.
-A subsequent read-only observation on the ordinary diagnostic build succeeded:
-all twelve offsets remained at −1, power peers read 80/75 W, live admission was
-available, and owned-resource cleanup and an unchanged saved journal were proved.
-A fresh-boot observation then reproduced mailbox status `0xFD` during PM
-refresh; one later observation succeeded at 80/75 W. In the compatibility-matched
-firmware handler, an empty sampling window returns `0xFD` and registers the
-collector. The diagnostic build ended the read on that prerequisite response.
-This establishes the rejection mechanism and supports missing first-read
-priming; the collector's timing and the actor that emptied the window remain
-unproved. Both observations retained all twelve offsets at −1, made no setting
-changes, preserved the saved journal and verified owned-resource cleanup.
-The first recovery implementation allowed one fresh typed observation after
-this exact prerequisite within the original getter deadline, after native cleanup
-and fresh context checks. It waited boundedly and obtained new approval and metadata.
-Other failures and a failed second attempt still block live writes; the rejected
-wire transaction is never resumed.
-A fresh-boot read exercised this recovery, but the final context check reached
-its existing operation timeout. Power peers remained unavailable and live writes
-remained blocked. All twelve offsets remained at −1, the saved journal was
-unchanged, and owned-resource cleanup completed. That attempt did not prove
-recovery within one retained lease; its shared deadline remained a blocker.
-The installed PM getter now reuses the backend snapshot validated by the same
-boundary's continuity check, removing an adjacent duplicate backend read. Each
-later boundary still reads and validates a new snapshot. This preserves the
-original deadline and final context admission. A subsequent read still reached
-the operation timeout during controller continuity, with recovery incomplete.
-It preserved all twelve offsets and the saved journal and completed cleanup.
-The timing benefit and dominant earlier cost remain unproved. Power-read
-diagnostics now report elapsed time for six fixed phases: initial context,
-first native observation, recovery wait/admission, replacement observation,
-post-range checks and final getter admission. A timeout freezes these timings
-before late worker completion. The timings add no native calls and do not
-change admission or the deadline. A normal installed read measured 6,679 ms:
-226 ms for initial context, 6,138 ms for native observation, 55 ms for post-range
-checks and 260 ms for final getter admission. It returned 80/75 W power peers,
-all twelve offsets at −1 and available live admission, preserved the saved
-journal, and completed cleanup. No `0xFD` occurred, so this measures baseline
-cost without proving prerequisite recovery or isolating the native cost.
-The revised source closes the failed getter completely before one separately
-admitted getter. Each retains its ten-second deadline; the read-only power
-sequence has a 21-second cancellation budget including the one-second wait.
-The replacement requires unchanged hardware, boot and runtime context, the
-same retained installed lease, and distinct getter, approval and metadata.
-Ownership is reloaded normally; the empty first response writes no journal.
-Only explicit observation can consume this one-use recovery. Mutation and
-preparation paths cannot retry. First-failure evidence and both getter timings
-remain available.
-A fresh-boot observation on the revised installed build encountered the exact
-`0xFD` and recovered successfully in one request. The first getter took 3,666 ms,
-the wait 1,009 ms and the replacement 7,117 ms: 11,792 ms across these phases.
-It read 80/75 W power peers, all twelve offsets at −1 and available live
-admission, with no recovery pending. No Set or Restore was requested. The
-saved journal was byte-identical, the validation processes and owned driver
-were closed, and the ordinary service resumed. This verifies one successful
-first-read recovery on the tested firmware.
 
-The service admits saved next-boot commands for the exact RZ09-0528/SKU
-when fresh safety checks, paired readback and a reversible original
-plan pass. Attended installed-service IPC tests passed CO disabled-zero and PPT
-45 W, each followed by exact original restoration. The installed combined build
-wires optional live CO and read-only PPT through a shared retained device
-lifetime and fresh metadata proofs. Live PPT mutation remains unavailable in
-default composition.
-Further PPT feature development and power-limit experiments are deferred. The
-Voltage Optimizer card has no PPT controls or requests. Existing power-limit code
-and the historical validation notes below are retained as experimental work;
-they are not requirements for completing the Voltage Optimizer.
+## Power-peer observation
 
-Admission is model/SKU scoped. BIOS 2.02 identifies the attended captures below;
-BIOS values, including missing or inconsistent provenance, do not grant or revoke
-CPU admission or ownership. Firmware interface version, complete layout, exact
-hardware, backend lifetime and all command-specific safety checks still apply.
+The installed getter handles the exact sampling-prerequisite response `0xFD`
+by closing the failed getter before one separately admitted observation. Each
+getter retains its ten-second deadline; the explicit read-only sequence has a
+21-second cancellation budget including a one-second wait. Hardware, boot,
+runtime context and the retained installed lease must remain unchanged. The
+replacement uses distinct getter approval and metadata. The empty first response
+writes no journal, and mutation/preparation paths cannot consume this retry.
+First-failure evidence and phase timings remain available.
+
+One fresh-boot observation on the revised installed build encountered `0xFD`
+and recovered in one request: 3,666 ms for the first getter, 1,009 ms waiting and
+7,117 ms for the replacement. It read 80/75 W power peers and all twelve offsets
+at −1 with live admission available and no recovery pending. No Set or Restore
+was requested. The saved journal was byte-identical, validation processes and
+the owned driver were closed, and the ordinary service resumed. This proves one
+successful first-read recovery on the tested firmware, not arbitrary firmware
+or native setter behavior.
+
+Live PPT mutation and further power-limit experiments remain deferred. The
+Voltage Optimizer card has no PPT controls or requests. Read-only PPT evidence
+is retained for voltage admission and peer checks.
+
+Admission is model/SKU scoped. BIOS 2.02 identifies historical captures; BIOS
+provenance does not grant or revoke CPU admission or ownership. Firmware
+interface version, complete layout, exact hardware, backend lifetime and
+command-specific safety checks still apply.
 
 ## Saved firmware
 
@@ -125,29 +81,14 @@ plan restoring the first original pair. PPT zero reset is available only for
 exact original-default restoration. The reviewed semantic candidate is in
 [capture PR #35](https://github.com/OpenBladeProject/openblade-captures/pull/35).
 Physical tests covered CO zero/original −1 and PPT 45 W/default; they did not
-exercise every selectable value or the installed application. Later installed-service
-validation is described below.
+exercise every selectable value or the installed application.
 
-A later attended test of the actual service transaction stopped before submitting
-a command. A read-only diagnostic found that the COM getter returned output but
-omitted the `ReturnValue` property exposed by the CIM helper. The decoder now
-distinguishes confirmed absence from property-read errors for this exact provider;
-version 7 and command payload checks remain mandatory. A subsequent attended
-getter passed with exactly one output property: UInt32 version 7. All eight full
-saved-pair checks matched the original baseline. The subsequent attended cycle
-using the actual service classes saved zero, verified both copies, and restored
-the original −1 value through journal reconciliation in a new process. Both
-800-byte copies restored exactly and the journal reached `Restored`. This test
-did not exercise installed-service IPC or establish boot activation.
-
-An attended test of the published Service classes saved a 45 W PPT limit and
-verified both complete firmware copies. A new helper process recovered the real
-ownership journal and restored the original default PPT configuration with the
-exact zero-reset command. Both 800-byte copies matched their independent
-originals, CO remained -1, and the journal reached `Restored` with no pending
-steps. No reboot, live-setting command or installed-application change occurred.
-This verifies the exact saved transaction and recovery path; boot activation and
-installed IPC were unverified at that stage.
+Later installed-service IPC cycles verified CO disabled-zero/original −1 and
+saved PPT 45 W/original-default restoration. Both complete 800-byte firmware
+copies matched their originals after each cycle, and typed observation and
+recovery checks passed. These tests establish saved persistence for those
+transitions, not stability or correctness at every selectable value. Boot
+activation for saved Off and restored −1 was separately verified across restarts.
 
 Recovery authority identifies its saved or live target and the features that
 need restoration. A saved curve-only change does not require admission for an
@@ -158,306 +99,118 @@ reverse command is admitted before the first restoration submission.
 ## Optional installed AMD backend
 
 The optional backend is scoped to the RZ09-0528's exact signed AMD stack. Passive
-inspection checks paths, signatures, hashes, and service state. It never installs,
-enables, starts, stops, or removes a driver.
+inspection checks paths, signatures, hashes and service state. It never installs,
+enables, starts, stops or removes a driver. Disk hashes do not attest the bytes
+of an image already loaded in the kernel; the integration trusts the Windows
+signed-driver stack.
 
-An internal attended-query adapter implements PCI discovery, topology checks,
-PM-version queries, and per-core curve optimizer queries. These queries use PCI
-transport writes and require a separate, single-use attended approval. Production
-invocation remains blocked. Fake-transport tests do not establish hardware
-admission, and hashes of installed files do not attest the image already loaded
-in the kernel.
+The retained session confirms CPU node, SMN root bridge and topology separately
+before PCI transport writes. Attended observations measured all twelve enabled
+physical cores at −1, PM version `0x005D000B` and table length `0xD50`. The
+private query helper's owned driver registration was removed after termination.
+Read-only CPU queries still use PCI transport writes and require typed native
+admission; they are distinct from CPU-setting writes.
 
-The developer `cpu-live-query-rz09-0528` command requires separate approval for
-PCI transport writes and acknowledgement of a freshly loaded pinned driver.
-It passively verifies a healthy exact USB devnode and installed-backend readiness
-before the native adapter runs. It contains no driver lifecycle commands. On
-2026-09-29, a fresh readiness check found the signed driver file present but its
-service registration absent, so a separate attended provisioning proposal is
-required before a live query.
+An initiating live request retains the device handle and immutable inspected
+files. Each operation duplicates that same file object and rechecks host,
+processor, registration, competing-controller absence and runtime admission.
+File inspection is reused only while actual pins remain held. One private
+platform serializes query, CO and PM operations before native acquisition.
+Caller cancellation does not release its actual native worker. Uncertain cleanup
+or continuity parks the scope and excludes replacement operations.
 
-Attended validation on 2026-09-29 measured all 12 enabled physical cores at curve
-optimizer −1. The PM version was `0x005D000B`, with table length `0xD50`. The query
-made no CPU-setting writes. Its private helper temporarily registered and started
-the pinned installed driver, then stopped and removed its own registration after
-the query exited. Independent checks confirmed registration absence and that both
-validation processes had exited.
+The fixed CO metadata reader accepts version 7 and selector `5000A` with strict
+unsigned fields. Completely enumerated missing `ReturnValue` compatibility
+requires the firmware shadow within the magnitude bounds. It preserves partial
+evidence and supplies a range only after cleanup and independent scope checks.
+Fresh forward, immediate-reverse and original-restoration values must fit the
+range. Later requests cannot renew an initiating proof. Ownership contexts bind
+the service instance and observed sleep/AC generations; restart or a power
+boundary rejects reuse.
 
-The validated adapter confirms the CPU node, SMN root bridge, and topology
-function separately before its SMN transport writes. Earlier attempts identified
-a developer payload dependency omission and an incorrect topology assumption;
-both were corrected before the successful measurement. This observation does
-not admit production live tuning or prove boot activation.
+Live journals preserve the first complete per-core original separately from
+current edits and durably record possible submission before the native call.
+Mixed and positive originals remain necessary for exact restoration even though
+the editor exposes an all-core negative value. Confirmed drift is persisted;
+returning values do not restore permission. Unknown submission, readback,
+persistence or cleanup blocks further mutation without replay or guessed
+restoration. Saved recovery remains separate.
 
-The developer PM observation command is connected to a native supervisor,
-parent authority listener, and pinned evidence writer. It requests three idle
-samples with fresh identity, power, session and driver-lifetime checks. The
-reviewed launcher pins the complete payload and binds the actual parent and
-child processes. Cleanup requires confirmed child termination and authority
-revocation before the supervisor removes its own driver registration. Unknown
-completion retains the original processes and evidence without retrying.
-
-An attended run on 2026-09-30 retained three complete private tables for version
-`0x005D000B`. Independent review verified reply and payload bytes, file hashes,
-provenance, timing, and the complete driver lifecycle journal. Separate checks
-confirmed process termination and temporary driver-registration absence. This
-validates the capture path; table fields do not yet supply an admitted power-limit
-value or restoration baseline. Production PM invocation remains blocked.
+### PPT metadata and voltage peer
 
 The vendor parser and command implementation, corroborated by primary upstream
 source ([UXTU](https://github.com/JamesCJ60/Universal-x86-Tuning-Utility/blob/eeb43042883bc9a80847999b2957b6ded86938a9/Universal%20x86%20Tuning%20Utility/Scripts/AMD%20Backend/RyzenSmu.cs#L224)
 and [RyzenAdj](https://github.com/FlyGoat/RyzenAdj/blob/5775fc3e6dbb25c7030ee2d100a1bdd6e8bf2d0a/lib/api.c#L1470)),
-map command `0x32` to the fast-limit field and `0x33` to the slow-limit
-field. The captured candidates correspond to 85 W and 80 W. Restoration must
-preserve each independently. The vendor's fused value comes from separate SMN
-registers and was not part of the initial capture. The full writable range,
-physical setter readback and independent restoration remain unproved.
+map `0x32` to fast and `0x33` to slow. Initial captures contained 85/80 W,
+while separate source-mapped fused registers decoded to 71 W. Those historical
+values are not a current baseline or an unconditional live power ceiling.
+Capability 82 bit 1 bypasses only the fused ceiling; firmware-range and
+independent write/restoration admission remain necessary.
 
-A subsequent attended query read both source-mapped registers and retained three
-complete PM tables. Independent review verified all 18 exported files and the
-complete driver lifecycle. The registers decode to 71 W, while the tables still
-report 85 W fast and 80 W slow limits. The fused value therefore does not establish
-an unconditional live power ceiling. Its relationship to the vendor capability
-flag and firmware range needs further validation before power-limit writes.
-Each new run uses its own independently pinned preset before launch, preserving
-earlier protected payloads and evidence.
+The exact firmware exposes PPT as a continuous-range entry. Service and Capture
+use version 7 and `GetMinMaxSteppingValues` selector `50001`; the discrete
+`Getdvalues` path is unsupported and cannot invoke WMI. MinMax accepts Boolean
+true or narrowly classified missing acknowledgement after this reader actually
+completes version 7, cleanup and exact model/SKU admission. That eligibility is
+single-use. Compatibility requires exact enumeration of all five UInt32 fields,
+selector `50001`, an ordered interval, nonzero stepping and Current within bounds.
+Explicit compatibility provenance preserves the absent/null acknowledgement;
+the enclosing PM engine still performs separate fresh post-admission. Attended
+Capture validation completed this sequence with Current 0, Min 0, Max 125000 and
+Stepping 1. Current is a firmware shadow; bounds alone do not establish units,
+requested-state mapping or setter authority.
 
-A separate developer range-observation profile reads the capability response,
-four fixed source-mapped SMN registers, one PM table and the continuous min/max
-firmware getter. The exact firmware describes PPT as a continuous-range entry;
-its discrete-value getter returns an empty packet for this selector. The command
-must match a separately reviewed run preset and
-explicit attended approval. Metadata errors retain the completed PM sample and
-copied fields as incomplete evidence. The existing three-sample profile cannot
-invoke these additional queries.
+The installed observation checks firmware `0B5D1600` before copying the PM table,
+then obtains the fixed metadata pair under initiating request, fresh USB identity
+and retained runtime lifetime. Production PPT write proofs remain disabled.
+Voltage-only apply and restore require an unchanged read-only PPT peer, without
+creating PPT ownership or granting a PPT setter. Native peer checks read accepted
+Fast/Slow plus STAPM under the voltage setter's same lease before and after the
+CO command. Missing or changed peer evidence blocks completion; possible CPU
+submission remains journaled. These serialized reads are not physically atomic.
+The peer correction in [issue #697](https://github.com/OpenBladeProject/openblade-core/issues/697)
+has focused source/fake coverage and has not been physically validated.
 
-The first attended range run retained the four register reads, capability
-response and one PM table, then stopped at the empty discrete-value response.
-Independent review verified the exported bytes, timing and complete owned driver
-cleanup. The firmware trace explains that response, and the capture now selects
-the continuous getter directly. The published continuous metadata reader subsequently passed attended
-validation, described below. These observations do not admit power-limit writes
-or restoration.
+Existing combined experimental transactions preserve independent originals,
+prepare both plans before sending, apply PPT before CO and restore CO before
+PPT. An unchanged family acquires no ownership. Incomplete operations stop
+without compensation or replay; unresolved historical PPT journals remain
+fail-closed. These retained recovery paths do not enable production PPT writes.
 
-Admitted live power-limit readback and independent restoration remain
-unresolved. A curve-only observation therefore reports unknown power limits.
-The unwired live curve transaction now permits repeated edits after a fresh
-complete observation matches its owned state. Its bounded journal keeps the
-original 12-core baseline separately from the current operation. Restoration
-covers every remaining owned change, including changes from earlier edits, and
-each reverse command requires independent admission. Ambiguous submission,
-drift, or malformed recovery data blocks further edits. Earlier journal schemas
-remain blocked in place. Live recovery represents the loader sequence with an
-explicit source and nullable unsigned counter, rather than a boot GUID. Zero is
-a valid counter. A reviewed normal-token diagnostic observed short-term equality
-between separate processes; reboot and power-transition continuity remain unproved.
-An internal service reader acquires that named counter with one fixed four-byte
-read of its own process mapping on native AMD64 and the reviewed Windows build
-10.0.26200 with service-pack major/minor zero. Its version gate uses the numeric
-fields returned by `RtlGetVersion`, independently of the app compatibility
-manifest. Failed platform/version checks, failed or incomplete copies and
-cancellation return unknown without retaining a previous value. It supplies no
-CPU-state or driver-lifetime continuity and is not wired into production admission.
-Fake-backend tests cover these paths; native mutation
-and a trustworthy boot-continuity source remain unadmitted.
-An internal CO transport reuses the query session for full before/after vectors,
-checks fresh capability and range evidence, and records possible submission before
-the driver call. Forward edits also require the exact immediate reverse to fit
-that range. Uncertain cleanup blocks later operations on the retained platform.
-A concrete optional installed-stack provider now supplies the proof and connects
-that transport to the live transaction. Construction performs no native work.
-An initiating live request retains the existing device handle and immutable
-inspected files. Each operation duplicates that same device file object and
-rechecks host, processor, registration, controller and runtime admission. The
-initial file inspection is reused only while its actual file pins remain held.
-This assumes the trusted Windows signed-driver stack; disk hashes do not attest
-the bytes of an already loaded kernel image.
-It retains the actual native worker across caller cancellation and excludes
-replacement operations on the same platform until completion. Cleanup uncertainty
-invalidates that scope. Its private proof wrapper rechecks fresh context under
-the native lease. A separate fixed CO metadata reader accepts only version 7 and
-selector 5000A with strict unsigned fields. Its bounded version-7 compatibility
-accepts Boolean true or completely enumerated absence of ReturnValue; the absent
-form also requires the firmware shadow to lie within the magnitude bounds. It
-preserves partial evidence, treats Current as a firmware shadow, and returns a
-range only after confirmed cleanup and independent scope checks. Injected tests
-exercise cancellation, ambiguous submission, range decoding and recovery.
-The concrete proof captures its initiating admission, requires the forward and
-exact reverse values to fit fresh metadata, and reads one complete getter pair
-under each exact native write lease. Later requests cannot renew that proof.
-Ownership contexts include the service instance and observed sleep/AC generations;
-a restart or power boundary rejects reuse of an earlier ownership context.
-The native factory retains one private platform for query, CO and PM operations.
-An opaque typed session gives the service access without exposing raw driver
-handles or commands. All three paths share exclusion before native acquisition;
-uncertain resource or continuity cleanup keeps that platform parked. Construction
-grants no authority, and each path still requires its distinct approval or proof.
-An internal PPT transport now uses the same retained session for one typed fast
-or slow command in milliwatts, with separate PM samples before and after it.
-It checks both raw limit values and STAPM, rechecks the source-mapped conditional
-fused cap and fresh firmware range, and requires independent admission for the
-immediate reverse and every remaining original restoration value. Its proof must
-establish that the candidate PM fields represent restorable requested settings;
-integer reconstruction alone does not do that. A bounded static trace ties the
-reviewed PM fields to the accepted post-clamp target and shows that the reviewed
-maintenance paths preserve those targets. The native transport now requires a
-fresh matching SMU firmware-version getter before baseline reads or setters.
-Physical setter behavior and exact restoration still require the attended cycle.
-The pure planner requires explicit
-capability and firmware-range data for changes: capability 82 bit 1 bypasses only
-the fused ceiling, while the firmware range still covers each forward and exact
-restoration value. These inputs supply no freshness or native authority, and
-independent admission remains mandatory. An unwired service transaction and
-durable CAS journal now preserve the first exact Fast/Slow/STAPM pair across
-repeated edits and partial restoration. Each step requires fresh full-pair
-comparison and independent forward, immediate-reverse and original-restore
-admission before its pending marker is flushed. Unknown submission, readback or
-persistence outcomes retain uncertainty across restart; late completion cannot
-advance the journal. Fake tests cover this orchestration.
-Both live ownership observers persist confirmed drift, so returning values do
-not restore permission after restart. Unavailable observations preserve the
-existing journal. The PPT backend uses the same retained Service
-worker as CO, including provider callbacks before native acquisition. Cancellation
-and backend replacement cannot release that worker or clear cleanup uncertainty.
-Its typed read-only observation facade distinguishes retained-installed approval
-from attended RangeSingleSample approval and fresh run-owned driver lifetime; requested-state
-interpretation and range admission remain independent provider requirements.
-A Service-owned fixed metadata reader now decodes version 7 and continuous
-selector 50001, preserving partial evidence and actual disposal outcomes.
-Missing version acknowledgement compatibility requires the exact model/SKU
-scope; MinMax accepts Boolean true or narrowly classified missing-acknowledgement
-compatibility after this reader actually completes version 7, all getter stages,
-cleanup and fresh local admission on the exact model/SKU profile. That eligibility
-is consumed before the next continuous `50001` getter; an intervening getter or
-failure cannot reuse it. Compatibility requires complete exact enumeration of all
-five UInt32 fields, selector `50001`, an ordered interval, nonzero stepping and
-Current within that interval. Its explicit `MissingReturnValueCompatibility`
-provenance preserves raw `Absent`/null acknowledgement; it does not invent true.
-The enclosing PM engine must still perform and record its separate fresh
-post-admission before metadata can be complete. The attended r6 driverless read
-completed both invocations and cleanup and returned Current 0, Min 0, Max 125000,
-Stepping 1 and Value `50001`, with no ReturnValue. The old strict reader therefore
-reported incomplete metadata. A subsequent attended test loaded the exact
-published Capture default reader, including its real identity path. Both version
-7 and MinMax completed with all getter stages, cleanup and separate fresh
-post-admission checks. Both retained absent/null acknowledgements with explicit
-compatibility provenance. This verifies the revised Capture reader's read-only
-sequence. Current remains a firmware shadow,
-and decoded bounds do not establish units, requested-state mapping or authority.
-The optional already-installed driver path uses the same retained device and
-file pins for CO and PPT. A separate typed installed approval binds each PPT
-observation to its initiating request, fresh USB identity and runtime lifetime.
-It checks firmware `0B5D1600` before copying the PM table, then obtains the fixed
-version-7/`50001` metadata pair. It never creates temporary driver authority or
-starts a driver. Default composition now includes PPT observation and its
-durable ownership store in the installed combined build. Production PPT write
-proofs remain disabled; further PPT feature development is deferred.
+## Presentation and validation
 
-The service runtime now dispatches injected live backends through retained CO
-and PPT transactions. Each operation has admission tied to its initiating
-session and power generation; later requests cannot renew an expired operation.
-Uncertain submission or journal persistence blocks both live features, including
-when a failed journal write leaves no entry on disk. Saved recovery remains
-separate; confirmed saved identity or complete paired-image drift is durably
-blocked, and saved journal persistence uncertainty remains blocked across
-transactions in the same controller.
+The editor initializes from confirmed state without overwriting user edits on
+refresh. Mixed per-core observations require an explicit choice before Apply.
+Commands retain target/settings through deferred startup. The card suppresses
+restoration that includes PPT. Live write availability requires complete
+observation, resolved ownership and fresh admission; every setter and reverse
+still needs its own native proof. Captured −30 to −1 capability and zero for Off
+do not prove stability at every offset.
 
-Combined live edits prepare both complete plans and their restoration routes
-before either family sends. Each journal preserves its first original, including
-across later single-family edits. Apply orders PPT before CO; restore orders CO
-before PPT. Before every step the coordinator checks the other family's exact
-expected state and restoration admission. Confirmed peer loss blocks the active
-coupled journals, including when a peer has already been restored. An unchanged
-family acquires no baseline ownership. An incomplete or uncertain operation stops
-without compensation or automatic replay; verified partial changes retain their
-independent recovery records. Each native step now carries its peer's immutable
-expected state and first owned original. The native adapter reads the peer under
-the initiating setter's same retained lease: version-bracketed accepted PPT
-Fast/Slow plus STAPM for CO, or the full enabled-core CO vector for PPT. The
-strict scripts retain firmware, capability, fuse, topology and deadline checks;
-peer reads never reenter a service observer or acquire another native worker.
-Exact-request proofs recheck peer restoration admission before the setter.
-The installed provider permits an unchanged unowned PPT observation but continues
-to deny PPT restoration/write authority pending the physical setter fixture.
-These serialized observations do not make firmware state physically atomic.
-Offline native and service fakes cover binding, drift, missing evidence and
-reentry; this combined native sequence remains unverified on physical hardware
-and does not establish physical live-write admission.
-The IPC 60 status contract also permits PPT-only observations. These retain the
-independent fast and slow limits in milliwatts and report CO as unknown. The
-Voltage Optimizer card displays CO observations only and does not derive them
-from power limits. Older IPC 59 peers cannot read this expanded status
-contract, so deployment must update Service, Session Agent and Tray together.
-Default composition shares one concrete retained-installed provider across CO
-and PPT observation. Live PPT mutation remains unavailable.
-The coordinated IPC 61 installation passed complete saved-firmware baseline
-reads and typed service observation. First-failed-check diagnostics identified
-an initial pre-submission rejection at fresh power admission ([issue #641](https://github.com/OpenBladeProject/openblade-core/issues/641)):
-Windows reports unknown external power even on the barrel adapter. CPU admission
-now uses the existing uncached adapter classifier and requires fresh agreeing
-full-power readings. Battery, USB-C, unknown power, cancellation and changed
-session or device state still reject commands ([issue #642](https://github.com/OpenBladeProject/openblade-core/issues/642)).
+CPU admission uses the uncached adapter classifier and fresh agreeing full-power
+readings. Battery, USB-C, unknown power, cancellation and changed session/device
+state reject commands. PPT-only status can retain independent Fast/Slow
+milliwatts while CO is unknown; the card never derives CO from those limits.
 
-The corrected installed service passed attended CO disabled-zero with exact
-original all-core −1 restoration, then a separate PPT 45 W cycle with exact
-original-default restoration. Both complete 800-byte firmware copies matched
-their originals after each cycle, and typed observation and recovery checks
-passed. No live CPU settings, driver changes or reboot occurred. This validates
-saved persistence for those transitions, rather than every selectable value.
-Live controls still require trusted native proof and attended readback and
-restoration. Boot activation remains unverified and separate from saved
-persistence. The voltage-only editor uses the shared card toggle and integer
-slider styles. It initializes each target from confirmed optimizer state without
-overwriting user edits on refresh. Mixed per-core observations require an explicit
-editor choice before Apply, and command execution retains the chosen target and
-settings through deferred startup. The card suppresses restoration that includes PPT.
-Source and synthetic UI checks do not establish installed behavior or live-write
-admission.
+The CPU branch uses IPC 60; the installed combined CPU/cooling build uses IPC 61.
+A CPU-branch build alone is not an installation candidate for that combined
+setup. Deployment must retain cooling sources and update Service, Session Agent
+and Tray together when shared contracts change.
 
-The developer-only `--cpu-tuning-layout-smoke` harness renders seven synthetic
-CPU states at two card widths. It checks saved/live optimizer separation,
-pending boot changes, editing and restoration availability, and control bounds.
-It writes screenshots to the private validation archive without connecting to
-the service or sending CPU commands. These fixtures do not establish hardware
-admission or validate the installed application.
+The developer `--cpu-tuning-layout-smoke` harness renders seven synthetic states
+at two widths without connecting to the service. It checks editor bounds,
+saved/live separation and recovery presentation; screenshots are not hardware
+admission or installed-application proof.
 
-Tracked in [issue #622](https://github.com/OpenBladeProject/openblade-core/issues/622)
-and [draft PR #623](https://github.com/OpenBladeProject/openblade-core/pull/623).
-
-The Voltage Optimizer revisions passed independent source review and the full
-Release solution build with zero warnings/errors. All 9,370 tests across 17
-projects passed, including all 1,679 Tray tests. The rebuilt synthetic harness
-passed all fourteen layouts at 760/520 widths; saved editing, live restoration
-and restricted mixed/PPT recovery screenshots were inspected. These offline and
-synthetic results do not admit installed live writes or prove boot activation.
-
-The live backend reports write availability only after complete CO observation,
-resolved ownership and fresh CO runtime admission. This is presentation eligibility;
-each command and its reverse still require their own native proof. The production
-model capability now permits CO reads and writes within the captured −30 to −1
-range, with zero for Off. This capability does not bypass native admission or
-establish stability at every offset.
-
-The existing FirmwareSmoke tool has a dedicated `cpu-voltage-optimizer` command.
-An attended run requires `--confirm-target RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE`,
-`--expected-service-version` matching the installed version with its commit suffix,
-and a fresh private `--output` directory. It requires a full twelve-core uniform
-baseline of −1 or zero, saves it durably, then observes it again before Apply.
-The command sends one voltage-only change to the opposite On/Off state, checks
-all twelve offsets independently, restores through Service ownership, and checks
-the exact original vector and resolved recovery. Uncertainty stops the run without
-retry or guessed restoration. Existing baseline/result evidence is preserved.
-The command does not bypass admission; production CO requests require the same
-fresh safety and ownership checks. Installation, driver provisioning, restart and
-sleep validation remain separately authorized actions.
-
-The CPU feature branch uses IPC 60. The installed combined CPU/cooling build uses
-IPC 61; its contracts and cooling implementation must be retained in a separate
-combined candidate before any replacement. A CPU-branch build alone is not an
-installation candidate for the current combined setup.
-
-Focused checks passed 118 service tests and 40 runner tests. The full host run
-included all 194 FirmwareSmoke tests. No hardware command was run.
+FirmwareSmoke's `cpu-voltage-optimizer` command requires
+`--confirm-target RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE`, an exact installed
+`--expected-service-version` with source suffix, and a fresh private `--output`.
+It durably captures a uniform twelve-core −1 or zero baseline, observes it again,
+applies the opposite On/Off state, independently checks all offsets, restores
+through Service ownership and verifies the exact original and resolved recovery.
+Uncertainty stops without retry or guessed restoration. Existing evidence is
+preserved. Installation, provisioning, restart and sleep remain separately
+authorized actions.
 
 ### Bounded live voltage validation build
 
@@ -492,89 +245,61 @@ These profile builds do not establish physical validation or broader production
 admission; the CPU/cooling replacement must retain the combined IPC 61 sources.
 
 
-### Attended temporary-driver owner for the voltage cycle
+### Attended temporary-driver owner
 
-Issue [#660](https://github.com/OpenBladeProject/openblade-core/issues/660) adds
-one developer Capture command, `cpu-voltage-owned-smoke`. Its `--help` and
-invalid/missing arguments perform no native operation. This is source tooling;
-no physical run or deployment is established by its fake tests.
+Capture's `cpu-voltage-owned-smoke` reuses `CpuPmOwnedDriverLifecycle`: exact
+signed V31 registration, durable ownership journal, independent absence checks
+and retained child rules. It launches only packaged FirmwareSmoke; the owner
+performs no CPU-PM getter or setter. Maximum twenty-four CO setters cover one
+all-core −1/zero transition and exact original restoration.
 
-The command reuses `CpuPmOwnedDriverLifecycle`, its exact V31 registration,
-durable journal, independent absence checks, signed vendor pins and retained
-child rules. It launches only the existing packaged FirmwareSmoke
-`cpu-voltage-optimizer` command. The owner performs no CPU-PM query, SMU getter
-or setter. FirmwareSmoke and the Service remain responsible for the existing
-maximum twenty-four CO setters: one all-core −1/zero transition and exact
-original restoration, with no automatic reverse or retry after ambiguity.
+Approval must cover installation, temporary owned-driver create/start/stop/delete,
+the cycle and normal OpenBlade shutdown cleanup. Driver absence and the exact
+reviewed Service process are established first. Cleanup requires a terminal
+zero-exit Smoke child, fresh pinned baseline/results, complete forward/original
+readbacks and `OriginalVerified`. A typed shutdown acknowledgement is insufficient:
+the exact Service must terminate without replacement before owned-driver cleanup.
 
-A future attended approval must expressly cover installation, temporary owned
-V31 create/start/stop/delete, the voltage cycle, and the installed OpenBlade
-shutdown **including its normal shutdown cleanup**. The owner first requires
-independent V31 absence and retains the exact reviewed Service process. Only a
-terminal Smoke child with exit code zero, fresh pinned baseline/result files,
-complete twelve-core forward/original readback, and `OriginalVerified` permits
-one typed `ShutdownOpenBladeRequest`. The shutdown pipe must belong to that
-same retained Service process. Acknowledgement alone cannot permit cleanup:
-the retained process must become terminal and no replacement Service process
-may be present before the existing owned-driver cleanup runs.
+The single 600-second deadline covers admission through shutdown and cleanup;
+ordinary PM owner continuity remains 120 seconds. The client connection remains
+two seconds; requests and native setter boundaries use the remaining original
+deadline. Deadline, Ctrl+C, unknown completion, Service replacement or lost
+file/power/session/ownership evidence parks the owner and retains resources.
+It does not kill a child, guess restoration, retry shutdown or delete the driver
+on uncertainty. Retained failures require reconciliation.
 
-The operation has one fixed 600-second deadline, covering admission through
-shutdown and driver cleanup. Ordinary PM owner continuity remains 120 seconds.
-The Service client retains its existing two-second connection bound; requests
-use the remaining operation token. Hosted voltage cycles propagate the original
-host deadline through the native worker to the immediate setter boundary.
-Deadline, Ctrl+C, unknown child/result/shutdown,
-Service replacement, or lost file/power/session/ownership evidence parks the
-owner and retains resources. It does not kill the child, guess restoration,
-retry shutdown, or stop/delete the driver on uncertainty. A parked run needs
-attended investigation; it must not be described as successful cleanup.
+Use one committed combined IPC 61 package and independently reviewed protected
+payload. Strict manifest version 1 binds full source and `name`, `length`,
+`sha256` for the complete Capture root, `firmware-smoke/` and `service/` trees.
+Cycle assemblies share the full source; Service has matching
+`+voltage-validation.<8hex>`. Required arguments are `--payload`, `--source`,
+`--manifest-sha256`, `--expected-service-version` and
+`--confirm-target RZ09-0528-OWNED-V31-CO-AND-OPENBLADE-SHUTDOWN`.
+Pins cover package and installed files; result handles deny writes/deletion
+through cleanup. The fresh run tree is administrator/SYSTEM-only. JSON cannot
+grant authority, and building source authorizes no installation or physical test.
 
-Before any live approval, prepare and independently review a protected package
-from one committed combined IPC 61 source. Run Capture from that exact private
-package root. The existing strict manifest format (`version: 1`, `source`, and
-`files` entries containing `name`, `length`, `sha256`) covers the complete
-Capture payload at root, complete Smoke payload under `firmware-smoke/`, and
-matching installed Service payload under `service/`. For live validation cycles,
-all OpenBlade assemblies must be source-qualified to the same full commit;
-the Service must carry the exact `+voltage-validation.<8hex>` version matching
-the full source prefix. The full manifest hash, source and Service version are
-explicit reviewed command arguments. The command pins all
-manifest files, validates the complete package inventory, compares and pins the
-installed Service files, and uses the existing administrator/SYSTEM-only fresh
-run tree. It durably records package/Service/child context and validated result
-hashes; result handles deny subsequent writes/deletion through cleanup. This
-trusts the expressly attending administrator and SYSTEM, as the existing owner
-does; JSON cannot grant approval by itself. No new launcher or deployment path
-is supplied, and previously packaged source artifacts remain historical.
+Ordinary builds support standalone `--observe-only` with its exact confirmation
+and separate `--owner-source`. The manifest independently binds helper and
+Service/Smoke source. Cycles and session jobs reject ordinary profiles before
+provisioning. Observation sends no CO/PPT setter and keeps owned cleanup and
+ambiguity rules. Session/broker enrollment and job details are in
+[cpu-voltage-session.md](cpu-voltage-session.md) and
+[unattended-deployment-broker.md](unattended-deployment-broker.md).
 
-Ordinary builds also support standalone `--observe-only` with the exact
-observe-only confirmation and a separate `--owner-source` identifying the
-Capture helper. The manifest pins the helper's full source and the target
-Service/Smoke source independently; installed Service files must match the
-target payload. Ordinary cycles and session jobs are rejected before driver
-provisioning. This developer observation performs no CO or PPT setter and
-retains the existing owned-driver cleanup and ambiguity rules.
+Voltage packages retain bounds of 1,536 files, 512 KiB manifest, 1 GiB payload,
+4,096 pins and 2,048 inventory entries. Ordinary PM retains 256 files, 64 KiB
+manifest, 512 MiB payload, 800 pins and 768 entries. Both retain 128 MiB per-file
+and three-component relative paths. These bounds accommodate complete runtime
+trees without trimming dependencies.
 
-The voltage package uses fixed bounds of 1,536 manifest files, a 512 KiB
-manifest, 1 GiB aggregate payload, 4,096 retained pins and 2,048 inventory
-entries. The existing 128 MiB per-file and three-component relative-path bounds
-remain. These accommodate the measured complete self-contained trees without
-trimming runtime dependencies. The ordinary PM path retains its original
-256 files, 64 KiB manifest, 512 MiB total, 800 pins and 768 inventory entries.
+Visible validation versions use exactly eight lowercase source characters to
+fit the existing 64-character IPC limit. Full 40-character SourceRevision is
+retained in Service metadata `OpenBladeValidationSourceRevision`, publication
+checks and manifest. The owner verifies prefix and complete file hashes.
 
-The explicit confirmation is
-`RZ09-0528-OWNED-V31-CO-AND-OPENBLADE-SHUTDOWN`, supplied with `--confirm-target`.
-The other required options are `--payload`, `--source`, `--manifest-sha256` and
-`--expected-service-version`. No installation, elevation, driver provisioning,
-Service shutdown or physical test is authorized merely by building this code.
-
-
-Issue [#661](https://github.com/OpenBladeProject/openblade-core/issues/661) bounds
-the profile's visible version to the existing 64-character IPC limit. The
-validation suffix uses exactly the first eight lowercase source characters;
-even `65535.65534.65534.65534+voltage-validation.<8hex>` fits. The complete
-40-character `SourceRevision` remains required in Service assembly metadata
-`OpenBladeValidationSourceRevision`, the clean-HEAD publication check, and the
-reviewed manifest. The owner requires the short visible suffix to match that
-full reviewed source prefix and retains all package and installed-file hashes.
-Normal build versions, native admission and IPC limits are unchanged.
+Historical captures and intermediate implementation evidence remain in Git
+history and private validation archives. Current work is tracked in
+[issue #622](https://github.com/OpenBladeProject/openblade-core/issues/622),
+[simplification #698](https://github.com/OpenBladeProject/openblade-core/issues/698)
+and [draft PR #623](https://github.com/OpenBladeProject/openblade-core/pull/623).
