@@ -4,15 +4,12 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
-using OpenBlade.Deployment;
 
 namespace OpenBlade.DeploymentBroker;
 
 public enum BrokerAction
 {
     ApplyFixedInbox,
-    ApplyCpuVoltageInbox,
-    ReadDeploymentStatus,
 }
 
 public sealed record BrokerRequest(int ProtocolVersion, Guid RequestId, BrokerAction Action);
@@ -29,10 +26,7 @@ public sealed record BrokerResponse(
     int ProtocolVersion,
     Guid RequestId,
     BrokerResponseStatus Status,
-    string Code)
-{
-    public DeploymentStatusSnapshot? Diagnostics { get; init; }
-}
+    string Code);
 
 public static class BrokerRequestCodec
 {
@@ -48,7 +42,7 @@ public static class BrokerRequestCodec
             writer.WriteStartObject();
             writer.WriteNumber("protocolVersion", request.ProtocolVersion);
             writer.WriteString("requestId", request.RequestId.ToString("D"));
-            writer.WriteString("action", request.Action.ToString());
+            writer.WriteString("action", nameof(BrokerAction.ApplyFixedInbox));
             writer.WriteEndObject();
         }
 
@@ -153,20 +147,19 @@ public static class BrokerRequestCodec
 
     private static BrokerAction ReadAction(
         IReadOnlyDictionary<string, JsonElement> values,
-        string name) => ReadString(values, name) switch
-        {
-            nameof(BrokerAction.ApplyFixedInbox) => BrokerAction.ApplyFixedInbox,
-            nameof(BrokerAction.ApplyCpuVoltageInbox) => BrokerAction.ApplyCpuVoltageInbox,
-            nameof(BrokerAction.ReadDeploymentStatus) => BrokerAction.ReadDeploymentStatus,
-            _ => throw new InvalidDataException("The broker action is not recognized."),
-        };
+        string name) => string.Equals(
+            ReadString(values, name),
+            nameof(BrokerAction.ApplyFixedInbox),
+            StringComparison.Ordinal)
+        ? BrokerAction.ApplyFixedInbox
+        : throw new InvalidDataException("The broker action is not recognized.");
 
     private static void Validate(BrokerRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.ProtocolVersion != ProtocolVersion
             || request.RequestId == Guid.Empty
-            || request.Action is not (BrokerAction.ApplyFixedInbox or BrokerAction.ApplyCpuVoltageInbox or BrokerAction.ReadDeploymentStatus))
+            || request.Action != BrokerAction.ApplyFixedInbox)
         {
             throw new InvalidDataException("The broker request contract is invalid.");
         }
@@ -177,11 +170,6 @@ internal static class BrokerResponseCodec
 {
     public static byte[] SerializeCanonical(BrokerResponse response)
     {
-        if (response.Diagnostics is { } diagnostics)
-        {
-            return DeploymentStatusCodec.Serialize(new(response.ProtocolVersion, response.RequestId,
-                response.Status.ToString(), response.Code, diagnostics));
-        }
         using MemoryStream stream = new();
         using (Utf8JsonWriter writer = new(stream))
         {
@@ -210,10 +198,7 @@ public enum BrokerClientLogonKind
 public sealed record BrokerClientContext(
     SecurityIdentifier UserSid,
     int SessionId,
-    BrokerClientLogonKind LogonKind)
-{
-    public bool NormalIntegrity { get; init; }
-}
+    BrokerClientLogonKind LogonKind);
 
 public interface IBrokerClientContextResolver
 {
@@ -291,32 +276,8 @@ public sealed class WindowsBrokerClientContextResolver : IBrokerClientContextRes
         SecurityIdentifier sid = identity.User
             ?? throw new UnauthorizedAccessException("The broker client SID is unavailable.");
         BrokerClientLogonKind kind = Classify(identity);
-        return new BrokerClientContext(sid, ReadSessionId(identity), kind)
-        { NormalIntegrity = ReadNormalIntegrity(identity) };
+        return new BrokerClientContext(sid, ReadSessionId(identity), kind);
     }
-
-    private static bool ReadNormalIntegrity(WindowsIdentity identity)
-    {
-        int elevated = 0;
-        if (!GetTokenInformation(identity.AccessToken.DangerousGetHandle(), (TokenInformationClass)20,
-            ref elevated, sizeof(int), out _) || elevated != 0) { return false; }
-        GetTokenInformationBuffer(identity.AccessToken.DangerousGetHandle(), 25, IntPtr.Zero, 0, out int length);
-        if (length is <= 0 or > 4096) { return false; }
-        IntPtr buffer = Marshal.AllocHGlobal(length);
-        try
-        {
-            if (!GetTokenInformationBuffer(identity.AccessToken.DangerousGetHandle(), 25, buffer, length, out _))
-            { return false; }
-            string sid = new SecurityIdentifier(Marshal.ReadIntPtr(buffer)).Value;
-            return sid is "S-1-16-8192" or "S-1-16-8448";
-        }
-        finally { Marshal.FreeHGlobal(buffer); }
-    }
-
-    [DllImport("advapi32.dll", EntryPoint = "GetTokenInformation", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetTokenInformationBuffer(IntPtr token, int informationClass,
-        IntPtr information, int length, out int returned);
 
     private static BrokerClientLogonKind Classify(WindowsIdentity identity)
     {
@@ -528,8 +489,6 @@ public sealed class BrokerPipeServer
     private readonly BrokerSingleFlightGate singleFlight;
     private readonly IBrokerRequestHandler handler;
     private readonly Func<PipeOptions, NamedPipeServerStream> createPipe;
-    private readonly Func<DeploymentStatusSnapshot>? readDiagnostics;
-    private readonly bool installEnabled;
 
     public BrokerPipeServer(
         string pipeName,
@@ -538,9 +497,7 @@ public sealed class BrokerPipeServer
         IActiveConsoleSessionSource activeConsole,
         BrokerReplayStore replayStore,
         BrokerSingleFlightGate singleFlight,
-        IBrokerRequestHandler handler,
-        Func<DeploymentStatusSnapshot>? readDiagnostics = null,
-        bool installEnabled = true)
+        IBrokerRequestHandler handler)
         : this(
             enrollment,
             contextResolver,
@@ -557,8 +514,7 @@ public sealed class BrokerPipeServer
                 inBufferSize: 0,
                 outBufferSize: 0,
                 BrokerPipeSecurityFactory.Create(
-                    BrokerEnrollmentCodec.ParseAccountSid(enrollment.EnrolledAccountSid))),
-            readDiagnostics, installEnabled)
+                    BrokerEnrollmentCodec.ParseAccountSid(enrollment.EnrolledAccountSid))))
     {
     }
 
@@ -569,9 +525,7 @@ public sealed class BrokerPipeServer
         BrokerReplayStore replayStore,
         BrokerSingleFlightGate singleFlight,
         IBrokerRequestHandler handler,
-        Func<PipeOptions, NamedPipeServerStream> createPipe,
-        Func<DeploymentStatusSnapshot>? readDiagnostics = null,
-        bool installEnabled = true)
+        Func<PipeOptions, NamedPipeServerStream> createPipe)
     {
         this.enrollment = enrollment;
         this.contextResolver = contextResolver;
@@ -580,8 +534,6 @@ public sealed class BrokerPipeServer
         this.singleFlight = singleFlight;
         this.handler = handler;
         this.createPipe = createPipe;
-        this.readDiagnostics = readDiagnostics;
-        this.installEnabled = installEnabled;
     }
 
     public async Task ServeOnceAsync(CancellationToken cancellationToken)
@@ -623,16 +575,6 @@ public sealed class BrokerPipeServer
             if (lease is null)
             {
                 response = Reject(request, "deployment-in-progress");
-            }
-            else if (request.Action == BrokerAction.ReadDeploymentStatus)
-            {
-                response = client.NormalIntegrity && readDiagnostics is not null
-                    ? new BrokerResponse(1, request.RequestId, BrokerResponseStatus.Succeeded, "deployment-status") { Diagnostics = readDiagnostics() }
-                    : Reject(request, "diagnostics-unavailable");
-            }
-            else if (!installEnabled)
-            {
-                response = Reject(request, "unresolved-deployment");
             }
             else if (!replayStore.TryMarkAccepted(request.RequestId))
             {

@@ -23,16 +23,11 @@ public sealed record OpenBladeReleaseManifest
     public required string UpgradeCode { get; init; }
     public long InstallerSize { get; init; }
     public required string InstallerSha256 { get; init; }
-    public string? ValidationProfile { get; init; }
-    public string? CpuVoltageManifestSha256 { get; init; }
-    public string? CpuVoltageServiceVersion { get; init; }
 }
 
 public static partial class OpenBladeReleaseManifestCodec
 {
     public const int CurrentSchemaVersion = 1;
-    public const int CpuVoltageSchemaVersion = 2;
-    public const string CpuVoltageProfile = "CpuVoltageValidation";
     public const int MaximumManifestBytes = 4096;
     public const long MaximumInstallerBytes = 1024L * 1024L * 1024L;
     public const string SignatureAlgorithm = "ECDSA-P256-SHA256-P1363";
@@ -95,12 +90,6 @@ public static partial class OpenBladeReleaseManifestCodec
             writer.WriteString("upgradeCode", manifest.UpgradeCode);
             writer.WriteNumber("installerSize", manifest.InstallerSize);
             writer.WriteString("installerSha256", manifest.InstallerSha256);
-            if (manifest.SchemaVersion == CpuVoltageSchemaVersion)
-            {
-                writer.WriteString("validationProfile", manifest.ValidationProfile);
-                writer.WriteString("cpuVoltageManifestSha256", manifest.CpuVoltageManifestSha256);
-                writer.WriteString("cpuVoltageServiceVersion", manifest.CpuVoltageServiceVersion);
-            }
             writer.WriteEndObject();
         }
 
@@ -161,9 +150,6 @@ public static partial class OpenBladeReleaseManifestCodec
                 UpgradeCode = ReadString(properties, "upgradeCode"),
                 InstallerSize = ReadInt64(properties, "installerSize"),
                 InstallerSha256 = ReadString(properties, "installerSha256"),
-                ValidationProfile = properties.ContainsKey("validationProfile") ? ReadString(properties, "validationProfile") : null,
-                CpuVoltageManifestSha256 = properties.ContainsKey("cpuVoltageManifestSha256") ? ReadString(properties, "cpuVoltageManifestSha256") : null,
-                CpuVoltageServiceVersion = properties.ContainsKey("cpuVoltageServiceVersion") ? ReadString(properties, "cpuVoltageServiceVersion") : null,
             };
 
             Validate(manifest);
@@ -196,7 +182,6 @@ public static partial class OpenBladeReleaseManifestCodec
         HashSet<string> exactNames = new(StringComparer.Ordinal);
         HashSet<string> caseInsensitiveNames = new(StringComparer.OrdinalIgnoreCase);
         HashSet<string> allowedNames = new(RequiredProperties, StringComparer.Ordinal);
-        allowedNames.UnionWith(["validationProfile", "cpuVoltageManifestSha256", "cpuVoltageServiceVersion"]);
         Dictionary<string, JsonElement> properties = new(StringComparer.Ordinal);
 
         foreach (JsonProperty property in root.EnumerateObject())
@@ -295,7 +280,7 @@ public static partial class OpenBladeReleaseManifestCodec
 
     private static void Validate(OpenBladeReleaseManifest manifest)
     {
-        if (manifest.SchemaVersion is not (CurrentSchemaVersion or CpuVoltageSchemaVersion))
+        if (manifest.SchemaVersion != CurrentSchemaVersion)
         {
             throw InvalidManifest($"schemaVersion must be {CurrentSchemaVersion}.");
         }
@@ -340,15 +325,6 @@ public static partial class OpenBladeReleaseManifestCodec
         {
             throw InvalidManifest("sourceRevision must contain exactly 40 lowercase hexadecimal characters.");
         }
-        if (manifest.SchemaVersion == CurrentSchemaVersion)
-        {
-            if (manifest.ValidationProfile is not null || manifest.CpuVoltageManifestSha256 is not null || manifest.CpuVoltageServiceVersion is not null)
-            { throw InvalidManifest("Ordinary deployments cannot carry CPU validation authority."); }
-        }
-        else if (manifest.ValidationProfile != CpuVoltageProfile
-            || manifest.CpuVoltageManifestSha256 is not { } closure || !LowerSha256Pattern().IsMatch(closure)
-            || manifest.CpuVoltageServiceVersion != manifest.Version + "+voltage-validation." + manifest.SourceRevision[..8])
-        { throw InvalidManifest("CPU validation profile, closure or Service version binding is invalid."); }
 
         if (manifest.InstallerSize <= 0 || manifest.InstallerSize > MaximumInstallerBytes)
         {

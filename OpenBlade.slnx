@@ -12,7 +12,6 @@
     <Project Path="src/OpenBlade.Display/OpenBlade.Display.csproj" />
     <Project Path="src/OpenBlade.FirmwareSmoke/OpenBlade.FirmwareSmoke.csproj" />
     <Project Path="src/OpenBlade.Platform/OpenBlade.Platform.csproj" />
-    <Project Path="src/OpenBlade.PmSupervisor/OpenBlade.PmSupervisor.csproj" />
     <Project Path="src/OpenBlade.Protocol/OpenBlade.Protocol.csproj" />
     <Project Path="src/OpenBlade.Service/OpenBlade.Service.csproj" />
     <Project Path="src/OpenBlade.Session/OpenBlade.Session.csproj" />

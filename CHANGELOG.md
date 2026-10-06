@@ -7,10 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add an explicitly enrolled developer broker operation for signed CPU-validation builds and fixed elevated session-host startup without a UAC prompt for each build; jobs remain explicit and unresolved resources block replacement. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Add a developer voltage-validation session host that permits one diagnostic observation and one reversible test after a single attended elevation, with fixed build identity, bounded jobs, and retained evidence on uncertainty. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Add saved next-boot CPU Voltage Optimizer settings with paired firmware verification and exact original restoration on the supported Blade 16 (2025) RZ09-0528. Keep saved settings separate from measured running offsets through the optional already-running signed AMD backend. Admit live CO after complete readback, fresh safety checks and resolved ownership. Use an all-core On/Off control and remembered −30 to −1 value, with voltage-only requests and restoration. PPT feature work is deferred. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Preserve live CPU boot-identity observation on reviewed Windows builds 26200 and 26300, retaining exact version, architecture and four-byte acquisition checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Add an all-core CPU Voltage Optimizer with remembered −30 to −1 intent, separately admitted saved next-boot settings and measured live offsets, paired firmware readback and exact original restoration on RZ09-0528. Optional live tuning uses its exact signed already-running AMD backend; live PPT mutation is deferred. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable HyperBoost without the cooling pad on the supported Blade 16 (2025) RZ09-0528 on the full-power adapter, keep GPU clock tuning available, and start HyperBoost directly from Silent, Balanced or Performance with or without the pad. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
@@ -21,56 +19,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Require a fresh read-only PPT peer for voltage-only live apply and restoration, and verify that peer after native voltage readback without granting power-limit write authority. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Require fresh read-only Fast/Slow/STAPM power peers before and after voltage-only live apply and restoration; missing or changed evidence and unresolved historical PPT ownership block further mutation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Recover an explicit installed power-peer observation once from the exact sampling prerequisite with separately admitted bounded getters, while retaining first-failure diagnostics and excluding retries from mutation preparation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Preserve live CPU boot identity on reviewed Windows builds 26200 and 26300, separate BIOS provenance from model/SKU admission, and resolve identity dependencies before CPU pipe impersonation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
-- Accept the admitted CPU Voltage Optimizer ReadWrite capability in firmware smoke baselines while retaining its exact range and enable/disable checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Retain the first failed live CPU power query and distinguish rejected request state, PCI echo or mailbox response, including its status, without changing native commands or admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Recover an installed CPU power-peer read once when firmware sampling is not ready, closing the failed getter before a fresh ten-second read under a bounded recovery sequence. Preserve fresh safety checks and phase timings while avoiding duplicate backend reads within each boundary. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Report the first rejected live CPU getter guard and distinguish admission denial from native I/O failure without repeating safety checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Enforce the developer voltage job's protected deadline at the native setter boundary and reuse each prepared step's complete read-only preflight before independently verified application and restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Retain exact-request read continuity through CO proof preparation and initial native admission, disposing it before independent fresh setter validation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Evaluate each complete CO preflight plan within bounded read continuity while preserving fresh native setter and restoration authority; retain submission timeout stage diagnostics. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Reuse exact read continuity during a native CPU curve operation's preparation and readback while retaining independent full setter and restoration admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Preserve exact terminal CPU non-submission after a caller deadline and settle only its matching ownership record, without claiming a fresh observation or restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Load Windows identity dependencies before pipe impersonation so the first Identification client can authenticate without a cached assembly-binding failure. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Complete CPU validation Service file and process checks before connecting, then verify the retained IPC peer immediately and revalidate full context before accepting responses, keeping the existing first-frame deadline. ([#685](https://github.com/OpenBladeProject/openblade-core/issues/685))
-
-- Wait for the exact validation Service pipe before launching a CPU validation owner, retain explicit launch-phase evidence, and permit bounded resource-only closure after a proven unlaunched failure. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Match the exact AMD backend getter mailbox readiness semantics for a prior completed error while still requiring successful acknowledgement of each new command; setter admission remains unchanged. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Preserve the rejected mailbox status and frozen readiness/submission evidence for returned CPU query errors, without changing native traffic or admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Retain power-peer rejection and timeout details when live CPU curve observation succeeds, without changing observation or write admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Preserve pending native CPU query stage, mailbox wait phase, transport attempts/completions, zero-poll counts, completed calls and cumulative timing in the first observation-timeout diagnostic without changing query admission or deadlines. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Keep the mandatory live CPU power-peer observation inside a bounded getter with full entry/completion admission and continuous retained-device checks, without repeated full discovery at every read. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Validate full native CPU getter context at entry and completion, with retained identity and fresh bounded continuity checks between reads instead of repeated hardware discovery. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Classify adapter power once per bounded live CPU getter while continuously checking power and runtime continuity; retain fresh independent admission for every setter and restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Let the enrolled development user read retained installation diagnostics through the broker without another elevation prompt. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Preserve the first live CPU observation rejection, transaction reason and available native query diagnostic in the existing response, without adding probes or changing admission limits. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Cancel live CPU observation admission with its initiating operation and report the active timeout stage while retaining unfinished reads and the existing safety limits. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Let the enrolled developer voltage session clean up a proved readonly failed job and accept a fresh explicit observation without another elevation, while retaining uncertain resources and all CPU safety guards. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Report the first rejected CPU observation admission check and retain the validation owner's failure reason in blocked session status, without retrying or weakening safety guards. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Recheck both settings and required capabilities before submitting combined live CPU edits. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-
-- Use fresh verified adapter readings for CPU full-power admission when Windows reports unknown external power. Battery, USB-C, unknown and canceled readings still deny commands. ([#642](https://github.com/OpenBladeProject/openblade-core/issues/642))
-
-- Identify the first rejecting safety check when a saved CPU command is denied, without changing admission or retrying commands. ([#641](https://github.com/OpenBladeProject/openblade-core/issues/641))
-- Ignore queued window load callbacks after a language replacement window has been disposed. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Show one-shot keyboard lighting as unconfirmed on the supported Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode, and redraw automatically only with the lighting override setting enabled. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))
 - Record the reason in the installer's package log when a quiet install fails, instead of only an exit code. ([#612](https://github.com/OpenBladeProject/openblade-core/pull/612))
 - Stop showing the HyperBoost unavailable warning while a performance mode change is still in progress. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))

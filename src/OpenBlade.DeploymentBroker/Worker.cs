@@ -31,6 +31,14 @@ public sealed class Worker(
                             enrollment.DevelopmentSigningSubjectPublicKeyInfoBase64),
                     ])));
 
+            await durableRecords.ValidateExistingJournalsAsync(stoppingToken)
+                .ConfigureAwait(false);
+            if (!await startupReconciler.TryReconcileAsync(enrollment, stoppingToken)
+                .ConfigureAwait(false))
+            {
+                throw new InvalidDataException(
+                    "An unresolved deployment blocks unattended broker startup.");
+            }
         }
         catch (Exception exception) when (exception is
             IOException or UnauthorizedAccessException or InvalidDataException
@@ -44,12 +52,6 @@ public sealed class Worker(
                 exception);
         }
 
-        bool installEnabled = await CheckInstallReadinessAsync(
-            () => durableRecords.ValidateExistingJournalsAsync(stoppingToken),
-            () => startupReconciler.TryReconcileAsync(enrollment, stoppingToken),
-            exception => logger.LogError(exception, "Deployment remains blocked; authenticated diagnostics are available."))
-            .ConfigureAwait(false);
-        BrokerDeploymentDiagnostics diagnostics = new(paths);
         BrokerPipeServer server = new(
             PipeName,
             enrollment,
@@ -57,9 +59,7 @@ public sealed class Worker(
             activeConsole,
             new BrokerReplayStore(paths),
             new BrokerSingleFlightGate(),
-            requestHandler,
-            () => diagnostics.Read(installEnabled),
-            installEnabled);
+            requestHandler);
         await RunPipeLoopAsync(
             server.ServeOnceAsync,
             Task.Delay,
@@ -67,22 +67,6 @@ public sealed class Worker(
                 exception,
                 "A deployment broker pipe request failed closed."),
             stoppingToken).ConfigureAwait(false);
-    }
-
-    internal static async Task<bool> CheckInstallReadinessAsync(Func<Task> validateJournals,
-        Func<Task<bool>> reconcile, Action<Exception> log)
-    {
-        try
-        {
-            await validateJournals().ConfigureAwait(false);
-            return await reconcile().ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or InvalidDataException or OpenBladeReleaseVerificationException)
-        {
-            log(exception);
-            return false;
-        }
     }
 
     internal static async Task RunPipeLoopAsync(

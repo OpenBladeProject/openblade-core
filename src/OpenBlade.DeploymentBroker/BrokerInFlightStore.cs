@@ -20,10 +20,7 @@ public sealed record BrokerInFlightDeployment(
     string? SigningKeyId,
     long? TargetSequence,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt)
-{
-    public string? CpuVoltageServiceVersion { get; init; }
-}
+    DateTimeOffset UpdatedAt);
 
 public static partial class BrokerInFlightDeploymentCodec
 {
@@ -82,8 +79,6 @@ public static partial class BrokerInFlightDeploymentCodec
 
             writer.WriteString("createdAt", FormatTimestamp(state.CreatedAt));
             writer.WriteString("updatedAt", FormatTimestamp(state.UpdatedAt));
-            if (state.CpuVoltageServiceVersion is not null)
-            { writer.WriteString("cpuVoltageServiceVersion", state.CpuVoltageServiceVersion); }
             writer.WriteEndObject();
         }
 
@@ -126,7 +121,6 @@ public static partial class BrokerInFlightDeploymentCodec
                 "updatedAt",
             ];
             HashSet<string> allowed = new(required, StringComparer.Ordinal);
-            allowed.Add("cpuVoltageServiceVersion");
             HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, JsonElement> values = new(StringComparer.Ordinal);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
@@ -145,7 +139,7 @@ public static partial class BrokerInFlightDeploymentCodec
                 }
             }
 
-            if (values.Count != required.Length + (values.ContainsKey("cpuVoltageServiceVersion") ? 1 : 0)
+            if (values.Count != required.Length
                 || required.Any(name => !values.ContainsKey(name)))
             {
                 throw new InvalidDataException(
@@ -168,11 +162,7 @@ public static partial class BrokerInFlightDeploymentCodec
                 ReadNullableString(values, "signingKeyId"),
                 ReadNullableInt64(values, "targetSequence"),
                 ReadTimestamp(values, "createdAt"),
-                ReadTimestamp(values, "updatedAt"))
-            {
-                CpuVoltageServiceVersion = values.ContainsKey("cpuVoltageServiceVersion")
-                    ? ReadNullableString(values, "cpuVoltageServiceVersion") : null,
-            };
+                ReadTimestamp(values, "updatedAt"));
             Validate(state);
             if (!bytes.SequenceEqual(SerializeCanonical(state)))
             {
@@ -205,10 +195,6 @@ public static partial class BrokerInFlightDeploymentCodec
             || state.ManifestSha256 is not null
             || state.SigningKeyId is not null;
         releaseBound = releaseBound || state.TargetSequence.HasValue;
-        if (state.CpuVoltageServiceVersion is not null && (!releaseBound
-            || state.TargetSourceRevision is not { Length: 40 }
-            || state.CpuVoltageServiceVersion != state.TargetVersion + "+voltage-validation." + state.TargetSourceRevision[..8]))
-        { throw new InvalidDataException("The unresolved CPU deployment profile is invalid."); }
         if (state.SchemaVersion != CurrentSchemaVersion
             || state.RequestId == Guid.Empty
             || state.BrokerProcessId <= 0
@@ -433,8 +419,7 @@ public sealed class BrokerInFlightStore
         string manifestSha256,
         string signingKeyId,
         long targetSequence,
-        DateTimeOffset now,
-        string? cpuVoltageServiceVersion = null)
+        DateTimeOffset now)
     {
         BrokerInFlightDeployment current = LoadRequired(requestId);
         if (current.PreviousVersion is null || current.InstallerSha256 is not null)
@@ -451,7 +436,6 @@ public sealed class BrokerInFlightStore
             ManifestSha256 = manifestSha256,
             SigningKeyId = signingKeyId,
             TargetSequence = targetSequence,
-            CpuVoltageServiceVersion = cpuVoltageServiceVersion,
             UpdatedAt = now.ToUniversalTime(),
         });
     }

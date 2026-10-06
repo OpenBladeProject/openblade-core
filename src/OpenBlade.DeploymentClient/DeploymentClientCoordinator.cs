@@ -30,8 +30,7 @@ internal sealed class DeploymentClientCoordinator(
     IRequestIdSource requestIds,
     Action<string>? diagnostic = null,
     TimeProvider? timeProvider = null,
-    Func<TimeSpan, CancellationToken, Task>? delay = null,
-    ICpuVoltageHostStatusVerifier? cpuVoltageHost = null)
+    Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
     private static readonly TimeSpan SessionAgentSurvivalWindow = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan FinalInventoryTimeout = TimeSpan.FromSeconds(10);
@@ -40,28 +39,13 @@ internal sealed class DeploymentClientCoordinator(
     private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
     private readonly Func<TimeSpan, CancellationToken, Task> delay = delay ?? Task.Delay;
 
-    internal Task<bool> ApplyFixedInboxAsync(CancellationToken cancellationToken) =>
-        ApplyAsync(cpuVoltage: false, cancellationToken);
-
-    internal Task<bool> ApplyCpuVoltageInboxAsync(CancellationToken cancellationToken) =>
-        ApplyAsync(cpuVoltage: true, cancellationToken);
-
-    private async Task<bool> ApplyAsync(bool cpuVoltage, CancellationToken cancellationToken)
+    internal async Task<bool> ApplyFixedInboxAsync(CancellationToken cancellationToken)
     {
         try
         {
             if (!HasRequiredContext())
             {
                 return Fail("client-context-rejected");
-            }
-            if (cpuVoltage && cpuVoltageHost is null)
-            {
-                return Fail("cpu-voltage-status-verifier-unavailable");
-            }
-            if (cpuVoltage && (!await cpuVoltageHost!.PrepareAsync(cancellationToken).ConfigureAwait(false)
-                || !HasRequiredContext()))
-            {
-                return Fail("cpu-voltage-previous-host-unresolved");
             }
 
             // Retain a verified desktop lifetime parent before stopping installed
@@ -148,25 +132,9 @@ internal sealed class DeploymentClientCoordinator(
                 throw new InvalidOperationException("The deployment client request ID is unavailable.");
             }
 
-            DeploymentBrokerResponse response = cpuVoltage
-                ? await broker.ApplyCpuVoltageInboxAsync(requestId, cancellationToken).ConfigureAwait(false)
-                : await broker.ApplyFixedInboxAsync(requestId, cancellationToken).ConfigureAwait(false);
-            if (cpuVoltage)
-            {
-                if (!DeploymentBrokerProtocol.IsExactCpuVoltageSuccess(response, requestId))
-                {
-                    return Fail($"broker-response:{response.Status}:{response.Code}");
-                }
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!HasRequiredContext() || !inventory.Inspect(expectedPaths).IsEmpty)
-                {
-                    return Fail("cpu-voltage-client-context-changed");
-                }
-                bool ready = await cpuVoltageHost!.VerifyAsync(requestId, cancellationToken).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                return ready && HasRequiredContext() && inventory.Inspect(expectedPaths).IsEmpty
-                    || Fail("cpu-voltage-host-status-unverified");
-            }
+            DeploymentBrokerResponse response = await broker.ApplyFixedInboxAsync(
+                requestId,
+                cancellationToken).ConfigureAwait(false);
             if (DeploymentBrokerProtocol.IsExactSuccess(response, requestId))
             {
                 return await CompleteSuccessfulInstallAsync(

@@ -5,19 +5,11 @@ param(
     [string]$TpmKeyName,
     [switch]$StageOnly,
     [switch]$ThermalExternalDriftValidation,
-    [switch]$CpuVoltageValidation,
     [string]$ValidationOutputDirectory
 )
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
-
-if ($CpuVoltageValidation -and $ThermalExternalDriftValidation) {
-    throw 'CPU voltage and thermal external-drift validation cannot be combined.'
-}
-if ($CpuVoltageValidation -and [string]::IsNullOrWhiteSpace($ValidationOutputDirectory)) {
-    throw '-ValidationOutputDirectory is required for CPU voltage validation.'
-}
 
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 . (Join-Path $PSScriptRoot 'LocalDevBuildVersion.ps1')
@@ -38,16 +30,7 @@ if ($baseVersion -notmatch '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-
 }
 $localDevVersion = Get-OpenBladeNextLocalDevBuildVersion
 
-if ($CpuVoltageValidation) {
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (
-        Join-Path $PSScriptRoot 'Publish-CpuVoltageValidation.ps1') `
-        -OutputDirectory $ValidationOutputDirectory -LocalDevVersion $localDevVersion
-    if ($LASTEXITCODE -ne 0) {
-        throw "The coordinated CPU voltage validation build failed with exit code $LASTEXITCODE."
-    }
-    $installer = Join-Path ([IO.Path]::GetFullPath($ValidationOutputDirectory)) 'OpenBlade-Setup.exe'
-}
-elseif ($ThermalExternalDriftValidation) {
+if ($ThermalExternalDriftValidation) {
     if ([string]::IsNullOrWhiteSpace($ValidationOutputDirectory)) {
         throw '-ValidationOutputDirectory is required for thermal external-drift validation.'
     }
@@ -67,7 +50,7 @@ elseif ($ThermalExternalDriftValidation) {
 }
 else {
     if (-not [string]::IsNullOrWhiteSpace($ValidationOutputDirectory)) {
-        throw '-ValidationOutputDirectory is valid only with an explicit validation profile.'
+        throw '-ValidationOutputDirectory is valid only with -ThermalExternalDriftValidation.'
     }
     $publishScript = Join-Path $repository 'build\Publish.ps1'
     & powershell.exe `
@@ -86,18 +69,16 @@ else {
 
 $toolProject = Join-Path $repository (
     'build\tools\OpenBlade.LocalDevDeployment.Tool\OpenBlade.LocalDevDeployment.Tool.csproj')
-$stageArguments = @('stage', '--installer', $installer, '--version', $localDevVersion,
-    '--source-revision', $head, '--key-name', $TpmKeyName)
-if ($CpuVoltageValidation) {
-    $stageArguments[0] = 'stage-cpu-voltage'
-    $stageArguments += '--closure', (Join-Path ([IO.Path]::GetFullPath($ValidationOutputDirectory)) 'closure')
-}
 & dotnet run `
     --project $toolProject `
     --configuration Release `
     --property:NuGetAudit=false `
     -- `
-    @stageArguments
+    stage `
+    --installer $installer `
+    --version $localDevVersion `
+    --source-revision $head `
+    --key-name $TpmKeyName
 if ($LASTEXITCODE -ne 0) {
     throw "The TPM-signed local-development staging step failed with exit code $LASTEXITCODE."
 }
@@ -113,21 +94,11 @@ if (-not (Test-Path -LiteralPath $client -PathType Leaf)) {
     throw 'The attended local-development deployment enrollment is not installed.'
 }
 
-if ($CpuVoltageValidation) {
-    & $client --cpu-voltage
-}
-else {
-    & $client
-}
+& $client
 if ($LASTEXITCODE -ne 0) {
     throw "The local-development broker client failed with exit code $LASTEXITCODE."
 }
 
-if ($CpuVoltageValidation) {
-    Write-Host 'CPU voltage validation installer applied; the fixed host Status was verified. No CPU job was submitted.'
-    Write-Host ('CPU voltage validation evidence: {0}' -f ([IO.Path]::GetFullPath($ValidationOutputDirectory)))
-    return
-}
 Write-Host (
     'Applied and relaunched local OpenBlade build {0} as {1} without another UAC prompt.' -f
         $head,

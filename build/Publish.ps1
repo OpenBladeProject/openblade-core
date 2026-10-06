@@ -15,8 +15,7 @@ param(
     [string]$LocalDevVersion,
     [string]$SourceRevision,
     [string]$WorkflowRunId,
-    [switch]$ThermalExternalDriftValidation,
-    [switch]$CpuVoltageValidation
+    [switch]$ThermalExternalDriftValidation
 )
 
 Set-StrictMode -Version 3.0
@@ -115,24 +114,6 @@ if ($ThermalExternalDriftValidation -and $SourceRevision -notmatch '^[0-9a-fA-F]
     throw 'Thermal external-drift validation installers require an exact source revision.'
 }
 
-if ($CpuVoltageValidation) {
-    if ($buildIdentity.Channel -ne 'LocalDev' -or $SourceRevision -notmatch '^[0-9a-fA-F]{40}$') {
-        throw 'CPU voltage validation installers require LocalDev and an exact source revision.'
-    }
-    if ($ThermalExternalDriftValidation) {
-        throw 'CPU voltage validation cannot be combined with thermal external-drift validation.'
-    }
-    $validationHead = (& git -C $repository rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or $validationHead -ne $SourceRevision) {
-        throw 'CPU voltage validation requires SourceRevision to match the current checkout HEAD.'
-    }
-    $validationChanges = & git -C $repository status --porcelain
-    if ($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace(($validationChanges -join "`n"))) {
-        throw 'CPU voltage validation publication requires a clean source checkout, including nonignored untracked files.'
-    }
-    $buildIdentity.InformationalVersion = "$($buildIdentity.Version)+voltage-validation.$($buildIdentity.SourceRevision.Substring(0, 8).ToLowerInvariant())"
-}
-
 function Invoke-OpenBladeSigning {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -156,13 +137,6 @@ $publishArguments = @(
     '--property:PublishTrimmed=false',
     '--property:OpenBladePadlessHyperBoostLifecycleValidation=false'
 )
-# Every project must use the same profile: Protocol is shared by service and tools.
-if ($CpuVoltageValidation) {
-    $publishArguments += '--property:OpenBladeCpuVoltageValidation=true', "--property:SourceRevision=$SourceRevision"
-}
-else {
-    $publishArguments += '--property:OpenBladeCpuVoltageValidation=false'
-}
 if ($buildIdentity.Channel -ne 'Stable') {
     $publishArguments += @(
         "--property:Version=$($buildIdentity.Version)",

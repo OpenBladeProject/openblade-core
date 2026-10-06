@@ -142,7 +142,6 @@ internal static class LocalDevEnrollmentUser
     private static Dictionary<string, JsonElement> ReadExactProperties(JsonElement root)
     {
         HashSet<string> allowed = new(RequiredProperties, StringComparer.Ordinal);
-        allowed.Add("cpuVoltageValidationEnabled");
         HashSet<string> seenIgnoreCase = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, JsonElement> properties = new(StringComparer.Ordinal);
         foreach (JsonProperty property in root.EnumerateObject())
@@ -156,17 +155,11 @@ internal static class LocalDevEnrollmentUser
             }
         }
 
-        if (properties.Count != RequiredProperties.Length + (properties.ContainsKey("cpuVoltageValidationEnabled") ? 1 : 0)
+        if (properties.Count != RequiredProperties.Length
             || RequiredProperties.Any(name => !properties.ContainsKey(name)))
         {
             throw new InvalidDataException(
                 "The protected local-development enrollment is missing a required property.");
-        }
-
-        if (properties.TryGetValue("cpuVoltageValidationEnabled", out JsonElement capability)
-            && capability.ValueKind != JsonValueKind.True)
-        {
-            throw new InvalidDataException("The optional CPU voltage capability must be true.");
         }
 
         foreach (string propertyName in RequiredProperties.Where(name => name != "schemaVersion"))

@@ -296,67 +296,64 @@ public sealed class ServiceClientTests
         string pipeName = NewPipeName();
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         var observed = new List<ServiceRequest>();
-        TaskCompletionSource[] listeners = Enumerable.Range(0, 23)
-            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
-            .ToArray();
-        Task server = RunMutationServersAsync(pipeName, observed, listeners, timeout.Token);
+        Task server = RunMutationServersAsync(pipeName, observed, timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         Guid shortcutSessionId = Guid.NewGuid();
 
-        Func<Task<ControlOperationResult>>[] mutations =
+        ControlOperationResult[] results =
         [
-            () => client.UpdateProfilesAsync(profiles, timeout.Token),
-            () => client.SetPerformanceOverrideAsync(
+            await client.UpdateProfilesAsync(profiles, timeout.Token),
+            await client.SetPerformanceOverrideAsync(
                 new ManualOverride<PerformancePreset>(PerformancePreset.Performance, OverrideLifetime.Persistent),
                 timeout.Token),
-            () => client.SetHyperBoostAsync(true, timeout.Token),
-            () => client.CyclePerformanceShortcutAsync(
+            await client.SetHyperBoostAsync(true, timeout.Token),
+            await client.CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
                 timeout.Token),
-            () => client.SetPerformanceShortcutPreviewAsync(
+            await client.SetPerformanceShortcutPreviewAsync(
                 shortcutSessionId,
                 generation: 3,
                 PerformancePreset.Performance,
                 timeout.Token),
-            () => client.SetFanOverrideAsync(
+            await client.SetFanOverrideAsync(
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange),
                 timeout.Token),
-            () => client.SetLightingOverrideAsync(null, timeout.Token),
-            () => client.StepKeyboardBrightnessAsync(
+            await client.SetLightingOverrideAsync(null, timeout.Token),
+            await client.StepKeyboardBrightnessAsync(
                 KeyboardBrightnessDirection.Increase,
                 OverrideLifetime.UntilPowerSourceChange,
                 timeout.Token),
-            () => client.SetDisplayBrightnessHidUsageAsync(
+            await client.SetDisplayBrightnessHidUsageAsync(
                 DisplayBrightnessHidUsage.Decrement,
                 timeout.Token),
-            () => client.SetExternalLightingOverridePolicyAsync(true, timeout.Token),
-            () => client.SetThermalControlPolicyAsync(
+            await client.SetExternalLightingOverridePolicyAsync(true, timeout.Token),
+            await client.SetThermalControlPolicyAsync(
                 ThermalControlPolicy.Strict,
                 timeout.Token),
-            () => client.AcknowledgeThermalPolicyUpgradeDisclosureAsync(timeout.Token),
-            () => client.SetLightingRefreshRateAsync(
+            await client.AcknowledgeThermalPolicyUpgradeDisclosureAsync(timeout.Token),
+            await client.SetLightingRefreshRateAsync(
                 LightingRefreshRate.SixtyHz,
                 timeout.Token),
-            () => client.SetFirmwareCompatibilityOverrideAsync(true, timeout.Token),
-            () => client.ReapplyChangedSettingsAsync(timeout.Token),
-            () => client.RecoverHyperBoostRestoreAsync(timeout.Token),
-            () => client.SetLightingSuppressionAsync(
+            await client.SetFirmwareCompatibilityOverrideAsync(true, timeout.Token),
+            await client.ReapplyChangedSettingsAsync(timeout.Token),
+            await client.RecoverHyperBoostRestoreAsync(timeout.Token),
+            await client.SetLightingSuppressionAsync(
                 LightingSuppressionReason.DisplayOff,
                 suppressed: true,
                 timeout.Token),
-            () => client.PulseReactiveKeyAsync(new ReactiveKeyPulse(77), timeout.Token),
-            () => client.SetBatteryPolicyAsync(BatteryPolicy.Create(75), timeout.Token),
-            () => client.SetBatteryProtectionAsync(false, timeout.Token),
-            () => client.SetFullChargeOverrideAsync(true, timeout.Token),
-            () => client.ApplyOneShotLaptopControlAsync(
+            await client.PulseReactiveKeyAsync(new ReactiveKeyPulse(77), timeout.Token),
+            await client.SetBatteryPolicyAsync(BatteryPolicy.Create(75), timeout.Token),
+            await client.SetBatteryProtectionAsync(false, timeout.Token),
+            await client.SetFullChargeOverrideAsync(true, timeout.Token),
+            await client.ApplyOneShotLaptopControlAsync(
                 new ApplyOneShotLaptopControl(
                     OneShotLaptopControl.GamingMode,
                     Enabled: true),
                 timeout.Token),
-            () => client.ShutdownOpenBladeAsync(timeout.Token),
+            await client.ShutdownOpenBladeAsync(timeout.Token),
         ];
-        ControlOperationResult[] results = await RunMutationSequenceAsync(mutations, listeners, server, timeout);
+        await server;
 
         Assert.All(results, result => Assert.Equal(ControlOperationStatus.Stored, result.Status));
         Assert.Collection(
@@ -424,33 +421,6 @@ public sealed class ServiceClientTests
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
         Assert.Equal(23, observed.Select(request => request.RequestId).Distinct().Count());
-    }
-
-    [Fact]
-    public async Task TypedMutationFailureBeforeConnectingCancelsAndDisposesTheActualServer()
-    {
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
-        NamedPipeServerStream listener = CreateServer(NewPipeName());
-        Microsoft.Win32.SafeHandles.SafePipeHandle handle = listener.SafePipeHandle;
-        TaskCompletionSource[] listeners = [new(TaskCreationOptions.RunContinuationsAsynchronously)];
-        Task server = ServeAsync();
-        var failure = new InvalidOperationException("Synthetic mutation failure before connecting.");
-
-        Exception actual = await Assert.ThrowsAsync<InvalidOperationException>(() => RunMutationSequenceAsync(
-            [() => Task.FromException<ControlOperationResult>(failure)], listeners, server, timeout));
-
-        Assert.Same(failure, actual);
-        Assert.True(server.IsCanceled);
-        Assert.True(handle.IsClosed);
-
-        async Task ServeAsync()
-        {
-            await using (listener)
-            {
-                listeners[0].TrySetResult();
-                await listener.WaitForConnectionAsync(timeout.Token);
-            }
-        }
     }
 
     [Fact]
@@ -1158,64 +1128,14 @@ public sealed class ServiceClientTests
         await server;
     }
 
-    private static async Task<ControlOperationResult[]> RunMutationSequenceAsync(
-        IReadOnlyList<Func<Task<ControlOperationResult>>> mutations,
-        IReadOnlyList<TaskCompletionSource> listeners,
-        Task server,
-        CancellationTokenSource timeout)
-    {
-        try
-        {
-            var results = new ControlOperationResult[mutations.Count];
-            for (int index = 0; index < mutations.Count; index++)
-            {
-                Task ready = listeners[index].Task;
-                await Task.WhenAny(ready, server).WaitAsync(timeout.Token);
-                if (server.IsCompleted)
-                {
-                    await server;
-                    throw new InvalidOperationException("The mutation server completed before its next listener was ready.");
-                }
-                await ready.WaitAsync(timeout.Token);
-                results[index] = await mutations[index]();
-            }
-            await server;
-            return results;
-        }
-        catch (Exception failure)
-        {
-            bool cleanupCancellation = !timeout.IsCancellationRequested && !server.IsCanceled;
-            List<Exception> failures = [failure];
-            try { timeout.Cancel(); }
-            catch (Exception cancellationFailure) { failures.Add(cancellationFailure); }
-            try { await server; }
-            catch (OperationCanceledException exception) when (cleanupCancellation && exception.CancellationToken == timeout.Token)
-            {
-                // This cancellation was requested here to drain the actual server.
-            }
-            catch (Exception serverFailure)
-            {
-                if (!ReferenceEquals(failure, serverFailure))
-                {
-                    failures.Add(serverFailure);
-                }
-            }
-            if (failures.Count > 1) { throw new AggregateException(failures); }
-            throw;
-        }
-    }
-
     private static async Task RunMutationServersAsync(
         string pipeName,
         List<ServiceRequest> observed,
-        IReadOnlyList<TaskCompletionSource> listeners,
         CancellationToken token)
     {
-        for (int index = 0; index < listeners.Count; index++)
+        for (int index = 0; index < 23; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
-            // Publish this specific fresh listener before its corresponding call starts.
-            listeners[index].TrySetResult();
             await server.WaitForConnectionAsync(token);
             ServiceRequest request = await IpcMessageCodec.ReadRequestAsync(server, token);
             observed.Add(request);

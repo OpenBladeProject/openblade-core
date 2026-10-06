@@ -18,7 +18,6 @@ builder.Services.AddSingleton<IBrokerRecordedInstallerProcessInspector, WindowsB
 builder.Services.AddSingleton<IBrokerStartupReconciler, BrokerStartupReconciler>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IBrokerRequestHandler, ApplyFixedInboxBrokerRequestHandler>();
-builder.Services.AddSingleton<IBrokerCpuVoltageDeployment, WindowsCpuVoltageDeployment>();
 builder.Services.AddHostedService<Worker>();
 
 using IHost host = builder.Build();

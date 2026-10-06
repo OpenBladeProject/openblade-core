@@ -5,18 +5,6 @@ namespace OpenBlade.FirmwareSmoke.Tests;
 
 public sealed class FirmwareSmokeProgramTests
 {
-    [Fact]
-    public void CpuVoltageObserveOnlyIsExplicitAndStrictlyParsed()
-    {
-        string[] args = ["cpu-voltage-optimizer", "--observe-only", "--confirm-target", CpuVoltageOptimizerSmokeRunner.ObserveConfirmation,
-            "--expected-service-version", "0.24.0+12345678", "--output", "new-directory"];
-        Assert.True(FirmwareSmokeProgram.ReadCpuVoltageObserveOnly(args));
-        Assert.False(FirmwareSmokeProgram.ReadCpuVoltageObserveOnly(args.Where(value => value != "--observe-only").ToArray()));
-        Assert.Throws<ArgumentException>(() => FirmwareSmokeProgram.ReadCpuVoltageObserveOnly([.. args, "--observe-only"]));
-        Assert.Throws<ArgumentException>(() => FirmwareSmokeProgram.ReadCpuVoltageObserveOnly([.. args, "--unknown"]));
-        Assert.Throws<ArgumentException>(() => FirmwareSmokeProgram.ReadCpuVoltageObserveOnly(["cpu-voltage-optimizer", "--output", "--observe-only"]));
-    }
-
     [Theory]
     [InlineData("RZ09-0581", "RZ09-0581-FIRMWARE-SMOKE")]
     [InlineData("RZ09-0528", "RZ09-0528-FIRMWARE-SMOKE")]

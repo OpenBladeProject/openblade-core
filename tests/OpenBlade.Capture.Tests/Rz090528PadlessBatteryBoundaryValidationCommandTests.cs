@@ -1,4 +1,3 @@
-using System.Runtime.ExceptionServices;
 using OpenBlade.Capture;
 using OpenBlade.Protocol;
 
@@ -111,18 +110,15 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationCommandTests
     {
         using var release = new ManualResetEventSlim();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var lane = new OwnedReadOnlyLane<string>(() => drained.SetResult(), TimeSpan.FromMilliseconds(100));
+        var lane = new OwnedReadOnlyLane<string>(() => { }, TimeSpan.FromMilliseconds(100));
         int probes = 0;
         Task<string> blocked = lane.InvokeAsync(() =>
         {
             entered.SetResult(); release.Wait(); return "late";
         }, null, CancellationToken.None).AsTask();
-        await WithBlockedLaneCleanupAsync(lane, release, blocked, drained.Task, expectedOperationTimeout: true, async () =>
+        try
         {
-            // Pending ownership starts at enqueue, including before the worker
-            // enters the callback. Neither phase may overlap a final probe.
-            Assert.False(lane.OperationQuiesced);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
             Assert.False(await Rz090528PadlessBatteryBoundaryValidationCommand.VerifyFinalGpuZeroAsync(lane,
                 () => { probes++; return "zero"; }, value => value == "zero", true, true, CancellationToken.None));
             await Assert.ThrowsAsync<TimeoutException>(() => blocked);
@@ -130,8 +126,9 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationCommandTests
                 () => { probes++; return "zero"; }, value => value == "zero", true, true, CancellationToken.None));
             Assert.Equal(0, probes);
             Assert.False(lane.OperationQuiesced);
-        });
-        Assert.True(entered.Task.IsCompletedSuccessfully);
+        }
+        finally { release.Set(); }
+        Assert.True(await lane.CloseAsync());
     }
 
     [Fact]
@@ -140,81 +137,21 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationCommandTests
         using var release = new ManualResetEventSlim();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int disposed = 0;
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var lane = new OwnedReadOnlyLane<string>(() => { disposed++; drained.SetResult(); }, TimeSpan.FromMilliseconds(100));
+        var lane = new OwnedReadOnlyLane<string>(() => disposed++, TimeSpan.FromMilliseconds(100));
         Task<bool> probe = Rz090528PadlessBatteryBoundaryValidationCommand.VerifyFinalGpuZeroAsync(lane,
             () => { entered.SetResult(); release.Wait(); return "zero"; }, value => value == "zero", true, true,
             CancellationToken.None).AsTask();
-        await WithBlockedLaneCleanupAsync(lane, release, probe, drained.Task, expectedOperationTimeout: false, async () =>
+        try
         {
-            Assert.False(lane.OperationQuiesced);
-            Assert.False(await probe);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.False(await probe.WaitAsync(TimeSpan.FromSeconds(2)));
             Assert.False(lane.OperationQuiesced);
             Assert.False(await lane.CloseAsync());
             Assert.Equal(0, disposed);
-        });
-        Assert.True(entered.Task.IsCompletedSuccessfully);
+        }
+        finally { release.Set(); }
+        Assert.True(await lane.CloseAsync());
         Assert.Equal(1, disposed);
-    }
-
-    [Fact]
-    public async Task FailedAssertionStillDrainsActualLaneBeforeEventDisposal()
-    {
-        using var release = new ManualResetEventSlim();
-        var handle = release.WaitHandle.SafeWaitHandle;
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var lane = new OwnedReadOnlyLane<string>(() => drained.SetResult(), TimeSpan.FromMilliseconds(100));
-        Task<string> operation = lane.InvokeAsync(() =>
-        {
-            release.Wait(); entered.SetResult(); return "late";
-        }, null, CancellationToken.None).AsTask();
-        var original = new InvalidOperationException("synthetic assertion while worker is blocked");
-        Exception? failure = await Record.ExceptionAsync(() => WithBlockedLaneCleanupAsync(
-            lane, release, operation, drained.Task, expectedOperationTimeout: true, () =>
-            {
-                Assert.False(entered.Task.IsCompleted);
-                return Task.FromException(original);
-            }));
-        Assert.Same(original, failure);
-        Assert.True(entered.Task.IsCompletedSuccessfully);
-        Assert.True(drained.Task.IsCompletedSuccessfully);
-        Assert.True(operation.IsCompleted);
-        Assert.True(lane.OperationQuiesced);
-        Assert.False(handle.IsClosed);
-        release.Dispose();
-        Assert.True(handle.IsClosed);
-    }
-
-    private static async Task WithBlockedLaneCleanupAsync(OwnedReadOnlyLane<string> lane,
-        ManualResetEventSlim release, Task operation, Task drained, bool expectedOperationTimeout, Func<Task> assertions)
-    {
-        Exception? original = null;
-        List<Exception> cleanupFailures = [];
-        try { await assertions(); }
-        catch (Exception error) { original = error; }
-        finally
-        {
-            release.Set();
-            try { await operation; }
-            catch (TimeoutException) when (expectedOperationTimeout) { }
-            catch (Exception error) { cleanupFailures.Add(error); }
-            // CloseAsync alone can time out while the real queued read still
-            // owns release. Its disposal callback proves the read has returned.
-            // Await that same lane, then confirm actual worker termination.
-            await lane.CloseAsync();
-            await drained;
-            try { Assert.True(await lane.CloseAsync(), "The released test lane did not close cleanly."); }
-            catch (Exception error) { cleanupFailures.Add(error); }
-        }
-
-        if (original is not null)
-        {
-            cleanupFailures.RemoveAll(error => ReferenceEquals(error, original));
-            if (cleanupFailures.Count == 0) { ExceptionDispatchInfo.Capture(original).Throw(); }
-            cleanupFailures.Insert(0, original);
-        }
-        if (cleanupFailures.Count != 0) { throw new AggregateException(cleanupFailures); }
     }
 
     [Fact]

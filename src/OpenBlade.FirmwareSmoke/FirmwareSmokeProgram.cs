@@ -21,11 +21,6 @@ public static class FirmwareSmokeProgram
             ?? DefaultOutputDirectory(command);
         try
         {
-            if (command == "cpu-voltage-optimizer")
-            {
-                CpuVoltageOptimizerSmokeRunner.ValidateAuthorization(ReadOption(args, "--confirm-target"),
-                    ReadOption(args, "--expected-service-version"), ReadCpuVoltageObserveOnly(args));
-            }
             await using var client = new FirmwareSmokeClient();
             var collector = new FirmwareSmokeSnapshotCollector(client);
             return command switch
@@ -80,8 +75,6 @@ public static class FirmwareSmokeProgram
                         outputDirectory,
                         client,
                         cancellationToken).ConfigureAwait(false),
-                "cpu-voltage-optimizer" => await RunCpuVoltageOptimizerAsync(args, outputDirectory, client,
-                    cancellationToken).ConfigureAwait(false),
                 _ => UnknownCommand(command),
             };
         }
@@ -119,32 +112,6 @@ public static class FirmwareSmokeProgram
 
         PrintSummary(report, outputDirectory, snapshotPath);
         return report.Succeeded ? 0 : 2;
-    }
-
-    private static async Task<int> RunCpuVoltageOptimizerAsync(string[] args, string outputDirectory,
-        IFirmwareSmokeClient client, CancellationToken cancellationToken)
-    {
-        CpuVoltageOptimizerSmokeResult result = await new CpuVoltageOptimizerSmokeRunner(client).RunAsync(
-            ReadOption(args, "--confirm-target"), ReadOption(args, "--expected-service-version"), outputDirectory,
-            cancellationToken, ReadCpuVoltageObserveOnly(args)).ConfigureAwait(false);
-        Console.WriteLine($"CPU Voltage Optimizer: {result.Outcome}. {result.Message}");
-        Console.WriteLine("No driver provisioning, power-limit request, retry or guessed restoration is performed.");
-        return result.Outcome is "Passed" or "ObservationRecorded" ? 0 : 2;
-    }
-
-    internal static bool ReadCpuVoltageObserveOnly(string[] args)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        for (int i = 1; i < args.Length; i++)
-        {
-            string name = args[i];
-            if (!seen.Add(name)) { throw new ArgumentException("Duplicate CPU voltage option."); }
-            if (name == "--observe-only") { continue; }
-            if (name is not ("--confirm-target" or "--expected-service-version" or "--output")
-                || ++i >= args.Length || args[i].StartsWith("--", StringComparison.Ordinal))
-            { throw new ArgumentException("Unknown or incomplete CPU voltage option."); }
-        }
-        return seen.Contains("--observe-only");
     }
 
     private static async Task<int> CompareAsync(
@@ -652,10 +619,6 @@ public static class FirmwareSmokeProgram
     {
         Console.WriteLine("OpenBlade firmware smoke utility");
         Console.WriteLine("  baseline [--output <directory>]");
-        Console.WriteLine("  cpu-voltage-optimizer --confirm-target " + CpuVoltageOptimizerSmokeRunner.Confirmation
-            + " --expected-service-version <exact-version> [--output <new-directory>]");
-        Console.WriteLine("  cpu-voltage-optimizer --observe-only --confirm-target " + CpuVoltageOptimizerSmokeRunner.ObserveConfirmation
-            + " --expected-service-version <exact-version> [--output <new-directory>]");
         Console.WriteLine(
             "  post-update --baseline <baseline.json> " +
             "--expect-firmware-changes <components> [--output <directory>]");

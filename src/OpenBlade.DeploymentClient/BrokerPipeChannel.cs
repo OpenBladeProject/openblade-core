@@ -11,10 +11,6 @@ internal interface IBrokerChannel
     Task<DeploymentBrokerResponse> ApplyFixedInboxAsync(
         Guid requestId,
         CancellationToken cancellationToken);
-
-    Task<DeploymentBrokerResponse> ApplyCpuVoltageInboxAsync(
-        Guid requestId,
-        CancellationToken cancellationToken);
 }
 
 internal interface IBrokerPipeConnection : IAsyncDisposable
@@ -88,19 +84,8 @@ internal sealed class BrokerPipeChannel : IBrokerChannel
         this.deadlines = deadlines;
     }
 
-    public Task<DeploymentBrokerResponse> ApplyFixedInboxAsync(
+    public async Task<DeploymentBrokerResponse> ApplyFixedInboxAsync(
         Guid requestId,
-        CancellationToken cancellationToken) => ApplyAsync(
-            requestId, DeploymentBrokerAction.ApplyFixedInbox, cancellationToken);
-
-    public Task<DeploymentBrokerResponse> ApplyCpuVoltageInboxAsync(
-        Guid requestId,
-        CancellationToken cancellationToken) => ApplyAsync(
-            requestId, DeploymentBrokerAction.ApplyCpuVoltageInbox, cancellationToken);
-
-    private async Task<DeploymentBrokerResponse> ApplyAsync(
-        Guid requestId,
-        DeploymentBrokerAction action,
         CancellationToken cancellationToken)
     {
         if (requestId == Guid.Empty)
@@ -119,7 +104,7 @@ internal sealed class BrokerPipeChannel : IBrokerChannel
                 DeploymentBrokerRequest request = new(
                     DeploymentBrokerProtocol.ProtocolVersion,
                     requestId,
-                    action);
+                    DeploymentBrokerAction.ApplyFixedInbox);
                 await WriteFrameAsync(
                     connection.Output,
                     DeploymentBrokerProtocol.SerializeRequest(request),
@@ -173,18 +158,15 @@ internal sealed class BrokerPipeChannel : IBrokerChannel
     }
 }
 
-internal sealed class WindowsBrokerPipeConnector(bool startService = true) : IBrokerPipeConnector
+internal sealed class WindowsBrokerPipeConnector : IBrokerPipeConnector
 {
     private const string PipeName = "OpenBlade.DeploymentBroker.v1";
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);
 
     public async Task<IBrokerPipeConnection> ConnectAsync(CancellationToken cancellationToken)
     {
-        if (startService)
-        {
-            await WindowsBrokerServiceStarter.EnsureStartedAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await WindowsBrokerServiceStarter.EnsureStartedAsync(cancellationToken)
+            .ConfigureAwait(false);
         NamedPipeClientStream pipe = new(
             ".",
             PipeName,

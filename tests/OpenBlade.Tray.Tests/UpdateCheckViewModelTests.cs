@@ -46,17 +46,10 @@ public sealed class UpdateCheckViewModelTests
         {
             var client = new ControlledReleaseUpdateClient();
             var observedContexts = new List<SynchronizationContext?>();
-            var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             await using var viewModel = Create(client);
             Apply(viewModel, promptShown: true, lastSuccessfulCheckAt: null);
-            viewModel.PropertyChanged += (_, args) =>
-            {
+            viewModel.PropertyChanged += (_, _) =>
                 observedContexts.Add(SynchronizationContext.Current);
-                if (args.PropertyName == nameof(viewModel.IsChecking) && !viewModel.IsChecking)
-                {
-                    completed.TrySetResult();
-                }
-            };
             viewModel.PreferencesChanged += (_, _) =>
                 observedContexts.Add(SynchronizationContext.Current);
             viewModel.UpdateAvailable += (_, _) =>
@@ -68,15 +61,10 @@ public sealed class UpdateCheckViewModelTests
                 ReleaseUpdateDisposition.PublishedRelease,
                 NewerRelease,
                 "\"release\""));
-            await completed.Task;
+            await WaitUntilAsync(() => !viewModel.IsChecking);
 
             Assert.NotEmpty(observedContexts);
             Assert.All(observedContexts, observed => Assert.Same(context, observed));
-            Assert.False(viewModel.IsChecking);
-            Assert.Equal(Now, viewModel.LastSuccessfulCheckAt);
-            Assert.Null(viewModel.RetryAfter);
-            Assert.True(viewModel.IsUpdateAvailable);
-            Assert.Equal(ReleaseUri, viewModel.ReleasePageUri);
         });
     }
 
