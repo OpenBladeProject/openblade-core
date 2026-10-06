@@ -184,11 +184,15 @@ peer and readback checks remain unchanged. Focused tests and independent source
 review passed. This change has no installed cycle timing or restoration proof.
 
 An uncertain live submission keeps further writes blocked. An explicit Observe
-may reconcile its ownership after a trusted new boot only when fresh complete
+may reconcile its ownership, or a verified interrupted partial restoration,
+after a trusted new boot only when fresh complete
 core measurements equal every captured original and complete current power
 peers remain unchanged during the observation. The failed journal and readback
 evidence are preserved before guarded settlement. Reboot or saved settings alone
 cannot close the obligation, and this path submits no setter or restoration.
+Partial-restoration recovery is tracked in
+[issue #710](https://github.com/OpenBladeProject/openblade-core/issues/710);
+its current installed recovery remains unproved.
 Historical installed validation verified this recovery for an earlier failed
 journal: all twelve offsets equaled the captured −1 originals and complete power
 peers remained unchanged. The journal was archived before settlement, with zero

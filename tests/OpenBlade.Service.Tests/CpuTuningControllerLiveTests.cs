@@ -7,6 +7,45 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerLiveTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ClosedMutationPreparationDoesNotBlockSameBootOwnedObservation(bool interruptedRestoration)
+    {
+        var fixture = new Fixture();
+        var controller = new CpuTuningController(new UnusedSource(), curveBackend: fixture.Curve,
+            curveStore: fixture.CurveStore, powerBackend: fixture.Power, powerStore: fixture.PowerStore,
+            readRecoveryBoot: _ => fixture.Curve.Context.BootSequence, recoveryWorkerIdle: () => true);
+        fixture.Curve.OnObserve = _ =>
+        {
+            fixture.Curve.Context = fixture.Curve.Context with { RuntimeLifetime = controller.CaptureLiveRuntimeLifetime() };
+            return Task.FromResult(new CpuLiveCurveBackendObservation(fixture.Curve.Context,
+                new(0xFF55, 0x005D000B, 0xD50, fixture.Curve.Values.ToArray())));
+        };
+        fixture.Power.OnObserve = () => fixture.Power.Context = fixture.Power.Context with
+        { RuntimeLifetime = controller.CaptureLiveRuntimeLifetime() };
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await controller.MutateLiveAsync(new(null, new(false, -1)), false, _ => true, default)).Status);
+        if (interruptedRestoration)
+        {
+            int restores = 0;
+            fixture.Curve.OnSend = command => ++restores == 3
+                ? Task.FromResult(CpuLiveCurveSubmission.NotSubmitted) : fixture.Curve.Apply(command);
+            Assert.Equal(ControlOperationStatus.Blocked,
+                (await controller.MutateLiveAsync(null, true, _ => true, default)).Status);
+        }
+        var prior = fixture.CurveStore.Journal;
+        Assert.Equal(CpuLiveCurveOwnershipState.OwnedVerified, prior!.State);
+        Assert.Equal(interruptedRestoration, prior.Restoring);
+        Assert.Equal(interruptedRestoration ? 10 : 12, prior.CompletedSteps);
+        int curveReads = fixture.Curve.Reads, powerReads = fixture.Power.Reads, sent = fixture.Curve.Sent.Count;
+        var observed = await controller.ObserveLiveAsync(_ => true, default);
+        Assert.True(observed.RestorePending); Assert.Equal(CpuTuningRecoveryState.RestoreReady, observed.LiveRecovery!.State);
+        Assert.Same(prior, fixture.CurveStore.Journal);
+        Assert.Equal(curveReads + 1, fixture.Curve.Reads); Assert.Equal(powerReads + 1, fixture.Power.Reads);
+        Assert.Equal(sent, fixture.Curve.Sent.Count);
+    }
+
+    [Theory]
     [InlineData("Prepared")]
     [InlineData("PossibleSubmission")]
     [InlineData("OwnedVerified")]

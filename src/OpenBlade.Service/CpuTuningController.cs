@@ -275,7 +275,8 @@ internal sealed class CpuTuningController
         try
         {
             var ownership = await ReadLiveOwnershipAsync(token).ConfigureAwait(false);
-            if (ownership.Blocked)
+            bool recoveryBlocked = ownership.Blocked;
+            if (ownership.Blocked || ownership.Features.HasFlag(CpuTuningFeatures.CurveOptimizer))
             {
                 if (liveUncertainty == CpuTuningFeatures.None && readRecoveryBoot is not null && recoveryWorkerIdle is not null
                     && liveCurve is not null && livePower is not null && powerStore is not null)
@@ -283,13 +284,17 @@ internal sealed class CpuTuningController
                     var reconciled = await liveCurve.ReconcileAfterBootAsync(livePower, powerStore, readRecoveryBoot,
                         readToken => ObservePowerSequenceCoreAsync(readToken, diagnostic, preparePeer: true),
                         lease.Lifetime, () => recoveryWorkerIdle() && lease.Allows(CpuTuningFeatures.None, token), token, diagnostic).ConfigureAwait(false);
-                    RetainUncertainty(reconciled.Curve);
-                    if (reconciled.Curve is { Outcome: CpuLiveCurveOutcome.Verified, Observation: { } original })
+                    RetainUncertainty(reconciled?.Curve);
+                    if (reconciled?.Curve is { Outcome: CpuLiveCurveOutcome.Verified, Observation: { } original })
                     {
                         if (diagnostic is not null) { diagnostic.LiveObservationReason = "original live CO observed after boot; prior journal archived"; }
                         return LiveStatus(original, reconciled.Power, CpuTuningRecoveryState.None, CpuTuningFeatures.None);
                     }
+                    recoveryBlocked |= reconciled is not null;
                 }
+            }
+            if (recoveryBlocked)
+            {
                 if (diagnostic is not null) { diagnostic.LiveObservationReason = "ownership blocked: " + ownership.Features; }
                 return LiveStatus(null, null, CpuTuningRecoveryState.Blocked, ownership.Features | liveUncertainty);
             }

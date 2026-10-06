@@ -88,7 +88,9 @@ internal sealed class CpuLiveCurveTuningTransaction
 
     // Explicit Observe only. A changed trusted kernel boot establishes that the
     // original worker cannot still run; it never establishes the current values.
-    internal async Task<CpuLiveCurvePostBootResult> ReconcileAfterBootAsync(CpuLivePowerObserver power,
+    // Null keeps ordinary observation for ineligible journals or same-boot
+    // verified restoration. An attempted recovery never falls back after failure.
+    internal async Task<CpuLiveCurvePostBootResult?> ReconcileAfterBootAsync(CpuLivePowerObserver power,
         ICpuLivePowerOwnershipJournalStore powerStore, Func<CancellationToken, CpuLiveCurveBootSequence?> readBoot,
         Func<CancellationToken, Task<(CpuLivePowerObservationResult Result, CpuLivePowerObserver.Peer? Peer)>> preparePeer,
         CpuLiveRuntimeLifetime lifetime, Func<bool> admitted, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
@@ -98,12 +100,15 @@ internal sealed class CpuLiveCurveTuningTransaction
         try
         {
             var loaded = await LoadAsync(token).ConfigureAwait(false);
-            if (pendingSubmission is not null || currentPrepared is not null || loaded.Invalid
-                || loaded.Journal is not { State: CpuLiveCurveOwnershipState.PossibleSubmission } prior
-                || loaded.Sha256 is not { } hash || prior.Context.RuntimeLifetime is not { } oldLifetime
+            if (pendingSubmission is not null || currentPrepared is { Closed: false } || loaded.Invalid)
+            { return new(Blocked(CpuLiveCurveBlockReason.PendingSubmission), null); }
+            if (loaded.Journal is not { IsPostBootReconciliationCandidate: true } prior) { return null; }
+            var boot = readBoot(token);
+            if (prior.State == CpuLiveCurveOwnershipState.OwnedVerified
+                && boot is { IsWellFormed: true } && boot == prior.Context.BootSequence) { return null; }
+            if (loaded.Sha256 is not { } hash || prior.Context.RuntimeLifetime is not { } oldLifetime
                 || oldLifetime.ServiceInstance == Guid.Empty || oldLifetime.ServiceInstance == lifetime.ServiceInstance)
             { return new(Blocked(CpuLiveCurveBlockReason.PendingSubmission), null); }
-            var boot = readBoot(token);
             if (boot is not { IsWellFormed: true } || boot == prior.Context.BootSequence
                 || !await CurrentAsync().ConfigureAwait(false))
             { return new(Blocked(CpuLiveCurveBlockReason.ContextMismatch), null); }

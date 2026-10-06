@@ -82,6 +82,11 @@ internal sealed class CpuLiveCurveOwnershipJournal
     public bool Restoring { get; }
     public DateTimeOffset UpdatedAtUtc { get; }
 
+    internal bool IsPostBootReconciliationCandidate => IsWellFormed
+        && (State == CpuLiveCurveOwnershipState.PossibleSubmission
+            || State == CpuLiveCurveOwnershipState.OwnedVerified && Restoring
+                && CompletedSteps > 0 && CompletedSteps < Steps.Count);
+
     internal bool IsWellFormed
     {
         get
@@ -163,8 +168,7 @@ internal sealed record CpuLiveCurvePostBootObservation(CpuLiveCurveContext Conte
     IReadOnlyList<CpuLiveCoreOffset> CoreValues, CpuLivePowerContext PowerContext,
     CpuLivePowerStoredPair PowerBefore, CpuLivePowerStoredPair PowerAfter, DateTimeOffset ObservedAtUtc)
 {
-    internal bool Matches(CpuLiveCurveOwnershipJournal prior) => prior.IsWellFormed
-        && prior.State == CpuLiveCurveOwnershipState.PossibleSubmission
+    internal bool Matches(CpuLiveCurveOwnershipJournal prior) => prior.IsPostBootReconciliationCandidate
         && Context is { IsWellFormed: true, RuntimeLifetime.ServiceInstance: var service } && service != Guid.Empty
         && prior.Context.RuntimeLifetime is { ServiceInstance: var originalService } && originalService != Guid.Empty
         && service != originalService && Context.BootSequence != prior.Context.BootSequence
