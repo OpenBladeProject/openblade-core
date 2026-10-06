@@ -38,7 +38,7 @@ attended cycle uses `LiveNow` only and submits no saved or PPT command.
 
 Unit builds require `-p:SourceRevision=<40-character-commit>` and should use a
 separate `--artifacts-path`. Their product version is
-`0.24.0+voltage-validation.<first-eight-commit-characters>`. For a coordinated local candidate, the
+`0.24.1+voltage-validation.<first-eight-commit-characters>`. For a coordinated local candidate, the
 existing `build/Publish.ps1` accepts `-CpuVoltageValidation` only with
 `-BuildChannel LocalDev`, a reserved `-LocalDevVersion` and `-SourceRevision`
 matching a clean checkout, including nonignored untracked files. Every published project receives the same
