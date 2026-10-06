@@ -128,10 +128,13 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
                     if (!result.CleanupComplete) { worker.Invalidate(); }
                     if (result is { Status: CpuLiveCurveRangeStatus.Complete, CleanupComplete: true }) { range = result.Range; }
                 }
-                if (range is not { } freshRange) { return false; }
+                if (range is not { } freshRange || !getter.Current(exactContext)) { return false; }
+                // This bounded loop only checks local command/range values.
+                // Keep fresh continuity around the complete ordered plan, not
+                // repeated environmental discovery for each scalar command.
                 foreach (var check in checks)
                 {
-                    if (!getter.Current(exactContext) || !ValidCurveCommand(check.Command, check.Purpose)
+                    if (token.IsCancellationRequested || !ValidCurveCommand(check.Command, check.Purpose)
                         || !freshRange.Allows(check.Command)) { return false; }
                 }
                 if (!CompleteGetter(exactContext, token)) { return false; }

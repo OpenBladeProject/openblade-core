@@ -168,13 +168,20 @@ creating PPT ownership or granting a PPT setter. Native peer checks read accepte
 Fast/Slow plus STAPM under the voltage setter's same lease before and after the
 CO command. Missing or changed peer evidence blocks completion; possible CPU
 submission remains journaled. These serialized reads are not physically atomic.
-The current peer path has focused source/fake coverage. Its installed observation
-returned complete power peers and all twelve offsets at −1 with live admission.
-The subsequent cycle reached the 30-second submission deadline during its first
-core's native execution. Submission is uncertain; forward readback and
-restoration were not proved. Further writes remain blocked. Repeated full context
-validation inside final checkpoints is tracked in
-[issue #707](https://github.com/OpenBladeProject/openblade-core/issues/707).
+The current peer path has focused source/fake coverage. Its latest installed
+observation returned complete power peers and all twelve offsets at −1 with live
+admission. The subsequent cycle verified all twelve offsets at 0, then reached
+the 600-second job limit during restoration. Its last verified response showed
+cores 14 and 15 at −1 and the other ten at 0. These are retained measurements;
+current physical state and exact restoration remain unproved. Further writes
+are blocked and resources are retained for reconciliation.
+
+Plan preflight now checks continuity around its bounded local command/range loop
+instead of rediscovering the environment for every scalar entry, as tracked in
+[issue #709](https://github.com/OpenBladeProject/openblade-core/issues/709).
+Every entry remains validated; final admission and independent native setter,
+peer and readback checks remain unchanged. Focused tests and independent source
+review passed. This change has no installed cycle timing or restoration proof.
 
 An uncertain live submission keeps further writes blocked. An explicit Observe
 may reconcile its ownership after a trusted new boot only when fresh complete
@@ -186,12 +193,17 @@ Historical installed validation verified this recovery for an earlier failed
 journal: all twelve offsets equaled the captured −1 originals and complete power
 peers remained unchanged. The journal was archived before settlement, with zero
 setters or restoration requests, and independent evidence review passed. That
-proof does not settle the subsequent uncertain cycle. Its post-boot read rejected
-provider getter controller continuity before returning live measurements; the
-journal remains unchanged and further writes are blocked. Getter continuity now
-preserves a bounded rejection detail through the initiating diagnostic, without
-changing admission or publishing process/service names, as tracked in
-[issue #708](https://github.com/OpenBladeProject/openblade-core/issues/708).
+proof did not settle the subsequent uncertain cycle. Its first post-boot read
+rejected provider getter controller continuity before returning measurements.
+Getter continuity now preserves a bounded rejection detail through the initiating
+diagnostic without changing admission or publishing process/service names, as
+tracked in [issue #708](https://github.com/OpenBladeProject/openblade-core/issues/708).
+The matching follow-up read verified all twelve captured −1 originals and
+unchanged power peers, archived and settled that journal, and removed its owned
+resources with zero setters or restoration requests. Independent actual-evidence
+review passed and the normal Service resumed. The prior cycle remains failed;
+the passing read does not establish the cause of its earlier continuity rejection
+or validate the current mutation path.
 
 Historical PPT recovery journals are retained as read-only compatibility data.
 Invalid or non-Restored records block live voltage apply and restoration.

@@ -4,7 +4,7 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
+public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     [Fact]
     public async Task BoundFinalCheckpointUsesOneFullContextAndRequiresCompletedExactReadProof()
@@ -323,18 +323,22 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         int full = 0;
         fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
             _ => { full++; return fixture.Admitted; }, continuity: _ => fixture.Admitted);
-        int? expectedHosts = null, expectedUsb = null;
+        (int Hosts, int Usb, int Controllers, int Boots)? expected = null;
         foreach (int count in new[] { 1, 36 })
         {
             await fixture.Run(context =>
             {
-                int hosts = fixture.Platform.HostReads, usb = fixture.UsbReads, initialFull = full;
+                int hosts = fixture.Platform.HostReads, usb = fixture.UsbReads, initialFull = full,
+                    controllers = fixture.ControllerReads, boots = fixture.BootReads;
                 fixture.OnMinMax = () => Assert.Null(fixture.Provider.CreateWriteProof(context, Request(-2), fixture.OperationToken));
                 Assert.True(fixture.Provider.CheckPlanAdmission(context, PlanChecks().Take(count).ToArray(), fixture.OperationToken));
-                int hostReads = fixture.Platform.HostReads - hosts, usbReads = fixture.UsbReads - usb;
+                var reads = (Hosts: fixture.Platform.HostReads - hosts, Usb: fixture.UsbReads - usb,
+                    Controllers: fixture.ControllerReads - controllers, Boots: fixture.BootReads - boots);
                 Assert.Equal(2, full - initialFull);
-                if (expectedHosts is null) { expectedHosts = hostReads; expectedUsb = usbReads; }
-                else { Assert.Equal(expectedHosts, hostReads); Assert.Equal(expectedUsb, usbReads); }
+                Assert.True(reads.Controllers > 0 && reads.Boots > 0);
+                output.WriteLine($"{count} commands: {reads.Hosts} host, {reads.Usb} USB, {reads.Controllers} controller, {reads.Boots} boot reads; {full - initialFull} full getter admissions.");
+                if (expected is null) { expected = reads; }
+                else { Assert.Equal(expected.Value, reads); }
                 fixture.Admitted = false;
                 Assert.Null(fixture.Provider.CreateWriteProof(context, Request(-2), fixture.OperationToken));
             });
@@ -348,13 +352,26 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
     [InlineData("cancel")]
     [InlineData("disposed")]
     [InlineData("final-context")]
+    [InlineData("final-controller")]
+    [InlineData("final-cancel")]
+    [InlineData("final-disposed")]
     public async Task CompletePlanPreflightRejectsContinuityLossAndAlwaysDisposes(string failure)
     {
         using var fixture = new Fixture(); using var cancellation = new CancellationTokenSource();
         CpuLiveGetterAdmission? active = null;
         int full = 0;
         fixture.GetterAdmission = (_, token, lifetime) => active = new(token, lifetime,
-            _ => { if (++full == 2 && failure == "final-context") { fixture.Platform.HostValid = false; } return true; },
+            _ =>
+            {
+                if (++full == 2)
+                {
+                    if (failure == "final-context") { fixture.Platform.HostValid = false; }
+                    if (failure == "final-controller") { fixture.ControllerCurrent = false; }
+                    if (failure == "final-cancel") { cancellation.Cancel(); }
+                    if (failure == "final-disposed") { active!.Dispose(); }
+                }
+                return true;
+            },
             continuity: _ => true);
         await fixture.Run(context =>
         {
@@ -367,6 +384,35 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
             Assert.False(fixture.Provider.CheckPlanAdmission(context, PlanChecks(), cancellation.Token));
             Assert.False(active!.Allows());
             // The failed preflight did not leave a nested scope or grant a proof.
+            fixture.Admitted = false;
+            Assert.Null(fixture.Provider.CreateWriteProof(context, Request(-2), fixture.OperationToken));
+        });
+    }
+
+    [Theory]
+    [InlineData("purpose")]
+    [InlineData("forward")]
+    [InlineData("range")]
+    public async Task CompletePlanPreflightRejectsInvalidLastEntry(string failure)
+    {
+        using var fixture = new Fixture();
+        CpuLiveGetterAdmission? active = null;
+        int full = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => active = new(token, lifetime,
+            _ => { full++; return fixture.Admitted; }, continuity: _ => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var checks = PlanChecks();
+            Assert.Equal(36, checks.Length);
+            if (failure == "purpose") { checks[^1] = checks[^1] with { Purpose = (CpuLiveCurveCommandPurpose)int.MaxValue }; }
+            else
+            {
+                Assert.True(CpuLiveCurveCommand.TryCreate(15, failure == "forward" ? 1 : -51, 0xFF55, out var command));
+                checks[^1] = new(command, failure == "forward" ? CpuLiveCurveCommandPurpose.Forward : CpuLiveCurveCommandPurpose.Restore);
+            }
+            Assert.False(fixture.Provider.CheckPlanAdmission(context, checks, fixture.OperationToken));
+            Assert.Equal(1, full); // Invalid local eligibility never reaches final revalidation.
+            Assert.False(active!.Allows());
             fixture.Admitted = false;
             Assert.Null(fixture.Provider.CreateWriteProof(context, Request(-2), fixture.OperationToken));
         });
