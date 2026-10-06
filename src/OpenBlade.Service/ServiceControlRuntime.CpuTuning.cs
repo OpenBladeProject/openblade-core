@@ -179,7 +179,8 @@ public sealed partial class ServiceControlRuntime
                     feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, generation, sourceGeneration, token),
                     token, generation, sourceGeneration,
                     (features, operationToken, lifetime) => CreateCpuLiveGetterAdmission(features, stillControlsSession,
-                        generation, sourceGeneration, operationToken, lifetime)).ConfigureAwait(false);
+                        generation, sourceGeneration, operationToken, lifetime,
+                        cpuTuningController.CaptureLiveObservationDiagnostic())).ConfigureAwait(false);
                 if (live.CpuTuning is { } liveStatus)
                 {
                     var merged = MergeLiveCpuStatus(GetStatus().CpuTuning, liveStatus);
