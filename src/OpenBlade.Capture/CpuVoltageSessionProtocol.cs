@@ -92,6 +92,7 @@ internal sealed class CpuVoltageSessionState(Guid session)
         if (cleanup) { cleaning = true; message = "Readonly resource cleanup accepted; do not resubmit."; return true; }
         if (request.Action == CpuVoltageSessionAction.ObserveOnly) { observations++; } else { cycled = true; }
         activeAction = request.Action; cleanupAttempted = false; observationAdmitted = false;
+        evidence = null;
         active = request.RequestId; message = "Accepted; do not resubmit this job."; return true;
     }
     internal void Complete(bool success, bool admitCycle, IReadOnlyDictionary<string, JsonElement>? records, string detail)
@@ -117,6 +118,6 @@ internal sealed class CpuVoltageSessionState(Guid session)
         active = null; failed = false; blocked = true; observationAdmitted = false;
         message = "Owner launch never attempted; exact prepared resources resolved. Close permitted; no job retry.";
     }
-    internal void UpdateEvidence(IReadOnlyDictionary<string, JsonElement> records) => evidence = records;
+    internal void UpdateEvidence(IReadOnlyDictionary<string, JsonElement>? records) => evidence = records;
     internal void Block(string detail) { blocked = true; message = detail; }
 }

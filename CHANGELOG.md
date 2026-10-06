@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Report retained CPU validation failures promptly with evidence from the current job, while preserving its deadline and cleanup restrictions. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
+
 - Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Require fresh read-only Fast/Slow/STAPM power peers before and after voltage-only live apply and restoration; missing or changed evidence and unresolved historical PPT ownership block further mutation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

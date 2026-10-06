@@ -172,6 +172,156 @@ public sealed class CpuVoltageSessionTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void NewJobClearsPreviousEvidenceOnlyAfterDurableAcceptance(bool persists)
+    {
+        var state = new CpuVoltageSessionState(Guid.NewGuid());
+        state.Accept(Request(CpuVoltageSessionAction.ObserveOnly), _ => { });
+        var (_, _, oldRecords, _) = Evidence(ControlOperationStatus.Stored, true);
+        state.Complete(true, true, oldRecords, "previous observation");
+        var cycle = Request(CpuVoltageSessionAction.VoltageCycle);
+        void Persist(CpuVoltageSessionRequest _)
+        {
+            Assert.Same(oldRecords, state.Snapshot.Evidence);
+            Assert.Null(state.Snapshot.Job);
+            if (!persists) { throw new IOException("disk"); }
+        }
+        if (persists)
+        {
+            Assert.True(state.Accept(cycle, Persist));
+            Assert.Null(state.Snapshot.Evidence);
+            Assert.Equal(cycle.RequestId, state.Snapshot.Job);
+        }
+        else
+        {
+            Assert.Throws<IOException>(() => state.Accept(cycle, Persist));
+            Assert.Same(oldRecords, state.Snapshot.Evidence);
+            Assert.Null(state.Snapshot.Job);
+        }
+    }
+
+    [Fact]
+    public async Task CurrentRetainedOwnerAnnouncementBlocksBeforeJobCompletionWithoutEnablingCleanup()
+    {
+        var state = new CpuVoltageSessionState(Guid.NewGuid());
+        var request = Request(CpuVoltageSessionAction.ObserveOnly);
+        state.Accept(request, _ => { });
+        var (_, run, records, _) = Evidence(ControlOperationStatus.Blocked, false);
+        Guid announced = Guid.Empty;
+        var job = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var output = new StringReader($"CpuVoltageOwnerRun={run:N}\nCpuVoltageOwner=Unknown_IOException\n");
+        await CpuVoltageSessionCommand.ReadOwnerOutputAsync(output, value => announced = value, _ =>
+        {
+            Assert.True(CpuVoltageSessionCommand.ReportRetainedOwnerFailure(state, request.RequestId, announced, value =>
+            { Assert.Equal(run, value); return records; }));
+        });
+        Assert.False(job.Task.IsCompleted);
+        Assert.Equal("Blocked", state.Snapshot.State);
+        Assert.Equal(request.RequestId, state.Snapshot.Job);
+        Assert.Same(records, state.Snapshot.Evidence);
+        Assert.True(state.MustRetainHost);
+        Assert.False(state.Snapshot.ObservationAdmitted);
+        Assert.False(state.CanResolveBeforeOwner(false));
+        Assert.False(state.Accept(Request(CpuVoltageSessionAction.CleanupReadOnly), _ => throw new Exception("early cleanup")));
+        // The original job's later deadline failure still retains its owner.
+        state.Complete(false, false, records, "deadline");
+        job.SetResult();
+        Assert.True(state.MustRetainHost);
+        Assert.Equal(request.RequestId, state.Snapshot.Job);
+        Assert.Equal("Blocked", state.Snapshot.State);
+        Assert.True(state.Accept(Request(CpuVoltageSessionAction.CleanupReadOnly), _ => { }));
+    }
+
+    [Fact]
+    public void PreviousOwnerFailureCannotBlockCurrentJobOrReadPreviousRun()
+    {
+        var state = new CpuVoltageSessionState(Guid.NewGuid());
+        var previous = Request(CpuVoltageSessionAction.ObserveOnly);
+        state.Accept(previous, _ => { });
+        var (_, _, records, _) = Evidence(ControlOperationStatus.Stored, true);
+        state.Complete(true, true, records, "observed");
+        var completed = state.Snapshot;
+        Assert.False(CpuVoltageSessionCommand.ReportRetainedOwnerFailure(state, previous.RequestId, Guid.NewGuid(),
+            _ => throw new Exception("completed job evidence read")));
+        Assert.Equal(completed, state.Snapshot);
+        var current = Request(CpuVoltageSessionAction.VoltageCycle);
+        state.Accept(current, _ => { });
+        var before = state.Snapshot;
+        Assert.False(CpuVoltageSessionCommand.ReportRetainedOwnerFailure(state, previous.RequestId, Guid.NewGuid(),
+            _ => throw new Exception("old evidence read")));
+        Assert.Equal(before, state.Snapshot);
+    }
+
+    [Fact]
+    public async Task CleanupCanDrainOwnerOutputWithoutConcurrentEvidenceReads()
+    {
+        var gate = new object();
+        var state = new CpuVoltageSessionState(Guid.NewGuid());
+        var request = Request(CpuVoltageSessionAction.ObserveOnly);
+        state.Accept(request, _ => { });
+        state.Complete(false, false, null, "deadline");
+        Assert.True(state.Accept(Request(CpuVoltageSessionAction.CleanupReadOnly), _ => { }));
+        var before = state.Snapshot;
+        string? ownerFailure = null;
+        using var output = new StringReader("CpuVoltageOwner=Unknown_IOException\n");
+        // Cleanup joins this reader outside gate while it exclusively owns pins.
+        Task reader = Task.Run(() => CpuVoltageSessionCommand.ReadOwnerOutputAsync(output, _ => { }, line =>
+        {
+            lock (gate)
+            {
+                if (CpuVoltageSessionCommand.ReportRetainedOwnerFailure(state, request.RequestId, Guid.NewGuid(),
+                    _ => throw new Exception("cleanup pins accessed concurrently"))) { ownerFailure = line; }
+            }
+        }));
+        await reader.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("CpuVoltageOwner=Unknown_IOException", ownerFailure);
+        Assert.Equal(before, state.Snapshot);
+        state.CompleteCleanup(false, null, "cleanup failed");
+        Assert.True(state.MustRetainHost);
+        int reads = 0;
+        Assert.True(CpuVoltageSessionCommand.ReportRetainedOwnerFailure(state, request.RequestId, Guid.NewGuid(),
+            _ => { reads++; return new(); }));
+        Assert.Equal(1, reads);
+        Assert.Equal("Blocked", state.Snapshot.State);
+    }
+
+    [Theory]
+    [InlineData("missing-run")]
+    [InlineData("missing-result")]
+    [InlineData("unreadable")]
+    [InlineData("malformed")]
+    public void UnavailableCurrentFailureEvidenceNeverRetainsPreviousSuccess(string failure)
+    {
+        var state = new CpuVoltageSessionState(Guid.NewGuid());
+        var request = Request(CpuVoltageSessionAction.ObserveOnly);
+        state.Accept(request, _ => { });
+        var (_, run, oldRecords, _) = Evidence(ControlOperationStatus.Stored, true);
+        state.UpdateEvidence(oldRecords);
+        Assert.True(CpuVoltageSessionCommand.ReportRetainedOwnerFailure(state, request.RequestId,
+            failure == "missing-run" ? Guid.Empty : run, _ => failure switch
+            {
+                "missing-result" => new(),
+                "malformed" => throw new JsonException("invalid"),
+                _ => throw new IOException("unavailable"),
+            }));
+        Assert.Equal("Blocked", state.Snapshot.State);
+        Assert.Contains("unavailable", state.Snapshot.Message);
+        Assert.NotSame(oldRecords, state.Snapshot.Evidence);
+        Assert.True(state.Snapshot.Evidence is null or { Count: 0 });
+        Assert.True(state.MustRetainHost);
+    }
+
+    [Fact]
+    public async Task OwnerSuccessAnnouncementsDoNotReportRetainedFailure()
+    {
+        using var output = new StringReader("CpuVoltageOwner=ObservationRecorded_ServiceTerminal_OwnedDriverAbsent\n"
+            + "CpuVoltageOwner=OriginalVerified_ServiceTerminal_OwnedDriverAbsent\n"
+            + "CpuVoltageOwner=BlockedBeforeDriverMutation_IOException\nCpuVoltageOwner=Unknown_\n");
+        await CpuVoltageSessionCommand.ReadOwnerOutputAsync(output, _ => { }, _ => throw new Exception("success classified as retained failure"));
+    }
+
+    [Theory]
     [InlineData("O:BAD:NO_ACCESS_CONTROL")]
     [InlineData("O:BAD:(A;;GW;;;WD)")]
     [InlineData("O:BAD:(A;;GA;;;WD)")]

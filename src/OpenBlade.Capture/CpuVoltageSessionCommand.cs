@@ -15,6 +15,8 @@ internal sealed class CpuVoltageSessionCommand
     internal const string HostName = "cpu-voltage-session-host", ClientName = "cpu-voltage-session-client";
     internal const string Confirmation = "RZ09-0528-CPU-SESSION-THREE-OBSERVATIONS-ONE-CYCLE-READONLY-CLEANUP";
     private static CpuVoltageSessionCommand? retainedHost;
+    // Serializes state and shared evidence pins. Cleanup exclusively owns pins
+    // while CleaningReadOnly; never hold this gate across its waits/output join.
     private readonly object gate = new();
     private readonly WindowsCpuVoltageSessionPlatform platform;
     private readonly CpuVoltageSessionState state;
@@ -104,7 +106,12 @@ internal sealed class CpuVoltageSessionCommand
                     {
                         if (request.Action is CpuVoltageSessionAction.ObserveOnly or CpuVoltageSessionAction.VoltageCycle or CpuVoltageSessionAction.CleanupReadOnly && !ContextCurrent())
                         { state.Block("Session/power continuity changed. No new job permitted."); }
-                        if (request.Action == CpuVoltageSessionAction.Status && job?.IsCompleted == true && currentRun != Guid.Empty)
+                        if (request.Action == CpuVoltageSessionAction.Status && ownerFailure is not null && state.Snapshot.State == "Blocked"
+                            && state.Snapshot.Job is { } failedOwnerRequest)
+                        {
+                            ReportRetainedOwnerFailure(state, failedOwnerRequest, currentRun, platform.ReadEvidence);
+                        }
+                        else if (request.Action == CpuVoltageSessionAction.Status && job?.IsCompleted == true && currentRun != Guid.Empty)
                         {
                             try
                             {
@@ -239,34 +246,40 @@ internal sealed class CpuVoltageSessionCommand
             Guid ownerRequest = request.RequestId;
             Task read = ownerOutput = ReadOwnerOutputAsync(owner.StandardOutput, value =>
             {
-                lock (gate) { run = value; currentRun = value; }
+                lock (gate)
+                {
+                    if (state.Snapshot.Job == ownerRequest) { run = value; currentRun = value; }
+                }
             }, line =>
             {
                 lock (gate)
                 {
                     // An ended previous owner's buffered output cannot overwrite
                     // diagnostics for a later explicit job.
-                    if (state.Snapshot.Job == ownerRequest) { ownerFailure = line; }
+                    if (ReportRetainedOwnerFailure(state, ownerRequest, run, platform.ReadEvidence)) { ownerFailure = line; }
                 }
             });
             await owner.WaitForExitAsync(budget.Token).ConfigureAwait(false);
             await read.WaitAsync(budget.Token).ConfigureAwait(false);
-            if (retainedOwner.ReadState() != CpuPmChildState.Terminal || owner.ExitCode != 0 || run == Guid.Empty)
-            { throw new IOException("Owner did not produce verified terminal success."); }
-            records = platform.ReadEvidence(run);
-            bool admitted = VerifyCompletion(platform.Enrollment, request.Action, run, records, launched, DateTimeOffset.UtcNow);
-            if (!new WindowsCpuPmDriverLifecyclePlatform().ReadIndependentAbsence().IsAbsent)
-            { throw new IOException("Owned-driver absence no longer confirmed."); }
-            platform.ReleaseVerifiedTerminalService();
-            retainedOwner.ReleaseAfterTerminal(); retainedOwner = null; owner.Dispose(); owner = null;
-            platform.WriteNew("result-" + request.RequestId.ToString("N") + ".json", records);
-            lock (gate) { state.Complete(true, admitted, records, admitted ? "Verified completion and owned cleanup." : "Observation recorded and cleaned; admission refused. Cycle blocked."); }
+            lock (gate)
+            {
+                if (retainedOwner.ReadState() != CpuPmChildState.Terminal || owner.ExitCode != 0 || run == Guid.Empty)
+                { throw new IOException("Owner did not produce verified terminal success."); }
+                records = platform.ReadEvidence(run);
+                bool admitted = VerifyCompletion(platform.Enrollment, request.Action, run, records, launched, DateTimeOffset.UtcNow);
+                if (!new WindowsCpuPmDriverLifecyclePlatform().ReadIndependentAbsence().IsAbsent)
+                { throw new IOException("Owned-driver absence no longer confirmed."); }
+                platform.ReleaseVerifiedTerminalService();
+                retainedOwner.ReleaseAfterTerminal(); retainedOwner = null; owner.Dispose(); owner = null;
+                platform.WriteNew("result-" + request.RequestId.ToString("N") + ".json", records);
+                state.Complete(true, admitted, records, admitted ? "Verified completion and owned cleanup." : "Observation recorded and cleaned; admission refused. Cycle blocked.");
+            }
         }
         catch (Exception exception)
         {
-            try { if (run != Guid.Empty) { records = platform.ReadEvidence(run); } } catch { }
             lock (gate)
             {
+                try { if (run != Guid.Empty) { records = platform.ReadEvidence(run); } } catch { }
                 string detail = $"Stopped without retry: {exception.Message} Phase: {jobPhase}; owner launch attempted: {ownerLaunchAttempted}. Retained resources require explicit reconciliation.";
                 try
                 {
@@ -310,25 +323,53 @@ internal sealed class CpuVoltageSessionCommand
             var cleanup = platform.BeginReadOnlyCleanup(request.RequestId, currentRun, currentLaunched, owner, retainedOwner, ownerOutput,
                 ContextCurrent, () => { lock (gate) { return ownerFailure; } });
             CpuVoltageReadOnlyCleanup.Execute(cleanup);
-            records = platform.ReadEvidence(currentRun);
-            records["control/session-readonly-cleanup.json"] = platform.ReadCleanupReceipt(request.RequestId);
-            owner = null; retainedOwner = null; ownerOutput = null;
             lock (gate)
             {
+                records = platform.ReadEvidence(currentRun);
+                records["control/session-readonly-cleanup.json"] = platform.ReadCleanupReceipt(request.RequestId);
+                owner = null; retainedOwner = null; ownerOutput = null;
                 completedCleanup = request.RequestId;
                 state.CompleteCleanup(true, records, "Readonly resources cleaned; no CPU restoration claim. A fresh observation requires a new explicit request.");
             }
         }
         catch (Exception exception)
         {
-            try { if (currentRun != Guid.Empty) { records = platform.ReadEvidence(currentRun); } } catch { }
-            lock (gate) { state.CompleteCleanup(false, records, "Readonly cleanup refused or uncertain: " + exception.Message + " Retained resources; no retry."); }
+            lock (gate)
+            {
+                try { if (currentRun != Guid.Empty) { records = platform.ReadEvidence(currentRun); } } catch { }
+                state.CompleteCleanup(false, records, "Readonly cleanup refused or uncertain: " + exception.Message + " Retained resources; no retry.");
+            }
         }
     }
     // Retain late parked-owner output across subsequent monitor messages. This
     // decorates diagnostics only and cannot change job or cleanup authority.
     internal static CpuVoltageSessionReply WithOwnerFailure(CpuVoltageSessionReply reply, string? failure) =>
         reply.State == "Blocked" && failure is not null ? reply with { Message = reply.Message + " Owner: " + failure } : reply;
+    // Reporting a parked owner is not task completion. Keep the active job and
+    // its original deadline; only RunJob's completion can enable failed-job cleanup.
+    internal static bool ReportRetainedOwnerFailure(CpuVoltageSessionState state, Guid request, Guid run,
+        Func<Guid, Dictionary<string, JsonElement>> readEvidence)
+    {
+        if (state.Snapshot.Job != request) { return false; }
+        // Cleanup owns the shared pin dictionary and retained file streams until
+        // it publishes completion. Its owner-output join must remain free to drain
+        // callbacks: retain the reason, but do not read evidence or take pin ownership.
+        if (state.Snapshot.State == "CleaningReadOnly") { return true; }
+        const string detail = "Owner retained resources; job completion is pending or failed. No retry or automatic cleanup.";
+        state.Block(detail);
+        state.UpdateEvidence(null);
+        try
+        {
+            if (run == Guid.Empty) { throw new IOException("Owner run announcement unavailable."); }
+            var records = readEvidence(run);
+            state.UpdateEvidence(records);
+            if (!records.ContainsKey("evidence/cpu-voltage-optimizer.json"))
+            { state.Block(detail + " Current result evidence unavailable."); }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        { state.Block(detail + " Current protected evidence unavailable: " + exception.GetType().Name + "."); }
+        return true;
+    }
     internal static bool VerifyCompletion(CpuVoltageSessionEnrollment enrollment, CpuVoltageSessionAction action, Guid run,
         IReadOnlyDictionary<string, JsonElement> records, DateTimeOffset launched, DateTimeOffset completed)
     {
@@ -365,8 +406,7 @@ internal sealed class CpuVoltageSessionCommand
             {
                 if (character != '\n') { pending.Append(character); continue; }
                 string line = pending.ToString().TrimEnd('\r'); pending.Clear();
-                if (line.StartsWith("CpuVoltageOwner=", StringComparison.Ordinal)
-                    && line.Length <= 256 && !line.Any(char.IsControl))
+                if (IsRetainedOwnerFailure(line))
                 { failure(line); continue; }
                 const string prefix = "CpuVoltageOwnerRun=";
                 if (!line.StartsWith(prefix, StringComparison.Ordinal)) { continue; }
@@ -376,6 +416,16 @@ internal sealed class CpuVoltageSessionCommand
                 announced = true; announce(run);
             }
         }
+    }
+    private static bool IsRetainedOwnerFailure(string line)
+    {
+        const string prefix = "CpuVoltageOwner=";
+        if (!line.StartsWith(prefix, StringComparison.Ordinal) || line.Length > 256 || line.Any(char.IsControl)) { return false; }
+        string value = line[prefix.Length..];
+        return value is "ResourcesRetained_NoRetry_NoCleanup" or "DriverOrLaunchAdmissionUnknown"
+            or "ChildBindingUnknown" or "CompletionOrCleanupUnknown"
+            || value.StartsWith("Unknown_", StringComparison.Ordinal) && value.Length > "Unknown_".Length
+                && value["Unknown_".Length..].All(character => char.IsAsciiLetterOrDigit(character) || character == '_');
     }
     internal static async Task<int> RunClientAsync(string[] args, TextWriter output)
     {
