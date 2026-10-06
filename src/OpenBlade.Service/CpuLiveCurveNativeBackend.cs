@@ -37,6 +37,14 @@ internal enum CpuLiveCurveNativeWorkerKind { None, Observation, Admission, Submi
 internal sealed record CpuLiveCurveNativeBackendStatus(bool WorkerOutstanding,
     CpuLiveCurveNativeWorkerKind WorkerKind, bool ScopeInvalid, CpuLiveCurveNativeResult? LastNativeResult);
 
+// An exact prepared read may prove its request and expected hardware/runtime
+// context together at this checkpoint. Null retains the independent fallback;
+// false is a denial, never permission to try another admission path.
+internal interface ICpuLiveCurveContextBoundReadProof
+{
+    bool? ReadCurrentWithContext(CpuLiveCurveNativeRequest request, CpuLiveCurveContext expected);
+}
+
 // Callers supply the same retained typed session and an actual
 // trusted provider. Nothing constructs a native platform, creates approval from
 // a bool, provisions a driver, establishes ownership or updates a journal here.
@@ -205,7 +213,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
 
     private Task<T> Start<T>(CpuLiveCurveNativeWorkerKind kind, Func<CancellationToken, T> work, T refused, CancellationToken token) =>
         state.Start(CpuNativeWorkerFamily.Curve, (CpuNativeWorkerKind)kind, work, refused, token, Diagnostic);
-    private sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
+    internal sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
         CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
         internal override bool IsSubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) =>
@@ -213,8 +221,17 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) =>
             source.PreparationCurrent(exactRequest) && owner.MatchesFresh(context, token);
         internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest) => source.BeginRead(exactRequest);
-        internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) =>
-            source.ReadCurrent(exactRequest) && owner.MatchesFresh(context, token);
+        internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest)
+        {
+            token.ThrowIfCancellationRequested();
+            if (source is ICpuLiveCurveContextBoundReadProof bound
+                && bound.ReadCurrentWithContext(exactRequest, context) is bool current)
+            {
+                token.ThrowIfCancellationRequested();
+                return current;
+            }
+            return source.ReadCurrent(exactRequest) && owner.MatchesFresh(context, token);
+        }
         internal override bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest) =>
             source.CompleteRead(exactRequest) && owner.MatchesFresh(context, token);
         internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) =>

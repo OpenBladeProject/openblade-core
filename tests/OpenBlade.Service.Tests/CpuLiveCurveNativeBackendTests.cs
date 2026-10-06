@@ -7,6 +7,23 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveNativeBackendTests
 {
     [Fact]
+    public void ContextWrapperKeepsIndependentFreshContextForAnUnboundProof()
+    {
+        var platform = new Platform(); using var provider = new Provider(platform);
+        var context = provider.Context!;
+        var request = new CpuLiveCurveNativeRequest(new(), Command(0), CpuLiveCurveCommandPurpose.Forward, Snapshot());
+        using var source = provider.CreateWriteProof(context, request, default);
+        Assert.NotNull(source);
+        Assert.True(source.Consume(request));
+        var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source, backend, context, default);
+        Assert.True(bound.Consume(request)); Assert.True(bound.ReadCurrent(request));
+        provider.Context = null;
+        Assert.True(source.ReadCurrent(request));
+        Assert.False(bound.ReadCurrent(request)); Assert.False(bound.Current(request));
+    }
+
+    [Fact]
     public async Task PreparedProofRemainsOwnedUntilActualWorkerExitsBeforeNativeAdoption()
     {
         var platform = new Platform(); using var provider = new Provider(platform); var context = provider.Context!;

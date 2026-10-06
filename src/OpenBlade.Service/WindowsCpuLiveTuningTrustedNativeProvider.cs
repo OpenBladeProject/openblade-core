@@ -442,7 +442,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     private sealed class WriteProof(CpuLiveCurveNativeRequest request, CpuLiveCurveContext context,
         Func<bool> current, CpuNativeWorkerCoordinator worker,
         WindowsCpuLiveTuningTrustedNativeProvider owner, CancellationToken token,
-        GetterScope? preparation = null) : CpuLiveCurveWriteProof(request)
+        GetterScope? preparation = null) : CpuLiveCurveWriteProof(request), ICpuLiveCurveContextBoundReadProof
     {
         private bool read;
         private CpuLiveCurveTrustedRange? range;
@@ -451,6 +451,13 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         private bool preparationAdopted;
         private int readScopesStarted;
         private GetterScope? ActiveRead => readScope is { IsDisposed: false } ? readScope : null;
+        public bool? ReadCurrentWithContext(CpuLiveCurveNativeRequest exactRequest, CpuLiveCurveContext expected)
+        {
+            if (initialPreparation is null || ActiveRead is null) { return null; }
+            // ReadCurrent retains consumed-request/lifetime checks and performs
+            // one fresh GetterScope.Current against this proof's exact context.
+            return expected.IsWellFormed && expected.MatchesHardwareContext(context) && ReadCurrent(exactRequest);
+        }
         private bool CheckRead(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is null
             ? Current(exactRequest) : ReadCurrent(exactRequest);
         internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest)
