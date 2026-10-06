@@ -60,6 +60,7 @@ internal sealed class CpuLiveCurveTuningTransaction
     private readonly ICpuLiveCurveOwnershipJournalStore store;
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly TimeSpan operationTimeout;
+    private readonly TimeSpan submissionTimeout;
     private PreparedOperation? currentPrepared;
     private PendingSubmission? pendingSubmission;
 
@@ -136,12 +137,17 @@ internal sealed class CpuLiveCurveTuningTransaction
     }
 
     internal CpuLiveCurveTuningTransaction(ICpuLiveCurveBackend backend, ICpuLiveCurveOwnershipJournalStore store,
-        TimeSpan? operationTimeout = null)
+        TimeSpan? operationTimeout = null, TimeSpan? submissionTimeout = null)
     {
         this.backend = backend; this.store = store;
         this.operationTimeout = operationTimeout ?? TimeSpan.FromSeconds(10);
         if (this.operationTimeout <= TimeSpan.Zero || this.operationTimeout > TimeSpan.FromSeconds(10))
         { throw new ArgumentOutOfRangeException(nameof(operationTimeout)); }
+        // A send includes proof preparation and the native lease/setter/readback.
+        // Preserve the existing injected short budget unless separately overridden.
+        this.submissionTimeout = submissionTimeout ?? operationTimeout ?? TimeSpan.FromSeconds(30);
+        if (this.submissionTimeout <= TimeSpan.Zero || this.submissionTimeout > TimeSpan.FromSeconds(30))
+        { throw new ArgumentOutOfRangeException(nameof(submissionTimeout)); }
     }
 
     internal Task<CpuLiveCurveTransactionResult> ApplyAllCoreAsync(CpuCurveOptimizerSettings? settings, CancellationToken token) =>
@@ -448,7 +454,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             {
                 token.ThrowIfCancellationRequested();
                 submission = await BoundedAsync(t => actualSubmission = backend.SendAsync(journal.Context, step.Command(restoring),
-                    purpose, snapshot!, peer, t), token, backend.Diagnostic, "submission").ConfigureAwait(false);
+                    purpose, snapshot!, peer, t), token, backend.Diagnostic, "submission", submissionTimeout).ConfigureAwait(false);
             }
             catch
             {
@@ -536,17 +542,22 @@ internal sealed class CpuLiveCurveTuningTransaction
         catch { return false; }
     }
     private async Task<T> BoundedAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken token,
-        CpuSavedAdmissionDiagnostic? observationDiagnostic = null, string? mutationOperation = null)
+        CpuSavedAdmissionDiagnostic? observationDiagnostic = null, string? mutationOperation = null, TimeSpan? timeoutOverride = null)
     {
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         // The observation's synchronous admission prefix can still be running
         // when its deadline fires. Capture its stage then, before unwinding it.
         using var registration = observationDiagnostic is null ? default : timeout.Token.Register(() =>
         {
             if (mutationOperation is null) { observationDiagnostic.RecordObservationCancellation(token.IsCancellationRequested); }
-            else { observationDiagnostic.RecordCurveOperationCancellation(token.IsCancellationRequested, mutationOperation); }
+            else
+            {
+                observationDiagnostic.RecordCurveOperationCancellation(token.IsCancellationRequested, mutationOperation,
+                    System.Diagnostics.Stopwatch.GetElapsedTime(started));
+            }
         });
-        timeout.CancelAfter(operationTimeout);
+        timeout.CancelAfter(timeoutOverride ?? operationTimeout);
         Task<T>? task = null;
         try
         {
@@ -559,7 +570,10 @@ internal sealed class CpuLiveCurveTuningTransaction
             // WaitAsync may resume before the cancellation callback is dispatched.
             // Freeze the same pending operation before disposing that registration.
             if (mutationOperation is not null && timeout.IsCancellationRequested)
-            { observationDiagnostic?.RecordCurveOperationCancellation(token.IsCancellationRequested, mutationOperation); }
+            {
+                observationDiagnostic?.RecordCurveOperationCancellation(token.IsCancellationRequested, mutationOperation,
+                    System.Diagnostics.Stopwatch.GetElapsedTime(started));
+            }
             if (task is not null)
             {
                 _ = task.ContinueWith(static completed => { _ = completed.Exception; }, CancellationToken.None,

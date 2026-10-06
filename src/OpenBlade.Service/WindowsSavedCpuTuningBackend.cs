@@ -70,9 +70,10 @@ internal sealed class CpuSavedAdmissionDiagnostic
         }
     }
 
-    internal void RecordCurveOperationCancellation(bool callerCancelled, string operation)
+    internal void RecordCurveOperationCancellation(bool callerCancelled, string operation, TimeSpan elapsed)
     {
-        string detail = "curve " + operation + (callerCancelled ? " caller cancellation" : " operation timeout") + ActiveStageDetail();
+        string detail = "curve " + operation + (callerCancelled ? " caller cancellation" : " operation timeout") + ActiveStageDetail()
+            + $"; total {operation} elapsed {Math.Min(600000L, (long)elapsed.TotalMilliseconds)} ms";
         Interlocked.CompareExchange(ref liveObservationTimeoutContext, "; " + detail, null);
         Check(false, detail);
     }
@@ -103,7 +104,11 @@ internal sealed class CpuSavedAdmissionDiagnostic
                 || parent.Name.StartsWith("curve native ", StringComparison.Ordinal)
                 || parent.Name.StartsWith("curve setter ", StringComparison.Ordinal)
                 || parent.Name.StartsWith("curve final ", StringComparison.Ordinal))
-            { enclosing = "; enclosing stage " + parent.Name; break; }
+            {
+                enclosing = "; enclosing stage " + parent.Name + $"; enclosing elapsed {Math.Min(600000L,
+                    (long)System.Diagnostics.Stopwatch.GetElapsedTime(parent.Started).TotalMilliseconds)} ms";
+                break;
+            }
         }
         return $"; active stage {stage.Name}{enclosing}; elapsed {Math.Min(600000L,
             (long)System.Diagnostics.Stopwatch.GetElapsedTime(stage.Started).TotalMilliseconds)} ms";
