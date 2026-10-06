@@ -55,12 +55,24 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     public CpuSavedAdmissionDiagnostic? Diagnostic => controller()?.CaptureLiveObservationDiagnostic();
     public bool SupportsReadPreparation => true;
+    public CpuLiveCurveWriteDeadline? BeginSubmission(CancellationToken token)
+    {
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        return WindowsCpuVoltageWriteDeadline.Open(token);
+#else
+        return null;
+#endif
+    }
+
     public CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext exactContext,
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
     {
         if (getterAdmission is not null || !ValidCurveCommand(exactRequest.Command, exactRequest.Purpose)
             || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward
                 && !ValidCurveCommand(exactRequest.ImmediateReverse, CpuLiveCurveCommandPurpose.Restore)) { return null; }
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        if (exactRequest.Before.CoreOffsets.Any(core => core.Offset is not (-1 or 0))) { return null; }
+#endif
         if (controller()?.CaptureLiveRuntimeAdmission(CpuTuningFeatures.CurveOptimizer, token)() != true) { return null; }
         var scope = BeginGetter(token);
         if (scope is null)
@@ -266,6 +278,11 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     private static bool ValidCurveCommand(CpuLiveCurveCommand command, CpuLiveCurveCommandPurpose purpose)
     {
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        // The developer profile narrows every purpose, including first-original
+        // restoration. Fresh firmware metadata remains an independent intersection.
+        if (command.Offset is not (-1 or 0)) { return false; }
+#endif
         if (!Enum.IsDefined(purpose) || purpose == CpuLiveCurveCommandPurpose.Forward && command.Offset is < -30 or > 0
             || !CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
                 CpuLiveCurveSnapshot.SupportedMask, out var decoded) || decoded != command) { return false; }
@@ -276,6 +293,9 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
     {
         if (getterAdmission is not null) { return null; }
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        if (exactRequest.Before.CoreOffsets.Any(core => core.Offset is not (-1 or 0))) { return null; }
+#endif
         var admission = Capture(exactContext, CpuTuningFeatures.CurveOptimizer, token);
         if (admission is null || !CheckWriteAdmission(exactContext, exactRequest.Command, exactRequest.Purpose, token)
             || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward

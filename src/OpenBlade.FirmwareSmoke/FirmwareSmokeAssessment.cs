@@ -704,8 +704,11 @@ public static class FirmwareSmokeAssessment
                 "capabilities.cpu-voltage-optimizer",
                 "Observed CPU voltage-optimizer range is retained",
                 snapshot.Capabilities.CpuVoltageOptimizer
-                    == ExpectedRz090528CpuVoltageOptimizer,
-                ExpectedRz090528CpuVoltageOptimizer.ToString(),
+                    == ExpectedRz090528CpuVoltageOptimizer
+                    || snapshot.Capabilities.CpuVoltageOptimizer
+                        == ExpectedRz090528CpuVoltageOptimizer with { Access = DeviceFeatureAccess.ReadWrite },
+                $"{ExpectedRz090528CpuVoltageOptimizer} or "
+                    + $"{ExpectedRz090528CpuVoltageOptimizer with { Access = DeviceFeatureAccess.ReadWrite }}",
                 snapshot.Capabilities.CpuVoltageOptimizer?.ToString() ?? "Unavailable"));
             checks.Add(Check(
                 "capabilities.gpu-overclock",

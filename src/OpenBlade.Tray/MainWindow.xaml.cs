@@ -516,6 +516,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
+        Root.Loaded -= OnRootLoaded;
         gpuAppCleanupCoordinator.Cancel();
 
         Task? activeInitialization;
@@ -559,7 +560,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel.UserSettingsChanged -= OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
         AppWindow.Closing -= OnClosing;
-        Root.Loaded -= OnRootLoaded;
         Root.SizeChanged -= OnRootSizeChanged;
         AppWindow.Changed -= OnAppWindowChanged;
         chargeLimitCommitTimer.Stop();
@@ -4770,6 +4770,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
         MoveCanonicalLaptopCardsIntoPlace();
         RegisterPageSections();
         dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;

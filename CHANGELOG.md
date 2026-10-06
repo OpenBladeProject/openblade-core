@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
+
 - Add an all-core CPU Voltage Optimizer with remembered −30 to −1 intent, separately admitted saved next-boot settings and measured live offsets, paired firmware readback and exact original restoration on RZ09-0528. Optional live tuning uses its exact signed already-running AMD backend; live PPT mutation is deferred. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
@@ -18,6 +20,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Show Windows' own brightness flyout on the supported Blade 16 (2025) RZ09-0528 when its Razer driver is installed, like the RZ09-0581. ([#618](https://github.com/OpenBladeProject/openblade-core/pull/618))
 
 ### Fixed
+
+- Report retained CPU validation failures promptly with evidence from the current job, while preserving its deadline and cleanup restrictions. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
+
+- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Allow an explicit read-only check after a confirmed new boot to reconcile uncertain live voltage ownership only when all original core offsets are freshly verified, preserving the failed journal and recovery evidence. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Avoid repeating the same fresh context check at a prepared voltage read checkpoint, and keep compound mutation getters within a separate bounded window from standalone reads, with exact rejection causes and complete operation timing. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

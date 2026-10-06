@@ -5,6 +5,12 @@ namespace OpenBlade.FirmwareSmoke;
 
 public interface IFirmwareSmokeClient : IAsyncDisposable
 {
+    Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend, CancellationToken cancellationToken) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "CPU optimizer observation is unavailable."));
+    Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings, CancellationToken cancellationToken) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "CPU optimizer changes are unavailable."));
+    Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target, CancellationToken cancellationToken) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "CPU optimizer restoration is unavailable."));
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken cancellationToken);
 
     Task<ServiceStatusSnapshot> ObserveStateAsync(
@@ -79,6 +85,13 @@ public interface IFirmwareSmokeClient : IAsyncDisposable
 public sealed class FirmwareSmokeClient : IFirmwareSmokeClient
 {
     private readonly ServiceClient client = new();
+
+    public Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend, CancellationToken cancellationToken) =>
+        client.ObserveCpuTuningAsync(useInstalledBackend, cancellationToken);
+    public Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings, CancellationToken cancellationToken) =>
+        client.SetCpuTuningAsync(target, settings, cancellationToken);
+    public Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target, CancellationToken cancellationToken) =>
+        client.RestoreCpuTuningAsync(target, cancellationToken);
 
     public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken cancellationToken) =>
         client.GetStatusAsync(cancellationToken);
