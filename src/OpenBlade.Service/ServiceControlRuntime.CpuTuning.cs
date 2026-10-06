@@ -175,12 +175,14 @@ public sealed partial class ServiceControlRuntime
                 }
                 long generation = lowPowerGate.Generation;
                 long sourceGeneration = powerSourceGeneration;
+                // Compound preparation and peer reads share the original Send token.
+                // Separate read/admission calls still carry their shorter operation token.
                 ControlOperationResult live = await cpuTuningController.MutateLiveAsync(settings, restoring,
                     feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, generation, sourceGeneration, token),
                     token, generation, sourceGeneration,
                     (features, operationToken, lifetime) => CreateCpuLiveGetterAdmission(features, stillControlsSession,
                         generation, sourceGeneration, operationToken, lifetime,
-                        cpuTuningController.CaptureLiveObservationDiagnostic())).ConfigureAwait(false);
+                        cpuTuningController.CaptureLiveObservationDiagnostic(), TimeSpan.FromSeconds(30))).ConfigureAwait(false);
                 if (live.CpuTuning is { } liveStatus)
                 {
                     var merged = MergeLiveCpuStatus(GetStatus().CpuTuning, liveStatus);
@@ -251,11 +253,12 @@ public sealed partial class ServiceControlRuntime
 
     private CpuLiveGetterAdmission CreateCpuLiveGetterAdmission(CpuTuningFeatures features,
         Func<bool> stillControlsSession, long generation, long sourceGeneration, CancellationToken token,
-        Func<bool> lifetime, CpuSavedAdmissionDiagnostic? diagnostic = null) =>
+        Func<bool> lifetime, CpuSavedAdmissionDiagnostic? diagnostic = null, TimeSpan? maximumLifetime = null) =>
         new(token, lifetime, proof => CpuLiveRuntimeAdmission(features, stillControlsSession,
             generation, sourceGeneration, token, diagnostic, proof),
             continuity: proof => CpuLiveRuntimeAdmission(features, stillControlsSession,
-                generation, sourceGeneration, token, diagnostic, proof, continuity: true), diagnostic: diagnostic);
+                generation, sourceGeneration, token, diagnostic, proof, continuity: true), diagnostic: diagnostic,
+            maximumLifetime: maximumLifetime);
 
     private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation,
         long sourceGeneration, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,

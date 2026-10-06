@@ -10,12 +10,20 @@ internal sealed class CpuLiveGetterAdmission(
     CancellationToken token, Func<bool> lifetime,
     Func<CpuLiveGetterAdmission, bool> admit,
     Func<TimeSpan>? elapsed = null, Func<CpuLiveGetterAdmission, bool>? continuity = null,
-    CpuSavedAdmissionDiagnostic? diagnostic = null) : IDisposable
+    CpuSavedAdmissionDiagnostic? diagnostic = null, TimeSpan? maximumLifetime = null) : IDisposable
 {
     private readonly long started = Stopwatch.GetTimestamp();
+    private readonly TimeSpan deadline = ValidateMaximumLifetime(maximumLifetime);
     private int revoked;
     private bool classified, admitted;
     internal IBladeDevice? Device { get; private set; }
+    private static TimeSpan ValidateMaximumLifetime(TimeSpan? maximumLifetime)
+    {
+        TimeSpan value = maximumLifetime ?? TimeSpan.FromSeconds(10);
+        if (value <= TimeSpan.Zero || value > TimeSpan.FromSeconds(30))
+        { throw new ArgumentOutOfRangeException(nameof(maximumLifetime)); }
+        return value;
+    }
     internal bool BindDevice(IBladeDevice device)
     {
         if (Device is null) { Device = device; }
@@ -72,7 +80,7 @@ internal sealed class CpuLiveGetterAdmission(
             if (!Check(lifetime(), stage)) { Dispose(); return false; }
             stage = "getter deadline";
             TimeSpan measured = elapsed?.Invoke() ?? Stopwatch.GetElapsedTime(started);
-            if (!Check(measured < TimeSpan.FromSeconds(10),
+            if (!Check(measured < deadline,
                 $"{stage}; elapsed {measured.TotalMilliseconds:F0} ms")) { Dispose(); return false; }
             return true;
         }
