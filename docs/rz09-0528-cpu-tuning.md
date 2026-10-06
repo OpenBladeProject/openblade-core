@@ -45,8 +45,8 @@ wire transaction is never resumed.
 A fresh-boot read exercised this recovery, but the final context check reached
 its existing operation timeout. Power peers remained unavailable and live writes
 remained blocked. All twelve offsets remained at −1, the saved journal was
-unchanged, and owned-resource cleanup completed. Physical recovery within one
-retained lease is not yet proved; the timeout remains under investigation.
+unchanged, and owned-resource cleanup completed. That attempt did not prove
+recovery within one retained lease; its shared deadline remained a blocker.
 The installed PM getter now reuses the backend snapshot validated by the same
 boundary's continuity check, removing an adjacent duplicate backend read. Each
 later boundary still reads and validates a new snapshot. This preserves the
@@ -64,7 +64,6 @@ checks and 260 ms for final getter admission. It returned 80/75 W power peers,
 all twelve offsets at −1 and available live admission, preserved the saved
 journal, and completed cleanup. No `0xFD` occurred, so this measures baseline
 cost without proving prerequisite recovery or isolating the native cost.
-Successful first-read recovery remains unproved.
 The revised source closes the failed getter completely before one separately
 admitted getter. Each retains its ten-second deadline; the read-only power
 sequence has a 21-second cancellation budget including the one-second wait.
@@ -73,7 +72,15 @@ same retained installed lease, and distinct getter, approval and metadata.
 Ownership is reloaded normally; the empty first response writes no journal.
 Only explicit observation can consume this one-use recovery. Mutation and
 preparation paths cannot retry. First-failure evidence and both getter timings
-remain available. Physical verification of this revision is pending.
+remain available.
+A fresh-boot observation on the revised installed build encountered the exact
+`0xFD` and recovered successfully in one request. The first getter took 3,666 ms,
+the wait 1,009 ms and the replacement 7,117 ms: 11,792 ms across these phases.
+It read 80/75 W power peers, all twelve offsets at −1 and available live
+admission, with no recovery pending. No Set or Restore was requested. The
+saved journal was byte-identical, the validation processes and owned driver
+were closed, and the ordinary service resumed. This verifies one successful
+first-read recovery on the tested firmware.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
