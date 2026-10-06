@@ -168,8 +168,13 @@ creating PPT ownership or granting a PPT setter. Native peer checks read accepte
 Fast/Slow plus STAPM under the voltage setter's same lease before and after the
 CO command. Missing or changed peer evidence blocks completion; possible CPU
 submission remains journaled. These serialized reads are not physically atomic.
-The peer correction in [issue #697](https://github.com/OpenBladeProject/openblade-core/issues/697)
-has focused source/fake coverage and has not been physically validated.
+The current peer path has focused source/fake coverage. Its installed observation
+returned complete power peers and all twelve offsets at −1 with live admission.
+The subsequent cycle reached the 30-second submission deadline during its first
+core's native execution. Submission is uncertain; forward readback and
+restoration were not proved. Further writes remain blocked. Repeated full context
+validation inside final checkpoints is tracked in
+[issue #707](https://github.com/OpenBladeProject/openblade-core/issues/707).
 
 An uncertain live submission keeps further writes blocked. An explicit Observe
 may reconcile its ownership after a trusted new boot only when fresh complete
@@ -177,7 +182,11 @@ core measurements equal every captured original and complete current power
 peers remain unchanged during the observation. The failed journal and readback
 evidence are preserved before guarded settlement. Reboot or saved settings alone
 cannot close the obligation, and this path submits no setter or restoration.
-This recovery path has source coverage; installed validation remains pending.
+Installed validation verified this recovery after a restart: all twelve offsets
+equaled the captured −1 originals and complete power peers remained unchanged.
+The original failed journal was archived before settlement, with zero setters or
+restoration requests. Independent review of the actual evidence passed. This
+proves originals observed after boot; the earlier failed cycle remains failed.
 
 Historical PPT recovery journals are retained as read-only compatibility data.
 Invalid or non-Restored records block live voltage apply and restoration.
