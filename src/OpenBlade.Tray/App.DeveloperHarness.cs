@@ -82,6 +82,7 @@ public partial class App
 public partial class App
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
+    private const string CpuTuningLayoutSmokeArgument = "--cpu-tuning-layout-smoke";
     private const string ResponsivePageHeaderSmokeArgument =
         "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
@@ -104,6 +105,11 @@ public partial class App
     /// </summary>
     private bool TryRunDeveloperHarness(string[] commandLineArguments)
     {
+        if (commandLineArguments is [_, CpuTuningLayoutSmokeArgument])
+        {
+            _ = RunCpuTuningLayoutSmokeAsync();
+            return true;
+        }
         bool pseudoLocalizationRequested = string.Equals(
             Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
             "1",
@@ -324,6 +330,10 @@ public partial class App
                 ?? throw new InvalidOperationException(
                     "The localization smoke test did not create a tray icon.");
             await smokeContext.RunPhaseAsync(
+                "validate retired window Loaded callback",
+                () => AssertRetiredLoadedCallbackAsync(smokeContext),
+                LiveLocalizationSmokeContext.RefreshTimeout);
+            await smokeContext.RunPhaseAsync(
                 "refresh Russian to failed Chinese rollback",
                 () => RefreshLanguageAsync(
                     UiLanguagePreference.SimplifiedChinese,
@@ -411,6 +421,70 @@ public partial class App
                 }
             }
             Environment.Exit(1);
+        }
+    }
+
+    private async Task AssertRetiredLoadedCallbackAsync(LiveLocalizationSmokeContext smokeContext)
+    {
+        const System.Reflection.BindingFlags privateInstance =
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        System.Reflection.FieldInfo disposedField = typeof(MainWindow).GetField("disposed", privateInstance)
+            ?? throw new InvalidOperationException("The window disposal field is unavailable.");
+        System.Reflection.FieldInfo readyField = typeof(MainWindow).GetField("dashboardCardsReady", privateInstance)
+            ?? throw new InvalidOperationException("The dashboard readiness field is unavailable.");
+        System.Reflection.FieldInfo canonicalField = typeof(MainWindow).GetField("canonicalLaptopCardsPlaced", privateInstance)
+            ?? throw new InvalidOperationException("The canonical card placement field is unavailable.");
+        System.Reflection.MethodInfo loadedMethod = typeof(MainWindow).GetMethod("OnRootLoaded", privateInstance)
+            ?? throw new InvalidOperationException("The window Loaded handler is unavailable.");
+        MainWindow spare = CreateMainWindow(
+            startupRegistration ?? throw new InvalidOperationException("The smoke startup registration is unavailable."),
+            UiLanguagePreference.Russian,
+            smokeContext.PreferenceStore,
+            UpdateCheckInterval.ManualOnly);
+        bool closed = false;
+        spare.Closed += (_, _) => closed = true;
+        try
+        {
+            // Construct, capture and start disposal in one dispatcher turn. The
+            // spare is never initialized, shown, attached or used as mainWindow.
+            if (disposedField.GetValue(spare) is not 0
+                || readyField.GetValue(spare) is not false
+                || canonicalField.GetValue(spare) is not false)
+            {
+                throw new InvalidOperationException("The fresh spare window has already processed Loaded work.");
+            }
+            object loadedSender = spare.Content
+                ?? throw new InvalidOperationException("The spare window content is unavailable.");
+            RoutedEventHandler queuedLoaded = loadedMethod.CreateDelegate<RoutedEventHandler>(spare);
+            await spare.DisposeAsync();
+            if (!await CloseWindowSafelyAsync(spare) || !closed
+                || disposedField.GetValue(spare) is not 1
+                || readyField.GetValue(spare) is not false
+                || canonicalField.GetValue(spare) is not false)
+            {
+                throw new InvalidOperationException("The spare window did not retire with its Loaded work still pending.");
+            }
+            smokeContext.Report("invoke queued Loaded callback on retired spare window");
+            queuedLoaded(loadedSender, new RoutedEventArgs());
+            if (readyField.GetValue(spare) is not false || canonicalField.GetValue(spare) is not false)
+            {
+                throw new InvalidOperationException("A queued Loaded callback mutated the retired spare window.");
+            }
+            smokeContext.Report("retired spare window Loaded callback ignored");
+        }
+        finally
+        {
+            if (!closed)
+            {
+                try { await spare.DisposeAsync(); }
+                finally
+                {
+                    if (!await CloseWindowSafelyAsync(spare))
+                    {
+                        throw new InvalidOperationException("The spare regression window did not close during cleanup.");
+                    }
+                }
+            }
         }
     }
 

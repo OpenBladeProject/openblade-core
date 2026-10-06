@@ -4,6 +4,47 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0] == CpuVoltageSessionCommand.HostName)
+{
+    return await CpuVoltageSessionCommand.RunHostAsync(args.Skip(1).ToArray(), Console.Out);
+}
+if (args.Length > 0 && args[0] == CpuVoltageSessionCommand.ClientName)
+{
+    return await CpuVoltageSessionCommand.RunClientAsync(args.Skip(1).ToArray(), Console.Out);
+}
+
+if (args.Length > 0 && args[0].Equals(CpuVoltageOwnedSmokeCommand.Name, StringComparison.OrdinalIgnoreCase))
+{
+    return CpuVoltageOwnedSmokeCommand.Run(args.Skip(1).ToArray(), Console.Out);
+}
+
+if (args.Length > 0 && (args[0].Equals(Rz090528CpuPmObservationProbe.Name, StringComparison.OrdinalIgnoreCase)
+    || args[0].Equals(Rz090528CpuPmObservationProbe.RangeName, StringComparison.OrdinalIgnoreCase)))
+{
+    // Developer-only observations require the reviewed supervisor bootstrap
+    // and fresh live parent authority before constructing a native provider.
+    var profile = args[0].Equals(Rz090528CpuPmObservationProbe.RangeName, StringComparison.OrdinalIgnoreCase)
+        ? CpuPmObservationProfile.RangeSingleSample : CpuPmObservationProfile.IdleThreeSamples;
+    return await CpuPmAttendedCapture.RunAsync(args.Skip(1).ToArray(), Console.Out, Console.Error, profile);
+}
+
+if (args.Length > 0 && args[0].Equals(Rz090528CpuLiveQueryProbe.Name, StringComparison.OrdinalIgnoreCase))
+{
+    using var cancellation = new CancellationTokenSource();
+    ConsoleCancelEventHandler cancel = (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        cancellation.Cancel();
+    };
+    Console.CancelKeyPress += cancel;
+    try
+    {
+        return Rz090528CpuLiveQueryProbe.RunWindows(
+            args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token);
+    }
+    finally { Console.CancelKeyPress -= cancel; }
+}
+
 if (args.Length > 0 && args[0].Equals(
     Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
@@ -2234,4 +2275,8 @@ Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0528-02c6-temporary-full-charge" +
     " RZ09-0528:1532:02C6:2.02");
 Console.WriteLine("See captures/README.md for the gated USBPcap workflow.");
+Console.WriteLine($"  OpenBlade.Capture {Rz090528CpuLiveQueryProbe.Usage}");
+Console.WriteLine($"  OpenBlade.Capture {Rz090528CpuPmObservationProbe.Usage} (unavailable: live-parent authority required)");
+Console.WriteLine("    Attended native CO/PM query; PCI transport writes require a present operator. " +
+    "Fresh loaded driver provenance is an operator acknowledgement, not machine attestation.");
 return args.Length == 0 ? 0 : 1;
