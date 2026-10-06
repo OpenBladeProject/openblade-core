@@ -86,11 +86,13 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task MutationGetterRetainsInnerRejectionInTypedResponse(bool restoring, bool cancelGetter)
+    [InlineData(false, "session")]
+    [InlineData(false, "cancel")]
+    [InlineData(false, "device")]
+    [InlineData(true, "session")]
+    [InlineData(true, "cancel")]
+    [InlineData(true, "device")]
+    public async Task MutationGetterRetainsInnerRejectionInTypedResponse(bool restoring, string failure)
     {
         var live = new LiveFixture(curve: true, power: true);
         CpuTuningController? controller = null; bool controlsSession = true;
@@ -108,10 +110,11 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
             using var getter = controller!.BeginLiveGetter(cancellation.Token);
             Assert.NotNull(getter); Assert.True(getter.Allows());
-            if (cancelGetter) { cancellation.Cancel(); }
-            else { controlsSession = false; }
+            if (failure == "cancel") { cancellation.Cancel(); }
+            if (failure == "session") { controlsSession = false; }
+            if (failure == "device") { context.Provider.Available = false; }
             Assert.False(getter.Allows());
-            controlsSession = true;
+            controlsSession = true; context.Provider.Available = true;
             Assert.False(getter.Allows());
             // A provider's outer rejection must not replace the exact inner cause.
             controller.CaptureLiveObservationDiagnostic()!.Check(false, "provider getter admission after continuity");
@@ -122,7 +125,13 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
             : await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => controlsSession, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.NotNull(result.CpuTuning);
-        Assert.Contains("First rejection: " + (cancelGetter ? "getter cancellation" : "runtime controlling session") + ".", result.Message);
+        string expected = failure switch
+        {
+            "cancel" => "getter cancellation",
+            "device" => "runtime fresh verified device",
+            _ => "runtime controlling session",
+        };
+        Assert.Contains("First rejection: " + expected + ".", result.Message);
         Assert.DoesNotContain("provider getter admission after continuity", result.Message);
         Assert.Equal(sent, live.Curve.Sent.Count); Assert.Equal(0, context.Source.Submissions);
     }

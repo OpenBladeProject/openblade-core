@@ -5,6 +5,58 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveGetterAdmissionTests
 {
+    [Fact]
+    public void CompoundLifetimeSurvivesTenSecondsButCannotBeRenewedPastThirty()
+    {
+        TimeSpan elapsed = TimeSpan.Zero;
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        using var ordinary = new CpuLiveGetterAdmission(default, () => true, _ => true, () => elapsed);
+        using var compound = new CpuLiveGetterAdmission(default, () => true, _ => true, () => elapsed,
+            diagnostic: diagnostic, maximumLifetime: TimeSpan.FromSeconds(30));
+        Assert.True(ordinary.Allows()); Assert.True(compound.Allows());
+        elapsed = TimeSpan.FromMilliseconds(10016);
+        Assert.False(ordinary.Allows()); Assert.True(compound.Allows());
+        elapsed = TimeSpan.FromMilliseconds(29999);
+        Assert.True(compound.Revalidate());
+        elapsed = TimeSpan.FromSeconds(30);
+        Assert.False(compound.Allows());
+        Assert.Equal("getter deadline; elapsed 30000 ms", diagnostic.FirstFailure);
+        elapsed = TimeSpan.Zero;
+        Assert.False(ordinary.Revalidate()); Assert.False(compound.Revalidate());
+    }
+
+    [Theory]
+    [InlineData("cancel")]
+    [InlineData("lifetime")]
+    [InlineData("continuity")]
+    [InlineData("full-admission")]
+    public void CompoundLifetimeNeverOverridesCallerOrFreshAdmission(string failure)
+    {
+        using var cancellation = new CancellationTokenSource();
+        bool lifetime = true, continuity = true, full = true;
+        TimeSpan elapsed = TimeSpan.Zero;
+        using var proof = new CpuLiveGetterAdmission(cancellation.Token, () => lifetime, _ => full, () => elapsed,
+            continuity: _ => continuity, maximumLifetime: TimeSpan.FromSeconds(30));
+        Assert.True(proof.Allows());
+        elapsed = TimeSpan.FromMilliseconds(10016);
+        Assert.True(proof.Allows());
+        if (failure == "cancel") { cancellation.Cancel(); }
+        if (failure == "lifetime") { lifetime = false; }
+        if (failure == "continuity") { continuity = false; }
+        if (failure == "full-admission") { full = false; }
+        Assert.False(failure == "full-admission" ? proof.Revalidate() : proof.Allows());
+        lifetime = true; continuity = true; full = true; elapsed = TimeSpan.Zero;
+        Assert.False(proof.Allows()); Assert.False(proof.Revalidate());
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(30001)]
+    public void LifetimeCannotBeUnbounded(int milliseconds) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CpuLiveGetterAdmission(default, () => true, _ => true,
+            maximumLifetime: TimeSpan.FromMilliseconds(milliseconds)));
+
     [Theory]
     [InlineData("revoked", "getter revoked")]
     [InlineData("cancel", "getter cancellation")]
