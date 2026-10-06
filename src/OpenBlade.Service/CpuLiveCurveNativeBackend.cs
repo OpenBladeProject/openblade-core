@@ -45,6 +45,13 @@ internal interface ICpuLiveCurveContextBoundReadProof
     bool? ReadCurrentWithContext(CpuLiveCurveNativeRequest request, CpuLiveCurveContext expected);
 }
 
+internal interface ICpuLiveCurveContextBoundFinalProof
+{
+    bool SupportsFinalCheckpoint { get; }
+    bool FinalCheckpointWithContext(CpuLiveCurveNativeRequest request, CpuLiveCurveContext expected,
+        uint capability, CpuLivePowerFusedCap cap);
+}
+
 // Callers supply the same retained typed session and an actual
 // trusted provider. Nothing constructs a native platform, creates approval from
 // a bool, provisions a driver, establishes ownership or updates a journal here.
@@ -216,6 +223,15 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     internal sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
         CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
+        internal override bool SupportsFinalCheckpoint => source is ICpuLiveCurveContextBoundFinalProof { SupportsFinalCheckpoint: true };
+        internal override bool IsFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap)
+        {
+            token.ThrowIfCancellationRequested();
+            bool current = source is ICpuLiveCurveContextBoundFinalProof { SupportsFinalCheckpoint: true } bound
+                && bound.FinalCheckpointWithContext(exactRequest, context, capability, cap);
+            token.ThrowIfCancellationRequested();
+            return current;
+        }
         internal override bool IsSubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) =>
             source.SubmissionCurrent(exactRequest) && !token.IsCancellationRequested;
         internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) =>

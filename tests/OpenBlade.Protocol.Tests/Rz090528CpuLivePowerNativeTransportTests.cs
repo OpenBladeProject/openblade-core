@@ -7,6 +7,38 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Theory]
+    [InlineData("none")]
+    [InlineData("before")]
+    [InlineData("after")]
+    [InlineData("peer")]
+    [InlineData("cancel")]
+    public void JointFinalCheckKeepsTwoIndependentBarriersAndExactNativeTraffic(string fault)
+    {
+        var ordinary = new Platform { Capability = 6 }; var ordinaryRequest = CurveRequest(ordinary);
+        Assert.True(WindowsRz090528CpuNativeSession.ForPlatform(ordinary)
+            .ExecuteCurve(ordinaryRequest, new CurveProof(ordinaryRequest), () => Exact).Verified);
+        using var cancellation = new CancellationTokenSource();
+        var platform = new Platform { Capability = 6 }; var request = CurveRequest(platform);
+        using var proof = new CurveProof(request) { Scoped = true, Prepared = true, Reading = true, JointFinal = true };
+        proof.FullAllowed = () =>
+        {
+            Assert.False(proof.Reading);
+            if (fault == "cancel") { cancellation.Cancel(); }
+            return fault != "before" && (fault != "after" || proof.Ends == 1);
+        };
+        proof.CompletionAllowed = () => { if (fault == "peer") { proof.PeerAllowed = false; } return true; };
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact, cancellation.Token);
+        Assert.Equal(fault == "none", result.Verified);
+        Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+        Assert.Equal(fault is "none" or "after" ? 1 : 0, platform.Setters);
+        Assert.Equal(fault is "none" or "after" ? 2 : 1, proof.FinalChecks);
+        // Two final barriers plus the independent immediate post-setter IOCTL checkpoint.
+        if (fault == "none") { Assert.Equal(ordinary.Calls, platform.Calls); Assert.Equal(3, proof.FullChecks); }
+        if (platform.Setters == 0) { Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition); }
+        else { Assert.Equal(CpuLiveCurveNativeDisposition.Acknowledged, result.Disposition); }
+    }
+
     [Fact]
     public void CombinedCurveExpiryAfterFullSetterProofCannotReachNativeSetter()
     {
@@ -210,6 +242,15 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     }
     private sealed class CurveProof(CpuLiveCurveNativeRequest request) : CpuLiveCurveWriteProof(request)
     {
+        internal bool JointFinal;
+        internal int FinalChecks;
+        internal override bool SupportsFinalCheckpoint => JointFinal;
+        internal override bool IsFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap)
+        {
+            FinalChecks++;
+            return !Reading && ReadFreshRange(exactRequest)?.AllowsOperation(exactRequest) == true
+                && AdmitPowerPeer(exactRequest, capability, cap) && IsCurrent(exactRequest);
+        }
         internal Func<bool>? SubmissionAllowed;
         internal override bool IsSubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) => SubmissionAllowed?.Invoke() ?? true;
         internal bool PeerAllowed = true;

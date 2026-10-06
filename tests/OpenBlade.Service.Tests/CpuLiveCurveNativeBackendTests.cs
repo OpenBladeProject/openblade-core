@@ -17,6 +17,7 @@ public sealed class CpuLiveCurveNativeBackendTests
         Assert.True(source.Consume(request));
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source, backend, context, default);
+        Assert.False(bound.SupportsFinalCheckpoint);
         Assert.True(bound.Consume(request)); Assert.True(bound.ReadCurrent(request));
         provider.Context = null;
         Assert.True(source.ReadCurrent(request));

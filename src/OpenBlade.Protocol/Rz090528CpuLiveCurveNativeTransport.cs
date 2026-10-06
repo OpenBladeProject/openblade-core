@@ -98,6 +98,14 @@ internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request
     internal virtual IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest) => null;
     internal virtual bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
     internal virtual bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
+    // Optional joint final barrier. It must freshly bind full write authority,
+    // context, this operation's range and peer; no result survives the call.
+    internal virtual bool SupportsFinalCheckpoint => false;
+    internal bool FinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) =>
+        Volatile.Read(ref disposed) == 0 && admitted && ReferenceEquals(request, exactRequest)
+        && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
+        && IsFinalCheckpointCurrent(exactRequest, capability, cap);
+    internal virtual bool IsFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) => false;
     // Called under the initiating native lease, before the peer sample and at
     // the final setter boundary. Independently admit requested-state semantics
     // and every differing first-original restore against fresh range/caps.

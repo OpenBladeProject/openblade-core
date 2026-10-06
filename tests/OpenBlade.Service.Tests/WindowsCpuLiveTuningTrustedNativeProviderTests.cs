@@ -6,6 +6,77 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
+    [Fact]
+    public async Task BoundFinalCheckpointUsesOneFullContextAndRequiresCompletedExactReadProof()
+    {
+        using var fixture = new Fixture();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted, continuity: _ => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var single = Request(-2);
+            var request = new CpuLiveCurveNativeRequest(single.Scope, single.Command, single.Purpose, single.Before,
+                new(CpuPowerTestData.PairFixture(), null));
+            var cap = CpuLivePowerFusedCap.TryDecode(4, 7u << 28)!;
+            using var source = fixture.Provider.CreatePreparedWriteProof(context, request, fixture.OperationToken)!;
+            Assert.True(source.Consume(request));
+            var backend = new CpuLiveCurveNativeBackend(fixture.Platform, fixture.Provider);
+            using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source, backend, context, fixture.OperationToken);
+            Assert.True(bound.SupportsFinalCheckpoint); Assert.True(bound.Consume(request));
+            Assert.False(bound.FinalCheckpointCurrent(request, 6, cap));
+            using (var read = bound.BeginRead(request))
+            {
+                Assert.NotNull(bound.ReadFreshRange(request));
+                Assert.False(bound.FinalCheckpointCurrent(request, 6, cap));
+                Assert.True(bound.CompleteRead(request));
+            }
+            int before = fixture.BootReads;
+            Assert.True(bound.FinalCheckpointCurrent(request, 6, cap));
+            Assert.Equal(1, fixture.BootReads - before);
+            var joint = Assert.IsAssignableFrom<ICpuLiveCurveContextBoundFinalProof>(source);
+            Assert.False(joint.FinalCheckpointWithContext(request, context with { RuntimeLifetime = null }, 6, cap));
+            Assert.False(bound.FinalCheckpointCurrent(single, 6, cap));
+            Assert.False(bound.FinalCheckpointCurrent(request, uint.MaxValue, cap));
+            using (var readback = bound.BeginRead(request)) { Assert.True(bound.CompleteRead(request)); }
+            before = fixture.BootReads;
+            Assert.True(bound.FinalCheckpointCurrent(request, 6, cap));
+            Assert.Equal(1, fixture.BootReads - before);
+        });
+    }
+
+    [Theory]
+    [InlineData("boot")]
+    [InlineData("runtime")]
+    [InlineData("cancel-during")]
+    public async Task BoundFinalCheckpointRejectsFreshDriftAfterAnEarlierSuccessfulBarrier(string drift)
+    {
+        using var fixture = new Fixture(); using var cancellation = new CancellationTokenSource();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted, continuity: _ => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var single = Request(-2);
+            var request = new CpuLiveCurveNativeRequest(single.Scope, single.Command, single.Purpose, single.Before,
+                new(CpuPowerTestData.PairFixture(), null));
+            var cap = CpuLivePowerFusedCap.TryDecode(4, 7u << 28)!;
+            using var source = fixture.Provider.CreatePreparedWriteProof(context, request, fixture.OperationToken)!;
+            Assert.True(source.Consume(request));
+            using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source,
+                new(fixture.Platform, fixture.Provider), context, cancellation.Token);
+            Assert.True(bound.Consume(request));
+            using (var read = bound.BeginRead(request))
+            { Assert.NotNull(bound.ReadFreshRange(request)); Assert.True(bound.CompleteRead(request)); }
+            Assert.True(bound.FinalCheckpointCurrent(request, 6, cap));
+            using (var readback = bound.BeginRead(request)) { Assert.True(bound.CompleteRead(request)); }
+            if (drift == "boot") { fixture.Boot = fixture.Boot with { Sequence = 43 }; }
+            if (drift == "runtime") { fixture.Admitted = false; }
+            if (drift == "cancel-during")
+            {
+                fixture.OnBoot = cancellation.Cancel;
+                Assert.Throws<OperationCanceledException>(() => bound.FinalCheckpointCurrent(request, 6, cap));
+            }
+            else { Assert.False(bound.FinalCheckpointCurrent(request, 6, cap)); }
+        });
+    }
+
     [Theory]
     [InlineData(true, 1)]
     [InlineData(false, 2)]

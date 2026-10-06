@@ -442,7 +442,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     private sealed class WriteProof(CpuLiveCurveNativeRequest request, CpuLiveCurveContext context,
         Func<bool> current, CpuNativeWorkerCoordinator worker,
         WindowsCpuLiveTuningTrustedNativeProvider owner, CancellationToken token,
-        GetterScope? preparation = null) : CpuLiveCurveWriteProof(request), ICpuLiveCurveContextBoundReadProof
+        GetterScope? preparation = null) : CpuLiveCurveWriteProof(request), ICpuLiveCurveContextBoundReadProof, ICpuLiveCurveContextBoundFinalProof
     {
         private bool read;
         private CpuLiveCurveTrustedRange? range;
@@ -451,6 +451,17 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         private bool preparationAdopted;
         private int readScopesStarted;
         private GetterScope? ActiveRead => readScope is { IsDisposed: false } ? readScope : null;
+        internal override bool SupportsFinalCheckpoint => initialPreparation is not null;
+        bool ICpuLiveCurveContextBoundFinalProof.SupportsFinalCheckpoint => SupportsFinalCheckpoint;
+        public bool FinalCheckpointWithContext(CpuLiveCurveNativeRequest exactRequest, CpuLiveCurveContext expected,
+            uint capability, CpuLivePowerFusedCap cap) => expected.IsWellFormed && expected.MatchesHardwareContext(context)
+            && FinalCheckpointCurrent(exactRequest, capability, cap);
+        // Range was freshly decoded inside this proof's native read scope.
+        // Validate full write authority once, after every pure rejection.
+        internal override bool IsFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) =>
+            SupportsFinalCheckpoint && ActiveRead is null && read && range?.AllowsOperation(exactRequest) == true
+            && exactRequest.PowerPeer is { Original: null } && CpuLivePowerCapability.TryDecode(capability) is not null
+            && IsCurrent(exactRequest);
         public bool? ReadCurrentWithContext(CpuLiveCurveNativeRequest exactRequest, CpuLiveCurveContext expected)
         {
             if (initialPreparation is null || ActiveRead is null) { return null; }

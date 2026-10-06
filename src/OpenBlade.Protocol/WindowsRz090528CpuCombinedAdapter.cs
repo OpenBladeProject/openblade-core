@@ -101,6 +101,17 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         }
         void CheckFinal()
         {
+            if (proof?.SupportsFinalCheckpoint == true)
+            {
+                token.ThrowIfCancellationRequested();
+                if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)
+                    || adapter?.FreshAdmission() != true || !ExactPlatform()
+                    || wire is not { Capability: uint capability, Cap: { } cap } || (capability & 4) == 0
+                    || !proof.FinalCheckpointCurrent(request, capability, cap)) { throw new CpuPowerAdmissionException(); }
+                token.ThrowIfCancellationRequested();
+                if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)) { throw new CpuPowerAdmissionException(); }
+                return;
+            }
             Check();
             if (adapter?.FreshAdmission() != true || !ExactPlatform()) { throw new CpuPowerAdmissionException(); }
             CheckPeer();
