@@ -58,8 +58,13 @@ diagnostics now report elapsed time for six fixed phases: initial context,
 first native observation, recovery wait/admission, replacement observation,
 post-range checks and final getter admission. A timeout freezes these timings
 before late worker completion. The timings add no native calls and do not
-change admission or the deadline. A normal read can measure the baseline cost
-without another restart; successful first-read recovery remains unproved.
+change admission or the deadline. A normal installed read measured 6,679 ms:
+226 ms for initial context, 6,138 ms for native observation, 55 ms for post-range
+checks and 260 ms for final getter admission. It returned 80/75 W power peers,
+all twelve offsets at −1 and available live admission, preserved the saved
+journal, and completed cleanup. No `0xFD` occurred, so this measures baseline
+cost without proving prerequisite recovery or isolating the native cost.
+Successful first-read recovery remains unproved.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
