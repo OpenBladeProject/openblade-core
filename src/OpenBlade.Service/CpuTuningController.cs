@@ -22,7 +22,7 @@ internal sealed class CpuTuningController
     private readonly ICpuLiveCurveOwnershipJournalStore? curveStore;
     private readonly ICpuLivePowerOwnershipJournalStore? powerStore;
     private readonly CpuLiveCurveTuningTransaction? liveCurve;
-    private readonly CpuLivePowerTuningTransaction? livePower;
+    private readonly CpuLivePowerObserver? livePower;
     private readonly SemaphoreSlim liveGate = new(1, 1);
     private readonly AsyncLocal<LiveAdmission?> liveAdmission = new();
     private readonly Guid serviceInstance = Guid.NewGuid();
@@ -285,11 +285,10 @@ internal sealed class CpuTuningController
             }
             RetainUncertainty(curve);
             // Do not start another family after uncertainty or failed admission.
-            CpuLivePowerTransactionResult? power = livePower is null || liveUncertainty != CpuTuningFeatures.None
+            CpuLivePowerObservationResult? power = livePower is null || liveUncertainty != CpuTuningFeatures.None
                 || curve?.Recovery == CpuLiveCurveRecovery.Blocked
                 || !lease.Allows(CpuTuningFeatures.None) ? null
                 : await ObservePowerSequenceAsync(token, diagnostic).ConfigureAwait(false);
-            RetainUncertainty(power);
             if (diagnostic is not null && diagnostic.LiveObservationReason is null && power?.Reason is { } powerReason
                 && powerReason != CpuLivePowerBlockReason.None)
             { diagnostic.LiveObservationReason = "power transaction " + powerReason + diagnostic.LiveObservationTimeoutContext; }
@@ -298,7 +297,7 @@ internal sealed class CpuTuningController
             if (diagnostic?.TakePowerTimingSummary() is { } timings)
             { diagnostic.LiveObservationReason = (diagnostic.LiveObservationReason ?? "power observation") + timings; }
             var recovery = liveUncertainty != CpuTuningFeatures.None
-                || curve?.Recovery == CpuLiveCurveRecovery.Blocked || power?.Recovery == CpuLivePowerRecovery.Blocked
+                || curve?.Recovery == CpuLiveCurveRecovery.Blocked || power is { Reason: not CpuLivePowerBlockReason.None }
                 ? CpuTuningRecoveryState.Blocked : ownership.Features == CpuTuningFeatures.None
                     ? CpuTuningRecoveryState.None : CpuTuningRecoveryState.RestoreReady;
             return LiveStatus(curve?.Observation, power?.Observation, recovery, ownership.Features | liveUncertainty,
@@ -315,7 +314,7 @@ internal sealed class CpuTuningController
     // Only explicit live observation consumes an empty-window ticket. Each
     // transaction call retains its original ten-second deadline; this envelope
     // also includes the gap, admission, queueing and terminal scope cleanup.
-    private async Task<CpuLivePowerTransactionResult> ObservePowerSequenceAsync(CancellationToken caller,
+    private async Task<CpuLivePowerObservationResult> ObservePowerSequenceAsync(CancellationToken caller,
         CpuSavedAdmissionDiagnostic? diagnostic)
     {
         using var sequence = CancellationTokenSource.CreateLinkedTokenSource(caller);
@@ -328,8 +327,7 @@ internal sealed class CpuTuningController
         bool gapComplete = false;
         try
         {
-            var first = await livePower!.ObserveOwnershipAsync(sequence.Token, diagnostic).ConfigureAwait(false);
-            RetainUncertainty(first);
+            var first = await livePower!.ObserveAsync(sequence.Token, diagnostic).ConfigureAwait(false);
             sequence.Token.ThrowIfCancellationRequested();
             if (first.Reason != CpuLivePowerBlockReason.ObservationUnavailable || first.RecoveryTicket is not { } candidate
                 || liveUncertainty != CpuTuningFeatures.None || diagnostic?.FirstFailure is not null
@@ -343,11 +341,10 @@ internal sealed class CpuTuningController
             gapMilliseconds = (long)System.Diagnostics.Stopwatch.GetElapsedTime(gapStarted).TotalMilliseconds;
             gapComplete = true;
             sequence.Token.ThrowIfCancellationRequested();
-            var second = await livePower.ObserveOwnershipAsync(sequence.Token, diagnostic, ticket).ConfigureAwait(false);
-            RetainUncertainty(second);
+            var second = await livePower.ObserveAsync(sequence.Token, diagnostic, ticket).ConfigureAwait(false);
             sequence.Token.ThrowIfCancellationRequested();
             bool recovered = second.Reason == CpuLivePowerBlockReason.None && second.Observation is not null
-                && second.Recovery != CpuLivePowerRecovery.Blocked && !sequence.IsCancellationRequested;
+                && !sequence.IsCancellationRequested;
             if (diagnostic is not null)
             {
                 diagnostic.LiveObservationReason = ticket.Detail + (recovered ? "; recovery succeeded" : "; recovery rejected: power transaction " + second.Reason)
@@ -366,7 +363,7 @@ internal sealed class CpuTuningController
                     + "; first getter" + firstTiming
                     + $"; recovery wait {(gapComplete ? gapMilliseconds : (long)System.Diagnostics.Stopwatch.GetElapsedTime(gapStarted).TotalMilliseconds)} ms";
             }
-            return new(CpuLivePowerOutcome.Blocked, CpuLivePowerRecovery.Blocked, CpuLivePowerBlockReason.ObservationUnavailable, null);
+            return new(CpuLivePowerBlockReason.ObservationUnavailable, null);
         }
     }
 
@@ -377,7 +374,7 @@ internal sealed class CpuTuningController
     {
         CpuTuningFeatures requested = (settings?.CurveOptimizer is null ? CpuTuningFeatures.None : CpuTuningFeatures.CurveOptimizer)
             | (settings?.PowerLimitWatts is null ? CpuTuningFeatures.None : CpuTuningFeatures.PowerLimit);
-        if (!HasLiveBackend || !restoring && settings is not { IsWellFormed: true, IsConfigured: true })
+        if (!HasLiveBackend || !restoring && (settings is not { IsWellFormed: true, CurveOptimizer: not null } || settings.PowerLimitWatts is not null))
         { return new(ControlOperationStatus.Blocked, "Live CPU tuning requires supported settings and an admitted backend."); }
         await liveGate.WaitAsync(token).ConfigureAwait(false);
         var diagnostic = new CpuSavedAdmissionDiagnostic();
@@ -385,7 +382,7 @@ internal sealed class CpuTuningController
             diagnostic: diagnostic, getterAdmission: getterAdmission);
         liveAdmission.Value = lease;
         CpuLiveCurveTuningTransaction.PreparedOperation? curveOperation = null;
-        CpuLivePowerTuningTransaction.PreparedOperation? powerOperation = null;
+        CpuLivePowerObserver.Peer? powerPeer = null;
         CpuLiveCurveSnapshot? curve = null;
         CpuLivePowerPair? power = null;
         CpuTuningFeatures required = CpuTuningFeatures.None;
@@ -402,28 +399,16 @@ internal sealed class CpuTuningController
                 || livePower is null
                 || !lease.Allows(required)) { return await FinishAsync(false).ConfigureAwait(false); }
 
-            // Both complete plans are durably prepared before either sends. A
-            // peer owned by a prior edit is retained and validated without edits.
-            // CO also requires a fresh read-only PPT peer; this does not add PPT
-            // to the required write features or create restoration ownership.
-            if (restoring)
-            {
-                if (!await PrepareCurveAsync().ConfigureAwait(false) || !await PreparePowerAsync().ConfigureAwait(false))
-                { return await FinishAsync(false).ConfigureAwait(false); }
-            }
-            else if (!await PreparePowerAsync().ConfigureAwait(false) || !await PrepareCurveAsync().ConfigureAwait(false))
+            // PPT is read-only. Prepare its complete expectation before CO can
+            // persist a command, then recheck it at every step and native lease.
+            if (!await PreparePowerAsync().ConfigureAwait(false) || !await PrepareCurveAsync().ConfigureAwait(false))
             { return await FinishAsync(false).ConfigureAwait(false); }
-            if (curveOperation is not null && powerOperation is not null
-                && !CompatibleContexts(curveOperation.Context, powerOperation.Context))
+            if (!CompatibleContexts(curveOperation!.Context, powerPeer!.Context)
+                || !await CheckPowerAsync(token).ConfigureAwait(false))
             { return await FinishAsync(false).ConfigureAwait(false); }
-            if (!await CheckCurveAsync(token).ConfigureAwait(false) || !await CheckPowerAsync(token).ConfigureAwait(false))
-            { return await FinishAsync(false).ConfigureAwait(false); }
-
-            // Family order is explicit; an incomplete family stops the sequence.
-            // There is no compensation, automatic restore or restart replay.
-            bool completed = restoring
-                ? await ExecuteCurveAsync().ConfigureAwait(false) && await ExecutePowerAsync().ConfigureAwait(false)
-                : await ExecutePowerAsync().ConfigureAwait(false) && await ExecuteCurveAsync().ConfigureAwait(false);
+            var result = await liveCurve!.ExecutePreparedAsync(curveOperation, CheckPowerAsync, token, powerPeer.State).ConfigureAwait(false);
+            RecordCurve(result);
+            bool completed = result.Outcome is CpuLiveCurveOutcome.Verified or CpuLiveCurveOutcome.Unchanged;
             if (completed)
             { completed = await CheckCurveAsync(token).ConfigureAwait(false) && await CheckPowerAsync(token).ConfigureAwait(false); }
             return await FinishAsync(completed).ConfigureAwait(false);
@@ -440,12 +425,9 @@ internal sealed class CpuTuningController
             async Task<bool> PreparePowerAsync()
             {
                 if (!lease.Allows(required)) { return false; }
-                var prepared = restoring && required.HasFlag(CpuTuningFeatures.PowerLimit)
-                    ? await livePower!.PrepareRestoreAsync(token).ConfigureAwait(false)
-                    : await livePower!.PrepareApplyAsync(!restoring && settings?.PowerLimitWatts is { } watts
-                        ? [new(CpuLivePowerLimit.Fast, watts), new(CpuLivePowerLimit.Slow, watts)] : [], token).ConfigureAwait(false);
-                RecordPower(prepared.Result); powerOperation = prepared.Operation;
-                return powerOperation is not null && lease.Allows(required);
+                var prepared = await livePower!.PreparePeerAsync(token).ConfigureAwait(false);
+                RecordPower(prepared.Result); powerPeer = prepared.Peer;
+                return powerPeer is not null && lease.Allows(required);
             }
             async Task<bool> CheckCurveAsync(CancellationToken checkToken)
             {
@@ -458,32 +440,15 @@ internal sealed class CpuTuningController
             async Task<bool> CheckPowerAsync(CancellationToken checkToken)
             {
                 if (!lease.Allows(required) || liveUncertainty != CpuTuningFeatures.None) { return false; }
-                if (powerOperation is null) { return true; }
-                var result = await livePower!.ValidatePreparedAsync(powerOperation, checkToken).ConfigureAwait(false);
+                if (powerPeer is null) { return false; }
+                var result = await livePower!.ValidatePeerAsync(powerPeer, checkToken).ConfigureAwait(false);
                 RecordPower(result);
-                return result.Outcome == CpuLivePowerOutcome.Unchanged && lease.Allows(required);
-            }
-            async Task<bool> ExecuteCurveAsync()
-            {
-                if (!requested.HasFlag(CpuTuningFeatures.CurveOptimizer)) { return true; }
-                if (!lease.Allows(required)) { return false; }
-                // Called while CO holds its gate: validate only the PPT peer.
-                var result = await liveCurve!.ExecutePreparedAsync(curveOperation!, CheckPowerAsync, token, powerOperation?.PeerState).ConfigureAwait(false);
-                RecordCurve(result);
-                return result.Outcome is CpuLiveCurveOutcome.Verified or CpuLiveCurveOutcome.Unchanged;
-            }
-            async Task<bool> ExecutePowerAsync()
-            {
-                if (!requested.HasFlag(CpuTuningFeatures.PowerLimit)) { return true; }
-                if (!lease.Allows(required)) { return false; }
-                var result = await livePower!.ExecutePreparedAsync(powerOperation!, CheckCurveAsync, token, curveOperation?.PeerState).ConfigureAwait(false);
-                RecordPower(result);
-                return result.Outcome is CpuLivePowerOutcome.Verified or CpuLivePowerOutcome.Unchanged;
+                return result.Reason == CpuLivePowerBlockReason.None && lease.Allows(required);
             }
         }
         finally
         {
-            curveOperation?.Close(); powerOperation?.Close();
+            curveOperation?.Close();
             try { lease.Dispose(); }
             finally { liveAdmission.Value = null; liveGate.Release(); }
         }
@@ -493,24 +458,20 @@ internal sealed class CpuTuningController
             RetainUncertainty(result); curve = result.Observation; uncertain |= result.Outcome == CpuLiveCurveOutcome.Uncertain;
             confirmedPeerLoss |= result.Reason is CpuLiveCurveBlockReason.StateChanged or CpuLiveCurveBlockReason.ContextMismatch;
         }
-        void RecordPower(CpuLivePowerTransactionResult result)
+        void RecordPower(CpuLivePowerObservationResult result)
         {
-            RetainUncertainty(result); power = result.Observation; uncertain |= result.Outcome == CpuLivePowerOutcome.Uncertain;
+            power = result.Observation;
             confirmedPeerLoss |= result.Reason is CpuLivePowerBlockReason.StateChanged or CpuLivePowerBlockReason.ContextMismatch;
         }
         async Task<ControlOperationResult> FinishAsync(bool completed)
         {
-            // Gates are released before these journal-only CAS operations. A
-            // confirmed peer loss must survive restart even if that peer never
-            // needed a setter or has already been restored in this operation.
+            // The transaction gate is released before this journal-only CAS.
+            // Confirmed peer loss blocks CO ownership across restart; the
+            // historical read-only PPT journal is never modified.
             if (confirmedPeerLoss)
             {
                 if (curveOperation is not null)
                 { RetainUncertainty(await liveCurve!.RejectPreparedAsync(curveOperation).ConfigureAwait(false)); }
-                // An unowned read-only peer may have a historical Restored journal;
-                // drift must not reopen that completed PPT obligation.
-                if (powerOperation is not null && required.HasFlag(CpuTuningFeatures.PowerLimit))
-                { RetainUncertainty(await livePower!.RejectPreparedAsync(powerOperation).ConfigureAwait(false)); }
                 completed = false;
             }
             var retained = await ReadLiveOwnershipAsync(CancellationToken.None).ConfigureAwait(false);
@@ -550,7 +511,7 @@ internal sealed class CpuTuningController
         { features |= CpuTuningFeatures.PowerLimit; }
         bool blocked = curve?.Invalid == true || power?.Invalid == true
             || curve?.Journal is { State: CpuLiveCurveOwnershipState.PossibleSubmission or CpuLiveCurveOwnershipState.Blocked }
-            || power?.Journal is { State: CpuLivePowerOwnershipState.PossibleSubmission or CpuLivePowerOwnershipState.Blocked };
+            || power?.Journal is { State: not CpuLivePowerOwnershipState.Restored };
         return (blocked || liveUncertainty != CpuTuningFeatures.None, features | liveUncertainty);
     }
 
@@ -560,11 +521,6 @@ internal sealed class CpuTuningController
         { liveUncertainty |= CpuTuningFeatures.CurveOptimizer; }
     }
 
-    private void RetainUncertainty(CpuLivePowerTransactionResult? result)
-    {
-        if (result is { Outcome: CpuLivePowerOutcome.Uncertain } or { Reason: CpuLivePowerBlockReason.JournalUnavailable })
-        { liveUncertainty |= CpuTuningFeatures.PowerLimit; }
-    }
     private static CpuTuningStatus LiveStatus(CpuLiveCurveSnapshot? curve, CpuLivePowerPair? power,
         CpuTuningRecoveryState recovery, CpuTuningFeatures features, bool curveWriteEligible = false)
     {
@@ -708,24 +664,6 @@ internal sealed class CpuTuningController
             var result = await backend.ObserveAsync(cancellation.Token, diagnostic, recovery).ConfigureAwait(false);
             if (lease.Allows(CpuTuningFeatures.None, token)) { return result; }
             diagnostic?.Check(false, "runtime power observation lease after query"); return new(null, null, null, null, null);
-        }
-        public async Task<bool> CheckWriteAdmissionAsync(CpuLivePowerContext context, CpuLivePowerCommand command,
-            CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token)
-        {
-            var lease = current.Value;
-            if (lease?.Allows(CpuTuningFeatures.PowerLimit) != true) { return false; }
-            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
-            return await backend.CheckWriteAdmissionAsync(context, command, purpose, expectedBefore, original, cancellation.Token).ConfigureAwait(false)
-                && lease.Allows(CpuTuningFeatures.PowerLimit);
-        }
-        public async Task<CpuLivePowerSubmission> SendAsync(CpuLivePowerContext context, CpuLivePowerNativeRequest request, CancellationToken token)
-        {
-            var lease = current.Value;
-            if (lease?.Allows(CpuTuningFeatures.PowerLimit) != true) { return CpuLivePowerSubmission.NotSubmitted; }
-            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
-            var result = await backend.SendAsync(context, request, cancellation.Token).ConfigureAwait(false);
-            return result == CpuLivePowerSubmission.NotSubmitted || lease.Allows(CpuTuningFeatures.PowerLimit)
-                ? result : CpuLivePowerSubmission.Unknown;
         }
     }
     private static CpuCurveOptimizerState? DecodeCurve(Rz090528SavedCpuConfiguration saved)

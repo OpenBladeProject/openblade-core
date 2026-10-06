@@ -55,24 +55,12 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     public CpuSavedAdmissionDiagnostic? Diagnostic => controller()?.CaptureLiveObservationDiagnostic();
     public bool SupportsReadPreparation => true;
-    public CpuLiveCurveWriteDeadline? BeginSubmission(CancellationToken token)
-    {
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        return WindowsCpuVoltageWriteDeadline.Open(token);
-#else
-        return null;
-#endif
-    }
-
     public CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext exactContext,
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
     {
         if (getterAdmission is not null || !ValidCurveCommand(exactRequest.Command, exactRequest.Purpose)
             || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward
                 && !ValidCurveCommand(exactRequest.ImmediateReverse, CpuLiveCurveCommandPurpose.Restore)) { return null; }
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        if (exactRequest.Before.CoreOffsets.Any(core => core.Offset is not (-1 or 0))) { return null; }
-#endif
         if (controller()?.CaptureLiveRuntimeAdmission(CpuTuningFeatures.CurveOptimizer, token)() != true) { return null; }
         var scope = BeginGetter(token);
         if (scope is null)
@@ -198,9 +186,6 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         { RuntimeLifetime = lifetime };
     }
 
-    // Attended developer approval is never manufactured by the product.
-    public CpuQueryAttendedApproval? CreateQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token) => null;
-
     public CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token)
     {
         var getter = getterScope;
@@ -219,8 +204,6 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         { RuntimeLifetime = context.RuntimeLifetime };
     }
 
-    public CpuPmAttendedApproval? CreateObservationApproval(CpuLivePowerContext exactContext, CancellationToken token) => null;
-    public CpuPmRunOwnedDriverLifetime? ReadFreshObservationLifetime(CpuLivePowerContext exactContext, CancellationToken token) => null;
 
     public CpuPmInstalledApproval? CreateInstalledObservationApproval(CpuLivePowerContext exactContext, CancellationToken token)
     {
@@ -251,12 +234,6 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         // Current in WMI metadata is a shadow and never supplies this baseline.
         return admission() ? new(0x50001, limits.Min, limits.Max, 1) : null;
     }
-
-    // Native PPT production writes await the reviewed physical setter fixture.
-    public bool CheckWriteAdmission(CpuLivePowerContext exactContext, CpuLivePowerCommand command,
-        CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token) => false;
-    public CpuLivePowerWriteProof? CreateWriteProof(CpuLivePowerContext exactContext,
-        CpuLivePowerNativeRequest exactRequest, CancellationToken token) => null;
 
     private Func<bool>? CapturePower(CpuLivePowerContext context, CancellationToken token)
     {
@@ -289,11 +266,6 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     private static bool ValidCurveCommand(CpuLiveCurveCommand command, CpuLiveCurveCommandPurpose purpose)
     {
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        // The developer profile narrows every purpose, including first-original
-        // restoration. Fresh firmware metadata remains an independent intersection.
-        if (command.Offset is not (-1 or 0)) { return false; }
-#endif
         if (!Enum.IsDefined(purpose) || purpose == CpuLiveCurveCommandPurpose.Forward && command.Offset is < -30 or > 0
             || !CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
                 CpuLiveCurveSnapshot.SupportedMask, out var decoded) || decoded != command) { return false; }
@@ -304,9 +276,6 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
     {
         if (getterAdmission is not null) { return null; }
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        if (exactRequest.Before.CoreOffsets.Any(core => core.Offset is not (-1 or 0))) { return null; }
-#endif
         var admission = Capture(exactContext, CpuTuningFeatures.CurveOptimizer, token);
         if (admission is null || !CheckWriteAdmission(exactContext, exactRequest.Command, exactRequest.Purpose, token)
             || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward
@@ -519,22 +488,8 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         {
             if (!CheckRead(exactRequest) || exactRequest.PowerPeer is not { } peer
                 || CpuLivePowerCapability.TryDecode(capability) is null) { return false; }
-            // The unchanged, unowned peer requires observation authority only.
-            // Any owned original still needs independent PPT restoration admission;
-            // the production PPT gate deliberately remains closed pending fixture.
-            if (peer.Original is { } original)
-            {
-                var peerContext = new CpuLivePowerContext(context.Identity, context.EnabledCoreMask, context.PmVersion,
-                    context.PmTableLength, context.Backend, context.BootSequence)
-                { RuntimeLifetime = context.RuntimeLifetime };
-                foreach (var limit in new[] { CpuLivePowerLimit.Fast, CpuLivePowerLimit.Slow })
-                {
-                    if (peer.Expected.Get(limit) == original.Get(limit)) { continue; }
-                    if (!CpuLivePowerCommand.TryCreate(limit, original.Get(limit).Milliwatts, out var restore)
-                        || !owner.CheckWriteAdmission(peerContext, restore, CpuLivePowerCommandPurpose.Restore,
-                            peer.Expected, original, token)) { return false; }
-                }
-            }
+            // Historical PPT ownership is never silently promoted to read-only authority.
+            if (peer.Original is not null) { return false; }
             return CheckRead(exactRequest);
         }
         internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest)

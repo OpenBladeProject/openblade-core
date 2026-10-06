@@ -11,11 +11,10 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     public void CombinedCurveExpiryAfterFullSetterProofCannotReachNativeSetter()
     {
         var platform = new Platform { Capability = 6 }; var request = CurveRequest(platform);
-        long now = 100;
-        using var deadline = new CpuLiveCurveWriteDeadline(100, 600_100, () => now, () => true, default);
+        bool current = true;
         using var proof = new CurveProof(request) { Scoped = true, Prepared = true, Reading = true };
-        proof.FullAllowed = () => { if (proof.Ends == 1) { now = 600_100; } return true; };
-        proof.SubmissionAllowed = deadline.IsCurrent;
+        proof.FullAllowed = () => { if (proof.Ends == 1) { current = false; } return true; };
+        proof.SubmissionAllowed = () => current;
         var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact);
         Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition);
         Assert.Equal(0, platform.Setters); Assert.True(proof.FullChecks > 0);
@@ -101,319 +100,6 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     }
 
     [Theory]
-    [InlineData(0, 0x32u)]
-    [InlineData(1, 0x33u)]
-    public void OneIndependentSetterHasFreshUnequalFullPairReadbackAndTwoBracketedCopies(int limitValue, uint message)
-    {
-        var limit = (CpuLivePowerLimit)limitValue;
-        var platform = new Platform(); var request = Request(platform.Pair, limit: limit);
-        var proof = new Proof(request, platform);
-        var result = Run(platform, request, proof);
-        Assert.True(result.Verified); Assert.True(result.CleanupComplete); Assert.True(result.WorkerTerminal);
-        Assert.Equal(CpuLivePowerNativeDisposition.Acknowledged, result.Disposition);
-        Assert.Equal(request.After, result.After!.Pair);
-        Assert.Equal(new uint[] { 0x02, 0x82, 6, 0x65, 6, 0x82, message, 6, 0x65, 6 }, platform.Commands);
-        Assert.Equal(2, platform.Copies); Assert.Equal(1, platform.Setters); Assert.Equal(3, proof.RangeReads);
-        Assert.Equal(1, platform.Opens); Assert.Equal(1, platform.Releases);
-        Assert.Equal(3, platform.BackendReads); Assert.False(platform.Pinned); Assert.False(platform.Held);
-        Assert.Equal(new[] { "close", "unpin", "release", "mutex-dispose" }, platform.Cleanup);
-        Assert.Equal(limit == CpuLivePowerLimit.Fast ? 80000u : 85000u,
-            result.After.Pair.Get(limit == CpuLivePowerLimit.Fast ? CpuLivePowerLimit.Slow : CpuLivePowerLimit.Fast).Milliwatts);
-    }
-
-    [Theory]
-    [InlineData(0u)]
-    [InlineData(0x005D000Bu)]
-    [InlineData(0x0B5D1700u)]
-    [InlineData(uint.MaxValue)]
-    public void DifferentFirmwareVersionStopsBeforeBaselineOrAnySetter(uint firmwareVersion)
-    {
-        var platform = new Platform { FirmwareVersion = firmwareVersion }; var request = Request(platform.Pair);
-        var proof = new Proof(request, platform);
-        var result = Run(platform, request, proof);
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-        Assert.False(result.Verified); Assert.Null(result.After); Assert.True(result.CleanupComplete);
-        Assert.Equal(new uint[] { 0x02 }, platform.Commands);
-        Assert.Equal(0, platform.Copies); Assert.Equal(0, platform.Setters); Assert.Equal(0, proof.RangeReads);
-        Assert.Equal(request.Before, platform.Pair);
-        Assert.False(platform.Pinned); Assert.False(platform.Held);
-    }
-
-    [Theory]
-    [InlineData("firmware-ack")]
-    [InlineData("firmware-ack-failed-reply")]
-    public void FirmwareAcknowledgementFailureStopsBeforeBaselineOrAnySetter(string fault)
-    {
-        var platform = new Platform { Fault = fault }; var request = Request(platform.Pair);
-        var result = Run(platform, request, new Proof(request, platform));
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-        Assert.False(result.Verified); Assert.Null(result.After); Assert.True(result.CleanupComplete);
-        Assert.Equal(new uint[] { 0x02 }, platform.Commands);
-        Assert.Equal(0, platform.Copies); Assert.Equal(0, platform.Setters);
-        Assert.Equal(request.Before, platform.Pair);
-    }
-
-    [Fact]
-    public void EachLeaseReadsFirmwareAgainRatherThanReusingEarlierMatch()
-    {
-        var platform = new Platform(); var first = Request(platform.Pair);
-        Assert.True(Run(platform, first, new Proof(first, platform)).Verified);
-        int copies = platform.Copies, commands = platform.Commands.Count;
-        platform.FirmwareVersion = 0x0B5D1700;
-        var second = Request(platform.Pair, target: 59000);
-        var result = Run(platform, second, new Proof(second, platform));
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-        Assert.False(result.Verified); Assert.True(result.CleanupComplete);
-        Assert.Equal(new uint[] { 0x02 }, platform.Commands.Skip(commands));
-        Assert.Equal(copies, platform.Copies); Assert.Equal(1, platform.Setters);
-        Assert.Equal(first.After, platform.Pair);
-    }
-
-    [Fact]
-    public void RestorePreservesExactFractionalMilliwattBaselineOutsideForwardEditorRange()
-    {
-        var original = Pair(102345, 80765);
-        var platform = new Platform { Pair = Pair(60000, 80765) };
-        var request = Request(platform.Pair, original, CpuLivePowerLimit.Fast, 102345, CpuLivePowerCommandPurpose.Restore);
-        Assert.True(Run(platform, request, new Proof(request, platform)).Verified);
-        Assert.Equal(original, platform.Pair);
-        Assert.Equal(102345u, platform.SetterArgument);
-    }
-
-    [Fact]
-    public void FusedCeilingIsConditionalButNeverOverridesIndependentFirmwareOrReverseAdmission()
-    {
-        var platform = new Platform { Capability = 0 };
-        var request = Request(platform.Pair, target: 60000);
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, Run(platform, request, new Proof(request, platform)).Disposition);
-        Assert.Equal(0, platform.Setters); // Immediate reverse85W exceeds the actual71W cap.
-        platform = new Platform(); request = Request(platform.Pair);
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted,
-            Run(platform, request, new Proof(request, platform) { Range = new(0x50001, 0, 84000, 1) }).Disposition);
-        Assert.Equal(0, platform.Setters); // Bit1 bypasses only the fused check, never firmware range.
-    }
-
-    [Fact]
-    public void CompleteOriginalRestorationForBothLimitsIsCheckedAfterRepeatedEdits()
-    {
-        var platform = new Platform { Pair = Pair(90000, 82000) };
-        var request = Request(platform.Pair, Pair(85000, 80000), target: 89000);
-        Assert.Equal(2, request.OriginalRestores.Count);
-        var result = Run(platform, request, new Proof(request, platform) { Range = new(0x50001, 81000, 125000, 1) });
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-        Assert.Equal(0, platform.Setters); // Current pair and immediate reverse fit; original slow80W does not.
-    }
-
-    [Theory]
-    [InlineData(0x5000Au, 1u)]
-    [InlineData(0x50001u, 0u)]
-    [InlineData(0x50001u, 2u)]
-    public void UnreviewedFirmwareSelectorOrGranularityIsRejected(uint selector, uint step)
-    {
-        var platform = new Platform(); var request = Request(platform.Pair);
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted,
-            Run(platform, request, new Proof(request, platform) { Range = new(selector, 0, 125000, step) }).Disposition);
-        Assert.Equal(0, platform.Setters);
-    }
-
-    [Fact]
-    public void CapAndCapabilityAreRecheckedAfterBeforeSnapshotAndRangeImmediatelyBeforeSubmission()
-    {
-        foreach (string fault in new[] { "capability-revoked", "range-revoked" })
-        {
-            var platform = new Platform { Fault = fault }; var request = Request(platform.Pair);
-            var proof = new Proof(request, platform);
-            var result = Run(platform, request, proof);
-            Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-            Assert.Equal(0, platform.Setters);
-            Assert.Equal(1, platform.Copies);
-            Assert.Equal(2, platform.Commands.Count(command => command == 0x82));
-        }
-    }
-
-    [Theory]
-    [InlineData("before-drift")]
-    [InlineData("before-noninvertible")]
-    [InlineData("before-canonical-float")]
-    [InlineData("version")]
-    [InlineData("post-before-version")]
-    [InlineData("copy-length")]
-    [InlineData("root")]
-    [InlineData("mask")]
-    [InlineData("cap")]
-    public void InvalidBeforeEvidenceNeverReachesSetter(string fault)
-    {
-        var platform = new Platform { Fault = fault }; var request = Request(platform.Pair);
-        var result = Run(platform, request, new Proof(request, platform));
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-        Assert.True(result.CleanupComplete); Assert.False(result.Verified); Assert.Equal(0, platform.Setters);
-    }
-
-    [Theory]
-    [InlineData("setter-throw")]
-    [InlineData("setter-failed-reply")]
-    [InlineData("setter-ack")]
-    [InlineData("setter-cancel")]
-    public void ActualSetterInvocationIsPossibleSubmissionEvenWithoutAcknowledgement(string fault)
-    {
-        using var cancelled = new CancellationTokenSource();
-        var platform = new Platform { Fault = fault, Cancel = cancelled.Cancel }; var request = Request(platform.Pair);
-        var result = Run(platform, request, new Proof(request, platform), cancelled.Token);
-        Assert.Equal(CpuLivePowerNativeDisposition.PossibleSubmission, result.Disposition);
-        Assert.False(result.Verified); Assert.True(result.CleanupComplete);
-        Assert.Equal(1, platform.Setters); Assert.Equal(1, platform.Copies);
-    }
-
-    [Fact]
-    public void ProofRevokedAfterSelectorPreparationStopsAtPreNativeSetterCheckpoint()
-    {
-        var platform = new Platform(); var request = Request(platform.Pair);
-        int preparedChecks = 0;
-        var proof = new Proof(request, platform)
-        {
-            ReadCurrent = () => !platform.SetterPrepared || ++preparedChecks == 1,
-        };
-        // The first check accepts the completed selector write; the next is
-        // BeforeNativeInvoke for the actual setter message, before its marker.
-        var result = Run(platform, request, proof);
-        Assert.True(platform.SetterPrepared); Assert.Equal(2, preparedChecks);
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-        Assert.Equal(CpuLivePowerNativeFailure.AdmissionDenied, result.Failure);
-        Assert.False(result.Verified); Assert.True(result.CleanupComplete);
-        Assert.Equal(0, platform.Setters); Assert.Equal(request.Before, platform.Pair);
-        Assert.Equal(new uint[] { 0x02, 0x82, 6, 0x65, 6, 0x82 }, platform.Commands);
-        Assert.Equal(1, proof.RangeReads);
-        Assert.False(platform.Pinned); Assert.False(platform.Held);
-    }
-
-    [Fact]
-    public void ProofRevokedInsideActualSetterInvokePreservesPossibleSubmission()
-    {
-        var platform = new Platform(); var request = Request(platform.Pair);
-        bool current = true;
-        var proof = new Proof(request, platform) { ReadCurrent = () => current };
-        platform.AtSetter = () => current = false;
-        var result = Run(platform, request, proof);
-        Assert.Equal(1, platform.Setters);
-        Assert.Equal(request.After, platform.Pair); // The call took effect before revocation was observed.
-        Assert.Equal(CpuLivePowerNativeDisposition.PossibleSubmission, result.Disposition);
-        Assert.Equal(CpuLivePowerNativeFailure.AdmissionDenied, result.Failure);
-        Assert.False(result.Verified); Assert.Null(result.After); Assert.True(result.CleanupComplete);
-        Assert.Equal(new uint[] { 0x02, 0x82, 6, 0x65, 6, 0x82, 0x32 }, platform.Commands);
-        Assert.False(platform.Pinned); Assert.False(platform.Held);
-    }
-
-    [Theory]
-    [InlineData("firmware")]
-    [InlineData("layout")]
-    [InlineData("copy")]
-    public async Task GetterOrCopyCancellationRetainsActualWorkerUntilCleanClosure(string blockedOperation)
-    {
-        using var cancelled = new CancellationTokenSource();
-        using var entered = new ManualResetEventSlim(); using var finish = new ManualResetEventSlim();
-        void Block() { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); }
-        var platform = new Platform(); var request = Request(platform.Pair);
-        if (blockedOperation == "copy") { platform.AtFirstCopy = Block; }
-        else if (blockedOperation == "firmware") { platform.AtFirmwareVersionGetter = Block; }
-        else { platform.AtVersionGetter = Block; }
-        Task<CpuLivePowerNativeResult> worker = Task.Run(() => Run(platform, request, new Proof(request, platform), cancelled.Token));
-        try
-        {
-            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
-            cancelled.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await worker.WaitAsync(cancelled.Token));
-            Assert.False(worker.IsCompleted); Assert.True(platform.Pinned); Assert.True(platform.Held);
-            Assert.Empty(platform.Cleanup); Assert.Equal(0, platform.Setters);
-            Assert.Equal(blockedOperation == "copy" ? 1 : 0, platform.Copies);
-            Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, Run(platform, request, new Proof(request, platform)).Disposition);
-            Assert.Equal(CpuLiveQueryStatus.Busy, WindowsRz090528CpuNativeSession.ForPlatform(platform).Query(
-                CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), () => Exact).Status);
-            AssertCurveBusy(platform);
-            Assert.Equal(CpuPmObservationFailure.Busy, WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(
-                CpuPmAttendedApproval.Acknowledge(true, true, platform.Lifetime), () => platform.Lifetime, platform, platform).Diagnostic!.Failure);
-            Assert.Equal(1, platform.Opens);
-        }
-        finally { finish.Set(); }
-        var result = await worker;
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-        Assert.Equal(CpuLivePowerNativeFailure.Cancelled, result.Failure);
-        Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete); Assert.False(result.Verified);
-        Assert.False(platform.Held); Assert.False(platform.Pinned); Assert.Equal(1, platform.Releases);
-        Assert.Equal(new[] { "close", "unpin", "release", "mutex-dispose" }, platform.Cleanup);
-        platform.AtFirstCopy = platform.AtVersionGetter = platform.AtFirmwareVersionGetter = null;
-        Assert.True(Run(platform, request, new Proof(request, platform)).Verified); // Only terminal clean closure releases the gate.
-    }
-
-    [Theory]
-    [InlineData("clamp")]
-    [InlineData("other-limit")]
-    [InlineData("stapm")]
-    [InlineData("post-version")]
-    public void AckDoesNotVerifyClampingDriftOrUnbracketedReadback(string fault)
-    {
-        var platform = new Platform { Fault = fault }; var request = Request(platform.Pair);
-        var result = Run(platform, request, new Proof(request, platform));
-        Assert.Equal(CpuLivePowerNativeDisposition.Acknowledged, result.Disposition);
-        Assert.False(result.Verified); Assert.True(result.CleanupComplete);
-    }
-
-    [Theory]
-    [InlineData("close")]
-    [InlineData("unpin-cancel")]
-    [InlineData("acquire-cleanup-cancel")]
-    public void UncertainCleanupParksAllNativePathsOnRetainedPlatform(string fault)
-    {
-        var platform = new Platform { Fault = fault }; var request = Request(platform.Pair);
-        var result = Run(platform, request, new Proof(request, platform));
-        Assert.False(result.CleanupComplete); Assert.False(result.Verified);
-        Assert.Equal(CpuLivePowerNativeFailure.Cleanup, result.Failure);
-        int opens = platform.Opens; platform.Fault = null;
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, Run(platform, request, new Proof(request, platform)).Disposition);
-        Assert.Equal(CpuLiveQueryStatus.Busy, WindowsRz090528CpuNativeSession.ForPlatform(platform).Query(
-            CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), () => Exact).Status);
-        AssertCurveBusy(platform);
-        Assert.Equal(CpuPmObservationFailure.Busy, WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(
-            CpuPmAttendedApproval.Acknowledge(true, true, platform.Lifetime), () => platform.Lifetime, platform, platform).Diagnostic!.Failure);
-        Assert.Equal(opens, platform.Opens);
-    }
-
-    [Fact]
-    public void ProofIsIndependentSingleUseBoundToExactRequestAndFactoryGrantsNoAuthority()
-    {
-        var platform = new Platform(); var request = Request(platform.Pair); var proof = new Proof(request, platform);
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, Run(platform, request, null).Disposition);
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, Run(platform, Request(platform.Pair), proof).Disposition);
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, Run(platform, request, proof).Disposition);
-        Assert.Equal(0, platform.Opens);
-        Assert.False(typeof(CpuLivePowerWriteProof).IsAssignableFrom(typeof(CpuLiveCurveWriteProof)));
-        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession()
-            .ExecutePower(request, null, () => throw new InvalidOperationException()).Disposition);
-    }
-
-    [Fact]
-    public async Task CallerTimeoutCannotReleaseOutstandingPowerWorkerOrAllowQueryOrPm()
-    {
-        using var entered = new ManualResetEventSlim(); using var finish = new ManualResetEventSlim();
-        var platform = new Platform { AtSetter = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); } };
-        var request = Request(platform.Pair);
-        Task<CpuLivePowerNativeResult> worker = Task.Run(() => Run(platform, request, new Proof(request, platform)));
-        try
-        {
-            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
-            await Assert.ThrowsAsync<TimeoutException>(async () => await worker.WaitAsync(TimeSpan.FromMilliseconds(1)));
-            Assert.True(platform.Held); Assert.True(platform.Pinned);
-            Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, Run(platform, request, new Proof(request, platform)).Disposition);
-            Assert.Equal(CpuLiveQueryStatus.Busy, WindowsRz090528CpuNativeSession.ForPlatform(platform).Query(
-                CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), () => Exact).Status);
-            AssertCurveBusy(platform);
-            Assert.Equal(CpuPmObservationFailure.Busy, WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(
-                CpuPmAttendedApproval.Acknowledge(true, true, platform.Lifetime), () => platform.Lifetime, platform, platform).Diagnostic!.Failure);
-        }
-        finally { finish.Set(); }
-        Assert.True((await worker).Verified);
-    }
-
-    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void CombinedCurveReadsPowerAfterCurveMetadataWithinOneLeaseAndNeverReenters(bool restoring)
@@ -488,26 +174,6 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     }
 
     [Fact]
-    public void CombinedPowerReadsCurveAfterOwnMetadataAndDeniesMissingPeerProof()
-    {
-        foreach (bool drift in new[] { false, true })
-        {
-            var platform = new Platform { Capability = 6 };
-            var baseline = Request(platform.Pair);
-            var request = new CpuLivePowerNativeRequest(baseline.Scope, baseline.Command, baseline.Purpose,
-                baseline.Before, baseline.Original, new(CurveSnapshot(), null));
-            var proof = new Proof(request, platform)
-            {
-                PeerAllowed = drift,
-                AtRange = () => { if (drift) { platform.Curve[0] = new(0, -2); } },
-            };
-            var result = Run(platform, request, proof);
-            Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
-            Assert.Equal(0, platform.Setters); Assert.True(result.CleanupComplete);
-        }
-    }
-
-    [Fact]
     public void CombinedCurveSetterFailureRemainsPossibleSubmissionWithoutCompensation()
     {
         var platform = new Platform { Capability = 6, Fault = "setter-throw" };
@@ -525,14 +191,6 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     private static CpuLiveCurveSnapshot CurveSnapshot() => CpuLiveCurveSnapshot.TryCreate(new(0xFF55, 0x005D000B, 0xD50,
         Enumerable.Range(0, 16).Where(CpuLiveCurveSnapshot.IsEnabled).Select(id => new CpuLiveCoreOffset(id, -1)).ToArray()))!;
 
-    private static CpuLivePowerNativeResult Run(Platform platform, CpuLivePowerNativeRequest request, Proof? proof, CancellationToken token = default) =>
-        WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecutePower(request, proof, () => Exact, token);
-    private static CpuLivePowerNativeRequest Request(CpuLivePowerPair before, CpuLivePowerPair? original = null,
-        CpuLivePowerLimit limit = CpuLivePowerLimit.Fast, uint target = 60000, CpuLivePowerCommandPurpose purpose = CpuLivePowerCommandPurpose.Forward)
-    {
-        Assert.True(CpuLivePowerCommand.TryCreate(limit, target, out var command));
-        return new(new(), command, purpose, before, original ?? before);
-    }
     private static CpuLivePowerPair Pair(uint fast, uint slow)
     {
         Assert.True(CpuLivePowerValue.TryFromMilliwatts(fast, out var first));
@@ -586,21 +244,6 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         }
         private sealed class ReadScope(Action end) : IDisposable { public void Dispose() => end(); }
     }
-    private sealed class Proof(CpuLivePowerNativeRequest request, Platform platform) : CpuLivePowerWriteProof(request)
-    {
-        internal CpuLivePowerTrustedRange Range = new(0x50001, 0, 125000, 1);
-        internal int RangeReads;
-        internal bool PeerAllowed;
-        internal Action? AtRange;
-        internal override bool AdmitCurvePeer(CpuLivePowerNativeRequest exactRequest) => PeerAllowed;
-        internal Func<bool>? ReadCurrent;
-        internal override bool IsCurrent(CpuLivePowerNativeRequest exactRequest) => ReadCurrent?.Invoke() ?? true;
-        internal override CpuLivePowerTrustedRange? ReadFreshRange(CpuLivePowerNativeRequest exactRequest)
-        {
-            Assert.True(platform.Pinned); Assert.True(platform.Held); RangeReads++; AtRange?.Invoke();
-            return platform.Fault == "range-revoked" && RangeReads == 2 ? null : Range;
-        }
-    }
     private sealed class Platform : ICpuPmWindowsPlatform, ICpuQueryDevice, ICpuQueryMutex, ICpuPmObservationClock
     {
         internal CpuLiveCoreOffset[] Curve = CurveSnapshot().CoreOffsets.ToArray();
@@ -609,11 +252,11 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         internal readonly List<uint> Commands = [];
         internal readonly List<string> Calls = [];
         internal readonly List<string> Cleanup = [];
-        internal uint Capability = 2, SetterArgument, FirmwareVersion = 0x0B5D1600;
+        internal uint Capability = 2, FirmwareVersion = 0x0B5D1600;
         internal int Copies, Setters, Opens, Releases, BackendReads;
         internal bool Held, Pinned, SetterPrepared;
         internal string? Fault;
-        internal Action? AtSetter, AtVersionGetter, AtFirmwareVersionGetter, AtFirstCopy, Cancel;
+        internal Action? AtSetter, AtFirstCopy;
         private uint selected, argument, command;
         private bool deviceOpen;
         public HostIdentityReadResult ReadHost() => new(new("Razer", Fault == "acquire-cleanup-cancel" && Pinned ? "other" : "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
@@ -661,8 +304,6 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
             else if (code == 0x81112F24)
             {
                 input.CopyTo(output, 0); uint offset = Word(input, 12);
-                if (offset == 0xC8 && selected == 0x03B10A88 && command == 6 && Copies == 0) { AtVersionGetter?.Invoke(); }
-                if (offset == 0xC8 && selected == 0x03B10A88 && command == 0x02) { AtFirmwareVersionGetter?.Invoke(); }
                 if (offset == 0xC8 && selected == 0x03B10A80 && command == 0x02 && Fault == "firmware-ack-failed-reply")
                 { return new(false, []); }
                 uint value = offset == 0 ? Word(input, 4) == 0 ? Fault == "root" ? 0 : CpuQueryPciTopology.RootId
@@ -704,17 +345,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
                         int index = Array.FindIndex(Curve, core => core.PhysicalCoreId == curve.PhysicalCoreId);
                         Curve[index] = new(curve.PhysicalCoreId, curve.Offset);
                     }
-                    if (value is 0x32 or 0x33)
-                    {
-                        Setters++; SetterArgument = argument; AtSetter?.Invoke();
-                        if (Fault == "setter-throw") { throw new IOException(); }
-                        if (Fault == "setter-failed-reply") { return new(false, []); }
-                        if (Fault == "setter-cancel") { Cancel!(); }
-                        Assert.True(CpuLivePowerCommand.TryDecode(value, argument, out var typed)); Pair = Pair.With(typed);
-                        if (Fault == "clamp") { Assert.True(CpuLivePowerCommand.TryCreate(typed.Limit, argument - 1000, out typed)); Pair = Pair.With(typed); }
-                        if (Fault == "other-limit") { Pair = Rz090528CpuLivePowerNativeTransportTests.Pair(Pair.Fast.Milliwatts, 70000); }
-                        if (Fault == "stapm") { Pair = Pair with { StapmRawBits = BitConverter.SingleToUInt32Bits(46) }; }
-                    }
+                    Assert.False(value is 0x32 or 0x33);
                 }
             }
             else if (code == 0x81112F08)

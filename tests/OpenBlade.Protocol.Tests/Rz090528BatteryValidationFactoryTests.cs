@@ -118,13 +118,8 @@ public sealed class Rz090528BatteryValidationFactoryTests
             factory.Capabilities.CpuPowerLimit);
         Assert.Equal(
             new CpuVoltageOptimizerCapabilities(
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
-                new DeviceNumericRange(-1, -1, 1),
-                DeviceFeatureAccess.ReadWrite)
-#else
                 new DeviceNumericRange(-30, -1, 1),
                 DeviceFeatureAccess.ReadWrite)
-#endif
             {
                 SupportsEnableDisable = true,
             },

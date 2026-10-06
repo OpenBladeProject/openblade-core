@@ -7,41 +7,10 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveNativeBackendTests
 {
     [Fact]
-    public async Task ValidationExpiryRetainsPendingActualWorkerAndItsDeadlineResources()
-    {
-        using var entered = new ManualResetEventSlim(); using var finish = new ManualResetEventSlim();
-        long now = 100; var resources = new DeadlineResources(); CpuLiveCurveWriteDeadline? deadline = null;
-        var provider = new Provider
-        {
-            Deadline = token => deadline = new(100, 600_100, () => now, () => true, token, resources),
-        };
-        var platform = new Platform { OnSetter = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); } };
-        var backend = new CpuLiveCurveNativeBackend(platform, provider);
-        var before = CpuLiveCurveSnapshot.TryCreate((await backend.ObserveAsync(default)).Observation)!;
-        var work = backend.SendAsync(provider.Context!, Command(0), CpuLiveCurveCommandPurpose.Forward, before, default);
-        try
-        {
-            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
-            now = 600_100; Assert.False(deadline!.IsCurrent());
-            Assert.True(deadline.Token.IsCancellationRequested);
-            Assert.False(work.IsCompleted); Assert.NotNull(backend.OutstandingWorker);
-            Assert.False(resources.Disposed); Assert.True(platform.Pinned);
-        }
-        finally { finish.Set(); }
-        Assert.Equal(CpuLiveCurveSubmission.Unknown, await work.WaitAsync(TimeSpan.FromSeconds(10)));
-        Assert.True(resources.Disposed); Assert.Null(backend.OutstandingWorker);
-        Assert.Equal(1, platform.Setters);
-    }
-    private sealed class DeadlineResources : IDisposable
-    {
-        internal bool Disposed;
-        public void Dispose() => Disposed = true;
-    }
-    [Fact]
     public async Task PreparedProofRemainsOwnedUntilActualWorkerExitsBeforeNativeAdoption()
     {
-        var provider = new Provider(); var context = provider.Context!;
-        var platform = new Platform(); var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        var platform = new Platform(); using var provider = new Provider(platform); var context = provider.Context!;
+        var backend = new CpuLiveCurveNativeBackend(platform, provider);
         using var entered = new ManualResetEventSlim(); using var finish = new ManualResetEventSlim();
         using var cancellation = new CancellationTokenSource();
         PreparationProof? proof = null;
@@ -74,13 +43,13 @@ public sealed class CpuLiveCurveNativeBackendTests
         internal override void DisposeCore() => Disposed = true;
     }
     [Fact]
-    public async Task ExistingQueryDiagnosticPreservesStageAndNativeCodeWithoutExceptionText()
+    public async Task InstalledApprovalFailurePreservesFailureCodeWithoutExceptionText()
     {
         var platform = new Platform { OnWait = () => throw new System.ComponentModel.Win32Exception(5, "private path") };
         var diagnostic = new CpuSavedAdmissionDiagnostic();
-        var result = await new CpuLiveCurveNativeBackend(platform, new Provider()).ObserveAsync(default, diagnostic);
+        var result = await new CpuLiveCurveNativeBackend(platform, new Provider(platform)).ObserveAsync(default, diagnostic);
         Assert.Null(result.Observation);
-        Assert.Equal("native query MutexWait/Win32Error; native error 5; operation ", diagnostic.FirstFailure);
+        Assert.Equal("native observation exception Win32Error", diagnostic.FirstFailure);
         Assert.Equal(1, platform.MutexCreates); Assert.Equal(0, platform.Opens); Assert.Equal(0, platform.Setters);
     }
     [Theory]
@@ -90,7 +59,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     {
         var platform = new Platform { RetainDevice = true, MailboxError = 0xFE, ErrorAfterSubmission = afterSubmission };
         var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         using var held = session.TryRetainInstalledBackend(() => provider.Context!.Identity);
         Assert.NotNull(held);
         provider.InstalledApproval = () => held.CreateQueryApproval(() => true);
@@ -114,7 +83,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     [InlineData("Unknown")]
     public async Task BiosProvenanceChangeDoesNotInvalidateTheOtherwiseExactFreshContext(string bios)
     {
-        var platform = new Platform(); var provider = new Provider();
+        var platform = new Platform(); using var provider = new Provider(platform);
         var expected = provider.Context!;
         provider.Context = expected with { Identity = expected.Identity with { BiosVersion = bios } };
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
@@ -129,7 +98,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     public async Task ActualProtocolCompositionObservesAdmitsWritesAndRestoresFullMixedVector()
     {
         var platform = new Platform();
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         var before = await backend.ObserveAsync(default);
         Assert.Equal(provider.Context, before.Context);
@@ -161,7 +130,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     public async Task UntrustedOrMalformedContextCannotObtainGetterApprovalOrTouchPlatform(string fault)
     {
         var platform = new Platform();
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         provider.Context = fault switch
         {
             "missing" => null,
@@ -180,16 +149,17 @@ public sealed class CpuLiveCurveNativeBackendTests
     [Fact]
     public async Task KnownSourceCounterZeroIsNotConfusedWithUnknownSource()
     {
-        var provider = new Provider();
+        var platform = new Platform();
+        using var provider = new Provider(platform);
         provider.Context = provider.Context! with { BootSequence = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 0) };
-        Assert.NotNull((await new CpuLiveCurveNativeBackend(new Platform(), provider).ObserveAsync(default)).Observation);
+        Assert.NotNull((await new CpuLiveCurveNativeBackend(platform, provider).ObserveAsync(default)).Observation);
     }
 
     [Fact]
     public async Task GetterApprovalMustComeFromProviderAndIsNeverMintedByBackend()
     {
         var platform = new Platform();
-        var backend = new CpuLiveCurveNativeBackend(platform, new Provider { QueryAllowed = false });
+        var backend = new CpuLiveCurveNativeBackend(platform, new Provider(platform) { QueryAllowed = false });
         Assert.Null((await backend.ObserveAsync(default)).Observation);
         Assert.Equal(0, platform.Opens);
         Assert.False(backend.Status.ScopeInvalid);
@@ -199,7 +169,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     public async Task AlreadyConsumedInnerProofCannotAcquireNewAuthorityThroughANewContextWrapper()
     {
         var platform = new Platform();
-        var provider = new Provider { ReuseProof = true };
+        using var provider = new Provider(platform) { ReuseProof = true };
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Assert.Equal(CpuLiveCurveSubmission.Acknowledged, await Send(backend, provider));
         int opens = platform.Opens;
@@ -221,7 +191,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     public async Task BoundProofRechecksContextUnderLeaseEvenWhenInnerProofAlwaysClaimsCurrent(string change, string when)
     {
         var platform = new Platform();
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         var original = provider.Context!;
         Action drift = () => provider.Context = Change(original, change);
         if (when == "acquire") { platform.OnWait = drift; }
@@ -238,22 +208,23 @@ public sealed class CpuLiveCurveNativeBackendTests
     public async Task ContextDriftAfterCompleteGetterRejectsObservationAndParksScope()
     {
         var platform = new Platform();
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         platform.OnCoreRead = count => { if (count == 12) { provider.Context = Change(provider.Context!, "counter"); } };
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Assert.Null((await backend.ObserveAsync(default)).Observation);
         Assert.True(backend.Status.ScopeInvalid);
         Assert.Equal(12, platform.CoreReads);
-        Assert.False(platform.Pinned);
+        Assert.True(platform.Pinned);
+        provider.Dispose(); Assert.False(platform.Pinned);
     }
 
     [Fact]
     public async Task AdmissionDelegatesExactCommandPurposeAndRechecksContextAfterProvider()
     {
-        var provider = new Provider();
+        var platform = new Platform();
+        using var provider = new Provider(platform);
         var original = provider.Context!;
         provider.OnAdmission = () => provider.Context = Change(original, "counter");
-        var platform = new Platform();
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Assert.False(await backend.CheckWriteAdmissionAsync(original, Command(-1), CpuLiveCurveCommandPurpose.Restore, default));
         Assert.Equal((Command(-1), CpuLiveCurveCommandPurpose.Restore), Assert.Single(provider.Admitted));
@@ -265,7 +236,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     [InlineData(true)]
     public async Task CompletePlanFallbackPreservesChecksAndRejectsFinalContextDrift(bool drift)
     {
-        var provider = new Provider(); var context = provider.Context!;
+        var platform = new Platform(); using var provider = new Provider(platform); var context = provider.Context!;
         var checks = new CpuLiveCurveAdmissionCheck[]
         {
             new(Command(0), CpuLiveCurveCommandPurpose.Forward),
@@ -273,7 +244,7 @@ public sealed class CpuLiveCurveNativeBackendTests
             new(Command(-1), CpuLiveCurveCommandPurpose.Restore),
         };
         if (drift) { provider.OnAdmission = () => provider.Context = Change(context, "counter"); }
-        var platform = new Platform(); var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Assert.Equal(!drift, await backend.CheckPlanAdmissionAsync(context, checks, default));
         Assert.Equal(checks.Select(check => (check.Command, check.Purpose)), provider.Admitted);
         Assert.Equal(0, provider.Proofs); Assert.Equal(0, platform.Opens);
@@ -291,7 +262,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     public async Task ActualProtocolResultsMapConservatively(string fault, string expected, bool invalid)
     {
         var platform = new Platform { Fault = fault };
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Assert.Equal(Enum.Parse<CpuLiveCurveSubmission>(expected), await Send(backend, provider));
         Assert.Equal(invalid, backend.Status.ScopeInvalid);
@@ -305,13 +276,13 @@ public sealed class CpuLiveCurveNativeBackendTests
     public async Task GetterCleanupFailureCannotBeReusedThroughSameOrNewBackend(string fault)
     {
         var platform = new Platform { Fault = fault };
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Assert.Null((await backend.ObserveAsync(default)).Observation);
         Assert.True(backend.Status.ScopeInvalid);
         int opens = platform.Opens;
         platform.Fault = null;
-        var replacement = new CpuLiveCurveNativeBackend(platform, new Provider());
+        var replacement = new CpuLiveCurveNativeBackend(platform, new Provider(platform));
         Assert.Null((await replacement.ObserveAsync(default)).Observation);
         Assert.False(await replacement.CheckWriteAdmissionAsync(provider.Context!, Command(0), CpuLiveCurveCommandPurpose.Forward, default));
         Assert.Equal(CpuLiveCurveSubmission.Unknown, await Send(replacement, provider));
@@ -321,8 +292,8 @@ public sealed class CpuLiveCurveNativeBackendTests
     [Fact]
     public async Task PostSendContextDriftCannotPromoteAcknowledgementToOwnership()
     {
-        var provider = new Provider();
         var platform = new Platform();
+        using var provider = new Provider(platform);
         platform.OnCoreRead = count => { if (count == 24) { provider.Context = Change(provider.Context!, "counter"); } };
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Assert.Equal(CpuLiveCurveSubmission.Unknown, await Send(backend, provider));
@@ -340,7 +311,7 @@ public sealed class CpuLiveCurveNativeBackendTests
         using var finish = new ManualResetEventSlim();
         using var cancellation = new CancellationTokenSource();
         var platform = new Platform { OnSetter = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); } };
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Task<CpuLiveCurveSubmission> caller = Send(backend, provider, token: cancellation.Token);
         try
@@ -354,9 +325,9 @@ public sealed class CpuLiveCurveNativeBackendTests
             Assert.Same(worker, backend.OutstandingWorker);
             Assert.True(platform.Held); Assert.True(platform.Pinned);
             await AssertAllRefused(backend, provider);
-            await AssertAllRefused(new CpuLiveCurveNativeBackend(platform, new Provider()), provider);
+            await AssertAllRefused(new CpuLiveCurveNativeBackend(platform, new Provider(platform)), provider);
             await AssertAllRefused(new CpuLiveCurveNativeBackend(
-                WindowsRz090528CpuNativeSession.ForPlatform(platform), new Provider()), provider);
+                WindowsRz090528CpuNativeSession.ForPlatform(platform), new Provider(platform)), provider);
             Assert.Equal(1, platform.Setters);
         }
         finally { finish.Set(); }
@@ -373,7 +344,7 @@ public sealed class CpuLiveCurveNativeBackendTests
         using var finish = new ManualResetEventSlim();
         using var cancellation = new CancellationTokenSource();
         var platform = new Platform { OnWait = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); } };
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         Task<CpuLiveCurveSubmission> caller = Send(backend, provider, token: cancellation.Token);
         try
@@ -398,7 +369,7 @@ public sealed class CpuLiveCurveNativeBackendTests
         using var finish = new ManualResetEventSlim();
         using var cancellation = new CancellationTokenSource();
         var platform = new Platform();
-        var provider = new Provider
+        using var provider = new Provider(platform)
         {
             AdmissionAllowed = false,
             OnAdmission = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); },
@@ -422,8 +393,8 @@ public sealed class CpuLiveCurveNativeBackendTests
         using var entered = new ManualResetEventSlim();
         using var finish = new ManualResetEventSlim();
         using var cancellation = new CancellationTokenSource();
-        var provider = new Provider { OnAdmission = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); throw new IOException(); } };
         var platform = new Platform();
+        using var provider = new Provider(platform) { OnAdmission = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); throw new IOException(); } };
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         var caller = backend.CheckWriteAdmissionAsync(provider.Context!, Command(0), CpuLiveCurveCommandPurpose.Forward, cancellation.Token);
         try
@@ -446,7 +417,7 @@ public sealed class CpuLiveCurveNativeBackendTests
         using var entered = new ManualResetEventSlim();
         using var finish = new ManualResetEventSlim();
         var platform = new Platform { OnSetter = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); } };
-        var provider = new Provider();
+        using var provider = new Provider(platform);
         var backend = new CpuLiveCurveNativeBackend(platform, provider);
         var store = new CpuLiveCurveTuningTransactionTests.MemoryStore();
         var transaction = new CpuLiveCurveTuningTransaction(backend, store, TimeSpan.FromMilliseconds(250));
@@ -516,10 +487,8 @@ public sealed class CpuLiveCurveNativeBackendTests
         ? context with { BootSequence = context.BootSequence with { Sequence = context.BootSequence.Sequence + 1 } }
         : context with { Backend = context.Backend with { DriverSha256 = "other" } };
 
-    private sealed class Provider : ICpuLiveCurveTrustedNativeProvider
+    private sealed class Provider(Platform platform) : ICpuLiveCurveTrustedNativeProvider, IDisposable
     {
-        internal Func<CancellationToken, CpuLiveCurveWriteDeadline>? Deadline;
-        public CpuLiveCurveWriteDeadline? BeginSubmission(CancellationToken token) => Deadline?.Invoke(token);
         internal Func<CpuLiveCurveNativeRequest, CpuLiveCurveWriteProof?>? Prepare;
         public bool SupportsReadPreparation => Prepare is not null;
         public CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext context,
@@ -535,9 +504,17 @@ public sealed class CpuLiveCurveNativeBackendTests
         internal readonly List<(CpuLiveCurveCommand, CpuLiveCurveCommandPurpose)> Admitted = [];
         private CpuLiveCurveWriteProof? cachedProof;
         public CpuLiveCurveContext? ReadFreshContext(CancellationToken token) => Context;
-        public CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext context, CancellationToken token) => InstalledApproval?.Invoke();
-        public CpuQueryAttendedApproval? CreateQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token)
-        { QueryApprovals++; return QueryAllowed ? CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true) : null; }
+        private CpuInstalledBackendLease? installed;
+        public void Dispose() => installed?.Dispose();
+        public CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext context, CancellationToken token)
+        {
+            QueryApprovals++;
+            if (!QueryAllowed) { return null; }
+            if (InstalledApproval is not null) { return InstalledApproval(); }
+            platform.RetainDevice = true;
+            installed ??= WindowsRz090528CpuNativeSession.ForPlatform(platform).TryRetainInstalledBackend(() => context.Identity, token);
+            return installed?.CreateQueryApproval(() => context.MatchesHardwareContext(Context));
+        }
         public bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
             CpuLiveCurveCommandPurpose purpose, CancellationToken token)
         { Admitted.Add((command, purpose)); OnAdmission?.Invoke(); return AdmissionAllowed; }
@@ -586,7 +563,7 @@ public sealed class CpuLiveCurveNativeBackendTests
         {
             public ICpuQueryDevice Duplicate() => new RetainedDevice(owner);
             public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength) => owner.Invoke(code, input, outputLength);
-            public void Dispose() { }
+            public void Dispose() { if (owner.Held && owner.Fault == "cleanup") { throw new IOException(); } }
         }
         public ICpuQueryMutex CreateSharedMutex() { MutexCreates++; return this; }
         public CpuQueryMutexWait Wait(TimeSpan timeout, CancellationToken cancellationToken)

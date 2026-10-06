@@ -57,7 +57,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                 else { Volatile.Write(ref operation.Active, 0); }
             }
         }
-        return new((CpuLiveCurveNativeDisposition)(wire?.Disposition ?? CpuLivePowerNativeDisposition.NotSubmitted),
+        return new(wire?.Disposition ?? CpuLiveCurveNativeDisposition.NotSubmitted,
             true, cleanup, verified, wire?.CurveAfter, failure);
 
         void Check()

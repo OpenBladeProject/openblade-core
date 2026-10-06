@@ -14,50 +14,21 @@ public sealed class CpuLivePowerOwnershipJournalStoreTests : IDisposable
     [Fact]
     public async Task PublicDtoFieldsRoundTripExactFractionalOriginalAndFullPendingPair()
     {
-        var journal = Create().Progress(CpuLivePowerOwnershipState.PossibleSubmission, 1);
+        var journal = Create();
         var store = new CpuLivePowerOwnershipJournalStore(JournalPath);
-        string? hash = await store.TryWriteAsync(null, journal, default);
-        Assert.NotNull(hash);
+        Directory.CreateDirectory(directory);
+        string originalJson = JsonSerializer.Serialize(journal, Options);
+        await File.WriteAllTextAsync(JournalPath, originalJson);
         var loaded = await new CpuLivePowerOwnershipJournalStore(JournalPath).LoadAsync(default);
-        Assert.False(loaded.Invalid); Assert.Equal(hash, loaded.Sha256);
+        Assert.False(loaded.Invalid); Assert.NotNull(loaded.Sha256); Assert.Equal(originalJson, await File.ReadAllTextAsync(JournalPath));
         Assert.Equal(journal.Context, loaded.Journal!.Context); Assert.Equal(journal.OriginalBaseline, loaded.Journal.OriginalBaseline);
         Assert.Equal(journal.OperationBaseline, loaded.Journal.OperationBaseline); Assert.Equal(journal.Expected, loaded.Journal.Expected);
-        Assert.Equal(journal.Steps, loaded.Journal.Steps); Assert.Equal(1, loaded.Journal.CompletedSteps);
-        Assert.Equal(CpuLivePowerOwnershipState.PossibleSubmission, loaded.Journal.State);
+        Assert.Equal(journal.Steps, loaded.Journal.Steps); Assert.Equal(0, loaded.Journal.CompletedSteps);
+        Assert.Equal(CpuLivePowerOwnershipState.Prepared, loaded.Journal.State);
         var json = JsonNode.Parse(await File.ReadAllTextAsync(JournalPath))!;
         Assert.Equal(100123u, json["originalBaseline"]!["fast"]!["milliwatts"]!.GetValue<uint>());
-        Assert.Equal(CpuLivePowerTuningTransactionTests.Bits(100123), json["originalBaseline"]!["fast"]!["rawBits"]!.GetValue<uint>());
-        Assert.Equal(CpuLivePowerTuningTransactionTests.Bits(80765), json["originalBaseline"]!["slow"]!["rawBits"]!.GetValue<uint>());
-    }
-
-    [Fact]
-    public async Task RestoringFractionalDestinationsProgressForwardAndKeepCompleteOriginal()
-    {
-        var original = Create(); var owned = original.Progress(CpuLivePowerOwnershipState.OwnedVerified, 2);
-        var restoring = owned.ArmRestoration().Progress(CpuLivePowerOwnershipState.OwnedVerified, 1);
-        Assert.True(restoring.IsWellFormed); Assert.True(restoring.Restoring);
-        Assert.Equal(owned.Expected, restoring.OperationBaseline);
-        Assert.Equal(new[] { CpuLivePowerLimit.Fast, CpuLivePowerLimit.Slow }, restoring.Steps.Select(step => step.Limit));
-        Assert.Equal(new[] { 100123u, 80765u }, restoring.Steps.Select(step => step.After.Milliwatts));
-        var store = new CpuLivePowerOwnershipJournalStore(JournalPath);
-        Assert.NotNull(await store.TryWriteAsync(null, restoring, default));
-        var loaded = (await new CpuLivePowerOwnershipJournalStore(JournalPath).LoadAsync(default)).Journal!;
-        Assert.Equal(original.OriginalBaseline, loaded.OriginalBaseline); Assert.Equal(100123u, loaded.Expected.Fast.Milliwatts);
-        Assert.Equal(79000u, loaded.Expected.Slow.Milliwatts);
-        var finished = loaded.Progress(CpuLivePowerOwnershipState.Restored, 2);
-        Assert.True(finished.IsWellFormed); Assert.Equal(original.OriginalBaseline, finished.Expected);
-    }
-
-    [Fact]
-    public async Task CompareAndSwapAcrossInstancesAllowsOnlyOneWinner()
-    {
-        var store = new CpuLivePowerOwnershipJournalStore(JournalPath); var journal = Create();
-        string? hash = await store.TryWriteAsync(null, journal, default);
-        var results = await Task.WhenAll(store.TryWriteAsync(hash, journal.Progress(CpuLivePowerOwnershipState.PossibleSubmission, 0), default),
-            new CpuLivePowerOwnershipJournalStore(JournalPath).TryWriteAsync(hash, journal.Progress(CpuLivePowerOwnershipState.Blocked, 0), default));
-        Assert.Single(results, result => result is not null);
-        Assert.Null(await store.TryWriteAsync(hash, journal, default)); Assert.Null(await store.TryWriteAsync(null, journal, default));
-        Assert.False((await store.LoadAsync(default)).Invalid);
+        Assert.Equal(CpuPowerTestData.Bits(100123), json["originalBaseline"]!["fast"]!["rawBits"]!.GetValue<uint>());
+        Assert.Equal(CpuPowerTestData.Bits(80765), json["originalBaseline"]!["slow"]!["rawBits"]!.GetValue<uint>());
     }
 
     [Theory]
@@ -109,7 +80,7 @@ public sealed class CpuLivePowerOwnershipJournalStoreTests : IDisposable
             case "edited-range": node["steps"]![0]!["after"] = Value(96000); break;
             case "progress": node["completedSteps"] = 3; break;
             case "expected": node["expected"]!["slow"] = Value(80000); break;
-            case "stapm": node["operationBaseline"]!["stapmRawBits"] = CpuLivePowerTuningTransactionTests.Bits(59000); break;
+            case "stapm": node["operationBaseline"]!["stapmRawBits"] = CpuPowerTestData.Bits(59000); break;
             case "false-restored": node["state"] = (int)CpuLivePowerOwnershipState.Restored; break;
             case "false-restoring": node["restoring"] = true; break;
             case "null-steps": node["steps"] = null; break;
@@ -125,7 +96,7 @@ public sealed class CpuLivePowerOwnershipJournalStoreTests : IDisposable
         Directory.CreateDirectory(directory); await File.WriteAllTextAsync(JournalPath, json);
         var store = new CpuLivePowerOwnershipJournalStore(JournalPath);
         Assert.True((await store.LoadAsync(default)).Invalid);
-        Assert.Null(await store.TryWriteAsync(null, Create(), default)); Assert.Equal(json, await File.ReadAllTextAsync(JournalPath));
+        Assert.Equal(json, await File.ReadAllTextAsync(JournalPath));
     }
 
     [Fact]
@@ -137,35 +108,24 @@ public sealed class CpuLivePowerOwnershipJournalStoreTests : IDisposable
         foreach (var content in new[] { "", "{}", "null", "{bad", new string('x', 32769) })
         {
             await File.WriteAllTextAsync(JournalPath, content);
-            Assert.True((await store.LoadAsync(default)).Invalid); Assert.Null(await store.TryWriteAsync(null, Create(), default));
+            Assert.True((await store.LoadAsync(default)).Invalid);
             Assert.Equal(content, await File.ReadAllTextAsync(JournalPath));
         }
         await File.WriteAllTextAsync(JournalPath, JsonSerializer.Serialize(Create(), Options));
         using var held = new FileStream(JournalPath, FileMode.Open, FileAccess.Read, FileShare.None);
-        Assert.True((await store.LoadAsync(default)).Invalid); Assert.Null(await store.TryWriteAsync(null, Create(), default));
+        Assert.True((await store.LoadAsync(default)).Invalid);
     }
 
-    [Fact]
-    public async Task DefensiveStepArrayAndLockContentionCannotReplaceJournal()
-    {
-        var original = Create(); var steps = original.Steps.ToArray();
-        var journal = new CpuLivePowerOwnershipJournal(1, original.TransactionId, original.Context, original.OriginalBaseline,
-            original.OperationBaseline, steps, original.Expected, original.State, 0, false, original.UpdatedAtUtc);
-        steps[0] = steps[1]; Assert.True(journal.IsWellFormed);
-        Assert.Throws<NotSupportedException>(() => ((IList<CpuLivePowerStoredStep>)journal.Steps)[0] = steps[1]);
-        Directory.CreateDirectory(directory);
-        using var held = new FileStream(JournalPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-        Assert.Null(await new CpuLivePowerOwnershipJournalStore(JournalPath).TryWriteAsync(null, journal, default));
-        Assert.False(File.Exists(JournalPath));
-    }
-
-    private static JsonNode Value(uint value) => JsonSerializer.SerializeToNode(new CpuLivePowerStoredValue(value, CpuLivePowerTuningTransactionTests.Bits(value)), Options)!;
+    private static JsonNode Value(uint value) => JsonSerializer.SerializeToNode(new CpuLivePowerStoredValue(value, CpuPowerTestData.Bits(value)), Options)!;
     internal static CpuLivePowerOwnershipJournal Create()
     {
-        var plan = Rz090528CpuLivePowerPlan.CreateSelective(CpuLivePowerTuningTransactionTests.Raw(CpuLivePowerTuningTransactionTests.PairFixture()),
-            [new(CpuLivePowerLimit.Fast, 90), new(CpuLivePowerLimit.Slow, 79)], CpuLivePowerFusedCap.TryDecode(4, 7u << 28),
-            CpuLivePowerCapability.TryDecode(2), new(0x50001, 0, 125000, 1), (_, _) => true).Plan!;
-        return CpuLivePowerOwnershipJournal.Prepare(CpuLivePowerTuningTransactionTests.ContextFixture(), plan);
+        var original = CpuPowerTestData.PairFixture();
+        var after = CpuPowerTestData.PairFixture(90000, 79000);
+        return new(1, Guid.NewGuid(), CpuPowerTestData.ContextFixture(), CpuLivePowerStoredPair.From(original),
+            CpuLivePowerStoredPair.From(original),
+            [new(CpuLivePowerLimit.Fast, CpuLivePowerStoredValue.From(original.Fast), CpuLivePowerStoredValue.From(after.Fast)),
+                new(CpuLivePowerLimit.Slow, CpuLivePowerStoredValue.From(original.Slow), CpuLivePowerStoredValue.From(after.Slow))],
+            CpuLivePowerStoredPair.From(original), CpuLivePowerOwnershipState.Prepared, 0, false, DateTimeOffset.UnixEpoch);
     }
 
     public void Dispose() { if (Directory.Exists(directory)) { Directory.Delete(directory, recursive: true); } }

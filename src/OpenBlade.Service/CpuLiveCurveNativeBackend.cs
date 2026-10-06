@@ -11,14 +11,12 @@ internal interface ICpuLiveCurveTrustedNativeProvider
 {
     CpuSavedAdmissionDiagnostic? Diagnostic => null;
     bool SupportsReadPreparation => false;
-    CpuLiveCurveWriteDeadline? BeginSubmission(CancellationToken token) => null;
     CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext exactContext,
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token) => null;
     IDisposable? BeginGetter(CancellationToken token) => null;
     CpuLiveCurveContext? ReadFreshContext(CancellationToken token);
     bool CompleteGetter(CpuLiveCurveContext expected, CancellationToken token) =>
         ReadFreshContext(token) is { } actual && expected.MatchesHardwareContext(actual);
-    CpuQueryAttendedApproval? CreateQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token);
     CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token) => null;
     bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token);
@@ -115,16 +113,13 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         var context = provider.ReadFreshContext(token);
         if (!Check(context is { IsWellFormed: true }, "native curve context unavailable")) { return new(null, null); }
         var installed = provider.CreateInstalledQueryApproval(context!, token);
-        var approval = installed is null ? provider.CreateQueryApproval(context!, token) : null;
-        if (!Check(installed is not null || approval is not null, "native curve query approval")
+        if (!Check(installed is not null, "native curve query approval")
             || !Check(MatchesFresh(context!, token), "native curve context before query")) { return new(null, null); }
         Rz090528CpuLiveQueryResult result;
         CpuQueryProgress? progress = null;
         using (diagnostic?.BeginStage("native curve query (admission/mutex/mailbox)"))
         {
-            result = installed is not null
-                ? session.QueryInstalled(installed, () => ReadBoundUsb(context!, token), token, progress = diagnostic?.BeginNativeQuery())
-                : session.Query(approval, () => ReadBoundUsb(context!, token), token);
+            result = session.QueryInstalled(installed, () => ReadBoundUsb(context!, token), token, progress = diagnostic?.BeginNativeQuery());
         }
         if (result.Diagnostic is { } detail)
         {
@@ -145,12 +140,6 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     {
         var diagnostic = Diagnostic;
         bool Check(bool allowed, string name) => diagnostic?.Check(allowed, name) ?? allowed;
-        using var deadline = provider.BeginSubmission(token);
-        if (deadline is not null)
-        {
-            if (!Check(deadline.IsCurrent(), "validation write deadline")) { return CpuLiveCurveSubmission.NotSubmitted; }
-            token = deadline.Token;
-        }
         using var preparation = diagnostic?.BeginStage("curve send proof preparation");
         if (!Check(ValidCommand(command, purpose), "curve send command shape")) { return CpuLiveCurveSubmission.NotSubmitted; }
         var request = new CpuLiveCurveNativeRequest(scope, command, purpose, expectedBefore, peer);
@@ -169,7 +158,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
             || !Check(proof!.Consume(request), "curve send proof consumption")
             || !Check(MatchesFresh(context, token), "curve send proof context"))
         { return CpuLiveCurveSubmission.NotSubmitted; }
-        var boundProof = new ContextBoundProof(request, proof!, this, context, token, deadline);
+        var boundProof = new ContextBoundProof(request, proof!, this, context, token);
         // ReadFreshContext uses the provider's exact active getter continuity
         // during preparation/readback, and full context outside that scope.
         CpuLiveCurveNativeResult result;
@@ -217,11 +206,10 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     private Task<T> Start<T>(CpuLiveCurveNativeWorkerKind kind, Func<CancellationToken, T> work, T refused, CancellationToken token) =>
         state.Start(CpuNativeWorkerFamily.Curve, (CpuNativeWorkerKind)kind, work, refused, token, Diagnostic);
     private sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
-        CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token,
-        CpuLiveCurveWriteDeadline? deadline = null) : CpuLiveCurveWriteProof(request)
+        CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
         internal override bool IsSubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) =>
-            source.SubmissionCurrent(exactRequest) && !token.IsCancellationRequested && (deadline?.IsCurrent() ?? true);
+            source.SubmissionCurrent(exactRequest) && !token.IsCancellationRequested;
         internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) =>
             source.PreparationCurrent(exactRequest) && owner.MatchesFresh(context, token);
         internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest) => source.BeginRead(exactRequest);

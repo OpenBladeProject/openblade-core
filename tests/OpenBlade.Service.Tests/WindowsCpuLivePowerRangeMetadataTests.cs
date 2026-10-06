@@ -290,7 +290,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     private const CpuLivePowerRangeMetadataStages CompleteStages = CpuLivePowerRangeMetadataStages.InvocationEntered
         | CpuLivePowerRangeMetadataStages.InvocationReturned | CpuLivePowerRangeMetadataStages.OutputEnumerated
         | CpuLivePowerRangeMetadataStages.PropertiesRead | CpuLivePowerRangeMetadataStages.Disposed;
-    private static CpuLivePowerContext Context() => CpuLivePowerTuningTransactionTests.ContextFixture();
+    private static CpuLivePowerContext Context() => CpuPowerTestData.ContextFixture();
     private static WindowsCpuLivePowerRangeMetadata Reader(Session session) => new(Context(), new Scope(), _ => session);
     private static void ChangeReturn(Output output, string fault)
     {

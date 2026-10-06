@@ -260,8 +260,6 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
                 }
                 Assert.Equal(hosts, fixture.Platform.HostReads); Assert.Equal(usb, fixture.UsbReads);
                 Assert.True(continuity > 250);
-                Assert.Null(provider.CreateWriteProof(context, null!, fixture.OperationToken));
-                Assert.False(provider.CheckWriteAdmission(context, default, default, null!, null!, fixture.OperationToken));
                 if (previous is not null) { Assert.False(previous.IsCurrent()); }
                 if (finalDrift) { fixture.Platform.HostValid = false; }
                 Assert.Equal(!finalDrift, provider.CompleteGetter(context, fixture.OperationToken));
@@ -444,15 +442,11 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
             var context = Assert.IsType<CpuLivePowerContext>(power.ReadFreshContext(default));
             Assert.Equal(curve.Identity, context.Identity); Assert.Equal(curve.Backend, context.Backend);
             Assert.Equal(curve.RuntimeLifetime, context.RuntimeLifetime);
-            Assert.Null(power.CreateObservationApproval(context, default));
-            Assert.Null(power.ReadFreshObservationLifetime(context, default));
             captured = power.CreateInstalledObservationApproval(context, default);
             Assert.NotNull(captured); Assert.True(captured.IsCurrent());
             Assert.NotNull(power.CreateObservationMetadata(context, default));
             Assert.Equal(0, fixture.MetadataOpens);
             // Physical PPT admission is still pending, including restoration.
-            Assert.False(power.CheckWriteAdmission(context, default, CpuLivePowerCommandPurpose.Restore, null!, null!, default));
-            Assert.Null(power.CreateWriteProof(context, null!, default));
         });
         Assert.False(captured!.IsCurrent());
         await fixture.Run(_ =>
@@ -469,7 +463,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
     {
         using var fixture = new Fixture();
         CpuLiveCurveWriteProof? captured = null; CpuLiveCurveNativeRequest? capturedRequest = null;
-        var expected = CpuLivePowerTuningTransactionTests.PairFixture(45000, 45000);
+        var expected = CpuPowerTestData.PairFixture(45000, 45000);
         await fixture.Run(context =>
         {
             var single = Request(-2);
@@ -479,7 +473,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
             var cap = CpuLivePowerFusedCap.TryDecode(4, 7u << 28)!;
             Assert.True(captured.AdmitPowerPeer(capturedRequest, 6, cap));
             var owned = new CpuLiveCurveNativeRequest(single.Scope, single.Command, single.Purpose, single.Before,
-                new(expected, CpuLivePowerTuningTransactionTests.PairFixture(100123, 80765)));
+                new(expected, CpuPowerTestData.PairFixture(100123, 80765)));
             var ownedProof = fixture.Provider.CreateWriteProof(context, owned, default)!;
             Assert.False(ownedProof.AdmitPowerPeer(owned, 6, cap));
             Assert.False(captured.AdmitPowerPeer(owned, 6, cap));
@@ -548,7 +542,6 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         {
             approval = fixture.Provider.CreateInstalledQueryApproval(context, default);
             Assert.NotNull(approval); Assert.True(approval.IsCurrent());
-            Assert.Null(fixture.Provider.CreateQueryApproval(context, default));
             proof = fixture.Provider.CreateWriteProof(context, request, default);
             Assert.NotNull(proof); Assert.True(proof.Current(request));
             Assert.NotNull(proof.ReadFreshRange(request));

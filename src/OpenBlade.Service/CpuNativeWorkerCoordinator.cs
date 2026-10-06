@@ -6,7 +6,7 @@ namespace OpenBlade.Service;
 internal enum CpuNativeWorkerKind { None, Observation, Admission, Submission }
 internal enum CpuNativeWorkerFamily { Curve, Power }
 internal sealed record CpuNativeWorkerStatus(bool WorkerOutstanding, CpuNativeWorkerKind Kind, bool Invalid,
-    CpuLiveCurveNativeResult? CurveResult, CpuLivePowerNativeResult? PowerResult);
+    CpuLiveCurveNativeResult? CurveResult);
 
 // One actual-worker owner per cached native session, covering provider/WMI work
 // before Protocol acquires its separate native-operation latch. No authority is
@@ -19,14 +19,12 @@ internal sealed class CpuNativeWorkerCoordinator
     private CpuNativeWorkerKind kind;
     private bool invalid;
     private CpuLiveCurveNativeResult? curveResult;
-    private CpuLivePowerNativeResult? powerResult;
     private CpuNativeWorkerCoordinator() { }
     internal static CpuNativeWorkerCoordinator ForSession(WindowsRz090528CpuNativeSession session) => Workers.GetValue(session, static _ => new());
     internal Task? OutstandingWorker { get { lock (gate) { return active; } } }
-    internal CpuNativeWorkerStatus Status { get { lock (gate) { return new(active is not null, kind, invalid, curveResult, powerResult); } } }
+    internal CpuNativeWorkerStatus Status { get { lock (gate) { return new(active is not null, kind, invalid, curveResult); } } }
     internal void Invalidate() { lock (gate) { invalid = true; } }
     internal void Record(CpuLiveCurveNativeResult result) { lock (gate) { curveResult = result; } }
-    internal void Record(CpuLivePowerNativeResult result) { lock (gate) { powerResult = result; } }
 
     internal Task<T> Start<T>(CpuNativeWorkerFamily family, CpuNativeWorkerKind nextKind,
         Func<CancellationToken, T> work, T refused, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,
@@ -40,7 +38,7 @@ internal sealed class CpuNativeWorkerCoordinator
             { diagnostic?.Check(false, invalid ? "native worker scope invalid" : "native worker outstanding"); return Task.FromResult(refused); }
             linked = CancellationTokenSource.CreateLinkedTokenSource(token); kind = nextKind;
             if (nextKind == CpuNativeWorkerKind.Submission)
-            { if (family == CpuNativeWorkerFamily.Curve) { curveResult = null; } else { powerResult = null; } }
+            { if (family == CpuNativeWorkerFamily.Curve) { curveResult = null; } }
             // Even queued cancellation executes its terminal cleanup path.
             worker = Task.Run(() =>
             {

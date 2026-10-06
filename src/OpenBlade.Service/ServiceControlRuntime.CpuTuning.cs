@@ -262,9 +262,6 @@ public sealed partial class ServiceControlRuntime
     {
         bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         ServiceStatusSnapshot current = GetStatus();
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        if (!Check((features & ~CpuTuningFeatures.CurveOptimizer) == 0, "runtime voltage-only validation features")) { return false; }
-#endif
         if (!Check(lowPowerGate.Generation == generation, "runtime power generation before probes")
             || !Check(powerSourceGeneration == sourceGeneration, "runtime power source generation before probes")
             || !CpuMutationSafetyAvailable(current, stillControlsSession, diagnostic)
@@ -334,9 +331,6 @@ public sealed partial class ServiceControlRuntime
     // time; unrelated advertised features confer no authority.
     private static bool CpuFeaturesAdmitted(DeviceCapabilities? capabilities, CpuTuningSettings? settings, bool restoring) =>
         capabilities is not null
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        && (restoring || settings is { PowerLimitWatts: null, CurveOptimizer.EffectiveValue: -1 or 0 })
-#endif
         && (restoring || settings is not null
                 && (settings.PowerLimitWatts is null || capabilities.CpuPowerLimit is { Access: DeviceFeatureAccess.ReadWrite })
                 && (settings.CurveOptimizer is null || capabilities.CpuVoltageOptimizer is { Access: DeviceFeatureAccess.ReadWrite }));

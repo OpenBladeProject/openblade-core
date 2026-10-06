@@ -5,7 +5,6 @@ namespace OpenBlade.Protocol;
 // Pure source-mapped observations and planning. These values cannot establish
 // freshness, native permission, ownership, a firmware clamp rule or restoration.
 internal enum CpuLivePowerLimit { Fast, Slow }
-internal enum CpuLivePowerCommandPurpose { Forward, Restore }
 
 internal readonly record struct CpuLivePowerValue
 {
@@ -47,16 +46,6 @@ internal sealed record CpuLivePowerPair(CpuLivePowerValue Fast, CpuLivePowerValu
 {
     internal CpuLivePowerValue Get(CpuLivePowerLimit limit) => limit switch
     { CpuLivePowerLimit.Fast => Fast, CpuLivePowerLimit.Slow => Slow, _ => throw new ArgumentOutOfRangeException(nameof(limit)) };
-    internal CpuLivePowerPair With(CpuLivePowerCommand command)
-    {
-        if (!CpuLivePowerValue.TryFromMilliwatts(command.Milliwatts, out var value)) { throw new ArgumentException("Invalid power command."); }
-        return command.Limit switch
-        {
-            CpuLivePowerLimit.Fast => this with { Fast = value },
-            CpuLivePowerLimit.Slow => this with { Slow = value },
-            _ => throw new ArgumentException("Invalid power limit."),
-        };
-    }
 }
 
 internal sealed class CpuLivePowerSnapshot
@@ -114,104 +103,8 @@ internal sealed class CpuLivePowerCapability
     internal uint RawValue { get; }
     internal bool AppliesFusedCeiling => (RawValue & 2) == 0;
     internal static CpuLivePowerCapability? TryDecode(uint rawValue) => rawValue == uint.MaxValue ? null : new(rawValue);
-    internal bool AllowsUnderFusedCap(CpuLivePowerCommand command, CpuLivePowerFusedCap cap) =>
-        !AppliesFusedCeiling || command.Milliwatts <= cap.Milliwatts;
 }
 
-internal readonly record struct CpuLivePowerCommand
-{
-    private CpuLivePowerCommand(CpuLivePowerLimit limit, uint milliwatts) { Limit = limit; Milliwatts = milliwatts; }
-    internal CpuLivePowerLimit Limit { get; }
-    internal uint Milliwatts { get; }
-    internal uint Message => Limit switch
-    { CpuLivePowerLimit.Fast => 0x32, CpuLivePowerLimit.Slow => 0x33, _ => 0 };
-    internal static bool TryCreate(CpuLivePowerLimit limit, uint milliwatts, out CpuLivePowerCommand command)
-    {
-        command = default;
-        if (limit is not (CpuLivePowerLimit.Fast or CpuLivePowerLimit.Slow)
-            || !CpuLivePowerValue.TryFromMilliwatts(milliwatts, out _)) { return false; }
-        command = new(limit, milliwatts); return true;
-    }
-    internal uint EncodeArgument() => Milliwatts is > 0 and <= CpuLivePowerValue.MaximumMilliwatts
-        && Message is 0x32 or 0x33 ? Milliwatts : throw new InvalidOperationException("Invalid power command.");
-    internal static bool TryDecode(uint message, uint argument, out CpuLivePowerCommand command)
-    {
-        command = default;
-        return message is 0x32 or 0x33 && TryCreate(message == 0x32 ? CpuLivePowerLimit.Fast : CpuLivePowerLimit.Slow, argument, out command);
-    }
-}
-
-internal sealed record CpuLivePowerTarget(CpuLivePowerLimit Limit, int WholeWatts);
-internal enum CpuLivePowerPlanStatus { Prepared, Unchanged, InvalidBaseline, InvalidTarget, InvalidCap, AdmissionDenied, InvalidCapability, InvalidRange }
-internal sealed record CpuLivePowerStep(CpuLivePowerCommand Command, CpuLivePowerCommand RestoreCommand,
-    CpuLivePowerPair Before, CpuLivePowerPair After);
-internal sealed record CpuLivePowerPlanResult(CpuLivePowerPlanStatus Status, CpuLivePowerSnapshot? Baseline, Rz090528CpuLivePowerPlan? Plan);
-
-internal sealed class Rz090528CpuLivePowerPlan
-{
-    private Rz090528CpuLivePowerPlan(CpuLivePowerSnapshot baseline, CpuLivePowerFusedCap cap,
-        CpuLivePowerCapability capability, CpuLivePowerTrustedRange range, CpuLivePowerStep[] steps)
-    { Baseline = baseline; FusedCap = cap; Capability = capability; FirmwareRange = range; Steps = Array.AsReadOnly(steps); }
-    internal CpuLivePowerSnapshot Baseline { get; }
-    internal CpuLivePowerFusedCap FusedCap { get; }
-    internal CpuLivePowerCapability Capability { get; }
-    internal CpuLivePowerTrustedRange FirmwareRange { get; }
-    internal IReadOnlyList<CpuLivePowerStep> Steps { get; }
-    internal CpuLivePowerPair Expected => Steps[^1].After;
-    internal static CpuLivePowerPlanResult CreateSelective(CpuPmRawSnapshot? observation,
-        IReadOnlyList<CpuLivePowerTarget>? targets, CpuLivePowerFusedCap? cap,
-        CpuLivePowerCapability? capability, CpuLivePowerTrustedRange? range,
-        Func<CpuLivePowerCommand, CpuLivePowerCommandPurpose, bool>? admit)
-    {
-        var baseline = CpuLivePowerSnapshot.TryCreate(observation);
-        if (baseline is null) { return new(CpuLivePowerPlanStatus.InvalidBaseline, null, null); }
-        int count = targets?.Count ?? 0;
-        if (count == 0) { return new(CpuLivePowerPlanStatus.Unchanged, baseline, null); }
-        if (count is < 0 or > 2) { return new(CpuLivePowerPlanStatus.InvalidTarget, baseline, null); }
-        var copy = new CpuLivePowerTarget[count]; uint seen = 0;
-        for (int i = 0; i < count; i++)
-        {
-            var target = targets![i];
-            if (target is null || target.Limit is not (CpuLivePowerLimit.Fast or CpuLivePowerLimit.Slow)
-                || target.WholeWatts is < 45 or > 95 || (seen & (1u << (int)target.Limit)) != 0)
-            { return new(CpuLivePowerPlanStatus.InvalidTarget, baseline, null); }
-            seen |= 1u << (int)target.Limit; copy[i] = target;
-        }
-        var steps = new List<CpuLivePowerStep>(2); var current = baseline.Pair;
-        foreach (var target in copy.OrderBy(value => value.Limit))
-        {
-            var previous = current.Get(target.Limit); uint next = (uint)target.WholeWatts * 1000;
-            if (previous.Milliwatts == next) { continue; }
-            _ = CpuLivePowerCommand.TryCreate(target.Limit, next, out var forward);
-            _ = CpuLivePowerCommand.TryCreate(target.Limit, previous.Milliwatts, out var restore);
-            var after = current.With(forward); steps.Add(new(forward, restore, current, after)); current = after;
-        }
-        if (steps.Count == 0) { return new(CpuLivePowerPlanStatus.Unchanged, baseline, null); }
-        if (cap is null) { return new(CpuLivePowerPlanStatus.InvalidCap, baseline, null); }
-        if (capability is null) { return new(CpuLivePowerPlanStatus.InvalidCapability, baseline, null); }
-        if (range is null) { return new(CpuLivePowerPlanStatus.InvalidRange, baseline, null); }
-        if (steps.Any(step => !capability.AllowsUnderFusedCap(step.Command, cap)
-            || !capability.AllowsUnderFusedCap(step.RestoreCommand, cap)))
-        { return new(CpuLivePowerPlanStatus.InvalidCap, baseline, null); }
-        if (steps.Any(step => !range.AllowsCommand(step.Command, capability, cap)
-            || !range.AllowsCommand(step.RestoreCommand, capability, cap)))
-        { return new(CpuLivePowerPlanStatus.InvalidRange, baseline, null); }
-        if (admit is null) { return new(CpuLivePowerPlanStatus.AdmissionDenied, baseline, null); }
-        try
-        {
-            // The restore callback deliberately sees the captured mW value even
-            // outside the forward editor range. It must apply independent exact
-            // restore/context authority before any plan is returned. Candidate
-            // capability/cap/range checks above only reject inconsistent plans;
-            // they never supply fresh native permission or original ownership.
-            foreach (var step in steps)
-            {
-                if (!admit(step.Command, CpuLivePowerCommandPurpose.Forward)
-                    || !admit(step.RestoreCommand, CpuLivePowerCommandPurpose.Restore))
-                { return new(CpuLivePowerPlanStatus.AdmissionDenied, baseline, null); }
-            }
-        }
-        catch (Exception) { return new(CpuLivePowerPlanStatus.AdmissionDenied, baseline, null); }
-        return new(CpuLivePowerPlanStatus.Prepared, baseline, new(baseline, cap, capability, range, steps.ToArray()));
-    }
-}
+// Decoded and admitted observation metadata only; it supplies no setter authority.
+internal sealed record CpuLivePowerTrustedRange(uint Selector, uint MinimumMilliwatts,
+    uint MaximumMilliwatts, uint StepMilliwatts);

@@ -3,107 +3,18 @@ using System.Diagnostics;
 
 namespace OpenBlade.Protocol;
 
-internal sealed partial class WindowsRz090528CpuNativeSession
-{
-    internal CpuLivePowerNativeResult ExecutePower(CpuLivePowerNativeRequest request,
-        CpuLivePowerWriteProof? proof, Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default) =>
-        WindowsRz090528CpuQueryAdapter.ExecutePowerWithPlatform(request, proof, readFreshUsbIdentity, platform, token);
-}
-
-internal sealed partial class WindowsRz090528CpuQueryAdapter
-{
-    // One synchronous, typed operation only. No provider, service composition or
-    // attended command constructs PPT write authority. The actual worker must
-    // remain retained until it returns, regardless of caller timeout/cancellation.
-    internal static CpuLivePowerNativeResult ExecutePowerWithPlatform(CpuLivePowerNativeRequest request,
-        CpuLivePowerWriteProof? proof, Func<DeviceIdentity?> readUsb, ICpuQueryWindowsPlatform platform,
-        CancellationToken token = default)
-    {
-        ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(readUsb);
-        ArgumentNullException.ThrowIfNull(platform);
-        var operation = NativeOperations.GetValue(platform, static _ => new());
-        if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
-        { return new(CpuLivePowerNativeDisposition.NotSubmitted, true, true, false, null, CpuLivePowerNativeFailure.AdmissionDenied); }
-        IDisposable? lease = null;
-        WindowsRz090528CpuQueryAdapter? adapter = null;
-        CpuPowerNativeWire? wire = null;
-        bool cleanup = true, verified = false;
-        var failure = CpuLivePowerNativeFailure.AdmissionDenied;
-        long started = Stopwatch.GetTimestamp();
-        try
-        {
-            token.ThrowIfCancellationRequested();
-            if (proof is null || !proof.Consume(request) || !ExactUsb(readUsb()) || !ExactPowerPlatform())
-            { throw new CpuPowerAdmissionException(); }
-            wire = new(request, Check, CheckRange, CheckFinal);
-            adapter = new(platform, readUsb, wire);
-            lease = adapter.Acquire(TimeSpan.FromSeconds(20), token);
-            if (lease is null || !ExactPowerPlatform()) { throw new CpuPowerAdmissionException(); }
-            Check();
-            failure = CpuLivePowerNativeFailure.Transport;
-            wire.Run(adapter, token);
-            CheckRange();
-            verified = wire.Complete && wire.After?.Pair == request.After;
-            failure = verified ? CpuLivePowerNativeFailure.None : CpuLivePowerNativeFailure.ReadbackDrift;
-        }
-        catch (CpuPowerAdmissionException) { failure = CpuLivePowerNativeFailure.AdmissionDenied; }
-        catch (OperationCanceledException) { failure = CpuLivePowerNativeFailure.Cancelled; }
-        catch (Exception) { failure = CpuLivePowerNativeFailure.Transport; }
-        finally
-        {
-            wire?.Abort();
-            try { lease?.Dispose(); }
-            catch { cleanup = false; }
-            finally
-            {
-                cleanup &= adapter?.cleanupFailed != true;
-                if (!cleanup) { verified = false; failure = CpuLivePowerNativeFailure.Cleanup; }
-                else { Volatile.Write(ref operation.Active, 0); }
-            }
-        }
-        return new(wire?.Disposition ?? CpuLivePowerNativeDisposition.NotSubmitted, true, cleanup, verified, wire?.After, failure);
-
-        void Check()
-        {
-            token.ThrowIfCancellationRequested();
-            if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90) || proof?.Current(request) != true)
-            { throw new CpuPowerAdmissionException(); }
-        }
-        bool ExactPowerPlatform() => platform is ICpuPmWindowsPlatform pm
-            && pm.ReadHost() is { Failure: null, Evidence: { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" } }
-            && pm.ReadPackage() is { MaximumExtendedLeaf: >= 0x80000001, Package: 1 };
-        void CheckRange()
-        {
-            Check();
-            var range = proof!.ReadFreshRange(request);
-            Check();
-            if (wire is not { Capability: uint capability, Cap: { } cap }
-                || range?.AllowsOperation(request, capability, cap) != true) { throw new CpuPowerAdmissionException(); }
-        }
-        void CheckFinal()
-        {
-            Check();
-            if (adapter?.FreshAdmission() != true || !ExactPowerPlatform()) { throw new CpuPowerAdmissionException(); }
-            CheckRange();
-            if (request.CurvePeer is not null && !proof!.AdmitCurvePeer(request)) { throw new CpuPowerAdmissionException(); }
-            Check();
-        }
-    }
-}
-
 internal sealed class CpuPowerAdmissionException : Exception;
 
 // An exact instruction sequence, with polling as its only variable repetition.
 // This is separate from both the 06/5E query and attended PM guards. Every request
 // is checked again at the actual native boundary, including echoed PCI replies,
-// topology/masks, two version-bracketed PM copies and one exact 32/33 setter.
+// topology/masks, two version-bracketed PM copies and one exact CO setter.
 internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
 {
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8, Copy = 0x81112F08;
     private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
     private const uint ExpectedFirmwareVersion = 0x0B5D1600;
-    private readonly CpuLivePowerNativeRequest? request;
-    private readonly CpuLiveCurveNativeRequest? curveRequest;
+    private readonly CpuLiveCurveNativeRequest curveRequest;
     private readonly Action checkpoint, snapshotAdmission, finalAdmission;
     private readonly Action? afterSetter;
     private readonly Queue<Step> steps = new();
@@ -112,25 +23,19 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     private int operations;
     private uint bus, capFirst;
     private CpuLivePowerSnapshot? copied;
-    internal CpuLivePowerNativeDisposition Disposition { get; private set; }
+    internal CpuLiveCurveNativeDisposition Disposition { get; private set; }
     internal CpuLivePowerFusedCap? Cap { get; private set; }
     internal uint? Capability { get; private set; }
     internal CpuLivePowerSnapshot? After { get; private set; }
     internal CpuLiveCurveSnapshot? CurveAfter { get; private set; }
     internal bool Complete => scriptCreated && !failed && pending is null && steps.Count == 0;
 
-    internal CpuPowerNativeWire(CpuLivePowerNativeRequest request, Action checkpoint, Action snapshotAdmission, Action finalAdmission)
-        : this(request, null, checkpoint, snapshotAdmission, finalAdmission) { }
-
-    internal CpuPowerNativeWire(CpuLiveCurveNativeRequest request, Action checkpoint, Action snapshotAdmission, Action finalAdmission,
-        Action? afterSetter = null)
-        : this(null, request, checkpoint, snapshotAdmission, finalAdmission) { this.afterSetter = afterSetter; }
-
-    private CpuPowerNativeWire(CpuLivePowerNativeRequest? request, CpuLiveCurveNativeRequest? curveRequest,
-        Action checkpoint, Action snapshotAdmission, Action finalAdmission)
+    internal CpuPowerNativeWire(CpuLiveCurveNativeRequest curveRequest, Action checkpoint, Action snapshotAdmission,
+        Action finalAdmission, Action afterSetter)
     {
-        this.request = request; this.curveRequest = curveRequest;
+        this.curveRequest = curveRequest;
         this.checkpoint = checkpoint; this.snapshotAdmission = snapshotAdmission; this.finalAdmission = finalAdmission;
+        this.afterSetter = afterSetter;
         steps.Enqueue(new(Enumerate, new byte[28], 28, bytes =>
         {
             uint count = Word(bytes, 24);
@@ -171,11 +76,11 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
         { throw new CpuPowerAdmissionException(); }
         checkpoint();
         if (!step.Setter) { return; }
-        if (Disposition != CpuLivePowerNativeDisposition.NotSubmitted) { throw new CpuPowerAdmissionException(); }
+        if (Disposition != CpuLiveCurveNativeDisposition.NotSubmitted) { throw new CpuPowerAdmissionException(); }
         finalAdmission();
         // Preparation and selection are not submission. This marker is written
-        // immediately before the only actual device.Invoke of message32/33.
-        Disposition = CpuLivePowerNativeDisposition.PossibleSubmission;
+        // immediately before the only actual device.Invoke of the CO setter.
+        Disposition = CpuLiveCurveNativeDisposition.PossibleSubmission;
     }
 
     public bool AcceptReply(uint code, byte[] input, int outputLength, CpuQueryIoctlReply reply)
@@ -222,18 +127,6 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
             CurveSnapshot(curve.After, after: true);
             Snapshot(before: false); // Prove the complete PPT peer remained unchanged.
         }
-        else if (request is { } power)
-        {
-            Snapshot(before: true);
-            if (power.CurvePeer is { } peer)
-            {
-                CurveSnapshot(peer.Expected, after: false);
-                Mailbox(0x82, null, value => (value & 4) != 0);
-            }
-            ReadCaps(); // Recheck conditional fused ceiling after the before sample.
-            Mailbox(power.Command.Message, power.Command.EncodeArgument(), null, setter: true);
-            Snapshot(before: false);
-        }
         else { throw new CpuPowerAdmissionException(); }
     }
     private void CurveSnapshot(CpuLiveCurveSnapshot expected, bool after)
@@ -274,14 +167,13 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
             if (!CpuPmRawSnapshot.TryCreate(CpuLivePowerSnapshot.SupportedVersion, new(true, bytes),
                 DateTimeOffset.UtcNow, Stopwatch.GetTimestamp(), out var raw)) { return false; }
             copied = CpuLivePowerSnapshot.TryCreate(raw);
-            return copied is not null && (!before || copied.Pair == (request?.Before ?? curveRequest!.PowerPeer!.Expected));
+            return copied is not null && (!before || copied.Pair == curveRequest.PowerPeer!.Expected);
         }));
         // F08 can alter hidden mailbox/index state; always explicitly reselect.
         Mailbox(6, 0, value =>
         {
             if (value != CpuLivePowerSnapshot.SupportedVersion || copied is null) { return false; }
-            if (before) { if (request is not null) { snapshotAdmission(); } }
-            else { After = copied; }
+            if (!before) { After = copied; }
             copied = null; return true;
         });
     }
@@ -291,7 +183,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
         if (argument is uint value) { Select(Argument); Data(value); }
         Select(Message); Data(command, setter);
         Select(Response);
-        Poll(setter ? _ => { Disposition = CpuLivePowerNativeDisposition.Acknowledged; return true; } : null);
+        Poll(setter ? _ => { Disposition = CpuLiveCurveNativeDisposition.Acknowledged; return true; } : null);
         if (accept is not null) { Select(Argument); Pci(bus, 0, 0, 0xC8, accept); }
     }
     private void Smn(uint address, Func<uint, bool> accept) { Select(address); Pci(bus, 0, 0, 0xC8, accept); }

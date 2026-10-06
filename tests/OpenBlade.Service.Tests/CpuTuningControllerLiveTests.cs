@@ -7,39 +7,50 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerLiveTests
 {
     [Theory]
-    [InlineData("context", "power transaction ContextMismatch")]
-    [InlineData("state", "power transaction StateChanged")]
-    [InlineData("none", "power observation")]
-    public async Task CompletedPowerTimingsPreserveOwnershipClassification(string drift, string expectedReason)
+    [InlineData("Prepared")]
+    [InlineData("PossibleSubmission")]
+    [InlineData("OwnedVerified")]
+    [InlineData("Blocked")]
+    [InlineData("invalid")]
+    public async Task HistoricalPowerOwnershipBlocksEveryLiveOperationWithoutChangingJournal(string state)
     {
         var fixture = new Fixture();
-        var transaction = new CpuLivePowerTuningTransaction(fixture.Power, fixture.PowerStore);
-        Assert.Equal(CpuLivePowerOutcome.Verified,
-            (await transaction.ApplySelectiveAsync([new(CpuLivePowerLimit.Fast, 90)], default)).Outcome);
-        if (drift == "context")
-        { fixture.Power.Context = fixture.Power.Context with { BootSequence = fixture.Power.Context.BootSequence with { Sequence = 43 } }; }
-        if (drift == "state") { fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(91000, 80765); }
-        var diagnostic = new CpuSavedAdmissionDiagnostic();
-        fixture.Power.OnObserve = () =>
-        {
-            var timing = diagnostic.BeginPowerObservation()!;
-            timing.MoveTo(CpuPowerObservationPhase.FirstNative);
-            timing.MoveTo(CpuPowerObservationPhase.PostRange);
-            timing.MoveTo(CpuPowerObservationPhase.CompleteGetter);
-            diagnostic.CompletePowerObservation(timing);
-            Assert.Null(diagnostic.LiveObservationReason);
-        };
-        int writes = fixture.Power.Sent.Count;
-        var status = await fixture.Controller().ObserveLiveAsync(_ => true, default, diagnostic: diagnostic);
-        Assert.Equal(drift == "none" ? CpuTuningRecoveryState.RestoreReady : CpuTuningRecoveryState.Blocked, status.LiveRecovery!.State);
-        string reason = Assert.IsType<string>(diagnostic.LiveObservationReason);
-        Assert.StartsWith(expectedReason + "; power phases total ", reason);
-        Assert.Contains("CompleteGetter=", reason);
-        Assert.Equal(2, reason.Split("power phases total", StringSplitOptions.None).Length);
-        Assert.Null(diagnostic.TakePowerTimingSummary()); Assert.Equal(reason, diagnostic.LiveObservationReason);
-        Assert.Equal(writes, fixture.Power.Sent.Count);
-        if (drift != "none") { Assert.Equal(CpuLivePowerOwnershipState.Blocked, fixture.PowerStore.Journal!.State); }
+        fixture.PowerStore.Invalid = state == "invalid";
+        fixture.PowerStore.Journal = state == "invalid" ? null : CpuPowerTestData.Legacy(Enum.Parse<CpuLivePowerOwnershipState>(state));
+        var original = fixture.PowerStore.Journal;
+        var controller = fixture.Controller();
+        var observed = await controller.ObserveLiveAsync(_ => true, default);
+        Assert.Equal(CpuTuningRecoveryState.Blocked, observed.LiveRecovery!.State);
+        Assert.True(observed.LiveRecovery.Features.HasFlag(CpuTuningFeatures.PowerLimit));
+        Assert.Equal(ControlOperationStatus.Blocked, (await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default)).Status);
+        Assert.Equal(ControlOperationStatus.Blocked, (await controller.MutateLiveAsync(null, true, _ => true, default)).Status);
+        Assert.Same(original, fixture.PowerStore.Journal);
+        Assert.Equal(0, fixture.Power.Reads); Assert.Equal(0, fixture.Curve.Reads);
+        Assert.Empty(fixture.Curve.Sent); Assert.Equal(0, fixture.CurveStore.Writes);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LivePowerRequestsAreRejectedBeforeReadsOrOwnership(bool combined)
+    {
+        var fixture = new Fixture();
+        var result = await fixture.Controller().MutateLiveAsync(new(45, combined ? new(true, -2) : null), false, _ => true, default);
+        Assert.NotEqual(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(0, fixture.Power.Reads); Assert.Equal(0, fixture.Curve.Reads);
+        Assert.Empty(fixture.Curve.Sent); Assert.Null(fixture.CurveStore.Journal);
+    }
+
+    [Fact]
+    public async Task ReadOnlyPeerDriftDuringPreparationStopsBeforeCurveSetter()
+    {
+        var fixture = new Fixture();
+        fixture.Power.OnObserve = () => { if (fixture.Power.Reads == 2) { fixture.Power.Pair = CpuPowerTestData.PairFixture(99000); } };
+        var result = await fixture.Controller().MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default);
+        Assert.NotEqual(ControlOperationStatus.Stored, result.Status);
+        Assert.Empty(fixture.Curve.Sent); Assert.Null(fixture.PowerStore.Journal);
+    }
+
 
     [Theory]
     [InlineData(false)]
@@ -66,7 +77,7 @@ public sealed class CpuTuningControllerLiveTests
         Assert.Equal(failSettlement ? CpuLiveCurveOwnershipState.PossibleSubmission : CpuLiveCurveOwnershipState.Restored,
             fixture.CurveStore.Journal.State);
         if (failSettlement) { Assert.Equal(reads, fixture.Curve.Reads); }
-        Assert.Single(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+        Assert.Single(fixture.Curve.Sent);
     }
 
     [Fact]
@@ -103,7 +114,7 @@ public sealed class CpuTuningControllerLiveTests
         Assert.Equal("runtime controlling session", diagnostic.FirstFailure);
         diagnostic.Check(false, "late native failure");
         Assert.Equal("runtime controlling session", diagnostic.FirstFailure);
-        Assert.Null(result.LiveState); Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+        Assert.Null(result.LiveState); Assert.Empty(fixture.Curve.Sent);
     }
     [Fact]
     public async Task FullCurveObservationWithFreshAdmissionPresentsWritableWithoutAdmittingCommands()
@@ -117,7 +128,7 @@ public sealed class CpuTuningControllerLiveTests
         Assert.Equal(-1, status.LiveState!.UniformCurveOptimizerValue);
         Assert.NotNull(status.LiveState.PowerLimits);
         Assert.Equal(CpuTuningFeatures.CurveOptimizer, requested[^1]);
-        Assert.Empty(fixture.Curve.Admissions); Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+        Assert.Empty(fixture.Curve.Admissions); Assert.Empty(fixture.Curve.Sent);
         // The presentation flag cannot admit a command or its exact reverse route.
         var denied = await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default);
         Assert.Equal(ControlOperationStatus.Blocked, denied.Status);
@@ -140,7 +151,7 @@ public sealed class CpuTuningControllerLiveTests
         Assert.Equal(-1, status.LiveState!.UniformCurveOptimizerValue);
         Assert.NotNull(status.LiveState.PowerLimits);
         Assert.NotNull(capturedQuery); Assert.False(capturedQuery()); // Operation has expired.
-        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+        Assert.Empty(fixture.Curve.Sent);
     }
 
     [Theory]
@@ -185,9 +196,8 @@ public sealed class CpuTuningControllerLiveTests
     [Fact]
     public async Task RuntimeLifetimeIsStableWithinServiceAndChangesAtRestartOrPowerBoundary()
     {
-        var store = new CpuLivePowerTuningTransactionTests.MemoryStore();
-        var backend = new CpuLivePowerTuningTransactionTests.FakeBackend(store);
-        var controller = new CpuTuningController(new UnusedSource(), powerBackend: backend, powerStore: store);
+        var fixture = new Fixture(); var store = fixture.CurveStore; var backend = fixture.Curve;
+        var controller = fixture.Controller();
         Assert.Null(controller.CaptureLiveRuntimeLifetime());
         var lifetimes = new List<CpuLiveRuntimeLifetime>();
         backend.Admit = (_, _) =>
@@ -195,7 +205,7 @@ public sealed class CpuTuningControllerLiveTests
             lifetimes.Add(Assert.IsType<CpuLiveRuntimeLifetime>(controller.CaptureLiveRuntimeLifetime()));
             return true;
         };
-        await controller.MutateLiveAsync(new(45, null), false, _ => true, default, 2, 3);
+        await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default, 2, 3);
         var first = lifetimes[0];
         Assert.All(lifetimes, value => Assert.Equal(first, value));
         Assert.Equal(2, first.LowPowerGeneration); Assert.Equal(3, first.PowerSourceGeneration);
@@ -204,13 +214,13 @@ public sealed class CpuTuningControllerLiveTests
         await controller.MutateLiveAsync(null, true, _ => true, default, 2, 3);
         Assert.All(lifetimes, value => Assert.Equal(first, value));
         lifetimes.Clear();
-        await controller.MutateLiveAsync(new(60, null), false, _ => true, default, 4, 5);
+        await controller.MutateLiveAsync(new(null, new(true, -3)), false, _ => true, default, 4, 5);
         Assert.All(lifetimes, value =>
         {
             Assert.Equal(first.ServiceInstance, value.ServiceInstance);
             Assert.NotEqual(first, value);
         });
-        controller = new CpuTuningController(new UnusedSource(), powerBackend: backend, powerStore: store);
+        controller = fixture.Controller();
         lifetimes.Clear();
         await controller.MutateLiveAsync(null, true, _ => true, default, 4, 5);
         Assert.NotEmpty(lifetimes);
@@ -225,39 +235,38 @@ public sealed class CpuTuningControllerLiveTests
         fixture.Curve.Context = fixture.Curve.Context with { RuntimeLifetime = lifetime };
         fixture.Power.Context = fixture.Power.Context with { RuntimeLifetime = lifetime };
         Assert.Equal(ControlOperationStatus.Stored,
-            (await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default)).Status);
-        int curveSends = fixture.Curve.Sent.Count, powerSends = fixture.Power.Sent.Count;
+            (await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default)).Status);
+        int curveSends = fixture.Curve.Sent.Count;
         fixture.Curve.Context = fixture.Curve.Context with { RuntimeLifetime = lifetime with { PowerSourceGeneration = 4 } };
         fixture.Power.Context = fixture.Power.Context with { RuntimeLifetime = lifetime with { PowerSourceGeneration = 4 } };
         Assert.Equal(ControlOperationStatus.Blocked,
             (await controller.MutateLiveAsync(null, true, _ => true, default)).Status);
-        Assert.Equal(curveSends, fixture.Curve.Sent.Count); Assert.Equal(powerSends, fixture.Power.Sent.Count);
+        Assert.Equal(curveSends, fixture.Curve.Sent.Count);
     }
 
     [Fact]
     public async Task CapturedAdmissionExpiresAndLaterRequestsCannotRenewIt()
     {
-        var store = new CpuLivePowerTuningTransactionTests.MemoryStore();
-        var backend = new CpuLivePowerTuningTransactionTests.FakeBackend(store);
-        var controller = new CpuTuningController(new UnusedSource(), powerBackend: backend, powerStore: store);
-        var outside = controller.CaptureLiveRuntimeAdmission(CpuTuningFeatures.PowerLimit);
+        var fixture = new Fixture(); var store = fixture.CurveStore; var backend = fixture.Curve;
+        var controller = fixture.Controller();
+        var outside = controller.CaptureLiveRuntimeAdmission(CpuTuningFeatures.CurveOptimizer);
         Func<bool>? first = null;
         backend.Admit = (_, _) =>
         {
-            var current = controller.CaptureLiveRuntimeAdmission(CpuTuningFeatures.PowerLimit);
+            var current = controller.CaptureLiveRuntimeAdmission(CpuTuningFeatures.CurveOptimizer);
             Assert.True(current());
             if (first is null) { first = current; }
             return true;
         };
         Assert.False(outside());
-        var applied = await controller.MutateLiveAsync(new(45, null), false, _ => true, default);
+        var applied = await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default);
         Assert.Equal(ControlOperationStatus.Stored, applied.Status);
-        Assert.False(applied.CpuTuning!.Live.CanWrite);
+        Assert.True(applied.CpuTuning!.Live.CanWrite);
         Assert.False(first!());
         backend.Admit = (_, _) =>
         {
             Assert.False(first!());
-            Assert.True(controller.CaptureLiveRuntimeAdmission(CpuTuningFeatures.PowerLimit)());
+            Assert.True(controller.CaptureLiveRuntimeAdmission(CpuTuningFeatures.CurveOptimizer)());
             return true;
         };
         Assert.Equal(ControlOperationStatus.Stored,
@@ -266,19 +275,18 @@ public sealed class CpuTuningControllerLiveTests
     }
 
     [Fact]
-    public async Task RuntimeRevocationAfterPendingFlushSkipsSetterAndRetainsPreparedOwnership()
+    public async Task RuntimeRevocationAfterPendingFlushSettlesConfirmedNonSubmission()
     {
-        var store = new CpuLivePowerTuningTransactionTests.MemoryStore();
-        var backend = new CpuLivePowerTuningTransactionTests.FakeBackend(store);
-        var controller = new CpuTuningController(new UnusedSource(), powerBackend: backend, powerStore: store);
+        var fixture = new Fixture(); var store = fixture.CurveStore; var backend = fixture.Curve;
+        var controller = fixture.Controller();
         bool admitted = true;
-        store.BeforeWrite = index => { if (index == 2) { admitted = false; } return Task.CompletedTask; };
-        var result = await controller.MutateLiveAsync(new(45, null), false, _ => admitted, default);
+        store.BeforeWrite = index => { if (index == 2) { admitted = false; } };
+        var result = await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => admitted, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Empty(backend.Sent);
-        Assert.Equal(CpuLivePowerOwnershipState.Prepared, store.Journal!.State);
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal!.State);
         Assert.Equal(0, store.Journal.CompletedSteps);
-        Assert.Equal(CpuTuningRecoveryState.Blocked, result.CpuTuning!.LiveRecovery!.State);
+        Assert.Equal(CpuTuningRecoveryState.None, result.CpuTuning!.LiveRecovery!.State);
     }
 
     [Fact]
@@ -286,18 +294,17 @@ public sealed class CpuTuningControllerLiveTests
     {
         var fixture = new Fixture(); var controller = fixture.Controller();
         var original = fixture.Curve.Values.ToArray();
-        fixture.Power.Admit = (_, _) => throw new InvalidOperationException("Read-only PPT has no write authority.");
         bool Admit(CpuTuningFeatures features) => !features.HasFlag(CpuTuningFeatures.PowerLimit);
         // A previous successful Observe is not the peer baseline for this apply.
         await controller.ObserveLiveAsync(Admit, default);
-        fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(91023, 80765);
+        fixture.Power.Pair = CpuPowerTestData.PairFixture(91023, 80765);
         var applied = await controller.MutateLiveAsync(new(null, new(true, -2)), false, Admit, default);
         Assert.Equal(ControlOperationStatus.Stored, applied.Status);
         Assert.Equal(CpuTuningFeatures.CurveOptimizer, applied.CpuTuning!.LiveRecovery!.Features);
         Assert.Equal(12, fixture.Curve.Peers.Count);
         Assert.All(fixture.Curve.Peers, peer => { Assert.Equal(fixture.Power.Pair, peer.Expected); Assert.Null(peer.Original); });
         // Unowned PPT may change between separate operations; restore samples it afresh.
-        fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(92034, 81765);
+        fixture.Power.Pair = CpuPowerTestData.PairFixture(92034, 81765);
         fixture.Curve.Peers.Clear();
         var restored = await fixture.Controller().MutateLiveAsync(null, true, Admit, default);
         Assert.Equal(ControlOperationStatus.Stored, restored.Status);
@@ -305,8 +312,8 @@ public sealed class CpuTuningControllerLiveTests
         Assert.Equal(CpuTuningFeatures.None, restored.CpuTuning!.LiveRecovery!.Features);
         Assert.Equal(12, fixture.Curve.Peers.Count);
         Assert.All(fixture.Curve.Peers, peer => { Assert.Equal(fixture.Power.Pair, peer.Expected); Assert.Null(peer.Original); });
-        Assert.Empty(fixture.Power.Admissions); Assert.Empty(fixture.Power.Sent);
-        Assert.Null(fixture.PowerStore.Journal); Assert.Equal(0, fixture.PowerStore.Writes);
+
+        Assert.Null(fixture.PowerStore.Journal);
     }
 
     [Theory]
@@ -343,7 +350,7 @@ public sealed class CpuTuningControllerLiveTests
         }
         var result = await controller.MutateLiveAsync(restoring ? null : new(null, new(true, -2)), restoring, _ => true, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent); Assert.Empty(fixture.Power.Admissions);
+        Assert.Empty(fixture.Curve.Sent);
         Assert.Null(fixture.PowerStore.Journal);
         Assert.False(result.CpuTuning!.LiveRecovery!.Features.HasFlag(CpuTuningFeatures.PowerLimit));
         if (fault != "missing")
@@ -367,7 +374,7 @@ public sealed class CpuTuningControllerLiveTests
         fixture.Curve.Sent.Clear(); fixture.Curve.Peers.Clear(); fixture.Power.Unavailable = true;
         var result = await controller.MutateLiveAsync(restoring ? null : new(null, new(true, -2)), restoring, _ => true, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Curve.Peers); Assert.Empty(fixture.Power.Sent);
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Curve.Peers);
         Assert.Null(fixture.PowerStore.Journal);
     }
 
@@ -375,13 +382,8 @@ public sealed class CpuTuningControllerLiveTests
     public async Task ReadOnlyPeerDriftDoesNotReopenHistoricalRestoredPowerOwnership()
     {
         var fixture = new Fixture(); var controller = fixture.Controller();
-        Assert.Equal(ControlOperationStatus.Stored,
-            (await controller.MutateLiveAsync(new(45, null), false, _ => true, default)).Status);
-        Assert.Equal(ControlOperationStatus.Stored,
-            (await controller.MutateLiveAsync(null, true, _ => true, default)).Status);
-        Assert.Equal(CpuLivePowerOwnershipState.Restored, fixture.PowerStore.Journal!.State);
-        int writes = fixture.PowerStore.Writes;
-        fixture.Power.Sent.Clear(); fixture.Power.Admissions.Clear();
+        fixture.PowerStore.Journal = CpuPowerTestData.Legacy(CpuLivePowerOwnershipState.Restored);
+        var historical = fixture.PowerStore.Journal;
         fixture.Curve.AfterSend = () => fixture.Power.Pair = fixture.Power.Pair with { StapmRawBits = 0 };
         var result = await controller.MutateLiveAsync(new(null, new(true, -2)), false,
             features => !features.HasFlag(CpuTuningFeatures.PowerLimit), default);
@@ -389,294 +391,33 @@ public sealed class CpuTuningControllerLiveTests
         Assert.Equal(CpuTuningFeatures.CurveOptimizer, result.CpuTuning!.LiveRecovery!.Features);
         Assert.Equal(CpuLiveCurveOwnershipState.Blocked, fixture.CurveStore.Journal!.State);
         Assert.Equal(CpuLivePowerOwnershipState.Restored, fixture.PowerStore.Journal.State);
-        Assert.Equal(writes, fixture.PowerStore.Writes);
-        Assert.Empty(fixture.Power.Sent); Assert.Empty(fixture.Power.Admissions);
-    }
+        Assert.Same(historical, fixture.PowerStore.Journal);
 
-    [Fact]
-    public async Task CombinedApplyPreparesBothJournalsBeforeFirstSendAndRestoresAcrossRestart()
-    {
-        var fixture = new Fixture();
-        // Only BIOS provenance differs between the independently observed families.
-        fixture.Power.Context = fixture.Power.Context with { Identity = fixture.Power.Context.Identity with { BiosVersion = "Unknown" } };
-        var curveOriginal = fixture.Curve.Values.ToArray(); var powerOriginal = fixture.Power.Pair;
-        fixture.Power.OnSend = request =>
-        {
-            Assert.Equal(CpuLiveCurveOwnershipState.Prepared, fixture.CurveStore.Journal!.State);
-            Assert.Empty(fixture.Curve.Sent);
-            fixture.Power.Pair = request.After;
-            return Task.FromResult(CpuLivePowerSubmission.Acknowledged);
-        };
-        fixture.Curve.OnSend = command =>
-        {
-            Assert.Equal(CpuLivePowerOwnershipState.OwnedVerified, fixture.PowerStore.Journal!.State);
-            Assert.Equal(2, fixture.PowerStore.Journal.CompletedSteps);
-            return fixture.Curve.Apply(command);
-        };
-        var controller = fixture.Controller();
-        var applied = await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Stored, applied.Status);
-        Assert.True(applied.CpuTuning!.Live.CanWrite);
-        Assert.Equal(Both, applied.CpuTuning!.LiveRecovery!.Features);
-        Assert.Equal(CpuTuningRecoveryState.RestoreReady, applied.CpuTuning.LiveRecovery.State);
-        Assert.Equal(new(null, 45000, 45000), applied.CpuTuning.LiveState!.PowerLimits);
-        Assert.Equal(-2, applied.CpuTuning.LiveState.UniformCurveOptimizerValue);
-        fixture.Power.OnSend = null; fixture.Curve.OnSend = null;
-        fixture.Curve.Context = fixture.Curve.Context with { Identity = fixture.Curve.Context.Identity with { BiosVersion = "2.03" } };
-        var restored = await fixture.Controller().MutateLiveAsync(null, true, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
-        Assert.True(restored.CpuTuning!.Live.CanWrite);
-        Assert.Equal(curveOriginal, fixture.Curve.Values); Assert.Equal(powerOriginal, fixture.Power.Pair);
-        Assert.False(restored.CpuTuning!.RestorePending);
-        Assert.Equal(CpuTuningFeatures.None, restored.CpuTuning.LiveRecovery!.Features);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task UnchangedPowerPeerIsBoundAtCurveSubmissionAndLossNeverSubmits(bool unavailable)
-    {
-        var fixture = new Fixture();
-        fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(45000, 45000);
-        var expected = fixture.Power.Pair;
-        fixture.Power.Admit = (_, _) => false; // Unchanged PPT requires no setter admission.
-        fixture.Curve.CheckPeer = peer =>
-        {
-            Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
-            Assert.Equal(expected, peer.Expected); Assert.Null(peer.Original);
-            fixture.Power.Unavailable = unavailable;
-            if (!unavailable) { fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(46000, 45000); }
-            return !fixture.Power.Unavailable && fixture.Power.Pair == peer.Expected;
-        };
-        var result = await fixture.Controller().MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
-        Assert.Single(fixture.Curve.Peers); Assert.Null(fixture.PowerStore.Journal);
-        Assert.NotEqual(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
-    }
-
-    [Fact]
-    public async Task CombinedRequestsCarryLatestPeerExpectedAndFirstOriginalAcrossEdits()
-    {
-        var fixture = new Fixture(); var controller = fixture.Controller();
-        var originalCurve = fixture.Curve.Values.ToArray(); var originalPower = fixture.Power.Pair;
-        Assert.Equal(ControlOperationStatus.Stored,
-            (await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default)).Status);
-        Assert.All(fixture.Power.Sent, request => Assert.Equal(originalCurve, request.CurvePeer!.Expected.CoreOffsets));
-        Assert.All(fixture.Curve.Peers, peer =>
-        {
-            Assert.Equal(45000u, peer.Expected.Fast.Milliwatts); Assert.Equal(45000u, peer.Expected.Slow.Milliwatts);
-            Assert.Equal(originalPower, peer.Original);
-        });
-        fixture.Power.Sent.Clear(); fixture.Curve.Peers.Clear();
-        Assert.Equal(ControlOperationStatus.Stored,
-            (await controller.MutateLiveAsync(new(60, new(true, -3)), false, _ => true, default)).Status);
-        Assert.All(fixture.Power.Sent, request =>
-        {
-            Assert.All(request.CurvePeer!.Expected.CoreOffsets, core => Assert.Equal(-2, core.Offset));
-            Assert.Equal(originalCurve, request.CurvePeer.Original!.CoreOffsets);
-        });
-        Assert.All(fixture.Curve.Peers, peer =>
-        {
-            Assert.Equal(60000u, peer.Expected.Fast.Milliwatts); Assert.Equal(originalPower, peer.Original);
-        });
     }
 
     [Fact]
     public async Task UnchangedPeerWithDifferentRuntimeGenerationCannotBindToCurveStep()
     {
         var fixture = new Fixture();
-        fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(45000, 45000);
+        fixture.Power.Pair = CpuPowerTestData.PairFixture(45000, 45000);
         var lifetime = new CpuLiveRuntimeLifetime(Guid.NewGuid(), 2, 3);
         fixture.Curve.Context = fixture.Curve.Context with { RuntimeLifetime = lifetime };
         fixture.Power.Context = fixture.Power.Context with { RuntimeLifetime = lifetime with { LowPowerGeneration = 4 } };
-        var result = await fixture.Controller().MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
+        var result = await fixture.Controller().MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Empty(fixture.Curve.Peers); Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+        Assert.Empty(fixture.Curve.Peers); Assert.Empty(fixture.Curve.Sent);
     }
 
-    [Theory]
-    [InlineData("reverse")]
-    [InlineData("persist")]
-    [InlineData("context")]
-    public async Task SecondPreparationDenialPersistenceOrContextMismatchCannotSubmitEitherFamily(string fault)
-    {
-        var fixture = new Fixture(); var controller = fixture.Controller();
-        if (fault == "reverse") { fixture.Curve.Admit = (_, purpose) => purpose != CpuLiveCurveCommandPurpose.Restore; }
-        if (fault == "persist") { fixture.CurveStore.FailWrite = 1; }
-        if (fault == "context")
-        { fixture.Curve.Context = fixture.Curve.Context with { BootSequence = fixture.Curve.Context.BootSequence with { Sequence = 43 } }; }
-        var result = await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
-        Assert.Equal(CpuLivePowerOwnershipState.Prepared, fixture.PowerStore.Journal!.State);
-        if (fault == "persist")
-        {
-            Assert.Equal(Both, result.CpuTuning!.LiveRecovery!.Features);
-            int reads = fixture.Curve.Reads + fixture.Power.Reads;
-            await controller.MutateLiveAsync(null, true, _ => true, default);
-            Assert.Equal(reads, fixture.Curve.Reads + fixture.Power.Reads);
-        }
-    }
-
-    [Fact]
-    public async Task RepeatedSingleFamilyEditsCoexistAndRetainBothFirstOriginals()
-    {
-        var fixture = new Fixture(); var controller = fixture.Controller();
-        var curveOriginal = fixture.Curve.Values.ToArray(); var powerOriginal = fixture.Power.Pair;
-        foreach (var settings in new CpuTuningSettings[] { new(45, null), new(null, new(true, -2)), new(60, null), new(null, new(true, -3)) })
-        { Assert.Equal(ControlOperationStatus.Stored, (await controller.MutateLiveAsync(settings, false, _ => true, default)).Status); }
-        Assert.Equal(curveOriginal, fixture.CurveStore.Journal!.OriginalBaseline);
-        Assert.Equal(powerOriginal, fixture.PowerStore.Journal!.OriginalBaseline.Decode());
-        var restored = await fixture.Controller().MutateLiveAsync(null, true, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
-        Assert.Equal(curveOriginal, fixture.Curve.Values); Assert.Equal(powerOriginal, fixture.Power.Pair);
-    }
-
-    [Fact]
-    public async Task CompleteRestoreAdmissionPrecedesAnyRestoreAndCleanDenialRetainsOriginals()
-    {
-        var fixture = new Fixture(); var controller = fixture.Controller();
-        await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
-        int curveSends = fixture.Curve.Sent.Count, powerSends = fixture.Power.Sent.Count;
-        fixture.Power.Admit = (_, purpose) => purpose != CpuLivePowerCommandPurpose.Restore;
-        var result = await controller.MutateLiveAsync(null, true, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Equal(curveSends, fixture.Curve.Sent.Count); Assert.Equal(powerSends, fixture.Power.Sent.Count);
-        fixture.Power.Admit = (_, _) => true;
-        Assert.Equal(ControlOperationStatus.Stored, (await controller.MutateLiveAsync(null, true, _ => true, default)).Status);
-    }
-
-    [Fact]
-    public async Task UncertainCurveRestoreNeverStartsPowerRestoreOrAnyLaterFamily()
-    {
-        var fixture = new Fixture(); var controller = fixture.Controller();
-        await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
-        int powerSends = fixture.Power.Sent.Count;
-        fixture.Curve.OnSend = _ => Task.FromResult(CpuLiveCurveSubmission.Unknown);
-        var result = await controller.MutateLiveAsync(null, true, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
-        Assert.False(result.CpuTuning!.Live.CanWrite);
-        Assert.Equal(Both, result.CpuTuning!.LiveRecovery!.Features);
-        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
-        Assert.Equal(powerSends, fixture.Power.Sent.Count);
-        int reads = fixture.Curve.Reads + fixture.Power.Reads;
-        await fixture.Controller().MutateLiveAsync(null, true, _ => true, default);
-        await controller.ObserveLiveAsync(_ => true, default);
-        Assert.Equal(reads, fixture.Curve.Reads + fixture.Power.Reads);
-    }
-
-    [Fact]
-    public async Task RuntimeRevocationBetweenVerifiedFamiliesStopsWithoutCompensation()
-    {
-        var fixture = new Fixture(); var controller = fixture.Controller(); bool admitted = true;
-        fixture.PowerStore.BeforeWrite = index =>
-        {
-            if (index == 5) { admitted = false; } // Final PPT verified-progress CAS.
-            return Task.CompletedTask;
-        };
-        var result = await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => admitted, default);
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Equal(2, fixture.Power.Sent.Count); Assert.Empty(fixture.Curve.Sent);
-        Assert.Equal(CpuLivePowerOwnershipState.OwnedVerified, fixture.PowerStore.Journal!.State);
-        Assert.Equal(CpuLiveCurveOwnershipState.Prepared, fixture.CurveStore.Journal!.State);
-        Assert.Equal(Both, result.CpuTuning!.LiveRecovery!.Features);
-    }
-
-    [Fact]
-    public async Task PeerDriftBetweenPowerStepsIsDurablyBlockedBeforeNextSetter()
-    {
-        var fixture = new Fixture(); var controller = fixture.Controller();
-        fixture.Power.AfterSend = () => fixture.Curve.Values[0] = new(0, -9);
-        var result = await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Single(fixture.Power.Sent); Assert.Empty(fixture.Curve.Sent);
-        Assert.Equal(CpuLiveCurveOwnershipState.Blocked, fixture.CurveStore.Journal!.State);
-        fixture.Curve.Values[0] = new(0, -1);
-        int reads = fixture.Curve.Reads + fixture.Power.Reads;
-        await fixture.Controller().MutateLiveAsync(null, true, _ => true, default);
-        Assert.Equal(reads, fixture.Curve.Reads + fixture.Power.Reads);
-    }
-
-    [Fact]
-    public async Task UnchangedFamilyDoesNotAcquireOwnershipAndTicketsCannotReplay()
-    {
-        var fixture = new Fixture();
-        var result = await fixture.Controller().MutateLiveAsync(new(45, new(true, -1)), false, _ => true, default);
-        Assert.Equal(ControlOperationStatus.Stored, result.Status);
-        Assert.Null(fixture.CurveStore.Journal); Assert.Empty(fixture.Curve.Sent);
-        Assert.Equal(CpuTuningFeatures.PowerLimit, result.CpuTuning!.LiveRecovery!.Features);
-        var transaction = new CpuLiveCurveTuningTransaction(fixture.Curve, fixture.CurveStore);
-        var prepared = await transaction.PrepareApplyAsync(new(true, -2), default);
-        Assert.Empty(fixture.Curve.Sent);
-        Assert.Equal(CpuLiveCurveOutcome.Verified,
-            (await transaction.ExecutePreparedAsync(prepared.Operation!, null, default)).Outcome);
-        int sends = fixture.Curve.Sent.Count;
-        Assert.Equal(CpuLiveCurveOutcome.Blocked,
-            (await transaction.ExecutePreparedAsync(prepared.Operation!, null, default)).Outcome);
-        Assert.Equal(sends, fixture.Curve.Sent.Count);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ActivePeerDriftAfterNoOpOrRestorationPersistsCoupledStop(bool restoredPeer)
-    {
-        var fixture = new Fixture(); var controller = fixture.Controller();
-        int powerSends;
-        ControlOperationResult result;
-        if (restoredPeer)
-        {
-            await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
-            powerSends = fixture.Power.Sent.Count;
-            fixture.Power.OnObserve = () =>
-            {
-                if (fixture.CurveStore.Journal!.State == CpuLiveCurveOwnershipState.Restored)
-                { fixture.Curve.Values[0] = new(0, -9); }
-            };
-            result = await controller.MutateLiveAsync(null, true, _ => true, default);
-            Assert.Equal(powerSends, fixture.Power.Sent.Count);
-            Assert.Equal(CpuLiveCurveOwnershipState.Blocked, fixture.CurveStore.Journal!.State);
-        }
-        else
-        {
-            fixture.Power.AfterSend = () => fixture.Curve.Values[0] = new(0, -9);
-            result = await controller.MutateLiveAsync(new(45, new(true, -1)), false, _ => true, default);
-            Assert.Single(fixture.Power.Sent); Assert.Null(fixture.CurveStore.Journal);
-            Assert.Empty(fixture.Curve.Sent);
-        }
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Equal(CpuLivePowerOwnershipState.Blocked, fixture.PowerStore.Journal!.State);
-        fixture.Curve.Values[0] = new(0, -1); fixture.Power.OnObserve = null;
-        int reads = fixture.Curve.Reads + fixture.Power.Reads;
-        await fixture.Controller().MutateLiveAsync(null, true, _ => true, default);
-        Assert.Equal(reads, fixture.Curve.Reads + fixture.Power.Reads);
-    }
-
-    [Fact]
-    public async Task PreparedTicketCannotExecuteAfterAnotherOperationReplacesItsJournal()
-    {
-        var fixture = new Fixture();
-        var transaction = new CpuLivePowerTuningTransaction(fixture.Power, fixture.PowerStore);
-        var first = await transaction.PrepareApplyAsync([new(CpuLivePowerLimit.Fast, 45)], default);
-        await transaction.PrepareApplyAsync([new(CpuLivePowerLimit.Fast, 60)], default);
-        Assert.Equal(CpuLivePowerOutcome.Blocked,
-            (await transaction.ExecutePreparedAsync(first.Operation!, null, default)).Outcome);
-        Assert.Empty(fixture.Power.Sent);
-    }
-
-    private const CpuTuningFeatures Both = CpuTuningFeatures.CurveOptimizer | CpuTuningFeatures.PowerLimit;
     private sealed class Fixture
     {
         internal readonly CpuLiveCurveTuningTransactionTests.MemoryStore CurveStore = new();
-        internal readonly CpuLivePowerTuningTransactionTests.MemoryStore PowerStore = new();
+        internal readonly CpuPowerTestData.MemoryStore PowerStore = new();
         internal readonly CpuLiveCurveTuningTransactionTests.FakeBackend Curve;
-        internal readonly CpuLivePowerTuningTransactionTests.FakeBackend Power;
+        internal readonly CpuPowerTestData.FakeBackend Power;
         internal Fixture()
         {
-            Curve = new(CurveStore); Power = new(PowerStore);
+            Curve = new(CurveStore); Power = new();
             Curve.CheckPeer = peer => !Power.Unavailable && peer.Expected == Power.Pair;
-            Power.CheckPeer = peer => peer.Expected.CoreOffsets.SequenceEqual(Curve.Values);
         }
         internal CpuTuningController Controller() => new(new UnusedSource(), curveBackend: Curve,
             curveStore: CurveStore, powerBackend: Power, powerStore: PowerStore);

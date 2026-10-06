@@ -10,7 +10,7 @@ public sealed class Rz090528CpuLiveCurveNativeTransportTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ExpiryDuringFreshSetterProofBlocksForwardAndRestoreBeforeNativeInvocation(bool restoring)
+    public void RevocationDuringFreshSetterProofBlocksForwardAndRestoreBeforeNativeInvocation(bool restoring)
     {
         var platform = new Platform();
         if (restoring) { platform.Offsets[0] = 0; }
@@ -20,10 +20,9 @@ public sealed class Rz090528CpuLiveCurveNativeTransportTests
             Assert.True(CpuLiveCurveCommand.TryCreate(0, -1, 0xFF55, out var command));
             request = new(request.Scope, command, CpuLiveCurveCommandPurpose.Restore, request.Before);
         }
-        long now = 100;
-        using var deadline = new CpuLiveCurveWriteDeadline(100, 600_100, () => now, () => true, default);
-        var proof = new Proof(request, platform) { SubmissionAllowed = deadline.IsCurrent };
-        proof.ReadRange = count => { if (count == 2) { now = 600_100; } return new(0x5000A, 0, 50, 1, true); };
+        bool current = true;
+        var proof = new Proof(request, platform) { SubmissionAllowed = () => current };
+        proof.ReadRange = count => { if (count == 2) { current = false; } return new(0x5000A, 0, 50, 1, true); };
         var result = Run(platform, request, proof);
         Assert.Equal(2, proof.RangeReads);
         Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition);

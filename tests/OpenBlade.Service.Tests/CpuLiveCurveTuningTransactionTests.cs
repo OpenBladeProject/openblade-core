@@ -728,13 +728,14 @@ public sealed class CpuLiveCurveTuningTransactionTests
     internal sealed class MemoryStore : ICpuLiveCurveOwnershipJournalStore
     {
         internal CpuLiveCurveOwnershipJournal? Journal;
-        internal int Writes;
+        internal int Writes; internal Action<int>? BeforeWrite;
         internal int? FailWrite;
         internal string? Hash;
         public Task<CpuLiveCurveJournalLoadResult> LoadAsync(CancellationToken token) => Task.FromResult(new CpuLiveCurveJournalLoadResult(Journal, false, Hash));
         public Task<string?> TryWriteAsync(string? expectedSha256, CpuLiveCurveOwnershipJournal journal, CancellationToken token)
         {
             Assert.True(journal.IsWellFormed);
+            BeforeWrite?.Invoke(Writes + 1);
             if (++Writes == FailWrite || expectedSha256 != Hash) { return Task.FromResult<string?>(null); }
             Journal = journal; Hash = Writes.ToString(); return Task.FromResult<string?>(Hash);
         }
