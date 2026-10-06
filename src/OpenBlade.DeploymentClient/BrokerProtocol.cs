@@ -5,6 +5,8 @@ namespace OpenBlade.DeploymentClient;
 internal enum DeploymentBrokerAction
 {
     ApplyFixedInbox,
+    ApplyCpuVoltageInbox,
+    ReadDeploymentStatus,
 }
 
 internal sealed record DeploymentBrokerRequest(
@@ -31,6 +33,7 @@ internal static class DeploymentBrokerProtocol
     internal const int ProtocolVersion = 1;
     internal const int MaximumFrameBytes = 512;
     internal const string SuccessCode = "install-succeeded";
+    internal const string CpuVoltageSuccessCode = "cpu-voltage-host-started";
 
     private static readonly string[] RequestProperties =
     [
@@ -56,7 +59,7 @@ internal static class DeploymentBrokerProtocol
             writer.WriteStartObject();
             writer.WriteNumber("protocolVersion", request.ProtocolVersion);
             writer.WriteString("requestId", request.RequestId.ToString("D"));
-            writer.WriteString("action", nameof(DeploymentBrokerAction.ApplyFixedInbox));
+            writer.WriteString("action", request.Action.ToString());
             writer.WriteEndObject();
         }
 
@@ -81,7 +84,11 @@ internal static class DeploymentBrokerProtocol
                     nameof(DeploymentBrokerAction.ApplyFixedInbox),
                     StringComparison.Ordinal)
                     ? DeploymentBrokerAction.ApplyFixedInbox
-                    : throw new InvalidDataException("The broker request action is invalid."));
+                    : action == nameof(DeploymentBrokerAction.ApplyCpuVoltageInbox)
+                        ? DeploymentBrokerAction.ApplyCpuVoltageInbox
+                        : action == nameof(DeploymentBrokerAction.ReadDeploymentStatus)
+                            ? DeploymentBrokerAction.ReadDeploymentStatus
+                        : throw new InvalidDataException("The broker request action is invalid."));
             ValidateRequest(request);
             if (!bytes.SequenceEqual(SerializeRequest(request)))
             {
@@ -145,6 +152,12 @@ internal static class DeploymentBrokerProtocol
         && response.RequestId == requestId
         && response.Status == DeploymentBrokerResponseStatus.Succeeded
         && string.Equals(response.Code, SuccessCode, StringComparison.Ordinal);
+
+    internal static bool IsExactCpuVoltageSuccess(DeploymentBrokerResponse response, Guid requestId) =>
+        response.ProtocolVersion == ProtocolVersion
+        && response.RequestId == requestId
+        && response.Status == DeploymentBrokerResponseStatus.Succeeded
+        && string.Equals(response.Code, CpuVoltageSuccessCode, StringComparison.Ordinal);
 
     private static JsonDocument ParseDocument(ReadOnlySpan<byte> bytes, string description)
     {
@@ -244,7 +257,7 @@ internal static class DeploymentBrokerProtocol
     {
         if (request.ProtocolVersion != ProtocolVersion
             || request.RequestId == Guid.Empty
-            || request.Action != DeploymentBrokerAction.ApplyFixedInbox)
+            || request.Action is not (DeploymentBrokerAction.ApplyFixedInbox or DeploymentBrokerAction.ApplyCpuVoltageInbox or DeploymentBrokerAction.ReadDeploymentStatus))
         {
             throw new InvalidDataException("The broker request contract is invalid.");
         }

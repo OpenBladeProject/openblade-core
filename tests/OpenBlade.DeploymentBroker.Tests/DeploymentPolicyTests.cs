@@ -50,7 +50,7 @@ public sealed class DeploymentPolicyTests : IDisposable
         Assert.False(plan.UseShellExecute);
         Assert.Equal(installer, plan.FileName);
         Assert.Equal(root, plan.WorkingDirectory);
-        Assert.Equal(["/install", "/quiet", "/norestart"], plan.ArgumentList);
+        Assert.Equal(["/install", "/quiet", "/norestart", "/log", Path.Combine(root, "installer.log")], plan.ArgumentList);
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         Assert.Equal(windows, plan.Environment["SystemRoot"]);
         Assert.Equal(windows, plan.Environment["WINDIR"]);

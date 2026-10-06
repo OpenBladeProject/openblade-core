@@ -14,6 +14,123 @@ public sealed class DeploymentClientCoordinatorTests
         @"C:\Program Files\OpenBlade\OpenBlade.SessionAgent.exe",
         @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe");
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CpuVoltage_ExactSuccessRequiresStatusAndNeverRelaunches(bool statusReady)
+    {
+        List<string> events = [];
+        FixedBrokerChannel broker = new(new(1, RequestId, DeploymentBrokerResponseStatus.Succeeded,
+            DeploymentBrokerProtocol.CpuVoltageSuccessCode), () => events.Add("broker"));
+        RecordingCpuVoltageHost host = new(events) { Ready = statusReady };
+        RecordingProcessLauncher processes = new(true);
+        RecordingLegacyStartupCleanup cleanup = new();
+        var coordinator = new DeploymentClientCoordinator(broker, new FixedIntegritySource(false),
+            new FixedSessionSource(true), cleanup, new FixedInstalledPayloadVerifier(Paths),
+            new SequenceProcessInventory(new(true, 1, 1), new(true, 0, 0), new(true, 0, 0), new(true, 0, 0)),
+            new RecordingProcessShutdown(true, _ => events.Add("shutdown")), processes, new FixedRequestIdSource(),
+            cpuVoltageHost: host);
+
+        Assert.Equal(statusReady, await coordinator.ApplyCpuVoltageInboxAsync(CancellationToken.None));
+        Assert.Equal(["prepare-host", "shutdown", "broker", "host-status"], events);
+        Assert.Equal(1, broker.Calls);
+        Assert.Equal(1, broker.CpuVoltageCalls);
+        Assert.Empty(processes.Plans);
+        Assert.Equal(0, cleanup.Calls);
+    }
+
+    [Theory]
+    [InlineData("install-succeeded", (int)DeploymentBrokerResponseStatus.Succeeded, false, false)]
+    [InlineData("install-rolled-back", (int)DeploymentBrokerResponseStatus.RolledBack, false, false)]
+    [InlineData("cpu-voltage-host-started", (int)DeploymentBrokerResponseStatus.Indeterminate, false, false)]
+    [InlineData("cpu-voltage-host-started", (int)DeploymentBrokerResponseStatus.Succeeded, true, false)]
+    [InlineData("cpu-voltage-host-started", (int)DeploymentBrokerResponseStatus.Succeeded, false, true)]
+    public async Task CpuVoltage_NonExactReplyNeverChecksStatusOrRestoresApps(string code, int state, bool wrongId, bool wrongProtocol)
+    {
+        List<string> events = [];
+        FixedBrokerChannel broker = new(new(wrongProtocol ? 2 : 1, wrongId ? Guid.NewGuid() : RequestId,
+            (DeploymentBrokerResponseStatus)state, code));
+        RecordingCpuVoltageHost host = new(events);
+        RecordingProcessLauncher processes = new(true);
+        var coordinator = new DeploymentClientCoordinator(broker, new FixedIntegritySource(false),
+            new FixedSessionSource(true), new RecordingLegacyStartupCleanup(), new FixedInstalledPayloadVerifier(Paths),
+            new SequenceProcessInventory(new(true, 1, 1), new(true, 0, 0)), new RecordingProcessShutdown(true),
+            processes, new FixedRequestIdSource(), cpuVoltageHost: host);
+
+        Assert.False(await coordinator.ApplyCpuVoltageInboxAsync(CancellationToken.None));
+        Assert.Equal(["prepare-host"], events);
+        Assert.Equal(1, broker.CpuVoltageCalls);
+        Assert.Empty(processes.Plans);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CpuVoltage_UnresolvedPreviousHostPreventsAppShutdownAndBroker(bool throwing)
+    {
+        List<string> events = [];
+        FixedBrokerChannel broker = new(BrokerProtocolTests.Success());
+        RecordingProcessShutdown shutdown = new(true);
+        RecordingCpuVoltageHost host = new(events) { Prepared = false, ThrowPreparing = throwing };
+        var coordinator = new DeploymentClientCoordinator(broker, new FixedIntegritySource(false),
+            new FixedSessionSource(true), new RecordingLegacyStartupCleanup(), new FixedInstalledPayloadVerifier(Paths),
+            new SequenceProcessInventory(new InstalledProcessInventory(true, 1, 1)), shutdown, new RecordingProcessLauncher(true),
+            new FixedRequestIdSource(), cpuVoltageHost: host);
+
+        Assert.False(await coordinator.ApplyCpuVoltageInboxAsync(CancellationToken.None));
+        Assert.Equal(["prepare-host"], events);
+        Assert.Empty(shutdown.Shapes);
+        Assert.Equal(0, broker.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CpuVoltage_ContextLossOrCancellationDuringStatusCannotSucceed(bool cancel)
+    {
+        using var cancellation = new CancellationTokenSource();
+        MutableClientContext context = new();
+        RecordingCpuVoltageHost host = new([])
+        {
+            AfterStatus = () =>
+            {
+                if (cancel) { cancellation.Cancel(); } else { context.Active = false; }
+            },
+        };
+        FixedBrokerChannel broker = new(new(1, RequestId, DeploymentBrokerResponseStatus.Succeeded,
+            DeploymentBrokerProtocol.CpuVoltageSuccessCode));
+        RecordingProcessLauncher processes = new(true);
+        var coordinator = new DeploymentClientCoordinator(broker, context, context,
+            new RecordingLegacyStartupCleanup(), new FixedInstalledPayloadVerifier(Paths),
+            new SequenceProcessInventory(new(true, 0, 0), new(true, 0, 0), new(true, 0, 0)),
+            new RecordingProcessShutdown(true), processes, new FixedRequestIdSource(), cpuVoltageHost: host);
+
+        Assert.False(await coordinator.ApplyCpuVoltageInboxAsync(cancellation.Token));
+        Assert.Equal(1, broker.CpuVoltageCalls);
+        Assert.Empty(processes.Plans);
+    }
+
+    private sealed class RecordingCpuVoltageHost(List<string> events) : ICpuVoltageHostStatusVerifier
+    {
+        internal bool Prepared { get; init; } = true;
+        internal bool Ready { get; init; } = true;
+        internal bool ThrowPreparing { get; init; }
+        internal Action? AfterStatus { get; init; }
+        public Task<bool> PrepareAsync(CancellationToken cancellationToken)
+        {
+            events.Add("prepare-host");
+            if (ThrowPreparing) { throw new IOException("Uncertain prior host."); }
+            return Task.FromResult(Prepared);
+        }
+        public Task<bool> VerifyAsync(Guid deploymentRequestId, CancellationToken cancellationToken)
+        {
+            Assert.Equal(RequestId, deploymentRequestId);
+            events.Add("host-status");
+            AfterStatus?.Invoke();
+            return Task.FromResult(Ready);
+        }
+    }
+
     [Fact]
     public async Task ExactSuccess_NormalIntegrityAndVerifiedPaths_LaunchInRequiredOrder()
     {
@@ -1093,6 +1210,13 @@ public sealed class DeploymentClientCoordinatorTests
         Action? onCall = null) : IBrokerChannel
     {
         internal int Calls { get; private set; }
+        internal int CpuVoltageCalls { get; private set; }
+
+        public Task<DeploymentBrokerResponse> ApplyCpuVoltageInboxAsync(Guid requestId, CancellationToken cancellationToken)
+        {
+            CpuVoltageCalls++;
+            return ApplyFixedInboxAsync(requestId, cancellationToken);
+        }
 
         public Task<DeploymentBrokerResponse> ApplyFixedInboxAsync(
             Guid requestId,
@@ -1107,6 +1231,8 @@ public sealed class DeploymentClientCoordinatorTests
 
     private sealed class ThrowingBrokerChannel(Exception exception) : IBrokerChannel
     {
+        public Task<DeploymentBrokerResponse> ApplyCpuVoltageInboxAsync(Guid requestId, CancellationToken cancellationToken) =>
+            Task.FromException<DeploymentBrokerResponse>(exception);
         public Task<DeploymentBrokerResponse> ApplyFixedInboxAsync(
             Guid requestId,
             CancellationToken cancellationToken) => Task.FromException<DeploymentBrokerResponse>(
