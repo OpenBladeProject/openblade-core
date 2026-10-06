@@ -41,23 +41,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Keep NVIDIA GPU tuning available while HyperBoost runs on the supported RZ09-0581, and retain confirmed offsets after HyperBoost exits or recovers. ([#579](https://github.com/OpenBladeProject/openblade-core/pull/579))
 
 ## [0.21.10] - 2026-09-24
 
 ### Fixed
 
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Allow HyperBoost with verified Synapse Blade Blocker evidence despite known Synapse service aliases, and while the RGS updater service or verified Windows lighting helper is running; retain diagnostics and other controller checks. ([#573](https://github.com/OSSBlade/openblade-core/pull/573))
 
 ## [0.21.9] - 2026-09-23
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Keep apps launched by the local-development deployment client independent of the command runner, or report a relaunch failure when Windows prevents it. ([#567](https://github.com/OpenBladeProject/openblade-core/pull/567))
 - Recognize validated MCU 1.7.0.0 on Razer Blade 16 RZ09-0581 in the tested-firmware notice. ([#566](https://github.com/OSSBlade/openblade-core/pull/566))
@@ -66,8 +60,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ## [0.21.6] - 2026-09-20
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Keep the requested lighting effect visible when an apply completes before the final service status arrives. ([#549](https://github.com/OSSBlade/openblade-core/pull/549))
 - Keep intentional black primary colors when switching Breathing or Starlight between Single and Dual color modes. ([#541](https://github.com/OSSBlade/openblade-core/pull/541))
@@ -80,21 +72,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Allow Synapse to keep serving peripherals when its running AppEngine instances have a verified Synapse Blade Blocker patch, including its verified Windows lighting helper when a fresh device check finds no Blade lighting interface, while retaining checks for independent controllers, reevaluating patch timestamps after clock corrections, and falling back after updates or invalid patch evidence. ([#506](https://github.com/OSSBlade/openblade-core/pull/506))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Explain HyperBoost restrictions beside the performance controls and allow Chroma lighting services without relaxing checks for Synapse, updater, unknown, or unverified controllers. ([#503](https://github.com/OSSBlade/openblade-core/pull/503))
 
 ## [0.20.23] - 2026-09-15
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Turn off OpenBlade-controlled keyboard lighting on Windows suspend while preserving the separate display-off preference and eligible lighting settings for resume. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
 - Avoid classifying OpenBlade control writes as external changes during delayed resume validation, including writes that await confirmation, while continuing to compare unaffected settings. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
@@ -106,8 +92,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ## [0.20.18] - 2026-09-13
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Keep monitoring an already-running installer when durable PID binding fails, bound persisted broker state reads before allocation, and wait for a strictly verified final process inventory after relaunch without repeating installation or launches. ([#468](https://github.com/OSSBlade/openblade-core/pull/468))
 - Avoid redundant capability and fan-editor notifications after service updates. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
@@ -129,8 +113,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   ([#446](https://github.com/OSSBlade/openblade-core/pull/446))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Fixed false external-change warnings after uncertain battery command responses
   and missing battery or custom-performance reads. Charge limits, protection
@@ -168,8 +150,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Kept service status subscriptions ordered during concurrent updates so a
   newer pending snapshot cannot be replaced by an older one.
@@ -223,8 +203,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Stopped a failed device read from being reported as a keyboard lighting
   change made outside OpenBlade. When a profile transition wrote a keyboard
   effect and the aggregate readback that followed failed on another port, the
@@ -256,8 +234,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Stopped the tray's memory from growing for as long as it runs. The .NET 10
   runtime records every managed object handed to native XAML in a debugger
   list that is never trimmed, and each property change delivered to a XAML
@@ -269,8 +245,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ## [0.20.5-nightly.40] - 2026-09-02
 
 ### Added
-
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Added automatic restoration of performance and fan settings changed outside
   OpenBlade, and made it the default. The service reconciles confirmed
@@ -302,8 +276,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   preferences directory does not exist yet or a watcher cannot be armed. ([#395](https://github.com/OSSBlade/openblade-core/pull/395))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Quarantined a persistent override document whose JSON root is not an object
   instead of failing service startup. A `manual-overrides.json` file containing
@@ -350,8 +322,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Added an explicitly enrolled, TPM-authorized local-development deployment
   broker for quiet OpenBlade build installation without repeated UAC prompts,
   with a protected Burn environment, exact first-install rollback recovery,
@@ -361,8 +331,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   failure diagnostics. ([#297](https://github.com/OSSBlade/openblade-core/pull/297))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Removed the dormant Session Agent Dynamic Lighting sparse-package
   self-registration and relaunch path. OpenBlade continues delegating keyboard
@@ -483,8 +451,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ## [0.19.15-nightly.34] - 2026-08-27
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Released the quick-controls WinUI surface when it is dismissed instead of
   keeping it rendered off-screen, so the tray does not retain a discrete-GPU
@@ -618,8 +584,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Added an Excel-compatible translator package workflow for all four localization
   surfaces, with sanitized context screenshots, deterministic source and target
   catalog hashes, locked source and target transactions, synchronized source keysets,
@@ -715,8 +679,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Added Windows-native display-brightness handling and flyout presentation for
   the reconstructed function row, using the exact admitted Razer virtual
   Consumer Control path already present on the RZ09-0581. The existing WMI
@@ -755,8 +717,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   standardized its primary icon scale. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Reduced excess vertical space in single-line Dashboard rows while preserving
   the original spacing for descriptions, editors, and titles that wrap at
@@ -812,8 +772,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Added a compact quick-controls dashboard that opens with one click on the
   tray icon. Its tile controls, slider controls, order, visibility, and status
   row can be customized from Settings while the actual popup updates live.
@@ -860,8 +818,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   the full build workflow. ([#114](https://github.com/OSSBlade/openblade-core/pull/114))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Fixed the quick-controls popup's blank black opening frame, raw lighting
   option text, missing fan icon, clipped controls, and truncated status labels.
@@ -928,8 +884,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Folded GPU clock offsets under their tuning toggle, removed the persistent
   nested-card highlight, and placed dashboard slider values beside their
   sliders to keep the cards compact while retaining their circular thumbs. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
@@ -969,8 +923,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Added per-user notification controls for performance and power-profile changes,
   app and Razer firmware updates, controller advisories, and operation failures.
   Repeated toasts are coalesced, update versions notify once, and opening a
@@ -978,8 +930,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   advisories remain available in the app. ([#78](https://github.com/OSSBlade/openblade-core/pull/78))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Made function-row brightness failures identify the logical key action,
   recorded sanitized and deduplicated exact-device session failures for every
@@ -1001,8 +951,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Added Razer Blade 16 RZ09-0581 BIOS 4.00 to the tested production firmware
   set while retaining BIOS 3.01 support and keeping other BIOS versions behind
   the explicit untested-firmware override. ([#71](https://github.com/OSSBlade/openblade-core/pull/71))
@@ -1015,8 +963,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   and embedded installs a valid native apply owner. ([#69](https://github.com/OSSBlade/openblade-core/pull/69))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Fixed the Tray terminating at startup when loading the new GPU tuning card's
   description style. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
@@ -1037,8 +983,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   identity. ([#69](https://github.com/OSSBlade/openblade-core/pull/69))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Presented the installed MCU firmware consistently in Device information and
   the official firmware card while preserving the raw version for diagnostics
@@ -1093,8 +1037,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Added a separate GPU tuning switch and clock-offset controls for plugged-in
   profiles. Offsets now work with Balanced and other power modes, while
   existing Custom-mode settings migrate automatically. Exact Razer Blade 16
@@ -1130,8 +1072,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Added a read-only firmware assistant for admitted Blade models that shows
   installed BIOS, EC, and MCU values beside versions published on the model's
   official Razer support page without downloading or running firmware tools,
@@ -1155,8 +1095,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   input work can use any processor. ([813f0820](https://github.com/OSSBlade/openblade-core/commit/813f0820))
 
 ### Fixed
-
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Added a Launch action after successful graphical install or repair so a
   normally started upgrade does not leave the Tray and Session Agent stopped
@@ -1190,8 +1128,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   or Page Down key, while retaining Raw Input as a hook-recovery fallback. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
 
 ### Added
-
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Licensed OpenBlade under the GNU General Public License version 3 or later. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
 - Added an uninstall choice to keep saved profiles and settings by default or
@@ -1481,8 +1417,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
-
 - Fixed shortcut action pickers that changed visually without persisting their
   new binding. Custom RZ09-0581 M1 and M2 actions now also suppress the paired
   native Page Up or Page Down edge for the full key press, while Default and
@@ -1711,8 +1645,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   layouts. ([c83fdf61](https://github.com/OSSBlade/openblade-core/commit/c83fdf61))
 
 ### Added
-
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Removed the optional UIAccess input companion from the MVP. Interactive
   lighting and performance-shortcut input remain supported in normal user apps,
@@ -2004,8 +1936,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ## [0.1.0] - 2026-07-17
 
 ### Added
-
-- Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - A native Windows 11 WinUI 3 tray application backed by a LocalSystem service and versioned named-pipe contracts. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Automatic profiles for the validated 280 W adapter, 100 W USB-C PD operation, and battery operation on the 2026 Razer Blade 16 (RZ09-0581, VID 1532, PID 02E0, BIOS 3.01). ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
