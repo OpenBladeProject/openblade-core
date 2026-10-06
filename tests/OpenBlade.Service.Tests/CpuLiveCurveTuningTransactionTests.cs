@@ -84,6 +84,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.Equal(CpuLiveCurveOutcome.Uncertain, result.Outcome);
         string frozen = Assert.IsType<string>(backend.Diagnostic.LiveObservationTimeoutContext);
         Assert.StartsWith("; curve submission operation timeout; active stage native provider fresh context; enclosing stage curve send proof preparation", frozen);
+        Assert.Matches(@"; enclosing elapsed \d+ ms; elapsed \d+ ms; total submission elapsed \d+ ms$", frozen);
         Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
         pending.SetResult(CpuLiveCurveSubmission.NotSubmitted); await pending.Task; inner!.Dispose(); stage!.Dispose();
         backend.Diagnostic.Check(false, "late rejection");
@@ -91,6 +92,78 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
         Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal!.State);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IndependentSubmissionBudgetAllowsApplyAndRestoreBeyondReadBudget(bool restoring)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store,
+            operationTimeout: TimeSpan.FromMilliseconds(50), submissionTimeout: TimeSpan.FromSeconds(2));
+        if (restoring)
+        { Assert.Equal(CpuLiveCurveOutcome.Verified, (await transaction.ApplySelectiveAsync([new(0, 0)], default)).Outcome); }
+        var pending = new TaskCompletionSource<CpuLiveCurveSubmission>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource<CpuLiveCurveCommand>(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.OnSend = command => { entered.SetResult(command); return pending.Task; };
+        var operation = restoring ? transaction.RestoreAsync(default) : transaction.ApplySelectiveAsync([new(0, 0)], default);
+        var command = await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(150);
+        Assert.False(operation.IsCompleted);
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, store.Journal!.State);
+        pending.SetResult(await backend.Apply(command));
+        Assert.Equal(CpuLiveCurveOutcome.Verified, (await operation.WaitAsync(TimeSpan.FromSeconds(5))).Outcome);
+        Assert.Equal(restoring ? CpuLiveCurveOwnershipState.Restored : CpuLiveCurveOwnershipState.OwnedVerified, store.Journal.State);
+    }
+
+    [Fact]
+    public async Task LongerSubmissionBudgetDoesNotExtendObservationDeadline()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var pending = new TaskCompletionSource<CpuLiveCurveBackendObservation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.OnObserve = _ => pending.Task;
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store,
+            operationTimeout: TimeSpan.FromMilliseconds(20), submissionTimeout: TimeSpan.FromSeconds(30));
+        var result = await transaction.ObserveOwnershipAsync(default, diagnostic).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(CpuLiveCurveBlockReason.ObservationUnavailable, result.Reason);
+        Assert.Contains("curve observation operation timeout", diagnostic.LiveObservationTimeoutContext);
+        Assert.False(pending.Task.IsCompleted);
+        pending.SetResult(new(null, null));
+        Assert.Empty(backend.Sent); Assert.Equal(0, store.Writes);
+    }
+
+    [Fact]
+    public async Task CallerCancellationStillRetainsExactSubmissionUntilTerminalNonSubmission()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store) { Diagnostic = new() };
+        using var cancellation = new CancellationTokenSource();
+        var pending = new TaskCompletionSource<CpuLiveCurveSubmission>(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.OnSend = _ => { cancellation.Cancel(); return pending.Task; };
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store,
+            operationTimeout: TimeSpan.FromMilliseconds(50), submissionTimeout: TimeSpan.FromSeconds(30));
+        var result = await transaction.ApplySelectiveAsync([new(0, 0)], cancellation.Token).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, result.Outcome);
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, store.Journal!.State);
+        Assert.StartsWith("; curve submission caller cancellation", backend.Diagnostic.LiveObservationTimeoutContext);
+        Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
+        pending.SetResult(CpuLiveCurveSubmission.NotSubmitted);
+        Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal.State);
+        Assert.All(backend.Values, core => Assert.Equal(-1, core.Offset));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(30001)]
+    public void SubmissionBudgetRemainsBounded(int milliseconds)
+    {
+        var store = new MemoryStore();
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CpuLiveCurveTuningTransaction(new FakeBackend(store), store,
+            submissionTimeout: TimeSpan.FromMilliseconds(milliseconds)));
+    }
+
     [Fact]
     public async Task FirstTimeoutRetainsPendingNativeProgressAfterLateCompletion()
     {
