@@ -38,7 +38,10 @@ internal static class ServiceComposition
             curveStore: provider.GetRequiredService<ICpuLiveCurveOwnershipJournalStore>(),
             powerBackend: new CpuLivePowerNativeBackend(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
                 provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>()),
-            powerStore: provider.GetRequiredService<ICpuLivePowerOwnershipJournalStore>()));
+            powerStore: provider.GetRequiredService<ICpuLivePowerOwnershipJournalStore>(),
+            readRecoveryBoot: new WindowsCpuBootSequenceReader().Read,
+            recoveryWorkerIdle: () => CpuNativeWorkerCoordinator.ForSession(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession()).Status
+                is { WorkerOutstanding: false, Invalid: false }));
         services.AddSingleton<IServiceControlRuntime>(provider =>
             new ServiceControlRuntime(
                 provider.GetRequiredService<BatteryConfigurationStore>(),

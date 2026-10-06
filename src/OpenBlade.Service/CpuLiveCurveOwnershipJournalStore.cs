@@ -156,10 +156,38 @@ internal sealed class CpuLiveCurveOwnershipJournal
 }
 
 internal sealed record CpuLiveCurveJournalLoadResult(CpuLiveCurveOwnershipJournal? Journal, bool Invalid, string? Sha256);
+
+// Evidence of a fresh read, not proof that the old setter did not run or that
+// restoration was submitted. Exact old bytes are archived before journal CAS.
+internal sealed record CpuLiveCurvePostBootObservation(CpuLiveCurveContext Context,
+    IReadOnlyList<CpuLiveCoreOffset> CoreValues, CpuLivePowerContext PowerContext,
+    CpuLivePowerStoredPair PowerBefore, CpuLivePowerStoredPair PowerAfter, DateTimeOffset ObservedAtUtc)
+{
+    internal bool Matches(CpuLiveCurveOwnershipJournal prior) => prior.IsWellFormed
+        && prior.State == CpuLiveCurveOwnershipState.PossibleSubmission
+        && Context is { IsWellFormed: true, RuntimeLifetime.ServiceInstance: var service } && service != Guid.Empty
+        && prior.Context.RuntimeLifetime is { ServiceInstance: var originalService } && originalService != Guid.Empty
+        && service != originalService && Context.BootSequence != prior.Context.BootSequence
+        && (Context with { BootSequence = prior.Context.BootSequence, RuntimeLifetime = prior.Context.RuntimeLifetime })
+            .MatchesHardwareContext(prior.Context)
+        && CpuLiveCurveOwnershipJournal.Snapshot(CoreValues) is { } vector
+        && vector.CoreOffsets.SequenceEqual(prior.OriginalBaseline)
+        && PowerContext is { IsWellFormed: true }
+        && Context.MatchesHardwareContext(new(PowerContext.Identity, PowerContext.EnabledCoreMask,
+            PowerContext.PmVersion, PowerContext.PmTableLength, PowerContext.Backend, PowerContext.BootSequence)
+        { RuntimeLifetime = PowerContext.RuntimeLifetime })
+        && PowerBefore.Decode() is { } before && PowerAfter.Decode() == before && ObservedAtUtc != default;
+}
+
+internal sealed record CpuLiveCurvePostBootReceipt(string State, string Basis, string PreviousSha256,
+    string ProposedSha256, Guid TransactionId, CpuLiveCurvePostBootObservation Observation);
+
 internal interface ICpuLiveCurveOwnershipJournalStore
 {
     Task<CpuLiveCurveJournalLoadResult> LoadAsync(CancellationToken token);
     Task<string?> TryWriteAsync(string? expectedSha256, CpuLiveCurveOwnershipJournal journal, CancellationToken token);
+    Task<string?> TryReconcileAfterBootAsync(string expectedSha256, CpuLiveCurvePostBootObservation observation,
+        Func<Task<bool>> stillAdmitted, CancellationToken token) => Task.FromResult<string?>(null);
 }
 
 internal sealed class CpuLiveCurveOwnershipJournalStore(string path) : ICpuLiveCurveOwnershipJournalStore
@@ -212,6 +240,56 @@ internal sealed class CpuLiveCurveOwnershipJournalStore(string path) : ICpuLiveC
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or ArgumentException)
         { return null; }
         finally { gate.Release(); }
+    }
+
+    public async Task<string?> TryReconcileAfterBootAsync(string expectedSha256, CpuLiveCurvePostBootObservation observation,
+        Func<Task<bool>> stillAdmitted, CancellationToken token)
+    {
+        await gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            using var exclusion = new FileStream(path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            byte[]? previous = await ReadBytesAsync(token).ConfigureAwait(false);
+            if (previous is null || Hash(previous) != expectedSha256 || Decode(previous) is not { } prior
+                || !observation.Matches(prior) || !await stillAdmitted().ConfigureAwait(false)) { return null; }
+            var settled = new CpuLiveCurveOwnershipJournal(3, prior.TransactionId, prior.Context,
+                prior.OriginalBaseline, prior.OriginalBaseline, [], prior.OriginalBaseline,
+                CpuLiveCurveOwnershipState.Restored, 0, true, DateTimeOffset.UtcNow);
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(settled, Options);
+            string nextHash = Hash(bytes);
+            // This receipt is deliberately pre-settlement. A failed CAS leaves
+            // an audited attempt; closure requires the actual matching journal.
+            var receipt = new CpuLiveCurvePostBootReceipt("PreSettlement", "OriginalObservedAfterBoot",
+                expectedSha256, nextHash, prior.TransactionId, observation);
+            string archive = path + ".post-boot-" + Guid.NewGuid().ToString("N");
+            Directory.CreateDirectory(archive);
+            await WriteNewEvidenceAsync(Path.Combine(archive, "original.json"), previous, token).ConfigureAwait(false);
+            await WriteNewEvidenceAsync(Path.Combine(archive, "receipt.json"),
+                JsonSerializer.SerializeToUtf8Bytes(receipt, Options), token).ConfigureAwait(false);
+            string proposed = Path.Combine(archive, "proposed.json");
+            await WriteNewEvidenceAsync(proposed, bytes, token).ConfigureAwait(false);
+            // Do not let evidence persistence outlive the final admission or CAS.
+            if (!await stillAdmitted().ConfigureAwait(false)) { return null; }
+            byte[]? current = await ReadBytesAsync(token).ConfigureAwait(false);
+            if (current is null || Hash(current) != expectedSha256) { return null; }
+            token.ThrowIfCancellationRequested();
+            File.Move(proposed, path, overwrite: true);
+            return nextHash;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or ArgumentException)
+        { return null; }
+        finally { gate.Release(); }
+    }
+
+    private static async Task WriteNewEvidenceAsync(string destination, byte[] bytes, CancellationToken token)
+    {
+        if (bytes.Length is <= 0 or > MaximumBytes) { throw new InvalidDataException("Post-boot evidence bound."); }
+        await using var stream = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.Read,
+            4096, FileOptions.Asynchronous | FileOptions.WriteThrough);
+        await stream.WriteAsync(bytes, token).ConfigureAwait(false);
+        await stream.FlushAsync(token).ConfigureAwait(false);
+        stream.Flush(flushToDisk: true);
     }
 
     private static CpuLiveCurveOwnershipJournal? Decode(byte[] bytes)
