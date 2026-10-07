@@ -6,17 +6,20 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveCurveTuningTransactionTests
 {
-    [Fact]
-    public async Task PreparedStepsReuseOneExactObservationAndCompletePlanThenReadBackIndependently()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PreparedStepsKeepPreflightAndReuseOnlyExactTerminalReadback(bool receipt)
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store);
+        if (receipt) { backend.CompleteSubmission = (call, _) => VerifiedResult(call); }
         var transaction = new CpuLiveCurveTuningTransaction(backend, store);
         var prepared = await transaction.PrepareApplyAsync(new(true, -2), default);
         int reads = backend.Reads, admissions = backend.Admissions.Count;
         Assert.NotNull(prepared.Operation);
         Assert.Equal(CpuLiveCurveOutcome.Verified,
             (await transaction.ExecutePreparedAsync(prepared.Operation!, null, default)).Outcome);
-        Assert.Equal(24, backend.Reads - reads); // one expected vector plus one independent readback per setter
+        Assert.Equal(receipt ? 12 : 24, backend.Reads - reads); // every pre-step observation remains fresh
         // Remaining forward/reverse pairs (156), then all twelve original restores per step (144).
         Assert.Equal(300, backend.Admissions.Count - admissions);
         Assert.Equal(12, backend.Sent.Count);
@@ -24,11 +27,48 @@ public sealed class CpuLiveCurveTuningTransactionTests
         reads = backend.Reads;
         Assert.Equal(CpuLiveCurveOutcome.Verified,
             (await transaction.ExecutePreparedAsync(restore.Operation!, null, default)).Outcome);
-        Assert.Equal(24, backend.Reads - reads);
+        Assert.Equal(receipt ? 12 : 24, backend.Reads - reads);
         Assert.Equal(backend.Sent.Take(12).Select(c => c.PhysicalCoreId).Reverse(),
             backend.Sent.Skip(12).Select(c => c.PhysicalCoreId));
         Assert.All(backend.Values, c => Assert.Equal((short)-1, c.Offset));
         Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal!.State);
+    }
+
+    [Theory]
+    [InlineData("different-call")]
+    [InlineData("consumed")]
+    [InlineData("not-submitted")]
+    [InlineData("cancelled")]
+    public async Task OfferedInvalidReadbackNeverFallsBackOrAdvancesOwnership(string failure)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        using var cancellation = new CancellationTokenSource();
+        backend.CompleteSubmission = (call, status) =>
+        {
+            var result = VerifiedResult(failure == "different-call" ? call with { } : call);
+            if (failure == "consumed") { Assert.True(result.Readback!.TryConsume(call, out _)); }
+            if (failure == "not-submitted") { result = result with { Status = CpuLiveCurveSubmission.NotSubmitted }; }
+            if (failure == "cancelled") { cancellation.Cancel(); }
+            return result;
+        };
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        var result = await transaction.ApplySelectiveAsync([new(0, 0)], cancellation.Token);
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, result.Outcome);
+        Assert.Equal(2, backend.Reads); Assert.Single(backend.Sent);
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, store.Journal!.State);
+        Assert.Equal(0, store.Journal.CompletedSteps);
+        Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
+    }
+
+    [Fact]
+    public async Task VerifiedReadbackCannotBypassOwnershipCas()
+    {
+        var store = new MemoryStore { FailWrite = 3 }; var backend = new FakeBackend(store);
+        backend.CompleteSubmission = (call, _) => VerifiedResult(call);
+        var result = await new CpuLiveCurveTuningTransaction(backend, store).ApplySelectiveAsync([new(0, 0)], default);
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, result.Outcome);
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, store.Journal!.State);
+        Assert.Equal(2, backend.Reads); Assert.Single(backend.Sent);
     }
 
     [Theory]
@@ -86,7 +126,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.StartsWith("; curve submission operation timeout; active stage native provider fresh context; enclosing stage curve send proof preparation", frozen);
         Assert.Matches(@"; enclosing elapsed \d+ ms; elapsed \d+ ms; total submission elapsed \d+ ms$", frozen);
         Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
-        pending.SetResult(CpuLiveCurveSubmission.NotSubmitted); await pending.Task; inner!.Dispose(); stage!.Dispose();
+        pending.SetResult(CpuLiveCurveSubmission.NotSubmitted); await backend.Submission!; inner!.Dispose(); stage!.Dispose();
         backend.Diagnostic.Check(false, "late rejection");
         Assert.Equal(frozen, backend.Diagnostic.LiveObservationTimeoutContext);
         Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
@@ -148,6 +188,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.StartsWith("; curve submission caller cancellation", backend.Diagnostic.LiveObservationTimeoutContext);
         Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
         pending.SetResult(CpuLiveCurveSubmission.NotSubmitted);
+        await backend.Submission!;
         Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
         Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal.State);
         Assert.All(backend.Values, core => Assert.Equal(-1, core.Offset));
@@ -406,6 +447,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         var expected = store.Journal.Expected;
         Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
         completion.SetResult(CpuLiveCurveSubmission.NotSubmitted);
+        await backend.Submission!;
         Assert.Equal(writes, store.Writes); // Completion never starts a background writer.
         Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
         Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
@@ -443,6 +485,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         }
         if (failure == "cas-drift") { store.Hash = "different"; }
         if (failure == "write-failure") { store.FailWrite = store.Writes + 1; }
+        try { await backend.Submission!; } catch (IOException) { }
         int reads = backend.Reads;
         Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
         Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
@@ -472,6 +515,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         var pending = store.Journal!;
         Assert.Equal(1, pending.CompletedSteps);
         completion.SetResult(CpuLiveCurveSubmission.NotSubmitted);
+        await backend.Submission!;
         int reads = backend.Reads, sends = backend.Sent.Count;
         Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
         Assert.Equal(CpuLiveCurveOwnershipState.OwnedVerified, store.Journal!.State);
@@ -823,6 +867,8 @@ public sealed class CpuLiveCurveTuningTransactionTests
         internal readonly List<(CpuLiveCurveCommand, CpuLiveCurveCommandPurpose)> Admissions = [];
         internal Func<CpuLiveCurveCommand, CpuLiveCurveCommandPurpose, bool> Admit = (_, _) => true;
         internal Func<CpuLiveCurveCommand, Task<CpuLiveCurveSubmission>>? OnSend;
+        internal Func<CpuLiveCurveSubmissionCall, CpuLiveCurveSubmission, CpuLiveCurveSubmissionResult>? CompleteSubmission;
+        internal Task<CpuLiveCurveSubmissionResult>? Submission;
         internal Action? AfterSend;
         internal Func<CpuLivePowerPeerState, bool>? CheckPeer;
         internal readonly List<CpuLivePowerPeerState> Peers = [];
@@ -857,6 +903,23 @@ public sealed class CpuLiveCurveTuningTransactionTests
             Values[index] = new(command.PhysicalCoreId, command.Offset); AfterSend?.Invoke();
             return Task.FromResult(CpuLiveCurveSubmission.Acknowledged);
         }
+        public Task<CpuLiveCurveSubmissionResult> SendWithReadbackAsync(CpuLiveCurveSubmissionCall call, CancellationToken token) =>
+            Submission = CompleteAsync(call, token);
+        private async Task<CpuLiveCurveSubmissionResult> CompleteAsync(CpuLiveCurveSubmissionCall call, CancellationToken token)
+        {
+            var status = await SendAsync(call.Context, call.Command, call.Purpose, call.Before, call.Peer, token).ConfigureAwait(false);
+            return CompleteSubmission?.Invoke(call, status) ?? new(status);
+        }
+    }
+
+    internal static CpuLiveCurveSubmissionResult VerifiedResult(CpuLiveCurveSubmissionCall call)
+    {
+        var request = new CpuLiveCurveNativeRequest(new(), call.Command, call.Purpose, call.Before, call.Peer);
+        var native = new CpuLiveCurveNativeResult(CpuLiveCurveNativeDisposition.Acknowledged, true, true, true,
+            request.After, CpuLiveCurveNativeFailure.None);
+        var receipt = CpuLiveCurveVerifiedReadback.Create(call, call.Context, request, native);
+        Assert.NotNull(receipt);
+        return new(CpuLiveCurveSubmission.Acknowledged, receipt);
     }
 
     internal static CpuLiveCoreOffset[] ValuesFixture() => new[] { 0, 2, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15 }

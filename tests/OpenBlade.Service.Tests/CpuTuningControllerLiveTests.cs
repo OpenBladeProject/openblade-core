@@ -9,6 +9,44 @@ public sealed class CpuTuningControllerLiveTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task RuntimeWrapperCarriesExactReadbackAcrossApplyAndRestoreWithoutSkippingPeerChecks(bool receipt)
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        if (receipt) { fixture.Curve.CompleteSubmission = (call, _) => CpuLiveCurveTuningTransactionTests.VerifiedResult(call); }
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await controller.MutateLiveAsync(new(null, new(false, -1)), false, _ => true, default)).Status);
+        Assert.Equal(ControlOperationStatus.Stored, (await controller.MutateLiveAsync(null, true, _ => true, default)).Status);
+        Assert.Equal(receipt ? 28 : 52, fixture.Curve.Reads);
+        Assert.Equal(30, fixture.Power.Reads); Assert.Equal(24, fixture.Curve.Peers.Count);
+        Assert.Equal(24, fixture.Curve.Sent.Count);
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, fixture.CurveStore.Journal!.State);
+        Assert.All(fixture.Curve.Values, core => Assert.Equal(-1, core.Offset));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RuntimeLossAfterNativeReceiptCannotVerifyTheStep(bool cancel)
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        using var cancellation = new CancellationTokenSource();
+        bool admitted = true;
+        fixture.Curve.CompleteSubmission = (call, _) =>
+        {
+            var result = CpuLiveCurveTuningTransactionTests.VerifiedResult(call);
+            if (cancel) { cancellation.Cancel(); } else { admitted = false; }
+            return result;
+        };
+        var result = await controller.MutateLiveAsync(new(null, new(false, -1)), false, _ => admitted, cancellation.Token);
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Single(fixture.Curve.Sent); Assert.Equal(2, fixture.Curve.Reads);
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
+        Assert.Equal(0, fixture.CurveStore.Journal.CompletedSteps);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task ClosedMutationPreparationDoesNotBlockSameBootOwnedObservation(bool interruptedRestoration)
     {
         var fixture = new Fixture();

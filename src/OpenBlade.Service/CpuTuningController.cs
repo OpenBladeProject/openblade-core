@@ -675,16 +675,19 @@ internal sealed class CpuTuningController
             CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token) =>
             await SendAsync(context, command, purpose, expectedBefore, null, token).ConfigureAwait(false);
         public async Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
-            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token)
+            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token) =>
+            (await SendWithReadbackAsync(new(context, command, purpose, expectedBefore, peer), token).ConfigureAwait(false)).Status;
+        public async Task<CpuLiveCurveSubmissionResult> SendWithReadbackAsync(CpuLiveCurveSubmissionCall call, CancellationToken token)
         {
             var lease = current.Value;
-            if (lease?.Allows(CpuTuningFeatures.CurveOptimizer) != true) { return CpuLiveCurveSubmission.NotSubmitted; }
+            if (lease?.Allows(CpuTuningFeatures.CurveOptimizer) != true) { return new(CpuLiveCurveSubmission.NotSubmitted); }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
             // Await the actual terminal task: the transaction bounds its wait.
             // Keep this linked CTS alive until native cleanup has finished.
-            var result = await backend.SendAsync(context, command, purpose, expectedBefore, peer, cancellation.Token).ConfigureAwait(false);
-            return result == CpuLiveCurveSubmission.NotSubmitted || lease.Allows(CpuTuningFeatures.CurveOptimizer)
-                ? result : CpuLiveCurveSubmission.Unknown;
+            var result = await backend.SendWithReadbackAsync(call, cancellation.Token).ConfigureAwait(false);
+            return result.Status == CpuLiveCurveSubmission.NotSubmitted
+                || !cancellation.IsCancellationRequested && lease.Allows(CpuTuningFeatures.CurveOptimizer, token)
+                ? result : new(CpuLiveCurveSubmission.Unknown);
         }
     }
     private sealed class RuntimePowerBackend(ICpuLivePowerBackend backend, AsyncLocal<LiveAdmission?> current) : ICpuLivePowerBackend

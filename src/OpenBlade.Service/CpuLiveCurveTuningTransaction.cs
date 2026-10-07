@@ -5,6 +5,42 @@ namespace OpenBlade.Service;
 
 internal sealed record CpuLiveCurveBackendObservation(CpuLiveCurveContext? Context, Rz090528CpuLiveObservation? Observation);
 internal enum CpuLiveCurveSubmission { NotSubmitted, Acknowledged, Unknown }
+// A new reference for each invocation, including identical repeated commands.
+// This correlation object grants no native admission or ownership authority.
+internal sealed record CpuLiveCurveSubmissionCall(CpuLiveCurveContext Context, CpuLiveCurveCommand Command,
+    CpuLiveCurveCommandPurpose Purpose, CpuLiveCurveSnapshot Before, CpuLivePowerPeerState? Peer);
+internal sealed record CpuLiveCurveSubmissionResult(CpuLiveCurveSubmission Status, CpuLiveCurveVerifiedReadback? Readback = null);
+
+// Historical evidence from this exact terminal call only. Never used to admit a
+// later command, and never recovered from the backend's global last-result state.
+internal sealed class CpuLiveCurveVerifiedReadback
+{
+    private readonly CpuLiveCurveSubmissionCall call;
+    private readonly CpuLiveCurveSnapshot after;
+    private int consumed;
+    private CpuLiveCurveVerifiedReadback(CpuLiveCurveSubmissionCall call, CpuLiveCurveSnapshot after)
+    { this.call = call; this.after = after; }
+
+    internal static CpuLiveCurveVerifiedReadback? Create(CpuLiveCurveSubmissionCall call, CpuLiveCurveContext context,
+        CpuLiveCurveNativeRequest request, CpuLiveCurveNativeResult result) =>
+        context.IsWellFormed && call.Context.MatchesHardwareContext(context)
+        && request.Command == call.Command && request.Purpose == call.Purpose && request.PowerPeer == call.Peer
+        && CpuLiveCurveNativeRequest.Equal(request.Before, call.Before)
+        && CpuLiveCurveNativeRequest.Equal(request.After, call.Before.WithOffset(call.Command))
+        && result is
+        {
+            WorkerTerminal: true, CleanupComplete: true, Verified: true,
+            Disposition: CpuLiveCurveNativeDisposition.Acknowledged, Failure: CpuLiveCurveNativeFailure.None
+        }
+        && CpuLiveCurveNativeRequest.Equal(result.After, request.After) ? new(call, result.After!) : null;
+
+    internal bool TryConsume(CpuLiveCurveSubmissionCall exactCall, out CpuLiveCurveSnapshot? snapshot)
+    {
+        snapshot = null;
+        if (Interlocked.Exchange(ref consumed, 1) != 0 || !ReferenceEquals(call, exactCall)) { return false; }
+        snapshot = after; return true;
+    }
+}
 internal readonly record struct CpuLiveCurveAdmissionCheck(CpuLiveCurveCommand Command, CpuLiveCurveCommandPurpose Purpose);
 internal interface ICpuLiveCurveBackend
 {
@@ -40,6 +76,10 @@ internal interface ICpuLiveCurveBackend
         peer is null ? SendAsync(context, command, purpose, expectedBefore, token)
             : Task.FromResult(CpuLiveCurveSubmission.NotSubmitted);
 
+    // Legacy backends provide no receipt and retain the independent observation.
+    async Task<CpuLiveCurveSubmissionResult> SendWithReadbackAsync(CpuLiveCurveSubmissionCall call, CancellationToken token) =>
+        new(await SendAsync(call.Context, call.Command, call.Purpose, call.Before, call.Peer, token).ConfigureAwait(false));
+
 }
 
 internal enum CpuLiveCurveOutcome { Verified, Unchanged, Blocked, Uncertain }
@@ -65,7 +105,7 @@ internal sealed class CpuLiveCurveTuningTransaction
     private PreparedOperation? currentPrepared;
     private PendingSubmission? pendingSubmission;
 
-    private sealed record PendingSubmission(Task<CpuLiveCurveSubmission> Completion,
+    private sealed record PendingSubmission(Task<CpuLiveCurveSubmissionResult> Completion,
         CpuLiveCurveOwnershipJournal Prior, string PendingHash, PreparedOperation? Operation);
 
     // Journal-only, called under the controller's live gate. Never wait for an
@@ -79,7 +119,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             if (pendingSubmission is not { Completion.IsCompleted: true } pending) { return false; }
             pendingSubmission = null;
             if (pending.Completion.Status != TaskStatus.RanToCompletion
-                || pending.Completion.Result != CpuLiveCurveSubmission.NotSubmitted)
+                || pending.Completion.Result is not { Status: CpuLiveCurveSubmission.NotSubmitted, Readback: null })
             { _ = pending.Completion.Exception; return false; }
             return await SettleNotSubmittedAsync(pending.Prior, pending.PendingHash, pending.Operation).ConfigureAwait(false);
         }
@@ -516,13 +556,14 @@ internal sealed class CpuLiveCurveTuningTransaction
             string? pendingHash = await WriteAsync(hash, pending, token).ConfigureAwait(false);
             if (pendingHash is null) { return Blocked(CpuLiveCurveBlockReason.JournalUnavailable, snapshot); }
             operation?.Update(pending, pendingHash);
-            CpuLiveCurveSubmission submission;
-            Task<CpuLiveCurveSubmission>? actualSubmission = null;
+            var call = new CpuLiveCurveSubmissionCall(journal.Context, step.Command(restoring), purpose, snapshot!, peer);
+            CpuLiveCurveSubmissionResult submission;
+            Task<CpuLiveCurveSubmissionResult>? actualSubmission = null;
             try
             {
                 token.ThrowIfCancellationRequested();
-                submission = await BoundedAsync(t => actualSubmission = backend.SendAsync(journal.Context, step.Command(restoring),
-                    purpose, snapshot!, peer, t), token, backend.Diagnostic, "submission", submissionTimeout).ConfigureAwait(false);
+                submission = await BoundedAsync(t => actualSubmission = backend.SendWithReadbackAsync(call, t),
+                    token, backend.Diagnostic, "submission", submissionTimeout).ConfigureAwait(false);
             }
             catch
             {
@@ -530,16 +571,29 @@ internal sealed class CpuLiveCurveTuningTransaction
                 { pendingSubmission = new(actualSubmission, journal, pendingHash, operation); }
                 return Uncertain(snapshot);
             }
-            if (submission == CpuLiveCurveSubmission.NotSubmitted)
+            if (submission.Readback is not null && submission.Status != CpuLiveCurveSubmission.Acknowledged) { return Uncertain(snapshot); }
+            if (submission.Status == CpuLiveCurveSubmission.NotSubmitted)
             {
                 if (!await SettleNotSubmittedAsync(journal, pendingHash, operation).ConfigureAwait(false)) { return Uncertain(snapshot); }
                 return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot);
             }
-            if (submission != CpuLiveCurveSubmission.Acknowledged || token.IsCancellationRequested) { return Uncertain(snapshot); }
+            if (submission.Status != CpuLiveCurveSubmission.Acknowledged || token.IsCancellationRequested) { return Uncertain(snapshot); }
             int completed = journal.CompletedSteps + (restoring ? -1 : 1);
-            observed = await ObserveAsync(token).ConfigureAwait(false);
-            if (!Matches(journal, observed, journal.ExpectedAt(completed).CoreOffsets, out snapshot)
-                || token.IsCancellationRequested) { return Uncertain(snapshot); }
+            if (submission.Readback is { } readback)
+            {
+                // The native call already read the complete vector under its
+                // lease. Its fresh post-cleanup/runtime barriers must have passed.
+                // Offered but invalid evidence is uncertainty, never a retry.
+                if (!readback.TryConsume(call, out snapshot)
+                    || !snapshot!.CoreOffsets.SequenceEqual(journal.ExpectedAt(completed).CoreOffsets)
+                    || token.IsCancellationRequested) { return Uncertain(snapshot); }
+            }
+            else
+            {
+                observed = await ObserveAsync(token).ConfigureAwait(false);
+                if (!Matches(journal, observed, journal.ExpectedAt(completed).CoreOffsets, out snapshot)
+                    || token.IsCancellationRequested) { return Uncertain(snapshot); }
+            }
             bool finished = restoring ? completed == 0 : completed == journal.Steps.Count;
             var verified = journal.Progress(finished && snapshot!.CoreOffsets.SequenceEqual(journal.OriginalBaseline)
                 ? CpuLiveCurveOwnershipState.Restored

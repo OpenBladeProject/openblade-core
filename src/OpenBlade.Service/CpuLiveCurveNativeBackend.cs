@@ -115,11 +115,14 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token) =>
         SendAsync(context, command, purpose, expectedBefore, null, token);
 
-    public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
+    public async Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token) =>
+        (await SendWithReadbackAsync(new(context, command, purpose, expectedBefore, peer), token).ConfigureAwait(false)).Status;
+
+    public Task<CpuLiveCurveSubmissionResult> SendWithReadbackAsync(CpuLiveCurveSubmissionCall call, CancellationToken token) =>
         state.Start(CpuNativeWorkerFamily.Curve, CpuNativeWorkerKind.Submission,
-            workToken => Send(context, command, purpose, expectedBefore, peer, workToken),
-            CpuLiveCurveSubmission.Unknown, token, Diagnostic, returnTerminal: true);
+            workToken => Send(call, workToken),
+            new CpuLiveCurveSubmissionResult(CpuLiveCurveSubmission.Unknown), token, Diagnostic, returnTerminal: true);
 
     private CpuLiveCurveBackendObservation Observe(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
@@ -150,13 +153,13 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         return new(context, result.Observation);
     }
 
-    private CpuLiveCurveSubmission Send(CpuLiveCurveContext context, CpuLiveCurveCommand command,
-        CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token)
+    private CpuLiveCurveSubmissionResult Send(CpuLiveCurveSubmissionCall call, CancellationToken token)
     {
+        var (context, command, purpose, expectedBefore, peer) = call;
         var diagnostic = Diagnostic;
         bool Check(bool allowed, string name) => diagnostic?.Check(allowed, name) ?? allowed;
         using var preparation = diagnostic?.BeginStage("curve send proof preparation");
-        if (!Check(ValidCommand(command, purpose), "curve send command shape")) { return CpuLiveCurveSubmission.NotSubmitted; }
+        if (!Check(ValidCommand(command, purpose), "curve send command shape")) { return new(CpuLiveCurveSubmission.NotSubmitted); }
         var request = new CpuLiveCurveNativeRequest(scope, command, purpose, expectedBefore, peer);
         CpuLiveCurveWriteProof? CreateProof()
         {
@@ -172,7 +175,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         if (!Check(proof is not null, "curve send proof creation")
             || !Check(proof!.Consume(request), "curve send proof consumption")
             || !Check(MatchesFresh(context, token), "curve send proof context"))
-        { return CpuLiveCurveSubmission.NotSubmitted; }
+        { return new(CpuLiveCurveSubmission.NotSubmitted); }
         var boundProof = new ContextBoundProof(request, proof!, this, context, token);
         // ReadFreshContext uses the provider's exact active getter continuity
         // during preparation/readback, and full context outside that scope.
@@ -182,14 +185,18 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         state.Record(result);
         if (result.Failure != CpuLiveCurveNativeFailure.None)
         { diagnostic?.Check(false, "curve native result " + result.Disposition + "/" + result.Failure); }
-        if (!result.WorkerTerminal || !result.CleanupComplete) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
+        if (!result.WorkerTerminal || !result.CleanupComplete) { Invalidate(); return new(CpuLiveCurveSubmission.Unknown); }
         // Terminal non-submission is historical evidence, not fresh write
         // authority. Cancellation or context drift must not discard it.
         if (result.Disposition == CpuLiveCurveNativeDisposition.NotSubmitted)
-        { Invalidate(); return CpuLiveCurveSubmission.NotSubmitted; }
-        if (!MatchesFresh(context, token)) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
+        { Invalidate(); return new(CpuLiveCurveSubmission.NotSubmitted); }
+        if (!MatchesFresh(context, token)) { Invalidate(); return new(CpuLiveCurveSubmission.Unknown); }
         token.ThrowIfCancellationRequested();
-        return MapSubmission(request, result);
+        var status = MapSubmission(request, result);
+        var readback = status == CpuLiveCurveSubmission.Acknowledged
+            ? CpuLiveCurveVerifiedReadback.Create(call, context, request, result) : null;
+        return status == CpuLiveCurveSubmission.Acknowledged && readback is null
+            ? new(CpuLiveCurveSubmission.Unknown) : new(status, readback);
     }
 
     internal static CpuLiveCurveSubmission MapSubmission(CpuLiveCurveNativeRequest request, CpuLiveCurveNativeResult result)

@@ -6,6 +6,64 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveCurveNativeBackendTests
 {
+    [Theory]
+    [InlineData("success")]
+    [InlineData("cleanup")]
+    [InlineData("context")]
+    [InlineData("cancel")]
+    public async Task ExactNativeReadbackEscapesOnlyAfterTerminalCleanupAndFreshContext(string outcome)
+    {
+        var platform = new Platform(); using var provider = new Provider(platform);
+        using var cancellation = new CancellationTokenSource();
+        var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        var call = new CpuLiveCurveSubmissionCall(provider.Context!, Command(0), CpuLiveCurveCommandPurpose.Forward, Snapshot(), null);
+        if (outcome == "cleanup") { platform.Fault = "cleanup"; }
+        platform.OnCoreRead = count =>
+        {
+            if (count != 24) { return; }
+            if (outcome == "context") { provider.Context = Change(provider.Context!, "counter"); }
+            if (outcome == "cancel") { cancellation.Cancel(); }
+        };
+        var result = await backend.SendWithReadbackAsync(call, cancellation.Token);
+        Assert.Equal(1, platform.Setters); Assert.Equal(24, platform.CoreReads);
+        Assert.False(platform.Held);
+        if (outcome == "success")
+        {
+            Assert.Equal(CpuLiveCurveSubmission.Acknowledged, result.Status);
+            Assert.True(result.Readback!.TryConsume(call, out var after));
+            Assert.True(CpuLiveCurveNativeRequest.Equal(call.Before.WithOffset(call.Command), after));
+            Assert.False(result.Readback.TryConsume(call, out _));
+        }
+        else { Assert.Equal(CpuLiveCurveSubmission.Unknown, result.Status); Assert.Null(result.Readback); }
+    }
+
+    [Theory]
+    [InlineData("context")]
+    [InlineData("command")]
+    [InlineData("purpose")]
+    [InlineData("before")]
+    [InlineData("peer")]
+    [InlineData("after")]
+    [InlineData("terminal")]
+    [InlineData("cleanup")]
+    [InlineData("unverified")]
+    [InlineData("failure")]
+    public void NativeReadbackReceiptRejectsMismatchedOrIncompleteEvidence(string failure)
+    {
+        var context = CpuLiveCurveTuningTransactionTests.ContextFixture();
+        var call = new CpuLiveCurveSubmissionCall(context, Command(0), CpuLiveCurveCommandPurpose.Forward, Snapshot(), null);
+        var request = new CpuLiveCurveNativeRequest(new(), failure == "command" ? Command(-2) : call.Command,
+            failure == "purpose" ? CpuLiveCurveCommandPurpose.Restore : call.Purpose,
+            failure == "before" ? call.Before.WithOffset(Command(-2)) : call.Before,
+            failure == "peer" ? new(CpuPowerTestData.PairFixture(), null) : null);
+        var result = new CpuLiveCurveNativeResult(CpuLiveCurveNativeDisposition.Acknowledged,
+            failure != "terminal", failure != "cleanup", failure != "unverified",
+            failure == "after" ? call.Before : request.After,
+            failure == "failure" ? CpuLiveCurveNativeFailure.Transport : CpuLiveCurveNativeFailure.None);
+        Assert.Null(CpuLiveCurveVerifiedReadback.Create(call,
+            failure == "context" ? Change(context, "counter") : context, request, result));
+    }
+
     [Fact]
     public void ContextWrapperKeepsIndependentFreshContextForAnUnboundProof()
     {
