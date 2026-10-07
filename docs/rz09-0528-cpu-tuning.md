@@ -168,13 +168,14 @@ creating PPT ownership or granting a PPT setter. Native peer checks read accepte
 Fast/Slow plus STAPM under the voltage setter's same lease before and after the
 CO command. Missing or changed peer evidence blocks completion; possible CPU
 submission remains journaled. These serialized reads are not physically atomic.
-The current peer path has focused source/fake coverage. Its latest installed
+The current peer path has focused source/fake coverage. The latest installed
 observation returned complete power peers and all twelve offsets at −1 with live
-admission. The subsequent cycle verified all twelve offsets at 0, then reached
-the 600-second job limit during restoration. Its last verified response showed
-cores 14 and 15 at −1 and the other ten at 0. Those retained measurements did
-not prove exact restoration. The failed cycle blocked further writes and retained
-resources until the explicit post-boot reconciliation described below.
+admission. Its subsequent cycle verified all twelve offsets at 0, then rejected
+a getter service runtime-type change during restoration. The last response showed
+cores 14 and 15 at −1 and the other ten at 0. Exact restoration remains unproved;
+further writes are blocked and the failed run retains its resources. Its response
+arrived within the 600-second job window; the first recorded failure was the
+continuity rejection, not the deadline.
 
 Plan preflight now checks continuity around its bounded local command/range loop
 instead of rediscovering the environment for every scalar entry, as tracked in
@@ -195,24 +196,20 @@ Partial-restoration recovery is tracked in
 its installed post-boot recovery verified all twelve captured −1 originals and
 unchanged Fast/Slow/STAPM peers. It preserved the failed journal before guarded
 settlement, verified owned cleanup, and resumed the normal Service with zero CPU
-setters or restoration requests. Independent evidence review passed. The current
-mutation cycle and timing remain unproved.
-Historical installed validation verified this recovery for an earlier failed
-journal: all twelve offsets equaled the captured −1 originals and complete power
-peers remained unchanged. The journal was archived before settlement, with zero
-setters or restoration requests, and independent evidence review passed. That
-proof did not settle the subsequent uncertain cycle. Its first post-boot read
-rejected provider getter controller continuity before returning measurements.
+setters or restoration requests. Independent evidence review passed. That recovery
+settled the preceding failed cycle; it does not settle the latest failure above.
+The current mutation cycle and timing remain unproved.
 Getter continuity distinguishes runtime type, display name and configured/runtime
 compatibility failures with fixed reasons through the initiating
 diagnostic without changing admission or publishing process/service names, as
 tracked in [issue #708](https://github.com/OpenBladeProject/openblade-core/issues/708).
-The matching follow-up read verified all twelve captured −1 originals and
-unchanged power peers, archived and settled that journal, and removed its owned
-resources with zero setters or restoration requests. Independent actual-evidence
-review passed and the normal Service resumed. The prior cycle remains failed;
-the passing read does not establish the cause of its earlier continuity rejection
-or validate the current mutation path.
+Full inventory already admits both runtime forms for a shared-service configuration.
+Getter continuity now accepts a transition between those same forms only after
+the display name matches and a fresh configuration read equals the original,
+as tracked in [issue #711](https://github.com/OpenBladeProject/openblade-core/issues/711).
+Other continuity and controller checks remain required. Independent source review
+and 120 focused tests passed. The failed run's numeric type pair is unknown, so
+this correction has not yet been proved to resolve its failure.
 
 Historical PPT recovery journals are retained as read-only compatibility data.
 Invalid or non-Restored records block live voltage apply and restoration.

@@ -86,7 +86,14 @@ internal sealed class CpuServiceInventory
                         current = (new NativeEntry { Type = status.Type, State = status.State }, prior.DisplayName);
                     }
                     else { entries.Remove(prior.Name); }
-                    if (current.Native.Type != prior.Type) { throw new IOException("Getter service runtime type changed."); }
+                    // Shared-service split status may change without changing its configured identity.
+                    if (current.Native.Type != prior.Type
+                        && (prior.ConfiguredType is not (0x20 or 0xE0)
+                            || !TypesAgree(kind, prior.ConfiguredType, prior.Type)
+                            || !TypesAgree(kind, prior.ConfiguredType, current.Native.Type)
+                            || current.Display != prior.DisplayName
+                            || platform.ReadConfiguredType(prior.Name) != prior.ConfiguredType))
+                    { throw new IOException("Getter service runtime type changed."); }
                     if (current.Display != prior.DisplayName) { throw new IOException("Getter service display name changed."); }
                     if (!TypesAgree(kind, prior.ConfiguredType, current.Native.Type))
                     { throw new IOException("Getter service configured/runtime incompatible."); }
@@ -94,7 +101,7 @@ internal sealed class CpuServiceInventory
                         || Rz090528CpuControllerPresence.IsGetterControllerName(prior.DisplayName))
                         && platform.ReadConfiguredType(prior.Name) != prior.ConfiguredType)
                     { throw new IOException("Getter controller configuration changed."); }
-                    activity.Add(prior with { State = current.Native.State });
+                    activity.Add(prior with { Type = current.Native.Type, State = current.Native.State });
                 }
                 if (entries.Count != 0) { throw new IOException("Getter service inventory changed."); }
                 return activity.AsReadOnly();

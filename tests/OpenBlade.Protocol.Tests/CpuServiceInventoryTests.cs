@@ -8,6 +8,73 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class CpuServiceInventoryTests
 {
     [Theory]
+    [InlineData(0x20, 0x20, 0x30)]
+    [InlineData(0x20, 0x30, 0x20)]
+    [InlineData(0xE0, 0xE0, 0xF0)]
+    [InlineData(0xE0, 0xF0, 0xE0)]
+    public void GetterSharedRuntimeTransitionMatchesFreshFullInventoryWithoutChangingBaseline(int configured, int before, int after)
+    {
+        var platform = new Fake { Type = (uint)configured, RuntimeType = (uint)before, DisplayName = "Ordinary service" };
+        var inventory = new CpuServiceInventory(CpuServiceInventoryKind.Win32, platform);
+        var baseline = inventory.ReadAll(); int configReads = platform.ConfigReads;
+        platform.RuntimeType = (uint)after; platform.State = 4;
+        var current = Assert.Single(inventory.ReadGetterActivity(baseline));
+        Assert.Equal((uint)after, current.Type); Assert.Equal(4u, current.State);
+        Assert.Equal((uint)configured, current.ConfiguredType);
+        Assert.Equal((uint)before, baseline[0].Type); Assert.Equal(1u, baseline[0].State);
+        Assert.Equal(configReads + 1, platform.ConfigReads);
+        Assert.Equal(2, platform.Calls); Assert.Equal(1, platform.RegistryReads);
+        Assert.Equal(current, Assert.Single(inventory.ReadAll()));
+    }
+
+    [Theory]
+    [InlineData("config-drift", "Getter service runtime type changed.")]
+    [InlineData("config-error", "service inventory unavailable")]
+    public void SharedTransitionConfigurationFailureRevokesContinuityPermanently(string fault, string reason)
+    {
+        var platform = new Fake { Type = 0x20, DisplayName = "Ordinary service" };
+        var inventory = new CpuServiceInventory(CpuServiceInventoryKind.Win32, platform);
+        var reasons = new List<string>();
+        var current = Rz090528CpuControllerPresence.CaptureGetterContinuity(() => [], inventory.ReadAll,
+            inventory.ReadGetterActivity, reasons.Add)!;
+        platform.RuntimeType = 0x30; platform.Fault = fault;
+        Assert.False(current());
+        platform.RuntimeType = 0x20; platform.Fault = "";
+        Assert.False(current()); Assert.Equal([reason], reasons);
+        Assert.Equal(2, platform.Calls); Assert.Equal(1, platform.RegistryReads); Assert.Equal(1, platform.ConfigReads);
+    }
+
+    [Theory]
+    [InlineData(0x20, 0x30, true)]
+    [InlineData(0x20, 0xF0, false)]
+    [InlineData(0xE0, 0x30, false)]
+    [InlineData(0x10, 0x20, false)]
+    public void SharedTransitionNeverAdmitsDisplayDriftOrUnrelatedTypes(int configured, int runtime, bool displayChanged)
+    {
+        var platform = new Fake { Type = (uint)configured };
+        var inventory = new CpuServiceInventory(CpuServiceInventoryKind.Win32, platform);
+        var baseline = inventory.ReadAll();
+        platform.RuntimeType = (uint)runtime;
+        if (displayChanged) { platform.DisplayName = "Changed display"; }
+        Assert.Equal("Getter service runtime type changed.",
+            Assert.Throws<IOException>(() => inventory.ReadGetterActivity(baseline)).Message);
+        Assert.Equal(0, platform.ConfigReads); Assert.Equal(2, platform.Calls); Assert.Equal(1, platform.RegistryReads);
+    }
+
+    [Fact]
+    public void SharedTransitionStillChecksControllerConfigurationAndCurrentActivity()
+    {
+        var platform = new Fake { Type = 0x20 };
+        var inventory = new CpuServiceInventory(CpuServiceInventoryKind.Win32, platform);
+        var reasons = new List<string>();
+        var current = Rz090528CpuControllerPresence.CaptureGetterContinuity(() => [], inventory.ReadAll,
+            inventory.ReadGetterActivity, reasons.Add)!;
+        platform.RuntimeType = 0x30; platform.State = 4;
+        Assert.False(current()); Assert.Equal(["controller service active"], reasons);
+        Assert.Equal(2, platform.ConfigReads); Assert.Equal(2, platform.Calls); Assert.Equal(1, platform.RegistryReads);
+    }
+
+    [Theory]
     [InlineData(0x10, false, 0x20, "Getter service runtime type changed.")]
     [InlineData(0x20, true, 0x20, "Getter service display name changed.")]
     [InlineData(0x20, false, 0x10, "Getter service configured/runtime incompatible.")]
@@ -44,6 +111,8 @@ public sealed class CpuServiceInventoryTests
         if (drift is null) { Assert.Single(inventory.ReadGetterActivity(baseline)); }
         else { Assert.Throws<IOException>(() => inventory.ReadGetterActivity(baseline)); }
         Assert.Equal(registry, platform.RegistryReads);
+        Assert.Equal(drift is null or "config-drift" ? 1 : 0, platform.ConfigReads);
+        Assert.Equal(2, platform.Calls);
     }
 
     [Fact]
@@ -286,11 +355,15 @@ public sealed class CpuServiceInventoryTests
         internal uint Type = 0x10;
         internal uint? RuntimeType;
         internal string DisplayName = "Razer controller";
+        internal uint State = 1;
         internal string Fault = "";
         internal int Calls;
         internal int ConfigReads;
         public uint ReadConfiguredType(string name)
-        { ConfigReads++; return Fault == "config-drift" ? 0x10u : name == "Template" ? 0x50u : Type; }
+        {
+            ConfigReads++; if (Fault == "config-error") { throw new IOException("private config failure"); }
+            return Fault == "config-drift" ? 0x10u : name == "Template" ? 0x50u : Type;
+        }
         internal int TemplateReads;
         public CpuServiceTemplateStatus ReadUnenumeratedTemplateStatus(string name)
         {
@@ -314,7 +387,7 @@ public sealed class CpuServiceInventoryTests
                 Name = Fault == "pointer" ? buffer - 1 : name,
                 DisplayName = Fault == "display-pointer" ? buffer + bytes : display,
                 Type = Fault == "unknown-type" ? 0x800000 : RuntimeType ?? Type,
-                State = Fault == "state" ? 0u : 1u
+                State = Fault == "state" ? 0u : State
             };
             Marshal.StructureToPtr(entry, buffer, false);
             if (Fault == "duplicate") { Marshal.StructureToPtr(entry, buffer + 56, false); }
