@@ -5,6 +5,33 @@ namespace OpenBlade.Tray.Tests;
 public sealed class AsyncRelayCommandTests
 {
     [Fact]
+    public void CaptureRunsBeforeYieldAndNotForDeniedDisposedOrCanceledCommands()
+    {
+        PumpingSynchronizationContext.Run(async _ =>
+        {
+            int captures = 0, value = 7; object? dispatched = null;
+            using var cancellation = new CancellationTokenSource();
+            var command = new AsyncRelayCommand((parameter, _) => { dispatched = parameter; return Task.CompletedTask; },
+                _ => true, cancellation.Token, _ => { captures++; return value; });
+            Task request = command.ExecuteAsync(null);
+            Assert.Equal(1, captures); Assert.Null(dispatched);
+            value = 9;
+            await command.ExecuteAsync(null); // Running commands cannot recapture.
+            await request;
+            Assert.Equal(7, dispatched); Assert.Equal(1, captures);
+            cancellation.Cancel();
+            await command.ExecuteAsync(null);
+            Assert.Equal(1, captures);
+            await command.DisposeAsync();
+            await command.ExecuteAsync(null);
+            Assert.Equal(1, captures);
+            await using var denied = new AsyncRelayCommand((_, _) => throw new InvalidOperationException(),
+                _ => false, CancellationToken.None, _ => { captures++; return value; });
+            await denied.ExecuteAsync(null);
+            Assert.Equal(1, captures);
+        });
+    }
+    [Fact]
     public void ExecuteAsync_RetainsTheCallerSynchronizationContext()
     {
         PumpingSynchronizationContext.Run(async context =>

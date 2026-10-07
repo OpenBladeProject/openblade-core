@@ -68,9 +68,10 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
 
         try
         {
-            IReadOnlyList<RunningControllerProcess>? snapshots = processSnapshots?.Invoke();
+            IReadOnlyList<RunningControllerProcess>? snapshots = processSnapshots is null ? null
+                : CpuObservationCosts.Measure(CpuObservationCost.ProcessScan, processSnapshots);
             IReadOnlyList<string> names = snapshots is null
-                ? processSource.GetProcessNames()
+                ? CpuObservationCosts.Measure(CpuObservationCost.ProcessScan, processSource.GetProcessNames)
                 : snapshots.Select(process => process.Name).ToArray();
             RunningControllerProcess[] engines = snapshots?
                 .Where(process => process.Name.Equals("RazerAppEngine", StringComparison.OrdinalIgnoreCase))
@@ -119,8 +120,8 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
 
         try
         {
-            WindowsServiceSnapshot[] detectedServices = serviceSource
-                .GetServices()
+            WindowsServiceSnapshot[] detectedServices =
+                CpuObservationCosts.Measure(CpuObservationCost.ServiceScan, serviceSource.GetServices)
                 .Where(service => IsActive(service.State))
                 .Where(service => RazerControllerServiceAliases.MatchesService(
                     service.ServiceName,

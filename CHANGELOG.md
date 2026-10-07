@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add an all-core CPU Voltage Optimizer with remembered −30 to −1 intent, separately admitted saved next-boot settings and measured live offsets, paired firmware readback and exact original restoration on RZ09-0528. Optional live tuning uses its exact signed already-running AMD backend; live PPT mutation is deferred. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable HyperBoost without the cooling pad on the supported Blade 16 (2025) RZ09-0528 on the full-power adapter, keep GPU clock tuning available, and start HyperBoost directly from Silent, Balanced or Performance with or without the pad. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
@@ -16,6 +18,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Show Windows' own brightness flyout on the supported Blade 16 (2025) RZ09-0528 when its Razer driver is installed, like the RZ09-0581. ([#618](https://github.com/OpenBladeProject/openblade-core/pull/618))
 
 ### Fixed
+
+- Allow an explicit read-only check after a confirmed new boot to reconcile uncertain live voltage ownership or a verified partial restoration only when all original core offsets are freshly verified, preserving the failed journal and recovery evidence. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Accept an already-admitted shared-service runtime form during CPU getter continuity only when its display name and freshly read configuration still match the original inventory. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Reduce repeated validation during live voltage changes by checking each complete firmware command and reusing its verified readback, while keeping fresh admission immediately before every setter and after readback. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Require fresh read-only Fast/Slow/STAPM power peers before and after voltage-only live apply and restoration; missing or changed evidence and unresolved historical PPT ownership block further mutation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Recover an explicit installed power-peer observation once from the exact sampling prerequisite with separately admitted bounded getters, while retaining first-failure diagnostics and excluding retries from mutation preparation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Preserve live CPU boot identity on reviewed Windows builds 26200 and 26300, separate BIOS provenance from model/SKU admission, and resolve identity dependencies before CPU pipe impersonation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Show one-shot keyboard lighting as unconfirmed on the supported Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode, and redraw automatically only with the lighting override setting enabled. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))
 - Record the reason in the installer's package log when a quiet install fails, instead of only an exit code. ([#612](https://github.com/OpenBladeProject/openblade-core/pull/612))

@@ -1386,4 +1386,33 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>Review thermal control policy</value></data>
   <data name="Review policy" xml:space="preserve"><value>Review policy</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Review the new default. Restoration stays paused until you select Got it.</value></data>
+  <data name="effective {0}, fast {1}, slow {2}" xml:space="preserve"><value>effective {0}, fast {1}, slow {2}</value></data>
+  <data name="{0:0.###} W" xml:space="preserve"><value>{0:0.###} W</value></data>
+  <data name="Live now" xml:space="preserve"><value>Live now</value></data>
+  <data name="Next boot" xml:space="preserve"><value>Next boot</value></data>
+  <data name="Apply now" xml:space="preserve"><value>Apply now</value></data>
+  <data name="Save for next boot" xml:space="preserve"><value>Save for next boot</value></data>
+  <data name="Saved change takes effect next boot." xml:space="preserve"><value>Saved change takes effect next boot.</value></data>
+  <data name="Next boot: no change pending." xml:space="preserve"><value>Next boot: no change pending.</value></data>
+  <data name="Next boot: pending state unknown." xml:space="preserve"><value>Next boot: pending state unknown.</value></data>
+  <data name="CPU tuning backend available." xml:space="preserve"><value>CPU tuning backend available.</value></data>
+  <data name="CPU tuning is observed only. Writes require an admitted backend and verified readback." xml:space="preserve"><value>CPU tuning is observed only. Writes require an admitted backend and verified readback.</value></data>
+  <data name="Saved firmware: PPT {0} W ({1}); CO {2}." xml:space="preserve"><value>Saved firmware: PPT {0} W ({1}); CO {2}.</value></data>
+  <data name="enabled" xml:space="preserve"><value>enabled</value></data>
+  <data name="disabled" xml:space="preserve"><value>disabled</value></data>
+  <data name="Saved firmware: unknown." xml:space="preserve"><value>Saved firmware: unknown.</value></data>
+  <data name="Measured live: PPT {0}; CO {1}." xml:space="preserve"><value>Measured live: PPT {0}; CO {1}.</value></data>
+  <data name="mixed per-core values" xml:space="preserve"><value>mixed per-core values</value></data>
+  <data name="Measured live: unknown." xml:space="preserve"><value>Measured live: unknown.</value></data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>CPU tuning request failed: {0}</value></data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve"><value>Connect the supported cooling pad before enabling HyperBoost.</value></data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve"><value>The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost.</value></data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve"><value>HyperBoost requires the supported cooling pad to stay connected.</value></data>
+  <data name="Optimizer changes are currently unavailable for this target." xml:space="preserve"><value>Optimizer changes are currently unavailable for this target.</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Measured running optimizer: unknown.</value></data>
+  <data name="Running optimizer changes are available." xml:space="preserve"><value>Running optimizer changes are available.</value></data>
+  <data name="Saved for next boot: optimizer unknown." xml:space="preserve"><value>Saved for next boot: optimizer unknown.</value></data>
+  <data name="Saved for next boot: optimizer {0}." xml:space="preserve"><value>Saved for next boot: optimizer {0}.</value></data>
+  <data name="Saving the optimizer for next boot is available." xml:space="preserve"><value>Saving the optimizer for next boot is available.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Measured running optimizer: {0}.</value></data>
 </root>

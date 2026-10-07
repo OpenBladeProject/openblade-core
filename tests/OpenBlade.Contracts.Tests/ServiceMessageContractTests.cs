@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(60, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -27,6 +27,9 @@ public sealed class ServiceMessageContractTests
             (typeof(UpdateProfilesRequest), "updateProfiles"),
             (typeof(SetPerformanceOverrideRequest), "setPerformanceOverride"),
             (typeof(SetGpuClockTuningRequest), "setGpuClockTuning"),
+            (typeof(SetCpuTuningRequest), "setCpuTuning"),
+            (typeof(ObserveCpuTuningRequest), "observeCpuTuning"),
+            (typeof(RestoreCpuTuningRequest), "restoreCpuTuning"),
             (typeof(SetHyperBoostRequest), "setHyperBoost"),
             (typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle"),
             (typeof(ValidateThermalExternalDriftRequest), "validateThermalExternalDrift"),
@@ -81,6 +84,7 @@ public sealed class ServiceMessageContractTests
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
             "ControlAccess", "AllowUntestedFirmware", "FirmwareCompatibility",
             "DisplayBrightnessHidAvailability",
+            "CpuTuning",
         ];
 
         Assert.Equal(

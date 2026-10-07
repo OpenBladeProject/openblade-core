@@ -223,6 +223,10 @@ compatibility rules, and example are in
 
 ## Contributing
 
+The RZ09-0528's separate saved and live CPU tuning paths, admission status, and
+attended validation are described in
+[`rz09-0528-cpu-tuning.md`](rz09-0528-cpu-tuning.md).
+
 Keep changes narrow, add focused tests, and run the affected project tests
 before the full solution. Hardware support is not complete until its
 read/query, apply, readback, and restoration workflow has passed on the exact

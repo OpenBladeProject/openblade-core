@@ -242,9 +242,11 @@ type sealed class OpenBlade.Contracts.ControlOperationResult
   ctor (OpenBlade.Contracts.ControlOperationStatus Status, System.String Message)
   method OpenBlade.Contracts.ControlOperationResult <Clone>$()
   method OpenBlade.Contracts.ControlOperationStatus get_Status()
+  method OpenBlade.Contracts.CpuTuningStatus get_CpuTuning()
   method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_HyperBoostRestoredPerformance()
   method System.String get_Message()
   method System.Void Deconstruct(out OpenBlade.Contracts.ControlOperationStatus Status, out System.String Message)
+  method System.Void set_CpuTuning(OpenBlade.Contracts.CpuTuningStatus value)
   method System.Void set_HyperBoostRestoredPerformance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
   method System.Void set_Message(System.String value)
   method System.Void set_Status(OpenBlade.Contracts.ControlOperationStatus value)
@@ -255,6 +257,7 @@ type sealed class OpenBlade.Contracts.ControlOperationResult
   method static System.Boolean op_Inequality(OpenBlade.Contracts.ControlOperationResult left, OpenBlade.Contracts.ControlOperationResult right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.ControlOperationResult other)
   property OpenBlade.Contracts.ControlOperationStatus Status { get; init; }
+  property OpenBlade.Contracts.CpuTuningStatus CpuTuning { get; init; }
   property System.Nullable<OpenBlade.Contracts.PerformancePreset> HyperBoostRestoredPerformance { get; init; }
   property System.String Message { get; init; }
 type enum OpenBlade.Contracts.ControlOperationStatus
@@ -293,6 +296,120 @@ type enum OpenBlade.Contracts.CoolingPadConnectionState
   field const OpenBlade.Contracts.CoolingPadConnectionState ObservationFailed = 4
   field const OpenBlade.Contracts.CoolingPadConnectionState PresentExact = 2
   field const OpenBlade.Contracts.CoolingPadConnectionState Unavailable = 0
+type sealed class OpenBlade.Contracts.CpuCoreCurveOptimizerValue
+  interface System.IEquatable<OpenBlade.Contracts.CpuCoreCurveOptimizerValue>
+  ctor (System.Int32 CoreIndex, System.Int32 Value)
+  method OpenBlade.Contracts.CpuCoreCurveOptimizerValue <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Int32 get_CoreIndex()
+  method System.Int32 get_Value()
+  method System.Void Deconstruct(out System.Int32 CoreIndex, out System.Int32 Value)
+  method System.Void set_CoreIndex(System.Int32 value)
+  method System.Void set_Value(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuCoreCurveOptimizerValue left, OpenBlade.Contracts.CpuCoreCurveOptimizerValue right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuCoreCurveOptimizerValue left, OpenBlade.Contracts.CpuCoreCurveOptimizerValue right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuCoreCurveOptimizerValue other)
+  property System.Boolean IsWellFormed { get; }
+  property System.Int32 CoreIndex { get; init; }
+  property System.Int32 Value { get; init; }
+type enum OpenBlade.Contracts.CpuCurveOptimizerMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CpuCurveOptimizerMode AllCore = 0
+  field const OpenBlade.Contracts.CpuCurveOptimizerMode PerCore = 1
+type sealed class OpenBlade.Contracts.CpuCurveOptimizerSettings
+  interface System.IEquatable<OpenBlade.Contracts.CpuCurveOptimizerSettings>
+  ctor (System.Boolean Enabled, System.Int32 Value)
+  method OpenBlade.Contracts.CpuCurveOptimizerSettings <Clone>$()
+  method System.Boolean get_Enabled()
+  method System.Boolean get_IsWellFormed()
+  method System.Int32 get_EffectiveValue()
+  method System.Int32 get_Value()
+  method System.Void Deconstruct(out System.Boolean Enabled, out System.Int32 Value)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_Value(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuCurveOptimizerSettings left, OpenBlade.Contracts.CpuCurveOptimizerSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuCurveOptimizerSettings left, OpenBlade.Contracts.CpuCurveOptimizerSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuCurveOptimizerSettings other)
+  property System.Boolean Enabled { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Int32 EffectiveValue { get; }
+  property System.Int32 Value { get; init; }
+type sealed class OpenBlade.Contracts.CpuCurveOptimizerState
+  interface System.IEquatable<OpenBlade.Contracts.CpuCurveOptimizerState>
+  ctor (OpenBlade.Contracts.CpuCurveOptimizerMode Mode, System.Nullable<System.Int32> AllCoreValue, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> CoreValues)
+  field const System.Int32 MaximumCoreCount = 64
+  method OpenBlade.Contracts.CpuCurveOptimizerMode get_Mode()
+  method OpenBlade.Contracts.CpuCurveOptimizerState <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> get_CoreValues()
+  method System.Nullable<System.Int32> get_AllCoreValue()
+  method System.Void Deconstruct(out OpenBlade.Contracts.CpuCurveOptimizerMode Mode, out System.Nullable<System.Int32> AllCoreValue, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> CoreValues)
+  method System.Void set_AllCoreValue(System.Nullable<System.Int32> value)
+  method System.Void set_CoreValues(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> value)
+  method System.Void set_Mode(OpenBlade.Contracts.CpuCurveOptimizerMode value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean AreCoreValuesWellFormed(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> values)
+  method static System.Boolean IsBaselineValue(System.Int32 value)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuCurveOptimizerState left, OpenBlade.Contracts.CpuCurveOptimizerState right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuCurveOptimizerState left, OpenBlade.Contracts.CpuCurveOptimizerState right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuCurveOptimizerState other)
+  property OpenBlade.Contracts.CpuCurveOptimizerMode Mode { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> CoreValues { get; init; }
+  property System.Nullable<System.Int32> AllCoreValue { get; init; }
+type sealed class OpenBlade.Contracts.CpuLivePowerLimits
+  interface System.IEquatable<OpenBlade.Contracts.CpuLivePowerLimits>
+  ctor (System.Nullable<System.Double> EffectiveWatts, System.Nullable<System.UInt32> Message32Milliwatts, System.Nullable<System.UInt32> Message33Milliwatts)
+  method OpenBlade.Contracts.CpuLivePowerLimits <Clone>$()
+  method System.Boolean get_HasRestoreBaseline()
+  method System.Boolean get_IsWellFormed()
+  method System.Nullable<System.Double> get_EffectiveWatts()
+  method System.Nullable<System.UInt32> get_Message32Milliwatts()
+  method System.Nullable<System.UInt32> get_Message33Milliwatts()
+  method System.Void Deconstruct(out System.Nullable<System.Double> EffectiveWatts, out System.Nullable<System.UInt32> Message32Milliwatts, out System.Nullable<System.UInt32> Message33Milliwatts)
+  method System.Void set_EffectiveWatts(System.Nullable<System.Double> value)
+  method System.Void set_Message32Milliwatts(System.Nullable<System.UInt32> value)
+  method System.Void set_Message33Milliwatts(System.Nullable<System.UInt32> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuLivePowerLimits left, OpenBlade.Contracts.CpuLivePowerLimits right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuLivePowerLimits left, OpenBlade.Contracts.CpuLivePowerLimits right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuLivePowerLimits other)
+  property System.Boolean HasRestoreBaseline { get; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Nullable<System.Double> EffectiveWatts { get; init; }
+  property System.Nullable<System.UInt32> Message32Milliwatts { get; init; }
+  property System.Nullable<System.UInt32> Message33Milliwatts { get; init; }
+type sealed class OpenBlade.Contracts.CpuLiveState
+  interface System.IEquatable<OpenBlade.Contracts.CpuLiveState>
+  ctor (OpenBlade.Contracts.CpuLivePowerLimits PowerLimits, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> CoreValues)
+  method OpenBlade.Contracts.CpuLivePowerLimits get_PowerLimits()
+  method OpenBlade.Contracts.CpuLiveState <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> get_CoreValues()
+  method System.Nullable<System.Int32> get_UniformCurveOptimizerValue()
+  method System.Void Deconstruct(out OpenBlade.Contracts.CpuLivePowerLimits PowerLimits, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> CoreValues)
+  method System.Void set_CoreValues(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> value)
+  method System.Void set_PowerLimits(OpenBlade.Contracts.CpuLivePowerLimits value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuLiveState left, OpenBlade.Contracts.CpuLiveState right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuLiveState left, OpenBlade.Contracts.CpuLiveState right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuLiveState other)
+  property OpenBlade.Contracts.CpuLivePowerLimits PowerLimits { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CpuCoreCurveOptimizerValue> CoreValues { get; init; }
+  property System.Nullable<System.Int32> UniformCurveOptimizerValue { get; }
 type sealed class OpenBlade.Contracts.CpuPowerLimitCapabilities
   interface System.IEquatable<OpenBlade.Contracts.CpuPowerLimitCapabilities>
   ctor (OpenBlade.Contracts.DeviceNumericRange Watts, OpenBlade.Contracts.DeviceFeatureAccess Access)
@@ -312,6 +429,158 @@ type sealed class OpenBlade.Contracts.CpuPowerLimitCapabilities
   property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
   property OpenBlade.Contracts.DeviceNumericRange Watts { get; init; }
   property System.Boolean IsWellFormed { get; }
+type sealed class OpenBlade.Contracts.CpuSavedConfiguration
+  interface System.IEquatable<OpenBlade.Contracts.CpuSavedConfiguration>
+  ctor (System.UInt32 PowerLimitMilliwatts, System.Byte Policy, System.Byte PowerMode, OpenBlade.Contracts.CpuCurveOptimizerState CurveOptimizer)
+  method OpenBlade.Contracts.CpuCurveOptimizerState get_CurveOptimizer()
+  method OpenBlade.Contracts.CpuSavedConfiguration <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Byte get_Policy()
+  method System.Byte get_PowerMode()
+  method System.Nullable<System.Boolean> get_CustomPowerLimitEnabled()
+  method System.UInt32 get_PowerLimitMilliwatts()
+  method System.Void Deconstruct(out System.UInt32 PowerLimitMilliwatts, out System.Byte Policy, out System.Byte PowerMode, out OpenBlade.Contracts.CpuCurveOptimizerState CurveOptimizer)
+  method System.Void set_CurveOptimizer(OpenBlade.Contracts.CpuCurveOptimizerState value)
+  method System.Void set_Policy(System.Byte value)
+  method System.Void set_PowerLimitMilliwatts(System.UInt32 value)
+  method System.Void set_PowerMode(System.Byte value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuSavedConfiguration left, OpenBlade.Contracts.CpuSavedConfiguration right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuSavedConfiguration left, OpenBlade.Contracts.CpuSavedConfiguration right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuSavedConfiguration other)
+  property OpenBlade.Contracts.CpuCurveOptimizerState CurveOptimizer { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Byte Policy { get; init; }
+  property System.Byte PowerMode { get; init; }
+  property System.Nullable<System.Boolean> CustomPowerLimitEnabled { get; }
+  property System.UInt32 PowerLimitMilliwatts { get; init; }
+type enum OpenBlade.Contracts.CpuTuningBackendAvailability
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CpuTuningBackendAvailability Available = 1
+  field const OpenBlade.Contracts.CpuTuningBackendAvailability Failed = 4
+  field const OpenBlade.Contracts.CpuTuningBackendAvailability MissingDependency = 2
+  field const OpenBlade.Contracts.CpuTuningBackendAvailability Unavailable = 3
+  field const OpenBlade.Contracts.CpuTuningBackendAvailability Unknown = 0
+type sealed class OpenBlade.Contracts.CpuTuningBackendStatus
+  interface System.IEquatable<OpenBlade.Contracts.CpuTuningBackendStatus>
+  ctor (OpenBlade.Contracts.DeviceFeatureAccess Access, OpenBlade.Contracts.CpuTuningBackendAvailability Availability)
+  method OpenBlade.Contracts.CpuTuningBackendAvailability get_Availability()
+  method OpenBlade.Contracts.CpuTuningBackendStatus <Clone>$()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
+  method System.Boolean get_CanWrite()
+  method System.Boolean get_IsWellFormed()
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceFeatureAccess Access, out OpenBlade.Contracts.CpuTuningBackendAvailability Availability)
+  method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Availability(OpenBlade.Contracts.CpuTuningBackendAvailability value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuTuningBackendStatus left, OpenBlade.Contracts.CpuTuningBackendStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuTuningBackendStatus left, OpenBlade.Contracts.CpuTuningBackendStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuTuningBackendStatus other)
+  property OpenBlade.Contracts.CpuTuningBackendAvailability Availability { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
+  property System.Boolean CanWrite { get; }
+  property System.Boolean IsWellFormed { get; }
+type enum OpenBlade.Contracts.CpuTuningFeatures
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CpuTuningFeatures CurveOptimizer = 2
+  field const OpenBlade.Contracts.CpuTuningFeatures None = 0
+  field const OpenBlade.Contracts.CpuTuningFeatures PowerLimit = 1
+type enum OpenBlade.Contracts.CpuTuningPendingBoot
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CpuTuningPendingBoot None = 2
+  field const OpenBlade.Contracts.CpuTuningPendingBoot Requested = 1
+  field const OpenBlade.Contracts.CpuTuningPendingBoot Unknown = 0
+type enum OpenBlade.Contracts.CpuTuningRecoveryState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CpuTuningRecoveryState Blocked = 3
+  field const OpenBlade.Contracts.CpuTuningRecoveryState None = 1
+  field const OpenBlade.Contracts.CpuTuningRecoveryState RestoreReady = 2
+  field const OpenBlade.Contracts.CpuTuningRecoveryState Unknown = 0
+type sealed class OpenBlade.Contracts.CpuTuningRecoveryStatus
+  interface System.IEquatable<OpenBlade.Contracts.CpuTuningRecoveryStatus>
+  ctor (OpenBlade.Contracts.CpuTuningRecoveryState State, OpenBlade.Contracts.CpuTuningFeatures Features)
+  method OpenBlade.Contracts.CpuTuningFeatures get_Features()
+  method OpenBlade.Contracts.CpuTuningRecoveryState get_State()
+  method OpenBlade.Contracts.CpuTuningRecoveryStatus <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Void Deconstruct(out OpenBlade.Contracts.CpuTuningRecoveryState State, out OpenBlade.Contracts.CpuTuningFeatures Features)
+  method System.Void set_Features(OpenBlade.Contracts.CpuTuningFeatures value)
+  method System.Void set_State(OpenBlade.Contracts.CpuTuningRecoveryState value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuTuningRecoveryStatus left, OpenBlade.Contracts.CpuTuningRecoveryStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuTuningRecoveryStatus left, OpenBlade.Contracts.CpuTuningRecoveryStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuTuningRecoveryStatus other)
+  property OpenBlade.Contracts.CpuTuningFeatures Features { get; init; }
+  property OpenBlade.Contracts.CpuTuningRecoveryState State { get; init; }
+  property System.Boolean IsWellFormed { get; }
+type sealed class OpenBlade.Contracts.CpuTuningSettings
+  interface System.IEquatable<OpenBlade.Contracts.CpuTuningSettings>
+  ctor (System.Nullable<System.Int32> PowerLimitWatts, OpenBlade.Contracts.CpuCurveOptimizerSettings CurveOptimizer)
+  method OpenBlade.Contracts.CpuCurveOptimizerSettings get_CurveOptimizer()
+  method OpenBlade.Contracts.CpuTuningSettings <Clone>$()
+  method System.Boolean get_IsConfigured()
+  method System.Boolean get_IsWellFormed()
+  method System.Nullable<System.Int32> get_PowerLimitWatts()
+  method System.Void Deconstruct(out System.Nullable<System.Int32> PowerLimitWatts, out OpenBlade.Contracts.CpuCurveOptimizerSettings CurveOptimizer)
+  method System.Void set_CurveOptimizer(OpenBlade.Contracts.CpuCurveOptimizerSettings value)
+  method System.Void set_PowerLimitWatts(System.Nullable<System.Int32> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuTuningSettings left, OpenBlade.Contracts.CpuTuningSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuTuningSettings left, OpenBlade.Contracts.CpuTuningSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuTuningSettings other)
+  property OpenBlade.Contracts.CpuCurveOptimizerSettings CurveOptimizer { get; init; }
+  property System.Boolean IsConfigured { get; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Nullable<System.Int32> PowerLimitWatts { get; init; }
+type sealed class OpenBlade.Contracts.CpuTuningStatus
+  interface System.IEquatable<OpenBlade.Contracts.CpuTuningStatus>
+  ctor (OpenBlade.Contracts.CpuSavedConfiguration SavedConfiguration, OpenBlade.Contracts.CpuLiveState LiveState, OpenBlade.Contracts.CpuTuningBackendStatus Firmware, OpenBlade.Contracts.CpuTuningBackendStatus Live, OpenBlade.Contracts.CpuTuningPendingBoot PendingBoot, System.Boolean RestorePending)
+  method OpenBlade.Contracts.CpuLiveState get_LiveState()
+  method OpenBlade.Contracts.CpuSavedConfiguration get_SavedConfiguration()
+  method OpenBlade.Contracts.CpuTuningBackendStatus get_Firmware()
+  method OpenBlade.Contracts.CpuTuningBackendStatus get_Live()
+  method OpenBlade.Contracts.CpuTuningPendingBoot get_PendingBoot()
+  method OpenBlade.Contracts.CpuTuningRecoveryStatus get_FirmwareRecovery()
+  method OpenBlade.Contracts.CpuTuningRecoveryStatus get_LiveRecovery()
+  method OpenBlade.Contracts.CpuTuningStatus <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Boolean get_RestorePending()
+  method System.Void Deconstruct(out OpenBlade.Contracts.CpuSavedConfiguration SavedConfiguration, out OpenBlade.Contracts.CpuLiveState LiveState, out OpenBlade.Contracts.CpuTuningBackendStatus Firmware, out OpenBlade.Contracts.CpuTuningBackendStatus Live, out OpenBlade.Contracts.CpuTuningPendingBoot PendingBoot, out System.Boolean RestorePending)
+  method System.Void set_Firmware(OpenBlade.Contracts.CpuTuningBackendStatus value)
+  method System.Void set_FirmwareRecovery(OpenBlade.Contracts.CpuTuningRecoveryStatus value)
+  method System.Void set_Live(OpenBlade.Contracts.CpuTuningBackendStatus value)
+  method System.Void set_LiveRecovery(OpenBlade.Contracts.CpuTuningRecoveryStatus value)
+  method System.Void set_LiveState(OpenBlade.Contracts.CpuLiveState value)
+  method System.Void set_PendingBoot(OpenBlade.Contracts.CpuTuningPendingBoot value)
+  method System.Void set_RestorePending(System.Boolean value)
+  method System.Void set_SavedConfiguration(OpenBlade.Contracts.CpuSavedConfiguration value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuTuningStatus left, OpenBlade.Contracts.CpuTuningStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuTuningStatus left, OpenBlade.Contracts.CpuTuningStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuTuningStatus other)
+  property OpenBlade.Contracts.CpuLiveState LiveState { get; init; }
+  property OpenBlade.Contracts.CpuSavedConfiguration SavedConfiguration { get; init; }
+  property OpenBlade.Contracts.CpuTuningBackendStatus Firmware { get; init; }
+  property OpenBlade.Contracts.CpuTuningBackendStatus Live { get; init; }
+  property OpenBlade.Contracts.CpuTuningPendingBoot PendingBoot { get; init; }
+  property OpenBlade.Contracts.CpuTuningRecoveryStatus FirmwareRecovery { get; init; }
+  property OpenBlade.Contracts.CpuTuningRecoveryStatus LiveRecovery { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Boolean RestorePending { get; init; }
+type enum OpenBlade.Contracts.CpuTuningTarget
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CpuTuningTarget FirmwareNextBoot = 0
+  field const OpenBlade.Contracts.CpuTuningTarget LiveNow = 1
 type sealed class OpenBlade.Contracts.CpuVoltageOptimizerCapabilities
   interface System.IEquatable<OpenBlade.Contracts.CpuVoltageOptimizerCapabilities>
   ctor (OpenBlade.Contracts.DeviceNumericRange Value, OpenBlade.Contracts.DeviceFeatureAccess Access)
@@ -1262,6 +1531,22 @@ type sealed class OpenBlade.Contracts.ManualOverride<T>
   method virtual System.Boolean Equals(OpenBlade.Contracts.ManualOverride<T> other)
   property OpenBlade.Contracts.OverrideLifetime Lifetime { get; init; }
   property T Value { get; init; }
+type sealed class OpenBlade.Contracts.ObserveCpuTuningRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ObserveCpuTuningRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Boolean UseInstalledBackend)
+  method System.Boolean get_UseInstalledBackend()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean UseInstalledBackend)
+  method System.Void set_UseInstalledBackend(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ObserveCpuTuningRequest left, OpenBlade.Contracts.ObserveCpuTuningRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ObserveCpuTuningRequest left, OpenBlade.Contracts.ObserveCpuTuningRequest right)
+  method virtual OpenBlade.Contracts.ObserveCpuTuningRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ObserveCpuTuningRequest other)
+  property System.Boolean UseInstalledBackend { get; init; }
 type sealed class OpenBlade.Contracts.ObserveStateRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.ObserveStateRequest>
@@ -1304,7 +1589,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 58
+  field const System.Int32 ProtocolVersion = 60
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1688,6 +1973,22 @@ type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   method virtual System.Boolean Equals(OpenBlade.Contracts.ResolvedSetting<T> other)
   property OpenBlade.Contracts.SettingValueSource Source { get; init; }
   property T Value { get; init; }
+type sealed class OpenBlade.Contracts.RestoreCpuTuningRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.RestoreCpuTuningRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.CpuTuningTarget Target)
+  method OpenBlade.Contracts.CpuTuningTarget get_Target()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.CpuTuningTarget Target)
+  method System.Void set_Target(OpenBlade.Contracts.CpuTuningTarget value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.RestoreCpuTuningRequest left, OpenBlade.Contracts.RestoreCpuTuningRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.RestoreCpuTuningRequest left, OpenBlade.Contracts.RestoreCpuTuningRequest right)
+  method virtual OpenBlade.Contracts.RestoreCpuTuningRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.RestoreCpuTuningRequest other)
+  property OpenBlade.Contracts.CpuTuningTarget Target { get; init; }
 type struct OpenBlade.Contracts.RgbColor
   interface System.IEquatable<OpenBlade.Contracts.RgbColor>
   ctor (System.Byte Red, System.Byte Green, System.Byte Blue)
@@ -1853,6 +2154,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.BatteryHealthStatus get_BatteryHealth()
   method OpenBlade.Contracts.BatteryPolicy get_BatteryPolicyOverride()
   method OpenBlade.Contracts.ConfirmedDeviceState get_ConfirmedState()
+  method OpenBlade.Contracts.CpuTuningStatus get_CpuTuning()
   method OpenBlade.Contracts.DesiredDeviceState get_DesiredState()
   method OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
   method OpenBlade.Contracts.DeviceObservationReason get_ObservationReason()
@@ -1905,6 +2207,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_ConfirmedState(OpenBlade.Contracts.ConfirmedDeviceState value)
   method System.Void set_ControlAccess(OpenBlade.Contracts.SessionControlAccess value)
   method System.Void set_ControllerDetectionWarning(System.String value)
+  method System.Void set_CpuTuning(OpenBlade.Contracts.CpuTuningStatus value)
   method System.Void set_DesiredState(OpenBlade.Contracts.DesiredDeviceState value)
   method System.Void set_DeviceVerified(System.Boolean value)
   method System.Void set_DisplayBrightnessHidAvailability(OpenBlade.Contracts.DisplayBrightnessHidAvailability value)
@@ -1947,6 +2250,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.BatteryHealthStatus BatteryHealth { get; init; }
   property OpenBlade.Contracts.BatteryPolicy BatteryPolicyOverride { get; init; }
   property OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState { get; init; }
+  property OpenBlade.Contracts.CpuTuningStatus CpuTuning { get; init; }
   property OpenBlade.Contracts.DesiredDeviceState DesiredState { get; init; }
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; init; }
   property OpenBlade.Contracts.DeviceObservationReason ObservationReason { get; init; }
@@ -2028,6 +2332,25 @@ type sealed class OpenBlade.Contracts.SetBatteryProtectionRequest
   method virtual OpenBlade.Contracts.SetBatteryProtectionRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetBatteryProtectionRequest other)
   property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetCpuTuningRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetCpuTuningRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.CpuTuningTarget Target, OpenBlade.Contracts.CpuTuningSettings Settings)
+  method OpenBlade.Contracts.CpuTuningSettings get_Settings()
+  method OpenBlade.Contracts.CpuTuningTarget get_Target()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.CpuTuningTarget Target, out OpenBlade.Contracts.CpuTuningSettings Settings)
+  method System.Void set_Settings(OpenBlade.Contracts.CpuTuningSettings value)
+  method System.Void set_Target(OpenBlade.Contracts.CpuTuningTarget value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetCpuTuningRequest left, OpenBlade.Contracts.SetCpuTuningRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetCpuTuningRequest left, OpenBlade.Contracts.SetCpuTuningRequest right)
+  method virtual OpenBlade.Contracts.SetCpuTuningRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetCpuTuningRequest other)
+  property OpenBlade.Contracts.CpuTuningSettings Settings { get; init; }
+  property OpenBlade.Contracts.CpuTuningTarget Target { get; init; }
 type sealed class OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest>

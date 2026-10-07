@@ -2014,4 +2014,21 @@ OpenBlade did not retry any stop request.</value>
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>https://example.com</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>CPU Voltage Optimizer</value></data>
+  <data name="MainWindow_CpuTuningTargetLabel.Text" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>Use the installed driver for running values</value></data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>Optional. Refresh to check running values with the installed CPU driver.</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>All-core optimizer offset</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Off uses zero and keeps your offset. Choose Save or Apply to make changes.</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Restore prior optimizer</value></data>
+  <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Optimizer target</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU Voltage Optimizer</value></data>
+  <data name="MainWindow_CpuTuningTarget.OffContent" xml:space="preserve"><value>Next boot</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>All-core offset</value></data>
+  <data name="MainWindow_CpuTuningTarget.OnContent" xml:space="preserve"><value>Running now</value></data>
 </root>

@@ -27,6 +27,18 @@ public interface IServiceControlRuntime
 
     ServiceStatusSnapshot GetStatus();
 
+    Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU observation is unavailable."));
+
+    Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU writes are not admitted."));
+
+    Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU restoration is unavailable."));
+
     Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
 
     Task<DiagnosticHyperBoostOwnershipJournal>
@@ -403,7 +415,7 @@ internal sealed record ScopedIntentApplyExecution(
     ScopedApplyOutcome Outcome,
     ThermalTransitionTrace? ThermalTrace = null);
 
-public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
+public sealed partial class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
         "The external power adapter could not be classified; control writes are blocked.";
@@ -456,6 +468,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly LowPowerGate lowPowerGate;
     private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly IDisplayBrightnessHidController displayBrightnessHidController;
+    private readonly CpuTuningController cpuTuningController;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly Func<CancellationToken, Task> hyperBoostLifecycleExitBoundary;
     private readonly TimeProvider timeProvider;
@@ -783,7 +796,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
-        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
+        CpuTuningController? cpuTuningController = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -811,6 +825,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? new SafeWindowsFanTemperatureSource();
         this.displayBrightnessHidController = displayBrightnessHidController
             ?? UnavailableDisplayBrightnessHidController.Instance;
+        this.cpuTuningController = cpuTuningController
+            ?? new CpuTuningController(new WindowsCpuTuningObservationSource());
         this.hyperBoostPadDiscoverySource = hyperBoostPadDiscoverySource
             ?? CoolingPadDiscoveryFactory.CreateWindows();
         this.hyperBoostOwnershipJournalStore = hyperBoostOwnershipJournalStore
@@ -15110,9 +15126,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task<PowerSource> ResolveCurrentPowerSourceAsync(
         CancellationToken cancellationToken,
-        bool allowCachedExternalClassification = false)
+        bool allowCachedExternalClassification = false,
+        CpuSavedAdmissionDiagnostic? cpuDiagnostic = null)
     {
-        PowerSource windowsSource = powerStateProvider.CapturePowerSource();
+        PowerSource windowsSource;
+        using (cpuDiagnostic?.BeginStage("power Windows source capture"))
+        { windowsSource = powerStateProvider.CapturePowerSource(); }
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
@@ -15138,9 +15157,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         try
         {
-            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            IBladeDevice device;
+            using (cpuDiagnostic?.BeginStage("power verified device probe"))
             {
-                return PowerSource.ExternalUnknown;
+                if (!deviceProvider.TryGetVerifiedDevice(out device))
+                { return PowerSource.ExternalUnknown; }
             }
 
             AdapterPowerState classified = AdapterPowerState.Unknown;
@@ -15156,7 +15177,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 AdapterPowerState sample;
                 try
                 {
-                    sample = await device.ReadAdapterPowerStateAsync(cancellationToken);
+                    using (cpuDiagnostic?.BeginStage($"power adapter read sample {attempts + 1} of {MaximumAdapterPowerClassificationSamples} (open/exchange/dispose)"))
+                    { sample = await device.ReadAdapterPowerStateAsync(cancellationToken); }
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)

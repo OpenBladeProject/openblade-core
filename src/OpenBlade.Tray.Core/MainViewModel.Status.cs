@@ -11,6 +11,7 @@ public sealed partial class MainViewModel
         && left.ControlAccess == right.ControlAccess
         && left.WritesBlocked == right.WritesBlocked
         && left.HyperBoostRestorePending == right.HyperBoostRestorePending
+        && CpuTuningEqual(left.CpuTuning, right.CpuTuning)
         && ThermalConvergenceEqual(left.ThermalConvergence, right.ThermalConvergence)
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,
@@ -61,6 +62,28 @@ public sealed partial class MainViewModel
         && left.Firmware == right.Firmware
         && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
+
+    private static bool CpuTuningEqual(CpuTuningStatus? left, CpuTuningStatus? right) =>
+        ReferenceEquals(left, right)
+        || (left is not null && right is not null
+            && left.Firmware == right.Firmware && left.Live == right.Live
+            && left.PendingBoot == right.PendingBoot && left.RestorePending == right.RestorePending
+            && left.FirmwareRecovery == right.FirmwareRecovery && left.LiveRecovery == right.LiveRecovery
+            && SavedCpuEqual(left.SavedConfiguration, right.SavedConfiguration)
+            && LiveCpuEqual(left.LiveState, right.LiveState));
+
+    private static bool SavedCpuEqual(CpuSavedConfiguration? left, CpuSavedConfiguration? right) =>
+        ReferenceEquals(left, right) || (left is not null && right is not null
+            && left.PowerLimitMilliwatts == right.PowerLimitMilliwatts
+            && left.Policy == right.Policy && left.PowerMode == right.PowerMode
+            && (ReferenceEquals(left.CurveOptimizer, right.CurveOptimizer)
+                || (left.CurveOptimizer is { } l && right.CurveOptimizer is { } r
+                    && l.Mode == r.Mode && l.AllCoreValue == r.AllCoreValue
+                    && l.CoreValues.SequenceEqual(r.CoreValues))));
+
+    private static bool LiveCpuEqual(CpuLiveState? left, CpuLiveState? right) =>
+        ReferenceEquals(left, right) || (left is not null && right is not null
+            && left.PowerLimits == right.PowerLimits && left.CoreValues.SequenceEqual(right.CoreValues));
 
     private static bool ThermalConvergenceEqual(
         ThermalConvergenceStatus? left,

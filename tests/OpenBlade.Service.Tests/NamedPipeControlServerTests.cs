@@ -128,8 +128,11 @@ public sealed class NamedPipeControlServerTests
         }
     }
 
-    [Fact]
-    public async Task ServeOnceAsync_ReadsRequestBeforeResolvingWindowsClientContext()
+    [Theory]
+    [InlineData(TokenImpersonationLevel.Identification)]
+    [InlineData(TokenImpersonationLevel.Impersonation)]
+    public async Task ServeOnceAsync_ReadsRequestBeforeResolvingWindowsClientContext(
+        TokenImpersonationLevel impersonationLevel)
     {
         string pipeName = $"OpenBlade.Tests.{Guid.NewGuid():N}";
         var runtime = new StubRuntime(CreateStatus(0));
@@ -141,7 +144,8 @@ public sealed class NamedPipeControlServerTests
             new WindowsServiceClientContextResolver());
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         Task serverTask = server.ServeOnceAsync(timeout.Token);
-        await using NamedPipeClientStream client = await ConnectAsync(pipeName, timeout.Token);
+        await using NamedPipeClientStream client = await ConnectAsync(
+            pipeName, timeout.Token, impersonationLevel);
         var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
 
         await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
@@ -150,6 +154,7 @@ public sealed class NamedPipeControlServerTests
         await serverTask;
 
         Assert.Equal(request.RequestId, response.RequestId);
+        Assert.True(response.Success, response.Error);
     }
 
     [Fact]
@@ -896,10 +901,12 @@ public sealed class NamedPipeControlServerTests
 
     private static async Task<NamedPipeClientStream> ConnectAsync(
         string pipeName,
-        CancellationToken token)
+        CancellationToken token,
+        TokenImpersonationLevel impersonationLevel = TokenImpersonationLevel.None)
     {
         var client = new NamedPipeClientStream(
-            ".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            ".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous,
+            impersonationLevel);
         await client.ConnectAsync(token);
         return client;
     }

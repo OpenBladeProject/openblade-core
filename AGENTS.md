@@ -18,14 +18,42 @@ trivial tasks or split write-heavy work when merge conflicts and coordination
 would outweigh the benefit. When parallel editing is useful, assign disjoint
 files or components and inspect the combined diff before verification.
 
+## Proportionate execution
+
+Keep work pragmatic and proportionate to the requested outcome. Do not turn a
+bounded task into an open-ended research, tooling, or validation project.
+Every additional workstream must resolve a concrete blocker or satisfy an
+explicit requirement; hypothetical risks alone do not justify expanding scope.
+When the workflow grows disproportionate, simplify it and return to delivering
+the requested behavior while preserving applicable safety requirements.
+
+Use the smallest workflow that resolves the concrete problem. Identify the
+specific unanswered question or observed failure before adding a helper,
+abstraction, approval step, validation pass, or documentation artifact. Prefer
+existing tools and the existing end-to-end path first.
+
+Reuse authorization within its agreed scope. Seek fresh approval only for a
+material change, an action exceeding that scope, or an explicit applicable rule.
+Do not repeat conclusive checks unless a relevant change, an inconclusive result,
+or an unmet requirement justifies them. Distinguish mandatory policy from
+precautions chosen by the agent, and explain the concrete reason for an added
+precaution.
+
+For hardware validation, prefer one captured, typed, reversible test: observe
+the baseline, apply one approved change, read back, and restore the exact original
+state. Retain required reviews and stop on ambiguous submission or restoration.
+Additional scaffolding must address a concrete risk and must not replace an
+already authorized test. This guidance does not waive hardware authorization or
+any applicable safety rule.
+
 ## Product boundary
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
 architecture can admit more Blade models, but a hardware capability is enabled
 only for an exact model and SKU backed by sanitized, reviewed capture evidence.
-Captured BIOS versions are provenance by default; a capability may impose an
-exact firmware restriction only through an explicit reviewed admission rule,
-and no shipped capability imposes one today.
+Gate capabilities by exact model/SKU and device identity, never by BIOS version.
+Captured BIOS versions are provenance only. Missing or changed BIOS provenance
+must not grant or revoke CPU admission; firmware ABI and safety checks remain mandatory.
 Never copy a command from another model, expose raw firmware commands, or
 weaken exact-device checks to make a feature appear supported.
 
@@ -111,6 +139,12 @@ model's device-specific assumptions may be copied to the other.
    model or driver build. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
+   CPU tuning on RZ09-0528 may also offer an optional integration with its
+   exact, signed, already installed AMD driver stack. Keep the driverless
+   saved-configuration path available. Availability checks and reads must not
+   install, enable, start, stop, or remove a driver; provisioning requires a
+   separate attended proposal. Saved configuration and measured live state
+   require separate admission and must never be presented interchangeably.
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.
@@ -208,7 +242,8 @@ unrelated worktrees and checkout changes.
 4. Update the smallest authoritative layer. Do not duplicate state between the
    service, Session Agent, and tray.
 5. Add focused tests for parsing, normalization, failure handling, and shared UI
-   contracts. Run the affected project tests before the full solution.
+   contracts. Follow the development-build test scope under Verification
+   baseline; a full solution run is not automatic.
 6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
@@ -340,14 +375,28 @@ Follow [VERSIONING.md](VERSIONING.md). The short form is:
 
 ## Verification baseline
 
-For a normal product change:
+For development builds, use the smallest useful verification scope: build the
+affected projects and run tests focused on the changed behavior. Expand to the
+affected project suite only when the change or a failure warrants it. Do not run
+the full solution suite for every edit, local package, or development install.
+Documentation-only changes need no build or test run.
+
+Run the full solution suite before marking a product PR ready or releasing it,
+or earlier when shared IPC/schema/build/deployment contracts change or observed
+failures indicate a wider regression. State the concrete reason before
+expanding verification; hypothetical risks alone do not justify a full run.
+Reuse passing results for unchanged source, and do not repeat focused, project,
+and full suites merely to generate more evidence. Preserve required hardware
+admission, restoration, and package-integrity checks.
+
+For final product PR readiness or release validation:
 
 ```powershell
 dotnet build OpenBlade.slnx -p:NuGetAudit=false --no-restore
 dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 ```
 
-On managed hosts, run the full solution test command above with approved host
+When a full run is warranted on managed hosts, use approved host
 access from the outset. The sandbox consistently denies the loopback client in
 `NamedPipeControlServerTests.ServeOnceAsync_ReadsRequestBeforeResolvingWindowsClientContext`
 with `UnauthorizedAccessException`; this is a sandbox permission failure, not a

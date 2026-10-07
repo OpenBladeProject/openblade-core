@@ -106,6 +106,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     public bool RequiresUntestedFirmwareOverride =>
         Volatile.Read(ref requiresUntestedFirmwareOverride) != 0;
 
+    // Only a bounded CPU getter that has already obtained a fresh exact device
+    // may use this lifetime check; USB devnode continuity is independently held
+    // by its native provider. This does not authorize device commands.
+    internal bool IsCpuGetterDeviceCurrent(IBladeDevice retained)
+    {
+        lock (providerLifecycleSync) { return disposed == 0 && ReferenceEquals(retained, device); }
+    }
+
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
     {
         verifiedDevice = null!;

@@ -1386,4 +1386,33 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>Проверьте политику производительности и вентиляторов</value></data>
   <data name="Review policy" xml:space="preserve"><value>Проверьте политику</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Ознакомьтесь с новым режимом по умолчанию. Восстановление останется приостановленным, пока вы не выберете «Понятно».</value></data>
+  <data name="effective {0}, fast {1}, slow {2}" xml:space="preserve"><value>эффективное значение {0}, быстрый лимит {1}, медленный лимит {2}</value></data>
+  <data name="{0:0.###} W" xml:space="preserve"><value>{0:0.###} Вт</value></data>
+  <data name="Live now" xml:space="preserve"><value>Сейчас</value></data>
+  <data name="Next boot" xml:space="preserve"><value>При следующей загрузке</value></data>
+  <data name="Apply now" xml:space="preserve"><value>Применить сейчас</value></data>
+  <data name="Save for next boot" xml:space="preserve"><value>Сохранить для следующей загрузки</value></data>
+  <data name="Saved change takes effect next boot." xml:space="preserve"><value>Сохранённое изменение вступит в силу при следующей загрузке.</value></data>
+  <data name="Next boot: no change pending." xml:space="preserve"><value>Следующая загрузка: ожидающих изменений нет.</value></data>
+  <data name="Next boot: pending state unknown." xml:space="preserve"><value>Следующая загрузка: состояние ожидающих изменений неизвестно.</value></data>
+  <data name="CPU tuning backend available." xml:space="preserve"><value>Модуль настройки CPU доступен.</value></data>
+  <data name="CPU tuning is observed only. Writes require an admitted backend and verified readback." xml:space="preserve"><value>Настройки CPU доступны только для наблюдения. Для записи нужны допущенный модуль и проверенное обратное считывание.</value></data>
+  <data name="Saved firmware: PPT {0} W ({1}); CO {2}." xml:space="preserve"><value>Сохранено в прошивке: PPT {0} Вт ({1}); CO {2}.</value></data>
+  <data name="enabled" xml:space="preserve"><value>включено</value></data>
+  <data name="disabled" xml:space="preserve"><value>выключено</value></data>
+  <data name="Saved firmware: unknown." xml:space="preserve"><value>Сохранено в прошивке: неизвестно.</value></data>
+  <data name="Measured live: PPT {0}; CO {1}." xml:space="preserve"><value>Текущие измерения: PPT {0}; CO {1}.</value></data>
+  <data name="mixed per-core values" xml:space="preserve"><value>значения различаются по ядрам</value></data>
+  <data name="Measured live: unknown." xml:space="preserve"><value>Текущие измерения: неизвестно.</value></data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>Не удалось выполнить запрос настройки CPU: {0}</value></data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve"><value>Перед включением HyperBoost подключите поддерживаемую охлаждающую подставку.</value></data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve"><value>Не удалось подтвердить подключение охлаждающей подставки. Обновите состояние ноутбука перед включением HyperBoost.</value></data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve"><value>Для работы HyperBoost поддерживаемая охлаждающая подставка должна оставаться подключённой.</value></data>
+  <data name="Optimizer changes are currently unavailable for this target." xml:space="preserve"><value>Изменения оптимизатора для этой цели сейчас недоступны.</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Измеренный текущий оптимизатор: неизвестен.</value></data>
+  <data name="Running optimizer changes are available." xml:space="preserve"><value>Изменение текущих значений оптимизатора доступно.</value></data>
+  <data name="Saved for next boot: optimizer unknown." xml:space="preserve"><value>Сохранено для следующей загрузки: оптимизатор неизвестен.</value></data>
+  <data name="Saved for next boot: optimizer {0}." xml:space="preserve"><value>Сохранено для следующей загрузки: оптимизатор {0}.</value></data>
+  <data name="Saving the optimizer for next boot is available." xml:space="preserve"><value>Сохранение оптимизатора для следующей загрузки доступно.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Измеренный текущий оптимизатор: {0}.</value></data>
 </root>

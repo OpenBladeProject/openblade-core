@@ -5,6 +5,76 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ServiceStatusSnapshotComparerTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RecoveryOnlyChangesArePublishedForEachTarget(bool live)
+    {
+        var backend = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly,
+            CpuTuningBackendAvailability.Available);
+        var recovery = new CpuTuningRecoveryStatus(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer);
+        var cpu = new CpuTuningStatus(null, null, backend, backend, CpuTuningPendingBoot.Unknown, true)
+        {
+            FirmwareRecovery = live ? null : recovery,
+            LiveRecovery = live ? recovery : null,
+        };
+        ServiceStatusSnapshot baseline = CreateStatus() with { CpuTuning = cpu };
+        CpuTuningStatus WithRecovery(CpuTuningRecoveryStatus? value) => live
+            ? cpu with { LiveRecovery = value } : cpu with { FirmwareRecovery = value };
+
+        Assert.True(ServiceStatusSnapshotComparer.Equivalent(baseline,
+            baseline with { CpuTuning = WithRecovery(new(recovery.State, recovery.Features)) }));
+        foreach (CpuTuningRecoveryStatus? changed in new CpuTuningRecoveryStatus?[]
+        {
+            null,
+            recovery with { State = CpuTuningRecoveryState.Blocked },
+            recovery with { Features = CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer },
+        })
+        {
+            Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline,
+                baseline with { CpuTuning = WithRecovery(changed) }));
+        }
+    }
+
+    [Fact]
+    public void CpuStatusComparesValuesAcrossNewCoreCollectionsAndDetectsIndependentStateChanges()
+    {
+        var backend = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly,
+            CpuTuningBackendAvailability.Available);
+        var saved = new CpuSavedConfiguration(65000, 2, 2,
+            new(CpuCurveOptimizerMode.PerCore, null, [new(0, -1), new(2, -5)]));
+        var live = new CpuLiveState(new(65, null, null), [new(0, -1), new(2, -5)]);
+        var cpu = new CpuTuningStatus(saved, live, backend, backend, CpuTuningPendingBoot.Requested, true);
+        var baseline = CreateStatus() with { CpuTuning = cpu };
+        var reconstructed = baseline with
+        {
+            CpuTuning = cpu with
+            {
+                SavedConfiguration = saved with
+                {
+                    CurveOptimizer = saved.CurveOptimizer! with
+                    {
+                        CoreValues = saved.CurveOptimizer.CoreValues.ToList(),
+                    },
+                },
+                LiveState = live with { CoreValues = live.CoreValues.ToList() },
+            },
+        };
+        Assert.True(ServiceStatusSnapshotComparer.Equivalent(baseline, reconstructed));
+        foreach (var changed in new[]
+        {
+            cpu with { PendingBoot = CpuTuningPendingBoot.Unknown },
+            cpu with { RestorePending = false },
+            cpu with { SavedConfiguration = saved with { PowerMode = 255 } },
+            cpu with { LiveState = live with { CoreValues = [new(0, -1), new(2, -6)] } },
+            cpu with { Live = backend with { Availability = CpuTuningBackendAvailability.Unavailable } },
+        })
+        {
+            Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with { CpuTuning = changed }));
+        }
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with { CpuTuning = null }));
+    }
+
     [Fact]
     public void Equivalent_ReconstructedCollectionsCompareByContent()
     {

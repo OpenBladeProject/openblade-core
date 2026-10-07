@@ -119,7 +119,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.Equal(
             new CpuVoltageOptimizerCapabilities(
                 new DeviceNumericRange(-30, -1, 1),
-                DeviceFeatureAccess.ObservedOnly)
+                DeviceFeatureAccess.ReadWrite)
             {
                 SupportsEnableDisable = true,
             },

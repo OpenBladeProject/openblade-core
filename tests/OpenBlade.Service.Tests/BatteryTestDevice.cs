@@ -22,6 +22,7 @@ internal sealed class BatteryTestDevice : IBladeDevice
     public Exception? BatteryWriteFailure { get; set; }
     public Action<DeviceSubsystem>? AfterSetter { get; set; }
     public int StateReadCalls { get; private set; }
+    internal Func<CancellationToken, Task<AdapterPowerState>>? ReadAdapterPower;
 
     public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken)
     {
@@ -77,7 +78,8 @@ internal sealed class BatteryTestDevice : IBladeDevice
         CancellationToken cancellationToken) => throw new NotSupportedException();
 
     public Task<AdapterPowerState> ReadAdapterPowerStateAsync(
-        CancellationToken cancellationToken) => throw new NotSupportedException();
+        CancellationToken cancellationToken) => ReadAdapterPower?.Invoke(cancellationToken)
+            ?? throw new NotSupportedException();
 
     public Task SetPerformanceAsync(
         PerformancePreset value,
