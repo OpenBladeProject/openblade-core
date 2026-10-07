@@ -34,7 +34,9 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
                 fixture.Request.RequestId.ToString("N"),
                 OpenBladeReleaseManifestCodec.InstallerFileName),
             plan.FileName);
-        Assert.Equal(["/install", "/quiet", "/norestart"], plan.ArgumentList);
+        Assert.Equal(["/install", "/quiet", "/norestart", "/log",
+            Path.Combine(fixture.Paths.StagingDirectory, fixture.Request.RequestId.ToString("N"), "installer.log")],
+            plan.ArgumentList);
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         Assert.Equal(windows, plan.Environment["SystemRoot"]);
         Assert.Equal(windows, plan.Environment["WINDIR"]);
@@ -329,6 +331,120 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
             File.Exists(fixture.Paths.InFlightPath));
     }
 
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, true)]
+    public async Task CpuActionRequiresEnrollmentAndMatchingSignedProfile(bool enrolled, bool signed, bool success)
+    {
+        FakeCpuDeployment cpu = new();
+        using HandlerFixture fixture = CreateFixture(new(true, 0, false), new(true, true, false), cpu: cpu, signedCpu: signed);
+        BrokerResponse response = await fixture.Handler.HandleAsync(fixture.Request with { Action = BrokerAction.ApplyCpuVoltageInbox },
+            fixture.Enrollment with { CpuVoltageValidationEnabled = enrolled }, CancellationToken.None);
+        Assert.Equal(success ? BrokerResponseStatus.Succeeded : BrokerResponseStatus.Rejected, response.Status);
+        Assert.Equal(success ? 1 : 0, cpu.Launches);
+        Assert.Equal(success ? 1 : 0, fixture.Runner.CallCount);
+        if (success)
+        {
+            Assert.Equal("cpu-voltage-host-started", response.Code);
+            Assert.True(Directory.Exists(Path.Combine(fixture.Paths.StagingDirectory, fixture.Request.RequestId.ToString("N"))));
+            Assert.False(File.Exists(fixture.Paths.InFlightPath));
+        }
+    }
+
+    [Fact]
+    public async Task CpuUnknownLaunchRetainsStagingAndInFlightWithoutRetry()
+    {
+        FakeCpuDeployment cpu = new() { LaunchFails = true };
+        using HandlerFixture fixture = CreateFixture(new(true, 0, false), new(true, true, false), cpu: cpu, signedCpu: true);
+        BrokerResponse response = await fixture.Handler.HandleAsync(fixture.Request with { Action = BrokerAction.ApplyCpuVoltageInbox },
+            fixture.Enrollment with { CpuVoltageValidationEnabled = true }, CancellationToken.None);
+        Assert.Equal(BrokerResponseStatus.Indeterminate, response.Status);
+        Assert.Equal(1, cpu.Launches);
+        Assert.True(File.Exists(fixture.Paths.InFlightPath));
+        Assert.True(Directory.Exists(Path.Combine(fixture.Paths.StagingDirectory, fixture.Request.RequestId.ToString("N"))));
+        Assert.Equal(0, cpu.Rollbacks);
+    }
+
+    [Fact]
+    public async Task CpuKnownRollbackClosesOnlyUnlaunchedPreparation()
+    {
+        FakeCpuDeployment cpu = new();
+        using HandlerFixture fixture = CreateFixture(new(true, 1603, false), new(false, true, true), cpu: cpu, signedCpu: true);
+        BrokerResponse response = await fixture.Handler.HandleAsync(fixture.Request with { Action = BrokerAction.ApplyCpuVoltageInbox },
+            fixture.Enrollment with { CpuVoltageValidationEnabled = true }, CancellationToken.None);
+        Assert.Equal(BrokerResponseStatus.RolledBack, response.Status);
+        Assert.Equal(1, cpu.Rollbacks);
+        Assert.Equal(0, cpu.Launches);
+        Assert.False(File.Exists(fixture.Paths.InFlightPath));
+    }
+
+    [Fact]
+    public async Task OrdinaryInstallCannotPassAnUnresolvedCpuHost()
+    {
+        FakeCpuDeployment cpu = new() { LeaseFails = true };
+        using HandlerFixture fixture = CreateFixture(new(true, 0, false), new(true, true, false), cpu: cpu);
+        BrokerResponse response = await fixture.Handler.HandleAsync(fixture.Request, fixture.Enrollment, CancellationToken.None);
+        Assert.Equal("cpu-voltage-host-unresolved", response.Code);
+        Assert.Equal(0, fixture.Inbox.CallCount);
+        Assert.Equal(0, fixture.Runner.CallCount);
+    }
+
+    private sealed class FakeCpuDeployment : IBrokerCpuVoltageDeployment
+    {
+        public bool LaunchFails { get; init; }
+        public bool LeaseFails { get; init; }
+        public int Launches { get; private set; }
+        public int Rollbacks { get; private set; }
+        public int ClosedReconciliations { get; private set; }
+        public int CompletedReconciliations { get; private set; }
+        private bool prepared;
+        public IDisposable AcquireInstallLease() => LeaseFails ? throw new IOException("unclosed") : new MemoryStream();
+        public void Prepare(Guid id, BrokerEnrollment enrollment, OpenBladeReleaseManifest manifest) => prepared = true;
+        public void Launch(Guid id, BrokerEnrollment enrollment, OpenBladeReleaseManifest manifest, IDisposable lease)
+        {
+            Assert.True(prepared); Launches++;
+            if (LaunchFails) { throw new IOException("ambiguous resume"); }
+        }
+        public void AbandonVerifiedRollback(Guid id) { Assert.True(prepared); Rollbacks++; }
+        public bool TryReconcile() => true;
+        public IDisposable AcquireClosedReconciliation(BrokerInFlightDeployment state, OpenBladeReleaseManifest manifest)
+        {
+            Assert.Equal(state.CpuVoltageServiceVersion, manifest.CpuVoltageServiceVersion);
+            ClosedReconciliations++;
+            return new MemoryStream();
+        }
+        public void CompleteClosedReconciliation(Guid requestId) { CompletedReconciliations++; }
+    }
+
+    [Fact]
+    public async Task CpuClosedStartupCompletesCrashBeforeTerminalReportWithoutQueryOrRelaunch()
+    {
+        FakeCpuDeployment cpu = new();
+        using HandlerFixture fixture = CreateFixture(new(true, 0, false), new(true, true, false), cpu: cpu, signedCpu: true);
+        Directory.CreateDirectory(fixture.Paths.RootDirectory);
+        File.WriteAllText(fixture.Paths.ReportDirectory, "simulate unavailable terminal publication");
+        var enrollment = fixture.Enrollment with { CpuVoltageValidationEnabled = true };
+        BrokerResponse interrupted = await fixture.Handler.HandleAsync(
+            fixture.Request with { Action = BrokerAction.ApplyCpuVoltageInbox }, enrollment, CancellationToken.None);
+        Assert.Equal("terminal-report-unavailable", interrupted.Code);
+        var store = new BrokerInFlightStore(fixture.Paths);
+        var retained = await store.LoadAsync();
+        Assert.NotNull(retained);
+        Assert.Equal("65535.1.2.3+voltage-validation.bbbbbbbb", retained.CpuVoltageServiceVersion);
+        File.Delete(fixture.Paths.ReportDirectory);
+        BrokerStartupReconciler reconciler = new(store, new NotRunningProcessInspector(), fixture.State,
+            new BrokerDurableRecordStore(fixture.Paths), fixture.Paths, TimeProvider.System,
+            NullLogger<BrokerStartupReconciler>.Instance, cpu);
+        Assert.True(await reconciler.TryReconcileAsync(enrollment, CancellationToken.None));
+        Assert.Equal(1, cpu.Launches);
+        Assert.Equal(1, cpu.ClosedReconciliations);
+        Assert.Equal(1, cpu.CompletedReconciliations);
+        Assert.Equal(1, fixture.State.PostInstallCalls);
+        Assert.Equal(0, fixture.State.CurrentStateCalls);
+        Assert.Null(await store.LoadAsync());
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))
@@ -347,7 +463,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         bool corruptDetachedSignature = false,
         Action<BrokerInFlightDeployment>? afterInFlightReplacement = null,
         BrokerInstalledState? before = null,
-        Action<BrokerInFlightDeployment>? beforeInFlightReplacement = null)
+        Action<BrokerInFlightDeployment>? beforeInFlightReplacement = null,
+        FakeCpuDeployment? cpu = null, bool signedCpu = false)
     {
         ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         byte[] spki = key.ExportSubjectPublicKeyInfo();
@@ -361,6 +478,16 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
             InstallerSize = installer.Length,
             InstallerSha256 = Convert.ToHexString(SHA256.HashData(installer)).ToLowerInvariant(),
         };
+        if (signedCpu)
+        {
+            manifest = manifest with
+            {
+                SchemaVersion = 2,
+                ValidationProfile = "CpuVoltageValidation",
+                CpuVoltageManifestSha256 = new string('a', 64),
+                CpuVoltageServiceVersion = manifest.Version + "+voltage-validation." + manifest.SourceRevision[..8]
+            };
+        }
         byte[] manifestBytes = OpenBladeReleaseManifestCodec.SerializeCanonical(manifest);
         byte[] signatureBytes = key.SignHash(
             OpenBladeSignedReleaseVerifier.ComputeSigningDigest(manifestBytes),
@@ -396,7 +523,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
             runner,
             paths,
             new FixedTimeProvider(now),
-            NullLogger<ApplyFixedInboxBrokerRequestHandler>.Instance);
+            NullLogger<ApplyFixedInboxBrokerRequestHandler>.Instance, cpu);
         Guid requestId = Guid.NewGuid();
         BrokerEnrollment enrollment = BrokerEnrollmentTests.CreateEnrollment() with
         {
@@ -427,6 +554,10 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         public int CallCount { get; private set; }
         public bool TokenCanBeCanceled { get; private set; }
 
+        public Task<StagedVerifiedLocalDevDeployment> StageCpuVoltageAsync(string stagingDirectory,
+            OpenBladeReleaseTrustPolicy trustPolicy, CancellationToken cancellationToken = default)
+            => StageAsync(stagingDirectory, trustPolicy, cancellationToken);
+
         public async Task<StagedVerifiedLocalDevDeployment> StageAsync(
             string stagingDirectory,
             OpenBladeReleaseTrustPolicy trustPolicy,
@@ -438,6 +569,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
                 stagingDirectory,
                 OpenBladeReleaseManifestCodec.InstallerFileName);
             await File.WriteAllBytesAsync(installerPath, installerBytes, cancellationToken);
+            await File.WriteAllBytesAsync(Path.Combine(stagingDirectory, FixedLocalDevInboxSource.ManifestFileName), release.ManifestBytes, cancellationToken);
+            await File.WriteAllBytesAsync(Path.Combine(stagingDirectory, FixedLocalDevInboxSource.SignatureFileName), release.SignatureBytes, cancellationToken);
             return release with
             {
                 InstallerPath = returnUnauthorizedInstallerPath
@@ -493,19 +626,23 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         BrokerInstalledState before,
         BrokerPostInstallVerification after) : IBrokerInstalledStateVerifier
     {
+        public int PostInstallCalls { get; private set; }
+        public int CurrentStateCalls { get; private set; }
         public Task<BrokerInstalledState> ReadBeforeInstallAsync(
             CancellationToken cancellationToken) => Task.FromResult(before);
 
         public Task<BrokerPostInstallVerification> VerifyAfterInstallAsync(
             BrokerInstalledState ignoredBefore,
             OpenBladeVerifiedRelease expectedRelease,
-            CancellationToken cancellationToken) => Task.FromResult(after);
+            CancellationToken cancellationToken)
+        { PostInstallCalls++; return Task.FromResult(after); }
 
         public Task<BrokerPostInstallVerification> VerifyCurrentStateAsync(
             BrokerInstalledState ignoredBefore,
             string expectedVersion,
             string expectedSourceRevision,
-            CancellationToken cancellationToken) => Task.FromResult(after);
+            CancellationToken cancellationToken)
+        { CurrentStateCalls++; return Task.FromResult(after); }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

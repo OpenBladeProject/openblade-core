@@ -1,22 +1,57 @@
 using System.Buffers.Binary;
+using OpenBlade.Deployment;
 
 namespace OpenBlade.DeploymentClient.Tests;
 
 public sealed class BrokerPipeChannelTests
 {
+    [Fact]
+    public async Task Diagnostics_UsesOnlyFixedReadActionAfterServerVerification()
+    {
+        byte[] expected = DeploymentStatusCodec.Serialize(new(1, RequestId, "Succeeded", "deployment-status",
+            new(false, "None", null, [])));
+        DuplexConnection connection = new(expected);
+        RecordingIdentityVerifier verifier = new();
+        byte[] response = await DeploymentStatusCommand.ReadAsync(new FixedConnector(connection), verifier,
+            RequestId, CancellationToken.None);
+        Assert.Equal(expected, response);
+        Assert.Equal(connection.ServerIdentity, verifier.VerifiedIdentity);
+        Assert.Equal(DeploymentBrokerAction.ReadDeploymentStatus,
+            DeploymentBrokerProtocol.ParseRequest(connection.Written.ToArray().AsSpan(4)).Action);
+    }
+
+    [Fact]
+    public async Task Diagnostics_RejectsUntrustedPeerBeforeAnyRequest()
+    {
+        DuplexConnection connection = new(BrokerProtocolTests.Success());
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => DeploymentStatusCommand.ReadAsync(
+            new FixedConnector(connection), new RecordingIdentityVerifier { Reject = true }, RequestId, CancellationToken.None));
+        Assert.Empty(connection.Written.ToArray());
+    }
+
+    [Fact]
+    public async Task Diagnostics_RejectsMismatchedReplyIdentity()
+    {
+        DuplexConnection connection = new(DeploymentStatusCodec.Serialize(new(1, Guid.NewGuid(), "Succeeded", "deployment-status",
+            new(false, "None", null, []))));
+        await Assert.ThrowsAsync<InvalidDataException>(() => DeploymentStatusCommand.ReadAsync(new FixedConnector(connection),
+            new RecordingIdentityVerifier(), RequestId, CancellationToken.None));
+    }
     private static readonly Guid RequestId = Guid.Parse(
         "22222222-2222-2222-2222-222222222222");
 
-    [Fact]
-    public async Task Channel_VerifiesPipeServerBeforeWritingFixedRequest()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Channel_VerifiesPipeServerBeforeWritingFixedRequest(bool cpuVoltage)
     {
         DuplexConnection connection = new(BrokerProtocolTests.Success());
         RecordingIdentityVerifier verifier = new();
         BrokerPipeChannel channel = new(new FixedConnector(connection), verifier);
 
-        DeploymentBrokerResponse response = await channel.ApplyFixedInboxAsync(
-            RequestId,
-            CancellationToken.None);
+        DeploymentBrokerResponse response = cpuVoltage
+            ? await channel.ApplyCpuVoltageInboxAsync(RequestId, CancellationToken.None)
+            : await channel.ApplyFixedInboxAsync(RequestId, CancellationToken.None);
 
         Assert.Equal(BrokerProtocolTests.Success(), response);
         Assert.Equal(connection.ServerIdentity, verifier.VerifiedIdentity);
@@ -25,18 +60,21 @@ public sealed class BrokerPipeChannelTests
         Assert.Equal(frame.Length - sizeof(int), length);
         DeploymentBrokerRequest request = DeploymentBrokerProtocol.ParseRequest(frame.AsSpan(sizeof(int)));
         Assert.Equal(RequestId, request.RequestId);
-        Assert.Equal(DeploymentBrokerAction.ApplyFixedInbox, request.Action);
+        Assert.Equal(cpuVoltage ? DeploymentBrokerAction.ApplyCpuVoltageInbox : DeploymentBrokerAction.ApplyFixedInbox, request.Action);
     }
 
-    [Fact]
-    public async Task Channel_WritesNothingWhenServerIdentityFails()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Channel_WritesNothingWhenServerIdentityFails(bool cpuVoltage)
     {
         DuplexConnection connection = new(BrokerProtocolTests.Success());
         RecordingIdentityVerifier verifier = new() { Reject = true };
         BrokerPipeChannel channel = new(new FixedConnector(connection), verifier);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => channel.ApplyFixedInboxAsync(RequestId, CancellationToken.None));
+            () => cpuVoltage ? channel.ApplyCpuVoltageInboxAsync(RequestId, CancellationToken.None)
+                : channel.ApplyFixedInboxAsync(RequestId, CancellationToken.None));
 
         Assert.Empty(connection.Written.ToArray());
     }
@@ -122,8 +160,12 @@ public sealed class BrokerPipeChannelTests
         private readonly MemoryStream response;
 
         internal DuplexConnection(DeploymentBrokerResponse brokerResponse)
+            : this(DeploymentBrokerProtocol.SerializeResponse(brokerResponse))
         {
-            byte[] payload = DeploymentBrokerProtocol.SerializeResponse(brokerResponse);
+        }
+
+        internal DuplexConnection(byte[] payload)
+        {
             byte[] frame = new byte[sizeof(int) + payload.Length];
             BinaryPrimitives.WriteInt32LittleEndian(frame, payload.Length);
             payload.CopyTo(frame.AsSpan(sizeof(int)));

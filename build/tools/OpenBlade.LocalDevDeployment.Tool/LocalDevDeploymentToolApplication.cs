@@ -8,6 +8,15 @@ namespace OpenBlade.LocalDevDeploymentTool;
 
 internal sealed partial class LocalDevDeploymentToolApplication
 {
+    private static byte[] ReadClosureManifest(string path)
+    {
+        using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length is <= 0 or > CpuVoltageDeploymentClosure.MaximumManifestBytes)
+        { throw new InvalidDataException("CPU closure manifest exceeds its bound."); }
+        byte[] bytes = new byte[(int)stream.Length];
+        stream.ReadExactly(bytes);
+        return bytes;
+    }
     internal const string ManifestFileName = "OpenBlade-Local-Dev-Deployment.json";
     internal const string SignatureFileName = "OpenBlade-Local-Dev-Deployment.sig";
     internal const string InstallerFileName = "OpenBlade-Setup.exe";
@@ -117,6 +126,8 @@ internal sealed partial class LocalDevDeploymentToolApplication
         ValidateKeyName(command.KeyName);
         LocalDevDeploymentReceipt receipt = LocalDevDeploymentReceiptCodec.Read(
             layout.ReceiptPath);
+        if (command.CpuVoltageClosure is not null && !receipt.CpuVoltageValidationEnabled)
+        { throw new UnauthorizedAccessException("CPU voltage deployment requires attended broker capability enrollment."); }
         if (!string.Equals(
                 receipt.EnrolledAccountSid,
                 layout.CurrentUserSid,
@@ -149,9 +160,13 @@ internal sealed partial class LocalDevDeploymentToolApplication
             .ConfigureAwait(false);
         string installerSha256 = Convert.ToHexString(installerHash).ToLowerInvariant();
         long sequence = sequenceSource.Next();
+        string? closureHash = command.CpuVoltageClosure is null ? null : Convert.ToHexString(SHA256.HashData(
+            ReadClosureManifest(Path.Combine(command.CpuVoltageClosure, "manifest.json")))).ToLowerInvariant();
+        using var closure = command.CpuVoltageClosure is null ? null : CpuVoltageClosureLease.Open(
+            command.CpuVoltageClosure, command.SourceRevision, closureHash!, command.Version + "+voltage-validation." + command.SourceRevision[..8]);
         OpenBladeReleaseManifest manifest = new()
         {
-            SchemaVersion = OpenBladeReleaseManifestCodec.CurrentSchemaVersion,
+            SchemaVersion = closure is null ? OpenBladeReleaseManifestCodec.CurrentSchemaVersion : OpenBladeReleaseManifestCodec.CpuVoltageSchemaVersion,
             SignatureAlgorithm = OpenBladeReleaseManifestCodec.SignatureAlgorithm,
             SigningKeyCurve = OpenBladeReleaseManifestCodec.SigningKeyCurve,
             SigningKeyId = signingKeyId,
@@ -169,6 +184,9 @@ internal sealed partial class LocalDevDeploymentToolApplication
             UpgradeCode = OpenBladeReleaseManifestCodec.UpgradeCode,
             InstallerSize = installerSize,
             InstallerSha256 = installerSha256,
+            ValidationProfile = closure is null ? null : OpenBladeReleaseManifestCodec.CpuVoltageProfile,
+            CpuVoltageManifestSha256 = closureHash,
+            CpuVoltageServiceVersion = closure is null ? null : command.Version + "+voltage-validation." + command.SourceRevision[..8],
         };
         byte[] manifestBytes = OpenBladeReleaseManifestCodec.SerializeCanonical(manifest);
         byte[] signatureBytes = signer.SignHash(
@@ -195,7 +213,7 @@ internal sealed partial class LocalDevDeploymentToolApplication
             manifestBytes,
             signatureBytes,
             installer,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken, closure).ConfigureAwait(false);
         await WriteStageResultAsync(
             receipt.InstallationId,
             sequence,
@@ -246,7 +264,7 @@ internal sealed partial class LocalDevDeploymentToolApplication
         byte[] manifestBytes,
         byte[] signatureBytes,
         Stream installer,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, CpuVoltageClosureLease? closure = null)
     {
         string inbox = Path.GetFullPath(layout.InboxDirectory);
         if (!Directory.Exists(inbox)
@@ -260,6 +278,31 @@ internal sealed partial class LocalDevDeploymentToolApplication
             .Select(path => Path.GetFileName(path)!)
             .Order(StringComparer.Ordinal)
             .ToArray();
+        string cpuDirectory = Path.Combine(inbox, CpuVoltageDeploymentClosure.DirectoryName);
+        if (Directory.Exists(cpuDirectory))
+        {
+            // Only this fixed normal-user inbox directory is eligible for removal.
+            // Refuse redirected entries before walking/deleting the prior request.
+            var pending = new Stack<string>(); pending.Push(cpuDirectory); int count = 0;
+            while (pending.Count > 0)
+            {
+                string current = pending.Pop();
+                if (++count > CpuVoltageDeploymentClosure.MaximumEntries + 1
+                    || (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                { throw new IOException("Prior CPU inbox closure is unsafe."); }
+                if (Directory.Exists(current))
+                {
+                    foreach (string child in Directory.EnumerateFileSystemEntries(current))
+                    {
+                        if (count + pending.Count >= CpuVoltageDeploymentClosure.MaximumEntries + 1)
+                        { throw new IOException("Prior CPU inbox closure exceeds its bound."); }
+                        pending.Push(child);
+                    }
+                }
+            }
+            Directory.Delete(cpuDirectory, recursive: true);
+            entries = entries.Where(name => name != CpuVoltageDeploymentClosure.DirectoryName).ToArray();
+        }
         string[] allowedExisting = ExactInboxFiles.Order(StringComparer.Ordinal).ToArray();
         if (entries.Length != 0 && !entries.SequenceEqual(allowedExisting, StringComparer.Ordinal))
         {
@@ -283,6 +326,8 @@ internal sealed partial class LocalDevDeploymentToolApplication
         List<string> published = [];
         try
         {
+            if (closure is not null)
+            { closure.CopyTo(cpuDirectory, _ => { }, _ => { }); }
             await WriteCreateNewAsync(
                 temporaryManifest,
                 manifestBytes,
@@ -305,7 +350,8 @@ internal sealed partial class LocalDevDeploymentToolApplication
                 .Select(path => Path.GetFileName(path)!)
                 .Order(StringComparer.Ordinal)
                 .ToArray();
-            if (!finalEntries.SequenceEqual(allowedExisting, StringComparer.Ordinal))
+            string[] expectedFinal = (closure is null ? allowedExisting : allowedExisting.Append(CpuVoltageDeploymentClosure.DirectoryName)).Order(StringComparer.Ordinal).ToArray();
+            if (!finalEntries.SequenceEqual(expectedFinal, StringComparer.Ordinal))
             {
                 throw new LocalDevDeploymentToolException(
                     "The fixed local-development inbox does not contain the complete request.");

@@ -2,10 +2,12 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Win32.SafeHandles;
 using OpenBlade.DeploymentBroker;
 
 namespace OpenBlade.DevelopmentDeployment.Setup;
@@ -67,13 +69,16 @@ internal static class DevelopmentDeploymentProvisioner
 {
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
-        if (args.Length != 1 || args[0] is not ("install" or "uninstall" or "status"))
+        if (args.Length != 1 || args[0] is not ("install" or "uninstall" or "status" or "upgrade-cpu-voltage"))
         {
             return 64;
         }
 
         switch (args[0])
         {
+            case "upgrade-cpu-voltage":
+                await UpgradeCpuVoltageAsync(cancellationToken).ConfigureAwait(false);
+                return 0;
             case "install":
                 await InstallAsync(cancellationToken).ConfigureAwait(false);
                 return 0;
@@ -87,6 +92,245 @@ internal static class DevelopmentDeploymentProvisioner
                     tolerateFailure: true).ConfigureAwait(false)
                     ? 0
                     : 1;
+        }
+    }
+
+    private static async Task UpgradeCpuVoltageAsync(CancellationToken cancellationToken)
+    {
+        string[] expectedPayload =
+        [
+            "OpenBlade.DevelopmentDeployment.Setup.exe",
+            DevelopmentDeploymentLayout.BrokerExe,
+            DevelopmentDeploymentLayout.ClientExe,
+            DevelopmentDeploymentLayout.TrustFile,
+        ];
+        if (!Directory.EnumerateFileSystemEntries(AppContext.BaseDirectory)
+            .Select(Path.GetFileName).Order(StringComparer.Ordinal)
+            .SequenceEqual(expectedPayload.Order(StringComparer.Ordinal)))
+        {
+            throw new InvalidDataException("The attended upgrade requires the exact four-file provisioner payload.");
+        }
+
+        using FileStream brokerSource = OpenPayload(DevelopmentDeploymentLayout.BrokerExe);
+        using FileStream clientSource = OpenPayload(DevelopmentDeploymentLayout.ClientExe);
+        using FileStream trustSource = OpenPayload(DevelopmentDeploymentLayout.TrustFile);
+        DevelopmentTrustKey trust = await ReadTrustAsync(cancellationToken).ConfigureAwait(false);
+        BrokerPaths paths = BrokerPaths.CreateDefault();
+        BrokerEnrollmentStore store = new(paths);
+        BrokerEnrollment original = await store.LoadAsync(cancellationToken).ConfigureAwait(false);
+        BrokerEnrollment upgraded = CreateCpuVoltageUpgrade(
+            original, trust, ActiveConsoleUser.GetSid(), RequireBrokerVersion(brokerSource.Name));
+        string brokerTarget = Path.Combine(DevelopmentDeploymentLayout.BrokerDirectory, DevelopmentDeploymentLayout.BrokerExe);
+        string clientTarget = Path.Combine(DevelopmentDeploymentLayout.ClientDirectory, DevelopmentDeploymentLayout.ClientExe);
+        RequireProtectedUpgradeTarget(brokerTarget, null);
+        RequireProtectedUpgradeTarget(clientTarget, original.EnrolledAccountSid);
+        if (!string.Equals(RequireBrokerVersion(brokerTarget), original.BrokerVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The installed broker version differs from its enrollment.");
+        }
+        RequireSafeAncestors(DevelopmentDeploymentLayout.ReceiptPath);
+        VerifyUpgradeFileSecurity(DevelopmentDeploymentLayout.ReceiptPath, original.EnrolledAccountSid);
+        if (!(await File.ReadAllBytesAsync(DevelopmentDeploymentLayout.ReceiptPath, cancellationToken).ConfigureAwait(false))
+            .SequenceEqual(CreateReceipt(original)))
+        {
+            throw new InvalidDataException("The public receipt does not match the protected enrollment.");
+        }
+
+        using CpuUpgradeService service = CpuUpgradeService.Open();
+        service.RequireConfiguration(disabled: false);
+        RequireNoUnresolvedDeployment(paths.RootDirectory);
+        using (WindowsCpuVoltageDeployment.RequirePriorClosedAndAcquireLease(requireExistingClosedHost: true)) { }
+
+        // Disabling start closes the normal-user service-start race until every replacement is durable.
+        // Any failure from this point leaves maintenance disabled for attended diagnosis, never uninstall.
+        service.SetDisabled(true);
+        await service.StopAndWaitAsync(cancellationToken).ConfigureAwait(false);
+        using IDisposable cpuLease = WindowsCpuVoltageDeployment.RequirePriorClosedAndAcquireLease(requireExistingClosedHost: true);
+        service.RequireStopped();
+        RequireNoUnresolvedDeployment(paths.RootDirectory);
+        BrokerEnrollment confirmed = await store.LoadAsync(cancellationToken).ConfigureAwait(false);
+        if (confirmed != original)
+        {
+            throw new InvalidOperationException("The broker enrollment changed during maintenance admission.");
+        }
+        _ = CreateCpuVoltageUpgrade(confirmed, trust, ActiveConsoleUser.GetSid(), upgraded.BrokerVersion);
+        RequireProtectedUpgradeTarget(brokerTarget, null);
+        RequireProtectedUpgradeTarget(clientTarget, original.EnrolledAccountSid);
+        await ReplaceUpgradeFileAsync(brokerTarget, brokerSource, cancellationToken).ConfigureAwait(false);
+        await ReplaceUpgradeFileAsync(clientTarget, clientSource, cancellationToken).ConfigureAwait(false);
+        using MemoryStream enrollmentBytes = new(BrokerEnrollmentCodec.SerializeCanonical(upgraded));
+        await ReplaceUpgradeFileAsync(paths.EnrollmentPath, enrollmentBytes, cancellationToken).ConfigureAwait(false);
+        using MemoryStream receiptBytes = new(CreateReceipt(upgraded));
+        await ReplaceUpgradeFileAsync(DevelopmentDeploymentLayout.ReceiptPath, receiptBytes, cancellationToken).ConfigureAwait(false);
+        if (await store.LoadAsync(cancellationToken).ConfigureAwait(false) != upgraded)
+        {
+            throw new InvalidDataException("The upgraded enrollment could not be verified.");
+        }
+        RequireProtectedUpgradeTarget(brokerTarget, null);
+        RequireProtectedUpgradeTarget(clientTarget, original.EnrolledAccountSid);
+        VerifyUpgradeFileSecurity(DevelopmentDeploymentLayout.ReceiptPath, original.EnrolledAccountSid);
+        await VerifyUpgradePayloadAsync(brokerTarget, brokerSource, cancellationToken).ConfigureAwait(false);
+        await VerifyUpgradePayloadAsync(clientTarget, clientSource, cancellationToken).ConfigureAwait(false);
+        if (!(await File.ReadAllBytesAsync(DevelopmentDeploymentLayout.ReceiptPath, cancellationToken).ConfigureAwait(false))
+            .SequenceEqual(CreateReceipt(upgraded)))
+        {
+            throw new InvalidDataException("The upgraded public receipt could not be verified.");
+        }
+        service.RequireStopped();
+        try
+        {
+            service.SetDisabled(false);
+            service.RequireConfiguration(disabled: false);
+        }
+        catch (Exception completionFailure)
+        {
+            try
+            {
+                service.SetDisabled(true);
+                service.RequireConfiguration(disabled: true);
+            }
+            catch (Exception retentionFailure)
+            {
+                throw new AggregateException(
+                    "Broker maintenance completion and disabled-state verification are unresolved.",
+                    completionFailure, retentionFailure);
+            }
+            throw;
+        }
+    }
+
+    internal static BrokerEnrollment CreateCpuVoltageUpgrade(
+        BrokerEnrollment original, DevelopmentTrustKey trust, string consoleSid, string brokerVersion)
+    {
+        if (!string.Equals(original.EnrolledAccountSid, consoleSid, StringComparison.Ordinal)
+            || !string.Equals(original.DevelopmentSigningKeyId, trust.KeyId, StringComparison.Ordinal)
+            || !string.Equals(original.DevelopmentSigningSubjectPublicKeyInfoBase64, trust.SubjectPublicKeyInfoBase64, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The attended upgrade must retain the enrolled console account and signing key.");
+        }
+        BrokerEnrollment upgraded = original with { BrokerVersion = brokerVersion, CpuVoltageValidationEnabled = true };
+        _ = BrokerEnrollmentCodec.SerializeCanonical(upgraded);
+        return upgraded;
+    }
+
+    private static FileStream OpenPayload(string name)
+    {
+        string path = RequirePayloadFile(name);
+        RequireSafeAncestors(path);
+        return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+    }
+
+    internal static void RequireNoUnresolvedDeployment(string stateDirectory)
+    {
+        // Enumeration propagates access failures and treats even malformed/directory markers as unresolved.
+        if (Directory.EnumerateFileSystemEntries(stateDirectory)
+            .Any(path => string.Equals(Path.GetFileName(path), "unresolved-deployment.json", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("An unresolved deployment prevents broker maintenance.");
+        }
+    }
+
+    internal static async Task ReplaceUpgradeFileAsync(string destination, Stream source, CancellationToken cancellationToken)
+    {
+        string temporary = destination + ".cpu-upgrade";
+        await using (FileStream output = new FileInfo(temporary).Create(
+            FileMode.CreateNew, FileSystemRights.FullControl, FileShare.None,
+            65536, FileOptions.Asynchronous | FileOptions.WriteThrough,
+            new FileInfo(destination).GetAccessControl()))
+        {
+            await source.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            output.Flush(flushToDisk: true);
+        }
+        // ReplaceFile preserves the already verified destination ACL. No durable state is deleted on failure.
+        File.Replace(temporary, destination, destinationBackupFileName: null);
+    }
+
+    internal static async Task VerifyUpgradePayloadAsync(string destination, Stream source, CancellationToken cancellationToken)
+    {
+        using FileStream installed = new(destination, FileMode.Open, FileAccess.Read, FileShare.Read);
+        source.Position = 0;
+        byte[] installedHash = await SHA256.HashDataAsync(installed, cancellationToken).ConfigureAwait(false);
+        byte[] sourceHash = await SHA256.HashDataAsync(source, cancellationToken).ConfigureAwait(false);
+        if (installed.Length != source.Length
+            || !CryptographicOperations.FixedTimeEquals(installedHash, sourceHash))
+        {
+            throw new InvalidDataException("The installed upgrade payload differs from the pinned attended payload.");
+        }
+    }
+
+    private static void RequireSafeAncestors(string path)
+    {
+        for (string? current = Path.GetFullPath(path); current is not null; current = Path.GetDirectoryName(current))
+        {
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new UnauthorizedAccessException("Broker maintenance paths must not contain reparse points.");
+            }
+        }
+    }
+
+    private static void RequireProtectedUpgradeTarget(string path, string? readSid)
+    {
+        RequireSafeAncestors(path);
+        DirectorySecurity actual = new DirectoryInfo(Path.GetDirectoryName(path)!).GetAccessControl();
+        RequireUpgradeDirectorySecurity(actual, readSid);
+        VerifyUpgradeFileSecurity(path, readSid);
+    }
+
+    internal static void RequireUpgradeDirectorySecurity(DirectorySecurity security, string? readSid)
+    {
+        // Keep the existing DirectorySecurity read and its .NET normalization.
+        // Compare all distinctions that API returns, without further rule changes.
+        RequireUpgradeDirectorySecurity(new RawSecurityDescriptor(security.GetSecurityDescriptorBinaryForm(), 0), readSid);
+    }
+
+    internal static void RequireUpgradeDirectorySecurity(RawSecurityDescriptor actual, string? readSid)
+    {
+        RawSecurityDescriptor expected = new(
+            CreateDirectorySecurity(readSid, FileSystemRights.ReadAndExecute).GetSecurityDescriptorBinaryForm(), 0);
+        // Windows may add AI when persisting this protected DACL. It records
+        // inheritance processing, not an extra ACE or permission. Compare every
+        // other returned control flag and ACL byte; do not normalize rules here.
+        const ControlFlags ignored = ControlFlags.DiscretionaryAclAutoInherited;
+        if (actual.Owner != expected.Owner
+            || (actual.ControlFlags & ~ignored) != (expected.ControlFlags & ~ignored)
+            || actual.DiscretionaryAcl is null || expected.DiscretionaryAcl is null)
+        {
+            throw new UnauthorizedAccessException("The installed broker/client directory ACL differs from enrollment.");
+        }
+        byte[] actualAcl = new byte[actual.DiscretionaryAcl.BinaryLength];
+        byte[] expectedAcl = new byte[expected.DiscretionaryAcl.BinaryLength];
+        actual.DiscretionaryAcl.GetBinaryForm(actualAcl, 0);
+        expected.DiscretionaryAcl.GetBinaryForm(expectedAcl, 0);
+        if (!actualAcl.AsSpan().SequenceEqual(expectedAcl))
+        {
+            throw new UnauthorizedAccessException("The installed broker/client directory ACL differs from enrollment.");
+        }
+    }
+
+    private static void VerifyUpgradeFileSecurity(string path, string? readSid)
+    {
+        RequireUpgradeFileSecurity(new FileInfo(path).GetAccessControl(), readSid);
+    }
+
+    internal static void RequireUpgradeFileSecurity(FileSecurity security, string? readSid)
+    {
+        SecurityIdentifier system = new(WellKnownSidType.LocalSystemSid, null);
+        SecurityIdentifier administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
+        FileSystemAccessRule[] rules = security.GetAccessRules(true, true, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>().ToArray();
+        const FileSystemRights writes = FileSystemRights.Write | FileSystemRights.Delete
+            | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership
+            | (FileSystemRights)0x40000000 | (FileSystemRights)0x10000000;
+        if (security.GetOwner(typeof(SecurityIdentifier)) != administrators
+            || !rules.Any(rule => rule.IdentityReference == system && rule.AccessControlType == AccessControlType.Allow && rule.FileSystemRights == FileSystemRights.FullControl)
+            || !rules.Any(rule => rule.IdentityReference == administrators && rule.AccessControlType == AccessControlType.Allow && rule.FileSystemRights == FileSystemRights.FullControl)
+            || rules.Any(rule => rule.AccessControlType != AccessControlType.Allow
+                || rule.IdentityReference != system && rule.IdentityReference != administrators
+                && (rule.IdentityReference.Value != readSid || (rule.FileSystemRights & writes) != 0)))
+        {
+            throw new UnauthorizedAccessException("The installed broker/client/receipt file is not protected.");
         }
     }
 
@@ -379,6 +623,10 @@ internal static class DevelopmentDeploymentProvisioner
                 enrollment.EnrolledAt.UtcDateTime.ToString(
                     "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
                     System.Globalization.CultureInfo.InvariantCulture));
+            if (enrollment.CpuVoltageValidationEnabled)
+            {
+                writer.WriteBoolean("cpuVoltageValidationEnabled", true);
+            }
             writer.WriteEndObject();
         }
 
@@ -457,6 +705,148 @@ internal static class DevelopmentDeploymentProvisioner
 
     internal static bool IsRetryableDeleteFailure(Exception exception) =>
         exception is IOException or UnauthorizedAccessException;
+}
+
+// Fixed-service maintenance only: no caller-supplied service, executable, account or arguments.
+internal sealed class CpuUpgradeService : IDisposable
+{
+    private readonly SafeServiceHandle service;
+
+    private CpuUpgradeService(SafeServiceHandle service) => this.service = service;
+
+    internal static CpuUpgradeService Open()
+    {
+        using SafeServiceHandle manager = Native.OpenSCManagerW(null, null, 1);
+        if (manager.IsInvalid) { throw Failure(); }
+        SafeServiceHandle service = Native.OpenServiceW(manager, DevelopmentDeploymentLayout.ServiceName, 1 | 2 | 4 | 0x20);
+        if (service.IsInvalid) { service.Dispose(); throw Failure(); }
+        return new CpuUpgradeService(service);
+    }
+
+    internal static bool IsExpectedConfiguration(uint type, uint start, string binary, string account, bool disabled) =>
+        type == 0x10 && start == (disabled ? 4u : 3u)
+        && string.Equals(account, "LocalSystem", StringComparison.Ordinal)
+        && string.Equals(binary, DevelopmentDeploymentProvisioner.QuoteServiceBinaryPath(
+            Path.Combine(DevelopmentDeploymentLayout.BrokerDirectory, DevelopmentDeploymentLayout.BrokerExe)), StringComparison.OrdinalIgnoreCase);
+
+    internal void RequireConfiguration(bool disabled)
+    {
+        _ = Native.QueryServiceConfigW(service, 0, 0, out uint size);
+        if (Marshal.GetLastWin32Error() != 122 || size == 0 || size > 8192) { throw Failure(); }
+        nint buffer = Marshal.AllocHGlobal(checked((int)size));
+        try
+        {
+            if (!Native.QueryServiceConfigW(service, buffer, size, out _)) { throw Failure(); }
+            Configuration config = Marshal.PtrToStructure<Configuration>(buffer);
+            if (!IsExpectedConfiguration(config.Type, config.Start,
+                Marshal.PtrToStringUni(config.Binary) ?? string.Empty,
+                Marshal.PtrToStringUni(config.Account) ?? string.Empty, disabled))
+            {
+                throw new InvalidDataException("The fixed broker service configuration differs from enrollment.");
+            }
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
+
+    internal void SetDisabled(bool disabled)
+    {
+        if (!Native.ChangeServiceConfigW(service, uint.MaxValue, disabled ? 4u : 3u, uint.MaxValue,
+            null, null, 0, null, null, null, null)) { throw Failure(); }
+        RequireConfiguration(disabled);
+    }
+
+    internal async Task StopAndWaitAsync(CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        Status status = ReadStatus();
+        if (status.State == 1 && status.ProcessId == 0) { return; }
+        if (status.State != 4 || status.ProcessId == 0)
+        {
+            throw new InvalidOperationException("The broker is neither stopped nor stably running; maintenance cannot proceed.");
+        }
+        using Process process = Process.GetProcessById(checked((int)status.ProcessId));
+        // Capture a process handle before requesting stop; a later reused PID is not terminal evidence.
+        _ = process.Handle;
+        string expectedImage = Path.Combine(DevelopmentDeploymentLayout.BrokerDirectory, DevelopmentDeploymentLayout.BrokerExe);
+        Status confirmed = ReadStatus();
+        if (!string.Equals(process.MainModule?.FileName, expectedImage, StringComparison.OrdinalIgnoreCase)
+            || confirmed.State != 4 || confirmed.ProcessId != status.ProcessId)
+        {
+            throw new InvalidOperationException("The running service PID is not the exact protected broker image.");
+        }
+        if (!Native.ControlService(service, 1, out _)) { throw Failure(); }
+        await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
+        while (ReadStatus().State != 1)
+        {
+            await Task.Delay(100, deadline.Token).ConfigureAwait(false);
+        }
+        RequireStopped();
+    }
+
+    internal void RequireStopped()
+    {
+        RequireConfiguration(disabled: true);
+        Status status = ReadStatus();
+        if (status.State != 1 || status.ProcessId != 0)
+        {
+            throw new InvalidOperationException("The broker has not reached a verified stopped state.");
+        }
+    }
+
+    private Status ReadStatus()
+    {
+        if (!Native.QueryServiceStatusEx(service, 0, out Status status, checked((uint)Marshal.SizeOf<Status>()), out _)) { throw Failure(); }
+        return status;
+    }
+
+    private static Win32Exception Failure() => new(Marshal.GetLastWin32Error(), "Fixed broker maintenance service control failed.");
+    public void Dispose() => service.Dispose();
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Status
+    {
+        internal uint Type, State, Controls, ExitCode, SpecificExitCode, Checkpoint, WaitHint, ProcessId, Flags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Configuration
+    {
+        internal uint Type, Start, ErrorControl;
+        internal nint Binary, Group;
+        internal uint Tag;
+        internal nint Dependencies, Account, DisplayName;
+    }
+
+    private sealed class SafeServiceHandle : SafeHandleZeroOrMinusOneIsInvalid
+    {
+        private SafeServiceHandle() : base(true) { }
+        protected override bool ReleaseHandle() => Native.CloseServiceHandle(handle);
+    }
+
+    private static class Native
+    {
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        internal static extern SafeServiceHandle OpenSCManagerW(string? machine, string? database, uint access);
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        internal static extern SafeServiceHandle OpenServiceW(SafeServiceHandle manager, string name, uint access);
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool QueryServiceConfigW(SafeServiceHandle service, nint buffer, uint size, out uint needed);
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool ChangeServiceConfigW(SafeServiceHandle service, uint type, uint start, uint error,
+            string? binary, string? group, nint tag, string? dependencies, string? account, string? password, string? display);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool QueryServiceStatusEx(SafeServiceHandle service, int level, out Status status, uint size, out uint needed);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool ControlService(SafeServiceHandle service, uint control, out Status status);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool CloseServiceHandle(nint service);
+    }
 }
 
 internal static class ActiveConsoleUser

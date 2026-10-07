@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Extend the explicitly enrolled developer deployment broker with fixed CPU validation installation, pinned closures, typed host status/close and installation diagnostics, preserving replay history and unresolved resource ownership. ([#700](https://github.com/OpenBladeProject/openblade-core/pull/700))
+
 - Add developer-only bounded CPU voltage validation builds, typed owned-driver sessions, reversible smoke commands, exact-source publication and a synthetic tray layout harness. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
 - Add an all-core CPU Voltage Optimizer with remembered −30 to −1 intent, separately admitted saved next-boot settings and measured live offsets, paired firmware readback and exact original restoration on RZ09-0528. Optional live tuning uses its exact signed already-running AMD backend; live PPT mutation is deferred. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
@@ -22,6 +24,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Report retained CPU validation failures promptly with evidence from the current job, while preserving its deadline and cleanup restrictions. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
+
+- Verify independent deployment launches with a normal-token fixture and retain installer process ownership through input/output completion. ([#700](https://github.com/OpenBladeProject/openblade-core/pull/700))
 
 - Ignore retired tray Loaded callbacks after disposal and make developer validation fixtures wait for actual worker, listener and update-check completion. ([#699](https://github.com/OpenBladeProject/openblade-core/pull/699))
 
