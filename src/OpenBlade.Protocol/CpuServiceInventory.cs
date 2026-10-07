@@ -86,9 +86,10 @@ internal sealed class CpuServiceInventory
                         current = (new NativeEntry { Type = status.Type, State = status.State }, prior.DisplayName);
                     }
                     else { entries.Remove(prior.Name); }
-                    if (current.Native.Type != prior.Type || current.Display != prior.DisplayName
-                        || !TypesAgree(kind, prior.ConfiguredType, current.Native.Type))
-                    { throw new IOException("Getter service identity changed."); }
+                    if (current.Native.Type != prior.Type) { throw new IOException("Getter service runtime type changed."); }
+                    if (current.Display != prior.DisplayName) { throw new IOException("Getter service display name changed."); }
+                    if (!TypesAgree(kind, prior.ConfiguredType, current.Native.Type))
+                    { throw new IOException("Getter service configured/runtime incompatible."); }
                     if ((Rz090528CpuControllerPresence.IsGetterControllerName(prior.Name)
                         || Rz090528CpuControllerPresence.IsGetterControllerName(prior.DisplayName))
                         && platform.ReadConfiguredType(prior.Name) != prior.ConfiguredType)

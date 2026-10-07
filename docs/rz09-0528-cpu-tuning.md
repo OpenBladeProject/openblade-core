@@ -192,14 +192,18 @@ evidence are preserved before guarded settlement. Reboot or saved settings alone
 cannot close the obligation, and this path submits no setter or restoration.
 Partial-restoration recovery is tracked in
 [issue #710](https://github.com/OpenBladeProject/openblade-core/issues/710);
-its current installed recovery remains unproved.
+its current installed recovery remains unproved. The matching post-boot read
+returned no live measurements and rejected getter service identity continuity.
+Its owned read resources were cleaned up; the partial-restoration journal remains
+unchanged.
 Historical installed validation verified this recovery for an earlier failed
 journal: all twelve offsets equaled the captured −1 originals and complete power
 peers remained unchanged. The journal was archived before settlement, with zero
 setters or restoration requests, and independent evidence review passed. That
 proof did not settle the subsequent uncertain cycle. Its first post-boot read
 rejected provider getter controller continuity before returning measurements.
-Getter continuity now preserves a bounded rejection detail through the initiating
+Getter continuity distinguishes runtime type, display name and configured/runtime
+compatibility failures with fixed reasons through the initiating
 diagnostic without changing admission or publishing process/service names, as
 tracked in [issue #708](https://github.com/OpenBladeProject/openblade-core/issues/708).
 The matching follow-up read verified all twelve captured −1 originals and

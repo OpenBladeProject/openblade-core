@@ -104,7 +104,8 @@ internal static class Rz090528CpuControllerPresence
                 && AliasAbsent();
         }
         catch (IOException exception) when (exception.Message is "Getter service disappeared." or "Getter template changed."
-            or "Getter service identity changed." or "Getter controller configuration changed." or "Getter service inventory changed.")
+            or "Getter service identity changed." or "Getter service runtime type changed." or "Getter service display name changed."
+            or "Getter service configured/runtime incompatible." or "Getter controller configuration changed." or "Getter service inventory changed.")
         { return Reject(exception.Message); }
         catch { return Reject("service inventory unavailable"); }
     }

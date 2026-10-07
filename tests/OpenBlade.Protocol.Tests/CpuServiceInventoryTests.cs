@@ -8,6 +8,27 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class CpuServiceInventoryTests
 {
     [Theory]
+    [InlineData(0x10, false, 0x20, "Getter service runtime type changed.")]
+    [InlineData(0x20, true, 0x20, "Getter service display name changed.")]
+    [InlineData(0x20, false, 0x10, "Getter service configured/runtime incompatible.")]
+    [InlineData(0x10, true, 0x10, "Getter service runtime type changed.")]
+    [InlineData(0x20, true, 0x10, "Getter service display name changed.")]
+    public void GetterIdentityRejectionsPreservePrecedenceAndStopBeforeConfigurationReads(
+        int runtime, bool displayChanged, int configured, string reason)
+    {
+        var platform = new Fake { Type = 0x20 };
+        var inventory = new CpuServiceInventory(CpuServiceInventoryKind.Win32, platform);
+        var prior = Assert.Single(inventory.ReadAll());
+        platform.RuntimeType = (uint)runtime;
+        platform.DisplayName = displayChanged ? "Changed private display" : prior.DisplayName;
+        var exception = Assert.Throws<IOException>(() => inventory.ReadGetterActivity(
+            [prior with { ConfiguredType = (uint)configured }]));
+        Assert.Equal(reason, exception.Message);
+        Assert.Equal(2, platform.Calls); Assert.Equal(1, platform.RegistryReads);
+        Assert.Equal(0, platform.ConfigReads); Assert.Equal(0, platform.TemplateReads);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("config-drift")]
     [InlineData("partial")]
@@ -264,6 +285,7 @@ public sealed class CpuServiceInventoryTests
     {
         internal uint Type = 0x10;
         internal uint? RuntimeType;
+        internal string DisplayName = "Razer controller";
         internal string Fault = "";
         internal int Calls;
         internal int ConfigReads;
@@ -285,7 +307,7 @@ public sealed class CpuServiceInventoryTests
         {
             Calls++; Assert.Equal(CpuServiceInventory.BufferBytes, bytes);
             nint name = buffer + 112, display = buffer + 144;
-            byte[] nameBytes = Encoding.Unicode.GetBytes("Other\0"), displayBytes = Encoding.Unicode.GetBytes("Razer controller\0");
+            byte[] nameBytes = Encoding.Unicode.GetBytes("Other\0"), displayBytes = Encoding.Unicode.GetBytes(DisplayName + "\0");
             Marshal.Copy(nameBytes, 0, name, nameBytes.Length); Marshal.Copy(displayBytes, 0, display, displayBytes.Length);
             var entry = new CpuServiceInventory.NativeEntry
             {
