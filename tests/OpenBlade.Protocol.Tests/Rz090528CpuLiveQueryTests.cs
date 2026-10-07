@@ -8,6 +8,33 @@ public sealed class Rz090528CpuLiveQueryTests
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public void EachMailboxCommandHasTwoFullBoundariesRegardlessOfPolling(int polls)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { PendingPolls = polls };
+        Assert.Equal(CpuLiveQueryStatus.Observed, new Rz090528CpuLiveQuery(wire, sync).Query(Exact).Status);
+        Assert.Equal(26, wire.CommandBoundaries);
+        Assert.Equal(12, wire.Messages.Count(message => message.Command == 0x5E));
+        Assert.Equal(13 * (polls + 1), wire.CompletionPolls);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(25)]
+    public void FailedCommandStartOrEndCannotReturnPartialObservation(int admittedBoundaries)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { AdmittedBoundaries = admittedBoundaries };
+        var result = new Rz090528CpuLiveQuery(wire, sync).Query(Exact);
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status); Assert.Null(result.Observation);
+        Assert.Equal((admittedBoundaries + 1) / 2, wire.Messages.Count);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task PendingMailboxWaitFreezesDistinctPhaseAndZeroCounts(bool afterSubmission)
@@ -355,8 +382,10 @@ public sealed class Rz090528CpuLiveQueryTests
     private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);
     private sealed record Call(uint Code, byte[] Input, int OutputLength);
 
-    private sealed class ScriptedIoctl(FakeSynchronization synchronization) : IRz090528CpuQueryIoctl
+    private sealed class ScriptedIoctl(FakeSynchronization synchronization) : IRz090528CpuQueryIoctl, ICpuMailboxCommandAdmission
     {
+        internal int CommandBoundaries, AdmittedBoundaries = int.MaxValue;
+        public bool CommandBoundaryCurrent() => ++CommandBoundaries <= AdmittedBoundaries;
         public List<Call> Calls { get; } = [];
         public List<(uint Command, uint Argument)> Messages { get; } = [];
         public string? Fault { get; set; }

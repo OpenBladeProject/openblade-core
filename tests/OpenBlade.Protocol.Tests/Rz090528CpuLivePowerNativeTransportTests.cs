@@ -7,6 +7,45 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Fact]
+    public void LogicalCommandChecksStayConstantWhenOnlyTransportPollingIncreases()
+    {
+        int Run(int polls, out int transport)
+        {
+            var platform = new Platform { Capability = 6, PollsPerCommand = polls };
+            var request = CurveRequest(platform);
+            using var proof = new CurveProof(request) { Scoped = true, TransportAllowed = () => true };
+            Assert.True(WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact).Verified);
+            Assert.Equal(24, platform.Commands.Count(command => command == 0x5E));
+            Assert.Equal(2, platform.Copies); Assert.Equal(1, platform.Setters);
+            Assert.True(proof.ReadChecks >= 2 * platform.Commands.Count);
+            transport = proof.TransportChecks;
+            return proof.ReadChecks;
+        }
+        int full = Run(0, out int transport);
+        Assert.Equal(full, Run(2, out int pollingTransport));
+        Assert.True(pollingTransport > transport);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FreshEndOfIndividualGetCoreRejectsDriftEvenWhenTransportGuardPasses(bool afterSetter)
+    {
+        var platform = new Platform { Capability = 6 }; var request = CurveRequest(platform);
+        using var proof = new CurveProof(request) { Scoped = true, TransportAllowed = () => true };
+        platform.AtCoreRead = () =>
+        {
+            if ((platform.Setters != 0) == afterSetter) { proof.ReadAllowed = false; }
+        };
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact);
+        Assert.False(result.Verified); Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+        Assert.Equal(afterSetter ? 1 : 0, platform.Setters);
+        Assert.Equal(afterSetter ? 13 : 1, platform.Commands.Count(command => command == 0x5E));
+        Assert.Equal(afterSetter ? CpuLiveCurveNativeDisposition.Acknowledged : CpuLiveCurveNativeDisposition.NotSubmitted,
+            result.Disposition);
+    }
+
     [Theory]
     [InlineData("none")]
     [InlineData("before")]
@@ -259,6 +298,8 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         private bool adopted;
         internal int Begins, Ends, Completions, ReadChecks, FullChecks;
         internal Func<bool>? FullAllowed, CompletionAllowed;
+        internal Func<bool>? TransportAllowed;
+        internal int TransportChecks;
         internal Func<bool>? ReadRange;
         private bool rangeRead;
         internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) => Prepared
@@ -273,6 +314,11 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         }
         internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest)
         { Assert.True(Reading); ReadChecks++; return ReadAllowed; }
+        internal override bool IsReadTransportCurrent(CpuLiveCurveNativeRequest exactRequest)
+        {
+            if (TransportAllowed is null) { return IsReadCurrent(exactRequest); }
+            Assert.True(Reading); TransportChecks++; return TransportAllowed();
+        }
         internal override bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest)
         { Assert.True(Reading); Completions++; return ReadAllowed && (CompletionAllowed?.Invoke() ?? true); }
         internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) => PeerAllowed;
@@ -297,7 +343,9 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         internal int Copies, Setters, Opens, Releases, BackendReads;
         internal bool Held, Pinned, SetterPrepared;
         internal string? Fault;
-        internal Action? AtSetter, AtFirstCopy;
+        internal Action? AtSetter, AtFirstCopy, AtCoreRead;
+        internal int PollsPerCommand;
+        private int pendingPolls;
         private uint selected, argument, command;
         private bool deviceOpen;
         public HostIdentityReadResult ReadHost() => new(new("Razer", Fault == "acquire-cleanup-cancel" && Pinned ? "other" : "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
@@ -365,6 +413,9 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
                         _ => throw new InvalidOperationException(),
                     };
                 Put(output, 20, value);
+                if (offset == 0xC8 && selected == 0x03B10A80 && pendingPolls > 0)
+                { pendingPolls--; Put(output, 20, 0); }
+                if (offset == 0xC8 && selected == 0x03B10A88 && command == 0x5E) { AtCoreRead?.Invoke(); }
             }
             else if (code == 0x81112FF8)
             {
@@ -378,6 +429,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
                 else if (selected == 0x03B10A20)
                 {
                     command = value; Commands.Add(value);
+                    pendingPolls = PollsPerCommand;
                     if (value == 0x53)
                     {
                         Setters++; AtSetter?.Invoke();

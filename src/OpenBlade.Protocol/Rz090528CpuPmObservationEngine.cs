@@ -20,6 +20,8 @@ internal interface ICpuPmObservationSessionAdmission
 {
     CpuPmSessionEvidence ReadFresh();
     bool ValidateSnapshotBoundary();
+    // Null keeps the existing full per-IOCTL checks for unscoped callers.
+    bool? TransportCurrent(CpuInstalledBackendLease expected) => null;
 }
 internal interface ICpuPmObservationClock
 {
@@ -176,7 +178,10 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                     stage = CpuPmObservationStage.Refresh;
                     uint refreshed = Mailbox(bus, 0x65, 3, cancellationToken);
                     stage = CpuPmObservationStage.Copy;
-                    return (refreshed, Exchange(CpuPmObservationWireAdmission.Copy, Words(0xD50), 0xD54, cancellationToken));
+                    CheckBoundary(cancellationToken);
+                    byte[] copied = Exchange(CpuPmObservationWireAdmission.Copy, Words(0xD50), 0xD54, cancellationToken);
+                    CheckBoundary(cancellationToken);
+                    return (refreshed, copied);
                 });
                 DateTimeOffset utc = clock.UtcNow;
                 long timestamp = clock.MonotonicTimestamp;
@@ -283,12 +288,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
 
     private void CheckBoundary(CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (Environment.CurrentManagedThreadId != ownerThread) { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
-        TimeSpan now = clock.MonotonicNow;
-        if (now < previousClock || now - started >= TimeSpan.FromSeconds(90))
-        { throw new Failure(CpuPmObservationFailure.BudgetExpired); }
-        previousClock = now;
+        CheckLifetime(cancellationToken);
         CpuPmSessionEvidence evidence = admission.ReadFresh();
         if (evidence.UsbIdentity is not { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }
             || evidence.Host.Failure is not null || evidence.Host.Evidence is not
@@ -319,11 +319,27 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
         }
         // Include the fresh evidence provider's time in the cooperative budget.
-        now = clock.MonotonicNow;
+        CheckLifetime(cancellationToken);
+    }
+
+    private void CheckLifetime(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Environment.CurrentManagedThreadId != ownerThread) { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
+        TimeSpan now = clock.MonotonicNow;
         if (now < previousClock || now - started >= TimeSpan.FromSeconds(90))
         { throw new Failure(CpuPmObservationFailure.BudgetExpired); }
         previousClock = now;
         cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private void CheckTransportBoundary(CancellationToken token)
+    {
+        CheckLifetime(token);
+        if (installedLease is null || admission.TransportCurrent(installedLease) is not bool current)
+        { CheckBoundary(token); return; }
+        if (!current || !installedLease.LifetimeCurrent) { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
+        CheckLifetime(token);
     }
 
     private void CheckSnapshotBoundary(CancellationToken cancellationToken)
@@ -353,15 +369,27 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     { WriteRegister(bus, 0, address, token); return ReadPci(bus, 0, 0, 0xC8, token); }
     private void ReadCap(uint bus, uint address, CancellationToken token)
     {
+        CheckBoundary(token);
         WriteRegister(bus, 0, address, token);
         readingCapAddress = address;
         try { ReadPci(bus, 0, 0, 0xC8, token); }
         finally { readingCapAddress = 0; }
+        CheckBoundary(token);
+        var completed = address switch
+        {
+            CpuLivePowerFusedCap.RegisterA0F => capA0F,
+            CpuLivePowerFusedCap.RegisterA0B => capA0B,
+            CpuLivePowerRangeObservation.RegisterA13 => capA13,
+            CpuLivePowerRangeObservation.RegisterA90 => capA90,
+            _ => null,
+        };
+        if (completed is not null) { RetainCap(completed with { PostReadAdmissionPassed = true }); }
     }
     private void WriteSmn(uint bus, uint address, uint value, CancellationToken token)
     { WriteRegister(bus, 0, address, token); WriteRegister(bus, 1, value, token); }
     private uint Mailbox(uint bus, uint command, uint argument, CancellationToken token)
     {
+        CheckBoundary(token);
         WriteRegister(bus, 0, Response, token);
         Poll(bus, requireSuccess: false, token);
         WriteSmn(bus, Response, 0, token);
@@ -373,7 +401,13 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         readingFirmwareArgument = command == 2;
         readingCapabilityArgument = command == 0x82;
         if (readingCapabilityArgument && capability is not null) { capability = capability with { ResponseAcknowledged = true }; }
-        try { return ReadSmn(bus, Argument, token); }
+        try
+        {
+            uint result = ReadSmn(bus, Argument, token);
+            CheckBoundary(token);
+            if (readingCapabilityArgument && capability is not null) { capability = capability with { PostReadAdmissionPassed = true }; }
+            return result;
+        }
         finally { readingVersionArgument = readingFirmwareArgument = readingCapabilityArgument = false; }
     }
     private void Poll(uint bus, bool requireSuccess, CancellationToken token)
@@ -383,14 +417,14 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             uint response = ReadPci(bus, 0, 0, 0xC8, token);
             if (response == 1 || !requireSuccess && response != 0) { return; }
             if (response != 0) { throw new Failure(CpuPmObservationFailure.InvalidData); }
-            CheckBoundary(token);
+            CheckTransportBoundary(token);
             synchronization.Delay(TimeSpan.FromMilliseconds(1), token);
         }
         throw new Failure(CpuPmObservationFailure.Busy);
     }
     private byte[] Exchange(uint code, byte[] input, int outputLength, CancellationToken token)
     {
-        CheckBoundary(token);
+        CheckTransportBoundary(token);
         if (!wire.Allows(code, input, outputLength)) { throw new Failure(CpuPmObservationFailure.RequestRejected); }
         CpuQueryIoctlReply reply;
         try
@@ -412,13 +446,11 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             throw new Failure(CpuPmObservationFailure.NativeFailure, detail.Failure, detail.NativeErrorCode, code);
         }
         catch { wire.Abort(); throw; }
-        CpuPmCapRegisterRead? capRead = null;
         if (readingCapAddress != 0 && code == Read && reply.Bytes.Length == 24
             && reply.Bytes.AsSpan(0, 20).SequenceEqual(input))
         {
-            capRead = new(readingCapAddress, Word(reply.Bytes, 20), clock.UtcNow,
-                clock.MonotonicTimestamp, reply.Success, false);
-            RetainCap(capRead);
+            RetainCap(new(readingCapAddress, Word(reply.Bytes, 20), clock.UtcNow,
+                clock.MonotonicTimestamp, reply.Success, false));
         }
         if (readingCapabilityArgument && reply.Bytes.Length == 24 && reply.Bytes.AsSpan(0, 20).SequenceEqual(input) && capability is not null)
         { capability = capability with { RawValue = Word(reply.Bytes, 20), CapturedUtc = clock.UtcNow, MonotonicTimestamp = clock.MonotonicTimestamp, ReturnedWordTransportSucceeded = reply.Success }; }
@@ -432,9 +464,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                     ? CpuPmObservationFailure.UnsupportedVersion : CpuPmObservationFailure.ReplyRejected,
                 reply.Failure, reply.NativeErrorCode, code);
         }
-        CheckBoundary(token);
-        if (capRead is not null) { RetainCap(capRead with { PostReadAdmissionPassed = true }); }
-        if (readingCapabilityArgument && capability is not null) { capability = capability with { PostReadAdmissionPassed = true }; }
+        CheckTransportBoundary(token);
         return (byte[])reply.Bytes.Clone();
     }
     private void RetainCap(CpuPmCapRegisterRead read)

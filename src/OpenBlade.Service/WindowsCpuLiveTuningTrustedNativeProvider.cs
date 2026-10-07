@@ -199,7 +199,8 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         var getter = getterScope;
         Func<bool>? admission = getter is null ? Capture(exactContext, CpuTuningFeatures.None, token)
             : () => getter.Current(exactContext);
-        return admission?.Invoke() != true ? null : installed?.CreateQueryApproval(admission);
+        return admission?.Invoke() != true ? null : installed?.CreateQueryApproval(admission,
+            getter is null ? null : () => getter.TransportCurrent(exactContext));
     }
 
     CpuLivePowerContext? ICpuLivePowerTrustedNativeProvider.ReadFreshContext(CancellationToken token) => PowerContext(token);
@@ -216,8 +217,10 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public CpuPmInstalledApproval? CreateInstalledObservationApproval(CpuLivePowerContext exactContext, CancellationToken token)
     {
         var admission = CapturePower(exactContext, token);
-        return admission is null ? null : getterScope is not null
-            ? installed?.CreateGetterPowerObservationApproval(admission)
+        var getter = getterScope;
+        var context = getter?.Context;
+        return admission is null ? null : getter is not null && context is not null
+            ? installed?.CreateGetterPowerObservationApproval(admission, () => getter.TransportCurrent(context))
             : installed?.CreatePowerObservationApproval(admission);
     }
 
@@ -357,16 +360,32 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         internal CpuLiveCurveContext? Context { get; private set; }
         private CpuGetterUsbContinuity? usb;
         private Func<bool>? controllers;
+        private CpuInstalledBackendLease? installed;
         private bool disposed;
         internal bool IsDisposed => disposed;
         internal bool Bind(CpuLiveCurveContext context)
         {
             Context = context;
+            installed = owner.installed;
             usb = owner.captureGetterUsb?.Invoke();
             controllers = owner.captureGetterControllers?.Invoke();
             if (owner.captureGetterUsb is not null && usb is null
                 || owner.captureGetterControllers is not null && controllers is null) { return Reject(); }
             return Current(context);
+        }
+        internal bool TransportCurrent(CpuLiveCurveContext expected)
+        {
+            try
+            {
+                return !disposed && !token.IsCancellationRequested && admission.TransportCurrent()
+                    && ReferenceEquals(owner.getterScope, this)
+                    && Context is { } value && expected.MatchesHardwareContext(value)
+                    && installed is { LifetimeCurrent: true } && ReferenceEquals(owner.installed, installed)
+                    && owner.controller()?.CaptureLiveRuntimeLifetime() == Context.RuntimeLifetime
+                    && Volatile.Read(ref owner.disposed) == 0 && admission.TransportCurrent()
+                    || Reject();
+            }
+            catch { return Reject(); }
         }
         internal bool Current(CpuLiveCurveContext expected)
         {
@@ -477,6 +496,9 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             // one fresh GetterScope.Current against this proof's exact context.
             return expected.IsWellFormed && expected.MatchesHardwareContext(context) && ReadCurrent(exactRequest);
         }
+        public bool? ReadTransportCurrentWithContext(CpuLiveCurveNativeRequest exactRequest, CpuLiveCurveContext expected) =>
+            ActiveRead is null ? null : expected.IsWellFormed && expected.MatchesHardwareContext(context)
+                && ReadTransportCurrent(exactRequest);
         private bool CheckRead(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is null
             ? Current(exactRequest) : ReadCurrent(exactRequest);
         internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest)
@@ -508,6 +530,8 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         }
         internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is { } getter
             ? ReferenceEquals(owner.getterScope, getter) && getter.Current(context) : current();
+        internal override bool IsReadTransportCurrent(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is { } getter
+            ? ReferenceEquals(owner.getterScope, getter) && getter.TransportCurrent(context) : IsReadCurrent(exactRequest);
         internal override bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is { } getter
             ? ReferenceEquals(owner.getterScope, getter) && owner.CompleteGetter(context, token) : current();
         internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap)

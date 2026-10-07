@@ -27,7 +27,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             if (proof is null || !proof.Consume(request) || !ExactUsb(readUsb()) || !ExactPlatform())
             { throw new CpuPowerAdmissionException(); }
             readScope = proof.BeginRead(request);
-            wire = new(request, Check, CheckPeer, BeforeSetter, BeginReadback);
+            wire = new(request, CheckTransport, CheckPeer, BeforeSetter, BeginReadback, Check);
             adapter = new(platform, readUsb, wire);
             lease = adapter.Acquire(TimeSpan.FromSeconds(20), token);
             if (lease is null || !ExactPlatform()) { throw new CpuPowerAdmissionException(); }
@@ -65,6 +65,13 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             token.ThrowIfCancellationRequested();
             if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)
                 || (readScope is null ? proof?.Current(request) : proof?.ReadCurrent(request)) != true)
+            { throw new CpuPowerAdmissionException(); }
+        }
+        void CheckTransport()
+        {
+            token.ThrowIfCancellationRequested();
+            if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)
+                || (readScope is null ? proof?.Current(request) : proof?.ReadTransportCurrent(request)) != true)
             { throw new CpuPowerAdmissionException(); }
         }
         void EndRead()

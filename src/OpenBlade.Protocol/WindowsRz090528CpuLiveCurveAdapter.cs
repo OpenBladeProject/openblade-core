@@ -71,7 +71,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             token.ThrowIfCancellationRequested();
             if (proof is null || !proof.Consume(request) || !ExactUsb(readUsb())) { throw new CurveAdmissionException(); }
             readScope = proof.BeginRead(request);
-            adapter = new WindowsRz090528CpuQueryAdapter(platform, readUsb, wire);
+            adapter = new WindowsRz090528CpuQueryAdapter(platform, readUsb, wire)
+            { queryCurrent = ReadCurrent, queryTransportCurrent = ReadTransportCurrent };
             lease = adapter.Acquire(TimeSpan.FromSeconds(20), token);
             if (lease is null || !ReadCurrent()) { throw new CurveAdmissionException(); }
             var session = new Rz090528CpuMailboxSession(adapter, adapter);
@@ -130,6 +131,11 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         return Result();
 
         bool ReadCurrent() => (readScope is null ? proof?.Current(request) : proof?.ReadCurrent(request)) == true;
+        bool ReadTransportCurrent()
+        {
+            token.ThrowIfCancellationRequested();
+            return (readScope is null ? proof?.Current(request) : proof?.ReadTransportCurrent(request)) == true;
+        }
         void EndRead()
         {
             if (readScope is null) { return; }

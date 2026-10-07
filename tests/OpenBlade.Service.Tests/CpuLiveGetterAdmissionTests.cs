@@ -5,6 +5,42 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveGetterAdmissionTests
 {
+    [Theory]
+    [InlineData("cancel")]
+    [InlineData("deadline")]
+    [InlineData("lifetime")]
+    [InlineData("transport")]
+    public void TransportGuardPreservesOriginalLifetimeAndStickyRevocationWithoutDiscovery(string fault)
+    {
+        using var cancellation = new CancellationTokenSource();
+        bool lifetime = true, transport = true;
+        int full = 0, fresh = 0; TimeSpan elapsed = TimeSpan.Zero;
+        using var proof = new CpuLiveGetterAdmission(cancellation.Token, () => lifetime,
+            _ => { full++; return true; }, () => elapsed,
+            continuity: _ => { fresh++; return true; }, transportCurrent: () => transport);
+        Assert.True(proof.Allows());
+        for (int i = 0; i < 100; i++) { Assert.True(proof.TransportCurrent()); }
+        Assert.Equal(1, full); Assert.Equal(0, fresh);
+        Assert.True(proof.Allows()); Assert.Equal(1, fresh);
+        if (fault == "cancel") { cancellation.Cancel(); }
+        if (fault == "deadline") { elapsed = TimeSpan.FromSeconds(10); }
+        if (fault == "lifetime") { lifetime = false; }
+        if (fault == "transport") { transport = false; }
+        Assert.False(proof.TransportCurrent());
+        lifetime = transport = true; elapsed = TimeSpan.Zero;
+        Assert.False(proof.TransportCurrent()); Assert.False(proof.Revalidate());
+    }
+
+    [Fact]
+    public void MissingTransportGuardRetainsFreshAdmissionAndUnadmittedGuardCannotStartReads()
+    {
+        int full = 0;
+        using var legacy = new CpuLiveGetterAdmission(default, () => true, _ => { full++; return true; });
+        Assert.True(legacy.TransportCurrent()); Assert.True(legacy.TransportCurrent()); Assert.Equal(2, full);
+        using var scoped = new CpuLiveGetterAdmission(default, () => true, _ => true, transportCurrent: () => true);
+        Assert.False(scoped.TransportCurrent()); Assert.False(scoped.Allows());
+    }
+
     [Fact]
     public void CompoundLifetimeSurvivesTenSecondsButCannotBeRenewedPastThirty()
     {

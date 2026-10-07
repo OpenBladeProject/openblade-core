@@ -93,10 +93,13 @@ internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request
             ? BeginReadCore(exactRequest) : throw new InvalidOperationException("Invalid consumed CPU read scope.");
     internal bool ReadCurrent(CpuLiveCurveNativeRequest exactRequest) => Volatile.Read(ref disposed) == 0 && admitted && ReferenceEquals(request, exactRequest)
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && IsReadCurrent(exactRequest);
+    internal bool ReadTransportCurrent(CpuLiveCurveNativeRequest exactRequest) => Volatile.Read(ref disposed) == 0 && admitted && ReferenceEquals(request, exactRequest)
+        && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && IsReadTransportCurrent(exactRequest);
     internal bool CompleteRead(CpuLiveCurveNativeRequest exactRequest) => Volatile.Read(ref disposed) == 0 && admitted && ReferenceEquals(request, exactRequest)
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && CompleteReadCore(exactRequest);
     internal virtual IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest) => null;
     internal virtual bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
+    internal virtual bool IsReadTransportCurrent(CpuLiveCurveNativeRequest exactRequest) => IsReadCurrent(exactRequest);
     internal virtual bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
     // Optional joint final barrier. It must freshly bind full write authority,
     // context, this operation's range and peer; no result survives the call.

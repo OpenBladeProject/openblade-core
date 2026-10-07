@@ -7,6 +7,36 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     [Fact]
+    public async Task BoundTransportGuardAvoidsDiscoveryButNextCommandDetectsAndRetainsDrift()
+    {
+        using var fixture = new Fixture();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted,
+            continuity: _ => fixture.Admitted, transportCurrent: () => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var request = Request(-2);
+            using var source = fixture.Provider.CreatePreparedWriteProof(context, request, fixture.OperationToken)!;
+            Assert.True(source.Consume(request));
+            using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source,
+                new(fixture.Platform, fixture.Provider), context, fixture.OperationToken);
+            Assert.True(bound.Consume(request));
+            using var read = bound.BeginRead(request);
+            int boot = fixture.BootReads, controllers = fixture.ControllerReads, hosts = fixture.Platform.HostReads;
+            for (int i = 0; i < 100; i++) { Assert.True(bound.ReadTransportCurrent(request)); }
+            Assert.Equal(boot, fixture.BootReads); Assert.Equal(controllers, fixture.ControllerReads);
+            Assert.Equal(hosts, fixture.Platform.HostReads);
+            Assert.False(bound.ReadTransportCurrent(Request(-2)));
+            var contextual = Assert.IsAssignableFrom<ICpuLiveCurveContextBoundReadProof>(source);
+            Assert.False(contextual.ReadTransportCurrentWithContext(request, context with { RuntimeLifetime = null }));
+            fixture.ControllerCurrent = false;
+            Assert.True(bound.ReadTransportCurrent(request)); // No new discovery inside the current command.
+            Assert.False(bound.ReadCurrent(request)); // Next full boundary rejects that command/result.
+            fixture.ControllerCurrent = true;
+            Assert.False(bound.ReadTransportCurrent(request)); Assert.False(bound.CompleteRead(request));
+        });
+    }
+
+    [Fact]
     public async Task BoundFinalCheckpointUsesOneFullContextAndRequiresCompletedExactReadProof()
     {
         using var fixture = new Fixture();

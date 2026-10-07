@@ -47,6 +47,13 @@ internal interface IRz090528CpuQueryIoctl
     CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength);
 }
 
+// Optional command-boundary admission. Transport guards remain on every IOCTL;
+// a completed twelve-core vector never substitutes for its thirteen commands.
+internal interface ICpuMailboxCommandAdmission
+{
+    bool CommandBoundaryCurrent();
+}
+
 internal interface IRz090528CpuQuerySynchronization
 {
     // The adapter must acquire Global\AMDRyzenMasterMutex, not a process-local lock.
@@ -289,6 +296,7 @@ internal sealed class Rz090528CpuMailboxSession(
     private uint QueryMailboxCore(uint bus, QueryCommand command, uint argument,
         CancellationToken cancellationToken)
     {
+        CheckCommandBoundary(cancellationToken);
         progress?.MailboxPhase(CpuQueryMailboxPhase.ReadinessWait);
         WriteRegister(bus, 0, ResponseAddress, cancellationToken);
         uint previousResponse = 0;
@@ -330,7 +338,9 @@ internal sealed class Rz090528CpuMailboxSession(
             if (response == 1)
             {
                 if (command != QueryCommand.SetCoreOffset) { progress?.MailboxPhase(CpuQueryMailboxPhase.ArgumentRead); }
-                return command == QueryCommand.SetCoreOffset ? 0 : ReadSmn(bus, ArgumentAddress, cancellationToken);
+                uint result = command == QueryCommand.SetCoreOffset ? 0 : ReadSmn(bus, ArgumentAddress, cancellationToken);
+                CheckCommandBoundary(cancellationToken);
+                return result;
             }
 
             if (response != 0)
@@ -344,6 +354,14 @@ internal sealed class Rz090528CpuMailboxSession(
             { synchronization.Delay(TimeSpan.FromMilliseconds(1), cancellationToken); }
         }
         throw new QueryFailure(CpuLiveQueryStatus.Busy);
+    }
+
+    private void CheckCommandBoundary(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (ioctl is ICpuMailboxCommandAdmission admission && !admission.CommandBoundaryCurrent())
+        { throw new QueryFailure(CpuLiveQueryStatus.Unavailable, CpuQueryFailureCode.AdmissionDenied); }
+        token.ThrowIfCancellationRequested();
     }
 
     private byte[] Exchange(uint code, byte[] input, int outputLength, CancellationToken cancellationToken)

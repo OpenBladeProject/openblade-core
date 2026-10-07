@@ -15,7 +15,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
     private const uint ExpectedFirmwareVersion = 0x0B5D1600;
     private readonly CpuLiveCurveNativeRequest curveRequest;
-    private readonly Action checkpoint, snapshotAdmission, finalAdmission;
+    private readonly Action checkpoint, snapshotAdmission, finalAdmission, commandCheckpoint;
     private readonly Action? afterSetter;
     private readonly Queue<Step> steps = new();
     private Step? pending;
@@ -31,11 +31,12 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     internal bool Complete => scriptCreated && !failed && pending is null && steps.Count == 0;
 
     internal CpuPowerNativeWire(CpuLiveCurveNativeRequest curveRequest, Action checkpoint, Action snapshotAdmission,
-        Action finalAdmission, Action afterSetter)
+        Action finalAdmission, Action afterSetter, Action? commandCheckpoint = null)
     {
         this.curveRequest = curveRequest;
         this.checkpoint = checkpoint; this.snapshotAdmission = snapshotAdmission; this.finalAdmission = finalAdmission;
         this.afterSetter = afterSetter;
+        this.commandCheckpoint = commandCheckpoint ?? checkpoint;
         steps.Enqueue(new(Enumerate, new byte[28], 28, bytes =>
         {
             uint count = Word(bytes, 24);
@@ -75,6 +76,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
         if (failed || pending is not { } step || step.Code != code || !input.AsSpan().SequenceEqual(step.Input))
         { throw new CpuPowerAdmissionException(); }
         checkpoint();
+        if (step.CommandStart) { commandCheckpoint(); }
         if (!step.Setter) { return; }
         if (Disposition != CpuLiveCurveNativeDisposition.NotSubmitted) { throw new CpuPowerAdmissionException(); }
         finalAdmission();
@@ -98,6 +100,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
         }
         steps.Dequeue();
         if (step.Accept?.Invoke(reply.Bytes) == false) { Abort(); return false; }
+        if (step.CommandEnd) { commandCheckpoint(); }
         if (step.Setter) { afterSetter?.Invoke(); }
         return true;
     }
@@ -168,7 +171,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
                 DateTimeOffset.UtcNow, Stopwatch.GetTimestamp(), out var raw)) { return false; }
             copied = CpuLivePowerSnapshot.TryCreate(raw);
             return copied is not null && (!before || copied.Pair == curveRequest.PowerPeer!.Expected);
-        }));
+        }, CommandStart: true, CommandEnd: true));
         // F08 can alter hidden mailbox/index state; always explicitly reselect.
         Mailbox(6, 0, value =>
         {
@@ -179,20 +182,22 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     }
     private void Mailbox(uint command, uint? argument, Func<uint, bool>? accept, bool setter = false)
     {
-        Select(Response); Poll(); Data(0);
+        Select(Response, commandStart: true); Poll(); Data(0);
         if (argument is uint value) { Select(Argument); Data(value); }
         Select(Message); Data(command, setter);
         Select(Response);
-        Poll(setter ? _ => { Disposition = CpuLiveCurveNativeDisposition.Acknowledged; return true; } : null);
-        if (accept is not null) { Select(Argument); Pci(bus, 0, 0, 0xC8, accept); }
+        Poll(setter ? _ => { Disposition = CpuLiveCurveNativeDisposition.Acknowledged; return true; } : null, commandEnd: accept is null);
+        if (accept is not null) { Select(Argument); Pci(bus, 0, 0, 0xC8, accept, commandEnd: true); }
     }
-    private void Smn(uint address, Func<uint, bool> accept) { Select(address); Pci(bus, 0, 0, 0xC8, accept); }
-    private void Select(uint address) => steps.Enqueue(new(Write, Words(0, address, bus), 0));
+    private void Smn(uint address, Func<uint, bool> accept)
+    { Select(address, commandStart: true); Pci(bus, 0, 0, 0xC8, accept, commandEnd: true); }
+    private void Select(uint address, bool commandStart = false) =>
+        steps.Enqueue(new(Write, Words(0, address, bus), 0, CommandStart: commandStart));
     private void Data(uint value, bool setter = false) => steps.Enqueue(new(Write, Words(1, value, bus), 0, Setter: setter));
-    private void Pci(uint b, uint d, uint f, uint offset, Func<uint, bool> accept) =>
-        steps.Enqueue(new(Read, Words(b, d, f, offset, 4), 24, bytes => accept(Word(bytes, 20))));
-    private void Poll(Func<byte[], bool>? accept = null) =>
-        steps.Enqueue(new(Read, Words(bus, 0, 0, 0xC8, 4), 24, accept, Poll: true));
+    private void Pci(uint b, uint d, uint f, uint offset, Func<uint, bool> accept, bool commandEnd = false) =>
+        steps.Enqueue(new(Read, Words(b, d, f, offset, 4), 24, bytes => accept(Word(bytes, 20)), CommandEnd: commandEnd));
+    private void Poll(Func<byte[], bool>? accept = null, bool commandEnd = false) =>
+        steps.Enqueue(new(Read, Words(bus, 0, 0, 0xC8, 4), 24, accept, Poll: true, CommandEnd: commandEnd));
     private static bool Header(byte[] bytes) => bytes.AsSpan(0, 24).IndexOfAnyExcept((byte)0) < 0;
     private static byte[] Words(params uint[] values)
     {
@@ -202,6 +207,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     }
     private static uint Word(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
     private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);
-    private sealed record Step(uint Code, byte[] Input, int Output, Func<byte[], bool>? Accept = null, bool Poll = false, bool Setter = false)
+    private sealed record Step(uint Code, byte[] Input, int Output, Func<byte[], bool>? Accept = null, bool Poll = false,
+        bool Setter = false, bool CommandStart = false, bool CommandEnd = false)
     { internal int Polls; }
 }

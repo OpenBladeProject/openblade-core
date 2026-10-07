@@ -43,6 +43,7 @@ internal sealed record CpuLiveCurveNativeBackendStatus(bool WorkerOutstanding,
 internal interface ICpuLiveCurveContextBoundReadProof
 {
     bool? ReadCurrentWithContext(CpuLiveCurveNativeRequest request, CpuLiveCurveContext expected);
+    bool? ReadTransportCurrentWithContext(CpuLiveCurveNativeRequest request, CpuLiveCurveContext expected) => null;
 }
 
 internal interface ICpuLiveCurveContextBoundFinalProof
@@ -144,7 +145,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
             diagnostic?.Check(false, $"native query {detail.Stage}/{detail.Failure}; native error {detail.NativeErrorCode}; operation {detail.Operation}"
                 + progress?.Snapshot(freeze: true));
         }
-        if (result.Diagnostic?.Stage == CpuQueryStage.Cleanup) { Invalidate(); }
+        if (result.Diagnostic?.Stage == CpuQueryStage.Cleanup || installed!.IsRevoked) { Invalidate(); }
         token.ThrowIfCancellationRequested();
         if (!Check(result.Status == CpuLiveQueryStatus.Observed, "native curve query status " + result.Status)
             || !Check(CpuLiveCurveSnapshot.TryCreate(result.Observation) is not null, "native curve snapshot invalid"))
@@ -254,6 +255,17 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
                 return current;
             }
             return source.ReadCurrent(exactRequest) && owner.MatchesFresh(context, token);
+        }
+        internal override bool IsReadTransportCurrent(CpuLiveCurveNativeRequest exactRequest)
+        {
+            token.ThrowIfCancellationRequested();
+            if (source is ICpuLiveCurveContextBoundReadProof bound
+                && bound.ReadTransportCurrentWithContext(exactRequest, context) is bool current)
+            {
+                token.ThrowIfCancellationRequested();
+                return current;
+            }
+            return IsReadCurrent(exactRequest);
         }
         internal override bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest) =>
             source.CompleteRead(exactRequest) && owner.MatchesFresh(context, token);

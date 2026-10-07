@@ -116,10 +116,10 @@ internal sealed class CpuInstalledBackendLease : IDisposable
         before.ServiceExists == after.ServiceExists && before.ServiceType == after.ServiceType
         && before.Start == after.Start && before.Running == after.Running
         && string.Equals(before.ImagePath, after.ImagePath, StringComparison.OrdinalIgnoreCase);
-    internal CpuQueryInstalledApproval CreateQueryApproval(Func<bool> current)
+    internal CpuQueryInstalledApproval CreateQueryApproval(Func<bool> current, Func<bool>? transportCurrent = null)
     {
         ArgumentNullException.ThrowIfNull(current);
-        return new(this, current);
+        return new(this, current, transportCurrent);
     }
     internal bool TryBorrow()
     {
@@ -135,10 +135,10 @@ internal sealed class CpuInstalledBackendLease : IDisposable
         ArgumentNullException.ThrowIfNull(current);
         return new(this, current);
     }
-    internal CpuPmInstalledApproval CreateGetterPowerObservationApproval(Func<bool> current)
+    internal CpuPmInstalledApproval CreateGetterPowerObservationApproval(Func<bool> current, Func<bool>? transportCurrent = null)
     {
         ArgumentNullException.ThrowIfNull(current);
-        return new(this, current, getterScoped: true);
+        return new(this, current, getterScoped: true, transportCurrent: transportCurrent);
     }
     internal ICpuQueryDevice Duplicate()
     {
@@ -176,17 +176,26 @@ internal sealed class CpuInstalledBackendLease : IDisposable
     public void Dispose() => Revoke(false);
 }
 
-internal sealed class CpuQueryInstalledApproval(CpuInstalledBackendLease lease, Func<bool> current)
+internal sealed class CpuQueryInstalledApproval(CpuInstalledBackendLease lease, Func<bool> current, Func<bool>? transportCurrent = null)
 {
-    private int consumed;
+    private int consumed, revoked;
+    internal bool IsRevoked => Volatile.Read(ref revoked) != 0;
     private readonly long created = Stopwatch.GetTimestamp();
     internal bool Consume(ICpuQueryWindowsPlatform platform) => Interlocked.Exchange(ref consumed, 1) == 0
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
         && lease.Matches(platform) && lease.IsCurrent && IsCurrent();
-    internal bool IsCurrent()
+    internal bool IsCurrent() => Check(current);
+    internal bool TransportCurrent() => Check(transportCurrent ?? current);
+    private bool Check(Func<bool> check)
     {
-        try { return lease.LifetimeCurrent && current(); }
-        catch { return false; }
+        if (Volatile.Read(ref revoked) != 0) { return false; }
+        try
+        {
+            if (Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && lease.LifetimeCurrent && check())
+            { return Volatile.Read(ref revoked) == 0; }
+        }
+        catch { }
+        Interlocked.Exchange(ref revoked, 1); return false;
     }
 }
 
@@ -196,7 +205,7 @@ internal sealed class CpuQueryInstalledApproval(CpuInstalledBackendLease lease, 
 /// loads an AMD SDK DLL; installed queries require an opaque retained lease and
 /// a fresh initiating-call approval.
 /// </summary>
-internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQueryIoctl, IRz090528CpuQuerySynchronization
+internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQueryIoctl, IRz090528CpuQuerySynchronization, ICpuMailboxCommandAdmission
 {
     private static readonly Lazy<CpuQueryWindowsPlatform> InstalledPlatform = new(() => new());
     private static readonly Lazy<WindowsRz090528CpuNativeSession> InstalledSession =
@@ -208,6 +217,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     private ICpuQueryDevice? device;
     private CpuInstalledBackendLease? retained;
     private Func<bool>? queryCurrent;
+    private Func<bool>? queryTransportCurrent;
+    private bool deferTransportPostCheck;
     private InstalledCpuBackendSnapshot? backendSnapshot;
     private int ownerThread, acquiring;
     private bool cleanupFailed;
@@ -265,11 +276,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
             if (approval?.Consume(platform) != true)
             { return new(CpuLiveQueryStatus.Unavailable, null, new(CpuQueryStage.Approval, CpuQueryFailureCode.AdmissionDenied)); }
         }
-        return QueryWithPlatform(readFreshUsbIdentity, platform, token, approval.IsCurrent, progress);
+        return QueryWithPlatform(readFreshUsbIdentity, platform, token, approval.IsCurrent, progress, approval.TransportCurrent);
     }
 
     private static Rz090528CpuLiveQueryResult QueryWithPlatform(Func<DeviceIdentity?> readFreshUsbIdentity,
-        ICpuQueryWindowsPlatform platform, CancellationToken cancellationToken, Func<bool>? current = null, CpuQueryProgress? progress = null)
+        ICpuQueryWindowsPlatform platform, CancellationToken cancellationToken, Func<bool>? current = null, CpuQueryProgress? progress = null,
+        Func<bool>? transportCurrent = null)
     {
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readFreshUsbIdentity);
@@ -277,7 +289,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         var operation = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
         { return new(CpuLiveQueryStatus.Busy, null, new(CpuQueryStage.MutexWait, CpuQueryFailureCode.AdmissionDenied)); }
-        var adapter = new WindowsRz090528CpuQueryAdapter(platform, readFreshUsbIdentity) { queryCurrent = current, progress = progress };
+        var adapter = new WindowsRz090528CpuQueryAdapter(platform, readFreshUsbIdentity)
+        { queryCurrent = current, queryTransportCurrent = transportCurrent, progress = progress };
         try
         {
             DeviceIdentity? identity;
@@ -439,6 +452,18 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         public void Dispose() { }
     }
 
+    public bool CommandBoundaryCurrent()
+    {
+        CheckThread();
+        bool accepted = device is not null && (retained?.LifetimeCurrent ?? true)
+            && (queryCurrent?.Invoke() ?? true);
+        if (!accepted) { wire.Abort(); }
+        return accepted;
+    }
+
+    private bool TransportCurrent() => (retained?.LifetimeCurrent ?? true)
+        && ((queryTransportCurrent ?? queryCurrent)?.Invoke() ?? true);
+
     public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength)
     {
         CheckThread();
@@ -449,7 +474,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         {
             using (progress?.Enter(CpuQueryBucket.Continuity))
             {
-                if (retained is not null && (!retained.LifetimeCurrent || !(queryCurrent?.Invoke() ?? true)))
+                if (!TransportCurrent())
                 { throw new QueryAdmissionDeniedException(); }
             }
             if (wire is CpuCurveNativeWire curve) { curve.BeforeNativeInvoke(code, input); }
@@ -459,6 +484,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
                 reply = device.Invoke(code, input, outputLength);
                 progress?.CompletedIoctl();
             }
+            if (!deferTransportPostCheck && queryTransportCurrent is not null && !TransportCurrent())
+            { throw new QueryAdmissionDeniedException(); }
         }
         catch (QueryAdmissionDeniedException)
         {

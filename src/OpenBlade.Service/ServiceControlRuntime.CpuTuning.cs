@@ -261,7 +261,18 @@ public sealed partial class ServiceControlRuntime
             generation, sourceGeneration, token, diagnostic, proof),
             continuity: proof => CpuLiveRuntimeAdmission(features, stillControlsSession,
                 generation, sourceGeneration, token, diagnostic, proof, continuity: true), diagnostic: diagnostic,
-            maximumLifetime: maximumLifetime);
+            maximumLifetime: maximumLifetime,
+            transportCurrent: () =>
+            {
+                ServiceStatusSnapshot current = GetStatus();
+                return !token.IsCancellationRequested
+                    && lowPowerGate.Generation == generation && powerSourceGeneration == sourceGeneration
+                    && CpuMutationSafetyAvailable(current, stillControlsSession, diagnostic)
+                    && ((features & CpuTuningFeatures.CurveOptimizer) == 0
+                        || current.Capabilities?.CpuVoltageOptimizer?.Access == DeviceFeatureAccess.ReadWrite)
+                    && ((features & CpuTuningFeatures.PowerLimit) == 0
+                        || current.Capabilities?.CpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite);
+            });
 
     private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation,
         long sourceGeneration, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,

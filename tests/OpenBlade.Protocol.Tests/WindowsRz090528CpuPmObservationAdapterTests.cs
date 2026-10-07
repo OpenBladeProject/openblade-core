@@ -6,6 +6,80 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class WindowsRz090528CpuPmObservationAdapterTests
 {
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void CommandEndFailureRetainsRawCapEvidenceWithoutPostAdmission(bool capabilityCommand, bool cheapGuard)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        bool current = true;
+        fake.AfterRegisterRead = (address, command) =>
+        {
+            if (capabilityCommand ? address == 0x03B10A88 && command == 0x82 : address == CpuLivePowerFusedCap.RegisterA0B)
+            { current = false; }
+        };
+        var result = session.ObservePowerInstalled(held!.CreateGetterPowerObservationApproval(
+            () => cheapGuard || current, () => !cheapGuard || current),
+            fake.ReadUsb, new CompleteMetadata());
+        Assert.False(result.Batch.Complete); Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+        if (capabilityCommand)
+        {
+            var capability = Assert.IsType<CpuPmCapabilityObservation>(result.Batch.RangeObservation!.Capability);
+            Assert.True(capability.ReturnedWordTransportSucceeded); Assert.False(capability.PostReadAdmissionPassed);
+        }
+        else
+        {
+            Assert.True(result.Batch.FusedCap!.A0B!.TransportSucceeded);
+            Assert.False(result.Batch.FusedCap.A0B.PostReadAdmissionPassed); Assert.Null(result.Batch.FusedCap.Candidate);
+        }
+    }
+
+    [Fact]
+    public void ScopedTransportGuardReducesDiscoveryWithoutChangingMailboxOrCopyTraffic()
+    {
+        (Fake Platform, int Guards) Run(bool optimized)
+        {
+            var fake = new Fake { Installed = true };
+            var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+            using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+            int guards = 0;
+            Func<bool>? transport = optimized ? () => { guards++; return true; } : null;
+            var result = session.ObservePowerInstalled(held!.CreateGetterPowerObservationApproval(() => true, transport),
+                fake.ReadUsb, new CompleteMetadata());
+            Assert.True(result.Batch.Complete); Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+            Assert.Single(result.Batch.CopySamples());
+            return (fake, guards);
+        }
+        var legacy = Run(false); var scoped = Run(true);
+        Assert.Equal(legacy.Platform.Commands, scoped.Platform.Commands);
+        Assert.Equal(legacy.Platform.Codes, scoped.Platform.Codes);
+        Assert.True(scoped.Platform.FullBackendReads * 2 < legacy.Platform.FullBackendReads);
+        Assert.True(scoped.Guards >= 2 * scoped.Platform.Codes.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CopyTransportOrFullCommandEndRejectionCannotAdmitPmSnapshot(bool rejectTransport)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        bool current = true;
+        var approval = held!.CreateGetterPowerObservationApproval(() => rejectTransport || current,
+            () => !rejectTransport || current);
+        fake.AfterCopy = _ => current = false;
+        var result = session.ObservePowerInstalled(approval, fake.ReadUsb, new CompleteMetadata());
+        Assert.False(result.Batch.Complete); Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+        Assert.Equal(1, fake.Copies); Assert.Equal(0x81112F08u, fake.Codes.Last());
+        current = true;
+        Assert.False(approval.IsCurrent()); Assert.False(approval.TransportCurrent());
+    }
+
+    [Theory]
     [InlineData(true, 1)]
     [InlineData(false, 3)]
     public void InstalledMetadataBoundaryUsesOneFreshScopedBackendSnapshot(bool scoped, int readsPerBoundary)
@@ -738,6 +812,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal int FullBackendReads, ServiceReads, Copies, IdleDelays, HostReads, ControllerReads;
         internal uint CapFirst = 5, CapSecond = 0xF0000000;
         internal Action<Fake>? AfterOpen, AfterCopy, DuringArm, DuringContinuityDispose;
+        internal Action<uint, uint>? AfterRegisterRead;
         internal bool RefreshFails, CorruptRefreshEcho;
         internal uint RefreshResponse = 1;
         internal readonly List<string> Events = [];
@@ -860,6 +935,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
                     if (CorruptRefreshEcho) { reply[0] ^= 1; }
                 }
                 Put(reply, 20, value);
+                if (offset == 0xC8) { AfterRegisterRead?.Invoke(selected, command); }
             }
             else if (code == 0x81112F08)
             {

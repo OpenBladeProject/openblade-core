@@ -10,7 +10,8 @@ internal sealed class CpuLiveGetterAdmission(
     CancellationToken token, Func<bool> lifetime,
     Func<CpuLiveGetterAdmission, bool> admit,
     Func<TimeSpan>? elapsed = null, Func<CpuLiveGetterAdmission, bool>? continuity = null,
-    CpuSavedAdmissionDiagnostic? diagnostic = null, TimeSpan? maximumLifetime = null) : IDisposable
+    CpuSavedAdmissionDiagnostic? diagnostic = null, TimeSpan? maximumLifetime = null,
+    Func<bool>? transportCurrent = null) : IDisposable
 {
     private readonly long started = Stopwatch.GetTimestamp();
     private readonly TimeSpan deadline = ValidateMaximumLifetime(maximumLifetime);
@@ -50,6 +51,21 @@ internal sealed class CpuLiveGetterAdmission(
         diagnostic?.Check(accepted, stage);
         if (!accepted) { Dispose(); }
         return accepted && Volatile.Read(ref revoked) == 0;
+    }
+
+    // Only an already admitted command may use this between its full fresh
+    // checkpoints. It neither renews the original lifetime nor admits a write.
+    internal bool TransportCurrent()
+    {
+        if (transportCurrent is null) { return Allows(); }
+        if (!admitted || !Active()) { Dispose(); return false; }
+        try
+        {
+            if (transportCurrent() && Active()) { return true; }
+        }
+        catch { }
+        diagnostic?.Check(false, "getter transport continuity");
+        Dispose(); return false;
     }
 
     // Called at the existing runtime power-admission position. Classification

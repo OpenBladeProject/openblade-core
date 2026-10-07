@@ -239,7 +239,15 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             Transport = new(this, ReadUsb, new PmNativeWire(CpuPmObservationProfile.RangeSingleSample, (address, reply) =>
                 rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
                     clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false), RetainWireRejection), platform)
-            { queryCurrent = approval.IsCurrent };
+            {
+                queryCurrent = approval.IsCurrent,
+                // The PM engine retains shaped raw evidence before its own
+                // post-IOCTL guard. A failed guard must not erase that evidence.
+                deferTransportPostCheck = true,
+                queryTransportCurrent = approval.HasTransportGuard
+                    ? () => approval.TransportCurrent() ? true : throw new CpuPmAdmissionException(CpuPmAdmissionFailure.InstalledRequestAdmission)
+                    : null,
+            };
         }
         internal CpuPmObservationBatch PreserveRejectedCap(CpuPmObservationBatch result)
         {
@@ -323,6 +331,13 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         {
             CheckThread(); if (!leased || !pinned) { return false; }
             FullAdmission(); return true;
+        }
+        public bool? TransportCurrent(CpuInstalledBackendLease expected)
+        {
+            if (installedApproval is not { HasTransportGuard: true } installed) { return null; }
+            CheckThread();
+            return leased && pinned && ReferenceEquals(expected, installed.Lease)
+                && installed.Lease.LifetimeCurrent && installed.TransportCurrent();
         }
         public CpuPmSessionEvidence ReadFresh()
         {

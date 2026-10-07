@@ -4,7 +4,8 @@ namespace OpenBlade.Protocol;
 
 // One initiating request, tied to the actual retained installed device lease.
 // A failed callback stays revoked even if a later callback recovers.
-internal sealed class CpuPmInstalledApproval(CpuInstalledBackendLease lease, Func<bool> current, bool getterScoped = false)
+internal sealed class CpuPmInstalledApproval(CpuInstalledBackendLease lease, Func<bool> current, bool getterScoped = false,
+    Func<bool>? transportCurrent = null)
 {
     private readonly long created = Stopwatch.GetTimestamp();
     private int consumed, revoked;
@@ -15,10 +16,17 @@ internal sealed class CpuPmInstalledApproval(CpuInstalledBackendLease lease, Fun
     internal bool Consume(ICpuQueryWindowsPlatform platform) => Interlocked.Exchange(ref consumed, 1) == 0
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
         && lease.Matches(platform) && lease.IsCurrent && IsCurrent();
-    internal bool IsCurrent()
+    internal bool HasTransportGuard => GetterScoped && transportCurrent is not null;
+    internal bool IsCurrent() => Check(current);
+    internal bool TransportCurrent() => Check(transportCurrent ?? current);
+    private bool Check(Func<bool> check)
     {
         if (Volatile.Read(ref revoked) != 0) { return false; }
-        try { if (lease.LifetimeCurrent && current()) { return Volatile.Read(ref revoked) == 0; } }
+        try
+        {
+            if (Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && lease.LifetimeCurrent && check())
+            { return Volatile.Read(ref revoked) == 0; }
+        }
         catch { /* Request evidence is unavailable. */ }
         Interlocked.Exchange(ref revoked, 1);
         return false;
