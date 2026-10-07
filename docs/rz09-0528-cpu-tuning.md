@@ -14,6 +14,11 @@ after restart. Installed tests have verified saved Off activation and restored �
 activation across two restarts. The installed all-core live −1 → 0 → −1 cycle
 also completed with exact twelve-core readback/restoration and owned-resource
 cleanup. That proof predates the setter-time peer correction below.
+The revised command-validation build subsequently verified another complete
+−1 → 0 → −1 transition across all twelve cores, with unchanged 80/75 W peers
+and original readback about 475 seconds after submission. Its owner failed
+before recording resource cleanup; that failure remains unresolved. This is
+proof of the recorded transition and restoration, not completed owner cleanup.
 AC/battery/AC admission and lock/unlock recovery
 passed. A sleep/wake failure was followed by a comparison with all twelve running
 offsets independently measured at zero. The user reports repeated wake failures
@@ -112,12 +117,18 @@ Read-only CPU queries still use PCI transport writes and require typed native
 admission; they are distinct from CPU-setting writes.
 
 An initiating live request retains the device handle and immutable inspected
-files. Each operation duplicates that same file object and rechecks host,
-processor, registration, competing-controller absence and runtime admission.
+files. Full fresh admission brackets every mailbox command and PM copy, and
+runs immediately before a setter's actual submission and after readback. Each
+driver call checks cancellation, the original deadline, exact retained context,
+backend lifetime and runtime generations. Failed checks remain revoked.
 File inspection is reused only while actual pins remain held. One private
 platform serializes query, CO and PM operations before native acquisition.
 Caller cancellation does not release its actual native worker. Uncertain cleanup
 or continuity parks the scope and excludes replacement operations.
+
+The transaction consumes a native readback only once, after terminal cleanup,
+when its context, command, purpose, originals and power peer match the exact
+submission. Legacy backends retain their separate observation path.
 
 The fixed CO metadata reader accepts version 7 and selector `5000A` with strict
 unsigned fields. Completely enumerated missing `ReturnValue` compatibility
