@@ -203,8 +203,15 @@ unrelated worktrees and checkout changes.
 1. Inspect `git status`, the affected contracts, and existing tests before
    editing. User changes and unrelated dirty files are not cleanup targets.
 2. Whenever creating an issue, apply the relevant repository labels.
-3. For every fix, create the tracking issue before implementing the change,
-   then deliver the implementation through a pull request.
+3. Before implementing a fix, link it to existing tracking when that issue
+   already covers the problem. Keep related diagnostics and implementation
+   follow-ups in the parent issue and draft pull request; create a new issue
+   only for a distinct unresolved problem. Deliver fixes through a pull request.
+   When consolidating duplicates, preserve useful evidence and acceptance
+   criteria in the parent, leave a link explaining each closure, and use the
+   duplicate/not-planned closure reason. Keep unresolved hardware failures
+   visible; passing source checks or preparing a package does not prove
+   physical recovery.
 4. Update the smallest authoritative layer. Do not duplicate state between the
    service, Session Agent, and tray.
 5. Add focused tests for parsing, normalization, failure handling, and shared UI
