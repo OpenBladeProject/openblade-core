@@ -28,6 +28,7 @@ internal sealed class CpuVoltageSessionCommand
     private Task? job;
     private Task? ownerOutput;
     private string? ownerFailure;
+    private string? contextFailureDetail;
     private Guid currentRun;
     private Guid completedCleanup;
     private DateTimeOffset currentLaunched;
@@ -105,7 +106,7 @@ internal sealed class CpuVoltageSessionCommand
                     lock (gate)
                     {
                         if (request.Action is CpuVoltageSessionAction.ObserveOnly or CpuVoltageSessionAction.VoltageCycle or CpuVoltageSessionAction.CleanupReadOnly && !ContextCurrent())
-                        { state.Block("Session/power continuity changed. No new job permitted."); }
+                        { state.Block("Session/power continuity changed. No new job permitted." + contextFailureDetail); }
                         if (request.Action == CpuVoltageSessionAction.Status && ownerFailure is not null && state.Snapshot.State == "Blocked"
                             && state.Snapshot.Job is { } failedOwnerRequest)
                         {
@@ -196,13 +197,24 @@ internal sealed class CpuVoltageSessionCommand
     private bool ContextCurrent()
     {
         var current = continuity.Read();
-        if (disposed || Stopwatch.GetElapsedTime(started) >= TimeSpan.FromHours(8)
+        var age = Stopwatch.GetElapsedTime(started);
+        bool inactive = disposed;
+        if (inactive || age >= TimeSpan.FromHours(8)
             || !initial.Available || !current.Available || !current.OnAc || !current.LocalActiveDefault
             || current.SessionId != initial.SessionId || current.SessionId != platform.Enrollment.WindowsSession
-            || current.TickMilliseconds < initial.TickMilliseconds || current.Unbiased100Nanoseconds < initial.Unbiased100Nanoseconds) { return false; }
+            || current.TickMilliseconds < initial.TickMilliseconds || current.Unbiased100Nanoseconds < initial.Unbiased100Nanoseconds)
+        {
+            Interlocked.CompareExchange(ref contextFailureDetail,
+                $" Continuity flags: disposed={inactive}, expired={age >= TimeSpan.FromHours(8)}, initialAvailable={initial.Available}, currentAvailable={current.Available}, onAc={current.OnAc}, activeDefaultDesktop={current.LocalActiveDefault}, initialSessionMatches={current.SessionId == initial.SessionId}, enrolledSessionMatches={current.SessionId == platform.Enrollment.WindowsSession}, tickMonotonic={current.TickMilliseconds >= initial.TickMilliseconds}, awakeMonotonic={current.Unbiased100Nanoseconds >= initial.Unbiased100Nanoseconds}.", null);
+            return false;
+        }
         ulong ticks = (current.TickMilliseconds - initial.TickMilliseconds) * 10_000;
         ulong awake = current.Unbiased100Nanoseconds - initial.Unbiased100Nanoseconds;
-        return (ticks >= awake ? ticks - awake : awake - ticks) < 2_500_000;
+        ulong gap = ticks >= awake ? ticks - awake : awake - ticks;
+        if (gap < 2_500_000) { return true; }
+        Interlocked.CompareExchange(ref contextFailureDetail,
+            $" Continuity clock gap: tickDelta100ns={ticks}, awakeDelta100ns={awake}, gap100ns={gap}, limit100ns=2500000.", null);
+        return false;
     }
     private async Task MonitorAsync(CancellationToken token)
     {
@@ -211,7 +223,7 @@ internal sealed class CpuVoltageSessionCommand
             while (true)
             {
                 await Task.Delay(250, token).ConfigureAwait(false);
-                lock (gate) { if (!ContextCurrent()) { state.Block("Session, AC, awake continuity or enrollment deadline changed. No new jobs."); } }
+                lock (gate) { if (!ContextCurrent()) { state.Block("Session, AC, awake continuity or enrollment deadline changed. No new jobs." + contextFailureDetail); } }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
