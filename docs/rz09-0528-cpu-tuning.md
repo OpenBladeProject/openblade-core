@@ -172,9 +172,9 @@ The current peer path has focused source/fake coverage. Its latest installed
 observation returned complete power peers and all twelve offsets at −1 with live
 admission. The subsequent cycle verified all twelve offsets at 0, then reached
 the 600-second job limit during restoration. Its last verified response showed
-cores 14 and 15 at −1 and the other ten at 0. These are retained measurements;
-current physical state and exact restoration remain unproved. Further writes
-are blocked and resources are retained for reconciliation.
+cores 14 and 15 at −1 and the other ten at 0. Those retained measurements did
+not prove exact restoration. The failed cycle blocked further writes and retained
+resources until the explicit post-boot reconciliation described below.
 
 Plan preflight now checks continuity around its bounded local command/range loop
 instead of rediscovering the environment for every scalar entry, as tracked in
@@ -192,10 +192,11 @@ evidence are preserved before guarded settlement. Reboot or saved settings alone
 cannot close the obligation, and this path submits no setter or restoration.
 Partial-restoration recovery is tracked in
 [issue #710](https://github.com/OpenBladeProject/openblade-core/issues/710);
-its current installed recovery remains unproved. The matching post-boot read
-returned no live measurements and rejected getter service identity continuity.
-Its owned read resources were cleaned up; the partial-restoration journal remains
-unchanged.
+its installed post-boot recovery verified all twelve captured −1 originals and
+unchanged Fast/Slow/STAPM peers. It preserved the failed journal before guarded
+settlement, verified owned cleanup, and resumed the normal Service with zero CPU
+setters or restoration requests. Independent evidence review passed. The current
+mutation cycle and timing remain unproved.
 Historical installed validation verified this recovery for an earlier failed
 journal: all twelve offsets equaled the captured −1 originals and complete power
 peers remained unchanged. The journal was archived before settlement, with zero
