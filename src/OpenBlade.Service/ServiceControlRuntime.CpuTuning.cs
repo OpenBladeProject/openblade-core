@@ -67,6 +67,9 @@ public sealed partial class ServiceControlRuntime
     public async Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
         Func<bool> stillControlsSession, CancellationToken token)
     {
+        using var costs = CpuObservationCosts.BeginValidation(useInstalledBackend, typeof(ServiceControlRuntime).Assembly);
+        ControlOperationResult Finish(ControlOperationResult result) =>
+            costs is null ? result : result with { Message = result.Message + costs.Freeze() };
         EnsureInitialized();
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
@@ -79,8 +82,8 @@ public sealed partial class ServiceControlRuntime
                 || !diagnostic.Check(current.Capabilities?.CpuPowerLimit is not null, "runtime supported CPU capability")
                 || !diagnostic.Check(deviceProvider.TryGetRecentlyVerifiedReadOnlyDevice(out _), "runtime recently verified device"))
             {
-                return new(ControlOperationStatus.Blocked,
-                    $"CPU observation requires the active session and verified supported laptop. Admission failed at: {diagnostic.FirstFailure}.");
+                return Finish(new(ControlOperationStatus.Blocked,
+                    $"CPU observation requires the active session and verified supported laptop. Admission failed at: {diagnostic.FirstFailure}."));
             }
 
             long liveGeneration = lowPowerGate.Generation;
@@ -104,32 +107,32 @@ public sealed partial class ServiceControlRuntime
                 || useInstalledBackend && cpuTuningController.HasLiveBackend
                     && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration, livePowerSourceGeneration, token, diagnostic))
             {
-                return new(ControlOperationStatus.Blocked,
+                return Finish(new(ControlOperationStatus.Blocked,
                     "The CPU observation session changed."
                     + (liveDiagnostic.LiveObservationReason is { } innerReason ? $" Inner live observation: {innerReason}." : string.Empty)
                     + (liveDiagnostic.FirstFailure is { } innerFailure ? $" Inner first rejection: {innerFailure}." : string.Empty)
-                    + $" Admission failed at: {diagnostic.FirstFailure}.");
+                    + $" Admission failed at: {diagnostic.FirstFailure}."));
             }
             PublishStatusUpdate(status => status with { CpuTuning = observation });
-            return new(ControlOperationStatus.Stored,
+            return Finish(new(ControlOperationStatus.Stored,
                 (observation.LiveState is null ? "CPU configuration was inspected. Live measurements remain unavailable."
                     : "Saved configuration and live CPU observations were inspected.")
                     + (liveDiagnostic.LiveObservationReason is { } reason ? $" Live observation: {reason}." : string.Empty)
                     + (liveDiagnostic.FirstFailure is { } failure ? $" First rejection: {failure}." : string.Empty))
             {
                 CpuTuning = observation,
-            };
+            });
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or System.ComponentModel.Win32Exception or System.Security.SecurityException)
         {
-            return new(ControlOperationStatus.Failed,
-                "CPU observation is unavailable; the previous observation was retained.");
+            return Finish(new(ControlOperationStatus.Failed,
+                "CPU observation is unavailable; the previous observation was retained."));
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         {
-            return new(ControlOperationStatus.Failed,
-                "CPU observation timed out; the previous observation was retained.");
+            return Finish(new(ControlOperationStatus.Failed,
+                "CPU observation timed out; the previous observation was retained."));
         }
         finally { operationGate.Release(); }
     }

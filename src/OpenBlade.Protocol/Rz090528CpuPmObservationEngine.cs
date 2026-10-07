@@ -171,10 +171,13 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 CheckSnapshotBoundary(cancellationToken);
                 stage = CpuPmObservationStage.Version;
                 Mailbox(bus, 6, 0, cancellationToken);
-                stage = CpuPmObservationStage.Refresh;
-                uint refresh = Mailbox(bus, 0x65, 3, cancellationToken);
-                stage = CpuPmObservationStage.Copy;
-                byte[] reply = Exchange(CpuPmObservationWireAdmission.Copy, Words(0xD50), 0xD54, cancellationToken);
+                (uint refresh, byte[] reply) = CpuObservationCosts.Measure(CpuObservationCost.PMCopy, () =>
+                {
+                    stage = CpuPmObservationStage.Refresh;
+                    uint refreshed = Mailbox(bus, 0x65, 3, cancellationToken);
+                    stage = CpuPmObservationStage.Copy;
+                    return (refreshed, Exchange(CpuPmObservationWireAdmission.Copy, Words(0xD50), 0xD54, cancellationToken));
+                });
                 DateTimeOffset utc = clock.UtcNow;
                 long timestamp = clock.MonotonicTimestamp;
                 lastCapture = clock.MonotonicNow;

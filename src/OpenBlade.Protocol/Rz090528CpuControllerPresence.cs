@@ -118,7 +118,10 @@ internal static class Rz090528CpuControllerPresence
 
     private static bool NoProcesses(IReadOnlyList<string> names) => names.Count <= 16384
         && names.All(name => !string.IsNullOrWhiteSpace(name) && name.Length <= 1024 && !IsControllerName(name));
-    private static IReadOnlyList<string> ReadProcessNames()
+    private static IReadOnlyList<string> ReadProcessNames() =>
+        CpuObservationCosts.Measure(CpuObservationCost.ProcessScan, ReadProcessNamesCore);
+
+    private static IReadOnlyList<string> ReadProcessNamesCore()
     {
         var processes = Process.GetProcesses();
         try

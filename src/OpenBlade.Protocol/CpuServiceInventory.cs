@@ -50,7 +50,10 @@ internal sealed class CpuServiceInventory
     internal IReadOnlyList<CpuServiceInventoryEntry> ReadGetterActivity(IReadOnlyList<CpuServiceInventoryEntry> baseline) =>
         kind == CpuServiceInventoryKind.Win32 ? Read(baseline) : throw new InvalidOperationException();
 
-    private IReadOnlyList<CpuServiceInventoryEntry> Read(IReadOnlyList<CpuServiceInventoryEntry>? baseline)
+    private IReadOnlyList<CpuServiceInventoryEntry> Read(IReadOnlyList<CpuServiceInventoryEntry>? baseline) =>
+        CpuObservationCosts.Measure(CpuObservationCost.ServiceScan, () => ReadCore(baseline));
+
+    private IReadOnlyList<CpuServiceInventoryEntry> ReadCore(IReadOnlyList<CpuServiceInventoryEntry>? baseline)
     {
         nint buffer = Marshal.AllocHGlobal(BufferBytes);
         try

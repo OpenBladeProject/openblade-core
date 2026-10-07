@@ -7,6 +7,100 @@ public sealed class WindowsRz090528CpuNativeSessionTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Fact]
+    public void ObservationCostsCountAttemptsAndExclusiveNestedTime()
+    {
+        long now = 0;
+        long Second(int value) => value * System.Diagnostics.Stopwatch.Frequency;
+        using var costs = CpuObservationCosts.Begin(true, () => now);
+        Assert.NotNull(costs);
+        CpuObservationCosts.Measure(CpuObservationCost.GetCore0x5E, () =>
+        {
+            now = Second(1);
+            CpuObservationCosts.Measure(CpuObservationCost.ProcessScan, () =>
+            {
+                now = Second(3);
+                return 0;
+            });
+            now = Second(4);
+            // Delegation to an instrumented source counts one physical scan.
+            CpuObservationCosts.Measure(CpuObservationCost.ServiceScan, () =>
+                CpuObservationCosts.Measure(CpuObservationCost.ServiceScan, () => { now = Second(5); return 0; }));
+            now = Second(6);
+            return 0;
+        });
+        Assert.Throws<IOException>(() => CpuObservationCosts.Measure<int>(CpuObservationCost.PMCopy,
+            () => { now = Second(7); throw new IOException(); }));
+        now = Second(8);
+        string summary = costs.Freeze();
+        Assert.Contains("ProcessScan attempted/completed=1/1 exclusive-ms=2000.000", summary);
+        Assert.Contains("ServiceScan attempted/completed=1/1 exclusive-ms=1000.000", summary);
+        Assert.Contains("GetCore0x5E attempted/completed=1/1 exclusive-ms=3000.000", summary);
+        Assert.Contains("PMCopy attempted/completed=1/0 exclusive-ms=1000.000", summary);
+        Assert.Contains("wall-ms=8000.000, unclassified-ms=1000.000", summary);
+    }
+
+    [Fact]
+    public async Task ObservationCostsFreezePendingWorkerAndIgnoreItsLateCompletion()
+    {
+        long now = 0;
+        using var costs = CpuObservationCosts.Begin(true, () => Interlocked.Read(ref now));
+        Assert.NotNull(costs);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<int> worker = Task.Run(() => CpuObservationCosts.Measure(CpuObservationCost.GetCore0x5E, () =>
+        {
+            entered.SetResult();
+            release.Task.GetAwaiter().GetResult();
+            CpuObservationCosts.Measure(CpuObservationCost.ProcessScan, () => 0);
+            return 42;
+        }));
+        string frozen;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Interlocked.Exchange(ref now, System.Diagnostics.Stopwatch.Frequency);
+            frozen = costs.Freeze();
+            Assert.Contains("GetCore0x5E attempted/completed=1/0 exclusive-ms=1000.000", frozen);
+            Assert.False(worker.IsCompleted);
+        }
+        finally { release.TrySetResult(); }
+        Assert.Equal(42, await worker.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(frozen, costs.Freeze());
+    }
+
+    [Fact]
+    public async Task ObservationCostsKeepSeparateOperationsIsolated()
+    {
+        long now = 0;
+        using var old = CpuObservationCosts.Begin(true, () => Interlocked.Read(ref now));
+        Assert.NotNull(old);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<int> worker = Task.Run(() => CpuObservationCosts.Measure(CpuObservationCost.PMCopy, () =>
+        {
+            entered.SetResult();
+            release.Task.GetAwaiter().GetResult();
+            return CpuObservationCosts.Measure(CpuObservationCost.ProcessScan, () => 0);
+        }));
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            string frozen = old.Freeze();
+            using var next = CpuObservationCosts.Begin(true, () => Interlocked.Read(ref now));
+            Assert.NotNull(next);
+            CpuObservationCosts.Measure(CpuObservationCost.ServiceScan, () => 0);
+            release.TrySetResult();
+            await worker.WaitAsync(TimeSpan.FromSeconds(5));
+            string summary = next.Freeze();
+            Assert.Contains("ServiceScan attempted/completed=1/1", summary);
+            Assert.Contains("ProcessScan attempted/completed=0/0", summary);
+            Assert.Contains("PMCopy attempted/completed=0/0", summary);
+            Assert.Equal(frozen, old.Freeze());
+        }
+        finally { release.TrySetResult(); }
+    }
+
     [Theory]
     [InlineData("FullAdmission")]
     [InlineData("MutexWait")]

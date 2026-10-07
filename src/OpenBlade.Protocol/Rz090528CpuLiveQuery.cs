@@ -281,6 +281,12 @@ internal sealed class Rz090528CpuMailboxSession(
     private enum QueryCommand : uint { PmVersion = 0x06, CoreOffset = 0x5E, Capability = 0x82, SetCoreOffset = 0x53 }
 
     private uint QueryMailbox(uint bus, QueryCommand command, uint argument,
+        CancellationToken cancellationToken) => command == QueryCommand.CoreOffset
+        ? CpuObservationCosts.Measure(CpuObservationCost.GetCore0x5E,
+            () => QueryMailboxCore(bus, command, argument, cancellationToken))
+        : QueryMailboxCore(bus, command, argument, cancellationToken);
+
+    private uint QueryMailboxCore(uint bus, QueryCommand command, uint argument,
         CancellationToken cancellationToken)
     {
         progress?.MailboxPhase(CpuQueryMailboxPhase.ReadinessWait);
