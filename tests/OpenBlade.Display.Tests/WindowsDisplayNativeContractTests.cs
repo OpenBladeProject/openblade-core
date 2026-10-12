@@ -19,6 +19,7 @@ public sealed class WindowsDisplayNativeContractTests
         Assert.Equal(36, Marshal.SizeOf<DisplayConfigGetAdvancedColorInfo2>());
         Assert.Equal(24, Marshal.SizeOf<DisplayConfigSetHdrState>());
         Assert.Equal(220, Marshal.SizeOf<DevMode>());
+        Assert.Equal(840, Marshal.SizeOf<DisplayDevice>());
     }
 
     [Fact]
