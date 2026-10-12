@@ -5,6 +5,28 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class BatteryValidationProbeTests
 {
+    [Theory]
+    [InlineData(0x0200, 0x0200, true)]
+    [InlineData(0x0300, 0x0200, false)]
+    [InlineData(0x0000, 0x0200, false)]
+    [InlineData(0x0300, 0x0000, true)]
+    public void Evaluate_ExplicitRevisionIsRequiredAndUnspecifiedRevisionPreservesPriorPolicy(
+        int actualRevision, int expectedRevision, bool ready)
+    {
+        var expected = new HidHandleIdentity(0x1532, 0x0F43, 0x000C, 0x0001, 91, (ushort)expectedRevision);
+        var native = new ScriptedNative([]);
+        native.Add("pad", expected with { VersionNumber = (ushort)actualRevision });
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ScriptedIdentitySource(ExactHost, null),
+            new ScriptedGuard(new HardwareAccessDecision([], null), null),
+            native, ControllerExclusivityPolicy.Strict, expected);
+        using var evaluation = evaluator.Evaluate();
+        Assert.Equal(ready ? BatteryValidationProbeClassification.Ready
+            : BatteryValidationProbeClassification.NoExactHandle, evaluation.Result.Classification);
+        Assert.Equal(ready ? 1 : 0, evaluation.Result.ExactMatchCount);
+        Assert.Equal(0, native.BindCalls);
+    }
+
     private static readonly HostIdentityReadResult ExactHost = new(
         new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", "3.01"),
         null);

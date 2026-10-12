@@ -16,6 +16,46 @@ internal static class GetterCandidateProbeFactory
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan FeatureReportSettleDelay = TimeSpan.FromMilliseconds(20);
 
+    internal static IGetterCandidateProbeRunner CreateCoolingPadControlStateWindows()
+        => new CoolingPadControlStateQueryRunner(
+            static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
+            TimeProvider.System, ExchangeTimeout, CleanupTimeout);
+
+    internal static CoolingPadControlStateRoundTripRunner CreateCoolingPadControlStateRoundTripWindows()
+        => new(static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
+            TimeProvider.System, ExchangeTimeout, CleanupTimeout);
+
+    internal static CoolingPadFanExploratoryTrialRunner CreateCoolingPadFanExploratoryTrialWindows()
+        => new(static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
+            TimeProvider.System, ExchangeTimeout, CleanupTimeout, TimeSpan.FromSeconds(180));
+
+    internal static CoolingPadControlStateRecoveryRunner CreateCoolingPadControlStateRecoveryWindows()
+        => new(static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
+            TimeProvider.System, ExchangeTimeout, CleanupTimeout, TimeSpan.FromSeconds(180));
+
+    internal static CoolingPadFanSessionContinuityRunner CreateCoolingPadFanSessionContinuityWindows()
+        => new(static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
+            TimeProvider.System, ExchangeTimeout, CleanupTimeout, TimeSpan.FromSeconds(180));
+
+    internal static IValidationActorFactory CreateCoolingPadProcessActorFactory() => CreateCoolingPadActorFactory();
+
+    internal static IValidationActorFactory CreateCoolingPadActorFactory()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new CoolingPadControlStateQueryFactory.PadAccessGuard(new RunningProcessSource(), new WindowsServiceSource());
+        var opener = new WindowsRazerHidSessionOpener(
+            new WindowsHostIdentitySource(registry,
+                new RuntimeWindowsPlatformEvidenceSource(registry),
+                WindowsHostIdentitySource.Rz090528Identity),
+            guard, native, ControllerExclusivityPolicy.Strict,
+            CoolingPadControlStateQueryFactory.ExactIdentity);
+        return new ValidationActorFactory(opener, new OverlappedFeatureOperation(native),
+                guard, TimeProvider.System, TimeSpan.FromSeconds(3),
+                ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30),
+                featureReportId: 0);
+    }
+
     internal static IGetterCandidateProbeRunner CreateFunctionKeyPrimaryWindows() =>
         new FunctionKeyPrimaryGetterCandidateProbeRunner(
             static () => new ValidationRunContext(),

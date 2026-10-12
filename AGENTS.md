@@ -49,9 +49,11 @@ unresolved state; never replay an uncertain write, guess, or widen authority.
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
 architecture can admit more Blade models, but a hardware capability is enabled
 only for an exact model and SKU backed by sanitized, reviewed capture evidence.
-Captured BIOS versions are provenance by default; a capability may impose an
-exact firmware restriction only through an explicit reviewed admission rule,
-and no shipped capability imposes one today.
+BIOS versions are provenance only. Gate support and validation on exact model
+and SKU identity, never on a BIOS version. Do not introduce BIOS-version
+restrictions in production admission, developer tools, or capture preflights.
+Record BIOS versions for evidence and diagnostics without blocking other
+versions of the same model.
 Never copy a command from another model, expose raw firmware commands, or
 weaken exact-device checks to make a feature appear supported.
 

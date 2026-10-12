@@ -286,6 +286,19 @@ type enum OpenBlade.Contracts.ControlResultStatus
   field const OpenBlade.Contracts.ControlResultStatus Blocked = 2
   field const OpenBlade.Contracts.ControlResultStatus Failed = 3
   field const OpenBlade.Contracts.ControlResultStatus Unchanged = 1
+type struct OpenBlade.Contracts.CoolingPadConfiguredRpmDemand
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand>
+  ctor (System.Int32 rpm)
+  method System.Boolean get_IsWellFormed()
+  method System.Int32 get_Rpm()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand left, OpenBlade.Contracts.CoolingPadConfiguredRpmDemand right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand left, OpenBlade.Contracts.CoolingPadConfiguredRpmDemand right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand other)
+  property System.Boolean IsWellFormed { get; }
+  property System.Int32 Rpm { get; }
 type enum OpenBlade.Contracts.CoolingPadConnectionState
   field System.Int32 value__
   field const OpenBlade.Contracts.CoolingPadConnectionState Absent = 1
@@ -293,6 +306,27 @@ type enum OpenBlade.Contracts.CoolingPadConnectionState
   field const OpenBlade.Contracts.CoolingPadConnectionState ObservationFailed = 4
   field const OpenBlade.Contracts.CoolingPadConnectionState PresentExact = 2
   field const OpenBlade.Contracts.CoolingPadConnectionState Unavailable = 0
+type sealed class OpenBlade.Contracts.CoolingPadFanCapabilities
+  method OpenBlade.Contracts.DeviceFeatureAccess get_HostDemandAccess()
+  method OpenBlade.Contracts.DeviceNumericRange get_VendorConfiguredDemandRpm()
+  method System.Boolean get_ActiveFanStateReadbackSupported()
+  method System.Boolean get_FullDemandRangePhysicallyValidated()
+  method System.Boolean get_MeasuredRpmReadbackSupported()
+  method System.Boolean get_OwnershipReadbackSupported()
+  method System.UInt16 get_ProductId()
+  method System.UInt16 get_Revision()
+  method System.UInt16 get_VendorId()
+  method static OpenBlade.Contracts.CoolingPadFanCapabilities get_Observed()
+  property OpenBlade.Contracts.CoolingPadFanCapabilities Observed { get; }
+  property OpenBlade.Contracts.DeviceFeatureAccess HostDemandAccess { get; }
+  property OpenBlade.Contracts.DeviceNumericRange VendorConfiguredDemandRpm { get; }
+  property System.Boolean ActiveFanStateReadbackSupported { get; }
+  property System.Boolean FullDemandRangePhysicallyValidated { get; }
+  property System.Boolean MeasuredRpmReadbackSupported { get; }
+  property System.Boolean OwnershipReadbackSupported { get; }
+  property System.UInt16 ProductId { get; }
+  property System.UInt16 Revision { get; }
+  property System.UInt16 VendorId { get; }
 type sealed class OpenBlade.Contracts.CpuPowerLimitCapabilities
   interface System.IEquatable<OpenBlade.Contracts.CpuPowerLimitCapabilities>
   ctor (OpenBlade.Contracts.DeviceNumericRange Watts, OpenBlade.Contracts.DeviceFeatureAccess Access)

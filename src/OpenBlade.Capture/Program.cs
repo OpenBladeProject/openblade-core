@@ -4,6 +4,53 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0] is CoolingPadFanProcessContinuityCommand.UsbChildName or CoolingPadFanProcessContinuityCommand.UsbFakeChildName)
+{
+    return await CoolingPadFanProcessContinuityCommand.ChildAsync(
+        args[0] == CoolingPadFanProcessContinuityCommand.UsbFakeChildName, args.Skip(1).ToArray(), CancellationToken.None,
+        PadProcessTrial.UsbOnlyReconnect);
+}
+if (args.Length == 1 && args[0] == CoolingPadFanProcessContinuityCommand.UsbSelfTestName)
+{
+    return await PadProcessSelfTest.RunAsync(Console.Out, CancellationToken.None, PadProcessTrial.UsbOnlyReconnect);
+}
+if (args.Length > 0 && args[0] == CoolingPadFanProcessContinuityCommand.UsbName)
+{
+    return await CoolingPadFanProcessContinuityCommand.RunAsync(args.Skip(1).ToArray(), Console.In,
+        Console.Out, Console.Error, CancellationToken.None, PadProcessTrial.UsbOnlyReconnect);
+}
+
+if (args.Length > 0 && args[0] is CoolingPadFanProcessContinuityCommand.CooperativeChildName or CoolingPadFanProcessContinuityCommand.CooperativeFakeChildName)
+{
+    return await CoolingPadFanProcessContinuityCommand.ChildAsync(
+        args[0] == CoolingPadFanProcessContinuityCommand.CooperativeFakeChildName, args.Skip(1).ToArray(), CancellationToken.None,
+        PadProcessTrial.CooperativeCancellation);
+}
+if (args.Length == 1 && args[0] == CoolingPadFanProcessContinuityCommand.CooperativeSelfTestName)
+{
+    return await PadProcessSelfTest.RunAsync(Console.Out, CancellationToken.None, PadProcessTrial.CooperativeCancellation);
+}
+if (args.Length > 0 && args[0] == CoolingPadFanProcessContinuityCommand.CooperativeName)
+{
+    return await CoolingPadFanProcessContinuityCommand.RunAsync(args.Skip(1).ToArray(), Console.In,
+        Console.Out, Console.Error, CancellationToken.None, PadProcessTrial.CooperativeCancellation);
+}
+
+if (args.Length > 0 && args[0] is CoolingPadFanProcessContinuityCommand.ChildName or CoolingPadFanProcessContinuityCommand.FakeChildName)
+{
+    return await CoolingPadFanProcessContinuityCommand.ChildAsync(
+        args[0] == CoolingPadFanProcessContinuityCommand.FakeChildName, args.Skip(1).ToArray(), CancellationToken.None);
+}
+if (args.Length == 1 && args[0] == CoolingPadFanProcessContinuityCommand.SelfTestName)
+{
+    return await PadProcessSelfTest.RunAsync(Console.Out, CancellationToken.None);
+}
+if (args.Length > 0 && args[0] == CoolingPadFanProcessContinuityCommand.Name)
+{
+    return await CoolingPadFanProcessContinuityCommand.RunAsync(args.Skip(1).ToArray(), Console.In,
+        Console.Out, Console.Error, CancellationToken.None);
+}
+
 if (args.Length > 0 && args[0].Equals(
     Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
@@ -1616,6 +1663,113 @@ if (args.Length == 1 && args[0].Equals(
         Console.Out,
         device: new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02"));
     return await command.RunAsync([], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadFanSessionContinuityCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadFanSessionContinuityCommand(
+        (fixedConfirmation, autoConfirmation, finalConfirmation, token) =>
+            GetterCandidateProbeFactory.CreateCoolingPadFanSessionContinuityWindows().RunAsync(
+                fixedConfirmation, autoConfirmation, finalConfirmation, token),
+        Console.In, Console.Out, Console.Error);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadControlStateRecoveryCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadControlStateRecoveryCommand(
+        (confirmation, token) => GetterCandidateProbeFactory.CreateCoolingPadControlStateRecoveryWindows()
+            .RunAsync(confirmation, token), Console.In, Console.Out, Console.Error);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadCurveTrialCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadCurveTrialCommand(
+        (first, curve, fixedCheck, quiet, final, token) => new CoolingPadCurveTrialRunner(
+            CoolingPadCurvePreviewCommand.ReadWindowsHost,
+            static () => new SafeWindowsFanTemperatureSource(),
+            GetterCandidateProbeFactory.CreateCoolingPadActorFactory,
+            static () => new ValidationRunContext(), TimeProvider.System, physicalTimeout: TimeSpan.FromMinutes(10))
+            .RunAsync(first, curve, fixedCheck, quiet, final, token),
+        Console.In, Console.Out, Console.Error, initialConfirmationTimeout: TimeSpan.FromMinutes(10));
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadCurvePreviewCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadCurvePreviewCommand(
+        CoolingPadCurvePreviewCommand.ReadWindowsHost,
+        static () => new SafeWindowsFanTemperatureSource(), Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadHostDemand2200TrialCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadHostDemand2200TrialCommand(
+        (demandConfirmation, fixedConfirmation, autoConfirmation, finalConfirmation, token) =>
+            new CoolingPadHostDemand2200TrialRunner(
+                static () => new ValidationRunContext(),
+                GetterCandidateProbeFactory.CreateCoolingPadActorFactory(),
+                TimeProvider.System, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(180))
+            .RunAsync(demandConfirmation, fixedConfirmation, autoConfirmation, finalConfirmation, token),
+        Console.In, Console.Out, Console.Error);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadPreferredAutoRecoveryCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadPreferredAutoRecoveryCommand(
+        (fixedConfirmation, autoConfirmation, finalConfirmation, token) =>
+            new CoolingPadFanExploratoryTrialRunner(
+                static () => new ValidationRunContext(), GetterCandidateProbeFactory.CreateCoolingPadActorFactory(),
+                TimeProvider.System, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5),
+                operatorTimeout: TimeSpan.FromMinutes(10)).RunAsync(
+                    fixedConfirmation, autoConfirmation, finalConfirmation, token),
+        Console.In, Console.Out, Console.Error, initialConfirmationTimeout: TimeSpan.FromMinutes(10));
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadFanExploratoryTrialCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadFanExploratoryTrialCommand(
+        (fixedConfirmation, autoConfirmation, finalConfirmation, token) =>
+            GetterCandidateProbeFactory.CreateCoolingPadFanExploratoryTrialWindows().RunAsync(
+                fixedConfirmation, autoConfirmation, finalConfirmation, token),
+        Console.In, Console.Out, Console.Error);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadControlStateRoundTripCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var runner = GetterCandidateProbeFactory.CreateCoolingPadControlStateRoundTripWindows();
+    var command = new CoolingPadControlStateRoundTripCommand(runner.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    CoolingPadControlStateQueryCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    IGetterCandidateProbeRunner runner = CoolingPadControlStateQueryFactory.CreateWindows();
+    var command = new CoolingPadControlStateQueryCommand(runner.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
 if (args.Length > 0 && args[0].Equals(
