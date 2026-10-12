@@ -93,7 +93,7 @@ warning and no failures.
 | --- | --- | --- |
 | Silent (Quiet) | Mode 7 confirmed; Silent and Automatic restored | 50 passed, one GPU-temperature warning, no failures or skips |
 | Performance | Mode 7 confirmed; Performance and Automatic restored | 50 passed, one GPU-temperature warning, no failures or skips |
-| Custom | Pre-admission stopped before any write | Unresolved capability mismatch |
+| Custom | Setup returned indeterminate; HyperBoost not attempted | Blocked pending failure and reconciliation review |
 
 The user watched both completed transitions and confirmed that the tray showed
 HyperBoost and returned correctly. The complete original confirmed device state
@@ -102,9 +102,22 @@ HyperBoost off, temporary full charge enabled, protection enabled and charge
 limit 80. No external changes, unconfirmed writes or pending HyperBoost recovery
 remained.
 
-The exact installed service advertises the Custom preset but exposes no Custom
-CPU/GPU capability. The local setup helper stopped while checking that capability,
-before invoking a mutation. No Custom entry or Custom HyperBoost check occurred.
-The candidate's Custom admission and model-specific restoration semantics must be
-resolved before this PR is ready. Shared fake-device Custom tests do not establish
-that the RZ09-0581 backend supports CPU/GPU levels.
+The first Custom attempt stopped before a write because the local helper
+misinterpreted a null optional combination restriction as missing support.
+Source review confirmed that null uses the standard well-formed combinations;
+the exact RZ09-0581 fixture contains the Custom pair and CPU/GPU setters. The
+helper was corrected without changing production code.
+
+The subsequent typed Custom High/Low selection returned an indeterminate
+multi-command hardware result. No HyperBoost command followed. Diagnostic
+records show the initial failure at 10:15:06 UTC, then an autonomous Maintain
+desired state attempt reserved at 10:15:09 and acknowledged/confirmed at
+10:15:10. Later readbacks confirmed Custom High/Low, but cannot establish that
+the original operation succeeded. After two stable read-only observations,
+one saved-intent restoration returned Balanced/Automatic, confirmed by readback
+at 10:15:48 UTC. The original battery state and overrides also matched.
+
+Custom HyperBoost remains unvalidated. The initial setter failure and the
+subsequent automatic reconciliation require review before another physical
+attempt or readiness. The diagnostic archive and raw snapshots remain local;
+no raw payloads or machine-identifying data are included here.
