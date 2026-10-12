@@ -86,6 +86,64 @@ public sealed class ReversibleSmokeRunnerTests
         client.AssertOriginalState();
     }
 
+    [Fact]
+    public async Task RunHyperBoostRoundTripAsync_CustomRestoresExactCpuAndGpuLevels()
+    {
+        var custom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.Medium,
+            CustomPerformanceLevel.High);
+        await using var client = new FakeFirmwareSmokeClient(
+            PerformancePreset.Custom,
+            customPerformance: custom);
+
+        FirmwareSmokeCheck check = await new ReversibleSmokeRunner(client)
+            .RunHyperBoostRoundTripAsync(CancellationToken.None);
+
+        Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome);
+        Assert.Contains(
+            "exact Custom (CPU Medium, GPU High)",
+            check.Expected,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "independent readback confirmed mode 7",
+            check.Actual,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "independent readback confirmed exact Custom (CPU Medium, GPU High) and Automatic",
+            check.Actual,
+            StringComparison.Ordinal);
+        Assert.Equal(2, client.HyperBoostMutationCalls);
+        Assert.Equal(0, client.PerformanceMutationCalls);
+        Assert.Equal(0, client.FanMutationCalls);
+        client.AssertOriginalState();
+    }
+
+    [Fact]
+    public async Task RunHyperBoostRoundTripAsync_CustomLevelMismatchFails()
+    {
+        var custom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.Medium,
+            CustomPerformanceLevel.High);
+        await using var client = new FakeFirmwareSmokeClient(
+            PerformancePreset.Custom,
+            customPerformance: custom)
+        {
+            RestoreWrongCustomPerformance = true,
+        };
+
+        FirmwareSmokeCheck check = await new ReversibleSmokeRunner(client)
+            .RunHyperBoostRoundTripAsync(CancellationToken.None);
+
+        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
+        Assert.Contains(
+            "did not confirm the exact Custom (CPU Medium, GPU High) baseline",
+            check.Actual,
+            StringComparison.Ordinal);
+        Assert.Equal(2, client.HyperBoostMutationCalls);
+        Assert.Equal(0, client.PerformanceMutationCalls);
+        Assert.Equal(0, client.FanMutationCalls);
+    }
+
     [Theory]
     [InlineData((int)CoolingPadConnectionState.Ambiguous)]
     [InlineData((int)CoolingPadConnectionState.ObservationFailed)]
@@ -274,16 +332,22 @@ public sealed class ReversibleSmokeRunnerTests
     {
         private readonly ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         private readonly PerformancePreset originalPerformance;
+        private readonly CustomPerformanceSettings? originalCustomPerformance;
         private ServiceStatusSnapshot status;
         private PerformancePreset? hyperBoostRestoreBase;
+        private CustomPerformanceSettings? hyperBoostRestoreCustom;
 
         public FakeFirmwareSmokeClient(
             PerformancePreset originalPerformance = PerformancePreset.Balanced,
             bool padlessAdmitted = true,
             CoolingPadConnectionState coolingPadConnection =
-                CoolingPadConnectionState.Absent)
+                CoolingPadConnectionState.Absent,
+            CustomPerformanceSettings? customPerformance = null)
         {
             this.originalPerformance = originalPerformance;
+            originalCustomPerformance = originalPerformance == PerformancePreset.Custom
+                ? customPerformance ?? CustomPerformanceSettings.Default
+                : null;
             var capabilities = new DeviceCapabilities(
                 new HashSet<PerformancePreset>(Enum.GetValues<PerformancePreset>()),
                 new HashSet<FanMode>(Enum.GetValues<FanMode>()),
@@ -303,7 +367,12 @@ public sealed class ReversibleSmokeRunnerTests
                     padlessAdmitted ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly,
                     originalPerformance == PerformancePreset.Performance
                         ? DeviceFeatureAccess.ReadWrite
-                        : DeviceFeatureAccess.ObservedOnly),
+                        : DeviceFeatureAccess.ObservedOnly)
+                {
+                    Custom = originalPerformance == PerformancePreset.Custom
+                        ? DeviceFeatureAccess.ReadWrite
+                        : DeviceFeatureAccess.ObservedOnly,
+                },
                 LogoLightingModes =
                     new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>()),
                 OneShotLaptopControls =
@@ -316,6 +385,7 @@ public sealed class ReversibleSmokeRunnerTests
                 Lighting: null)
             {
                 LogoLighting = LogoLightingMode.Static,
+                CustomPerformance = originalCustomPerformance,
             };
             status = new ServiceStatusSnapshot(
                 Revision: 1,
@@ -361,6 +431,10 @@ public sealed class ReversibleSmokeRunnerTests
                 KeyboardDriverModeActive: true);
             status = status with
             {
+                DesiredState = status.DesiredState with
+                {
+                    CustomPerformance = originalCustomPerformance,
+                },
                 PadlessHyperBoostEligibility = coolingPadConnection switch
                 {
                     CoolingPadConnectionState.Absent => PadlessHyperBoostEligibilityState.CoolingPadAbsent,
@@ -381,6 +455,8 @@ public sealed class ReversibleSmokeRunnerTests
         public bool FailHyperBoostEnableAfterApplying { get; init; }
 
         public bool FailHyperBoostRestore { get; init; }
+
+        public bool RestoreWrongCustomPerformance { get; init; }
 
         public int PerformanceMutationCalls { get; private set; }
 
@@ -444,6 +520,7 @@ public sealed class ReversibleSmokeRunnerTests
             if (enabled)
             {
                 hyperBoostRestoreBase = status.ConfirmedState?.Performance;
+                hyperBoostRestoreCustom = status.ConfirmedState?.CustomPerformance;
                 if (hyperBoostRestoreBase is { } enabledBase)
                 {
                     HyperBoostEnableBases.Add(enabledBase);
@@ -458,6 +535,13 @@ public sealed class ReversibleSmokeRunnerTests
                     Performance = enabled
                         ? null
                         : hyperBoostRestoreBase,
+                    CustomPerformance = enabled
+                        ? null
+                        : RestoreWrongCustomPerformance
+                            ? new CustomPerformanceSettings(
+                                CustomPerformanceLevel.Low,
+                                CustomPerformanceLevel.Medium)
+                            : hyperBoostRestoreCustom,
                     Fans = FanMode.Automatic,
                 },
             };
@@ -559,6 +643,9 @@ public sealed class ReversibleSmokeRunnerTests
         public void AssertOriginalState()
         {
             Assert.Equal(originalPerformance, status.ConfirmedState?.Performance);
+            Assert.Equal(
+                originalCustomPerformance,
+                status.ConfirmedState?.CustomPerformance);
             Assert.Equal(FanMode.Automatic, status.ConfirmedState?.Fans);
             Assert.False(status.ConfirmedState?.HyperBoostActive);
             Assert.Equal(80, status.ConfirmedState?.Battery?.ChargeLimitPercent);

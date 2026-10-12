@@ -1329,8 +1329,17 @@
   <data name="Disconnect the cooling pad before enabling HyperBoost." xml:space="preserve">
     <value>Перед включением HyperBoost отключите охлаждающую подставку.</value>
   </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>Перед включением HyperBoost подключите поддерживаемую охлаждающую подставку.</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>Для HyperBoost поддерживаемая охлаждающая подставка должна оставаться подключённой.</value>
+  </data>
   <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>Не удалось подтвердить отсутствие охлаждающей подставки. Обновите состояние ноутбука перед включением HyperBoost.</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>Не удалось подтвердить подключение охлаждающей подставки. Обновите состояние ноутбука перед включением HyperBoost.</value>
   </data>
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>HyperBoost без охлаждающей подставки обнаружен, но недоступен при текущем наборе подтверждающих данных.</value>

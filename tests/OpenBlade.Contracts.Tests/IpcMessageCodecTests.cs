@@ -2694,6 +2694,22 @@ public sealed class IpcMessageCodecTests
         return frames;
     }
 
+    [Theory]
+    [InlineData(DeviceFeatureAccess.ReadWrite)]
+    [InlineData((DeviceFeatureAccess)99)]
+    public async Task ReadServerFrameAsync_RejectsUnboundedCustomHyperBoostAccess(DeviceFeatureAccess custom)
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            capabilities[nameof(DeviceCapabilities.HyperBoostAccess)] = (int)DeviceFeatureAccess.ReadOnly;
+            capabilities[nameof(DeviceCapabilities.HyperBoostBaseModes)] = JsonSerializer.SerializeToNode(
+                new HyperBoostBaseModeCapabilities(DeviceFeatureAccess.ReadOnly, DeviceFeatureAccess.ReadOnly,
+                    DeviceFeatureAccess.ReadOnly)
+                {
+                    Custom = custom,
+                });
+        });
+    }
     private static async Task AssertMalformedNestedCapabilityRejectedAsync(
         Action<JsonObject> mutateCapabilities)
     {

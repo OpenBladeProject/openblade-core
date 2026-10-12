@@ -1329,8 +1329,17 @@
   <data name="Disconnect the cooling pad before enabling HyperBoost." xml:space="preserve">
     <value>启用 HyperBoost 前请断开散热垫。</value>
   </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>启用 HyperBoost 前，请连接受支持的散热垫。</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>HyperBoost 要求受支持的散热垫保持连接。</value>
+  </data>
   <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>无法确认散热垫已断开。请刷新笔记本状态后再启用 HyperBoost。</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>无法确认散热垫连接。请先刷新笔记本状态，再启用 HyperBoost。</value>
   </data>
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>已检测到无散热垫 HyperBoost，但当前准入证据尚不支持使用。</value>

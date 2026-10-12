@@ -255,7 +255,9 @@ internal sealed class ProductionBatteryPort :
                 || !Enum.IsDefined(hyperBoostBaseModes.Performance)
                 || hyperBoostBaseModes.Silent > hyperBoostAccess
                 || hyperBoostBaseModes.Balanced > hyperBoostAccess
-                || hyperBoostBaseModes.Performance > hyperBoostAccess))
+                || hyperBoostBaseModes.Performance > hyperBoostAccess
+                || hyperBoostBaseModes.Custom is { } custom
+                    && (!Enum.IsDefined(custom) || custom > hyperBoostAccess)))
         {
             throw new ArgumentException(
                 "HyperBoost base-mode access must be defined and no broader than overall HyperBoost access.",
