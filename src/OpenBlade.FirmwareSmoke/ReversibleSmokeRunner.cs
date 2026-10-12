@@ -40,20 +40,48 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         return checks;
     }
 
+    public async Task<FirmwareSmokeCheck> RunHyperBoostRoundTripAsync(
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot original = await client.ObserveStateAsync(
+            LiveReadingSensors.All,
+            cancellationToken).ConfigureAwait(false);
+        ValidatePreconditions(original);
+        FirmwareSmokeCheck check = await TestHyperBoostAsync(
+            original,
+            cancellationToken).ConfigureAwait(false);
+        return check.Outcome == FirmwareSmokeOutcome.Skipped
+            ? check with
+            {
+                Outcome = FirmwareSmokeOutcome.Failed,
+                Expected = "The current confirmed mode is eligible for the round trip",
+                Actual = "Round trip was not attempted: " + check.Actual,
+            }
+            : check;
+    }
+
     private async Task<FirmwareSmokeCheck> TestHyperBoostAsync(
         ServiceStatusSnapshot original,
         CancellationToken cancellationToken)
     {
         const string id = "write.hyper-boost";
         PerformancePreset? baseMode = original.ConfirmedState?.Performance;
-        string baseLabel = baseMode == PerformancePreset.Silent
-            ? "Quiet"
-            : baseMode?.ToString() ?? "base mode";
+        CustomPerformanceSettings? baseCustom =
+            original.ConfirmedState?.CustomPerformance;
+        string baseLabel = baseMode switch
+        {
+            PerformancePreset.Silent => "Quiet",
+            PerformancePreset.Custom when baseCustom is not null =>
+                $"Custom (CPU {baseCustom.Cpu}, GPU {baseCustom.Gpu})",
+            _ => baseMode?.ToString() ?? "base mode",
+        };
         string description =
             $"HyperBoost applies, reads back, and restores {baseLabel} directly";
         if (original.Capabilities is not { } capabilities
             || capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
             || baseMode is null
+            || (baseMode == PerformancePreset.Custom
+                && !CustomPerformanceSettings.IsWellFormed(baseCustom))
             || (capabilities.HyperBoostBaseModes?.AccessFor(baseMode.Value)
                 ?? (baseMode == PerformancePreset.Balanced
                     ? capabilities.HyperBoostAccess
@@ -148,6 +176,7 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             }
             else
             {
+                application += "; independent readback confirmed mode 7.";
                 try
                 {
                     ControlOperationResult result = await client.SetHyperBoostAsync(
@@ -161,12 +190,20 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
                                 HyperBoostActive: false,
                                 Performance: { } restoredPerformance,
                                 Fans: FanMode.Automatic,
-                            } && restoredPerformance == baseMode,
+                            } restored
+                                && restoredPerformance == baseMode
+                                && (baseMode != PerformancePreset.Custom
+                                    || restored.CustomPerformance == baseCustom),
                             cleanup.Token).ConfigureAwait(false);
                     if (!restorationPassed)
                     {
                         restoration +=
                             $"; independent readback did not confirm the exact {baseLabel} baseline.";
+                    }
+                    else
+                    {
+                        restoration +=
+                            $"; independent readback confirmed exact {baseLabel} and Automatic.";
                     }
                 }
                 catch (Exception exception)
@@ -182,7 +219,7 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             applicationPassed && restorationPassed
                 ? FirmwareSmokeOutcome.Passed
                 : FirmwareSmokeOutcome.Failed,
-            $"Mode 7 confirmed; {baseLabel} and Automatic restored",
+            $"Mode 7 confirmed; exact {baseLabel} and Automatic restored",
             $"Apply={application} Restore={restoration}");
     }
 

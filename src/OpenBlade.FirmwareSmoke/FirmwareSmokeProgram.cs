@@ -51,6 +51,12 @@ public static class FirmwareSmokeProgram
                     ReadExpectedFirmwareChanges(args),
                     isRehearsal: false,
                     cancellationToken).ConfigureAwait(false),
+                "hyperboost-round-trip" => await RunHyperBoostRoundTripAsync(
+                    args,
+                    outputDirectory,
+                    collector,
+                    client,
+                    cancellationToken).ConfigureAwait(false),
                 "recover" => await RecoverAsync(
                     args,
                     outputDirectory,
@@ -110,6 +116,72 @@ public static class FirmwareSmokeProgram
             diagnostics.ZipBytes,
             cancellationToken).ConfigureAwait(false);
 
+        PrintSummary(report, outputDirectory, snapshotPath);
+        return report.Succeeded ? 0 : 2;
+    }
+
+    private static async Task<int> RunHyperBoostRoundTripAsync(
+        string[] args,
+        string outputDirectory,
+        FirmwareSmokeSnapshotCollector collector,
+        IFirmwareSmokeClient client,
+        CancellationToken cancellationToken)
+    {
+        FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
+            args,
+            cancellationToken).ConfigureAwait(false);
+        string expectedConfirmation = TargetConfirmation(baseline.TargetModel);
+        if (!HasTargetConfirmation(args, baseline.TargetModel))
+        {
+            Console.Error.WriteLine(
+                "HyperBoost round-trip writes require --confirm-target " +
+                expectedConfirmation);
+            return 1;
+        }
+
+        FirmwareSmokeSnapshot current = await collector.CaptureAsync(
+            cancellationToken).ConfigureAwait(false);
+        FirmwareSmokeReport preflight =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+                baseline,
+                current);
+        Directory.CreateDirectory(outputDirectory);
+        string snapshotPath = Path.Combine(
+            outputDirectory,
+            "hyperboost-round-trip-baseline.json");
+        await FirmwareSmokeFiles.WriteJsonAsync(
+            snapshotPath,
+            current,
+            cancellationToken).ConfigureAwait(false);
+        if (!preflight.Succeeded)
+        {
+            await SaveReportAsync(
+                outputDirectory,
+                "hyperboost-round-trip-preflight",
+                preflight,
+                cancellationToken).ConfigureAwait(false);
+            PrintSummary(preflight, outputDirectory, snapshotPath);
+            Console.Error.WriteLine("No hardware writes were attempted.");
+            return 2;
+        }
+
+        FirmwareSmokeCheck mutationCheck =
+            await new ReversibleSmokeRunner(client)
+                .RunHyperBoostRoundTripAsync(cancellationToken)
+                .ConfigureAwait(false);
+        var report = new FirmwareSmokeReport(
+            "HyperBoost round trip",
+            DateTimeOffset.UtcNow,
+            preflight.Checks.Append(mutationCheck).ToArray(),
+            []);
+        await FirmwareSmokeFiles.WriteJsonAsync(
+            Path.Combine(outputDirectory, "hyperboost-round-trip-results.json"),
+            report,
+            cancellationToken).ConfigureAwait(false);
+        await FirmwareSmokeFiles.WriteReportAsync(
+            Path.Combine(outputDirectory, "hyperboost-round-trip-report.md"),
+            report,
+            cancellationToken).ConfigureAwait(false);
         PrintSummary(report, outputDirectory, snapshotPath);
         return report.Succeeded ? 0 : 2;
     }
@@ -505,6 +577,13 @@ public static class FirmwareSmokeProgram
         return $"{canonical}-FIRMWARE-SMOKE";
     }
 
+    internal static bool HasTargetConfirmation(
+        string[] args,
+        string targetModel) => string.Equals(
+        ReadOption(args, "--confirm-target"),
+        TargetConfirmation(targetModel),
+        StringComparison.Ordinal);
+
     internal static string HyperBoostLifecycleConfirmation(
         string targetModel,
         HyperBoostLifecycleScenario scenario)
@@ -630,6 +709,9 @@ public static class FirmwareSmokeProgram
             "  reversible --baseline <baseline.json> --confirm-target " +
             TargetConfirmationFormat + " --expect-firmware-changes <components> " +
             "[--output <directory>]");
+        Console.WriteLine(
+            "  hyperboost-round-trip --baseline <baseline.json> --confirm-target " +
+            TargetConfirmationFormat + " [--output <directory>]");
         Console.WriteLine(
             "  recover --baseline <baseline.json> --confirm-target " +
             TargetConfirmationFormat + " [--output <directory>]");

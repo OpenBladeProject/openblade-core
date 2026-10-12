@@ -2,8 +2,8 @@
 
 This change prepares direct HyperBoost entry from Silent, Balanced, Performance
 and Custom on the Blade 16 (2026) RZ09-0581, SKU RZ09-05819EN4, USB 1532:02E0.
-The candidate admission is not ready to merge or deploy until the validation
-below is recorded and reviewed. Balanced padless entry has existing evidence;
+Keep the candidate admission in draft until the validation below is recorded
+and reviewed. A controlled local installation is needed for these checks. Balanced padless entry has existing evidence;
 Silent, Performance and Custom direct entry remain unvalidated on this model.
 
 The service uses the confirmed starting mode, sends the model's captured
@@ -35,3 +35,24 @@ fixtures. New vendor capture is needed only if a concrete protocol uncertainty
 remains; repository guidance permits direct typed validation of captured
 commands. Never substitute RZ09-0528 evidence for this model's physical results.
 The RZ09-0528 portion of issue #609 was completed by PRs #596 and #610.
+## Targeted round trip
+
+After an approved local installation, select one starting mode in the tray,
+then save a fresh green baseline with the matching developer tool. Run only the
+HyperBoost check:
+
+```powershell
+OpenBlade.FirmwareSmoke.exe baseline --output C:\tmp\ob-717-silent-baseline
+OpenBlade.FirmwareSmoke.exe hyperboost-round-trip --baseline C:\tmp\ob-717-silent-baseline\baseline.json --confirm-target RZ09-0581-FIRMWARE-SMOKE --output C:\tmp\ob-717-silent-round-trip
+```
+
+Use separate report directories for Silent, Performance and Custom. The command
+requires a green unchanged baseline and tests only the current confirmed mode.
+It records mode-7 readback and exact restoration, including Custom CPU/GPU
+levels. A failed or skipped admission returns failure. Stop after a failed run
+and reconcile read-only before taking any further action.
+
+Save the initial installed settings before selecting the first mode. Restore
+those settings after the final successful check and confirm them by readback.
+The reports are local developer evidence; sanitize the relevant model, source,
+power/pad state and restoration results before committing them.

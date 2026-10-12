@@ -29,6 +29,24 @@ public sealed class FirmwareSmokeProgramTests
     }
 
     [Theory]
+    [InlineData("RZ09-0581-FIRMWARE-SMOKE", true)]
+    [InlineData("rz09-0581-firmware-smoke", false)]
+    [InlineData("RZ09-0528-FIRMWARE-SMOKE", false)]
+    [InlineData(null, false)]
+    public void HasTargetConfirmation_RequiresExactExistingModelToken(
+        string? confirmation,
+        bool expected)
+    {
+        string[] args = confirmation is null
+            ? ["hyperboost-round-trip"]
+            : ["hyperboost-round-trip", "--confirm-target", confirmation];
+
+        Assert.Equal(
+            expected,
+            FirmwareSmokeProgram.HasTargetConfirmation(args, "rz09-05819en1"));
+    }
+
+    [Theory]
     [InlineData("RZ09-0581", "RZ09-0581-THERMAL-EXTERNAL-DRIFT")]
     [InlineData("rz09-05819en1", "RZ09-0581-THERMAL-EXTERNAL-DRIFT")]
     public void ThermalExternalDriftConfirmation_UsesCanonicalExactModel(
