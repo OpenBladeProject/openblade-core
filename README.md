@@ -34,10 +34,10 @@ Available controls vary by model. See the
 
 ## Features
 
-- Power modes, including Battery Saver and Battery Balanced on RZ09-0528,
-  automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU clock
-  offsets. On full-power AC, both laptops can start HyperBoost from any supported
-  AC mode, with or without the Razer cooling pad, then restore the starting settings.
+- Power modes, automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU
+  clock offsets.
+- HyperBoost on full-power AC, with or without the Razer cooling pad. Start from
+  any supported AC mode and restore your starting settings when you turn it off.
 - Charge limits, battery health, and separate settings for each
   power source.
 - Keyboard and lid-logo effects, reactive lighting, mute indicators,
