@@ -4,8 +4,8 @@ This change prepares direct HyperBoost entry from Silent, Balanced, Performance
 and Custom on the Blade 16 (2026) RZ09-0581, SKU RZ09-05819EN4, USB 1532:02E0.
 Keep the candidate admission in draft until the validation below is recorded
 and reviewed. A controlled local installation is needed for these checks.
-Balanced padless entry has existing evidence; Silent, Performance and Custom
-direct entry remain unvalidated on this model.
+Balanced padless entry has existing evidence. Silent and Performance passed
+the controlled checks recorded below; Custom remains unresolved.
 
 The service uses the confirmed starting mode, sends the model's captured
 HyperBoost pair, and restores the starting mode on exit. For Custom, the existing
@@ -74,3 +74,37 @@ Save the initial installed settings before selecting the first mode. Restore
 those settings after the final successful check and confirm them by readback.
 The reports are local developer evidence; sanitize the relevant model, source,
 power/pad state and restoration results before committing them.
+
+## Physical results, 2026-10-12
+
+The user approved installation and attended reversible checks on exact model
+RZ09-0581, SKU RZ09-05819EN4, USB 1532:02E0. Installed source was
+`57e3416187c33b79a0f958f6f8fbbcdd78b5caef`, local-development version
+`65535.417.12980.35604`. All 555 installed payload files matched the candidate.
+One Tray and one Session Agent ran from the installed directory.
+
+The Razer power adapter was connected, confirmed by the user. The service
+reported plugged-in power and an absent cooling pad. Fresh exact-device,
+controller, power, session and thermal admission passed before each operation.
+The installed baseline passed 33 checks with one unavailable GPU-temperature
+warning and no failures.
+
+| Starting mode | HyperBoost and restoration | Result |
+| --- | --- | --- |
+| Silent (Quiet) | Mode 7 confirmed; Silent and Automatic restored | 50 passed, one GPU-temperature warning, no failures or skips |
+| Performance | Mode 7 confirmed; Performance and Automatic restored | 50 passed, one GPU-temperature warning, no failures or skips |
+| Custom | Pre-admission stopped before any write | Unresolved capability mismatch |
+
+The user watched both completed transitions and confirmed that the tray showed
+HyperBoost and returned correctly. The complete original confirmed device state
+and saved overrides matched a fresh final readback: Balanced, Automatic,
+HyperBoost off, temporary full charge enabled, protection enabled and charge
+limit 80. No external changes, unconfirmed writes or pending HyperBoost recovery
+remained.
+
+The exact installed service advertises the Custom preset but exposes no Custom
+CPU/GPU capability. The local setup helper stopped while checking that capability,
+before invoking a mutation. No Custom entry or Custom HyperBoost check occurred.
+The candidate's Custom admission and model-specific restoration semantics must be
+resolved before this PR is ready. Shared fake-device Custom tests do not establish
+that the RZ09-0581 backend supports CPU/GPU levels.
