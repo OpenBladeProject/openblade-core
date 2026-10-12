@@ -94,6 +94,21 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
+    public void Rz090581DirectHyperBoostBaseline_RejectsMissingCustomAdmission()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.6.0.0");
+        snapshot = snapshot with
+        {
+            Capabilities = snapshot.Capabilities with
+            {
+                HyperBoostBaseModes = snapshot.Capabilities.HyperBoostBaseModes! with { Custom = null },
+            },
+        };
+        FirmwareSmokeCheck check = Assert.Single(FirmwareSmokeAssessment.ValidateBaseline(snapshot).Checks,
+            item => item.Id == "capabilities.hyper-boost-base-modes");
+        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
+    }
+    [Fact]
     public void Rz090581Bios400RequiresReadWriteHyperBoostCapability()
     {
         FirmwareSmokeSnapshot admitted = CreateSnapshot("1.6.0.0") with
@@ -103,9 +118,12 @@ public sealed class FirmwareSmokeAssessmentTests
             {
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite.ToString(),
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
-                    DeviceFeatureAccess.ObservedOnly,
                     DeviceFeatureAccess.ReadWrite,
-                    DeviceFeatureAccess.ObservedOnly),
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ReadWrite)
+                {
+                    Custom = DeviceFeatureAccess.ReadWrite,
+                },
             },
         };
 
@@ -966,9 +984,12 @@ public sealed class FirmwareSmokeAssessmentTests
                 DeviceFeatureAccess.ReadWrite.ToString())
         {
             HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
-                DeviceFeatureAccess.ObservedOnly,
                 DeviceFeatureAccess.ReadWrite,
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite)
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+            },
         },
         new FirmwareSmokeControlState(
             "Balanced",

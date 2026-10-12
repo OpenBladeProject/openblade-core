@@ -1329,8 +1329,17 @@
   <data name="Disconnect the cooling pad before enabling HyperBoost." xml:space="preserve">
     <value>Disconnect the cooling pad before enabling HyperBoost.</value>
   </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>Connect the supported cooling pad before enabling HyperBoost.</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>HyperBoost requires the supported cooling pad to stay connected.</value>
+  </data>
   <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost.</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost.</value>
   </data>
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>Pad-less HyperBoost is detected but is not available with the current admission evidence.</value>

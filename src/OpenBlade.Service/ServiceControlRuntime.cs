@@ -3160,7 +3160,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && recoveryBaseline is null
                 && load.AllowsExplicitRecoveryBaselineCapture)
             {
-                recoveryBaseline = CreateExactHyperBoostRecoveryBaseline(fresh);
+                recoveryBaseline = CreateExactHyperBoostRecoveryBaseline(
+                    fresh,
+                    journal);
                 if (recoveryBaseline is not null)
                 {
                     var replacementJournal = new HyperBoostOwnershipJournal(
@@ -6872,19 +6874,31 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && confirmed.GpuClockOffsets?.Current == baseline.GpuClockOffsets;
 
     private static HyperBoostRecoveryBaseline?
-        CreateExactHyperBoostRecoveryBaseline(ConfirmedDeviceState confirmed)
+        CreateExactHyperBoostRecoveryBaseline(
+            ConfirmedDeviceState confirmed,
+            HyperBoostOwnershipJournal journal)
     {
-        if (confirmed.Performance is not null
-            || confirmed.Fans is not { } fans
-            || !DeviceSubsystemOrder.IsManualFanMode(fans)
-            || confirmed.HyperBoostActive)
+        bool exactCustomTransitionBaseline =
+            journal.BaseMode == PerformancePreset.Custom
+            && journal.RestoreIntent.Performance == PerformancePreset.Custom
+            && confirmed.Performance == PerformancePreset.Custom
+            && confirmed.Fans == FanMode.Automatic
+            && CustomPerformanceSettings.IsWellFormed(
+                confirmed.CustomPerformance);
+        bool exactManualTransitionBaseline =
+            confirmed.Performance is null
+            && confirmed.Fans is { } fans
+            && DeviceSubsystemOrder.IsManualFanMode(fans);
+        if (confirmed.HyperBoostActive
+            || (!exactCustomTransitionBaseline
+                && !exactManualTransitionBaseline))
         {
             return null;
         }
 
         var baseline = new HyperBoostRecoveryBaseline(
             confirmed.Performance,
-            fans,
+            confirmed.Fans!.Value,
             confirmed.HyperBoostActive,
             confirmed.CustomPerformance,
             confirmed.GpuClockOffsets?.Current);

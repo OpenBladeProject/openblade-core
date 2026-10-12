@@ -190,7 +190,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             || !Enum.IsDefined(baseModes.Performance)
             || baseModes.Silent > overallAccess
             || baseModes.Balanced > overallAccess
-            || baseModes.Performance > overallAccess)
+            || baseModes.Performance > overallAccess
+            || baseModes.Custom is { } custom
+                && (!Enum.IsDefined(custom) || custom > overallAccess))
         {
             throw new ArgumentException(
                 "HyperBoost base-mode access must be defined and no broader than overall HyperBoost access.",
@@ -528,7 +530,12 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             new HyperBoostBaseModeCapabilities(
                 BoundAccess(baseModes.Silent, maximumAccess),
                 BoundAccess(baseModes.Balanced, maximumAccess),
-                BoundAccess(baseModes.Performance, maximumAccess)));
+                BoundAccess(baseModes.Performance, maximumAccess))
+            {
+                Custom = baseModes.Custom is { } custom
+                    ? BoundAccess(custom, maximumAccess)
+                    : null,
+            });
 
         static DeviceFeatureAccess BoundAccess(
             DeviceFeatureAccess candidate,
