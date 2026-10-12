@@ -1,11 +1,11 @@
 # RZ09-0581 direct HyperBoost admission
 
-This change prepares direct HyperBoost entry from Silent, Balanced, Performance
+This change enables direct HyperBoost entry from Silent, Balanced, Performance
 and Custom on the Blade 16 (2026) RZ09-0581, SKU RZ09-05819EN4, USB 1532:02E0.
-Keep the candidate admission in draft until the validation below is recorded
-and reviewed. A controlled local installation is needed for these checks.
+The controlled installation and physical results are recorded below.
 Balanced padless entry has existing evidence. Silent and Performance passed
-the controlled checks recorded below; Custom remains unresolved.
+the controlled checks recorded below. Custom Medium/High also passed after
+the initial setup failure was reconciled and reviewed.
 
 The service uses the confirmed starting mode, sends the model's captured
 HyperBoost pair, and restores the starting mode on exit. For Custom, the existing
@@ -13,7 +13,7 @@ shared restoration path also restores the saved CPU/GPU levels. The factory
 preserves Custom admission and bounds every base mode to overall HyperBoost
 access. Read-only construction cannot gain write access through Custom.
 
-## Required before merge
+## Validation procedure
 
 - Confirm direct Silent, Performance and Custom entry and exact restoration on
   this laptop through captured, typed, reversible operations. Save the confirmed
@@ -49,8 +49,8 @@ Silent and Performance use that same checked path with their saved base mode.
 Custom also restores the saved CPU/GPU levels. Regression tests cover Custom
 unexpected-exit and shutdown restoration, plus explicit recovery when the
 base mode has returned but the observed levels differ from the saved levels.
-The remaining physical check is a normal direct-entry round trip for each new
-base mode, including exact Custom-level restoration. The shared lifecycle
+The normal direct-entry checks below cover each new base mode, including exact
+Custom-level restoration. The shared lifecycle
 coverage does not require another crash or sleep test absent a new uncertainty.
 
 ## Targeted round trip
@@ -93,10 +93,11 @@ warning and no failures.
 | --- | --- | --- |
 | Silent (Quiet) | Mode 7 confirmed; Silent and Automatic restored | 50 passed, one GPU-temperature warning, no failures or skips |
 | Performance | Mode 7 confirmed; Performance and Automatic restored | 50 passed, one GPU-temperature warning, no failures or skips |
-| Custom | Setup returned indeterminate; HyperBoost not attempted | Blocked pending failure and reconciliation review |
+| Custom (CPU Medium, GPU High) | Mode 7 confirmed; exact levels and Automatic restored | 50 passed, one GPU-temperature warning, no failures or skips |
 
-The user watched both completed transitions and confirmed that the tray showed
-HyperBoost and returned correctly. The complete original confirmed device state
+The user watched all three completed transitions and confirmed that the tray
+showed HyperBoost and returned correctly, including Custom Medium/High and the
+final return to Balanced. The complete original confirmed device state
 and saved overrides matched a fresh final readback: Balanced, Automatic,
 HyperBoost off, temporary full charge enabled, protection enabled and charge
 limit 80. No external changes, unconfirmed writes or pending HyperBoost recovery
@@ -117,7 +118,22 @@ the original operation succeeded. After two stable read-only observations,
 one saved-intent restoration returned Balanced/Automatic, confirmed by readback
 at 10:15:48 UTC. The original battery state and overrides also matched.
 
-Custom HyperBoost remains unvalidated. The initial setter failure and the
-subsequent automatic reconciliation require review before another physical
-attempt or readiness. The diagnostic archive and raw snapshots remain local;
-no raw payloads or machine-identifying data are included here.
+Read-only source review confirmed that the first operation had observed a known
+intermediate state. Unavailable confirmation would instead create a pending
+confirmation and block Maintain admission. The enabled Maintain policy treated
+the confirmed mismatch as drift, performed another fresh read and safety
+admission, and durably reserved its bounded action. This was not a replay while
+submission remained unresolved; no production change was indicated.
+
+After original-state restoration, a fresh typed Custom Medium/High selection
+applied and confirmed directly. Its new baseline passed 33 checks with the same
+GPU-temperature warning. The HyperBoost round trip passed all 50 checks: an
+indeterminate enable was resolved by fresh mode-7 readback without retrying the
+write, and exit restored exact Medium/High levels and Automatic fans. The saved
+Balanced intent was then restored and confirmed, with original battery settings
+intact. No pending or unconfirmed writes remained.
+
+The initial High/Low setup result is retained as a failed attempt; later success
+does not rewrite it. Physical Custom restoration coverage is Medium/High. The
+diagnostic archive and raw snapshots remain local; no raw payloads or
+machine-identifying data are included here.
