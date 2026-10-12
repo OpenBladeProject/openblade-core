@@ -6,6 +6,7 @@ namespace OpenBlade.Display;
 public sealed class WindowsDisplaySettingsController : IDisplaySettingsController, IDisposable
 {
     private const int MaximumDisplayConfigurationRetries = 5;
+    private const int HResultFileNotFound = unchecked((int)0x80070002);
     private static readonly string[] RazerPresetProfileFiles =
     [
         "Native_CTR.icm",
@@ -252,34 +253,36 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         {
             return new(() => DisplayOperationResult.Success(state));
         }
-        uint originalScope = GetSelectedColorProfileScope(target);
-        string? previous = state.ActiveColorProfileId;
+        var baseline = new ColorProfileMutationBaseline(
+            GetSelectedColorProfileScope(target),
+            GetDefaultStandardColorProfile(target, WindowsDisplayNative.CurrentUserScope),
+            GetColorProfileAssociations(target, WindowsDisplayNative.CurrentUserScope));
+        string monitorDeviceKey = GetMonitorDeviceKey(target);
+        ColorProfileMutationOperations operations = CreateColorProfileMutationOperations(
+            target,
+            monitorDeviceKey);
         return new(() =>
         {
             try
             {
-                if (originalScope != WindowsDisplayNative.CurrentUserScope)
-                {
-                    SetUsePerUserProfiles(target, true);
-                }
-                // Scope and default-profile writes form one transaction. Do not
-                // leave a changed scope behind when cancellation arrives between them.
-                SetDefaultStandardColorProfile(target, requested.Id);
-                DisplaySettingsSnapshot after = QueryCore(CancellationToken.None);
-                if (!ProfilesMatch(after.ActiveColorProfileId ?? string.Empty, requested.Id))
-                {
-                    TryRestoreColorProfile(target, previous, originalScope);
-                    return DisplayOperationResult.Failure(
-                        "Windows did not confirm the requested color profile, so OpenBlade attempted to restore the previous profile.",
-                        QueryCore(CancellationToken.None));
-                }
-                return DisplayOperationResult.Success(after);
+                DisplaySettingsSnapshot? after = null;
+                ColorProfileMutationTransaction.Execute(
+                    requested.Id,
+                    baseline,
+                    operations,
+                    () =>
+                    {
+                        after = QueryCore(CancellationToken.None);
+                        return ProfilesMatch(
+                            after.ActiveColorProfileId ?? string.Empty,
+                            requested.Id);
+                    });
+                return DisplayOperationResult.Success(after!);
             }
             catch (Exception exception)
             {
-                TryRestoreColorProfile(target, previous, originalScope);
                 return DisplayOperationResult.Failure(
-                    $"The color-profile change failed and OpenBlade attempted to restore the previous profile: {exception.Message}",
+                    $"The color-profile change failed: {exception.Message}",
                     TryQuerySnapshot(CancellationToken.None));
             }
         });
@@ -501,16 +504,42 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
 
     private static IReadOnlyList<string> GetAssociatedColorProfiles(DisplayTarget target, uint scope)
     {
+        List<string> profiles = [.. GetColorProfileAssociations(target, scope)];
+        string colorDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "spool",
+            "drivers",
+            "color");
+        foreach (string fileName in RazerPresetProfileFiles)
+        {
+            string path = Path.Combine(colorDirectory, fileName);
+            if (IsValidMonitorRgbIcc(path))
+            {
+                profiles.Add(path);
+            }
+        }
+
+        return profiles;
+    }
+
+    private static IReadOnlyList<string> GetColorProfileAssociations(DisplayTarget target, uint scope)
+    {
         IntPtr profileList = IntPtr.Zero;
         List<string> profiles = [];
         try
         {
             int result = WindowsDisplayNative.ColorProfileGetDisplayList(
                 scope,
-                target.Path.SourceInfo.AdapterId,
+                target.Path.TargetInfo.AdapterId,
                 target.Path.SourceInfo.Id,
                 out profileList,
                 out uint profileCount);
+            if (result == HResultFileNotFound)
+            {
+                return profiles;
+            }
+
+            ThrowIfHResultFailed(result, "Windows could not enumerate display color profiles");
             if (result >= 0 && profileList != IntPtr.Zero)
             {
                 for (int index = 0; index < profileCount; index++)
@@ -523,20 +552,6 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
                     {
                         profiles.Add(profile);
                     }
-                }
-            }
-
-            string colorDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.System),
-                "spool",
-                "drivers",
-                "color");
-            foreach (string fileName in RazerPresetProfileFiles)
-            {
-                string path = Path.Combine(colorDirectory, fileName);
-                if (IsValidMonitorRgbIcc(path))
-                {
-                    profiles.Add(path);
                 }
             }
 
@@ -558,12 +573,18 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         {
             int result = WindowsDisplayNative.ColorProfileGetDisplayDefault(
                 scope,
-                target.Path.SourceInfo.AdapterId,
+                target.Path.TargetInfo.AdapterId,
                 target.Path.SourceInfo.Id,
                 WindowsDisplayNative.ColorProfileTypeIcc,
                 WindowsDisplayNative.ColorProfileSubtypeStandardDisplay,
                 out profileName);
-            return result >= 0 && profileName != IntPtr.Zero ? Marshal.PtrToStringUni(profileName) : null;
+            if (result == HResultFileNotFound)
+            {
+                return null;
+            }
+
+            ThrowIfHResultFailed(result, "Windows could not read the default display color profile");
+            return profileName != IntPtr.Zero ? Marshal.PtrToStringUni(profileName) : null;
         }
         finally
         {
@@ -574,23 +595,37 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
     }
 
-    private static void SetDefaultStandardColorProfile(DisplayTarget target, string profile)
+    private static void AddStandardColorProfileAssociation(DisplayTarget target, string profile)
     {
         int associationResult = WindowsDisplayNative.ColorProfileAddDisplayAssociation(
             WindowsDisplayNative.CurrentUserScope,
             profile,
-            target.Path.SourceInfo.AdapterId,
+            target.Path.TargetInfo.AdapterId,
             target.Path.SourceInfo.Id,
-            setAsDefault: 1,
+            setAsDefault: 0,
             associateAsAdvancedColor: 0);
         ThrowIfHResultFailed(associationResult, "Windows could not associate the color profile");
+    }
 
+    private static void RemoveStandardColorProfileAssociation(DisplayTarget target, string profile)
+    {
+        int result = WindowsDisplayNative.ColorProfileRemoveDisplayAssociation(
+            WindowsDisplayNative.CurrentUserScope,
+            profile,
+            target.Path.TargetInfo.AdapterId,
+            target.Path.SourceInfo.Id,
+            dissociateAdvancedColor: 0);
+        ThrowIfHResultFailed(result, "Windows could not remove the color-profile association");
+    }
+
+    private static void SetDefaultStandardColorProfile(DisplayTarget target, string profile)
+    {
         int defaultResult = WindowsDisplayNative.ColorProfileSetDisplayDefaultAssociation(
             WindowsDisplayNative.CurrentUserScope,
             profile,
             WindowsDisplayNative.ColorProfileTypeIcc,
             WindowsDisplayNative.ColorProfileSubtypeStandardDisplay,
-            target.Path.SourceInfo.AdapterId,
+            target.Path.TargetInfo.AdapterId,
             target.Path.SourceInfo.Id);
         ThrowIfHResultFailed(defaultResult, "Windows could not make the color profile active");
     }
@@ -598,54 +633,67 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     private static uint GetSelectedColorProfileScope(DisplayTarget target)
     {
         int result = WindowsDisplayNative.ColorProfileGetDisplayUserScope(
-            target.Path.SourceInfo.AdapterId,
+            target.Path.TargetInfo.AdapterId,
             target.Path.SourceInfo.Id,
             out uint scope);
         ThrowIfHResultFailed(result, "Windows could not determine the active color-profile scope");
         return scope;
     }
 
-    private static void SetUsePerUserProfiles(DisplayTarget target, bool enabled)
+    private static void SetUsePerUserProfiles(string monitorDeviceKey, bool enabled)
     {
         if (!WindowsDisplayNative.WcsSetUsePerUserProfiles(
-                target.SourceName,
+                monitorDeviceKey,
                 WindowsDisplayNative.ClassMonitor,
                 enabled))
         {
+            int error = Marshal.GetLastWin32Error();
             throw new Win32Exception(
-                Marshal.GetLastWin32Error(),
-                "Windows could not change the color-profile scope");
+                error,
+                $"Windows could not change the color-profile scope (Win32 error {error})");
         }
 
-        uint expected = enabled
-            ? WindowsDisplayNative.CurrentUserScope
-            : WindowsDisplayNative.SystemWideScope;
-        if (GetSelectedColorProfileScope(target) != expected)
-        {
-            throw new InvalidOperationException("Windows did not confirm the requested color-profile scope.");
-        }
     }
 
-    private static void TryRestoreColorProfile(
+    private static ColorProfileMutationOperations CreateColorProfileMutationOperations(
         DisplayTarget target,
-        string? previous,
-        uint originalScope)
+        string monitorDeviceKey) => new(
+        profile => AddStandardColorProfileAssociation(target, profile),
+        profile => RemoveStandardColorProfileAssociation(target, profile),
+        profile => SetDefaultStandardColorProfile(target, profile),
+        enabled => SetUsePerUserProfiles(monitorDeviceKey, enabled),
+        () => GetSelectedColorProfileScope(target),
+        () => GetDefaultStandardColorProfile(target, WindowsDisplayNative.CurrentUserScope),
+        () => GetColorProfileAssociations(target, WindowsDisplayNative.CurrentUserScope));
+
+    private static string GetMonitorDeviceKey(DisplayTarget target)
     {
-        try
+        if (string.IsNullOrWhiteSpace(target.MonitorDevicePath))
         {
-            if (previous is not null)
+            throw new InvalidOperationException(
+                "Windows did not report a monitor device path for the internal display.");
+        }
+
+        List<DisplayMonitorDeviceIdentity> monitors = [];
+        for (uint index = 0; ; index++)
+        {
+            DisplayDevice device = DisplayDevice.Create();
+            if (!WindowsDisplayNative.EnumDisplayDevices(
+                    target.SourceName,
+                    index,
+                    ref device,
+                    WindowsDisplayNative.EddGetDeviceInterfaceName))
             {
-                SetDefaultStandardColorProfile(target, previous);
+                break;
             }
 
-            if (originalScope == WindowsDisplayNative.SystemWideScope)
-            {
-                SetUsePerUserProfiles(target, false);
-            }
+            monitors.Add(new DisplayMonitorDeviceIdentity(
+                device.DeviceId.TrimEnd('\0'),
+                device.DeviceKey.TrimEnd('\0'),
+                (device.StateFlags & WindowsDisplayNative.DisplayDeviceActive) != 0));
         }
-        catch
-        {
-        }
+
+        return DisplayMonitorDeviceKeyResolver.Resolve(target.MonitorDevicePath, monitors);
     }
 
     private static bool IsValidMonitorRgbIcc(string path)

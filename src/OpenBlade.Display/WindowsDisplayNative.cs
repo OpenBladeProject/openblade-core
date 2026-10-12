@@ -34,6 +34,8 @@ internal static class WindowsDisplayNative
 
     internal const uint EnumCurrentSettings = 0xFFFFFFFF;
     internal const uint DmInterlaced = 0x00000002;
+    internal const uint DisplayDeviceActive = 0x00000001;
+    internal const uint EddGetDeviceInterfaceName = 0x00000001;
     internal const uint CurrentUserScope = 1;
     internal const uint SystemWideScope = 0;
     // CLASS_MONITOR from icm.h is the ICC device-class signature 'mntr'.
@@ -86,6 +88,14 @@ internal static class WindowsDisplayNative
         ref DevMode devMode,
         uint flags);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool EnumDisplayDevices(
+        string? deviceName,
+        uint deviceIndex,
+        ref DisplayDevice displayDevice,
+        uint flags);
+
     [DllImport("mscms.dll", ExactSpelling = true)]
     internal static extern int ColorProfileGetDisplayList(
         uint scope,
@@ -126,6 +136,14 @@ internal static class WindowsDisplayNative
         int associateAsAdvancedColor);
 
     [DllImport("mscms.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    internal static extern int ColorProfileRemoveDisplayAssociation(
+        uint scope,
+        string profileName,
+        DisplayConfigLuid targetAdapterId,
+        uint sourceId,
+        int dissociateAdvancedColor);
+
+    [DllImport("mscms.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     internal static extern int ColorProfileSetDisplayDefaultAssociation(
         uint scope,
         string profileName,
@@ -136,6 +154,35 @@ internal static class WindowsDisplayNative
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern IntPtr LocalFree(IntPtr memory);
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct DisplayDevice
+{
+    internal uint Cb;
+
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+    internal string DeviceName;
+
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+    internal string DeviceString;
+
+    internal uint StateFlags;
+
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+    internal string DeviceId;
+
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+    internal string DeviceKey;
+
+    internal static DisplayDevice Create() => new()
+    {
+        Cb = checked((uint)Marshal.SizeOf<DisplayDevice>()),
+        DeviceName = string.Empty,
+        DeviceString = string.Empty,
+        DeviceId = string.Empty,
+        DeviceKey = string.Empty,
+    };
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
