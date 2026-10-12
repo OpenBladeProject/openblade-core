@@ -18,8 +18,10 @@ access. Read-only construction cannot gain write access through Custom.
   this laptop through captured, typed, reversible operations. Save the confirmed
   baseline, pass fresh exact-device, controller, power and pad checks, apply the
   captured mode-7 pair, confirm both channels, restore, and confirm restoration.
-- Cover pad-present and padless paths separately where each is admitted. Record
-  the power connector and pad state. Verify Custom CPU/GPU levels as well as mode.
+- Record the power connector and pad state. Both pad routes use the shared
+  transition and restoration handler; one round trip per new base mode validates
+  that path. Add a second pad state for concrete eligibility or journaling
+  uncertainty. Verify Custom CPU/GPU levels as well as mode.
 - Stop further writes if submission or readback is ambiguous. Reconcile
   read-only. Do not retry an uncertain write or guess the restoration state.
 - Review whether existing crash-recovery and low-power evidence covers each new
