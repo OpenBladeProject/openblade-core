@@ -19,6 +19,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Translate the cooling-pad status messages shown when HyperBoost needs the pad. ([#717](https://github.com/OpenBladeProject/openblade-core/pull/717))
+
 - Keep the tray and Session Agent running during complete shutdown until the service is confirmed stopped. ([#663](https://github.com/OpenBladeProject/openblade-core/pull/663))
 - Clear a power mode warning after unplugging during sleep when a fresh read confirms the battery profile. ([#587](https://github.com/OpenBladeProject/openblade-core/pull/587))
 - Show one-shot keyboard lighting as unconfirmed on the supported Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode, and redraw automatically only with the lighting override setting enabled. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))
