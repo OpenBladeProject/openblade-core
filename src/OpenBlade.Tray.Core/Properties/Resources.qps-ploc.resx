@@ -1329,8 +1329,17 @@
   <data name="Disconnect the cooling pad before enabling HyperBoost." xml:space="preserve">
     <value>[!! Díscónnéct thé cóólíng pád béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>[!! Cónnéct thé súppórtéd cóólíng pád béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>[!! HýpérBóóst réqúírés thé súppórtéd cóólíng pád tó stáý cónnéctéd. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>[!! Cóólíng-pád ábséncé cóúld nót bé cónfírméd. Réfrésh thé láptóp státé béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>[!! Thé cóólíng-pád cónnéctíón cóúld nót bé cónfírméd. Réfrésh thé láptóp státé béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>[!! Pád-léss HýpérBóóst ís détéctéd bút ís nót áváíláblé wíth thé cúrrént ádmíssíón évídéncé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>

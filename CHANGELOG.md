@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Start HyperBoost directly from Silent, Performance or Custom on the supported Blade 16 (2026) RZ09-0581, with or without the cooling pad, and restore the starting mode and Custom CPU/GPU levels afterward. ([#717](https://github.com/OSSBlade/openblade-core/pull/717))
+
 - Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable HyperBoost without the cooling pad on the supported Blade 16 (2025) RZ09-0528 on the full-power adapter, keep GPU clock tuning available, and start HyperBoost directly from Silent, Balanced or Performance with or without the pad. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
@@ -18,6 +20,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Hide the apps using the NVIDIA GPU card when a successful activity scan confirms the GPU is inactive. ([#718](https://github.com/OSSBlade/openblade-core/pull/718))
+- Read published firmware versions with or without a v prefix, keeping each version tied to its updater row. ([#716](https://github.com/OpenBladeProject/openblade-core/pull/716))
+- Translate the cooling-pad status messages shown when HyperBoost needs the pad. ([#717](https://github.com/OpenBladeProject/openblade-core/pull/717))
+
 - Keep the tray and Session Agent running during complete shutdown until the service is confirmed stopped. ([#663](https://github.com/OpenBladeProject/openblade-core/pull/663))
 - Clear a power mode warning after unplugging during sleep when a fresh read confirms the battery profile. ([#587](https://github.com/OpenBladeProject/openblade-core/pull/587))
 - Show one-shot keyboard lighting as unconfirmed on the supported Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode, and redraw automatically only with the lighting override setting enabled. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))

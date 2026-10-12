@@ -264,7 +264,9 @@ public sealed record DeviceCapabilities(
                 && HyperBoostBaseModes.IsWellFormed
                 && HyperBoostBaseModes.Silent <= HyperBoostAccess.Value
                 && HyperBoostBaseModes.Balanced <= HyperBoostAccess.Value
-                && HyperBoostBaseModes.Performance <= HyperBoostAccess.Value)
+                && HyperBoostBaseModes.Performance <= HyperBoostAccess.Value
+                && (HyperBoostBaseModes.Custom is null
+                    || HyperBoostBaseModes.Custom <= HyperBoostAccess.Value))
         && (SpecialKeyBindingsAccess is null
             || Enum.IsDefined(SpecialKeyBindingsAccess.Value))
         && HasValidSpecialKeySlots()
