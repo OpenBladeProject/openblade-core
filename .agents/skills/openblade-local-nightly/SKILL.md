@@ -19,11 +19,9 @@ Keep these boundaries throughout the run:
 - Keep local artifact creation separate from GitHub publication. Stop at the user's authorized boundary.
 - Reproduce the guarded `docs/nightly-changelog-automation` draft-PR update before publication. Review and merge the generated changelog, then use `build/Complete-NightlyRelease.ps1`; opening a draft PR alone is not completion. Never push directly to `main` or replace that branch without the current remote SHA as a force-with-lease guard.
 
-## Use the exact release operator
+## Build and validate
 
-Route the artifact-build phase through the exact `openblade_release_operator` custom agent with mode `nightly-publish`, full SHA, positive `BuildRevision`, matching `SourceRevision`, and the reserved workflow-run identifier. Route the hosted-equivalent full quality and build-contract lanes through the exact `openblade_validation_operator` on the resulting exact-SHA worktree.
-
-If the runtime cannot select either exact named agent, or an operator is unavailable or usage-limited, stop before its phase and ask for explicit approval to execute that same bounded build or validation directly. A generic subagent, task label, or model override is not an OpenBlade operator. The primary agent always owns GitHub mutations and final acceptance.
+Run the exact-source build and hosted-equivalent validation lanes directly, or delegate bounded work to an available model under the repository delegation policy. The primary agent owns release inputs, GitHub mutations, and final acceptance.
 
 ## Run the fallback
 

@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-10-12
+
 ### Added
 
 - Start HyperBoost directly from Silent, Performance or Custom on the supported Blade 16 (2026) RZ09-0581, with or without the cooling pad, and restore the starting mode and Custom CPU/GPU levels afterward. ([#717](https://github.com/OSSBlade/openblade-core/pull/717))
@@ -1969,7 +1971,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.24.3...HEAD
+[0.24.3]: https://github.com/OSSBlade/openblade-core/compare/v0.22.0...v0.24.3
 [0.22.0]: https://github.com/OSSBlade/openblade-core/compare/v0.21.10...v0.22.0
 [0.21.10]: https://github.com/OSSBlade/openblade-core/compare/v0.21.9...v0.21.10
 [0.21.9]: https://github.com/OSSBlade/openblade-core/compare/v0.21.6...v0.21.9
