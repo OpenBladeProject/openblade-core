@@ -222,44 +222,60 @@ public sealed class GpuAppCleanupCoordinatorTests
     }
 
     [Theory]
-    [InlineData(0, false)]
-    [InlineData(0.1, false)]
-    [InlineData(0.11, true)]
-    public async Task ConfirmedInactiveGpuHidesCardDespiteClosableApps(
-        double utilizationPercent,
-        bool expectedVisible)
+    [InlineData(0)]
+    [InlineData(0.1)]
+    [InlineData(0.11)]
+    public async Task ClosableGpuHolderShowsAtEveryReportedUtilization(
+        double utilizationPercent)
     {
         var flow = new GpuAppCleanupFixture();
-        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Succeeded, flow.App));
         flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(
             SessionGpuOperationStatus.Succeeded,
             flow.App with { UtilizationPercent = utilizationPercent }));
 
         await flow.Coordinator.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal([true], flow.Visibility);
+        Assert.Empty(flow.Closes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SuccessfulScanWithoutClosableAppsHidesImmediately(bool blockedOnly)
+    {
+        var flow = new GpuAppCleanupFixture();
+        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Succeeded, flow.App));
+        SessionGpuApp[] apps = blockedOnly
+            ? [flow.App with { CanClose = false, BlockReason = "protected" }]
+            : [];
+        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Succeeded, apps));
+
+        await flow.Coordinator.ObserveAsync(CancellationToken.None);
         await flow.Coordinator.ObserveAsync(CancellationToken.None);
 
-        Assert.Equal([true, expectedVisible], flow.Visibility);
+        Assert.Equal([true, false], flow.Visibility);
         Assert.Empty(flow.Closes);
     }
 
     [Theory]
     [InlineData(SessionGpuOperationStatus.Failed)]
     [InlineData(SessionGpuOperationStatus.PartiallySucceeded)]
-    public async Task ObservationRetainsVisibilityThroughTransientFailureThenHides(
+    public async Task IncompleteObservationRetainsVisibilityForBoundedFailures(
         SessionGpuOperationStatus incompleteStatus)
     {
         var flow = new GpuAppCleanupFixture();
         flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Succeeded, flow.App));
         flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(incompleteStatus));
-        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Succeeded));
-        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Failed));
+        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(incompleteStatus));
+        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(incompleteStatus));
 
         for (int i = 0; i < 4; i++)
         {
             await flow.Coordinator.ObserveAsync(CancellationToken.None);
         }
 
-        Assert.Equal([true, true, false, false], flow.Visibility);
+        Assert.Equal([true, true, true, false], flow.Visibility);
         Assert.Empty(flow.Closes);
     }
 

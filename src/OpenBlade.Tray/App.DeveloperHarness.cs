@@ -1119,7 +1119,7 @@ public partial class App
         {
             host.Background = new SolidColorBrush(Microsoft.UI.Colors.White);
         }
-        SessionGpuApp app = new(101, 1001, "snapshot.exe", 5, true, null);
+        SessionGpuApp app = new(101, 1001, "snapshot.exe", 0, true, null);
         SessionGpuResponse scan = new(
             SessionGpuIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -1139,25 +1139,25 @@ public partial class App
                 && AnimatedVisibility.GetIsVisible(card)
                 && card.Visibility == Visibility.Visible
                 && card.ActualHeight > 0,
-            "An active NVIDIA scan did not show the bound card.");
-        double activeHostHeight = host.ActualHeight;
+            "An idle NVIDIA context holder did not show the bound card.");
+        double visibleHostHeight = host.ActualHeight;
         if (captureSnapshots)
         {
-            await SaveSnapshotAsync(host, reportPath + ".gpu-active.png");
+            await SaveSnapshotAsync(host, reportPath + ".gpu-idle-holder.png");
         }
 
-        scan = scan with { Apps = [app with { UtilizationPercent = 0 }] };
+        scan = scan with { Apps = [] };
         await coordinator.ObserveAsync(CancellationToken.None);
         await WaitForSnapshotLayoutAsync();
         RequireResponsiveSelector(
             !window.ViewModel.IsGpuAppCleanupVisible
                 && !AnimatedVisibility.GetIsVisible(card)
                 && card.Visibility == Visibility.Collapsed
-                && host.ActualHeight < activeHostHeight - 1,
-            "An inactive NVIDIA scan did not collapse the bound card and its layout space.");
+                && host.ActualHeight < visibleHostHeight - 1,
+            "A successful empty NVIDIA scan did not collapse the bound card and its layout space.");
         if (captureSnapshots)
         {
-            await SaveSnapshotAsync(host, reportPath + ".gpu-inactive.png");
+            await SaveSnapshotAsync(host, reportPath + ".gpu-empty.png");
         }
 
         scan = scan with { Apps = [app] };
@@ -1165,7 +1165,7 @@ public partial class App
         await WaitForSnapshotLayoutAsync();
         RequireResponsiveSelector(
             card.Visibility == Visibility.Visible,
-            "The NVIDIA app card did not return when activity resumed.");
+            "The NVIDIA app card did not return when an idle context holder returned.");
         scan = scan with { Apps = [] };
         await coordinator.ObserveAsync(CancellationToken.None);
         await WaitForSnapshotLayoutAsync();
