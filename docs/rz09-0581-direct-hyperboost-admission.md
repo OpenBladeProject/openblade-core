@@ -3,8 +3,9 @@
 This change prepares direct HyperBoost entry from Silent, Balanced, Performance
 and Custom on the Blade 16 (2026) RZ09-0581, SKU RZ09-05819EN4, USB 1532:02E0.
 Keep the candidate admission in draft until the validation below is recorded
-and reviewed. A controlled local installation is needed for these checks. Balanced padless entry has existing evidence;
-Silent, Performance and Custom direct entry remain unvalidated on this model.
+and reviewed. A controlled local installation is needed for these checks.
+Balanced padless entry has existing evidence; Silent, Performance and Custom
+direct entry remain unvalidated on this model.
 
 The service uses the confirmed starting mode, sends the model's captured
 HyperBoost pair, and restores the starting mode on exit. For Custom, the existing
@@ -35,6 +36,23 @@ fixtures. New vendor capture is needed only if a concrete protocol uncertainty
 remains; repository guidance permits direct typed validation of captured
 commands. Never substitute RZ09-0528 evidence for this model's physical results.
 The RZ09-0528 portion of issue #609 was completed by PRs #596 and #610.
+
+## Lifecycle coverage
+
+The existing RZ09-0581 [crash-recovery annotation](../captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json)
+and [low-power annotation](../captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json)
+record Balanced/Automatic restoration, stable repeated readback and journal
+retirement. Unexpected exit, shutdown and low-power restoration share
+`RestoreOwnedHyperBoostForLifecycleCoreAsync` and `RestoreHyperBoostIntentAsync`.
+Silent and Performance use that same checked path with their saved base mode.
+
+Custom also restores the saved CPU/GPU levels. Regression tests cover Custom
+unexpected-exit and shutdown restoration, plus explicit recovery when the
+base mode has returned but the observed levels differ from the saved levels.
+The remaining physical check is a normal direct-entry round trip for each new
+base mode, including exact Custom-level restoration. The shared lifecycle
+coverage does not require another crash or sleep test absent a new uncertainty.
+
 ## Targeted round trip
 
 After an approved local installation, select one starting mode in the tray,

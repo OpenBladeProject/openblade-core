@@ -263,6 +263,39 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteAndLoad_CurrentCustomRestorePendingWithoutBaselineAllowsExplicitCapture()
+    {
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        var store = new HyperBoostOwnershipJournalStore(path);
+        var custom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.Medium,
+            CustomPerformanceLevel.High);
+        var expected = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            PerformancePreset.Custom,
+            RequiresCoolingPad: false,
+            new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero))
+        {
+            RestoreIntent = new HyperBoostRestoreIntent(
+                PerformancePreset.Custom,
+                custom,
+                GpuClockTuning: null,
+                FanControlSettings.FromLegacy(FanMode.Automatic)),
+            TransitionId = Guid.NewGuid(),
+        };
+
+        await store.WriteAsync(expected, CancellationToken.None);
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Invalid);
+        Assert.Equal(expected, loaded.Journal);
+        Assert.Null(loaded.Journal!.RecoveryBaseline);
+        Assert.True(loaded.AllowsExplicitRecoveryBaselineCapture);
+        Assert.Matches("^[0-9A-F]{64}$", loaded.Sha256);
+    }
+
+    [Fact]
     public async Task Load_MalformedJournalFailsClosedWithoutDeletingEvidence()
     {
         Directory.CreateDirectory(directory);
