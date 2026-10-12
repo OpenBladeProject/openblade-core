@@ -18,6 +18,32 @@ trivial tasks or split write-heavy work when merge conflicts and coordination
 would outweigh the benefit. When parallel editing is useful, assign disjoint
 files or components and inspect the combined diff before verification.
 
+## Proportionate execution and authorization reuse
+
+Use the smallest workflow that resolves a concrete uncertainty and completes
+required verification and reviews. Before adding a check, capture, study, or
+validation step, identify what remains uncertain and how its result will affect
+the next action. Reuse conclusive evidence while the relevant source, device,
+and conditions remain unchanged; repeat a check only when a change, failure,
+or unresolved concern justifies it. Exact-head and fresh per-write safety
+checks remain required where specified below.
+
+Reuse explicit user authorization within its stated scope throughout the task.
+Do not ask again for the same authorized action merely because execution moves
+to another step or agent. Ask when the next action exceeds that scope or an
+existing rule requires fresh approval, including attended sleep/resume testing.
+This policy grants no hardware authority and waives no required review,
+approval, or safety requirement.
+
+For authorized hardware validation, prefer one captured, typed, reversible test
+that resolves the uncertainty: read and save the confirmed baseline, pass fresh
+exact-device and applicable safety admission, apply one value, confirm it by
+readback, restore the exact saved state, and verify restoration by readback.
+Add further tests only for a concrete remaining uncertainty or required gate.
+If submission or readback is ambiguous, stop further writes and reconcile
+read-only. If restoration fails or cannot be confirmed, stop and report the
+unresolved state; never replay an uncertain write, guess, or widen authority.
+
 ## Product boundary
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
