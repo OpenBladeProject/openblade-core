@@ -26,14 +26,9 @@ public sealed class GpuAppCleanupVisibilityTracker
 
     public bool ObserveSuccessfulScan(bool hasClosableApps)
     {
-        if (hasClosableApps)
-        {
-            unconfirmedScans = 0;
-            IsVisible = true;
-            return IsVisible;
-        }
-
-        return ObserveUnconfirmedScan();
+        unconfirmedScans = 0;
+        IsVisible = hasClosableApps;
+        return IsVisible;
     }
 
     public bool ObserveFailedScan() => ObserveUnconfirmedScan();

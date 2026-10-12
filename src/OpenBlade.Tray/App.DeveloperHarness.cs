@@ -1091,6 +1091,8 @@ public partial class App
             laptopCardsHost.Width = 450;
             await VerifyHyperBoostWarningLayoutAsync(
                 smokeWindow, root, smokeReportPath, captureSnapshots);
+            await VerifyGpuAppCleanupVisibilityAsync(
+                smokeWindow, root, smokeReportPath, captureSnapshots);
 
             smokeWindow.Close();
             File.WriteAllText(smokeReportPath, "completed");
@@ -1101,6 +1103,95 @@ public partial class App
             File.WriteAllText(smokeReportPath, exception.ToString());
             Environment.Exit(1);
         }
+    }
+
+    private static async Task VerifyGpuAppCleanupVisibilityAsync(
+        MainWindow window,
+        FrameworkElement root,
+        string reportPath,
+        bool captureSnapshots)
+    {
+        XamlBorder card = FindGpuAppCleanupCard(root)
+            ?? throw new InvalidOperationException("The NVIDIA app card was not rendered.");
+        XamlStackPanel host = FindPerformanceSmokeAncestor<XamlStackPanel>(card)
+            ?? throw new InvalidOperationException("The NVIDIA app card host was not rendered.");
+        if (captureSnapshots)
+        {
+            host.Background = new SolidColorBrush(Microsoft.UI.Colors.White);
+        }
+        SessionGpuApp app = new(101, 1001, "snapshot.exe", 5, true, null);
+        SessionGpuResponse scan = new(
+            SessionGpuIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            SessionGpuOperationStatus.Succeeded,
+            null,
+            [app],
+            []);
+        var coordinator = new GpuAppCleanupCoordinator(
+            _ => Task.FromResult(scan),
+            (_, _, _) => throw new InvalidOperationException("Snapshot must not close apps."),
+            window.ViewModel.SetGpuAppCleanupVisibleAsync);
+
+        await coordinator.ObserveAsync(CancellationToken.None);
+        await WaitForSnapshotLayoutAsync();
+        RequireResponsiveSelector(
+            window.ViewModel.IsGpuAppCleanupVisible
+                && AnimatedVisibility.GetIsVisible(card)
+                && card.Visibility == Visibility.Visible
+                && card.ActualHeight > 0,
+            "An active NVIDIA scan did not show the bound card.");
+        double activeHostHeight = host.ActualHeight;
+        if (captureSnapshots)
+        {
+            await SaveSnapshotAsync(host, reportPath + ".gpu-active.png");
+        }
+
+        scan = scan with { Apps = [app with { UtilizationPercent = 0 }] };
+        await coordinator.ObserveAsync(CancellationToken.None);
+        await WaitForSnapshotLayoutAsync();
+        RequireResponsiveSelector(
+            !window.ViewModel.IsGpuAppCleanupVisible
+                && !AnimatedVisibility.GetIsVisible(card)
+                && card.Visibility == Visibility.Collapsed
+                && host.ActualHeight < activeHostHeight - 1,
+            "An inactive NVIDIA scan did not collapse the bound card and its layout space.");
+        if (captureSnapshots)
+        {
+            await SaveSnapshotAsync(host, reportPath + ".gpu-inactive.png");
+        }
+
+        scan = scan with { Apps = [app] };
+        await coordinator.ObserveAsync(CancellationToken.None);
+        await WaitForSnapshotLayoutAsync();
+        RequireResponsiveSelector(
+            card.Visibility == Visibility.Visible,
+            "The NVIDIA app card did not return when activity resumed.");
+        scan = scan with { Apps = [] };
+        await coordinator.ObserveAsync(CancellationToken.None);
+        await WaitForSnapshotLayoutAsync();
+        RequireResponsiveSelector(
+            card.Visibility == Visibility.Collapsed,
+            "A successful empty NVIDIA scan did not collapse the card.");
+    }
+
+    private static XamlBorder? FindGpuAppCleanupCard(DependencyObject root)
+    {
+        int childCount = VisualTreeHelper.GetChildrenCount(root);
+        for (int index = 0; index < childCount; index++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, index);
+            if (child is XamlTextBlock { Text: "Apps using the NVIDIA GPU" } title)
+            {
+                return FindPerformanceSmokeAncestor<XamlBorder>(title);
+            }
+
+            if (FindGpuAppCleanupCard(child) is XamlBorder card)
+            {
+                return card;
+            }
+        }
+
+        return null;
     }
 
     private static async Task VerifyHyperBoostWarningLayoutAsync(

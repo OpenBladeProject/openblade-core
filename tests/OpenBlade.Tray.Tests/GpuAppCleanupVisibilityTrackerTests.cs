@@ -41,28 +41,24 @@ public sealed class GpuAppCleanupVisibilityTrackerTests
     }
 
     [Fact]
-    public void ThreeConsecutiveSuccessfulEmptyScansHideVisibleAction()
+    public void SuccessfulEmptyScanHidesVisibleActionImmediately()
     {
         var tracker = new GpuAppCleanupVisibilityTracker();
         tracker.ObserveSuccessfulScan(hasClosableApps: true);
 
-        Assert.True(tracker.ObserveSuccessfulScan(hasClosableApps: false));
-        Assert.True(tracker.ObserveSuccessfulScan(hasClosableApps: false));
+        Assert.False(tracker.ObserveSuccessfulScan(hasClosableApps: false));
         Assert.False(tracker.ObserveSuccessfulScan(hasClosableApps: false));
     }
 
     [Fact]
-    public void SuccessfulPresenceBreaksAnEmptySequence()
+    public void SuccessfulPresenceShowsAgainAfterAnEmptyScan()
     {
         var tracker = new GpuAppCleanupVisibilityTracker();
         tracker.ObserveSuccessfulScan(hasClosableApps: true);
         tracker.ObserveSuccessfulScan(hasClosableApps: false);
         tracker.ObserveSuccessfulScan(hasClosableApps: false);
 
-        tracker.ObserveSuccessfulScan(hasClosableApps: true);
-
-        Assert.True(tracker.ObserveSuccessfulScan(hasClosableApps: false));
-        Assert.True(tracker.ObserveSuccessfulScan(hasClosableApps: false));
+        Assert.True(tracker.ObserveSuccessfulScan(hasClosableApps: true));
     }
 
     [Fact]
@@ -77,13 +73,13 @@ public sealed class GpuAppCleanupVisibilityTrackerTests
     }
 
     [Fact]
-    public void EmptyAndFailedScansShareOneBoundedStaleBudget()
+    public void EmptyScanClearsVisibilityBeforeFurtherFailures()
     {
         var tracker = new GpuAppCleanupVisibilityTracker();
         tracker.ObserveSuccessfulScan(hasClosableApps: true);
 
-        Assert.True(tracker.ObserveSuccessfulScan(hasClosableApps: false));
-        Assert.True(tracker.ObserveFailedScan());
+        Assert.False(tracker.ObserveSuccessfulScan(hasClosableApps: false));
+        Assert.False(tracker.ObserveFailedScan());
         Assert.False(tracker.ObserveSuccessfulScan(hasClosableApps: false));
     }
 }

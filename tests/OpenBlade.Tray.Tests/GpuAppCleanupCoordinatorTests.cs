@@ -221,12 +221,36 @@ public sealed class GpuAppCleanupCoordinatorTests
         Assert.Equal(2, flow.QueryCalls);
     }
 
-    [Fact]
-    public async Task ObservationRetainsVisibilityThroughTransientFailureThenHides()
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0.1, false)]
+    [InlineData(0.11, true)]
+    public async Task ConfirmedInactiveGpuHidesCardDespiteClosableApps(
+        double utilizationPercent,
+        bool expectedVisible)
     {
         var flow = new GpuAppCleanupFixture();
         flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Succeeded, flow.App));
-        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Failed));
+        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(
+            SessionGpuOperationStatus.Succeeded,
+            flow.App with { UtilizationPercent = utilizationPercent }));
+
+        await flow.Coordinator.ObserveAsync(CancellationToken.None);
+        await flow.Coordinator.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal([true, expectedVisible], flow.Visibility);
+        Assert.Empty(flow.Closes);
+    }
+
+    [Theory]
+    [InlineData(SessionGpuOperationStatus.Failed)]
+    [InlineData(SessionGpuOperationStatus.PartiallySucceeded)]
+    public async Task ObservationRetainsVisibilityThroughTransientFailureThenHides(
+        SessionGpuOperationStatus incompleteStatus)
+    {
+        var flow = new GpuAppCleanupFixture();
+        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Succeeded, flow.App));
+        flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(incompleteStatus));
         flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Succeeded));
         flow.Scans.Enqueue(GpuAppCleanupFixture.Scan(SessionGpuOperationStatus.Failed));
 
@@ -235,7 +259,7 @@ public sealed class GpuAppCleanupCoordinatorTests
             await flow.Coordinator.ObserveAsync(CancellationToken.None);
         }
 
-        Assert.Equal([true, true, true, false], flow.Visibility);
+        Assert.Equal([true, true, false, false], flow.Visibility);
         Assert.Empty(flow.Closes);
     }
 

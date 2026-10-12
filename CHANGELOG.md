@@ -19,6 +19,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Hide the apps using the NVIDIA GPU card when a successful activity scan confirms the GPU is inactive. ([#718](https://github.com/OSSBlade/openblade-core/pull/718))
 - Read published firmware versions with or without a v prefix, keeping each version tied to its updater row. ([#716](https://github.com/OpenBladeProject/openblade-core/pull/716))
 - Translate the cooling-pad status messages shown when HyperBoost needs the pad. ([#717](https://github.com/OpenBladeProject/openblade-core/pull/717))
 

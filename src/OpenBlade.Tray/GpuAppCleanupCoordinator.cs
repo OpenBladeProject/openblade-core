@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using OpenBlade.Platform;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -357,10 +358,12 @@ internal sealed class GpuAppCleanupCoordinator
         SessionGpuResponse scan,
         CancellationToken cancellationToken)
     {
-        bool visible = scan.Status == SessionGpuOperationStatus.Failed
+        bool visible = scan.Status != SessionGpuOperationStatus.Succeeded
             ? visibilityTracker.ObserveFailedScan()
             : visibilityTracker.ObserveSuccessfulScan(
-                scan.Apps.Any(app => app.CanClose));
+                scan.Apps.Any(app => app.CanClose)
+                && scan.Apps.Any(app =>
+                    app.UtilizationPercent > WindowsGpuProcessActivity.ActiveThresholdPercent));
         return setVisibilityAsync(visible, cancellationToken);
     }
 
