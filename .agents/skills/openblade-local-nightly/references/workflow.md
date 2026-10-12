@@ -21,10 +21,6 @@ The reserved identity passed to the build is:
 
 ## 2. Build the exact source locally
 
-Prefer the exact `openblade_release_operator`. Supply only the immutable inputs selected above and mode `nightly-publish`. The operator must leave its detached worktree and artifacts for primary-agent review.
-
-If the user explicitly approves direct fallback after the exact operator is unavailable:
-
 1. Create a fresh detached exact-commit worktree under `C:\tmp`, outside the OneDrive-linked checkout. Use a path that includes the Nightly revision and short SHA.
 2. Initialize the pinned `captures` submodule. Prove the parent worktree and submodule are clean, the parent `HEAD` equals `SourceRevision`, and the submodule `HEAD` equals the recorded gitlink.
 3. Run the unchanged publisher through process-scoped execution-policy bypass:
@@ -44,9 +40,7 @@ If the user explicitly approves direct fallback after the exact operator is unav
 
 Before any GitHub release mutation, run the full validation mode represented by `.github/workflows/build.yml`: the quality-and-tests lane, the complete build-contract lane, and the installer-validation lane already completed by the unchanged publisher. Do not substitute the normal repository baseline alone; the Nightly workflow requires all three successful results.
 
-Prefer the exact `openblade_validation_operator` in `full` mode on the clean exact-SHA release worktree left by the release operator. Supply its absolute path and expected full SHA. It must mirror the current workflow commands and return exact commands, exit codes, elapsed time, and test totals.
-
-If the user explicitly approves direct validation after that operator is unavailable, mirror the current full lanes exactly:
+Mirror the current full lanes exactly:
 
 1. Set the workflow's .NET environment and keep interactive desktop tests enabled. Restore the solution, then run `dotnet format OpenBlade.slnx --verify-no-changes --no-restore --severity error --verbosity minimal`.
 2. Run `dotnet build OpenBlade.slnx -p:NuGetAudit=false --no-restore -m:1 --verbosity minimal`.

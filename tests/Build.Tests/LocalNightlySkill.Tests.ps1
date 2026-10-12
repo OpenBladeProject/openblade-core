@@ -48,9 +48,7 @@ Assert-ContainsAll `
     -Content $skill `
     -RequiredValues @(
         'references/workflow.md',
-        'openblade_release_operator',
-        'openblade_validation_operator',
-        'ask for explicit approval to execute that same bounded build or validation directly',
+        'repository delegation policy',
         'force-with-lease guard',
         'Do not edit source',
         'install artifacts',

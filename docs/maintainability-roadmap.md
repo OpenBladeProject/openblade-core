@@ -137,8 +137,7 @@ ideas. Retain local evidence outside worktrees before deleting them.
    issue/branch/head and active validation handles in the tracker or task record.
 3. Work in a dedicated main-based worktree. Start with up to two workers only
    for independent bounded scopes; one owner integrates shared-file changes.
-   Use available models according to the repository delegation policy. Existing
-   permission to fall back when Spark is unavailable applies; disclose it.
+   Use available models according to the repository delegation policy.
 4. Implement one coherent slice. Independently reproduce review findings before
    fixing them. Track behavior fixes separately with required version/changelog
    changes; internal refactors normally have version impact none.
