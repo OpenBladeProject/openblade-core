@@ -18,6 +18,32 @@ trivial tasks or split write-heavy work when merge conflicts and coordination
 would outweigh the benefit. When parallel editing is useful, assign disjoint
 files or components and inspect the combined diff before verification.
 
+## Proportionate execution and authorization reuse
+
+Use the smallest workflow that resolves a concrete uncertainty and completes
+required verification and reviews. Before adding a check, capture, study, or
+validation step, identify what remains uncertain and how its result will affect
+the next action. Reuse conclusive evidence while the relevant source, device,
+and conditions remain unchanged; repeat a check only when a change, failure,
+or unresolved concern justifies it. Exact-head and fresh per-write safety
+checks remain required where specified below.
+
+Reuse explicit user authorization within its stated scope throughout the task.
+Do not ask again for the same authorized action merely because execution moves
+to another step or agent. Ask when the next action exceeds that scope or an
+existing rule requires fresh approval, including attended sleep/resume testing.
+This policy grants no hardware authority and waives no required review,
+approval, or safety requirement.
+
+For authorized hardware validation, prefer one captured, typed, reversible test
+that resolves the uncertainty: read and save the confirmed baseline, pass fresh
+exact-device and applicable safety admission, apply one value, confirm it by
+readback, restore the exact saved state, and verify restoration by readback.
+Add further tests only for a concrete remaining uncertainty or required gate.
+If submission or readback is ambiguous, stop further writes and reconcile
+read-only. If restoration fails or cannot be confirmed, stop and report the
+unresolved state; never replay an uncertain write, guess, or widen authority.
+
 ## Product boundary
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
@@ -169,6 +195,12 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
   the user is unavailable. Keep it as the last physical-validation step and
   require fresh approval immediately beforehand from a present user who can
   resume the system and report the outcome.
+- Scope physical validation to the behavior and safety conditions exercised.
+  When source inspection confirms that different power connectors use the same
+  transition handler and relevant state checks, one attended test may validate
+  that shared path. Record the connector used and any source-specific behavior
+  left untested; do not repeat a disruptive lifecycle test solely to match the
+  connector in the original report.
 - Never run USBPcap capture and OpenBlade control against the same interface at
   the same time.
 - Never call `GenerateConsoleCtrlEvent` with process group `0`. USBPcapCMD must
@@ -212,10 +244,8 @@ unrelated worktrees and checkout changes.
 6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
-7. For hardware changes, complete the documented physical validation before
-   marking support production-ready. Unattended portions are allowed only
-   within the explicit limits under Hardware and capture safety; lifecycle
-   steps that require a present user remain attended.
+7. For hardware changes, complete the relevant physical validation before
+   marking support production-ready, following Hardware and capture safety.
 8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. Every
    new or materially changed changelog bullet must include a Markdown link to
    its implementing pull request, using
@@ -321,8 +351,6 @@ Follow [VERSIONING.md](VERSIONING.md). The short form is:
 - Name branches for the work, not the agent or vendor. Use purpose prefixes
   such as `feat/`, `fix/`, `docs/`, `chore/`, or `refactor/`; do not use
   prefixes such as `codex/` or `claude/`.
-- Base new work branches on `main` by default. Use a different base only when
-  the user explicitly requests one.
 - `Directory.Build.props` is the product-version source of truth.
 - Every pull request must complete the `Version impact`, exact `Version change`,
   and `Reason` fields defined in `VERSIONING.md`. Apply any required bump to
