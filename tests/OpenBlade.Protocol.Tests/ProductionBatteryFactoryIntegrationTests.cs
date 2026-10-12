@@ -122,9 +122,12 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         Assert.Equal(DeviceFeatureAccess.ObservedOnly, withoutCoolingPadAccess);
         Assert.Equal(
             new HyperBoostBaseModeCapabilities(
-                DeviceFeatureAccess.ObservedOnly,
                 DeviceFeatureAccess.ReadOnly,
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ReadOnly,
+                DeviceFeatureAccess.ReadOnly)
+            {
+                Custom = DeviceFeatureAccess.ReadOnly,
+            },
             baseModes);
     }
 
@@ -172,9 +175,12 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             factory.Capabilities.HyperBoostWithoutCoolingPadAccess);
         Assert.Equal(
             new HyperBoostBaseModeCapabilities(
-                DeviceFeatureAccess.ObservedOnly,
                 DeviceFeatureAccess.ReadOnly,
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ReadOnly,
+                DeviceFeatureAccess.ReadOnly)
+            {
+                Custom = DeviceFeatureAccess.ReadOnly,
+            },
             factory.Capabilities.HyperBoostBaseModes);
     }
 
@@ -510,6 +516,46 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         Assert.Equal(1, recovered.ExecuteCount);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Performance)]
+    [InlineData(PerformancePreset.Custom)]
+    public void Rz090581DirectHyperBoost_RequiresItsOwnCapturedRestorationPair(PerformancePreset mode)
+    {
+        DeviceCommandCatalog restoration = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()!.Value, TrustedFixtureHashRegistry.Production);
+        DeviceCommandCatalog hyperBoost = CapturedFixtureFile.LoadCatalog(
+            HyperBoostFixtureSource.Read()!.Value, TrustedFixtureHashRegistry.HyperBoostProduction,
+            new DeviceIdentity("RZ09-0581", 0x1532, 0x02E0, "4.00"));
+        HyperBoostBaseModeCapabilities modes = HyperBoostBaseModeAdmissionSource.ReadCapabilities();
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, modes.AccessFor(mode));
+        Assert.True(ProductionBatteryPort.HasPerformancePair(restoration, mode));
+        Assert.True(ProductionBatteryPort.HasHyperBoostCommandSet(hyperBoost, restoration, modes));
+        Assert.False(ProductionBatteryPort.HasHyperBoostCommandSet(hyperBoost, DeviceCommandCatalog.Empty, modes));
+        var capabilities = DeviceCapabilities.Unavailable() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = modes,
+        };
+        Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(capabilities, true, mode));
+        Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(capabilities, false, mode));
+    }
+
+    [Theory]
+    [InlineData(DeviceFeatureAccess.ReadWrite)]
+    [InlineData((DeviceFeatureAccess)99)]
+    public void ReadOnlyFactory_RejectsUnboundedCustomHyperBoost(DeviceFeatureAccess custom)
+    {
+        Assert.Throws<ArgumentException>(() => Factory(new RecordingActorFactory(),
+            hyperBoostAccess: DeviceFeatureAccess.ReadOnly,
+            hyperBoostBaseModes: new(DeviceFeatureAccess.ReadOnly, DeviceFeatureAccess.ReadOnly,
+                DeviceFeatureAccess.ReadOnly)
+            {
+                Custom = custom,
+            }));
+    }
     private static ProductionBatteryFactory Factory(
         IValidationActorFactory actors,
         Func<ValidationRunContext>? createContext = null,
