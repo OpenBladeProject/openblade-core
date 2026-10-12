@@ -224,6 +224,16 @@ compatibility rules, and example are in
 
 ## Contributing
 
+CI selects affected builds, tests, and contract checks for pull requests and
+pushes to main. Draft and ready pull requests use the same rules. Known test
+project files select their owning suite; production project metadata, shared
+build inputs, and unknown changes require full validation. Installer and Store
+checks run when packaging or its dependencies are affected.
+
+Manual CI runs and the weekly Sunday run at 00:00 UTC validate the full solution,
+build contracts, and installer. Release builds also retain full validation.
+The weekly run uses a separate concurrency group so a main push cannot cancel it.
+
 Keep changes narrow, add focused tests, and run the affected project tests
 before the full solution. Hardware support is not complete until its
 read/query, apply, readback, and restoration workflow has passed on the exact

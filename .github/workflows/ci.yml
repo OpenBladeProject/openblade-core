@@ -12,14 +12,16 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+  schedule:
+    - cron: '0 0 * * 0'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   classify-changes:
@@ -41,12 +43,11 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Determine whether the full build is required
+      - name: Determine affected validation
         id: scope
         shell: pwsh
         env:
           OPENBLADE_EVENT_NAME: ${{ github.event_name }}
-          OPENBLADE_PR_DRAFT: ${{ github.event.pull_request.draft }}
           OPENBLADE_BEFORE_SHA: ${{ github.event.before }}
           OPENBLADE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           OPENBLADE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -56,8 +57,7 @@ jobs:
           . ./build/CiBuildScope.ps1
           Assert-OpenBladeCiSelectorHealthy
 
-          $forceFull = $env:OPENBLADE_EVENT_NAME -ne 'pull_request' -or
-            $env:OPENBLADE_PR_DRAFT -ne 'true'
+          $forceFull = Test-OpenBladeCiFullBoundary -EventName $env:OPENBLADE_EVENT_NAME
           $changedPaths = @()
           if (-not $forceFull) {
             if ($env:OPENBLADE_EVENT_NAME -eq 'pull_request') {
@@ -76,7 +76,12 @@ jobs:
             }
             else {
               $changedPaths = @(
-                git diff --name-only --no-renames $baseSha $headSha --)
+                if ($env:OPENBLADE_EVENT_NAME -eq 'pull_request') {
+                  git diff --name-only --no-renames "${baseSha}...${headSha}" --
+                }
+                else {
+                  git diff --name-only --no-renames $baseSha $headSha --
+                })
               if ($LASTEXITCODE -ne 0) {
                 $changedPaths = @()
                 $forceFull = $true
