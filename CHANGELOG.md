@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.24.5] - 2026-10-12
+
 ### Fixed
 
 - Show GPU app cleanup for closable apps that hold a GPU context while idle. ([#726](https://github.com/OpenBladeProject/openblade-core/pull/726))
@@ -1982,7 +1984,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.24.3...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.24.5...HEAD
+[0.24.5]: https://github.com/OpenBladeProject/openblade-core/compare/v0.24.3...v0.24.5
 [0.24.3]: https://github.com/OSSBlade/openblade-core/compare/v0.22.0...v0.24.3
 [0.22.0]: https://github.com/OSSBlade/openblade-core/compare/v0.21.10...v0.22.0
 [0.21.10]: https://github.com/OSSBlade/openblade-core/compare/v0.21.9...v0.21.10
