@@ -9,6 +9,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Include the exact failed device check in exported diagnostics, with expected and observed identity values and HID failure details. ([#732](https://github.com/OSSBlade/openblade-core/pull/732))
 - Show GPU app cleanup for closable apps that hold a GPU context while idle. ([#726](https://github.com/OpenBladeProject/openblade-core/pull/726))
 - Show “No profile selected” in the display color profile picker when Windows reports no selected profile. ([#725](https://github.com/OpenBladeProject/openblade-core/pull/725))
 
