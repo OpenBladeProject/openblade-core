@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Show “No profile selected” in the display color profile picker when Windows reports no selected profile. ([#725](https://github.com/OpenBladeProject/openblade-core/pull/725))
+
 ### Changed
 
 - Give HyperBoost its own README feature bullet and remove the model-specific callout for standard power modes. ([#727](https://github.com/OpenBladeProject/openblade-core/pull/727))

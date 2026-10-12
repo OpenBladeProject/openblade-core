@@ -2015,6 +2015,7 @@
                                                                         AccessibleName="Display color profile"
                                                                         ItemsSource="{x:Bind ColorProfileOptions, Mode=OneWay}"
                                                                         DisplayMemberPath="Label"
+                                                                        PlaceholderText="No profile selected"
                                                                         SelectedItem="{x:Bind SelectedColorProfile, Mode=OneWay}"
                                                                         IsEnabled="{x:Bind CanChangeColorProfile, Mode=OneWay}"
                                                                         DropDownOpened="OnDisplayPickerOpened"

@@ -306,6 +306,9 @@
   <data name="MainWindow_DisplayColorProfilePickerText.AccessibleName" xml:space="preserve">
     <value>Display color profile</value>
   </data>
+  <data name="MainWindow_DisplayColorProfilePickerText.PlaceholderText" xml:space="preserve">
+    <value>No profile selected</value>
+  </data>
   <data name="MainWindow_DisplayHdrToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Use HDR</value>
   </data>
