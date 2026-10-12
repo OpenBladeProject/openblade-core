@@ -112,7 +112,7 @@ jobs:
           Format-OpenBladeCiPlan -Plan $plan |
             Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY
 
-  build-and-test:
+  validation:
     needs: classify-changes
     uses: ./.github/workflows/build.yml
     with:
@@ -126,3 +126,23 @@ jobs:
       checkout-captures: ${{ needs.classify-changes.outputs.checkout-captures == 'true' }}
     permissions:
       contents: read
+
+  build-and-test:
+    name: build-and-test
+    needs:
+      - classify-changes
+      - validation
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify CI result
+        shell: pwsh
+        env:
+          OPENBLADE_CLASSIFY_RESULT: ${{ needs.classify-changes.result }}
+          OPENBLADE_VALIDATION_RESULT: ${{ needs.validation.result }}
+        run: |
+          if ($env:OPENBLADE_CLASSIFY_RESULT -ne 'success' -or
+              $env:OPENBLADE_VALIDATION_RESULT -ne 'success') {
+            throw 'CI classification and required validation must both succeed.'
+          }

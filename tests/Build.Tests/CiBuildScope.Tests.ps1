@@ -348,6 +348,35 @@ if ($ci.Contains('if: ${{ needs.classify-changes.outputs.requires-build')) {
     throw 'The stable aggregate build check must not disappear for an empty plan.'
 }
 
+$outerGate = [Regex]::Match($ci, '(?ms)^  build-and-test:\r?\n.*?\z').Value
+foreach ($required in @('name: build-and-test', '- classify-changes', '- validation', 'if: ${{ always() }}')) {
+    if (-not $outerGate.Contains($required)) { throw "Stable CI check is missing '$required'." }
+}
+$gateRun = [Regex]::Match($outerGate, '(?ms)^        run: \|\r?\n(.*)\z')
+if (-not $gateRun.Success) { throw 'Stable CI gate must execute its result check.' }
+$gateScript = [ScriptBlock]::Create(($gateRun.Groups[1].Value -replace '(?m)^          ', ''))
+$oldClassify = $env:OPENBLADE_CLASSIFY_RESULT
+$oldValidation = $env:OPENBLADE_VALIDATION_RESULT
+try {
+    $env:OPENBLADE_CLASSIFY_RESULT = 'success'
+    $env:OPENBLADE_VALIDATION_RESULT = 'success'
+    & $gateScript
+    foreach ($dependency in @('OPENBLADE_CLASSIFY_RESULT', 'OPENBLADE_VALIDATION_RESULT')) {
+        foreach ($result in @('failure', 'cancelled', 'skipped')) {
+            $env:OPENBLADE_CLASSIFY_RESULT = 'success'
+            $env:OPENBLADE_VALIDATION_RESULT = 'success'
+            [Environment]::SetEnvironmentVariable($dependency, $result, 'Process')
+            $rejected = $false
+            try { & $gateScript } catch { $rejected = $true }
+            Assert-Equal $true $rejected "Stable check must reject $dependency=$result."
+        }
+    }
+}
+finally {
+    $env:OPENBLADE_CLASSIFY_RESULT = $oldClassify
+    $env:OPENBLADE_VALIDATION_RESULT = $oldValidation
+}
+
 if ($ci.Contains('OPENBLADE_PR_DRAFT') -or $ci.Contains('      - ready_for_review')) {
     throw 'Draft state must not change CI impact coverage or rerun unchanged commits.'
 }
