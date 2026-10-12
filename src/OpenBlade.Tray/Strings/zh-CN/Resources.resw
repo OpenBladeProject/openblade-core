@@ -306,6 +306,9 @@
   <data name="MainWindow_DisplayColorProfilePickerText.AccessibleName" xml:space="preserve">
     <value>显示器颜色配置文件</value>
   </data>
+  <data name="MainWindow_DisplayColorProfilePickerText.PlaceholderText" xml:space="preserve">
+    <value>未选择颜色配置文件</value>
+  </data>
   <data name="MainWindow_DisplayHdrToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>使用 HDR</value>
   </data>

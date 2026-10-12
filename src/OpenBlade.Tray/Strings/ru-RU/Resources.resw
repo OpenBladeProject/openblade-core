@@ -306,6 +306,9 @@
   <data name="MainWindow_DisplayColorProfilePickerText.AccessibleName" xml:space="preserve">
     <value>Цветовой профиль дисплея</value>
   </data>
+  <data name="MainWindow_DisplayColorProfilePickerText.PlaceholderText" xml:space="preserve">
+    <value>Профиль не выбран</value>
+  </data>
   <data name="MainWindow_DisplayHdrToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Использовать HDR</value>
   </data>

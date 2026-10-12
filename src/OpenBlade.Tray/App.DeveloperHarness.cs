@@ -1760,6 +1760,32 @@ public partial class App
                 compact.PlaceholderText == "Checking",
                 "The compact selector did not receive its placeholder.");
 
+            File.WriteAllText(smokeReportPath, "render null selection placeholder");
+            selector.ExpandedMinWindowWidth = double.MaxValue;
+            selector.PlaceholderText = "No profile selected";
+            selector.SelectedItem = null;
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            LocalizationSnapshotFrame placeholderFrame =
+                await CaptureCanonicalSnapshotFrameAsync(selector);
+            RequireResponsiveSelector(
+                selector.SelectedItem is null
+                    && compact.SelectedItem is null
+                    && compact.SelectionBoxItem is null
+                    && compact.PlaceholderText == "No profile selected"
+                    && compact.Visibility == Visibility.Visible
+                    && expanded.Visibility == Visibility.Collapsed
+                    && placeholderFrame.Width > 0
+                    && placeholderFrame.Height > 0
+                    && placeholderFrame.Pixels.Length > 0
+                    && publishedSelections == 0,
+                "A rendered null selection did not show the compact placeholder without publishing a selection.");
+            selector.PlaceholderText = "Checking";
+            selector.SelectedItem = originalOptions[1];
+            selector.ExpandedMinWindowWidth = 0;
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+            await DrainDispatcherAsync(selector.DispatcherQueue);
+
             File.WriteAllText(smokeReportPath, "replace responsive selector options");
             ResponsiveChoiceSelectorSmokeOption[] replacementOptions =
             [
