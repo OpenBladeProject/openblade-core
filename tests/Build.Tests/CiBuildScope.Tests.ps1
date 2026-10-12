@@ -260,9 +260,49 @@ foreach ($restoreProject in @(
         'Translator contracts must restore every disconnected snapshot renderer.'
 }
 
+foreach ($eventName in @('pull_request', 'push')) {
+    Assert-Equal $false (Test-OpenBladeCiFullBoundary -EventName $eventName) `
+        "Ordinary event '$eventName' must use impact routing regardless of draft state."
+}
+foreach ($eventName in @('schedule', 'workflow_dispatch', 'release', '', 'unknown')) {
+    Assert-Equal $true (Test-OpenBladeCiFullBoundary -EventName $eventName) `
+        "Integration or unknown event '$eventName' must force full validation."
+}
+
+$testMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'tests/OpenBlade.DeploymentClient.Tests/OpenBlade.DeploymentClient.Tests.csproj',
+    'tests/OpenBlade.DeploymentClient.Tests/IndependentInstalledProcessTests.cs')
+Assert-Equal 'affected' $testMetadata.Mode 'Test project metadata must select affected validation.'
+Assert-Equal 1 @($testMetadata.QualityProjects).Count 'Test-only changes must select one project.'
+Assert-Contains $testMetadata.TestProjects `
+    'tests/OpenBlade.DeploymentClient.Tests/OpenBlade.DeploymentClient.Tests.csproj' `
+    'Test metadata changes must run their owning suite.'
+Assert-Equal $false $testMetadata.RunInstaller 'Test metadata must not publish the installer.'
+Assert-Equal 0 @($testMetadata.ContractTests).Count 'Test metadata must not select unrelated contracts.'
+Assert-Equal 0 @($testMetadata.PublishProjects).Count 'Test metadata must not publish product binaries.'
+Assert-Equal $false $testMetadata.RequiresCaptures 'Deployment test metadata needs no captures.'
+
+$serviceMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'src/OpenBlade.Service/OpenBlade.Service.csproj')
+Assert-Equal 'full' $serviceMetadata.Mode 'Production metadata must keep exhaustive validation.'
+$setupMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'src/OpenBlade.Setup/OpenBlade.Setup.csproj')
+Assert-Equal 'full' $setupMetadata.Mode 'Setup metadata must keep exhaustive validation.'
+Assert-Equal $true $setupMetadata.RunInstaller 'Setup metadata must keep complete installer validation.'
+$catalog = Get-OpenBladeCiProjectCatalog -Repository $repository
+foreach ($project in @($catalog.Values | Where-Object { $_.Kind -eq 'Test' })) {
+    $metadataPlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($project.Path)
+    Assert-Equal 'affected' $metadataPlan.Mode "Known test metadata '$($project.Path)' must use affected validation."
+    Assert-Contains $metadataPlan.QualityProjects $project.Path 'Test metadata must select its build.'
+    Assert-Contains $metadataPlan.TestProjects $project.Path 'Test metadata must select its tests.'
+}
+$unknownMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('tools/Unknown.csproj')
+Assert-Equal 'full' $unknownMetadata.Mode 'Unowned metadata must fail closed.'
+$deletedMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('tests/OpenBlade.DeploymentClient.Tests/Deleted.csproj')
+Assert-Equal 'full' $deletedMetadata.Mode 'Deleted project metadata must fail closed.'
+
 foreach ($globalPath in @(
         'Directory.Build.props',
-        'src/OpenBlade.Service/OpenBlade.Service.csproj',
         '.github/workflows/ci.yml',
         'tools/new-script.ps1')) {
     $full = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($globalPath)
@@ -287,7 +327,12 @@ if ($contractDifference.Count -ne 0) {
 
 $ci = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\ci.yml') -Raw
 foreach ($requiredContract in @(
-        'OPENBLADE_PR_DRAFT:',
+        'Test-OpenBladeCiFullBoundary -EventName $env:OPENBLADE_EVENT_NAME',
+        'cancel-in-progress: ${{ github.event_name != ''schedule'' }}',
+        'git diff --name-only --no-renames "${baseSha}...${headSha}" --',
+        'schedule:',
+        'cron: ''0 0 * * 0''',
+        'group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}',
         'Assert-OpenBladeCiSelectorHealthy',
         'Get-OpenBladeCiPlan',
         'validation-plan-json:',
@@ -301,6 +346,39 @@ foreach ($requiredContract in @(
 }
 if ($ci.Contains('if: ${{ needs.classify-changes.outputs.requires-build')) {
     throw 'The stable aggregate build check must not disappear for an empty plan.'
+}
+
+$outerGate = [Regex]::Match($ci, '(?ms)^  build-and-test:\r?\n.*?\z').Value
+foreach ($required in @('name: build-and-test', '- classify-changes', '- validation', 'if: ${{ always() }}')) {
+    if (-not $outerGate.Contains($required)) { throw "Stable CI check is missing '$required'." }
+}
+$gateRun = [Regex]::Match($outerGate, '(?ms)^        run: \|\r?\n(.*)\z')
+if (-not $gateRun.Success) { throw 'Stable CI gate must execute its result check.' }
+$gateScript = [ScriptBlock]::Create(($gateRun.Groups[1].Value -replace '(?m)^          ', ''))
+$oldClassify = $env:OPENBLADE_CLASSIFY_RESULT
+$oldValidation = $env:OPENBLADE_VALIDATION_RESULT
+try {
+    $env:OPENBLADE_CLASSIFY_RESULT = 'success'
+    $env:OPENBLADE_VALIDATION_RESULT = 'success'
+    & $gateScript
+    foreach ($dependency in @('OPENBLADE_CLASSIFY_RESULT', 'OPENBLADE_VALIDATION_RESULT')) {
+        foreach ($result in @('failure', 'cancelled', 'skipped')) {
+            $env:OPENBLADE_CLASSIFY_RESULT = 'success'
+            $env:OPENBLADE_VALIDATION_RESULT = 'success'
+            [Environment]::SetEnvironmentVariable($dependency, $result, 'Process')
+            $rejected = $false
+            try { & $gateScript } catch { $rejected = $true }
+            Assert-Equal $true $rejected "Stable check must reject $dependency=$result."
+        }
+    }
+}
+finally {
+    $env:OPENBLADE_CLASSIFY_RESULT = $oldClassify
+    $env:OPENBLADE_VALIDATION_RESULT = $oldValidation
+}
+
+if ($ci.Contains('OPENBLADE_PR_DRAFT') -or $ci.Contains('      - ready_for_review')) {
+    throw 'Draft state must not change CI impact coverage or rerun unchanged commits.'
 }
 
 $build = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\build.yml') -Raw

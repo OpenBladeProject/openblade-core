@@ -2,6 +2,16 @@ Set-StrictMode -Version 3.0
 
 $script:OpenBladeCiRepository = Split-Path -Parent $PSScriptRoot
 
+function Test-OpenBladeCiFullBoundary {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowEmptyString()][string]$EventName)
+
+    # Ordinary pull requests and main pushes use the same impact rules.
+    # Scheduled, manual, and unknown events keep exhaustive validation.
+    return $EventName -notin @('pull_request', 'push')
+}
+
 function ConvertTo-OpenBladeCiPath {
     [CmdletBinding()]
     [OutputType([string])]
@@ -178,7 +188,10 @@ function Get-OpenBladeCiPlan {
 
     foreach ($path in $normalizedPaths) {
         if ($path.EndsWith('.csproj', [StringComparison]::OrdinalIgnoreCase)) {
-            return New-OpenBladeCiFullPlan -ChangedPath $normalizedPaths -Reason "Project metadata changed: $path"
+            $key = $path.ToLowerInvariant()
+            if (-not $projects.ContainsKey($key) -or $projects[$key].Kind -ne 'Test') {
+                return New-OpenBladeCiFullPlan -ChangedPath $normalizedPaths -Reason "Production or unavailable project metadata changed: $path"
+            }
         }
         foreach ($pattern in @($manifest.globalPatterns)) {
             if (Test-OpenBladeCiPattern -Path $path -Pattern ([string]$pattern)) {

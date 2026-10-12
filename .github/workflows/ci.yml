@@ -11,15 +11,16 @@ on:
       - opened
       - synchronize
       - reopened
-      - ready_for_review
+  schedule:
+    - cron: '0 0 * * 0'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   classify-changes:
@@ -41,12 +42,11 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Determine whether the full build is required
+      - name: Determine affected validation
         id: scope
         shell: pwsh
         env:
           OPENBLADE_EVENT_NAME: ${{ github.event_name }}
-          OPENBLADE_PR_DRAFT: ${{ github.event.pull_request.draft }}
           OPENBLADE_BEFORE_SHA: ${{ github.event.before }}
           OPENBLADE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           OPENBLADE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -56,8 +56,7 @@ jobs:
           . ./build/CiBuildScope.ps1
           Assert-OpenBladeCiSelectorHealthy
 
-          $forceFull = $env:OPENBLADE_EVENT_NAME -ne 'pull_request' -or
-            $env:OPENBLADE_PR_DRAFT -ne 'true'
+          $forceFull = Test-OpenBladeCiFullBoundary -EventName $env:OPENBLADE_EVENT_NAME
           $changedPaths = @()
           if (-not $forceFull) {
             if ($env:OPENBLADE_EVENT_NAME -eq 'pull_request') {
@@ -76,7 +75,12 @@ jobs:
             }
             else {
               $changedPaths = @(
-                git diff --name-only --no-renames $baseSha $headSha --)
+                if ($env:OPENBLADE_EVENT_NAME -eq 'pull_request') {
+                  git diff --name-only --no-renames "${baseSha}...${headSha}" --
+                }
+                else {
+                  git diff --name-only --no-renames $baseSha $headSha --
+                })
               if ($LASTEXITCODE -ne 0) {
                 $changedPaths = @()
                 $forceFull = $true
@@ -108,7 +112,7 @@ jobs:
           Format-OpenBladeCiPlan -Plan $plan |
             Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY
 
-  build-and-test:
+  validation:
     needs: classify-changes
     uses: ./.github/workflows/build.yml
     with:
@@ -122,3 +126,23 @@ jobs:
       checkout-captures: ${{ needs.classify-changes.outputs.checkout-captures == 'true' }}
     permissions:
       contents: read
+
+  build-and-test:
+    name: build-and-test
+    needs:
+      - classify-changes
+      - validation
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify CI result
+        shell: pwsh
+        env:
+          OPENBLADE_CLASSIFY_RESULT: ${{ needs.classify-changes.result }}
+          OPENBLADE_VALIDATION_RESULT: ${{ needs.validation.result }}
+        run: |
+          if ($env:OPENBLADE_CLASSIFY_RESULT -ne 'success' -or
+              $env:OPENBLADE_VALIDATION_RESULT -ne 'success') {
+            throw 'CI classification and required validation must both succeed.'
+          }
