@@ -73,10 +73,11 @@ Capture tools are kept outside the installed product, may pin an exact BIOS
 version for reproducibility, and raw captures are never production admission
 artifacts.
 
-When the exact admitted RZ09-0581 Razer driver stack is already present,
-OpenBlade can use it for the native Windows brightness flyout. WMI remains the
-fallback. See the [Razer driver package notes](razer-brightness-driver-package.md)
-for the model, validation, and redistribution limits.
+When an admitted laptop's exact Razer driver stack is already present,
+OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
+RZ09-0528 have separate, model-specific stacks. WMI remains the fallback. See
+the [Razer driver package notes](razer-brightness-driver-package.md) for the
+validation and redistribution limits.
 
 ## Build and test
 

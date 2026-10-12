@@ -15,7 +15,20 @@ OpenBlade rejects a patch record that no longer matches the installed files.
 
 ## How OpenBlade checks coexistence
 
-When every running Synapse AppEngine instance uses an installation with a verified applied patch and a patched AppEngine is running, OpenBlade excludes those verified AppEngine processes from competing-controller checks. The two known Synapse service aliases also stop blocking HyperBoost thermal admission in that verified state; they remain visible in diagnostics and continue to participate in other controller checks. Without verified patch evidence, they block HyperBoost. Independent Razer controllers retain their existing checks. RGS and its updater are always detected but do not block HyperBoost thermal admission. Hardware identity, supported commands, power requirements and other feature admission checks still apply.
+When every running Synapse AppEngine instance uses an installation with a
+verified applied patch and a patched AppEngine is running, OpenBlade excludes
+those verified AppEngine processes from competing-controller checks. The two
+known Synapse service aliases also stop blocking HyperBoost thermal admission
+in that verified state. They remain visible in diagnostics and continue to
+participate in other controller checks. Without verified patch evidence, they
+block HyperBoost.
+
+The active Windows service whose internal service name is exactly `RGS` remains
+visible but does not block HyperBoost thermal admission. A process merely named
+`RGS` or `Razer Gaming Services Updater`, or a service that only borrows either
+display name, still blocks. Independent Razer controllers retain their existing
+checks. Hardware identity, supported commands, power requirements, and other
+feature admission checks still apply.
 
 Synapse can also start its `razerwdl` Windows lighting helper after the UI loads. OpenBlade excludes this helper from controller discovery only when its expected installation path and product metadata match, its direct parent is a verified patched AppEngine in the same session, and process start times support that parent relationship. Every running helper must satisfy these checks. On every observation, OpenBlade then enumerates present, enabled Windows LampArray interfaces. Any endpoint matching a Blade product ID in the verified patch records, missing endpoint identity, or enumeration failure retains the helper conflict. Independent helpers remain conflicts even when a patched AppEngine is running. There is no helper-version allowlist. A detected helper with verified Razer path and product metadata does not block HyperBoost thermal admission; one with unverified identity does. A retained helper continues to trigger the other controller checks.
 
