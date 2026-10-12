@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
+using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -10,16 +12,43 @@ namespace OpenBlade.DeploymentClient.Tests;
 
 public sealed class IndependentInstalledProcessTests
 {
+    [Fact]
+    public void LaunchFixtureAppHostUsesTheWindowsGuiSubsystem()
+    {
+        string executable = Path.ChangeExtension(typeof(LaunchFixture).Assembly.Location, ".exe");
+        using FileStream stream = File.OpenRead(executable);
+        using PEReader image = new(stream);
+        Assert.NotNull(image.PEHeaders.PEHeader);
+        Assert.Equal(Subsystem.WindowsGui, image.PEHeaders.PEHeader.Subsystem);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task Launch_OutlivesCallerJobs_WithDisposableParentAndNoInheritedHandles(bool hidden)
     {
+        DesktopProcessIdentity caller = DesktopProcessIdentity.ReadCaller();
+        if (caller.IsNormal)
+        {
+            await RunPositiveFixtureAsync(hidden);
+            return;
+        }
+
+        await CiNormalLaunchFixture.RunAsync(hidden);
+    }
+
+    internal static async Task RunPositiveFixtureAsync(bool hidden, Action<string>? reportPhase = null)
+    {
+        reportPhase?.Invoke("core-enter");
         using FixtureScope fixture = new();
+        reportPhase?.Invoke("fixture-created");
         await fixture.StartAsync(hidden);
+        reportPhase?.Invoke("fixture-ready");
         File.WriteAllText(Path.Combine(fixture.Root, "launch"), "launch");
         LaunchReport report = await fixture.ReadReportAsync();
-        Assert.Null(report.Error);
+        reportPhase?.Invoke("launch-report-read");
+        Assert.True(report.Error is null,
+            $"Fixture launch failed: {report.Error}; {JsonSerializer.Serialize(report.Failure)}");
         using Process child = Process.GetProcessById(report.ProcessId);
         _ = child.Handle;
         try
@@ -37,11 +66,13 @@ public sealed class IndependentInstalledProcessTests
                 report.ParentHandleCandidate, fixture.ParentEvent.SafeWaitHandle));
             Assert.True(DesktopProcessIdentity.ReadCaller().IsSameNormalIdentity(report.Identity!));
             Assert.Equal(fixture.Root, report.WorkingDirectory);
+            reportPhase?.Invoke("assertions-completed");
         }
         finally
         {
             File.WriteAllText(Path.Combine(fixture.Root, "child.exit"), "exit");
             FixtureScope.StopExactFixture(child);
+            reportPhase?.Invoke("child-stopped");
         }
     }
 
@@ -92,10 +123,285 @@ public sealed class IndependentInstalledProcessTests
         Assert.False(parent.IsSameNormalIdentity(caller));
     }
 
+    [Fact]
+    public void LaunchFailure_RoundTripsExceptionAndSanitizedIdentityDetails()
+    {
+        DesktopProcessIdentity caller = new("private-user", 123, 4, "S-1-16-8192", false, false, false,
+            ["private-group"], ["private-privilege"]);
+        DesktopProcessIdentity parent = caller with { Elevated = true, AuthenticationId = 456, Groups = [] };
+        Exception exception = Record.Exception((Action)(() => throw new UnauthorizedAccessException("synthetic rejection")))!;
+        LaunchFailure failure = new("start", exception.Message, exception.HResult, exception.StackTrace,
+            false, LaunchIdentityDiagnostics.From(caller, parent));
+        LaunchReport original = new(0, 0, 0, "fixture", null, exception.GetType().Name, failure);
+        string json = JsonSerializer.Serialize(original);
+        LaunchReport copy = JsonSerializer.Deserialize<LaunchReport>(json)!;
+
+        Assert.Equal(original, copy);
+        Assert.NotNull(copy.Failure!.StackTrace);
+        Assert.True(copy.Failure.Identity!.CallerNormal);
+        Assert.False(copy.Failure.Identity.ParentNormal);
+        Assert.True(copy.Failure.Identity.AuthenticationMismatch);
+        Assert.True(copy.Failure.Identity.GroupsMismatch);
+        Assert.False(copy.Failure.Identity.UserMismatch);
+        Assert.DoesNotContain("private-user", json);
+        Assert.DoesNotContain("private-group", json);
+        Assert.DoesNotContain("private-privilege", json);
+        Assert.DoesNotContain("S-1-16-8192", json);
+    }
+
+    [Theory]
+    [InlineData("true", "github-hosted", "Windows", "eligible", true)]
+    [InlineData(null, "github-hosted", "Windows", "eligible", false)]
+    [InlineData("True", "github-hosted", "Windows", "eligible", false)]
+    [InlineData("true", "self-hosted", "Windows", "eligible", false)]
+    [InlineData("true", "github-hosted", "Linux", "eligible", false)]
+    [InlineData("true", "github-hosted", "Windows", "normal", false)]
+    [InlineData("true", "github-hosted", "Windows", "restricted", false)]
+    [InlineData("true", "github-hosted", "Windows", "appcontainer", false)]
+    [InlineData("true", "github-hosted", "Windows", "uiaccess", false)]
+    [InlineData("true", "github-hosted", "Windows", "system", false)]
+    [InlineData("true", "github-hosted", "Windows", "localsystem", false)]
+    public void CiAccountGuardRequiresExactHostedContextAndUnrestrictedElevatedCaller(
+        string? actions, string environment, string operatingSystem, string change, bool expected)
+    {
+        DesktopProcessIdentity caller = new("test-user", 1, 1, "S-1-16-12288", true, false, false, [], []);
+        caller = change switch
+        {
+            "normal" => caller with { Elevated = false, IntegritySid = "S-1-16-8192" },
+            "restricted" => caller with { Restricted = true },
+            "appcontainer" => caller with { AppContainer = true },
+            "uiaccess" => caller with { UiAccess = true },
+            "system" => caller with { IntegritySid = "S-1-16-16384" },
+            "localsystem" => caller with { UserSid = "S-1-5-18" },
+            _ => caller,
+        };
+        Assert.Equal(expected, CiNormalLaunchFixture.IsEligible(caller, actions, environment, operatingSystem));
+    }
+
+    [Theory]
+    [InlineData(true, true, true, "owned", "owned", true, true)]
+    [InlineData(false, true, true, "owned", "owned", true, false)]
+    [InlineData(true, false, true, "owned", "owned", true, false)]
+    [InlineData(true, true, false, "owned", "owned", true, false)]
+    [InlineData(true, true, true, null, null, true, false)]
+    [InlineData(true, true, true, "owned", "reused", true, false)]
+    [InlineData(true, true, true, "owned", "owned", false, false)]
+    public void CiAccountDeletionRequiresTerminalJobAndExactCreationOwnership(bool created, bool terminal,
+        bool drained, string? ownedSid, string? currentSid, bool markerMatches, bool expected)
+    {
+        Assert.Equal(expected, CiNormalLaunchFixture.CanDeleteAccount(created, terminal, drained,
+            ownedSid, currentSid, markerMatches));
+    }
+
+    [Fact]
+    public void CiBootstrapReportRequiresMatchingCaseAndCompletedAssertions()
+    {
+        var report = new CiNormalLaunchFixture.BootstrapReport("nonce", true, true, null);
+        Assert.True(CiNormalLaunchFixture.IsSuccessfulReport(report, "nonce", true));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report, "other", true));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report, "nonce", false));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report with { Succeeded = false }, "nonce", true));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report with { Error = "failed" }, "nonce", true));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(null, "nonce", true));
+    }
+
+    [Fact]
+    public void CiBootstrapDiagnosticsDistinguishUnconfirmedDrainageAndMissingEvidence()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.CiDiagnostics." + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal("not collected: owned job drainage unconfirmed",
+                CiNormalLaunchFixture.ReadBootstrapDiagnostics(root, jobDrained: false));
+            string evidence = CiNormalLaunchFixture.ReadBootstrapDiagnostics(root, jobDrained: true);
+            Assert.Contains("bootstrap-phases.txt: FileNotFoundException", evidence);
+            Assert.Contains("host-trace:", evidence);
+            Assert.Contains("NotFoundException", evidence[evidence.IndexOf("host-trace:", StringComparison.Ordinal)..]);
+        }
+        finally { Directory.Delete(root); }
+    }
+
+    [Fact]
+    public void CiBootstrapDiagnosticsBoundTraceEvidenceAndExcludeUnrelatedFiles()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.CiDiagnostics." + Guid.NewGuid().ToString("N"));
+        string traces = Path.Combine(root, "host-trace");
+        Directory.CreateDirectory(traces);
+        List<string> files = [];
+        try
+        {
+            Write(Path.Combine(root, "bootstrap-phases.txt"), "managed-enter\nidentity-verified\n");
+            Write(Path.Combine(root, "owned-account.json"), "unrelated-account-secret");
+            Write(Path.Combine(traces, "OpenBlade.DeploymentClient.Tests.log"), "malformed-name-secret");
+            for (int index = 1; index <= 9; index++)
+            {
+                Write(Path.Combine(traces, $"OpenBlade.DeploymentClient.Tests.{index}.log"),
+                    "omitted-prefix" + new string('x', 10000) + "host-tail-marker");
+            }
+            string evidence = CiNormalLaunchFixture.ReadBootstrapDiagnostics(root, jobDrained: true);
+            Assert.InRange(evidence.Length, 1, 6000);
+            Assert.Contains("managed-enter", evidence);
+            Assert.Contains("host-tail-marker", evidence);
+            Assert.DoesNotContain("omitted-prefix", evidence);
+            Assert.DoesNotContain("unrelated-account-secret", evidence);
+            Assert.DoesNotContain("malformed-name-secret", evidence);
+        }
+        finally
+        {
+            foreach (string path in files) { File.Delete(path); }
+            Directory.Delete(traces);
+            Directory.Delete(root);
+        }
+
+        void Write(string path, string text)
+        {
+            files.Add(path);
+            File.WriteAllText(path, text);
+        }
+    }
+
+    [Theory]
+    [InlineData("ancestry", 1)]
+    [InlineData("phase", 1)]
+    [InlineData("report", 4)]
+    public void CiBootstrapSetupFailuresReturnTerminalDiagnosticsWithoutEnteringCore(string failure, int expected)
+    {
+        string nonce = Guid.NewGuid().ToString("N");
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.CiNormalLaunch." + nonce);
+        Directory.CreateDirectory(root);
+        int ancestryCalls = 0, coreCalls = 0, phaseCalls = 0;
+        CiNormalLaunchFixture.BootstrapReport? report = null;
+        try
+        {
+            int result = CiNormalLaunchFixture.RunBootstrapWithDiagnostics(root, true, nonce,
+                () =>
+                {
+                    ancestryCalls++;
+                    throw new UnauthorizedAccessException("synthetic ancestry denial");
+                },
+                _ => coreCalls++,
+                phase =>
+                {
+                    phaseCalls++;
+                    Assert.Equal("managed-enter", phase);
+                    if (failure == "phase") { throw new IOException("synthetic phase write failure"); }
+                },
+                value =>
+                {
+                    if (failure == "report") { throw new IOException("synthetic report write failure"); }
+                    report = value;
+                });
+            Assert.Equal(expected, result);
+            Assert.Equal(0, coreCalls);
+            Assert.Equal(1, phaseCalls);
+            Assert.Equal(failure == "phase" ? 0 : 1, ancestryCalls);
+            if (failure != "report")
+            {
+                Assert.NotNull(report);
+                Assert.False(report.Succeeded);
+                Assert.Contains(failure == "phase" ? "synthetic phase write failure" : "synthetic ancestry denial", report.Error);
+            }
+        }
+        finally { Directory.Delete(root); }
+    }
+
+    [Fact]
+    public void CiBootstrapInvalidRootShapeDoesNotInvokeAnyOperationOrWriter()
+    {
+        int calls = 0;
+        int result = CiNormalLaunchFixture.RunBootstrapWithDiagnostics("invalid-relative-root", true, "invalid-nonce",
+            () => calls++, _ => calls++, _ => calls++, _ => calls++);
+        Assert.Equal(2, result);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public void ChildDiagnosticsReadOnlyReturnedPidAndBoundTraceTail()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.LaunchTest." + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string missing = LaunchFixture.ReadChildDiagnostics(root);
+            Assert.Contains("FileNotFoundException", missing);
+            Assert.Contains("child trace unavailable", missing);
+            File.WriteAllText(Path.Combine(root, "child-state.json"),
+                "{\"ProcessId\":123,\"ElapsedMilliseconds\":9750,\"Exited\":true,\"ExitCode\":2,\"Error\":null}");
+            File.WriteAllText(Path.Combine(root, "child-managed.txt"), "RootPresent=false");
+            File.WriteAllText(Path.Combine(root, "child-trace-setup.txt"), "configured");
+            string traces = Path.Combine(root, "child-host-trace");
+            Directory.CreateDirectory(traces);
+            File.WriteAllText(Path.Combine(traces, "OpenBlade.DeploymentClient.Tests.123.log"),
+                "excluded-prefix" + new string('x', 8192) + "selected-child-tail");
+            File.WriteAllText(Path.Combine(traces, "OpenBlade.DeploymentClient.Tests.456.log"), "unrelated-child-secret");
+            string evidence = LaunchFixture.ReadChildDiagnostics(root);
+            Assert.Contains("\"ExitCode\":2", evidence);
+            Assert.Contains("RootPresent=false", evidence);
+            Assert.Contains("selected-child-tail", evidence);
+            Assert.DoesNotContain("excluded-prefix", evidence);
+            Assert.DoesNotContain("unrelated-child-secret", evidence);
+            Assert.True(evidence.Length < 6600);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("relative")]
+    [InlineData("C:relative")]
+    [InlineData("\\ProgramData")]
+    public void CiFixtureRootRejectsMissingOrNonFullyQualifiedBase(string commonBase)
+    {
+        Assert.Throws<InvalidOperationException>(() => CiNormalLaunchFixture.GetFixtureRoot(
+            commonBase, "0123456789abcdef0123456789abcdef"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("../escape")]
+    [InlineData("0123456789abcdef0123456789abcdef\\child")]
+    public void CiFixtureRootRejectsInvalidOrEscapingNonce(string nonce)
+    {
+        Assert.Throws<InvalidOperationException>(() => CiNormalLaunchFixture.GetFixtureRoot(@"C:\ProgramData", nonce));
+    }
+
+    [Fact]
+    public void CiFixtureRootIsOneDirectUniqueLeafUnderTheCommonBase()
+    {
+        const string nonce = "0123456789abcdef0123456789abcdef";
+        string root = CiNormalLaunchFixture.GetFixtureRoot(@"C:\ProgramData\", nonce);
+        Assert.Equal(@"C:\ProgramData", Path.GetDirectoryName(root));
+        Assert.Equal("OpenBlade.CiNormalLaunch." + nonce, Path.GetFileName(root));
+        Assert.NotEqual(root, CiNormalLaunchFixture.GetFixtureRoot(@"C:\ProgramData", "1123456789abcdef0123456789abcdef"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData(" 4")]
+    [InlineData("+4")]
+    [InlineData("9223372036854775808")]
+    public void ParentSentinelHandleRejectsMalformedOrInvalidValues(string text)
+    {
+        Assert.False(LaunchFixture.TryParseSentinelHandle(text, out IntPtr handle));
+        Assert.Equal(IntPtr.Zero, handle);
+    }
+
+    [Fact]
+    public void ParentSentinelHandleParsesInvariantPositiveValueWithoutAdmittingAnObject()
+    {
+        Assert.True(LaunchFixture.TryParseSentinelHandle("4", out IntPtr handle));
+        Assert.Equal(new IntPtr(4), handle);
+        // The parent still requires a real inheritable handle, and the fixture
+        // compares its actual kernel object before allowing the launch phase.
+    }
+
     private sealed class FixtureScope : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), $"OpenBlade.LaunchTest.{Guid.NewGuid():N}");
-        private readonly string parentEventName = $"Local\\OpenBlade.ParentSentinel.{Guid.NewGuid():N}";
         internal EventWaitHandle CallerEvent { get; } = new(false, EventResetMode.ManualReset);
         internal EventWaitHandle ParentEvent { get; }
         internal SafeFileHandle ParentJob { get; } = LaunchFixture.CreateJob(killOnClose: false);
@@ -107,14 +413,27 @@ public sealed class IndependentInstalledProcessTests
         internal FixtureScope()
         {
             Directory.CreateDirectory(Root);
-            ParentEvent = new(false, EventResetMode.ManualReset, parentEventName);
+            ParentEvent = new(false, EventResetMode.ManualReset);
         }
 
         internal async Task StartAsync(bool hidden)
         {
-            Parent = LaunchFixture.StartFixture($"parent \"{Root}\" {parentEventName}", Root, ParentJob);
+            // The sentinel needs object identity, not a session namespace entry.
+            // Only the fixture parent receives this inheritable handle.
+            Assert.True(LaunchFixture.SetHandleInformation(ParentEvent.SafeWaitHandle, 1, 1));
+            try
+            {
+                string sentinelHandle = ParentEvent.SafeWaitHandle.DangerousGetHandle().ToInt64()
+                    .ToString(CultureInfo.InvariantCulture);
+                Parent = LaunchFixture.StartFixture($"parent \"{Root}\" {sentinelHandle}", Root, ParentJob);
+            }
+            finally
+            {
+                Assert.True(LaunchFixture.SetHandleInformation(ParentEvent.SafeWaitHandle, 1, 0));
+            }
+
             await WaitForFileAsync("parent.ready", Parent);
-            long parentHandle = long.Parse(File.ReadAllText(Path.Combine(Root, "parent.ready")));
+            long parentHandle = long.Parse(File.ReadAllText(Path.Combine(Root, "parent.ready")), CultureInfo.InvariantCulture);
             Assert.True(LaunchFixture.IsSameRemoteObject(Parent.SafeHandle, parentHandle, ParentEvent.SafeWaitHandle));
             Assert.True(LaunchFixture.SetHandleInformation(CallerEvent.SafeWaitHandle, 1, 1));
             Coordinator = LaunchFixture.StartFixture(
@@ -123,6 +442,7 @@ public sealed class IndependentInstalledProcessTests
             await WaitForFileAsync("coordinator.ready", Coordinator);
             Assert.True(LaunchFixture.IsSameRemoteObject(Coordinator.SafeHandle,
                 CallerEvent.SafeWaitHandle.DangerousGetHandle().ToInt64(), CallerEvent.SafeWaitHandle));
+            Assert.False(LaunchFixture.IsSameRemoteObject(Coordinator.SafeHandle, parentHandle, ParentEvent.SafeWaitHandle));
         }
 
         internal async Task<LaunchReport> ReadReportAsync()
@@ -139,14 +459,42 @@ public sealed class IndependentInstalledProcessTests
             {
                 if (process.HasExited)
                 {
-                    Assert.True(File.Exists(path), $"Fixture exited {process.ExitCode} before {name}.");
+                    bool produced = File.Exists(path);
+                    Assert.True(produced, produced ? null
+                        : $"Fixture exited {process.ExitCode} before {name}. {ReadFailureDiagnostics()}");
                     break;
                 }
 
                 await Task.Delay(25);
             }
 
-            Assert.True(File.Exists(path), $"Fixture did not produce {name} in ten seconds.");
+            bool exists = File.Exists(path);
+            Assert.True(exists, exists ? null
+                : $"Fixture did not produce {name} in ten seconds. {ReadFailureDiagnostics()}");
+        }
+
+        private string ReadFailureDiagnostics()
+        {
+            try
+            {
+                string phasePath = Path.Combine(Root, "coordinator-phase.txt");
+                string phase = File.Exists(phasePath) && new FileInfo(phasePath).Length <= 1024
+                    ? File.ReadAllText(phasePath) : "missing or oversized";
+                return $"Coordinator phase: {phase}; child.started: {File.Exists(Path.Combine(Root, "child.started"))}; "
+                    + $"report.json: {File.Exists(Path.Combine(Root, "report.json"))}; "
+                    + $"retained parent: {Describe(Parent)}; retained coordinator: {Describe(Coordinator)}. "
+                    + LaunchFixture.ReadChildDiagnostics(Root);
+            }
+            catch (Exception exception)
+            {
+                return $"Fixture diagnostics unavailable: {exception.GetType().Name} 0x{exception.HResult:X8}.";
+            }
+
+            static string Describe(Process? retained)
+            {
+                if (retained is null) { return "not returned"; }
+                return retained.HasExited ? $"exited {retained.ExitCode}" : "running";
+            }
         }
 
         internal void CloseCallerJobs()
@@ -207,7 +555,26 @@ public sealed class IndependentInstalledProcessTests
 }
 
 internal sealed record LaunchReport(int ProcessId, long CallerHandleCandidate, long ParentHandleCandidate,
-    string WorkingDirectory, DesktopProcessIdentity? Identity, string? Error = null);
+    string WorkingDirectory, DesktopProcessIdentity? Identity, string? Error = null, LaunchFailure? Failure = null);
+
+internal sealed record LaunchFailure(string Stage, string Message, int HResult, string? StackTrace,
+    bool? ParentExited, LaunchIdentityDiagnostics? Identity, string? DiagnosticError = null);
+
+internal sealed record LaunchIdentityDiagnostics(bool CallerNormal, bool CallerElevated, bool CallerRestricted,
+    bool CallerAppContainer, bool CallerUiAccess, bool? ParentNormal, bool? ParentElevated, bool? ParentRestricted,
+    bool? ParentAppContainer, bool? ParentUiAccess, bool? UserMismatch, bool? AuthenticationMismatch,
+    bool? SessionMismatch, bool? IntegrityMismatch, bool? GroupsMismatch, bool? PrivilegesMismatch)
+{
+    internal static LaunchIdentityDiagnostics From(DesktopProcessIdentity caller, DesktopProcessIdentity? parent) =>
+        new(caller.IsNormal, caller.Elevated, caller.Restricted, caller.AppContainer, caller.UiAccess,
+            parent?.IsNormal, parent?.Elevated, parent?.Restricted, parent?.AppContainer, parent?.UiAccess,
+            parent is null ? null : caller.UserSid != parent.UserSid,
+            parent is null ? null : caller.AuthenticationId != parent.AuthenticationId,
+            parent is null ? null : caller.SessionId != parent.SessionId,
+            parent is null ? null : caller.IntegritySid != parent.IntegritySid,
+            parent is null ? null : !caller.Groups.SequenceEqual(parent.Groups),
+            parent is null ? null : !caller.Privileges.SequenceEqual(parent.Privileges));
+}
 
 // This WinExe apphost runs only bounded fixture processes. It never locates or
 // designates Explorer, and cannot touch an installed product process.
@@ -219,6 +586,18 @@ internal static class LaunchFixture
 
     private static int Main(string[] args)
     {
+        if (args.Length == 0) { TryRecordChildManagedEntry(); }
+
+        if (args.Length == 4 && args[0] == "ci-normal-orchestrator")
+        {
+            return CiNormalLaunchFixture.RunOrchestrator(args[1], bool.Parse(args[2]), args[3]);
+        }
+
+        if (args.Length == 4 && args[0] == "ci-normal-positive")
+        {
+            return CiNormalLaunchFixture.RunBootstrap(args[1], bool.Parse(args[2]), args[3]);
+        }
+
         // Explicitly attended, read-only admission check. This mode never starts
         // an installed application, calls the broker, or creates a shell child.
         if (args.Length == 2 && args[0] == "verify-desktop-context")
@@ -245,13 +624,14 @@ internal static class LaunchFixture
 
         if (args.Length == 3 && args[0] == "parent")
         {
-            using EventWaitHandle sentinel = EventWaitHandle.OpenExisting(args[2]);
-            if (!SetHandleInformation(sentinel.SafeWaitHandle, 1, 1))
+            if (!TryParseSentinelHandle(args[2], out IntPtr handle)
+                || !GetHandleInformation(handle, out uint handleFlags) || (handleFlags & 1) == 0)
             {
                 return 3;
             }
 
-            WriteAtomic(args[1], "parent.ready", sentinel.SafeWaitHandle.DangerousGetHandle().ToInt64().ToString());
+            using SafeWaitHandle sentinel = new(handle, ownsHandle: true);
+            WriteAtomic(args[1], "parent.ready", handle.ToInt64().ToString(CultureInfo.InvariantCulture));
             WaitForMarker(args[1], "parent.exit", 25);
             return 0;
         }
@@ -259,6 +639,9 @@ internal static class LaunchFixture
         if (args.Length == 6 && args[0] == "launch")
         {
             string root = args[1];
+            string stage = "caller-sentinel";
+            SafeProcessHandle? parent = null;
+            DesktopProcessIdentity? identity = null;
             try
             {
                 if (!GetHandleInformation(new(long.Parse(args[2])), out uint handleFlags) || (handleFlags & 1) == 0)
@@ -266,26 +649,72 @@ internal static class LaunchFixture
                     throw new InvalidOperationException("The coordinator did not inherit its event sentinel.");
                 }
 
-                using SafeProcessHandle parent = OpenProcess(0x00101080, false, uint.Parse(args[4]));
+                stage = "open-parent";
+                parent = OpenProcess(0x00101080, false, uint.Parse(args[4]));
                 if (parent.IsInvalid)
                 {
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
 
-                DesktopProcessIdentity identity = DesktopProcessIdentity.ReadCaller();
+                stage = "read-caller-identity";
+                identity = DesktopProcessIdentity.ReadCaller();
+                stage = "coordinator-ready";
                 WriteAtomic(root, "coordinator.ready", "ready");
+                stage = "wait-launch";
                 WaitForMarker(root, "launch", 10);
+                stage = "prepare-child-environment";
                 Environment.SetEnvironmentVariable(RootVariable, root);
                 Environment.SetEnvironmentVariable(CallerHandleVariable, args[2]);
                 Environment.SetEnvironmentVariable(ParentHandleVariable, args[5]);
                 bool hidden = bool.Parse(args[3]);
+                stage = "start";
+                TryWriteCoordinatorPhase(root, "start-enter");
+                TryConfigureChildTrace(root);
                 using Process child = IndependentInstalledProcess.Start(new(Environment.ProcessPath!, root, hidden,
                     hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal), parent, identity);
-                Thread.Sleep(15000);
+                stage = "child-returned";
+                long maintenanceStarted = Stopwatch.GetTimestamp();
+                do
+                {
+                    TryRecordChildState(root, child, Stopwatch.GetElapsedTime(maintenanceStarted));
+                    TimeSpan remaining = TimeSpan.FromSeconds(15) - Stopwatch.GetElapsedTime(maintenanceStarted);
+                    if (remaining <= TimeSpan.Zero) { break; }
+                    Thread.Sleep(remaining < TimeSpan.FromMilliseconds(250) ? remaining : TimeSpan.FromMilliseconds(250));
+                }
+                while (Stopwatch.GetElapsedTime(maintenanceStarted) < TimeSpan.FromSeconds(15));
+                TryRecordChildState(root, child, Stopwatch.GetElapsedTime(maintenanceStarted));
             }
             catch (Exception exception)
             {
-                WriteReport(root, new(0, 0, 0, root, null, exception.GetType().Name));
+                bool? parentExited = null;
+                LaunchIdentityDiagnostics? diagnostic = identity is null ? null : LaunchIdentityDiagnostics.From(identity, null);
+                string? diagnosticError = null;
+                try
+                {
+                    // Failure-only snapshot of the retained fixture parent, not
+                    // the rejected child's token or the original gate instant.
+                    if (parent is { IsInvalid: false, IsClosed: false })
+                    {
+                        parentExited = IndependentInstalledProcess.HasExited(parent);
+                        if (parentExited == false && identity is not null)
+                        {
+                            diagnostic = LaunchIdentityDiagnostics.From(identity, DesktopProcessIdentity.Read(parent));
+                        }
+                    }
+                }
+                catch (Exception diagnosticException)
+                {
+                    // Diagnostics must never replace the original launch failure.
+                    diagnosticError = $"{diagnosticException.GetType().Name}: 0x{diagnosticException.HResult:X8}";
+                }
+
+                WriteReport(root, new(0, 0, 0, root, null, exception.GetType().Name,
+                    new(stage, exception.Message, exception.HResult, exception.StackTrace,
+                        parentExited, diagnostic, diagnosticError)));
+            }
+            finally
+            {
+                parent?.Dispose();
             }
 
             return 0;
@@ -308,6 +737,143 @@ internal static class LaunchFixture
         return 0;
     }
 
+    private sealed record ChildState(int ProcessId, long ElapsedMilliseconds, bool? Exited, int? ExitCode, string? Error);
+
+    private static void TryRecordChildState(string root, Process child, TimeSpan elapsed)
+    {
+        int id = 0;
+        ChildState state;
+        try
+        {
+            id = child.Id;
+            child.Refresh();
+            bool exited = child.HasExited;
+            state = new(id, (long)elapsed.TotalMilliseconds, exited, exited ? child.ExitCode : null, null);
+        }
+        catch (Exception exception)
+        {
+            state = new(id, (long)elapsed.TotalMilliseconds, null, null, DiagnosticError(exception));
+        }
+        TryWriteDiagnostic(root, "child-state.json", JsonSerializer.Serialize(state));
+        TryWriteCoordinatorPhase(root, "child-returned; " + JsonSerializer.Serialize(state));
+    }
+
+    private static void TryConfigureChildTrace(string root)
+    {
+        try
+        {
+            string directory = Path.Combine(root, "child-host-trace");
+            Directory.CreateDirectory(directory);
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            { throw new IOException("Child trace directory is reparsed."); }
+            // .NET 10's existing directory mode names each trace by executable/PID.
+            // Only subsequently created children receive this route; the running
+            // parent and coordinator retain their already initialized trace sinks.
+            Environment.SetEnvironmentVariable("DOTNET_HOST_TRACEFILE", directory);
+            Environment.SetEnvironmentVariable("DOTNET_HOST_TRACE_VERBOSITY", "4");
+            Environment.SetEnvironmentVariable("DOTNET_HOST_TRACE", "1");
+            TryWriteDiagnostic(root, "child-trace-setup.txt", "configured");
+        }
+        catch (Exception exception)
+        { TryWriteDiagnostic(root, "child-trace-setup.txt", DiagnosticError(exception)); }
+    }
+
+    private static void TryRecordChildManagedEntry()
+    {
+        string? root = null;
+        try
+        {
+            // The admitted launch plan supplies this exact fixture working directory.
+            // Do not route diagnostics through an unchecked environment-variable path.
+            string current = Environment.CurrentDirectory;
+            const string prefix = "OpenBlade.LaunchTest.";
+            string name = Path.GetFileName(current);
+            if (!Path.IsPathFullyQualified(current) || !name.StartsWith(prefix, StringComparison.Ordinal)
+                || !Guid.TryParseExact(name[prefix.Length..], "N", out _)
+                || (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) { return; }
+            root = current;
+            string? inheritedRoot = Environment.GetEnvironmentVariable(RootVariable);
+            TryWriteDiagnostic(root, "child-managed.txt", JsonSerializer.Serialize(new
+            {
+                Entered = true,
+                RootPresent = inheritedRoot is not null,
+                RootMatchesWorkingDirectory = string.Equals(inheritedRoot, current, StringComparison.OrdinalIgnoreCase),
+                CallerHandlePresent = Environment.GetEnvironmentVariable(CallerHandleVariable) is not null,
+                ParentHandlePresent = Environment.GetEnvironmentVariable(ParentHandleVariable) is not null,
+            }));
+        }
+        catch (Exception exception)
+        {
+            if (root is not null) { TryWriteDiagnostic(root, "child-managed.txt", DiagnosticError(exception)); }
+        }
+    }
+
+    private static string DiagnosticError(Exception exception) =>
+        $"{exception.GetType().Name} 0x{exception.HResult:X8}";
+
+    private static void TryWriteDiagnostic(string root, string name, string content)
+    {
+        try
+        {
+            string destination = Path.Combine(root, name);
+            string temporary = destination + ".tmp";
+            File.WriteAllText(temporary, content);
+            File.Move(temporary, destination, overwrite: true);
+        }
+        catch (Exception) { /* Best-effort diagnostics cannot change the launch outcome. */ }
+    }
+
+    internal static string ReadChildDiagnostics(string root)
+    {
+        // Failure-only, fixed file names and one exact returned PID; no inventory,
+        // process adoption, arbitrary environment dump or successful-case trace reads.
+        var result = new StringBuilder();
+        string stateText = ReadTail("child-state.json", 1024);
+        result.Append($"Child state: {stateText}; managed entry: {ReadTail("child-managed.txt", 1024)}; ");
+        result.Append($"trace setup: {ReadTail("child-trace-setup.txt", 256)}; ");
+        try
+        {
+            ChildState? state = JsonSerializer.Deserialize<ChildState>(stateText);
+            if (state is not { ProcessId: > 0 }) { return result.Append("child trace: returned PID unavailable").ToString(); }
+            string traceDirectory = Path.Combine(root, "child-host-trace");
+            if ((File.GetAttributes(traceDirectory) & FileAttributes.ReparsePoint) != 0)
+            { return result.Append("child trace: reparse directory refused").ToString(); }
+            string traceName = $"OpenBlade.DeploymentClient.Tests.{state.ProcessId.ToString(CultureInfo.InvariantCulture)}.log";
+            result.Append("child trace: " + ReadTail(Path.Combine("child-host-trace", traceName), 4096));
+        }
+        catch (Exception exception)
+        { result.Append("child trace unavailable: " + DiagnosticError(exception)); }
+        return result.ToString();
+
+        string ReadTail(string relative, int bound)
+        {
+            try
+            {
+                string path = Path.Combine(root, relative);
+                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) { return "reparse file refused"; }
+                using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                input.Position = Math.Max(0, input.Length - bound);
+                byte[] bytes = new byte[bound];
+                int count = input.Read(bytes);
+                return Encoding.UTF8.GetString(bytes, 0, count);
+            }
+            catch (Exception exception) { return DiagnosticError(exception); }
+        }
+    }
+
+    internal static bool TryParseSentinelHandle(string text, out IntPtr handle)
+    {
+        handle = IntPtr.Zero;
+        if (!long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out long value)
+            || value <= 0 || IntPtr.Size == 4 && value > int.MaxValue)
+        {
+            return false;
+        }
+
+        handle = new(value);
+        return true;
+    }
+
     private static void WaitForMarker(string root, string name, int seconds)
     {
         long start = Stopwatch.GetTimestamp();
@@ -319,6 +885,18 @@ internal static class LaunchFixture
 
     private static void WriteReport(string root, LaunchReport report) =>
         WriteAtomic(root, "report.json", JsonSerializer.Serialize(report));
+
+    private static void TryWriteCoordinatorPhase(string root, string phase)
+    {
+        try
+        {
+            string path = Path.Combine(root, "coordinator-phase.txt");
+            string temporary = path + ".tmp";
+            File.WriteAllText(temporary, phase);
+            File.Move(temporary, path, overwrite: true);
+        }
+        catch (Exception) { /* Diagnostics cannot replace the actual launch outcome. */ }
+    }
 
     private static void WriteAtomic(string root, string name, string content)
     {
@@ -388,7 +966,7 @@ internal static class LaunchFixture
         {
             int error = Marshal.GetLastWin32Error();
             duplicate.Dispose();
-            // Our CreateEvent/OpenEvent sentinels support cross-process duplication
+            // Our unnamed event sentinels support cross-process duplication
             // (also proved by the parent/coordinator positive controls). A missing
             // slot (6) or a reused, nonduplicable object (50) cannot be that event.
             // Permission failures and every other error remain test failures.
