@@ -1,9 +1,9 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using static OpenBlade.Service.Tests.VerifiedBladeProviderFixture;
-using OpenBlade.Contracts;
 
 namespace OpenBlade.Service.Tests;
 
