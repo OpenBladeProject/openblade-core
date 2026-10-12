@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Show “No profile selected” in the display color profile picker when Windows reports no active profile.
+- Show “No profile selected” in the display color profile picker when Windows reports no selected profile. ([#725](https://github.com/OpenBladeProject/openblade-core/pull/725))
 
 ## [0.24.3] - 2026-10-12
 
