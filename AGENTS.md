@@ -169,6 +169,12 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
   the user is unavailable. Keep it as the last physical-validation step and
   require fresh approval immediately beforehand from a present user who can
   resume the system and report the outcome.
+- Scope physical validation to the behavior and safety conditions exercised.
+  When source inspection confirms that different power connectors use the same
+  transition handler and relevant state checks, one attended test may validate
+  that shared path. Record the connector used and any source-specific behavior
+  left untested; do not repeat a disruptive lifecycle test solely to match the
+  connector in the original report.
 - Never run USBPcap capture and OpenBlade control against the same interface at
   the same time.
 - Never call `GenerateConsoleCtrlEvent` with process group `0`. USBPcapCMD must
@@ -212,10 +218,8 @@ unrelated worktrees and checkout changes.
 6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
-7. For hardware changes, complete the documented physical validation before
-   marking support production-ready. Unattended portions are allowed only
-   within the explicit limits under Hardware and capture safety; lifecycle
-   steps that require a present user remain attended.
+7. For hardware changes, complete the relevant physical validation before
+   marking support production-ready, following Hardware and capture safety.
 8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. Every
    new or materially changed changelog bullet must include a Markdown link to
    its implementing pull request, using
@@ -321,8 +325,6 @@ Follow [VERSIONING.md](VERSIONING.md). The short form is:
 - Name branches for the work, not the agent or vendor. Use purpose prefixes
   such as `feat/`, `fix/`, `docs/`, `chore/`, or `refactor/`; do not use
   prefixes such as `codex/` or `claude/`.
-- Base new work branches on `main` by default. Use a different base only when
-  the user explicitly requests one.
 - `Directory.Build.props` is the product-version source of truth.
 - Every pull request must complete the `Version impact`, exact `Version change`,
   and `Reason` fields defined in `VERSIONING.md`. Apply any required bump to
