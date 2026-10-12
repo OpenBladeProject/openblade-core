@@ -97,23 +97,16 @@ public static partial class RazerFirmwarePageParser
     {
         ArgumentNullException.ThrowIfNull(html);
         string text = NormalizeHtmlText(html);
-        ParsedVersion bios = FindVersion(text, BiosLabelRegex(), BiosVersionRegex());
-        ParsedVersion ec = FindVersion(text, EcLabelRegex(), EcVersionRegex());
-        ParsedVersion mcu = FindVersion(text, McuLabelRegex(), McuVersionRegex());
-        ParsedVbiosVersions vbios = FindVbiosVersions(html, text);
-        string[] thunderboltRows = HtmlTableRowRegex()
+        string[] rows = HtmlTableRowRegex()
             .Matches(html)
             .Select(match => NormalizeHtmlText(match.Groups["body"].Value))
-            .Where(row => ThunderboltLabelRegex().IsMatch(row))
             .ToArray();
-        ParsedVersion thunderbolt = FindVersion(
-            thunderboltRows.Length > 0 ? string.Join(" Updater ", thunderboltRows) : text,
-            ThunderboltLabelRegex(),
-            ThunderboltVersionRegex());
-        ParsedVersion touchpad = FindVersion(
-            text,
-            TouchpadLabelRegex(),
-            TouchpadVersionRegex());
+        ParsedVersion bios = FindVersion(text, rows, BiosLabelRegex());
+        ParsedVersion ec = FindVersion(text, rows, EcLabelRegex());
+        ParsedVersion mcu = FindVersion(text, rows, McuLabelRegex());
+        ParsedVbiosVersions vbios = FindVbiosVersions(html, text);
+        ParsedVersion thunderbolt = FindVersion(text, rows, ThunderboltLabelRegex());
+        ParsedVersion touchpad = FindVersion(text, rows, TouchpadLabelRegex());
         return new(
             bios.Value,
             ec.Value,
@@ -131,22 +124,29 @@ public static partial class RazerFirmwarePageParser
 
     private static ParsedVersion FindVersion(
         string text,
-        Regex labelRegex,
-        Regex versionRegex)
+        IReadOnlyList<string> rows,
+        Regex labelRegex)
     {
-        Match match = versionRegex.Match(text);
-        if (match.Success)
+        string[] matchingRows = rows.Where(row => labelRegex.IsMatch(row)).ToArray();
+        IEnumerable<string> sources = matchingRows.Length > 0 ? matchingRows : [text];
+        bool foundLabel = false;
+        foreach (string source in sources)
         {
-            return new(
-                match.Groups["version"].Value,
-                RazerPublishedFirmwareVersionStatus.Listed);
+            foreach (Match label in labelRegex.Matches(source))
+            {
+                foundLabel = true;
+                Match version = NumericVersionRegex().Match(source[(label.Index + label.Length)..]);
+                if (version.Success)
+                {
+                    return new(version.Groups["version"].Value,
+                        RazerPublishedFirmwareVersionStatus.Listed);
+                }
+            }
         }
 
-        return new(
-            Value: null,
-            labelRegex.IsMatch(text)
-                ? RazerPublishedFirmwareVersionStatus.Unreadable
-                : RazerPublishedFirmwareVersionStatus.NotListed);
+        return new(Value: null, foundLabel
+            ? RazerPublishedFirmwareVersionStatus.Unreadable
+            : RazerPublishedFirmwareVersionStatus.NotListed);
     }
 
     private readonly record struct ParsedVersion(
@@ -220,6 +220,11 @@ public static partial class RazerFirmwarePageParser
     [GeneratedRegex("<[^>]+>", RegexOptions.Singleline)]
     private static partial Regex TagRegex();
 
+    [GeneratedRegex(
+        "^\\s+v?\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex NumericVersionRegex();
+
     [GeneratedRegex("\\s+")]
     private static partial Regex WhitespaceRegex();
 
@@ -229,29 +234,14 @@ public static partial class RazerFirmwarePageParser
     private static partial Regex BiosLabelRegex();
 
     [GeneratedRegex(
-        "\\bBIOS(?:\\s+Firmware)?\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex BiosVersionRegex();
-
-    [GeneratedRegex(
         "\\bEC\\s+Firmware\\s+Updater\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex EcLabelRegex();
 
     [GeneratedRegex(
-        "\\bEC\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex EcVersionRegex();
-
-    [GeneratedRegex(
         "\\bMCU\\s+Firmware\\s+Updater\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex McuLabelRegex();
-
-    [GeneratedRegex(
-        "\\bMCU\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex McuVersionRegex();
 
     [GeneratedRegex(
         "\\bvBIOS\\s+Firmware\\s+Updater\\b(?<body>(?:(?!\\b(?:BIOS(?:\\s+Firmware)?|EC\\s+Firmware|MCU\\s+Firmware|vBIOS\\s+Firmware|Thunderbolt(?:\\s+5)?\\s+Firmware|Touchpad\\s+Firmware|Camera\\s+Firmware)\\s+Updater\\b).){0,500})",
@@ -280,19 +270,10 @@ public static partial class RazerFirmwarePageParser
     private static partial Regex ThunderboltLabelRegex();
 
     [GeneratedRegex(
-        "\\bThunderbolt(?:\\s+5)?\\s+Firmware\\s+Updater\\b\\s+v?\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex ThunderboltVersionRegex();
-
-    [GeneratedRegex(
         "\\bTouchpad\\s+Firmware\\s+Updater\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex TouchpadLabelRegex();
 
-    [GeneratedRegex(
-        "\\bTouchpad\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex TouchpadVersionRegex();
 }
 
 public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
