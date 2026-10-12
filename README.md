@@ -34,9 +34,10 @@ Available controls vary by model. See the
 
 ## Features
 
-- Power modes, automatic or fixed fan speeds,
-  custom fan curves, and NVIDIA GPU clock offsets. HyperBoost works without the
-  Razer cooling pad on both supported laptops.
+- Power modes, including Battery Saver and Battery Balanced on RZ09-0528,
+  automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU clock
+  offsets. On full-power AC, both laptops can start HyperBoost from any supported
+  AC mode, with or without the Razer cooling pad, then restore the starting settings.
 - Charge limits, battery health, and separate settings for each
   power source.
 - Keyboard and lid-logo effects, reactive lighting, mute indicators,
@@ -70,9 +71,9 @@ OpenBlade checks the patch before allowing shared use; see the
 [setup and coexistence notes](docs/synapse-blade-blocker.md).
 
 Core controls work without an additional driver. The native Windows brightness
-flyout on the Blade 16 (2026) uses Razer's brightness driver, installed separately.
-Without it, brightness keys use the OpenBlade flyout. See the
-[brightness driver guide](docs/razer-brightness-driver-package.md).
+flyout uses each supported laptop's own Razer brightness driver when that driver
+is already installed. Without it, brightness keys use the OpenBlade flyout. See
+the [brightness driver guide](docs/razer-brightness-driver-package.md).
 
 ## Development
 
