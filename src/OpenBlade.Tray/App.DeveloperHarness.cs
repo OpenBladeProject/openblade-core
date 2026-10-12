@@ -1113,8 +1113,12 @@ public partial class App
     {
         XamlBorder card = FindGpuAppCleanupCard(root)
             ?? throw new InvalidOperationException("The NVIDIA app card was not rendered.");
-        FrameworkElement host = FindPerformanceSmokeAncestor<XamlStackPanel>(card)
+        XamlStackPanel host = FindPerformanceSmokeAncestor<XamlStackPanel>(card)
             ?? throw new InvalidOperationException("The NVIDIA app card host was not rendered.");
+        if (captureSnapshots)
+        {
+            host.Background = new SolidColorBrush(Microsoft.UI.Colors.White);
+        }
         SessionGpuApp app = new(101, 1001, "snapshot.exe", 5, true, null);
         SessionGpuResponse scan = new(
             SessionGpuIpc.ProtocolVersion,
