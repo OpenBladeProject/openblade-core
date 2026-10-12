@@ -101,8 +101,13 @@ public static partial class RazerFirmwarePageParser
         ParsedVersion ec = FindVersion(text, EcLabelRegex(), EcVersionRegex());
         ParsedVersion mcu = FindVersion(text, McuLabelRegex(), McuVersionRegex());
         ParsedVbiosVersions vbios = FindVbiosVersions(html, text);
+        string[] thunderboltRows = HtmlTableRowRegex()
+            .Matches(html)
+            .Select(match => NormalizeHtmlText(match.Groups["body"].Value))
+            .Where(row => ThunderboltLabelRegex().IsMatch(row))
+            .ToArray();
         ParsedVersion thunderbolt = FindVersion(
-            text,
+            thunderboltRows.Length > 0 ? string.Join(" Updater ", thunderboltRows) : text,
             ThunderboltLabelRegex(),
             ThunderboltVersionRegex());
         ParsedVersion touchpad = FindVersion(
@@ -275,7 +280,7 @@ public static partial class RazerFirmwarePageParser
     private static partial Regex ThunderboltLabelRegex();
 
     [GeneratedRegex(
-        "\\bThunderbolt(?:\\s+5)?\\s+Firmware\\s+Updater\\b(?:(?!\\bUpdater\\b).){0,300}?\\bv\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
+        "\\bThunderbolt(?:\\s+5)?\\s+Firmware\\s+Updater\\b\\s+v?\\s*(?<version>\\d+(?:\\.\\d+)+)\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex ThunderboltVersionRegex();
 
