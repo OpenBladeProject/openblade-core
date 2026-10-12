@@ -61,6 +61,112 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Equal("1.07", versions.TouchpadVersion);
     }
 
+    [Theory]
+    [InlineData("70.2", "70.2")]
+    [InlineData("v69.1", "69.1")]
+    public void PageParser_ReadsThunderboltVersionWithOptionalPrefix(
+        string publishedVersion,
+        string expectedVersion)
+    {
+        string html = $"""
+            <table>
+              <tr><td>Thunderbolt 5 Firmware Updater</td><td>{publishedVersion}</td><td>October 1, 2026</td></tr>
+              <tr><td>MCU Firmware Updater</td><td>v1.07.00</td></tr>
+            </table>
+            """;
+
+        RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+
+        Assert.Equal(expectedVersion, versions.ThunderboltVersion);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.ThunderboltStatus);
+        Assert.Equal("1.07.00", versions.McuVersion);
+    }
+
+    [Fact]
+    public void PageParser_DoesNotBorrowThunderboltVersionFromNeighboringRow()
+    {
+        const string html = """
+            <table>
+              <tr><td>Thunderbolt 5 Firmware Updater</td><td>version unavailable</td><td>October 1, 2026</td></tr>
+              <tr><td>Graphics driver</td><td>v70.2</td></tr>
+              <tr><td>MCU Firmware Updater</td><td>v1.07.00</td></tr>
+            </table>
+            """;
+
+        RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+
+        Assert.Null(versions.ThunderboltVersion);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Unreadable, versions.ThunderboltStatus);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("v")]
+    public void PageParser_ReadsEveryFirmwareWithOptionalPrefix(string prefix)
+    {
+        string html = $"""
+            <table>
+              <tr><td>BIOS Updater</td><td>{prefix}4.01</td><td>September 5, 2026</td></tr>
+              <tr><td>EC Firmware Updater</td><td>{prefix}1.04</td></tr>
+              <tr><td>MCU Firmware Updater</td><td>{prefix}1.07.00</td></tr>
+              <tr><td>Thunderbolt 5 Firmware Updater</td><td>{prefix}70.2</td></tr>
+              <tr><td>TouchPad Firmware Updater</td><td>{prefix}1.07</td></tr>
+              <tr><td>vBIOS Firmware Updater</td><td>RTX 5090: {prefix}98.03.5C.40.15</td></tr>
+            </table>
+            """;
+
+        RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+
+        Assert.Equal("4.01", versions.BiosVersion);
+        Assert.Equal("1.04", versions.EcVersion);
+        Assert.Equal("1.07.00", versions.McuVersion);
+        Assert.Equal("70.2", versions.ThunderboltVersion);
+        Assert.Equal("1.07", versions.TouchpadVersion);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.BiosStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.EcStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.McuStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.ThunderboltStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.TouchpadStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.VbiosStatus);
+        Assert.Equal(new RazerPublishedVbiosVersion("98.03.5C.40.15", "RTX 5090"),
+            Assert.Single(versions.EffectiveVbiosVersions));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("version unavailable")]
+    [InlineData("October 1, 2026")]
+    public void PageParser_RejectsMissingFirmwareVersionsWithoutBorrowingRows(string value)
+    {
+        string html = $"""
+            <table>
+              <tr><td>BIOS Updater</td><td>{value}</td></tr>
+              <tr><td>Graphics driver</td><td>v4.01</td></tr>
+              <tr><td>EC Firmware Updater</td><td>{value}</td></tr>
+              <tr><td>Graphics driver</td><td>1.04</td></tr>
+              <tr><td>MCU Firmware Updater</td><td>{value}</td></tr>
+              <tr><td>Graphics driver</td><td>v1.07.00</td></tr>
+              <tr><td>Thunderbolt 5 Firmware Updater</td><td>{value}</td></tr>
+              <tr><td>Graphics driver</td><td>70.2</td></tr>
+              <tr><td>TouchPad Firmware Updater</td><td>{value}</td></tr>
+              <tr><td>Graphics driver</td><td>v1.07</td></tr>
+            </table>
+            """;
+
+        RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+
+        Assert.Null(versions.BiosVersion);
+        Assert.Null(versions.EcVersion);
+        Assert.Null(versions.McuVersion);
+        Assert.Null(versions.ThunderboltVersion);
+        Assert.Null(versions.TouchpadVersion);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Unreadable, versions.BiosStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Unreadable, versions.EcStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Unreadable, versions.McuStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Unreadable, versions.ThunderboltStatus);
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Unreadable, versions.TouchpadStatus);
+    }
+
     [Fact]
     public void PageParser_ReadsCurrentGpuSpecificVbiosMarkup()
     {
@@ -134,7 +240,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
     {
         const string html = """
             <table>
-              <tr><td>BIOS Firmware Updater</td><td>2.02</td></tr>
+              <tr><td>BIOS Firmware Updater</td><td>version unavailable</td></tr>
               <tr><td>EC Firmware Updater</td><td>v1.09</td></tr>
               <tr><td>MCU Firmware Updater</td><td>v1.09</td></tr>
             </table>
