@@ -348,8 +348,8 @@ if ($ci.Contains('if: ${{ needs.classify-changes.outputs.requires-build')) {
     throw 'The stable aggregate build check must not disappear for an empty plan.'
 }
 
-if ($ci.Contains('OPENBLADE_PR_DRAFT')) {
-    throw 'Draft state must not change CI impact coverage.'
+if ($ci.Contains('OPENBLADE_PR_DRAFT') -or $ci.Contains('      - ready_for_review')) {
+    throw 'Draft state must not change CI impact coverage or rerun unchanged commits.'
 }
 
 $build = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\build.yml') -Raw
