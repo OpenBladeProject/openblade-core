@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Show GPU app cleanup for closable apps that hold a GPU context while idle. ([#726](https://github.com/OpenBladeProject/openblade-core/pull/726))
+
 ## [0.24.3] - 2026-10-12
 
 ### Added
