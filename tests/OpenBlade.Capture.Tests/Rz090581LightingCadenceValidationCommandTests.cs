@@ -354,8 +354,10 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
         Assert.False(opened);
     }
 
-    [Fact]
-    public async Task RunAsync_RejectsWrongSkuBeforeOpeningHardware()
+    [Theory]
+    [InlineData("different-sku")]
+    [InlineData(null)]
+    public async Task RunAsync_RejectsMissingOrWrongSkuBeforeOpeningHardware(string? sku)
     {
         bool opened = false;
         var command = new Rz090581LightingCadenceValidationCommand(
@@ -373,7 +375,7 @@ public sealed class Rz090581LightingCadenceValidationCommandTests
                 new HostIdentityEvidence(
                     "Razer",
                     "Blade 16 - RZ09-0581",
-                    "different-sku",
+                    sku,
                     "3.01"),
                 null,
                 HostFirmwareCompatibility.Tested),

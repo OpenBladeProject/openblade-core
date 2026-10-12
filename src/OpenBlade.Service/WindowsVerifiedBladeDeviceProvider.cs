@@ -33,6 +33,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     private readonly FirmwareCompatibilityPolicy compatibilityPolicy;
     private readonly SerializedBladeDevice device;
     private readonly object providerLifecycleSync = new();
+    private DiagnosticDeviceVerification verificationDiagnostics =
+        DiagnosticDeviceVerification.NotObserved;
     private long lastReadyProbeTimestamp;
     private int firmwareCompatibility;
     private int requiresUntestedFirmwareOverride;
@@ -106,6 +108,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     public bool RequiresUntestedFirmwareOverride =>
         Volatile.Read(ref requiresUntestedFirmwareOverride) != 0;
 
+    public DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
+        Volatile.Read(ref verificationDiagnostics);
+
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
     {
         verifiedDevice = null!;
@@ -122,8 +127,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             BatteryValidationProbeClassification classification = result.Classification;
             if (!IsReadyClassification(classification))
             {
-                if (IsTransientProbeClassification(classification)
-                    && TryGetRecentlyVerifiedDevice(out verifiedDevice))
+                bool usedRecentlyVerifiedDevice =
+                    IsTransientProbeClassification(classification)
+                    && TryGetRecentlyVerifiedDevice(out verifiedDevice);
+                RecordVerificationAttempt(DiagnosticDeviceVerificationAttempt.FromProbe(
+                    result,
+                    usedRecentlyVerifiedDevice));
+                if (usedRecentlyVerifiedDevice)
                 {
                     return true;
                 }
@@ -134,6 +144,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             lock (providerLifecycleSync)
             {
+                RecordVerificationAttempt(DiagnosticDeviceVerificationAttempt.FromProbe(
+                    result,
+                    usedRecentlyVerifiedDevice: false));
                 if (disposed != 0)
                 {
                     return false;
@@ -146,9 +159,32 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 return true;
             }
         }
-        catch
+        catch (Exception exception)
         {
-            return TryGetRecentlyVerifiedDevice(out verifiedDevice);
+            bool usedRecentlyVerifiedDevice = TryGetRecentlyVerifiedDevice(out verifiedDevice);
+            RecordVerificationAttempt(new DiagnosticDeviceVerificationAttempt(
+                DateTimeOffset.UtcNow,
+                "Probe",
+                "ProbeException",
+                "The device verification probe threw an exception before returning a result.",
+                ProbeResult: null,
+                usedRecentlyVerifiedDevice,
+                exception.GetType().Name,
+                exception.HResult));
+            return usedRecentlyVerifiedDevice;
+        }
+    }
+
+    private void RecordVerificationAttempt(DiagnosticDeviceVerificationAttempt attempt)
+    {
+        lock (providerLifecycleSync)
+        {
+            DiagnosticDeviceVerification previous = verificationDiagnostics;
+            bool ready = attempt.ProbeResult is { } result
+                && IsReadyClassification(result.Classification);
+            Volatile.Write(ref verificationDiagnostics, new DiagnosticDeviceVerification(
+                attempt,
+                ready ? previous.LastFailure : attempt));
         }
     }
 

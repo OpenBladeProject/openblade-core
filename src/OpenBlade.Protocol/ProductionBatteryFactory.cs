@@ -487,7 +487,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             {
                 Manufacturer: "Razer",
                 ProductName: "Blade 16 - RZ09-0581",
-                Sku: "RZ09-05819EN4",
             } evidence,
             Failure: null,
         }
@@ -590,7 +589,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 {
                     Manufacturer: "Razer",
                     ProductName: "Blade 16 - RZ09-0581",
-                    Sku: "RZ09-05819EN4",
                 },
                 Failure: null,
                 FirmwareCompatibility: HostFirmwareCompatibility.Tested
@@ -644,7 +642,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             {
                 Manufacturer: "Razer",
                 ProductName: "Blade 16 - RZ09-0581",
-                Sku: "RZ09-05819EN4",
                 BiosVersion: { Length: > 0 },
             },
             Failure: null,

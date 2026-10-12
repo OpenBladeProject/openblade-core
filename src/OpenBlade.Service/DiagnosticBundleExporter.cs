@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
@@ -73,7 +74,8 @@ public sealed record DiagnosticBundle(
     IReadOnlyList<DiagnosticCommandResult> CommandResults,
     IReadOnlyList<string> LogLines,
     IReadOnlyCollection<string> SensitiveTokens,
-    DiagnosticHyperBoostOwnershipJournal? HyperBoostOwnership = null);
+    DiagnosticHyperBoostOwnershipJournal? HyperBoostOwnership = null,
+    DiagnosticDeviceVerification? DeviceVerification = null);
 
 public static class DiagnosticBundleExporter
 {
@@ -81,6 +83,11 @@ public static class DiagnosticBundleExporter
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
+    };
+
+    private static readonly JsonSerializerOptions VerificationJsonOptions = new(JsonOptions)
+    {
+        Converters = { new JsonStringEnumConverter() },
     };
 
     public static async Task ExportAsync(
@@ -94,6 +101,11 @@ public static class DiagnosticBundleExporter
         using ZipArchive archive = new(destination, ZipArchiveMode.Create, leaveOpen: true);
         await WriteJsonEntryAsync(archive, "versions.json", bundle.Versions, bundle.SensitiveTokens, cancellationToken);
         await WriteJsonEntryAsync(archive, "device.json", bundle.Device, bundle.SensitiveTokens, cancellationToken);
+        await WriteDeviceVerificationEntryAsync(
+            archive,
+            bundle.DeviceVerification ?? DiagnosticDeviceVerification.NotObserved,
+            bundle.SensitiveTokens,
+            cancellationToken);
         await WriteJsonEntryAsync(archive, "capabilities.json", bundle.Capabilities, bundle.SensitiveTokens, cancellationToken);
         await WriteJsonEntryAsync(archive, "configuration.json", bundle.Configuration, bundle.SensitiveTokens, cancellationToken);
         await WriteCommandResultsEntryAsync(
@@ -160,6 +172,59 @@ public static class DiagnosticBundleExporter
             redacted,
             sensitiveTokens: [],
             cancellationToken);
+    }
+
+    private static Task WriteDeviceVerificationEntryAsync(
+        ZipArchive archive,
+        DiagnosticDeviceVerification verification,
+        IReadOnlyCollection<string> sensitiveTokens,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        (string[] tokens, string replacement) = CreateRedactionPlan(sensitiveTokens);
+        DiagnosticDeviceVerification redacted = verification with
+        {
+            LatestAttempt = RedactAttempt(verification.LatestAttempt),
+            LastFailure = RedactAttempt(verification.LastFailure),
+        };
+
+        // Preserve schema names, enum labels, timestamps and native error codes.
+        // Only the bounded registry values and observed SKU can contain user-specific text.
+        return WriteTextEntryAsync(
+            archive,
+            "device-verification.json",
+            JsonSerializer.Serialize(redacted, VerificationJsonOptions),
+            cancellationToken);
+
+        DiagnosticDeviceVerificationAttempt? RedactAttempt(
+            DiagnosticDeviceVerificationAttempt? attempt)
+        {
+            if (attempt?.ProbeResult is not { } probe)
+            {
+                return attempt;
+            }
+
+            return attempt with
+            {
+                ProbeResult = probe with
+                {
+                    ObservedSku = probe.ObservedSku is null
+                        ? null
+                        : RedactString(probe.ObservedSku, tokens, replacement),
+                    HostIdentityFailure = probe.HostIdentityFailure is not { } failure
+                        ? null
+                        : failure with
+                        {
+                            ExpectedValue = failure.ExpectedValue is null
+                            ? null
+                            : RedactString(failure.ExpectedValue, tokens, replacement),
+                            ActualValue = failure.ActualValue is null
+                            ? null
+                            : RedactString(failure.ActualValue, tokens, replacement),
+                        },
+                },
+            };
+        }
     }
 
     private static async Task WriteLogEntryAsync(

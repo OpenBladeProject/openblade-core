@@ -34,6 +34,27 @@ public enum BatteryValidationFirmwareCompatibility
     ModelScoped,
 }
 
+public enum HostIdentityFailureReason
+{
+    PlatformNotSupported,
+    PlatformReadFailed,
+    RegistryValueMissing,
+    RegistryValueMismatch,
+    RegistryReadFailed,
+    RegistrySourcesMismatch,
+    FirmwareNotAdmitted,
+    IdentityReadFailed,
+}
+
+public sealed record HostIdentityFailureDetail(
+    HostIdentityFailureReason Reason,
+    string Source,
+    string Field,
+    string? ExpectedValue,
+    string? ActualValue,
+    string? ExceptionType = null,
+    int? HResult = null);
+
 public sealed record BatteryValidationProbeResult(
     BatteryValidationProbeStage Stage,
     BatteryValidationProbeClassification Classification,
@@ -52,7 +73,9 @@ public sealed record BatteryValidationProbeResult(
     int FeatureLengthMatchCount,
     int ExactMatchCount,
     BatteryValidationFirmwareCompatibility FirmwareCompatibility =
-        BatteryValidationFirmwareCompatibility.Unknown);
+        BatteryValidationFirmwareCompatibility.Unknown,
+    HostIdentityFailureDetail? HostIdentityFailure = null,
+    string? ObservedSku = null);
 
 internal sealed class HidEvidenceEvaluation : IDisposable
 {
@@ -159,11 +182,19 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
         {
             identity = hostIdentity.ReadExactIdentity();
         }
-        catch
+        catch (Exception exception)
         {
             return Failure(
                 BatteryValidationProbeStage.HostIdentity,
-                BatteryValidationProbeClassification.HostIdentityBlocked);
+                BatteryValidationProbeClassification.HostIdentityBlocked,
+                hostIdentityFailure: new HostIdentityFailureDetail(
+                    HostIdentityFailureReason.IdentityReadFailed,
+                    "HostIdentity",
+                    "ReadExactIdentity",
+                    ExpectedValue: null,
+                    ActualValue: null,
+                    exception.GetType().Name,
+                    exception.HResult));
         }
 
         if (identity.Evidence is null || identity.Failure is not null)
@@ -172,11 +203,13 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 BatteryValidationProbeStage.HostIdentity,
                 BatteryValidationProbeClassification.HostIdentityBlocked,
                 firmwareCompatibility: MapFirmwareCompatibility(
-                    identity.FirmwareCompatibility));
+                    identity.FirmwareCompatibility),
+                hostIdentityFailure: identity.HostIdentityFailure);
         }
 
         BatteryValidationFirmwareCompatibility firmwareCompatibility =
             MapFirmwareCompatibility(identity.FirmwareCompatibility);
+        string? observedSku = Bounded(identity.Evidence.Value.Sku);
 
         bool conflictCheckPassed = exclusivityPolicy == ControllerExclusivityPolicy.Strict;
         if (exclusivityPolicy == ControllerExclusivityPolicy.Strict)
@@ -192,7 +225,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                     BatteryValidationProbeStage.ConflictCheck,
                     BatteryValidationProbeClassification.ConflictDetectionFailed,
                     hostIdentityMatched: true,
-                    firmwareCompatibility: firmwareCompatibility);
+                    firmwareCompatibility: firmwareCompatibility,
+                    observedSku: observedSku);
             }
 
             if (access.DetectionFailure is not null)
@@ -201,7 +235,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                     BatteryValidationProbeStage.ConflictCheck,
                     BatteryValidationProbeClassification.ConflictDetectionFailed,
                     hostIdentityMatched: true,
-                    firmwareCompatibility: firmwareCompatibility);
+                    firmwareCompatibility: firmwareCompatibility,
+                    observedSku: observedSku);
             }
 
             if (access.Conflicts.Count != 0)
@@ -210,7 +245,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                     BatteryValidationProbeStage.ConflictCheck,
                     BatteryValidationProbeClassification.ConflictBlocked,
                     hostIdentityMatched: true,
-                    firmwareCompatibility: firmwareCompatibility);
+                    firmwareCompatibility: firmwareCompatibility,
+                    observedSku: observedSku);
             }
         }
 
@@ -226,7 +262,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 BatteryValidationProbeClassification.EnumerationFailed,
                 hostIdentityMatched: true,
                 conflictCheckPassed: conflictCheckPassed,
-                firmwareCompatibility: firmwareCompatibility);
+                firmwareCompatibility: firmwareCompatibility,
+                observedSku: observedSku);
         }
 
         int openAttempts = 0;
@@ -372,7 +409,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 UsageMatchCount: usageMatches,
                 FeatureLengthMatchCount: featureLengthMatches,
                 ExactMatchCount: exactMatches.Count,
-                FirmwareCompatibility: firmwareCompatibility);
+                FirmwareCompatibility: firmwareCompatibility,
+                ObservedSku: observedSku);
     }
 
     private static HidEvidenceEvaluation Failure(
@@ -381,7 +419,9 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
         bool hostIdentityMatched = false,
         bool conflictCheckPassed = false,
         BatteryValidationFirmwareCompatibility firmwareCompatibility =
-            BatteryValidationFirmwareCompatibility.Unknown) =>
+            BatteryValidationFirmwareCompatibility.Unknown,
+        HostIdentityFailureDetail? hostIdentityFailure = null,
+        string? observedSku = null) =>
         new(new BatteryValidationProbeResult(
             stage,
             classification,
@@ -399,7 +439,16 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
             UsageMatchCount: 0,
             FeatureLengthMatchCount: 0,
             ExactMatchCount: 0,
-            FirmwareCompatibility: firmwareCompatibility));
+            FirmwareCompatibility: firmwareCompatibility,
+            HostIdentityFailure: hostIdentityFailure,
+            ObservedSku: observedSku));
+
+    private static string? Bounded(string? value) => value switch
+    {
+        null => null,
+        { Length: <= 256 } => value,
+        _ => value[..256],
+    };
 
     private static BatteryValidationFirmwareCompatibility MapFirmwareCompatibility(
         HostFirmwareCompatibility compatibility) => compatibility switch

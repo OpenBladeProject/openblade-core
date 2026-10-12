@@ -66,7 +66,10 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   bounded SCM policy, observes fresh exact-device state, and resumes only
   eligible OpenBlade-owned producers.
 
-Production admission is scoped to the exact model and SKU. BIOS, EC, and MCU
+Production admission is scoped to the exact Razer product name and HID identity.
+SKU is optional diagnostic metadata, so configuration variants of an admitted
+product are not rejected by SKU. Hardware-specific backends retain their own
+device and driver checks. BIOS, EC, and MCU
 versions remain evidence provenance: no shipped capability is restricted to a
 firmware version, so an untested BIOS is admitted and reported as model-scoped.
 Capture tools are kept outside the installed product, may pin an exact BIOS
@@ -78,6 +81,27 @@ OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
 RZ09-0528 have separate, model-specific stacks. WMI remains the fallback. See
 the [Razer driver package notes](razer-brightness-driver-package.md) for the
 validation and redistribution limits.
+
+## Diagnostics exports
+
+Use **Export diagnostics** in the tray to collect device-verification evidence.
+The ZIP's `device-verification.json` contains the latest service probe and the
+most recent failure from the current service run, with timestamps. A successful
+probe after recovery does not erase the earlier failure.
+
+Each attempt records its stage, classification, and a readable reason. Host
+identity failures identify the failed platform or registry check and its
+expected and observed values. `observedSku` retains available SKU metadata after
+host admission. HID failures include candidate-open errors and
+identity-match counters. `usedRecentlyVerifiedDevice` shows when the service
+preserved a recently verified device through a transient probe failure.
+
+Export reads cached evidence without probing hardware again. Before the first
+probe, both attempts are `null`. Identity values use the export's sensitive-token
+redaction; exception evidence contains only the type and error code. Device
+paths, serial numbers, exception messages, and raw HID reports are not collected
+by this verification record. The USB IDs in `device.json` identify the catalog
+model and do not establish successful HID verification.
 
 ## Build and test
 

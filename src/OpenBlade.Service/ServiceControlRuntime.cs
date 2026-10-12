@@ -29,6 +29,9 @@ public interface IServiceControlRuntime
 
     Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
 
+    DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
+        DiagnosticDeviceVerification.NotObserved;
+
     Task<DiagnosticHyperBoostOwnershipJournal>
         GetHyperBoostOwnershipJournalDiagnosticsAsync(
             CancellationToken cancellationToken)
@@ -952,6 +955,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() =>
         Volatile.Read(ref rz090581CapabilityDiagnostics);
+
+    public DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
+        deviceProvider.GetCachedDeviceVerificationDiagnostics();
 
     public async Task<DiagnosticHyperBoostOwnershipJournal>
         GetHyperBoostOwnershipJournalDiagnosticsAsync(

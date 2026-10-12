@@ -22,9 +22,19 @@ public sealed class BatteryValidationProbeTests
     {
         List<string> events = [];
         ScriptedNative native = new(events);
+        var hostFailure = new HostIdentityFailureDetail(
+            HostIdentityFailureReason.RegistryValueMismatch,
+            "BIOS",
+            "SystemSKU",
+            "RZ09-05819EN4",
+            "RZ09-05819EU4");
         var evaluator = new WindowsRazerHidEvidenceEvaluator(
             new ScriptedIdentitySource(
-                new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked),
+                new HostIdentityReadResult(
+                    null,
+                    HidSessionFailureKind.IdentityBlocked,
+                    HostFirmwareCompatibility.Unknown,
+                    hostFailure),
                 events),
             new ScriptedGuard(new HardwareAccessDecision([], null), events),
             native,
@@ -37,8 +47,40 @@ public sealed class BatteryValidationProbeTests
             BatteryValidationProbeClassification.HostIdentityBlocked,
             evaluation.Result.Classification);
         Assert.False(evaluation.Result.HostIdentityMatched);
+        Assert.Equal(hostFailure, evaluation.Result.HostIdentityFailure);
+        Assert.Null(evaluation.Result.ObservedSku);
         Assert.Equal(["identity"], events);
         Assert.Equal(0, native.BindCalls);
+    }
+
+    [Fact]
+    public void Evaluate_HostSourceExceptionReportsBoundedIdentityFailureMetadata()
+    {
+        List<string> events = [];
+        ScriptedNative native = new(events);
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ThrowingIdentitySource(events),
+            new ScriptedGuard(new HardwareAccessDecision([], null), events),
+            native,
+            ControllerExclusivityPolicy.Advisory);
+
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+
+        Assert.Equal(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            evaluation.Result.Classification);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.IdentityReadFailed,
+                "HostIdentity",
+                "ReadExactIdentity",
+                ExpectedValue: null,
+                ActualValue: null,
+                nameof(InvalidOperationException),
+                new InvalidOperationException().HResult),
+            evaluation.Result.HostIdentityFailure);
+        Assert.Equal(["identity"], events);
+        Assert.Equal(0, native.EnumerateCalls);
     }
 
     [Fact]
@@ -87,6 +129,7 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(
             BatteryValidationFirmwareCompatibility.ModelScoped,
             evaluation.Result.FirmwareCompatibility);
+        Assert.Equal("RZ09-05819EN4", evaluation.Result.ObservedSku);
     }
 
     [Theory]
@@ -107,6 +150,7 @@ public sealed class BatteryValidationProbeTests
 
         Assert.Equal(BatteryValidationProbeStage.ConflictCheck, evaluation.Result.Stage);
         Assert.Equal(expected, evaluation.Result.Classification);
+        Assert.Equal("RZ09-05819EN4", evaluation.Result.ObservedSku);
         Assert.Equal(["identity", "guard"], events);
         Assert.Equal(0, native.EnumerateCalls);
         Assert.Equal(0, native.BindCalls);
@@ -129,6 +173,7 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(
             BatteryValidationFirmwareCompatibility.UntestedAllowed,
             evaluation.Result.FirmwareCompatibility);
+        Assert.Equal("RZ09-05819EN4", evaluation.Result.ObservedSku);
     }
 
     [Fact]
@@ -149,6 +194,7 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(
             BatteryValidationFirmwareCompatibility.UntestedAllowed,
             evaluation.Result.FirmwareCompatibility);
+        Assert.Equal("RZ09-05819EN4", evaluation.Result.ObservedSku);
     }
 
     [Theory]
@@ -261,6 +307,8 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(2, result.UsageMatchCount);
         Assert.Equal(2, result.FeatureLengthMatchCount);
         Assert.Equal(1, result.ExactMatchCount);
+        Assert.Null(result.HostIdentityFailure);
+        Assert.Equal("RZ09-05819EN4", result.ObservedSku);
         Assert.All(native.OpenParameters, parameters => Assert.Equal(
             new HidOpenParameters(0xC0000000u, 3u, 3u, 0x40000000u, false),
             parameters));
@@ -307,6 +355,33 @@ public sealed class BatteryValidationProbeTests
             evaluation.Result.Classification);
         Assert.Empty(native.OpenParameters);
         Assert.Equal(0, native.BindCalls);
+    }
+
+    [Theory]
+    [InlineData(false, BatteryValidationProbeClassification.Ready)]
+    [InlineData(true, BatteryValidationProbeClassification.EnumerationFailed)]
+    public void Evaluate_BoundsObservedSkuAfterHostAdmission(
+        bool failEnumeration,
+        BatteryValidationProbeClassification expectedClassification)
+    {
+        ScriptedNative native = new([]) { ThrowOnEnumeration = failEnumeration };
+        if (!failEnumeration)
+        {
+            native.Add("exact", ExactHandle);
+        }
+
+        HostIdentityReadResult host = new(
+            new HostIdentityEvidence(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                new string('x', 300),
+                "3.01"),
+            null);
+
+        using HidEvidenceEvaluation evaluation = CreateEvaluator(native, host: host).Evaluate();
+
+        Assert.Equal(expectedClassification, evaluation.Result.Classification);
+        Assert.Equal(new string('x', 256), evaluation.Result.ObservedSku);
     }
 
     [Fact]
@@ -404,9 +479,10 @@ public sealed class BatteryValidationProbeTests
         ScriptedNative native,
         List<string>? events = null,
         HardwareAccessDecision? access = null,
-        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict) =>
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
+        HostIdentityReadResult? host = null) =>
         new(
-            new ScriptedIdentitySource(ExactHost, events),
+            new ScriptedIdentitySource(host ?? ExactHost, events),
             new ScriptedGuard(access ?? new HardwareAccessDecision([], null), events),
             native,
             policy);
@@ -419,6 +495,15 @@ public sealed class BatteryValidationProbeTests
         {
             events?.Add("identity");
             return result;
+        }
+    }
+
+    private sealed class ThrowingIdentitySource(List<string> events) : IHostIdentitySource
+    {
+        public HostIdentityReadResult ReadExactIdentity()
+        {
+            events.Add("identity");
+            throw new InvalidOperationException("sensitive test detail");
         }
     }
 

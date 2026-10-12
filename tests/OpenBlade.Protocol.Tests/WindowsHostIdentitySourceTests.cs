@@ -54,7 +54,7 @@ public sealed class WindowsHostIdentitySourceTests
         get
         {
             TheoryData<string, string> data = new();
-            foreach (RegistryValueRequest request in ExpectedRequests)
+            foreach (RegistryValueRequest request in RequiredIdentityRequests)
             {
                 string caseDifferentValue = request.ExpectedValue.ToLowerInvariant();
                 if (!string.Equals(caseDifferentValue, request.ExpectedValue, StringComparison.Ordinal))
@@ -70,7 +70,7 @@ public sealed class WindowsHostIdentitySourceTests
     public static TheoryData<string> RegistryValueLocations()
     {
         TheoryData<string> data = new();
-        foreach (RegistryValueRequest request in ExpectedRequests)
+        foreach (RegistryValueRequest request in RequiredIdentityRequests)
         {
             data.Add(request.Location);
         }
@@ -97,6 +97,7 @@ public sealed class WindowsHostIdentitySourceTests
             new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", "3.01"),
             result.Evidence);
         Assert.Null(result.Failure);
+        Assert.Null(result.HostIdentityFailure);
         Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
         Assert.Equal(
             ExpectedRequests.Select(request => request.Location).Order(),
@@ -130,7 +131,7 @@ public sealed class WindowsHostIdentitySourceTests
     {
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[$"{BiosKey}|SystemProductName"] = "Blade 16 - RZ09-0528";
-        registry.Values[$"{BiosKey}|SystemSKU"] = "RZ09-05289EN4";
+        registry.Values[$"{BiosKey}|SystemSKU"] = "RZ09-05289EN9";
         registry.Values[$"{BiosKey}|BIOSVersion"] = "2.02";
         registry.Values[$"{SystemInformationKey}|SystemProductName"] =
             "Blade 16 - RZ09-0528";
@@ -146,7 +147,7 @@ public sealed class WindowsHostIdentitySourceTests
             new HostIdentityEvidence(
                 "Razer",
                 "Blade 16 - RZ09-0528",
-                "RZ09-05289EN4",
+                "RZ09-05289EN9",
                 "2.02"),
             result.Evidence);
         Assert.Null(result.Failure);
@@ -187,6 +188,14 @@ public sealed class WindowsHostIdentitySourceTests
         HostIdentityReadResult blocked = source.ReadExactIdentity();
         AssertIdentityBlocked(blocked);
         Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.FirmwareNotAdmitted,
+                "BIOS",
+                "BIOSVersion",
+                "3.01, 4.00, 4.01",
+                "3.02"),
+            blocked.HostIdentityFailure);
+        Assert.Equal(
             HostFirmwareCompatibility.UntestedBlocked,
             blocked.FirmwareCompatibility);
 
@@ -211,6 +220,7 @@ public sealed class WindowsHostIdentitySourceTests
 
         Assert.Equal("99.99", result.Evidence?.BiosVersion);
         Assert.Null(result.Failure);
+        Assert.Null(result.HostIdentityFailure);
         Assert.Equal(HostFirmwareCompatibility.ModelScoped, result.FirmwareCompatibility);
     }
 
@@ -223,16 +233,6 @@ public sealed class WindowsHostIdentitySourceTests
         var policy = new FirmwareCompatibilityPolicy { AllowUntestedFirmware = true };
 
         HostIdentityReadResult result = new WindowsHostIdentitySource(
-            registry,
-            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
-            policy).ReadExactIdentity();
-
-        AssertIdentityBlocked(result);
-        Assert.Equal(HostFirmwareCompatibility.Unknown, result.FirmwareCompatibility);
-
-        registry = CreateExactRegistry();
-        registry.Values[$"{BiosKey}|SystemSKU"] = "RZ09-05819EU4";
-        result = new WindowsHostIdentitySource(
             registry,
             new FakeWindowsPlatformEvidenceSource(ExactPlatform),
             policy).ReadExactIdentity();
@@ -267,6 +267,81 @@ public sealed class WindowsHostIdentitySourceTests
         AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
     }
 
+    [Fact]
+    public void ReadExactIdentity_AcceptsProductionEn9SkuWithMatchingModelAndBios()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|SystemSKU"] = "RZ09-05819EN9";
+        registry.Values[$"{BiosKey}|BIOSVersion"] = "4.01";
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "4.01";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.Equal("RZ09-05819EN9", result.Evidence?.Sku);
+        Assert.Null(result.Failure);
+        Assert.Null(result.HostIdentityFailure);
+        Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
+        Assert.Equal(
+            ExpectedRequests.Select(request => request.Location),
+            registry.Requests.Select(request => request.Location));
+    }
+
+    [Fact]
+    public void ReadExactIdentity_ExplicitExactVersionIdentityStillRequiresSku()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|SystemSKU"] = "RZ09-05819EN9";
+        var expected = new ExpectedHostIdentity(
+            "Razer",
+            "Blade 16 - RZ09-0581",
+            "RZ09-05819EN4",
+            ["3.01", "4.00", "4.01"]);
+        var source = new WindowsHostIdentitySource(
+            registry,
+            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            expected);
+
+        HostIdentityReadResult result = source.ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                "BIOS",
+                "SystemSKU",
+                "RZ09-05819EN4",
+                "RZ09-05819EN9"),
+            result.HostIdentityFailure);
+        Assert.Equal(
+            ExpectedRequests.Take(3).Select(request => request.Location),
+            registry.Requests.Select(request => request.Location));
+    }
+
+    [Theory]
+    [InlineData($"{BiosKey}|SystemProductName", "BIOS", "SystemProductName", "Blade 16 - RZ09-0581")]
+    [InlineData($"{SystemInformationKey}|SystemManufacturer", "SystemInformation", "SystemManufacturer", "Razer")]
+    public void ReadExactIdentity_ReportsExactMismatchedRegistryField(
+        string location,
+        string source,
+        string field,
+        string expectedValue)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[location] = "unexpected";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                source,
+                field,
+                expectedValue,
+                "unexpected"),
+            result.HostIdentityFailure);
+    }
+
     [Theory]
     [MemberData(nameof(CaseDifferentRegistryValues))]
     public void ReadExactIdentity_UsesOrdinalCaseSensitiveComparison(string location, string caseDifferentValue)
@@ -285,6 +360,65 @@ public sealed class WindowsHostIdentitySourceTests
         registry.Values.Remove(location);
 
         AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
+    }
+
+    [Fact]
+    public void ReadExactIdentity_AcceptsMissingProductionSkuAsNullMetadata()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values.Remove($"{BiosKey}|SystemSKU");
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.NotNull(result.Evidence);
+        Assert.Null(result.Evidence.Value.Sku);
+        Assert.Null(result.Failure);
+        Assert.Null(result.HostIdentityFailure);
+        Assert.Equal(
+            ExpectedRequests.Select(request => request.Location),
+            registry.Requests.Select(request => request.Location));
+    }
+
+    [Fact]
+    public void ReadExactIdentity_AcceptsNonStringProductionSkuAsNullMetadata()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|SystemSKU"] = new StringConvertibleRegistryValue("RZ09-05819EN4");
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.NotNull(result.Evidence);
+        Assert.Null(result.Evidence.Value.Sku);
+        Assert.Null(result.Failure);
+        Assert.Equal(ExpectedRequests.Count(), registry.Requests.Count);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_AcceptsProductionSkuReadFailureAsNullMetadata()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.ThrowAt = $"{BiosKey}|SystemSKU";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.NotNull(result.Evidence);
+        Assert.Null(result.Evidence.Value.Sku);
+        Assert.Null(result.Failure);
+        Assert.Equal(ExpectedRequests.Count(), registry.Requests.Count);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_BoundsReportedRegistryValues()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|SystemProductName"] = new string('x', 300);
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        HostIdentityFailureDetail failure = Assert.IsType<HostIdentityFailureDetail>(
+            result.HostIdentityFailure);
+        Assert.Equal(256, failure.ActualValue?.Length);
+        Assert.Equal(new string('x', 256), failure.ActualValue);
     }
 
     [Theory]
@@ -307,6 +441,26 @@ public sealed class WindowsHostIdentitySourceTests
         AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
     }
 
+    [Fact]
+    public void ReadExactIdentity_ReportsRegistryExceptionTypeAndHResultOnly()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.ThrowAt = $"{BiosKey}|SystemManufacturer";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        HostIdentityFailureDetail failure = Assert.IsType<HostIdentityFailureDetail>(
+            result.HostIdentityFailure);
+        Assert.Equal(HostIdentityFailureReason.RegistryReadFailed, failure.Reason);
+        Assert.Equal("BIOS", failure.Source);
+        Assert.Equal("SystemManufacturer", failure.Field);
+        Assert.Equal(nameof(UnauthorizedAccessException), failure.ExceptionType);
+        Assert.Equal(new UnauthorizedAccessException().HResult, failure.HResult);
+        Assert.Null(failure.ExpectedValue);
+        Assert.Null(failure.ActualValue);
+    }
+
     [Theory]
     [MemberData(nameof(OverlappingRegistryValues))]
     public void ReadExactIdentity_BlocksCrossKeyDisagreement(string systemInformationLocation)
@@ -315,6 +469,25 @@ public sealed class WindowsHostIdentitySourceTests
         registry.Values[systemInformationLocation] = $"{registry.Values[systemInformationLocation]} ";
 
         AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
+    }
+
+    [Fact]
+    public void ReadExactIdentity_ReportsBiosVersionSourceDisagreement()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "4.01";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistrySourcesMismatch,
+                "BIOS/SystemInformation",
+                "BIOSVersion",
+                "3.01",
+                "4.01"),
+            result.HostIdentityFailure);
     }
 
     [Theory]
@@ -356,7 +529,19 @@ public sealed class WindowsHostIdentitySourceTests
         FakeWindowsPlatformEvidenceSource platform = new(
             ExactPlatform with { IsWindows = false });
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        HostIdentityReadResult result = new WindowsHostIdentitySource(
+            registry,
+            platform).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.PlatformNotSupported,
+                "Platform",
+                "IsWindows",
+                bool.TrueString,
+                bool.FalseString),
+            result.HostIdentityFailure);
         Assert.Empty(registry.Requests);
     }
 
@@ -406,7 +591,18 @@ public sealed class WindowsHostIdentitySourceTests
             Throw = true,
         };
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        HostIdentityReadResult result = new WindowsHostIdentitySource(
+            registry,
+            platform).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        HostIdentityFailureDetail failure = Assert.IsType<HostIdentityFailureDetail>(
+            result.HostIdentityFailure);
+        Assert.Equal(HostIdentityFailureReason.PlatformReadFailed, failure.Reason);
+        Assert.Equal("Platform", failure.Source);
+        Assert.Equal("Evidence", failure.Field);
+        Assert.Equal(nameof(InvalidOperationException), failure.ExceptionType);
+        Assert.Equal(new InvalidOperationException().HResult, failure.HResult);
         Assert.Empty(registry.Requests);
     }
 
@@ -414,7 +610,7 @@ public sealed class WindowsHostIdentitySourceTests
         Func<RegistryValueRequest, string> valueFactory)
     {
         TheoryData<string, string> data = new();
-        foreach (RegistryValueRequest request in ExpectedRequests)
+        foreach (RegistryValueRequest request in RequiredIdentityRequests)
         {
             data.Add(request.Location, valueFactory(request));
         }
@@ -432,6 +628,9 @@ public sealed class WindowsHostIdentitySourceTests
 
         return registry;
     }
+
+    private static IEnumerable<RegistryValueRequest> RequiredIdentityRequests =>
+        ExpectedRequests.Where(request => request.ValueName != "SystemSKU");
 
     private static WindowsHostIdentitySource CreateSource(FakeRegistryValueSource registry) =>
         new(registry, new FakeWindowsPlatformEvidenceSource(ExactPlatform));

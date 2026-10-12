@@ -321,6 +321,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
         ServiceStatusSnapshot status = runtime.GetStatus();
+        DiagnosticDeviceVerification verification =
+            runtime.GetCachedDeviceVerificationDiagnostics();
         Rz090581CapabilityDiagnostics? capabilityDiagnostics =
             runtime.GetCachedRz090581CapabilityDiagnostics();
         DiagnosticHyperBoostOwnershipJournal hyperBoostJournalDiagnostics =
@@ -350,7 +352,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             historySnapshot.CommandResults,
             historySnapshot.LogLines,
             metadata.SensitiveTokens,
-            hyperBoostJournalDiagnostics);
+            hyperBoostJournalDiagnostics,
+            verification);
 
         await using var destination = new MemoryStream();
         await DiagnosticBundleExporter.ExportAsync(destination, bundle, cancellationToken)

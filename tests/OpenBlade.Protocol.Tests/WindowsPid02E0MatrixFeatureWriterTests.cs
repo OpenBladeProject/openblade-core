@@ -22,6 +22,32 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         0x0001,
         375);
 
+    [Theory]
+    [InlineData("RZ09-05819EN9")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task Opener_AdmitsExactProductAndHidAcrossSkuVariants(string? sku)
+    {
+        var native = new ScriptedCandidateNative();
+        OpenedCandidateHandle candidate = native.Add("mi03", ExactMatrix);
+        var opener = new WindowsPid02E0MatrixFeatureOpener(
+            new ScriptedHost(ExactHost with
+            {
+                Evidence = ExactHost.Evidence!.Value with { Sku = sku },
+            }),
+            new ScriptedGuard(),
+            native,
+            ControllerExclusivityPolicy.Strict);
+
+        HidSessionResult<OpenedHidHandle> result = opener.Open();
+
+        Assert.Null(result.Failure);
+        Assert.NotNull(result.Value);
+        Assert.Equal(1, native.EnumerateCalls);
+        await result.Value.DisposeAsync();
+        Assert.True(candidate.FileHandle.IsClosed);
+    }
+
     [Fact]
     public async Task Opener_SelectsOnlySoleExactMatrixInterfaceAndOwnsBoundHandle()
     {

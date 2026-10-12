@@ -5,7 +5,6 @@ internal sealed class WindowsPid02E0MatrixFeatureOpener
     private const int ErrorAccessDenied = 5;
     private const string ExactManufacturer = "Razer";
     private const string ExactProductName = "Blade 16 - RZ09-0581";
-    private const string ExactSku = "RZ09-05819EN4";
 
     internal static readonly HidOpenParameters OperationalOpenParameters = new(
         DesiredAccess: 0xC0000000u,
@@ -213,7 +212,6 @@ internal sealed class WindowsPid02E0MatrixFeatureOpener
         && identity.Evidence is { } evidence
         && string.Equals(evidence.Manufacturer, ExactManufacturer, StringComparison.Ordinal)
         && string.Equals(evidence.ProductName, ExactProductName, StringComparison.Ordinal)
-        && string.Equals(evidence.Sku, ExactSku, StringComparison.Ordinal)
         && identity.FirmwareCompatibility switch
         {
             HostFirmwareCompatibility.Tested =>

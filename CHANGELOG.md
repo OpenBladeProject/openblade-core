@@ -5,6 +5,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Admit supported Razer Blade products across SKU variants using their exact product name and HID identity. ([#732](https://github.com/OSSBlade/openblade-core/pull/732))
+
+### Fixed
+
+- Include the exact failed device check in exported diagnostics, with expected and observed identity values and HID failure details. ([#732](https://github.com/OSSBlade/openblade-core/pull/732))
+
 ## [0.24.5] - 2026-10-12
 
 ### Fixed
