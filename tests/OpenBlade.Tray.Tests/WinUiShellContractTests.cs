@@ -412,6 +412,46 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void DisplayColorProfilePickerLocalizesItsNoSelectionPlaceholder()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        Assert.Contains(
+            "x:Uid=\"MainWindow_DisplayColorProfilePickerText\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "PlaceholderText=\"No profile selected\"",
+            xaml,
+            StringComparison.Ordinal);
+
+        Dictionary<string, string> expected = new(StringComparer.Ordinal)
+        {
+            ["en-US"] = "No profile selected",
+            ["ru-RU"] = "Профиль не выбран",
+            ["zh-CN"] = "未选择颜色配置文件",
+            ["qps-ploc"] = "[!! Nó prófílé séléctéd ~~~~~~ !!]",
+        };
+        foreach ((string culture, string value) in expected)
+        {
+            XDocument catalog = XDocument.Load(RepositoryPath(
+                "src",
+                "OpenBlade.Tray",
+                "Strings",
+                culture,
+                "Resources.resw"));
+            string? actual = catalog.Root!
+                .Elements("data")
+                .Single(element => string.Equals(
+                    (string?)element.Attribute("name"),
+                    "MainWindow_DisplayColorProfilePickerText.PlaceholderText",
+                    StringComparison.Ordinal))
+                .Element("value")
+                ?.Value;
+            Assert.Equal(value, actual);
+        }
+    }
+
+    [Fact]
     public void ExecutableProjectsInheritTheSharedOpenBladeIcon()
     {
         string targets = ReadRepositoryFile("src", "Directory.Build.targets");

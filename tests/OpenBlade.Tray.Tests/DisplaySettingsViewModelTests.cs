@@ -58,6 +58,21 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
+    public async Task Refresh_WithProfilesButNoActiveKey_PreservesNoSelectionAndAllowsChoice()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed240.Key, hdr: false, colorKey: null));
+        await using var viewModel = CreateViewModel(adapter);
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal([Native, Srgb], viewModel.ColorProfileOptions);
+        Assert.Null(viewModel.SelectedColorProfile);
+        Assert.True(viewModel.CanChangeColorProfile);
+        Assert.Empty(adapter.ColorRequests);
+    }
+
+    [Fact]
     public async Task ProfileRelationship_TracksSavedCurrentAndPendingDisplayState()
     {
         var adapter = new FakeDisplaySettingsAdapter(
@@ -954,7 +969,7 @@ public sealed class DisplaySettingsViewModelTests
     private static DisplaySettingsSnapshot Snapshot(
         string refreshKey,
         bool hdr,
-        string colorKey) => new(
+        string? colorKey) => new(
             IsAvailable: true,
             RefreshRateOptions: [Fixed60, Fixed240, Dynamic],
             SelectedRefreshRateKey: refreshKey,

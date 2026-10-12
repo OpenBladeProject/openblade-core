@@ -4,6 +4,10 @@ This is the current handoff for Razer Blade 16 `RZ09-0528`, BIOS `2.02`,
 USB `1532:02C6`. It describes what OpenBlade may expose, what remains gated,
 and how to advance support safely.
 
+OpenBlade v0.24.3 includes the production capabilities summarized below. The
+BIOS and firmware versions in this guide record validation provenance; they are
+not production restrictions.
+
 The chronological, append-only record was preserved in the
 [archived implementation log](rz09-0528-support-implementation-log-archive.md).
 Do not append new status updates there.
@@ -60,7 +64,7 @@ production support merely because a neighboring model implements it.
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
 | Special keys | Exact PID `02C6` M1 (Fn+Page Up) and M2 (Fn+Page Down) bindings from the reported Fn state plus the Page Up/Down edge, which is suppressed only while a custom binding owns the slot; M3 Gaming, M4 Performance, M5 microphone-mute mappings; and Fn+P performance cycling |
 | Power source | Full-power barrel AC, USB-C power classes, battery classification, and admitted transition/readback leaves recorded by the ledger |
-| Display | Refresh modes, Dynamic Refresh Rate, Variable Refresh Rate range, HDR, and SDR color profiles through Windows APIs |
+| Display | Refresh modes, Dynamic Refresh Rate, Variable Refresh Rate range, HDR, and SDR color profiles through Windows APIs; native Windows brightness flyout through the exact signed PID `02C6` Razer stack when installed, with WMI and the OpenBlade flyout as fallback |
 | Ownership | Windows Dynamic Lighting delegation, zero-write delegation policy, external-change detection, and explicit reclaim behavior at their ledger statuses |
 
 Effect-specific parameter variants retain their individual ledger statuses.
@@ -89,7 +93,12 @@ not writable OpenBlade controls. Preserve them in the capability model and
 documentation even when OpenBlade cannot safely own their backend. Never
 silently drop a newly discovered model feature.
 
-### HyperBoost developer validation
+### HyperBoost validation history
+
+The records below describe the staged evidence that led to the v0.24.3
+production admission. Earlier limitations remain here as historical context;
+the capability table above and the later production-admission section describe
+the shipped behavior.
 
 The exact `02C6` vendor capture and independent paired readbacks establish
 mode 7 and restoration to Performance/Automatic. They do not establish

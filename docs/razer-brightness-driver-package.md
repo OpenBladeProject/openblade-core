@@ -1,17 +1,26 @@
 # Razer brightness driver package
 
 OpenBlade can use the signed Razer Consumer Control stack already installed on
-the admitted Razer Blade 16 RZ09-0581. Windows then owns the brightness change
-and native flyout. About > Device information reports whether the admitted
+either admitted laptop. Windows then owns the brightness change and native
+flyout. About > Device information reports whether the exact model's admitted
 runtime path is available. If it is unavailable, the brightness keys continue
 to use WMI and the OpenBlade flyout.
 
 The ordinary OpenBlade installer does not install or remove Razer drivers.
 
-## Hardware scope
+## Runtime hardware scope
 
-This package is not universal across Razer Blade laptops. Four signed INFs bind
-to exact PID `02E0` interfaces:
+The two admitted laptops use separate, model-specific stacks. OpenBlade checks
+the full device ancestry, service name, and pinned driver hashes before using
+either one:
+
+| Laptop | USB PID | Device service |
+|---|---|---|
+| Razer Blade 16 (2026), RZ09-0581 | `02E0` | `RzDev_02e0` |
+| Razer Blade 16 (2025), RZ09-0528 | `02C6` | `RzDev_02c6` |
+
+No stack is universal across Razer Blade laptops. The RZ09-0581 stack contains
+four model-specific signed INFs plus the shared control package:
 
 | Package | Exact hardware match | Role |
 |---|---|---|
@@ -31,15 +40,14 @@ catalogs are specific to PID `02E0`. Editing an INF for a different PID would
 invalidate its signed catalog and would not prove that the binary supports
 that hardware.
 
-Razer identifies RZ09-0581 as the Blade 16 (2026), while RZ09-0528 is a
-different Blade 16 generation with USB PID `02C6`. The RZ09-0528 uses its own
-signed Razer stack when it is already installed: `rzdevu_02c6_{dkm,vcon,kbd,mou}.inf`
+RZ09-0528 uses its own signed Razer stack when it is already installed:
+`rzdevu_02c6_{dkm,vcon,kbd,mou}.inf`
 with the `RzDev_02c6` service, the same `RzCommon.sys` build, and the same
 `RZCONTROL`/`RZVIRTUAL` device shape on PID `02C6`. OpenBlade pins
 `RzDev_02c6.sys` SHA-256
 `307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82` and checks
-every identity against PID `02C6` only. This export tooling and its catalog
-entry remain specific to `02E0`; OpenBlade does not bundle the `02C6` stack.
+every identity against PID `02C6` only. The export tooling and catalog entry in
+this guide remain specific to `02E0`; OpenBlade does not bundle either stack.
 Every other model needs its own signed-package inventory and hardware
 validation.
 
@@ -58,7 +66,7 @@ catalog is evidence, not OpenBlade support.
 Each model still needs independent runtime and hardware validation before core
 admits it.
 
-## Export the admitted package
+## Export the admitted RZ09-0581 package
 
 `build/Export-RazerBrightnessDriverPackage.ps1` creates a private, exact export
 with Windows PowerShell 5.1 from a machine that already has the validated
