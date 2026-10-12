@@ -29,6 +29,8 @@ public sealed class RepositoryArchitectureTests
                 && !pair.Key.EndsWith("ProductionBatteryFactory.cs")
                 && !pair.Key.EndsWith("ProductionLightingFactory.cs")
                 && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528HyperBoostValidation.cs")
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528PadlessHyperBoostValidation.cs")
                 && !pair.Key.EndsWith("HidInputAccessProbe.cs")),
             pair => pair.Value.Contains("new WindowsHidNative("));
         string[] composition = sources
@@ -44,6 +46,8 @@ public sealed class RepositoryArchitectureTests
                 "GetterCandidateProbeRunner.cs",
                 "ProductionBatteryFactory.cs",
                 "ProductionLightingFactory.cs",
+                "Rz090528HyperBoostValidation.cs",
+                "Rz090528PadlessHyperBoostValidation.cs",
             ],
             composition);
         string candidateProbePath = Assert.Single(

@@ -188,6 +188,30 @@ public sealed class FirmwareSmokeAssessmentTests
                     == "capabilities.hyper-boost-without-cooling-pad").Outcome);
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("ObservedOnly", true)]
+    [InlineData("ReadWrite", true)]
+    [InlineData("ReadOnly", false)]
+    public void Rz090528PadlessAccessAllowsOnlyAdmittedReadWriteOrValidationObservedOnly(
+        string? access, bool passes)
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.6.0.0") with
+        {
+            TargetModel = "RZ09-0528",
+        };
+        snapshot = snapshot with
+        {
+            Capabilities = snapshot.Capabilities with { HyperBoostWithoutCoolingPadAccess = access },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
+        Assert.Equal(
+            passes ? FirmwareSmokeOutcome.Passed : FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.hyper-boost-without-cooling-pad").Outcome);
+    }
     [Fact]
     public void Rz090581FirmwareUsesModelScopedHyperBoostCapability()
     {
@@ -208,7 +232,7 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
-    public void HealthyRz090528BaselineUsesItsExactCapabilityGate()
+    public async Task HealthyRz090528BaselineRoundTripsAndUsesItsExactCapabilityGate()
     {
         FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.9.0.0") with
         {
@@ -216,10 +240,11 @@ public sealed class FirmwareSmokeAssessmentTests
             Firmware = new FirmwareIdentity("2.02", "1.09", "1.9.0.0", "Unavailable"),
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
-                HyperBoostAccess = null,
-                HyperBoostWithoutCoolingPadAccess = null,
-                HyperBoostBaseModes = null,
-                PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite.ToString(),
+                HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite.ToString(),
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite)
+                { Custom = DeviceFeatureAccess.ReadWrite },
                 LightingEffects =
                 [
                     "AmbientAwareness",
@@ -239,10 +264,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 ],
                 ObservedLightingEffects = [],
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite.ToString(),
-                WritableSpecialKeySlots =
-                    (SpecialKeySlotSet.M3
-                    | SpecialKeySlotSet.M4
-                    | SpecialKeySlotSet.M5).ToString(),
+                WritableSpecialKeySlots = SpecialKeySlotSet.All.ToString(),
                 LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
                 OneShotLaptopControls =
                     ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
@@ -269,7 +291,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 GpuOverclock = new GpuOverclockCapabilities(
                     new DeviceNumericRange(-1000, 400, null),
                     new DeviceNumericRange(-1000, 3000, null),
-                    DeviceFeatureAccess.ObservedOnly)
+                    DeviceFeatureAccess.ReadWrite)
                 {
                     SupportsEnableDisable = true,
                 },
@@ -295,13 +317,46 @@ public sealed class FirmwareSmokeAssessmentTests
             },
         };
 
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "OpenBlade.FirmwareSmoke.Tests",
+            Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "baseline.json");
+        FirmwareSmokeSnapshot expected = snapshot;
+        try
+        {
+            await FirmwareSmokeFiles.WriteJsonAsync(path, expected, CancellationToken.None);
+            snapshot = await FirmwareSmokeFiles.ReadJsonAsync<FirmwareSmokeSnapshot>(
+                path,
+                CancellationToken.None);
+
+            Assert.Equal(expected.SchemaVersion, snapshot.SchemaVersion);
+            Assert.Equal(expected.TargetModel, snapshot.TargetModel);
+            Assert.Equal(expected.Controls, snapshot.Controls);
+            Assert.NotNull(snapshot.Capabilities.CustomPerformance);
+            Assert.Equal(7, snapshot.Capabilities.CustomPerformance.AllowedCombinations.Count);
+            Assert.True(expected.Capabilities.CustomPerformance!.AllowedCombinations.SetEquals(
+                snapshot.Capabilities.CustomPerformance.AllowedCombinations));
+            Assert.Equal(
+                System.Text.Json.JsonSerializer.Serialize(expected, FirmwareSmokeFiles.JsonOptions),
+                System.Text.Json.JsonSerializer.Serialize(snapshot, FirmwareSmokeFiles.JsonOptions));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
 
-        Assert.Null(snapshot.Capabilities.HyperBoostAccess);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite.ToString(), snapshot.Capabilities.HyperBoostAccess);
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(report.Checks, check => check.Id == "capabilities.hyper-boost").Outcome);
-        foreach (DeviceFeatureAccess unsupportedAccess in Enum.GetValues<DeviceFeatureAccess>())
+        foreach (DeviceFeatureAccess unsupportedAccess in Enum.GetValues<DeviceFeatureAccess>()
+            .Where(access => access != DeviceFeatureAccess.ReadWrite))
         {
             FirmwareSmokeReport unsupportedHyperBoostReport = FirmwareSmokeAssessment.ValidateBaseline(
                 snapshot with

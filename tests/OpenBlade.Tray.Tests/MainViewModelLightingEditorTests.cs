@@ -601,8 +601,23 @@ public sealed partial class MainViewModelTests
         await using var viewModel = new MainViewModel(client, dispatcher, time);
         (ServiceStatusSnapshot initial, _) = await ApplyLightingWithoutFinalStatusAsync(client, dispatcher, viewModel);
 
-        client.PublishReconnecting();
-        await WaitUntilAsync(() => !viewModel.IsConnected);
+        var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.AfterInvoke = () =>
+        {
+            if (!viewModel.IsConnected)
+            {
+                disconnected.TrySetResult();
+            }
+        };
+        try
+        {
+            client.PublishReconnecting();
+            await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            dispatcher.AfterInvoke = null;
+        }
         await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with { Message = "Reconnected without prior lighting intent" });
 
         Assert.Equal(initial.ConfirmedState!.Lighting, viewModel.LightingDraft);

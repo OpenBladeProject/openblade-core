@@ -46,6 +46,15 @@ public interface ISingleAttemptThermalDevice
         PerformancePreset baseMode,
         CancellationToken cancellationToken);
 
+    // Where both cooling-pad paths are admitted, the device must submit only under the
+    // journaled path instead of selecting one from its own observation.
+    Task SetHyperBoostOnceAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        bool requiresCoolingPad,
+        CancellationToken cancellationToken) =>
+        SetHyperBoostOnceAsync(enabled, baseMode, cancellationToken);
+
     Task SetFanControlOnceAsync(
         FanControlSettings value,
         CancellationToken cancellationToken);

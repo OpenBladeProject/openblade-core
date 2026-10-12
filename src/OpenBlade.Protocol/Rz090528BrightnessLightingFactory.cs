@@ -219,7 +219,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             SupportsKeyboardBrightness = true,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
             WritableSpecialKeySlots =
-            SpecialKeySlotSet.M3
+            SpecialKeySlotSet.M1
+            | SpecialKeySlotSet.M2
+            | SpecialKeySlotSet.M3
             | SpecialKeySlotSet.M4
             | SpecialKeySlotSet.M5,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
@@ -319,6 +321,14 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             if (current == RazerDeviceMode.Driver)
             {
                 return true;
+            }
+
+            // Normal mode breaks the claim that a one-shot matrix frame is still
+            // displayed. Reacquiring Driver mode cannot verify or restore it;
+            // leave restoration to the user's lighting ownership policy.
+            if (CaptureOwnedEffectCore().Effect is { RequiresContinuousRendering: false })
+            {
+                ClearOwnedEffectCore(settings: null);
             }
 
             // Mark the transition as ours before submission so an indeterminate

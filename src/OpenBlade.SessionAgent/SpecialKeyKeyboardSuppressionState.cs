@@ -4,7 +4,7 @@ namespace OpenBlade.SessionAgent;
 
 /// <summary>
 /// Suppresses the ordinary Page Up or Page Down keyboard edge emitted for an
-/// admitted RZ09-0581 M1 or M2 press when a custom binding owns that key. The
+/// admitted RZ09-0581 or RZ09-0528 M1 or M2 press when a custom binding owns that key. The
 /// first key-down decision is retained through key-up so a mid-press binding,
 /// Fn, or device-state change cannot leak an unmatched edge.
 /// </summary>
@@ -59,7 +59,7 @@ internal sealed class SpecialKeyKeyboardSuppressionState
             return existing;
         }
 
-        bool suppress = deviceKind == RazerBladeInputDeviceKind.Rz09_0581
+        bool suppress = SupportsDevice(deviceKind)
             && functionKeyPressed
             && isInputAdmitted(slot)
             && shouldOverride(slot);
@@ -70,6 +70,13 @@ internal sealed class SpecialKeyKeyboardSuppressionState
         }
         return suppress;
     }
+
+    // Both exact models report Fn separately and still send Page Up or Page
+    // Down to Windows for M1 and M2.
+    internal static bool SupportsDevice(RazerBladeInputDeviceKind deviceKind) =>
+        deviceKind is
+            RazerBladeInputDeviceKind.Rz09_0581 or
+            RazerBladeInputDeviceKind.Rz09_0528;
 
     internal static bool TryMap(uint virtualKey, out SpecialKeySlot slot)
     {

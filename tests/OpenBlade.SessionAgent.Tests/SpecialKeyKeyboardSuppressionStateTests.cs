@@ -7,13 +7,24 @@ public sealed class SpecialKeyKeyboardSuppressionStateTests
     [Theory]
     [InlineData(
         SpecialKeyKeyboardSuppressionState.VirtualKeyPageUp,
-        SpecialKeySlot.M1)]
+        SpecialKeySlot.M1,
+        RazerBladeInputDeviceKind.Rz09_0581)]
     [InlineData(
         SpecialKeyKeyboardSuppressionState.VirtualKeyPageDown,
-        SpecialKeySlot.M2)]
+        SpecialKeySlot.M2,
+        RazerBladeInputDeviceKind.Rz09_0581)]
+    [InlineData(
+        SpecialKeyKeyboardSuppressionState.VirtualKeyPageUp,
+        SpecialKeySlot.M1,
+        RazerBladeInputDeviceKind.Rz09_0528)]
+    [InlineData(
+        SpecialKeyKeyboardSuppressionState.VirtualKeyPageDown,
+        SpecialKeySlot.M2,
+        RazerBladeInputDeviceKind.Rz09_0528)]
     public void AdmittedOverride_SuppressesDownRepeatAndUp(
         uint virtualKey,
-        SpecialKeySlot expectedSlot)
+        SpecialKeySlot expectedSlot,
+        RazerBladeInputDeviceKind deviceKind)
     {
         var state = new SpecialKeyKeyboardSuppressionState();
         var observed = new List<SpecialKeySlot>();
@@ -22,7 +33,7 @@ public sealed class SpecialKeyKeyboardSuppressionStateTests
             virtualKey,
             keyDown: true,
             functionKeyPressed: true,
-            RazerBladeInputDeviceKind.Rz09_0581,
+            deviceKind,
             slot =>
             {
                 observed.Add(slot);
@@ -63,7 +74,8 @@ public sealed class SpecialKeyKeyboardSuppressionStateTests
     [Theory]
     [InlineData(false, true, RazerBladeInputDeviceKind.Rz09_0581)]
     [InlineData(true, false, RazerBladeInputDeviceKind.Rz09_0581)]
-    [InlineData(true, true, RazerBladeInputDeviceKind.Rz09_0528)]
+    [InlineData(false, true, RazerBladeInputDeviceKind.Rz09_0528)]
+    [InlineData(true, false, RazerBladeInputDeviceKind.Rz09_0528)]
     [InlineData(true, true, RazerBladeInputDeviceKind.Unsupported)]
     public void IneligibleFirstDown_PassesTheWholePressThrough(
         bool admitted,

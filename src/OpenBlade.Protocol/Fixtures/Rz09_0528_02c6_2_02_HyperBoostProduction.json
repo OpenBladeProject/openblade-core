@@ -1,0 +1,70 @@
+[
+  {
+    "device": {
+      "model": "RZ09-0528",
+      "vendorId": 5426,
+      "productId": 710,
+      "biosVersion": "2.02"
+    },
+    "action": "hyperboost-enable-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEHAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0528",
+      "vendorId": 5426,
+      "productId": 710,
+      "biosVersion": "2.02"
+    },
+    "action": "hyperboost-enable-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIHAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0528",
+      "vendorId": 5426,
+      "productId": 710,
+      "biosVersion": "2.02"
+    },
+    "action": "performance-performance-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQECAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0528",
+      "vendorId": 5426,
+      "productId": 710,
+      "biosVersion": "2.02"
+    },
+    "action": "performance-performance-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQICAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  }
+]

@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "hyperBoostWithoutCoolingPadSemanticAdmission",
+  "host": {
+    "manufacturer": "Razer",
+    "model": "Blade 16 - RZ09-0528",
+    "sku": "RZ09-05289EN4",
+    "firmwareAdmission": "ModelScoped",
+    "vendorId": 5426,
+    "productId": 710
+  },
+  "transition": {
+    "baselineMode": "Performance",
+    "baselineFanMode": "Automatic",
+    "candidateMode": 7,
+    "candidateValue": 0,
+    "thermalChannelCount": 2,
+    "fullPowerAdapterRequired": true,
+    "exactPadAbsenceRequired": true,
+    "admittedFullPowerAdapterStates": ["FullPower280W"],
+    "strictControllerExclusionRequired": true,
+    "pairedReadbackRequired": true,
+    "exactPerformanceRestoreRequired": true,
+    "indeterminateRetryForbidden": true,
+    "physicalPadVidPidPresenceVetoRequired": true,
+    "gpuClockTuningExcluded": false,
+    "coolingPadPathRetained": true
+  },
+  "evidence": {
+    "captureBiosVersion": "2.02",
+    "readinessDescriptor": "Rz09_0528_02c6_2_02_PadlessLifecyclePreparation.json",
+    "readinessDescriptorSha256": "A18E7BA301C87A0BA41BA0F39FECDFC4FC3A43660AE5DE28077C2863E7165237",
+    "supplementalAdapterTransitionAnnotation": "2026-09-28-rz09-0528-padless-hyperboost-usb-c-boundary.json",
+    "supplementalAdapterTransitionAnnotationSha256": "BADBF8D3E135ADD8F3EC4D8DAFEA75EBBAD8B87C7895B151B9F5D508C7224C7C",
+    "decision": "Prepared at the user's request with the cooling-pad path retained; tracked on OpenBladeProject/openblade-core#608"
+  },
+  "gates": {
+    "exactDeviceAndFirmwareReviewed": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-09-27-rz09-0528-padless-hyperboost-immediate.json",
+        "sha256": "AFFD4F85C5677B747009A42B3AD0DEFBDFAFC7A255B7B5962140AFE1D77BCB92"
+      }
+    },
+    "immediateNoLoadApplyReadbackRestoreValidated": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-09-27-rz09-0528-padless-hyperboost-immediate.json",
+        "sha256": "AFFD4F85C5677B747009A42B3AD0DEFBDFAFC7A255B7B5962140AFE1D77BCB92"
+      }
+    },
+    "sustainedNoLoadPlanReviewed": {
+      "validated": true,
+      "evidence": {
+        "artifact": "src/OpenBlade.Protocol/Fixtures/Rz09_0528_02c6_2_02_PadlessHyperBoostNoLoad60Plan.json",
+        "sha256": "7C5F8DA522F2DEBA865D4128E9D485D152E41F6E7AB0B9DE5847E6A1D88F424E"
+      }
+    },
+    "sustainedNoLoadExecutionValidated": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-no-load-sixty-second.json",
+        "sha256": "8D079A96AEC545665B05D1564FCF5663311651B845A34F236DC98CC8DE0DF997"
+      }
+    },
+    "postRestorationAbsenceValidated": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-09-29-rz09-0528-padless-post-restoration-absence.json",
+        "sha256": "9314C72E868E4D2C025E569E03B6152EC460EE4D68EBBB564056604A99AA5174"
+      }
+    },
+    "reviewedLoadPlanReviewed": {
+      "validated": true,
+      "evidence": {
+        "artifact": "src/OpenBlade.Protocol/Fixtures/Rz09_0528_02c6_2_02_PadlessHyperBoostLoaded60Plan.json",
+        "sha256": "AA1C670D89373C3823236BDFB6458747F2002DB8175EBE325D6845C9529ABDF7"
+      }
+    },
+    "reviewedLoadValidated": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-stress-test-sixty-second.json",
+        "sha256": "83A14BCBABF41DF1C961312D85D3DB3B1C8B5B3586E3576D3039423439473538"
+      }
+    },
+    "adapterTransitionValidated": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-09-28-rz09-0528-padless-hyperboost-battery-boundary.json",
+        "sha256": "EC8A775C3040D90EF0FCD6AFF07FAC8B6231A65E7E05F99EA6A39725BCD51CE3"
+      }
+    },
+    "lowPowerLifecycleValidated": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-low-power-lifecycle.json",
+        "sha256": "8CD05A30F2A5A7CEFB3D627808AD702338FE824B51EB37F7096A57A5BA9FD65B"
+      }
+    },
+    "crashRecoveryValidated": {
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-crash-recovery-lifecycle.json",
+        "sha256": "7CD8C237B4092018EE418F859AEAFCE5CA1E0C96554FDC6A72A865888A0B8B73"
+      }
+    }
+  }
+}

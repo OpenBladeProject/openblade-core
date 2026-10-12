@@ -245,6 +245,16 @@ foreach ($argument in @('InstallArgument', 'RepairArgument', 'UninstallArgument'
         "The setup package $argument must append the private progress pipe."
 }
 
+$logCommandLine = $package.SelectSingleNode(
+    "*[local-name()='CommandLine'][@Condition='WixBundleLog_OpenBladeSetup']")
+Assert-True ($null -ne $logCommandLine) `
+    'The setup package must receive its Burn-allocated package log path.'
+foreach ($argument in @('InstallArgument', 'RepairArgument', 'UninstallArgument')) {
+    Assert-True ($logCommandLine.GetAttribute($argument) -ceq
+            '--log "[WixBundleLog_OpenBladeSetup]"') `
+        "The setup package $argument must append its package log path."
+}
+
 foreach ($commandLine in $package.SelectNodes("*[local-name()='CommandLine']")) {
     foreach ($attribute in @(
             'Condition',

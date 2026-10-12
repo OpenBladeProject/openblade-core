@@ -1405,16 +1405,34 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 allowFreshSessionRetry: false,
                 cancellationToken);
 
+        Task ISingleAttemptThermalDevice.SetHyperBoostOnceAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            bool requiresCoolingPad,
+            CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
+                enabled,
+                baseMode,
+                allowFreshSessionRetry: false,
+                cancellationToken,
+                requiresCoolingPad);
+
         private Task SetHyperBoostCoreAsync(
             bool enabled,
             PerformancePreset baseMode,
             bool allowFreshSessionRetry,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            bool? requiresCoolingPad = null) =>
             ExecuteProductionWriteAsync(
-                port => port.SetHyperBoostAsync(
-                    enabled,
-                    baseMode,
-                    cancellationToken),
+                port => requiresCoolingPad is { } journaledPath
+                    ? port.SetHyperBoostAsync(
+                        enabled,
+                        baseMode,
+                        journaledPath,
+                        cancellationToken)
+                    : port.SetHyperBoostAsync(
+                        enabled,
+                        baseMode,
+                        cancellationToken),
                 cancellationToken,
                 retryHyperBoostAdapterPreflight: true,
                 allowFreshSessionRetry: allowFreshSessionRetry);

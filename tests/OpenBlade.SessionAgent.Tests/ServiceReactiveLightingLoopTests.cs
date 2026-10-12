@@ -411,6 +411,41 @@ public sealed class ServiceReactiveLightingLoopTests
             factory.Last.ReadDriverModeObservation();
         Assert.False(unknown.AllowsFunctionRowInterception);
         Assert.Equal(confirmedAt, unknown.LastConfirmedTimestamp);
+        Assert.True(factory.Last.FunctionPResetCount > 0);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Theory]
+    [InlineData(SessionControlAccess.InactiveSession)]
+    [InlineData(SessionControlAccess.NotInteractive)]
+    public async Task ControlAccessRoundTripResetsFunctionPWithoutInput(
+        SessionControlAccess inactiveAccess)
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+        ServiceStatusSnapshot active = Status(LightingRendererOwnershipState.Static) with
+        {
+            KeyboardDriverModeActive = true,
+            ControlAccess = SessionControlAccess.Active,
+        };
+        client.Publish(active);
+        await WaitUntilAsync(() => factory.Last?.IsDriverModeActive() == true);
+        RecordingSource source = factory.Last!;
+        int before = Volatile.Read(ref source.FunctionPResetCount);
+
+        client.Publish(active with { ControlAccess = inactiveAccess });
+        await WaitUntilAsync(() => Volatile.Read(ref source.FunctionPResetCount) > before);
+        int inactive = Volatile.Read(ref source.FunctionPResetCount);
+        Assert.True(source.IsDriverModeActive());
+        client.Publish(active);
+        await WaitUntilAsync(() => Volatile.Read(ref source.FunctionPResetCount) > inactive);
+        Assert.Same(source, factory.Last);
+        Assert.False(source.Disposed);
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
@@ -1086,6 +1121,10 @@ public sealed class ServiceReactiveLightingLoopTests
         }
 
         public bool Disposed { get; private set; }
+
+        public int FunctionPResetCount;
+
+        public void ResetFunctionPInput() => Interlocked.Increment(ref FunctionPResetCount);
 
         public Task Completion => completion.Task;
 

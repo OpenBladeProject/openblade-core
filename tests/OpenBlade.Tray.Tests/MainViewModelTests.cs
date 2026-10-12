@@ -9022,6 +9022,67 @@ public sealed partial class MainViewModelTests
         Assert.True(command.CanExecute(null));
     }
 
+    [Theory]
+    [InlineData(PadlessHyperBoostEligibilityState.CoolingPadPresent, true)]
+    [InlineData(PadlessHyperBoostEligibilityState.CoolingPadAbsent, false)]
+    [InlineData(PadlessHyperBoostEligibilityState.Unknown, false)]
+    public async Task HyperBoostPadRequired_OnlyExactConnectedPadAllowsToggle(
+        PadlessHyperBoostEligibilityState padState, bool canToggle)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreatePadlessHyperBoostStatus(CreateStatus(verified: true, blocked: false));
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostWithoutCoolingPadAccess = null,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+            },
+            PadlessHyperBoostEligibility = padState,
+        });
+        await WaitUntilAsync(() => viewModel.HyperBoostDescription.Contains("stay connected", StringComparison.Ordinal));
+        Assert.True(viewModel.IsHyperBoostWritable);
+        Assert.Equal(canToggle, viewModel.CanToggleHyperBoost);
+        if (!canToggle)
+        {
+            Assert.Contains("Connect the supported cooling pad", viewModel.HyperBoostUnavailableReason);
+        }
+    }
+
+    [Theory]
+    [InlineData(PadlessHyperBoostEligibilityState.CoolingPadPresent, true)]
+    [InlineData(PadlessHyperBoostEligibilityState.CoolingPadAbsent, true)]
+    [InlineData(PadlessHyperBoostEligibilityState.Unknown, false)]
+    public async Task HyperBoostBothPadPaths_ConfirmedPadStateEitherWayAllowsToggle(
+        PadlessHyperBoostEligibilityState padState, bool canToggle)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreatePadlessHyperBoostStatus(CreateStatus(verified: true, blocked: false));
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+            },
+            PadlessHyperBoostEligibility = padState,
+        });
+        await WaitUntilAsync(() => canToggle
+            ? viewModel.CanToggleHyperBoost
+            : viewModel.HyperBoostUnavailableReason.Contains("connection could not be confirmed", StringComparison.Ordinal));
+
+        Assert.True(viewModel.IsHyperBoostWritable);
+        Assert.Equal(canToggle, viewModel.CanToggleHyperBoost);
+        Assert.DoesNotContain("Disconnect the cooling pad", viewModel.HyperBoostDescription);
+        Assert.DoesNotContain("stay connected", viewModel.HyperBoostDescription);
+    }
+
     [Fact]
     public async Task HyperBoostReadWrite_AdmittedPadlessBalancedPathCanToggle()
     {
@@ -9328,6 +9389,29 @@ public sealed partial class MainViewModelTests
             client.MutationOperations);
         Assert.False(viewModel.HyperBoostActive);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
+    public async Task HyperBoostUnavailableReason_StaysHiddenWhileAPerformanceChangeRuns()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreatePadlessHyperBoostStatus(CreateStatus(verified: true, blocked: false)));
+        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost
+            && viewModel.AvailableLaptopPerformanceOptions.Any(option => option.Value == PerformancePreset.Silent));
+        LaptopPerformanceOption silent = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.Silent);
+
+        Task operation = viewModel.SetLaptopPerformanceOptionAsync(silent, default);
+        await client.MutationStarted.Task;
+
+        Assert.True(viewModel.IsPerformanceOperationInProgress);
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
+        client.CompleteMutation();
+        await operation;
     }
 
     [Fact]
@@ -10012,8 +10096,11 @@ public sealed partial class MainViewModelTests
             option => option.IsHyperBoost);
     }
 
-    [Fact]
-    public async Task HyperBoostPadlessPath_StillRequiresFullPowerAdapter()
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task HyperBoostPadlessPath_HidesUnavailableBannerOffFullPowerAc(
+        PowerSource powerSource)
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -10021,17 +10108,53 @@ public sealed partial class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline) with
         {
-            ActivePowerSource = PowerSource.UsbC,
+            ActivePowerSource = powerSource,
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == powerSource);
 
         Assert.False(viewModel.CanToggleHyperBoost);
-        Assert.Equal(
-            "Connect the full-power AC adapter to use HyperBoost.",
-            viewModel.HyperBoostUnavailableReason);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
         Assert.DoesNotContain(
             viewModel.AvailableLaptopPerformanceOptions,
             option => option.IsHyperBoost);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task HyperBoostUnavailableBanner_ReturnsWhenFullPowerAcReturns(
+        PowerSource powerSource)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false)) with
+        {
+            PotentialControllers = ["RazerAppEngine"],
+        };
+
+        await PushAsync(client, dispatcher, admitted);
+        Assert.True(viewModel.HasHyperBoostUnavailableReason);
+
+        await PushAsync(client, dispatcher, admitted with
+        {
+            Revision = admitted.Revision + 1,
+            ActivePowerSource = powerSource,
+        });
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
+
+        await PushAsync(client, dispatcher, admitted with
+        {
+            Revision = admitted.Revision + 2,
+        });
+        Assert.True(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Contains("RazerAppEngine", viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
     }
 
     [Fact]

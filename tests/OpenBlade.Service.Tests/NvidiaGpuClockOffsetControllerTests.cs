@@ -20,7 +20,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
             new NvidiaGpuClockOffsetController(api).Query();
 
         Assert.NotNull(actual);
-        Assert.Equal("Test NVIDIA GPU", actual.DeviceName);
+        Assert.Equal("NVIDIA GeForce RTX 5090 Laptop GPU", actual.DeviceName);
         Assert.Equal(new GpuClockOffsetRange(-1000, 1000, 75), actual.Core);
         Assert.Equal(new GpuClockOffsetRange(-1000, 3000, 150), actual.Memory);
         Assert.Equal(1, api.InitializeCalls);
@@ -97,9 +97,97 @@ public sealed class NvidiaGpuClockOffsetControllerTests
                 (NvmlClockType.Graphics, 125),
                 (NvmlClockType.Memory, 1000),
                 (NvmlClockType.Graphics, 50),
+                (NvmlClockType.Memory, 400),
             ],
             api.Writes);
         Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void Set_ErrorAfterMutationRestoresOrReportsIndeterminate(
+        bool failMemory,
+        bool failRestoration)
+    {
+        NvmlClockType failingType = failMemory
+            ? NvmlClockType.Memory
+            : NvmlClockType.Graphics;
+        var api = new FakeNvmlApi
+        {
+            CoreCurrent = 50,
+            MemoryCurrent = 400,
+            FailAfterMutation = failingType,
+            FailRestoration = failRestoration,
+        };
+
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            new NvidiaGpuClockOffsetController(api).Set(
+                new GpuClockOffsetSettings(125, 500)));
+
+        Assert.Equal(
+            failRestoration
+                ? WriteSubmissionState.Indeterminate
+                : WriteSubmissionState.KnownNotApplied,
+            error.SubmissionState);
+        Assert.Equal(failRestoration && !failMemory ? 125 : 50, api.CoreCurrent);
+        Assert.Equal(failRestoration && failMemory ? 1000 : 400, api.MemoryCurrent);
+        Assert.Equal(2, api.Writes.Count(write => write.Type == failingType));
+        Assert.Equal(failMemory ? 4 : 2, api.Writes.Count);
+        Assert.Equal(1, api.ShutdownCalls);
+        if (failRestoration)
+        {
+            Assert.DoesNotContain("were restored", error.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("were restored", error.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData(0, "NVIDIA GeForce RTX 5090 Laptop GPU")]
+    [InlineData(2, "NVIDIA GeForce RTX 5090 Laptop GPU")]
+    [InlineData(1, "NVIDIA GeForce RTX 5080 Laptop GPU")]
+    public void UnadmittedGpu_QueryIsUnavailableAndSetRejectsWithoutWrites(
+        int count,
+        string name)
+    {
+        var api = new FakeNvmlApi
+        {
+            DeviceCount = checked((uint)count),
+            DeviceName = name,
+        };
+        var controller = new NvidiaGpuClockOffsetController(api);
+
+        Assert.Null(controller.Query());
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            controller.Set(new GpuClockOffsetSettings(5, 5)));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(api.Writes);
+        Assert.Equal(2, api.ShutdownCalls);
+    }
+
+    [Theory]
+    [InlineData(2, "NVIDIA GeForce RTX 5090 Laptop GPU")]
+    [InlineData(1, "NVIDIA GeForce RTX 5080 Laptop GPU")]
+    public void Set_RechecksGpuTargetAfterSuccessfulQuery(int count, string name)
+    {
+        var api = new FakeNvmlApi();
+        var controller = new NvidiaGpuClockOffsetController(api);
+        Assert.NotNull(controller.Query());
+        api.DeviceCount = checked((uint)count);
+        api.DeviceName = name;
+
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            controller.Set(new GpuClockOffsetSettings(5, 5)));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(api.Writes);
+        Assert.Equal(2, api.ShutdownCalls);
     }
 
     private sealed class FakeNvmlApi : INvidiaNvmlClockOffsetApi
@@ -110,11 +198,19 @@ public sealed class NvidiaGpuClockOffsetControllerTests
 
         public int ShutdownCalls { get; private set; }
 
+        public uint DeviceCount { get; set; } = 1;
+
+        public string DeviceName { get; set; } = "NVIDIA GeForce RTX 5090 Laptop GPU";
+
         public int CoreCurrent { get; set; }
 
         public int MemoryCurrent { get; set; }
 
         public bool FailFirstMemoryWrite { get; init; }
+
+        public NvmlClockType? FailAfterMutation { get; init; }
+
+        public bool FailRestoration { get; init; }
 
         public List<(NvmlClockType Type, int Offset)> Writes { get; } = [];
 
@@ -132,7 +228,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
 
         public int GetDeviceCount(out uint count)
         {
-            count = 1;
+            count = DeviceCount;
             return 0;
         }
 
@@ -144,7 +240,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
 
         public int GetDeviceName(nint device, StringBuilder name, uint length)
         {
-            name.Append("Test NVIDIA GPU");
+            name.Append(DeviceName);
             return 0;
         }
 
@@ -169,6 +265,12 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         public int SetClockOffsets(nint device, ref NvmlClockOffset info)
         {
             Writes.Add((info.Type, info.CurrentMegahertz));
+            NvmlClockType type = info.Type;
+            int channelWrites = Writes.Count(write => write.Type == type);
+            if (FailRestoration && FailAfterMutation == type && channelWrites > 1)
+            {
+                return 3;
+            }
             if (info.Type == NvmlClockType.Memory
                 && FailFirstMemoryWrite
                 && Writes.Count(write => write.Type == NvmlClockType.Memory) == 1)
@@ -185,7 +287,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
                 MemoryCurrent = info.CurrentMegahertz;
             }
 
-            return 0;
+            return FailAfterMutation == type && channelWrites == 1 ? 3 : 0;
         }
     }
 }

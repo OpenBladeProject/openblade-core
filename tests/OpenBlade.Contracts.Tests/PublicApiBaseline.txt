@@ -940,8 +940,10 @@ type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
   method OpenBlade.Contracts.DeviceFeatureAccess get_Silent()
   method OpenBlade.Contracts.HyperBoostBaseModeCapabilities <Clone>$()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> AccessFor(OpenBlade.Contracts.PerformancePreset preset)
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_Custom()
   method System.Void Deconstruct(out OpenBlade.Contracts.DeviceFeatureAccess Silent, out OpenBlade.Contracts.DeviceFeatureAccess Balanced, out OpenBlade.Contracts.DeviceFeatureAccess Performance)
   method System.Void set_Balanced(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Custom(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_Performance(OpenBlade.Contracts.DeviceFeatureAccess value)
   method System.Void set_Silent(OpenBlade.Contracts.DeviceFeatureAccess value)
   method override System.Boolean Equals(System.Object obj)
@@ -953,6 +955,14 @@ type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
   property OpenBlade.Contracts.DeviceFeatureAccess Balanced { get; init; }
   property OpenBlade.Contracts.DeviceFeatureAccess Performance { get; init; }
   property OpenBlade.Contracts.DeviceFeatureAccess Silent { get; init; }
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> Custom { get; init; }
+type static class OpenBlade.Contracts.HyperBoostCapabilityPolicy
+  method static System.Boolean IsDirectEntryBase(OpenBlade.Contracts.DeviceCapabilities capabilities, System.Boolean coolingPadPresent, OpenBlade.Contracts.PerformancePreset mode)
+  method static System.Boolean IsWritable(OpenBlade.Contracts.DeviceCapabilities capabilities)
+  method static System.Boolean RequiresCoolingPad(OpenBlade.Contracts.DeviceCapabilities capabilities)
+  method static System.Nullable<OpenBlade.Contracts.PerformancePreset> EntryBaseMode(OpenBlade.Contracts.DeviceCapabilities capabilities, System.Boolean coolingPadPresent)
+  method static System.Nullable<OpenBlade.Contracts.PerformancePreset> PadPresentEntryBaseMode(OpenBlade.Contracts.DeviceCapabilities capabilities)
+  method static System.Nullable<OpenBlade.Contracts.PerformancePreset> PadlessEntryBaseMode(OpenBlade.Contracts.DeviceCapabilities capabilities)
 type static class OpenBlade.Contracts.IpcMessageCodec
   method static System.Threading.Tasks.Task WriteProtocol51ReadOnlyServerFrameAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceServerFrame frame, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceRequest request, System.Threading.CancellationToken token)
@@ -1294,7 +1304,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 57
+  field const System.Int32 ProtocolVersion = 58
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

@@ -37,6 +37,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly HyperBoostBaseModeCapabilities? hyperBoostBaseModes;
     private readonly IHyperBoostEligibilitySource? hyperBoostEligibility;
     private readonly bool allowPadlessHyperBoostLifecycleValidation;
+    private readonly PerformancePreset padlessHyperBoostLifecycleBaseMode;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -61,7 +62,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceCommandCatalog? hyperBoostCatalog = null,
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
-        bool allowPadlessHyperBoostLifecycleValidation = false)
+        bool allowPadlessHyperBoostLifecycleValidation = false,
+        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.hyperBoostCatalog = hyperBoostCatalog ?? DeviceCommandCatalog.Empty;
@@ -104,6 +106,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         this.hyperBoostEligibility = hyperBoostEligibility;
         this.allowPadlessHyperBoostLifecycleValidation =
             allowPadlessHyperBoostLifecycleValidation;
+        this.padlessHyperBoostLifecycleBaseMode = padlessHyperBoostLifecycleBaseMode;
         ValidateHyperBoostBaseModes(
             this.hyperBoostAccess,
             this.hyperBoostBaseModes,
@@ -114,14 +117,15 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 || this.hyperBoostWithoutCoolingPadAccess is not
                     (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
                 || this.hyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
-                    && this.hyperBoostBaseModes?.Balanced
-                        != DeviceFeatureAccess.ReadWrite))
+                    && this.hyperBoostBaseModes?.Balanced != DeviceFeatureAccess.ReadWrite
+                    && this.hyperBoostBaseModes?.Performance != DeviceFeatureAccess.ReadWrite))
         {
             throw new UnvalidatedCommandException(
-                "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
+                "HyperBoost without the cooling pad requires exact bounded evidence, a writable direct base mode, and access no broader than overall HyperBoost.");
         }
         if (this.hyperBoostAccess == DeviceFeatureAccess.ReadWrite
-            && (!ProductionBatteryPort.HasHyperBoostCommandSet(this.hyperBoostCatalog)
+            && (!ProductionBatteryPort.HasHyperBoostCommandSet(
+                    this.hyperBoostCatalog, catalog, this.hyperBoostBaseModes)
                 || this.hyperBoostEligibility is null))
         {
             throw new UnvalidatedCommandException(
@@ -131,10 +135,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             && (this.hyperBoostAccess != DeviceFeatureAccess.ReadWrite
                 || this.hyperBoostWithoutCoolingPadAccess is not
                     (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
-                || this.hyperBoostBaseModes?.Balanced
+                || padlessHyperBoostLifecycleBaseMode is not (PerformancePreset.Balanced or PerformancePreset.Performance)
+                || this.hyperBoostBaseModes?.AccessFor(padlessHyperBoostLifecycleBaseMode)
                     != DeviceFeatureAccess.ReadWrite
                 || !ProductionBatteryPort.HasHyperBoostCommandSet(
-                    this.hyperBoostCatalog)
+                    this.hyperBoostCatalog, catalog, this.hyperBoostBaseModes)
                 || this.hyperBoostEligibility is null))
         {
             throw new UnvalidatedCommandException(
@@ -351,7 +356,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 hyperBoostBaseModes,
                 hyperBoostCatalog,
                 hyperBoostEligibility,
-                allowPadlessHyperBoostLifecycleValidation),
+                allowPadlessHyperBoostLifecycleValidation,
+                padlessHyperBoostLifecycleBaseMode),
             null);
     }
 

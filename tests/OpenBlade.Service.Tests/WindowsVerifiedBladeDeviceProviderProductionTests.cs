@@ -985,6 +985,93 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task Rz090528GpuAdmission_AppliesUiStepAndDisablesToConfirmedZero()
+    {
+        DeviceCapabilities capabilities =
+            BatteryValidationFactory.CreateWindowsRz090528ProductionBattery().Capabilities;
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var gpu = new FakeGpuClockOffsetController();
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory, gpu);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var managedDevice = Assert.IsAssignableFrom<IGpuClockOffsetManagementDevice>(device);
+        var requested = new GpuClockOffsetSettings(5, 5);
+
+        await device.SetGpuClockOffsetsAsync(requested, default);
+        Assert.Equal(GpuClockOffsetManagementState.Managed, managedDevice.GpuClockOffsetManagementState);
+        Assert.Equal(requested, gpu.Capabilities?.Current);
+        await managedDevice.SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings.Default,
+            retainManagement: false,
+            default);
+        Assert.Equal(GpuClockOffsetManagementState.ResetConfirmed, managedDevice.GpuClockOffsetManagementState);
+        await managedDevice.RelinquishGpuClockOffsetManagementAsync(default);
+
+        Assert.Equal(GpuClockOffsetManagementState.RelinquishedDefaultConfirmed,
+            managedDevice.GpuClockOffsetManagementState);
+        Assert.Equal([requested, GpuClockOffsetSettings.Default], gpu.Writes);
+        Assert.Equal(GpuClockOffsetSettings.Default, gpu.Capabilities?.Current);
+        Assert.Equal(2, gpu.QueryCount);
+        Assert.Equal(0, factory.OpenCount);
+        Assert.Equal(0, port.SetPerformanceCount);
+    }
+
+    [Fact]
+    public async Task Rz090528GpuAdmission_RejectsDriverAllowedOffsetOutsideModelPolicy()
+    {
+        DeviceCapabilities capabilities =
+            BatteryValidationFactory.CreateWindowsRz090528ProductionBattery().Capabilities;
+        var gpu = new FakeGpuClockOffsetController();
+        var factory = new FakeProductionFactory(capabilities);
+        using var provider = ReadyProvider(factory, gpu);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var requested = new GpuClockOffsetSettings(405, 5);
+        Assert.True(gpu.Capabilities!.Supports(requested));
+
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            device.SetGpuClockOffsetsAsync(requested, default));
+
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Empty(gpu.Writes);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task Rz090528GpuAdmission_RejectsModelAllowedOffsetOutsideDriverRange()
+    {
+        DeviceCapabilities capabilities =
+            BatteryValidationFactory.CreateWindowsRz090528ProductionBattery().Capabilities;
+        var gpu = new FakeGpuClockOffsetController
+        {
+            Capabilities = new GpuClockOffsetCapabilities(
+                "NVIDIA GeForce RTX 5090 Laptop GPU",
+                new GpuClockOffsetRange(-1000, 0, 0),
+                new GpuClockOffsetRange(-1000, 3000, 0)),
+        };
+        var factory = new FakeProductionFactory(capabilities);
+        using var provider = ReadyProvider(factory, gpu);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var requested = new GpuClockOffsetSettings(5, 5);
+        Assert.InRange(requested.CoreMegahertz,
+            capabilities.GpuOverclock!.CoreOffsetMegahertz.Minimum,
+            capabilities.GpuOverclock.CoreOffsetMegahertz.Maximum);
+        Assert.False(gpu.Capabilities.Supports(requested));
+
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            device.SetGpuClockOffsetsAsync(requested, default));
+
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Empty(gpu.Writes);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
     public async Task SetGpuClockOffsets_StepLessReadWritePolicyAdmitsInRangeWrite()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(

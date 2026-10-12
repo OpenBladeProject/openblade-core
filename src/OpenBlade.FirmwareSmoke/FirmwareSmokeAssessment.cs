@@ -81,14 +81,14 @@ public static class FirmwareSmokeAssessment
         "Unavailable");
 
     private static readonly FirmwareSmokeCapabilityExpectation Rz090528Expectation = new(
-        ["Balanced", "Custom", "Performance", "Silent"],
+        ExpectedPerformancePresets,
         ExpectedFanModes,
         ExpectedRz090528LightingEffects,
         ExpectedChargeLimits,
         ExpectedLogoModes,
         ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
         DeviceFeatureAccess.ReadWrite.ToString(),
-        (SpecialKeySlotSet.M3 | SpecialKeySlotSet.M4 | SpecialKeySlotSet.M5).ToString(),
+        SpecialKeySlotSet.All.ToString(),
         DeviceFeatureAccess.ObservedOnly.ToString());
 
     private static readonly IReadOnlySet<CustomPerformanceCombination>
@@ -117,7 +117,7 @@ public static class FirmwareSmokeAssessment
     private static readonly GpuOverclockCapabilities ExpectedRz090528GpuOverclock = new(
         new DeviceNumericRange(-1000, 400, null),
         new DeviceNumericRange(-1000, 3000, null),
-        DeviceFeatureAccess.ObservedOnly)
+        DeviceFeatureAccess.ReadWrite)
     {
         SupportsEnableDisable = true,
     };
@@ -463,7 +463,7 @@ public static class FirmwareSmokeAssessment
             snapshot.TargetModel);
         string expectedHyperBoostAccess = ExpectedHyperBoostAccess(
             snapshot.TargetModel);
-        string expectedHyperBoostWithoutCoolingPadAccess =
+        string[] expectedHyperBoostWithoutCoolingPadAccess =
             ExpectedHyperBoostWithoutCoolingPadAccess(snapshot.TargetModel);
         HyperBoostBaseModeCapabilities? expectedHyperBoostBaseModes =
             ExpectedHyperBoostBaseModes(snapshot.TargetModel);
@@ -603,12 +603,10 @@ public static class FirmwareSmokeAssessment
             Check(
                 "capabilities.hyper-boost-without-cooling-pad",
                 "Pad-less HyperBoost access matches reviewed evidence",
-                string.Equals(
+                expectedHyperBoostWithoutCoolingPadAccess.Contains(
                     snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
-                        ?? "Unavailable",
-                    expectedHyperBoostWithoutCoolingPadAccess,
-                    StringComparison.Ordinal),
-                expectedHyperBoostWithoutCoolingPadAccess,
+                        ?? "Unavailable"),
+                string.Join(" or ", expectedHyperBoostWithoutCoolingPadAccess),
                 snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
                     ?? "Unavailable"),
             Check(
@@ -711,7 +709,7 @@ public static class FirmwareSmokeAssessment
                 snapshot.Capabilities.CpuVoltageOptimizer?.ToString() ?? "Unavailable"));
             checks.Add(Check(
                 "capabilities.gpu-overclock",
-                "Observed GPU overclock policy is retained",
+                "Admitted GPU overclock policy is retained",
                 snapshot.Capabilities.GpuOverclock == ExpectedRz090528GpuOverclock,
                 ExpectedRz090528GpuOverclock.ToString(),
                 snapshot.Capabilities.GpuOverclock?.ToString() ?? "Unavailable"));
@@ -878,24 +876,39 @@ public static class FirmwareSmokeAssessment
         {
             RazerBladeModelCatalog.OpenBladeTargetModelNumber =>
                 DeviceFeatureAccess.ReadWrite.ToString(),
+            RazerBladeModelCatalog.Rz090528ModelNumber =>
+                DeviceFeatureAccess.ReadWrite.ToString(),
             _ => "Unavailable",
         };
 
-    private static string ExpectedHyperBoostWithoutCoolingPadAccess(
-        string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
-            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
-                ? DeviceFeatureAccess.ReadWrite.ToString()
-                : "Unavailable";
+    // RZ09-0528 production admits pad-less HyperBoost through its exact 2025 admission manifest; its reviewed
+    // developer lifecycle-validation service keeps the separate ObservedOnly validation path.
+    private static string[] ExpectedHyperBoostWithoutCoolingPadAccess(
+        string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber => [DeviceFeatureAccess.ReadWrite.ToString()],
+            RazerBladeModelCatalog.Rz090528ModelNumber =>
+                [DeviceFeatureAccess.ReadWrite.ToString(), DeviceFeatureAccess.ObservedOnly.ToString()],
+            _ => ["Unavailable"],
+        };
 
     private static HyperBoostBaseModeCapabilities? ExpectedHyperBoostBaseModes(
         string modelNumber) =>
-        RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
-            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
-                ? new HyperBoostBaseModeCapabilities(
+        RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber => new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ObservedOnly,
                     DeviceFeatureAccess.ReadWrite,
-                    DeviceFeatureAccess.ObservedOnly)
-                : null;
+                    DeviceFeatureAccess.ObservedOnly),
+            RazerBladeModelCatalog.Rz090528ModelNumber => new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ReadWrite)
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+            },
+            _ => null,
+        };
 
     private static string HyperBoostBaseModeSummary(
         HyperBoostBaseModeCapabilities? capabilities) => capabilities is null

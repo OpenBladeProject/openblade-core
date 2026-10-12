@@ -11,6 +11,10 @@ internal sealed record PadlessHyperBoostLifecycleValidationBuildIdentity(
     string AdmissionManifestSha256)
 {
     internal static PadlessHyperBoostLifecycleValidationBuildIdentity ReadCurrent()
+        => ReadCurrent(PadlessHyperBoostLifecycleTarget.ForCurrentWindowsHost());
+
+    internal static PadlessHyperBoostLifecycleValidationBuildIdentity ReadCurrent(
+        PadlessHyperBoostLifecycleTarget? target)
     {
         Assembly assembly = typeof(PadlessHyperBoostLifecycleValidationBuildIdentity)
             .Assembly;
@@ -34,8 +38,18 @@ internal sealed record PadlessHyperBoostLifecycleValidationBuildIdentity(
             enabled,
             revision,
             assemblySha256,
-            HyperBoostWithoutCoolingPadAdmissionSource.TrustedManifestSha256);
+            target?.ManifestSha256 ?? string.Empty);
     }
+
+    internal bool Authorizes(
+        PadlessHyperBoostLifecycleTarget? target,
+        string expectedSourceRevision,
+        string expectedServiceAssemblySha256,
+        string expectedAdmissionManifestSha256) =>
+        target is not null
+        && target.Readiness.LifecycleValidationReady
+        && string.Equals(target.ManifestSha256, AdmissionManifestSha256, StringComparison.OrdinalIgnoreCase)
+        && Matches(expectedSourceRevision, expectedServiceAssemblySha256, expectedAdmissionManifestSha256);
 
     internal bool Matches(
         string expectedSourceRevision,
@@ -51,6 +65,7 @@ internal sealed record PadlessHyperBoostLifecycleValidationBuildIdentity(
         && ServiceAssemblySha256.Equals(
             expectedServiceAssemblySha256,
             StringComparison.OrdinalIgnoreCase)
+        && IsHex(AdmissionManifestSha256, 64)
         && AdmissionManifestSha256.Equals(
             expectedAdmissionManifestSha256,
             StringComparison.OrdinalIgnoreCase);

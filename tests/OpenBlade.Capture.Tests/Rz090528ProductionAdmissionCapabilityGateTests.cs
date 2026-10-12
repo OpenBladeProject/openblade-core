@@ -13,11 +13,40 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
     }
 
     [Fact]
+    public void Matches_RejectsGpuAdmissionRegressionOrExpandedBounds()
+    {
+        (DeviceCapabilities battery, DeviceCapabilities lighting) = ExactCapabilities();
+        GpuOverclockCapabilities expected = battery.GpuOverclock!;
+        GpuOverclockCapabilities[] rejected =
+        [
+            expected with { Access = DeviceFeatureAccess.ObservedOnly },
+            expected with { Access = DeviceFeatureAccess.ReadOnly },
+            expected with { CoreOffsetMegahertz = new DeviceNumericRange(-1000, 401, null) },
+            expected with { MemoryOffsetMegahertz = new DeviceNumericRange(-1000, 3001, null) },
+        ];
+        foreach (GpuOverclockCapabilities gpu in rejected)
+        {
+            Assert.False(Rz090528ProductionAdmissionCapabilityGate.Matches(
+                battery with { GpuOverclock = gpu }, lighting));
+        }
+    }
+
+    [Fact]
     public void Matches_RejectsDroppedModelSpecificDiscoveries()
     {
         (DeviceCapabilities battery, DeviceCapabilities lighting) = ExactCapabilities();
         var cases = new (DeviceCapabilities Battery, DeviceCapabilities Lighting)[]
         {
+            (battery with { HyperBoostAccess = null }, lighting),
+            (battery with { HyperBoostAccess = DeviceFeatureAccess.ReadOnly }, lighting),
+            (battery with { HyperBoostWithoutCoolingPadAccess = null }, lighting),
+            (battery with { HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ObservedOnly }, lighting),
+            (battery with { HyperBoostBaseModes = null }, lighting),
+            (battery with { HyperBoostBaseModes = battery.HyperBoostBaseModes! with
+                { Balanced = DeviceFeatureAccess.ObservedOnly } }, lighting),
+            (battery with { HyperBoostBaseModes = battery.HyperBoostBaseModes! with
+                { Silent = DeviceFeatureAccess.ObservedOnly } }, lighting),
+            (battery with { HyperBoostBaseModes = battery.HyperBoostBaseModes! with { Custom = null } }, lighting),
             (battery with { CpuPowerLimit = null }, lighting),
             (battery with { CpuVoltageOptimizer = null }, lighting),
             (
@@ -111,6 +140,8 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.BatterySaver,
+                PerformancePreset.BatteryBalanced,
                 PerformancePreset.Custom,
             },
             new HashSet<FanMode>
@@ -125,6 +156,11 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             SupportsBatteryProtectionOff: true,
             SupportsTemporaryFullCharge: true)
         {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite)
+            { Custom = DeviceFeatureAccess.ReadWrite },
             FanSpeedRange = new FanSpeedRange(2000, 5000, 100),
             CustomPerformance = new CustomPerformanceCapabilities(
                 new HashSet<CustomPerformanceCombination>
@@ -149,7 +185,7 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             GpuOverclock = new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),
-                DeviceFeatureAccess.ObservedOnly)
+                DeviceFeatureAccess.ReadWrite)
             {
                 SupportsEnableDisable = true,
             },
@@ -193,10 +229,7 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
         {
             SupportsKeyboardBrightness = true,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
-            WritableSpecialKeySlots =
-                SpecialKeySlotSet.M3
-                | SpecialKeySlotSet.M4
-                | SpecialKeySlotSet.M5,
+            WritableSpecialKeySlots = SpecialKeySlotSet.All,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {

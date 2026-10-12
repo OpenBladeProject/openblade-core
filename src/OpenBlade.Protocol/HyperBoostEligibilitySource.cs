@@ -120,6 +120,7 @@ internal sealed class WindowsCoolingPadDiscoverySource(IHidCandidateNative nativ
         try
         {
             int matches = 0;
+            bool knownAuxiliaryPresent = false;
             foreach (string path in native.EnumerateDevicePaths())
             {
                 bool targetPath = path.Contains(
@@ -179,6 +180,10 @@ internal sealed class WindowsCoolingPadDiscoverySource(IHidCandidateNative nativ
                     {
                         matches++;
                     }
+                    else if (targetMetadataRequired && IsKnownNonControlAuxiliary(identity))
+                    {
+                        knownAuxiliaryPresent = true;
+                    }
                     else if (targetMetadataRequired
                         && (identity.VendorId != VendorId
                             || identity.ProductId != ProductId
@@ -191,6 +196,7 @@ internal sealed class WindowsCoolingPadDiscoverySource(IHidCandidateNative nativ
 
             return matches switch
             {
+                0 when knownAuxiliaryPresent => CoolingPadConnectionState.ObservationFailed,
                 0 => CoolingPadConnectionState.Absent,
                 1 => CoolingPadConnectionState.PresentExact,
                 _ => CoolingPadConnectionState.Ambiguous,
@@ -201,4 +207,12 @@ internal sealed class WindowsCoolingPadDiscoverySource(IHidCandidateNative nativ
             return CoolingPadConnectionState.ObservationFailed;
         }
     }
+
+    private static bool IsKnownNonControlAuxiliary(HidHandleIdentity identity) =>
+        identity.VendorId == VendorId
+        && identity.ProductId == ProductId
+        && identity.VersionNumber == 0x0101
+        && identity.FeatureReportByteLength == 0
+        && (identity.UsagePage == 0x000C && identity.Usage == 0x0001
+            || identity.UsagePage == 0x0001 && identity.Usage == 0x0080);
 }

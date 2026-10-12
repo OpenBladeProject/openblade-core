@@ -7,6 +7,8 @@ namespace OpenBlade.SessionAgent;
 public interface IReactiveKeyboardSource : IDisposable
 {
     Task Completion { get; }
+
+    void ResetFunctionPInput() { }
 }
 
 public sealed record ReactiveKeyboardSourceOptions(
@@ -63,6 +65,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly Guid performanceShortcutSessionId = Guid.NewGuid();
     private IReactiveKeyboardSource? source;
     private ServiceStatusSnapshot? latestStatus;
+    private SessionControlAccess? previousControlAccess;
     private PerformancePreset? optimisticPerformancePreset;
     private long performanceShortcutGeneration;
     private bool performanceShortcutInFlight;
@@ -335,6 +338,11 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void ApplyAuthoritativeStatus(ServiceStatusSnapshot status)
     {
+        if (previousControlAccess != status.ControlAccess)
+        {
+            ResetFunctionPInput();
+        }
+        previousControlAccess = status.ControlAccess;
         lock (performanceShortcutStateSync)
         {
             latestStatus = status;
@@ -451,6 +459,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void SetDriverModeConfirmed(bool active)
     {
+        if (!active)
+        {
+            ResetFunctionPInput();
+        }
         KeyboardDriverModeKnowledge knowledge = active
             ? KeyboardDriverModeKnowledge.Active
             : KeyboardDriverModeKnowledge.Inactive;
@@ -468,6 +480,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void SetDriverModeUnknown(string reason, bool warning = true)
     {
+        ResetFunctionPInput();
         int previous = Interlocked.Exchange(
             ref driverModeKnowledge,
             (int)KeyboardDriverModeKnowledge.Unknown);
@@ -492,6 +505,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             Trace.TraceInformation(message, ageSeconds, reason);
         }
     }
+
+    internal void ResetFunctionPInput() => Volatile.Read(ref source)?.ResetFunctionPInput();
 
     private static FunctionKeyPrimaryMode? FunctionKeyPrimaryFromActiveProfile(
         ServiceStatusSnapshot status)

@@ -10,6 +10,8 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
             PerformancePreset.Balanced,
             PerformancePreset.Silent,
             PerformancePreset.Performance,
+            PerformancePreset.BatterySaver,
+            PerformancePreset.BatteryBalanced,
             PerformancePreset.Custom,
         };
 
@@ -118,7 +120,14 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
                 Step: null,
             },
             SupportsEnableDisable: true,
-            Access: DeviceFeatureAccess.ObservedOnly,
+            Access: DeviceFeatureAccess.ReadWrite,
+        }
+        && battery.HyperBoostAccess == DeviceFeatureAccess.ReadWrite
+        && battery.HyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
+        && battery.HyperBoostBaseModes == new HyperBoostBaseModeCapabilities(
+            DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite)
+        {
+            Custom = DeviceFeatureAccess.ReadWrite,
         }
         && battery.ObservedPowerSourceBehaviors.SequenceEqual(PowerSourceBehaviors)
         && battery.FanModes.SetEquals(FanModes)
@@ -134,10 +143,7 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
         ])
         && lighting.ObservedLightingEffects.SetEquals(ObservedLightingEffects)
         && lighting.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite
-        && lighting.WritableSpecialKeySlots == (
-            SpecialKeySlotSet.M3
-            | SpecialKeySlotSet.M4
-            | SpecialKeySlotSet.M5)
+        && lighting.WritableSpecialKeySlots == SpecialKeySlotSet.All
         && lighting.LampArrayLightingAccess == DeviceFeatureAccess.ObservedOnly
         && lighting.LogoLightingModes.SetEquals(Enum.GetValues<LogoLightingMode>())
         && lighting.SupportsKeyboardBrightness

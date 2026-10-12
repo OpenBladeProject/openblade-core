@@ -2581,8 +2581,26 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private async void OnManualFanCurveSettingChanged(object sender, RoutedEventArgs args) =>
-        await CommitFanControlAsync();
+    private async void OnManualFanCurveSettingChanged(object sender, RoutedEventArgs args)
+    {
+        if (Volatile.Read(ref disposed) != 0 || sender is not ToggleSwitch toggle)
+        {
+            return;
+        }
+
+        try
+        {
+            await ViewModel.SetUseHigherFanTemperatureAsync(toggle.IsOn);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade fan-curve sensor selection failed: {0}", exception);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.UseHigherFanTemperature;
+        }
+    }
 
     private async Task CommitFanControlAsync()
     {

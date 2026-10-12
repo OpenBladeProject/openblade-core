@@ -61,6 +61,7 @@ public sealed class SessionPowerTransitionRelayTests
     [Fact]
     public void NativeCallbackStartsReportInlineAndDeduplicatesResumeVariants()
     {
+        int inputInvalidations = 0;
         var requests = new List<ReportSessionPowerTransitionRequest>();
         int callbackThread = Environment.CurrentManagedThreadId;
         Guid instance = Guid.NewGuid();
@@ -71,7 +72,8 @@ public sealed class SessionPowerTransitionRelayTests
             return Task.FromResult(Applied);
         }, () => 100, 1000);
         var api = new FakeApi();
-        using var registration = new WindowsSessionPowerNotificationRegistration(relay, api);
+        using var registration = new WindowsSessionPowerNotificationRegistration(
+            relay, api, () => inputInvalidations++);
 
         foreach (uint type in new uint[] { 0, 10, 0x8013, 4, 4, 18, 7, 4 })
         {
@@ -79,6 +81,7 @@ public sealed class SessionPowerTransitionRelayTests
         }
 
         Assert.Equal(new[] { true, false, true }, requests.Select(item => item.Suspending));
+        Assert.Equal(5, inputInvalidations);
         Assert.Equal(new long[] { 1, 2, 3 }, requests.Select(item => item.Sequence));
         Assert.All(requests, item =>
         {

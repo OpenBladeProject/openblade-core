@@ -29,6 +29,7 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
     private const uint ClockOffsetStructVersion = (1u << 24) | 24u;
     private const int PerformanceStateZero = 0;
     private const int NvmlMemoryOffsetMultiplier = 2;
+    private const string AdmittedDeviceName = "NVIDIA GeForce RTX 5090 Laptop GPU";
 
     private readonly INvidiaNvmlClockOffsetApi api;
 
@@ -49,7 +50,7 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         {
             EnsureSuccess(api.Initialize(), "initialize NVIDIA NVML");
             initialized = true;
-            nint device = OpenFirstDevice();
+            nint device = OpenAdmittedDevice();
             return QueryCapabilities(device);
         }
         catch (Exception exception) when (IsAvailabilityFailure(exception))
@@ -84,7 +85,7 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         {
             EnsureSuccess(api.Initialize(), "initialize NVIDIA NVML");
             initialized = true;
-            device = OpenFirstDevice();
+            device = OpenAdmittedDevice();
             prior = QueryCapabilities(device);
             if (!prior.Supports(settings))
             {
@@ -96,16 +97,16 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
             NvmlClockOffset core = CreateWrite(
                 NvmlClockType.Graphics,
                 settings.CoreMegahertz);
-            EnsureSuccess(api.SetClockOffsets(device, ref core), "set the GPU core clock offset");
             coreMayHaveChanged = true;
+            EnsureSuccess(api.SetClockOffsets(device, ref core), "set the GPU core clock offset");
 
             NvmlClockOffset memory = CreateWrite(
                 NvmlClockType.Memory,
                 settings.MemoryMegahertz);
+            memoryMayHaveChanged = true;
             EnsureSuccess(
                 api.SetClockOffsets(device, ref memory),
                 "set the GPU memory clock offset");
-            memoryMayHaveChanged = true;
 
             GpuClockOffsetCapabilities confirmed = QueryCapabilities(device);
             if (confirmed.Current != settings)
@@ -151,14 +152,14 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         }
     }
 
-    private nint OpenFirstDevice()
+    private nint OpenAdmittedDevice()
     {
         EnsureSuccess(api.GetDeviceCount(out uint count), "enumerate NVIDIA GPUs");
-        if (count == 0)
+        if (count != 1)
         {
             throw new NvmlClockOffsetException(
                 status: -1,
-                "NVIDIA NVML did not report a GPU.");
+                "GPU clock tuning requires exactly one NVIDIA GPU.");
         }
 
         EnsureSuccess(api.GetDeviceHandleByIndex(0, out nint device), "open NVIDIA GPU 0");
@@ -171,6 +172,16 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         EnsureSuccess(
             api.GetDeviceName(device, name, checked((uint)name.Capacity)),
             "read the NVIDIA GPU name");
+        // Both admitted Blade SKUs were validated with this exact laptop GPU.
+        // Recheck the current target for every query and write; a previous
+        // successful query does not authorize another GPU selected later.
+        if (!string.Equals(name.ToString(), AdmittedDeviceName, StringComparison.Ordinal))
+        {
+            throw new NvmlClockOffsetException(
+                status: -1,
+                "GPU clock tuning is unavailable for this NVIDIA GPU.");
+        }
+
         var capabilities = new GpuClockOffsetCapabilities(
             name.ToString(),
             QueryRange(device, NvmlClockType.Graphics, "GPU core clock offset"),

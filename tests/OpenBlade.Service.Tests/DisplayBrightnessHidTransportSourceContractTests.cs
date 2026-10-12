@@ -20,11 +20,11 @@ public sealed class RazerDisplayBrightnessHidTransportSourceContractTests
             writerStart,
             StringComparison.Ordinal);
         int identityCheck = source.IndexOf(
-            "ValidateExactPath(path, out string? identityFailure)",
+            "ValidateExactPath(path, out RazerDisplayBrightnessDriverStack? stack, out string? identityFailure)",
             openHandle,
             StringComparison.Ordinal);
         int virtualIdentityCheck = source.IndexOf(
-            "ValidateVirtualConsumerDevice()",
+            "ValidateVirtualConsumerDevice(stack)",
             identityCheck,
             StringComparison.Ordinal);
         int submission = source.IndexOf(
@@ -56,14 +56,14 @@ public sealed class RazerDisplayBrightnessHidTransportSourceContractTests
             "OpenBlade.Service",
             "WindowsRazerDisplayBrightnessHidTransport.cs"));
         int resolverStart = source.IndexOf(
-            "private static (string? Path, DisplayBrightnessHidWriteResult Result) ResolveDevicePath()",
+            "ResolveDevicePath(stack);",
             StringComparison.Ordinal);
         int controlIdentity = source.IndexOf(
-            "IsExactControlDevice(deviceSet, ref deviceInfo, out string? failure)",
+            "IsExactControlDevice(deviceSet, ref deviceInfo, stack, out string? failure)",
             resolverStart,
             StringComparison.Ordinal);
         int virtualIdentity = source.IndexOf(
-            "ValidateVirtualConsumerDevice()",
+            "ValidateVirtualConsumerDevice(stack)",
             controlIdentity,
             StringComparison.Ordinal);
         int acceptedPath = source.IndexOf(
@@ -88,14 +88,14 @@ public sealed class RazerDisplayBrightnessHidTransportSourceContractTests
             "OpenBlade.Service",
             "WindowsRazerDisplayBrightnessHidTransport.cs"));
         int rejectedIdentity = source.IndexOf(
-            "if (!IsExactControlDevice(deviceSet, ref deviceInfo, out string? failure))",
+            "if (!IsExactControlDevice(deviceSet, ref deviceInfo, stack, out string? failure))",
             StringComparison.Ordinal);
         int preserveFailure = source.IndexOf(
             "inspectionFailure = failure;",
             rejectedIdentity,
             StringComparison.Ordinal);
         int retryIdentity = source.IndexOf(
-            "if (IsExactControlInstance(deviceInfo.DeviceInstance))",
+            "if (IsExactControlInstance(deviceInfo.DeviceInstance, stack))",
             rejectedIdentity,
             StringComparison.Ordinal);
 

@@ -32,10 +32,16 @@ invalidate its signed catalog and would not prove that the binary supports
 that hardware.
 
 Razer identifies RZ09-0581 as the Blade 16 (2026), while RZ09-0528 is a
-different Blade 16 generation. OpenBlade's evidence for RZ09-0528 identifies
-USB PID `02C6`; it contains no admitted equivalent of this virtual injection
-path. RZ09-0528 and every other model need their own signed-package inventory
-and hardware validation.
+different Blade 16 generation with USB PID `02C6`. The RZ09-0528 uses its own
+signed Razer stack when it is already installed: `rzdevu_02c6_{dkm,vcon,kbd,mou}.inf`
+with the `RzDev_02c6` service, the same `RzCommon.sys` build, and the same
+`RZCONTROL`/`RZVIRTUAL` device shape on PID `02C6`. OpenBlade pins
+`RzDev_02c6.sys` SHA-256
+`307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82` and checks
+every identity against PID `02C6` only. This export tooling and its catalog
+entry remain specific to `02E0`; OpenBlade does not bundle the `02C6` stack.
+Every other model needs its own signed-package inventory and hardware
+validation.
 
 Razer support pages:
 
