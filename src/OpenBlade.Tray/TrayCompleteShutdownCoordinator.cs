@@ -44,8 +44,7 @@ internal sealed class TrayCompleteShutdownCoordinator
             return TrayCompleteShutdownResult.Canceled;
         }
 
-        if (outcome == ElevatedServiceControlOutcome.Indeterminate
-            && !await confirmStoppedAsync(cancellationToken))
+        if (!await confirmStoppedAsync(cancellationToken))
         {
             return TrayCompleteShutdownResult.Unconfirmed;
         }
