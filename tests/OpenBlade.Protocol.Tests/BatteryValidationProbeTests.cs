@@ -48,6 +48,7 @@ public sealed class BatteryValidationProbeTests
             evaluation.Result.Classification);
         Assert.False(evaluation.Result.HostIdentityMatched);
         Assert.Equal(hostFailure, evaluation.Result.HostIdentityFailure);
+        Assert.Null(evaluation.Result.ObservedSku);
         Assert.Equal(["identity"], events);
         Assert.Equal(0, native.BindCalls);
     }
@@ -128,6 +129,7 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(
             BatteryValidationFirmwareCompatibility.ModelScoped,
             evaluation.Result.FirmwareCompatibility);
+        Assert.Equal("RZ09-05819EN4", evaluation.Result.ObservedSku);
     }
 
     [Theory]
@@ -148,6 +150,7 @@ public sealed class BatteryValidationProbeTests
 
         Assert.Equal(BatteryValidationProbeStage.ConflictCheck, evaluation.Result.Stage);
         Assert.Equal(expected, evaluation.Result.Classification);
+        Assert.Equal("RZ09-05819EN4", evaluation.Result.ObservedSku);
         Assert.Equal(["identity", "guard"], events);
         Assert.Equal(0, native.EnumerateCalls);
         Assert.Equal(0, native.BindCalls);
@@ -170,6 +173,7 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(
             BatteryValidationFirmwareCompatibility.UntestedAllowed,
             evaluation.Result.FirmwareCompatibility);
+        Assert.Equal("RZ09-05819EN4", evaluation.Result.ObservedSku);
     }
 
     [Fact]
@@ -190,6 +194,7 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(
             BatteryValidationFirmwareCompatibility.UntestedAllowed,
             evaluation.Result.FirmwareCompatibility);
+        Assert.Equal("RZ09-05819EN4", evaluation.Result.ObservedSku);
     }
 
     [Theory]
@@ -303,6 +308,7 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(2, result.FeatureLengthMatchCount);
         Assert.Equal(1, result.ExactMatchCount);
         Assert.Null(result.HostIdentityFailure);
+        Assert.Equal("RZ09-05819EN4", result.ObservedSku);
         Assert.All(native.OpenParameters, parameters => Assert.Equal(
             new HidOpenParameters(0xC0000000u, 3u, 3u, 0x40000000u, false),
             parameters));
@@ -349,6 +355,33 @@ public sealed class BatteryValidationProbeTests
             evaluation.Result.Classification);
         Assert.Empty(native.OpenParameters);
         Assert.Equal(0, native.BindCalls);
+    }
+
+    [Theory]
+    [InlineData(false, BatteryValidationProbeClassification.Ready)]
+    [InlineData(true, BatteryValidationProbeClassification.EnumerationFailed)]
+    public void Evaluate_BoundsObservedSkuAfterHostAdmission(
+        bool failEnumeration,
+        BatteryValidationProbeClassification expectedClassification)
+    {
+        ScriptedNative native = new([]) { ThrowOnEnumeration = failEnumeration };
+        if (!failEnumeration)
+        {
+            native.Add("exact", ExactHandle);
+        }
+
+        HostIdentityReadResult host = new(
+            new HostIdentityEvidence(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                new string('x', 300),
+                "3.01"),
+            null);
+
+        using HidEvidenceEvaluation evaluation = CreateEvaluator(native, host: host).Evaluate();
+
+        Assert.Equal(expectedClassification, evaluation.Result.Classification);
+        Assert.Equal(new string('x', 256), evaluation.Result.ObservedSku);
     }
 
     [Fact]
@@ -446,9 +479,10 @@ public sealed class BatteryValidationProbeTests
         ScriptedNative native,
         List<string>? events = null,
         HardwareAccessDecision? access = null,
-        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict) =>
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
+        HostIdentityReadResult? host = null) =>
         new(
-            new ScriptedIdentitySource(ExactHost, events),
+            new ScriptedIdentitySource(host ?? ExactHost, events),
             new ScriptedGuard(access ?? new HardwareAccessDecision([], null), events),
             native,
             policy);

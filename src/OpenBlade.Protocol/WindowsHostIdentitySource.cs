@@ -4,7 +4,7 @@ using Microsoft.Win32;
 namespace OpenBlade.Protocol;
 
 internal readonly record struct HostIdentityEvidence(
-    string Manufacturer, string ProductName, string Sku, string BiosVersion);
+    string Manufacturer, string ProductName, string? Sku, string BiosVersion);
 
 internal readonly record struct HostIdentityReadResult(
     HostIdentityEvidence? Evidence,
@@ -158,6 +158,7 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             return Blocked(failure);
         }
 
+        string? sku = null;
         if (!TryReadExact(
                 BiosKey,
                 "BIOS",
@@ -172,13 +173,16 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
                 expected.ProductName,
                 out string biosProductName,
                 out failure)
-            || !TryReadExact(
-                BiosKey,
-                "BIOS",
-                "SystemSKU",
-                expected.Sku,
-                out string sku,
-                out failure)
+            || expected.FirmwareAdmission == FirmwareAdmissionScope.ExactVersions
+                && !TryReadExact(
+                    BiosKey,
+                    "BIOS",
+                    "SystemSKU",
+                    expected.Sku,
+                    out sku,
+                    out failure)
+            || expected.FirmwareAdmission == FirmwareAdmissionScope.ModelScoped
+                && !TryReadOptionalValue(BiosKey, "SystemSKU", out sku)
             || !TryReadValue(
                 BiosKey,
                 "BIOS",
@@ -366,6 +370,29 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         }
 
         return true;
+    }
+
+    private bool TryReadOptionalValue(string key, string valueName, out string? actual)
+    {
+        try
+        {
+            actual = registry.Read(
+                RegistryHive.LocalMachine,
+                RegistryView.Registry64,
+                key,
+                valueName) as string;
+            if (string.IsNullOrWhiteSpace(actual))
+            {
+                actual = null;
+            }
+
+            return true;
+        }
+        catch
+        {
+            actual = null;
+            return true;
+        }
     }
 
     private bool TryReadValue(

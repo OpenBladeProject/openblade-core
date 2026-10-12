@@ -66,7 +66,10 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   bounded SCM policy, observes fresh exact-device state, and resumes only
   eligible OpenBlade-owned producers.
 
-Production admission is scoped to the exact model and SKU. BIOS, EC, and MCU
+Production admission is scoped to the exact Razer product name and HID identity.
+SKU is optional diagnostic metadata, so configuration variants of an admitted
+product are not rejected by SKU. Hardware-specific backends retain their own
+device and driver checks. BIOS, EC, and MCU
 versions remain evidence provenance: no shipped capability is restricted to a
 firmware version, so an untested BIOS is admitted and reported as model-scoped.
 Capture tools are kept outside the installed product, may pin an exact BIOS
@@ -88,7 +91,8 @@ probe after recovery does not erase the earlier failure.
 
 Each attempt records its stage, classification, and a readable reason. Host
 identity failures identify the failed platform or registry check and its
-expected and observed values. HID failures include candidate-open errors and
+expected and observed values. `observedSku` retains available SKU metadata after
+host admission. HID failures include candidate-open errors and
 identity-match counters. `usedRecentlyVerifiedDevice` shows when the service
 preserved a recently verified device through a transient probe failure.
 

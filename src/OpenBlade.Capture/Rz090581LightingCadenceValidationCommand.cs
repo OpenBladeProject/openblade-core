@@ -771,7 +771,7 @@ internal sealed class Rz090581LightingCadenceValidationCommand
     private static bool IsExactHost(HostIdentityEvidence host) =>
         host.Manufacturer.Equals(ExactManufacturer, StringComparison.Ordinal)
         && host.ProductName.Equals(ExactProductName, StringComparison.Ordinal)
-        && host.Sku.Equals(ExactSku, StringComparison.Ordinal);
+        && string.Equals(host.Sku, ExactSku, StringComparison.Ordinal);
 
     private static string? CheckWindowsEnvironment()
     {

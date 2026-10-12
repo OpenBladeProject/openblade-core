@@ -189,7 +189,7 @@ public static class DiagnosticBundleExporter
         };
 
         // Preserve schema names, enum labels, timestamps and native error codes.
-        // Only the bounded registry values can contain user-specific text.
+        // Only the bounded registry values and observed SKU can contain user-specific text.
         return WriteTextEntryAsync(
             archive,
             "device-verification.json",
@@ -199,24 +199,29 @@ public static class DiagnosticBundleExporter
         DiagnosticDeviceVerificationAttempt? RedactAttempt(
             DiagnosticDeviceVerificationAttempt? attempt)
         {
-            if (attempt?.ProbeResult?.HostIdentityFailure is not { } failure)
+            if (attempt?.ProbeResult is not { } probe)
             {
                 return attempt;
             }
 
             return attempt with
             {
-                ProbeResult = attempt.ProbeResult with
+                ProbeResult = probe with
                 {
-                    HostIdentityFailure = failure with
-                    {
-                        ExpectedValue = failure.ExpectedValue is null
+                    ObservedSku = probe.ObservedSku is null
+                        ? null
+                        : RedactString(probe.ObservedSku, tokens, replacement),
+                    HostIdentityFailure = probe.HostIdentityFailure is not { } failure
+                        ? null
+                        : failure with
+                        {
+                            ExpectedValue = failure.ExpectedValue is null
                             ? null
                             : RedactString(failure.ExpectedValue, tokens, replacement),
-                        ActualValue = failure.ActualValue is null
+                            ActualValue = failure.ActualValue is null
                             ? null
                             : RedactString(failure.ActualValue, tokens, replacement),
-                    },
+                        },
                 },
             };
         }

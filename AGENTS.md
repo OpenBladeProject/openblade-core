@@ -48,7 +48,12 @@ unresolved state; never replay an uncertain write, guess, or widen authority.
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
 architecture can admit more Blade models, but a hardware capability is enabled
-only for an exact model and SKU backed by sanitized, reviewed capture evidence.
+only for an exact product name and HID identity backed by sanitized, reviewed
+capture evidence. Production host admission verifies the Razer manufacturer and
+exact product name in both Windows registry sources; SKU is diagnostic metadata
+and must not reject a variant of an admitted product. Developer validation may
+pin a SKU for reproducibility. Hardware-specific backends retain their own
+device and driver checks.
 Captured BIOS versions are provenance by default; a capability may impose an
 exact firmware restriction only through an explicit reviewed admission rule,
 and no shipped capability imposes one today.

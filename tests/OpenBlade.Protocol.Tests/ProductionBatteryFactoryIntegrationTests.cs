@@ -8,6 +8,31 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     private static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(1);
 
+    [Theory]
+    [InlineData("RZ09-05819EN4")]
+    [InlineData("RZ09-05819EN9")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Rz090581ProductionPolicies_AdmitProductAcrossSkuVariants(string? sku)
+    {
+        HostIdentityReadResult baseline = ExactRz090581Identity("4.01");
+        HostIdentityReadResult variant = baseline with
+        {
+            Evidence = baseline.Evidence!.Value with { Sku = sku },
+        };
+
+        Assert.True(ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(variant)
+            .SupportsRz090581CapabilityDiagnosticsQuery);
+        Assert.Equal(
+            ProductionBatteryFactory.GetRz090581HyperBoostCapabilities(baseline,
+                reversibleWritesAdmitted: true, padlessWritesAdmitted: true),
+            ProductionBatteryFactory.GetRz090581HyperBoostCapabilities(variant,
+                reversibleWritesAdmitted: true, padlessWritesAdmitted: true));
+        Assert.Equal(
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(baseline).Order(),
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(variant).Order());
+    }
+
     [Fact]
     public void Rz090581CapabilityDiagnosticsAdmission_RequiresExactModelEvidence()
     {
@@ -35,8 +60,8 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             new(
                 new HostIdentityEvidence(
                     "Razer",
-                    "Blade 16 - RZ09-0581",
-                    "RZ09-05819EN3",
+                    "Blade 16 - RZ09-0581-extra",
+                    "RZ09-05819EN4",
                     "3.01"),
                 null,
                 HostFirmwareCompatibility.Tested),

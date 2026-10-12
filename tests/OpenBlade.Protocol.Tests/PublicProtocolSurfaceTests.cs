@@ -205,9 +205,10 @@ public sealed class PublicProtocolSurfaceTests
         Assert.Equal(typeof(BatteryValidationProbeClassification), properties["Classification"]);
         Assert.Equal(typeof(BatteryValidationFirmwareCompatibility), properties["FirmwareCompatibility"]);
         Assert.Equal(typeof(HostIdentityFailureDetail), properties["HostIdentityFailure"]);
+        Assert.Equal(typeof(string), properties["ObservedSku"]);
         Assert.Equal(typeof(int?), properties["CandidateOpenWin32Error"]);
         Assert.Equal(typeof(int), properties["CandidateAccessFallbackCount"]);
-        Assert.Equal(18, properties.Count);
+        Assert.Equal(19, properties.Count);
         Assert.DoesNotContain(properties.Keys, name =>
             name.Contains("Path", StringComparison.OrdinalIgnoreCase)
             || name.Contains("Handle", StringComparison.OrdinalIgnoreCase)
@@ -223,6 +224,7 @@ public sealed class PublicProtocolSurfaceTests
             || type == typeof(bool)
             || type == typeof(int)
             || type == typeof(int?)
+            || type == typeof(string)
             || type == typeof(HostIdentityFailureDetail)));
 
         Dictionary<string, Type> failureProperties = typeof(HostIdentityFailureDetail)

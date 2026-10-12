@@ -9,6 +9,39 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class DiagnosticBundleExporterTests
 {
+    [Theory]
+    [InlineData("RZ09-05819EN9", false, "RZ09-05819EN9")]
+    [InlineData("S-1-5-21-private-sku", true, "[REDACTED]")]
+    public async Task ExportAsync_RecordsOptionalSkuMetadataWithoutHostFailure(
+        string sku, bool redact, string expected)
+    {
+        DiagnosticDeviceVerificationAttempt attempt = DiagnosticDeviceVerificationAttempt.FromProbe(
+            Probe(BatteryValidationProbeClassification.Ready) with { ObservedSku = sku },
+            usedRecentlyVerifiedDevice: false);
+        DiagnosticBundle bundle = new(
+            new DiagnosticVersions("1.2.3", "Windows 11", "4.01"),
+            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", null),
+            new Dictionary<string, bool>(),
+            new Dictionary<string, string>(),
+            [],
+            [],
+            redact ? [sku] : [],
+            DeviceVerification: new DiagnosticDeviceVerification(attempt, null));
+        await using var destination = new MemoryStream();
+
+        await DiagnosticBundleExporter.ExportAsync(destination, bundle, CancellationToken.None);
+
+        destination.Position = 0;
+        using var archive = new ZipArchive(destination, ZipArchiveMode.Read, leaveOpen: true);
+        using JsonDocument verification = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "device-verification.json"));
+        JsonElement probe = verification.RootElement.GetProperty("latestAttempt")
+            .GetProperty("probeResult");
+        Assert.Equal("Ready", probe.GetProperty("classification").GetString());
+        Assert.Equal(expected, probe.GetProperty("observedSku").GetString());
+        Assert.Equal(JsonValueKind.Null, probe.GetProperty("hostIdentityFailure").ValueKind);
+    }
+
     [Fact]
     public async Task ExportAsync_RedactsVerificationValuesAndPreservesFailureSchema()
     {
@@ -22,8 +55,8 @@ public sealed class DiagnosticBundleExporterTests
                 HostIdentityFailure = new HostIdentityFailureDetail(
                     HostIdentityFailureReason.RegistryValueMismatch,
                     "BIOS",
-                    "SystemSKU",
-                    "RZ09-05819EN4",
+                    "SystemProductName",
+                    "Blade 16 - RZ09-0581",
                     secret),
             },
             usedRecentlyVerifiedDevice: false);
@@ -52,8 +85,8 @@ public sealed class DiagnosticBundleExporterTests
         Assert.Equal("HostIdentity", probe.GetProperty("stage").GetString());
         JsonElement failure = probe.GetProperty("hostIdentityFailure");
         Assert.Equal("RegistryValueMismatch", failure.GetProperty("reason").GetString());
-        Assert.Equal("SystemSKU", failure.GetProperty("field").GetString());
-        Assert.Equal("RZ09-05819EN4", failure.GetProperty("expectedValue").GetString());
+        Assert.Equal("SystemProductName", failure.GetProperty("field").GetString());
+        Assert.Equal("Blade 16 - RZ09-0581", failure.GetProperty("expectedValue").GetString());
         Assert.Equal("[REDACTED]", failure.GetProperty("actualValue").GetString());
         Assert.Equal(latest.GetRawText(), verification.RootElement.GetProperty("lastFailure").GetRawText());
     }

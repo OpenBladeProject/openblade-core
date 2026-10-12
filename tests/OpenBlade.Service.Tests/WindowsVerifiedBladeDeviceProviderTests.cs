@@ -19,9 +19,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         HostIdentityFailureDetail failure = new(
             HostIdentityFailureReason.RegistryValueMismatch,
             "BIOS",
-            "SystemSKU",
-            "RZ09-05819EN4",
-            "RZ09-0581-OTHER");
+            "SystemProductName",
+            "Blade 16 - RZ09-0581",
+            "Blade 16 - RZ09-9999");
         BatteryValidationProbeResult result = Probe(
             BatteryValidationProbeClassification.HostIdentityBlocked,
             BatteryValidationFirmwareCompatibility.Unknown) with
