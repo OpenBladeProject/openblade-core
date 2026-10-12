@@ -10,7 +10,8 @@ internal readonly record struct HostIdentityReadResult(
     HostIdentityEvidence? Evidence,
     HidSessionFailureKind? Failure,
     HostFirmwareCompatibility FirmwareCompatibility =
-        HostFirmwareCompatibility.Unknown);
+        HostFirmwareCompatibility.Unknown,
+    HostIdentityFailureDetail? HostIdentityFailure = null);
 
 internal enum HostFirmwareCompatibility
 {
@@ -89,6 +90,7 @@ internal sealed class RuntimeWindowsPlatformEvidenceSource(
 
 internal sealed class WindowsHostIdentitySource : IHostIdentitySource
 {
+    private const int MaximumDiagnosticValueLength = 256;
     private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
     private const string SystemInformationKey = @"SYSTEM\CurrentControlSet\Control\SystemInformation";
     private static readonly ExpectedHostIdentity ProductionIdentity = new(
@@ -150,19 +152,78 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
 
     public HostIdentityReadResult ReadExactIdentity()
     {
-        if (!IsAuthorizedPlatform()
-            || !TryReadExact(BiosKey, "SystemManufacturer", expected.Manufacturer, out string biosManufacturer)
-            || !TryReadExact(BiosKey, "SystemProductName", expected.ProductName, out string biosProductName)
-            || !TryReadExact(BiosKey, "SystemSKU", expected.Sku, out string sku)
-            || !TryReadValue(BiosKey, "BIOSVersion", out string biosVersion)
-            || !TryReadExact(SystemInformationKey, "SystemManufacturer", expected.Manufacturer, out string systemManufacturer)
-            || !TryReadExact(SystemInformationKey, "SystemProductName", expected.ProductName, out string systemProductName)
-            || !TryReadValue(SystemInformationKey, "BIOSVersion", out string systemBiosVersion)
-            || !string.Equals(biosManufacturer, systemManufacturer, StringComparison.Ordinal)
-            || !string.Equals(biosProductName, systemProductName, StringComparison.Ordinal)
-            || !string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
+        HostIdentityFailureDetail? failure = ReadPlatformFailure();
+        if (failure is not null)
         {
-            return new(null, HidSessionFailureKind.IdentityBlocked);
+            return Blocked(failure);
+        }
+
+        if (!TryReadExact(
+                BiosKey,
+                "BIOS",
+                "SystemManufacturer",
+                expected.Manufacturer,
+                out string biosManufacturer,
+                out failure)
+            || !TryReadExact(
+                BiosKey,
+                "BIOS",
+                "SystemProductName",
+                expected.ProductName,
+                out string biosProductName,
+                out failure)
+            || !TryReadExact(
+                BiosKey,
+                "BIOS",
+                "SystemSKU",
+                expected.Sku,
+                out string sku,
+                out failure)
+            || !TryReadValue(
+                BiosKey,
+                "BIOS",
+                "BIOSVersion",
+                out string biosVersion,
+                out failure)
+            || !TryReadExact(
+                SystemInformationKey,
+                "SystemInformation",
+                "SystemManufacturer",
+                expected.Manufacturer,
+                out string systemManufacturer,
+                out failure)
+            || !TryReadExact(
+                SystemInformationKey,
+                "SystemInformation",
+                "SystemProductName",
+                expected.ProductName,
+                out string systemProductName,
+                out failure)
+            || !TryReadValue(
+                SystemInformationKey,
+                "SystemInformation",
+                "BIOSVersion",
+                out string systemBiosVersion,
+                out failure))
+        {
+            return Blocked(failure!);
+        }
+
+        if (!string.Equals(biosManufacturer, systemManufacturer, StringComparison.Ordinal))
+        {
+            return Blocked(SourceMismatch(
+                "SystemManufacturer", biosManufacturer, systemManufacturer));
+        }
+
+        if (!string.Equals(biosProductName, systemProductName, StringComparison.Ordinal))
+        {
+            return Blocked(SourceMismatch(
+                "SystemProductName", biosProductName, systemProductName));
+        }
+
+        if (!string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
+        {
+            return Blocked(SourceMismatch("BIOSVersion", biosVersion, systemBiosVersion));
         }
 
         bool testedFirmware = expected.ValidatedBiosVersions.Contains(
@@ -175,7 +236,13 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             return new(
                 null,
                 HidSessionFailureKind.IdentityBlocked,
-                HostFirmwareCompatibility.UntestedBlocked);
+                HostFirmwareCompatibility.UntestedBlocked,
+                new HostIdentityFailureDetail(
+                    HostIdentityFailureReason.FirmwareNotAdmitted,
+                    "BIOS",
+                    "BIOSVersion",
+                    Bounded(string.Join(", ", expected.ValidatedBiosVersions)),
+                    Bounded(biosVersion)));
         }
 
         return new(
@@ -222,31 +289,91 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         };
     }
 
-    private bool IsAuthorizedPlatform()
+    private HostIdentityFailureDetail? ReadPlatformFailure()
     {
+        WindowsPlatformEvidence evidence;
         try
         {
-            WindowsPlatformEvidence evidence = platform.Read();
-            return evidence.IsWindows
-                && evidence.IsWorkstation
-                && evidence.Architecture == Architecture.X64
-                && evidence.Version.Major == 10
-                && evidence.Version.Minor == 0
-                && evidence.Version.Build >= 22000;
+            evidence = platform.Read();
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            return new HostIdentityFailureDetail(
+                HostIdentityFailureReason.PlatformReadFailed,
+                "Platform",
+                "Evidence",
+                ExpectedValue: null,
+                ActualValue: null,
+                exception.GetType().Name,
+                exception.HResult);
+        }
+
+        if (!evidence.IsWindows)
+        {
+            return PlatformMismatch("IsWindows", bool.TrueString, evidence.IsWindows.ToString());
+        }
+
+        if (!evidence.IsWorkstation)
+        {
+            return PlatformMismatch(
+                "IsWorkstation", bool.TrueString, evidence.IsWorkstation.ToString());
+        }
+
+        if (evidence.Architecture != Architecture.X64)
+        {
+            return PlatformMismatch(
+                "Architecture", Architecture.X64.ToString(), evidence.Architecture.ToString());
+        }
+
+        if (evidence.Version.Major != 10
+            || evidence.Version.Minor != 0
+            || evidence.Version.Build < 22000)
+        {
+            return PlatformMismatch(
+                "Version", "10.0.22000 or later", evidence.Version.ToString());
+        }
+
+        return null;
+    }
+
+    private bool TryReadExact(
+        string key,
+        string source,
+        string valueName,
+        string expectedValue,
+        out string actual,
+        out HostIdentityFailureDetail? failure)
+    {
+        if (!TryReadValue(key, source, valueName, out actual, out failure))
+        {
+            if (failure?.Reason == HostIdentityFailureReason.RegistryValueMissing)
+            {
+                failure = failure with { ExpectedValue = Bounded(expectedValue) };
+            }
+
             return false;
         }
+
+        if (!string.Equals(actual, expectedValue, StringComparison.Ordinal))
+        {
+            failure = new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                source,
+                valueName,
+                Bounded(expectedValue),
+                Bounded(actual));
+            return false;
+        }
+
+        return true;
     }
 
-    private bool TryReadExact(string key, string valueName, string expected, out string actual)
-    {
-        return TryReadValue(key, valueName, out actual)
-            && string.Equals(actual, expected, StringComparison.Ordinal);
-    }
-
-    private bool TryReadValue(string key, string valueName, out string actual)
+    private bool TryReadValue(
+        string key,
+        string source,
+        string valueName,
+        out string actual,
+        out HostIdentityFailureDetail? failure)
     {
         try
         {
@@ -256,12 +383,64 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
                 key,
                 valueName);
             actual = value as string ?? string.Empty;
-            return !string.IsNullOrWhiteSpace(actual);
+            if (string.IsNullOrWhiteSpace(actual))
+            {
+                failure = new HostIdentityFailureDetail(
+                    HostIdentityFailureReason.RegistryValueMissing,
+                    source,
+                    valueName,
+                    ExpectedValue: "Non-empty string",
+                    ActualValue: null);
+                return false;
+            }
+
+            failure = null;
+            return true;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             actual = string.Empty;
+            failure = new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryReadFailed,
+                source,
+                valueName,
+                ExpectedValue: null,
+                ActualValue: null,
+                exception.GetType().Name,
+                exception.HResult);
             return false;
         }
     }
+
+    private static HostIdentityReadResult Blocked(HostIdentityFailureDetail failure) =>
+        new(null, HidSessionFailureKind.IdentityBlocked, HostFirmwareCompatibility.Unknown, failure);
+
+    private static HostIdentityFailureDetail PlatformMismatch(
+        string field,
+        string expectedValue,
+        string actualValue) =>
+        new(
+            HostIdentityFailureReason.PlatformNotSupported,
+            "Platform",
+            field,
+            Bounded(expectedValue),
+            Bounded(actualValue));
+
+    private static HostIdentityFailureDetail SourceMismatch(
+        string field,
+        string biosValue,
+        string systemInformationValue) =>
+        new(
+            HostIdentityFailureReason.RegistrySourcesMismatch,
+            "BIOS/SystemInformation",
+            field,
+            Bounded(biosValue),
+            Bounded(systemInformationValue));
+
+    private static string? Bounded(string? value) => value switch
+    {
+        null => null,
+        { Length: <= MaximumDiagnosticValueLength } => value,
+        _ => value[..MaximumDiagnosticValueLength],
+    };
 }

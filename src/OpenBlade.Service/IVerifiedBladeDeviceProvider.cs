@@ -21,6 +21,9 @@ public interface IVerifiedBladeDeviceProvider
 
     bool TryGetVerifiedDevice(out IBladeDevice device);
 
+    DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
+        DiagnosticDeviceVerification.NotObserved;
+
     bool TryGetRecentlyVerifiedReadOnlyDevice(out IBladeDevice device) =>
         TryGetVerifiedDevice(out device);
 

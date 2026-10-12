@@ -204,9 +204,10 @@ public sealed class PublicProtocolSurfaceTests
         Assert.Equal(typeof(BatteryValidationProbeStage), properties["Stage"]);
         Assert.Equal(typeof(BatteryValidationProbeClassification), properties["Classification"]);
         Assert.Equal(typeof(BatteryValidationFirmwareCompatibility), properties["FirmwareCompatibility"]);
+        Assert.Equal(typeof(HostIdentityFailureDetail), properties["HostIdentityFailure"]);
         Assert.Equal(typeof(int?), properties["CandidateOpenWin32Error"]);
         Assert.Equal(typeof(int), properties["CandidateAccessFallbackCount"]);
-        Assert.Equal(17, properties.Count);
+        Assert.Equal(18, properties.Count);
         Assert.DoesNotContain(properties.Keys, name =>
             name.Contains("Path", StringComparison.OrdinalIgnoreCase)
             || name.Contains("Handle", StringComparison.OrdinalIgnoreCase)
@@ -218,7 +219,23 @@ public sealed class PublicProtocolSurfaceTests
             || name.Contains("ProductId", StringComparison.OrdinalIgnoreCase)
             || name.Contains("UsageId", StringComparison.OrdinalIgnoreCase));
         Assert.All(properties.Values, type => Assert.True(
-            type.IsEnum || type == typeof(bool) || type == typeof(int) || type == typeof(int?)));
+            type.IsEnum
+            || type == typeof(bool)
+            || type == typeof(int)
+            || type == typeof(int?)
+            || type == typeof(HostIdentityFailureDetail)));
+
+        Dictionary<string, Type> failureProperties = typeof(HostIdentityFailureDetail)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .ToDictionary(property => property.Name, property => property.PropertyType);
+        Assert.Equal(7, failureProperties.Count);
+        Assert.Equal(typeof(HostIdentityFailureReason), failureProperties["Reason"]);
+        Assert.Equal(typeof(string), failureProperties["Source"]);
+        Assert.Equal(typeof(string), failureProperties["Field"]);
+        Assert.Equal(typeof(string), failureProperties["ExpectedValue"]);
+        Assert.Equal(typeof(string), failureProperties["ActualValue"]);
+        Assert.Equal(typeof(string), failureProperties["ExceptionType"]);
+        Assert.Equal(typeof(int?), failureProperties["HResult"]);
     }
 
     [Fact]

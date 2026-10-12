@@ -13,6 +13,100 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     private static readonly TimeSpan TestShutdownBudget = TimeSpan.FromMilliseconds(50);
 
     [Fact]
+    public void VerificationDiagnostics_CachesExactHostFailureAndRetainsItAfterRecovery()
+    {
+        int probes = 0;
+        HostIdentityFailureDetail failure = new(
+            HostIdentityFailureReason.RegistryValueMismatch,
+            "BIOS",
+            "SystemSKU",
+            "RZ09-05819EN4",
+            "RZ09-0581-OTHER");
+        BatteryValidationProbeResult result = Probe(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            BatteryValidationFirmwareCompatibility.Unknown) with
+        {
+            Stage = BatteryValidationProbeStage.HostIdentity,
+            HostIdentityMatched = false,
+            HostIdentityFailure = failure,
+        };
+        var factory = new FakeQueryFactory();
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => { probes++; return result; },
+            Adapt(factory),
+            UnavailableFanRpmFactory());
+
+        Assert.Null(provider.GetCachedDeviceVerificationDiagnostics().LatestAttempt);
+        Assert.Equal(0, probes);
+        Assert.False(provider.TryGetVerifiedDevice(out _));
+        DiagnosticDeviceVerification blocked = provider.GetCachedDeviceVerificationDiagnostics();
+        Assert.Equal("HostIdentityBlocked", blocked.LatestAttempt!.Classification);
+        Assert.Equal(failure, blocked.LatestAttempt.ProbeResult!.HostIdentityFailure);
+        Assert.Same(blocked.LatestAttempt, blocked.LastFailure);
+
+        result = Probe(BatteryValidationProbeClassification.Ready);
+        Assert.True(provider.TryGetVerifiedDevice(out _));
+        DiagnosticDeviceVerification recovered = provider.GetCachedDeviceVerificationDiagnostics();
+        Assert.Equal("Ready", recovered.LatestAttempt!.Classification);
+        Assert.Null(recovered.LatestAttempt.ProbeResult!.HostIdentityFailure);
+        Assert.Same(blocked.LastFailure, recovered.LastFailure);
+        Assert.Equal(2, probes);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
+    public void VerificationDiagnostics_PreservesNativeFailureAndMarksGraceReuse()
+    {
+        BatteryValidationProbeResult result = Probe(BatteryValidationProbeClassification.Ready);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => result,
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory());
+        Assert.True(provider.TryGetVerifiedDevice(out _));
+        result = result with
+        {
+            Stage = BatteryValidationProbeStage.CandidateOpen,
+            Classification = BatteryValidationProbeClassification.CandidateOpenFailed,
+            CandidateOpenWin32Error = 5,
+            CandidateOpenSuccessCount = 0,
+            ExactMatchCount = 0,
+        };
+
+        Assert.True(provider.TryGetVerifiedDevice(out _));
+        DiagnosticDeviceVerificationAttempt attempt =
+            provider.GetCachedDeviceVerificationDiagnostics().LatestAttempt!;
+        Assert.True(attempt.UsedRecentlyVerifiedDevice);
+        Assert.Equal("CandidateOpen", attempt.Stage);
+        Assert.Equal(5, attempt.ProbeResult!.CandidateOpenWin32Error);
+        Assert.Equal(0, attempt.ProbeResult.ExactMatchCount);
+    }
+
+    [Fact]
+    public void VerificationDiagnostics_RecordsSafeExceptionAndClearsStaleProbeResult()
+    {
+        bool throwProbe = false;
+        var exception = new IOException(@"private detail C:\Users\someone\serial-123");
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => throwProbe
+                ? throw exception
+                : Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory());
+        Assert.True(provider.TryGetVerifiedDevice(out _));
+        throwProbe = true;
+
+        Assert.True(provider.TryGetVerifiedDevice(out _));
+        DiagnosticDeviceVerification diagnostics = provider.GetCachedDeviceVerificationDiagnostics();
+        Assert.Equal("ProbeException", diagnostics.LatestAttempt!.Classification);
+        Assert.Equal(nameof(IOException), diagnostics.LatestAttempt.ExceptionType);
+        Assert.Equal(exception.HResult, diagnostics.LatestAttempt.HResult);
+        Assert.True(diagnostics.LatestAttempt.UsedRecentlyVerifiedDevice);
+        Assert.Null(diagnostics.LatestAttempt.ProbeResult);
+        Assert.Same(diagnostics.LatestAttempt, diagnostics.LastFailure);
+        Assert.DoesNotContain("private detail", diagnostics.LatestAttempt.Reason);
+    }
+
+    [Fact]
     public void ProductionCompositionUsesOnlyServiceAdvisoryFactories()
     {
         Assert.Equal(

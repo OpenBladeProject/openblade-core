@@ -33,11 +33,12 @@ type enum OpenBlade.Protocol.BatteryValidationProbeClassification
   field const OpenBlade.Protocol.BatteryValidationProbeClassification ReadyWithAccessFallback = 1
 type sealed class OpenBlade.Protocol.BatteryValidationProbeResult
   interface System.IEquatable<OpenBlade.Protocol.BatteryValidationProbeResult>
-  ctor (OpenBlade.Protocol.BatteryValidationProbeStage Stage, OpenBlade.Protocol.BatteryValidationProbeClassification Classification, System.Boolean HostIdentityMatched, System.Boolean ConflictCheckPassed, System.Int32 EnumeratedCandidateCount, System.Int32 CandidateOpenAttemptCount, System.Int32 CandidateOpenSuccessCount, System.Nullable<System.Int32> CandidateOpenWin32Error, System.Int32 CandidateAccessFallbackCount, System.Int32 IdentityReadCount, System.Int32 VendorMatchCount, System.Int32 ProductMatchCount, System.Int32 UsagePageMatchCount, System.Int32 UsageMatchCount, System.Int32 FeatureLengthMatchCount, System.Int32 ExactMatchCount, OpenBlade.Protocol.BatteryValidationFirmwareCompatibility FirmwareCompatibility = Unknown)
+  ctor (OpenBlade.Protocol.BatteryValidationProbeStage Stage, OpenBlade.Protocol.BatteryValidationProbeClassification Classification, System.Boolean HostIdentityMatched, System.Boolean ConflictCheckPassed, System.Int32 EnumeratedCandidateCount, System.Int32 CandidateOpenAttemptCount, System.Int32 CandidateOpenSuccessCount, System.Nullable<System.Int32> CandidateOpenWin32Error, System.Int32 CandidateAccessFallbackCount, System.Int32 IdentityReadCount, System.Int32 VendorMatchCount, System.Int32 ProductMatchCount, System.Int32 UsagePageMatchCount, System.Int32 UsageMatchCount, System.Int32 FeatureLengthMatchCount, System.Int32 ExactMatchCount, OpenBlade.Protocol.BatteryValidationFirmwareCompatibility FirmwareCompatibility = Unknown, OpenBlade.Protocol.HostIdentityFailureDetail HostIdentityFailure = null)
   method OpenBlade.Protocol.BatteryValidationFirmwareCompatibility get_FirmwareCompatibility()
   method OpenBlade.Protocol.BatteryValidationProbeClassification get_Classification()
   method OpenBlade.Protocol.BatteryValidationProbeResult <Clone>$()
   method OpenBlade.Protocol.BatteryValidationProbeStage get_Stage()
+  method OpenBlade.Protocol.HostIdentityFailureDetail get_HostIdentityFailure()
   method System.Boolean get_ConflictCheckPassed()
   method System.Boolean get_HostIdentityMatched()
   method System.Int32 get_CandidateAccessFallbackCount()
@@ -52,7 +53,7 @@ type sealed class OpenBlade.Protocol.BatteryValidationProbeResult
   method System.Int32 get_UsagePageMatchCount()
   method System.Int32 get_VendorMatchCount()
   method System.Nullable<System.Int32> get_CandidateOpenWin32Error()
-  method System.Void Deconstruct(out OpenBlade.Protocol.BatteryValidationProbeStage Stage, out OpenBlade.Protocol.BatteryValidationProbeClassification Classification, out System.Boolean HostIdentityMatched, out System.Boolean ConflictCheckPassed, out System.Int32 EnumeratedCandidateCount, out System.Int32 CandidateOpenAttemptCount, out System.Int32 CandidateOpenSuccessCount, out System.Nullable<System.Int32> CandidateOpenWin32Error, out System.Int32 CandidateAccessFallbackCount, out System.Int32 IdentityReadCount, out System.Int32 VendorMatchCount, out System.Int32 ProductMatchCount, out System.Int32 UsagePageMatchCount, out System.Int32 UsageMatchCount, out System.Int32 FeatureLengthMatchCount, out System.Int32 ExactMatchCount, out OpenBlade.Protocol.BatteryValidationFirmwareCompatibility FirmwareCompatibility)
+  method System.Void Deconstruct(out OpenBlade.Protocol.BatteryValidationProbeStage Stage, out OpenBlade.Protocol.BatteryValidationProbeClassification Classification, out System.Boolean HostIdentityMatched, out System.Boolean ConflictCheckPassed, out System.Int32 EnumeratedCandidateCount, out System.Int32 CandidateOpenAttemptCount, out System.Int32 CandidateOpenSuccessCount, out System.Nullable<System.Int32> CandidateOpenWin32Error, out System.Int32 CandidateAccessFallbackCount, out System.Int32 IdentityReadCount, out System.Int32 VendorMatchCount, out System.Int32 ProductMatchCount, out System.Int32 UsagePageMatchCount, out System.Int32 UsageMatchCount, out System.Int32 FeatureLengthMatchCount, out System.Int32 ExactMatchCount, out OpenBlade.Protocol.BatteryValidationFirmwareCompatibility FirmwareCompatibility, out OpenBlade.Protocol.HostIdentityFailureDetail HostIdentityFailure)
   method System.Void set_CandidateAccessFallbackCount(System.Int32 value)
   method System.Void set_CandidateOpenAttemptCount(System.Int32 value)
   method System.Void set_CandidateOpenSuccessCount(System.Int32 value)
@@ -63,6 +64,7 @@ type sealed class OpenBlade.Protocol.BatteryValidationProbeResult
   method System.Void set_ExactMatchCount(System.Int32 value)
   method System.Void set_FeatureLengthMatchCount(System.Int32 value)
   method System.Void set_FirmwareCompatibility(OpenBlade.Protocol.BatteryValidationFirmwareCompatibility value)
+  method System.Void set_HostIdentityFailure(OpenBlade.Protocol.HostIdentityFailureDetail value)
   method System.Void set_HostIdentityMatched(System.Boolean value)
   method System.Void set_IdentityReadCount(System.Int32 value)
   method System.Void set_ProductMatchCount(System.Int32 value)
@@ -79,6 +81,7 @@ type sealed class OpenBlade.Protocol.BatteryValidationProbeResult
   property OpenBlade.Protocol.BatteryValidationFirmwareCompatibility FirmwareCompatibility { get; init; }
   property OpenBlade.Protocol.BatteryValidationProbeClassification Classification { get; init; }
   property OpenBlade.Protocol.BatteryValidationProbeStage Stage { get; init; }
+  property OpenBlade.Protocol.HostIdentityFailureDetail HostIdentityFailure { get; init; }
   property System.Boolean ConflictCheckPassed { get; init; }
   property System.Boolean HostIdentityMatched { get; init; }
   property System.Int32 CandidateAccessFallbackCount { get; init; }
@@ -273,6 +276,48 @@ type struct OpenBlade.Protocol.HidUnit
   method static System.Boolean op_Equality(OpenBlade.Protocol.HidUnit left, OpenBlade.Protocol.HidUnit right)
   method static System.Boolean op_Inequality(OpenBlade.Protocol.HidUnit left, OpenBlade.Protocol.HidUnit right)
   method virtual System.Boolean Equals(OpenBlade.Protocol.HidUnit other)
+type sealed class OpenBlade.Protocol.HostIdentityFailureDetail
+  interface System.IEquatable<OpenBlade.Protocol.HostIdentityFailureDetail>
+  ctor (OpenBlade.Protocol.HostIdentityFailureReason Reason, System.String Source, System.String Field, System.String ExpectedValue, System.String ActualValue, System.String ExceptionType = null, System.Nullable<System.Int32> HResult = null)
+  method OpenBlade.Protocol.HostIdentityFailureDetail <Clone>$()
+  method OpenBlade.Protocol.HostIdentityFailureReason get_Reason()
+  method System.Nullable<System.Int32> get_HResult()
+  method System.String get_ActualValue()
+  method System.String get_ExceptionType()
+  method System.String get_ExpectedValue()
+  method System.String get_Field()
+  method System.String get_Source()
+  method System.Void Deconstruct(out OpenBlade.Protocol.HostIdentityFailureReason Reason, out System.String Source, out System.String Field, out System.String ExpectedValue, out System.String ActualValue, out System.String ExceptionType, out System.Nullable<System.Int32> HResult)
+  method System.Void set_ActualValue(System.String value)
+  method System.Void set_ExceptionType(System.String value)
+  method System.Void set_ExpectedValue(System.String value)
+  method System.Void set_Field(System.String value)
+  method System.Void set_HResult(System.Nullable<System.Int32> value)
+  method System.Void set_Reason(OpenBlade.Protocol.HostIdentityFailureReason value)
+  method System.Void set_Source(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.HostIdentityFailureDetail left, OpenBlade.Protocol.HostIdentityFailureDetail right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.HostIdentityFailureDetail left, OpenBlade.Protocol.HostIdentityFailureDetail right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.HostIdentityFailureDetail other)
+  property OpenBlade.Protocol.HostIdentityFailureReason Reason { get; init; }
+  property System.Nullable<System.Int32> HResult { get; init; }
+  property System.String ActualValue { get; init; }
+  property System.String ExceptionType { get; init; }
+  property System.String ExpectedValue { get; init; }
+  property System.String Field { get; init; }
+  property System.String Source { get; init; }
+type enum OpenBlade.Protocol.HostIdentityFailureReason
+  field System.Int32 value__
+  field const OpenBlade.Protocol.HostIdentityFailureReason FirmwareNotAdmitted = 6
+  field const OpenBlade.Protocol.HostIdentityFailureReason IdentityReadFailed = 7
+  field const OpenBlade.Protocol.HostIdentityFailureReason PlatformNotSupported = 0
+  field const OpenBlade.Protocol.HostIdentityFailureReason PlatformReadFailed = 1
+  field const OpenBlade.Protocol.HostIdentityFailureReason RegistryReadFailed = 4
+  field const OpenBlade.Protocol.HostIdentityFailureReason RegistrySourcesMismatch = 5
+  field const OpenBlade.Protocol.HostIdentityFailureReason RegistryValueMismatch = 3
+  field const OpenBlade.Protocol.HostIdentityFailureReason RegistryValueMissing = 2
 type interface OpenBlade.Protocol.IBatteryQuerySequencePort
   interface System.IAsyncDisposable
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.BatteryValidationSetting>> QueryAsync(System.Threading.CancellationToken cancellationToken)

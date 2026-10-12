@@ -1,12 +1,99 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using OpenBlade.Protocol;
+using static OpenBlade.Service.Tests.VerifiedBladeProviderFixture;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service.Tests;
 
 public sealed class DiagnosticBundleExporterTests
 {
+    [Fact]
+    public async Task ExportAsync_RedactsVerificationValuesAndPreservesFailureSchema()
+    {
+        const string secret = "S-1-5-21-private";
+        DiagnosticDeviceVerificationAttempt attempt = DiagnosticDeviceVerificationAttempt.FromProbe(
+            Probe(BatteryValidationProbeClassification.HostIdentityBlocked,
+                BatteryValidationFirmwareCompatibility.Unknown) with
+            {
+                Stage = BatteryValidationProbeStage.HostIdentity,
+                HostIdentityMatched = false,
+                HostIdentityFailure = new HostIdentityFailureDetail(
+                    HostIdentityFailureReason.RegistryValueMismatch,
+                    "BIOS",
+                    "SystemSKU",
+                    "RZ09-05819EN4",
+                    secret),
+            },
+            usedRecentlyVerifiedDevice: false);
+        DiagnosticBundle bundle = new(
+            new DiagnosticVersions("1.2.3", "Windows 11", "4.01"),
+            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", null),
+            new Dictionary<string, bool>(),
+            new Dictionary<string, string>(),
+            [],
+            [],
+            [secret, "classification", "HostIdentityBlocked"],
+            DeviceVerification: new DiagnosticDeviceVerification(attempt, attempt));
+        await using var destination = new MemoryStream();
+
+        await DiagnosticBundleExporter.ExportAsync(destination, bundle, CancellationToken.None);
+
+        destination.Position = 0;
+        using var archive = new ZipArchive(destination, ZipArchiveMode.Read, leaveOpen: true);
+        string content = await ReadEntryAsync(archive, "device-verification.json");
+        Assert.DoesNotContain(secret, content);
+        using JsonDocument verification = JsonDocument.Parse(content);
+        JsonElement latest = verification.RootElement.GetProperty("latestAttempt");
+        Assert.Equal("HostIdentityBlocked", latest.GetProperty("classification").GetString());
+        Assert.Equal(attempt.ObservedAt, latest.GetProperty("observedAt").GetDateTimeOffset());
+        JsonElement probe = latest.GetProperty("probeResult");
+        Assert.Equal("HostIdentity", probe.GetProperty("stage").GetString());
+        JsonElement failure = probe.GetProperty("hostIdentityFailure");
+        Assert.Equal("RegistryValueMismatch", failure.GetProperty("reason").GetString());
+        Assert.Equal("SystemSKU", failure.GetProperty("field").GetString());
+        Assert.Equal("RZ09-05819EN4", failure.GetProperty("expectedValue").GetString());
+        Assert.Equal("[REDACTED]", failure.GetProperty("actualValue").GetString());
+        Assert.Equal(latest.GetRawText(), verification.RootElement.GetProperty("lastFailure").GetRawText());
+    }
+
+    [Fact]
+    public async Task ExportAsync_WritesSafeProbeExceptionWithoutPrivateExceptionMessage()
+    {
+        var exception = new IOException(@"private detail C:\Users\someone\serial-123");
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => throw exception,
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory());
+        Assert.False(provider.TryGetVerifiedDevice(out _));
+        DiagnosticBundle bundle = new(
+            new DiagnosticVersions("1.2.3", "Windows 11", "4.01"),
+            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", null),
+            new Dictionary<string, bool>(),
+            new Dictionary<string, string>(),
+            [],
+            [],
+            [],
+            DeviceVerification: provider.GetCachedDeviceVerificationDiagnostics());
+        await using var destination = new MemoryStream();
+
+        await DiagnosticBundleExporter.ExportAsync(destination, bundle, CancellationToken.None);
+
+        destination.Position = 0;
+        using var archive = new ZipArchive(destination, ZipArchiveMode.Read, leaveOpen: true);
+        string content = await ReadEntryAsync(archive, "device-verification.json");
+        Assert.DoesNotContain("private detail", content);
+        Assert.DoesNotContain("someone", content);
+        Assert.DoesNotContain("serial-123", content);
+        using JsonDocument verification = JsonDocument.Parse(content);
+        JsonElement latest = verification.RootElement.GetProperty("latestAttempt");
+        Assert.Equal("ProbeException", latest.GetProperty("classification").GetString());
+        Assert.Equal(nameof(IOException), latest.GetProperty("exceptionType").GetString());
+        Assert.Equal(exception.HResult, latest.GetProperty("hResult").GetInt32());
+        Assert.Equal(JsonValueKind.Null, latest.GetProperty("probeResult").ValueKind);
+    }
+
     [Fact]
     public async Task ExportAsync_WritesStructuredEntriesAndRedactsSensitiveTokensEverywhere()
     {
@@ -42,7 +129,7 @@ public sealed class DiagnosticBundleExporterTests
         destination.Position = 0;
         using ZipArchive archive = new(destination, ZipArchiveMode.Read, leaveOpen: true);
         Assert.Equal(
-            ["versions.json", "device.json", "capabilities.json", "configuration.json", "command-results.json", "logs.jsonl"],
+            ["versions.json", "device.json", "device-verification.json", "capabilities.json", "configuration.json", "command-results.json", "logs.jsonl"],
             archive.Entries.Select(entry => entry.FullName));
 
         foreach (ZipArchiveEntry entry in archive.Entries)

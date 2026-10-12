@@ -97,6 +97,7 @@ public sealed class WindowsHostIdentitySourceTests
             new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", "3.01"),
             result.Evidence);
         Assert.Null(result.Failure);
+        Assert.Null(result.HostIdentityFailure);
         Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
         Assert.Equal(
             ExpectedRequests.Select(request => request.Location).Order(),
@@ -187,6 +188,14 @@ public sealed class WindowsHostIdentitySourceTests
         HostIdentityReadResult blocked = source.ReadExactIdentity();
         AssertIdentityBlocked(blocked);
         Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.FirmwareNotAdmitted,
+                "BIOS",
+                "BIOSVersion",
+                "3.01, 4.00, 4.01",
+                "3.02"),
+            blocked.HostIdentityFailure);
+        Assert.Equal(
             HostFirmwareCompatibility.UntestedBlocked,
             blocked.FirmwareCompatibility);
 
@@ -211,6 +220,7 @@ public sealed class WindowsHostIdentitySourceTests
 
         Assert.Equal("99.99", result.Evidence?.BiosVersion);
         Assert.Null(result.Failure);
+        Assert.Null(result.HostIdentityFailure);
         Assert.Equal(HostFirmwareCompatibility.ModelScoped, result.FirmwareCompatibility);
     }
 
@@ -268,6 +278,32 @@ public sealed class WindowsHostIdentitySourceTests
     }
 
     [Theory]
+    [InlineData($"{BiosKey}|SystemProductName", "BIOS", "SystemProductName", "Blade 16 - RZ09-0581")]
+    [InlineData($"{BiosKey}|SystemSKU", "BIOS", "SystemSKU", "RZ09-05819EN4")]
+    [InlineData($"{SystemInformationKey}|SystemManufacturer", "SystemInformation", "SystemManufacturer", "Razer")]
+    public void ReadExactIdentity_ReportsExactMismatchedRegistryField(
+        string location,
+        string source,
+        string field,
+        string expectedValue)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[location] = "unexpected";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                source,
+                field,
+                expectedValue,
+                "unexpected"),
+            result.HostIdentityFailure);
+    }
+
+    [Theory]
     [MemberData(nameof(CaseDifferentRegistryValues))]
     public void ReadExactIdentity_UsesOrdinalCaseSensitiveComparison(string location, string caseDifferentValue)
     {
@@ -285,6 +321,42 @@ public sealed class WindowsHostIdentitySourceTests
         registry.Values.Remove(location);
 
         AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
+    }
+
+    [Fact]
+    public void ReadExactIdentity_ReportsMissingRegistryValueWithoutReadingPastIt()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values.Remove($"{BiosKey}|SystemSKU");
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMissing,
+                "BIOS",
+                "SystemSKU",
+                "RZ09-05819EN4",
+                ActualValue: null),
+            result.HostIdentityFailure);
+        Assert.Equal(
+            ExpectedRequests.Take(3).Select(request => request.Location),
+            registry.Requests.Select(request => request.Location));
+    }
+
+    [Fact]
+    public void ReadExactIdentity_BoundsReportedRegistryValues()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{BiosKey}|SystemProductName"] = new string('x', 300);
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        HostIdentityFailureDetail failure = Assert.IsType<HostIdentityFailureDetail>(
+            result.HostIdentityFailure);
+        Assert.Equal(256, failure.ActualValue?.Length);
+        Assert.Equal(new string('x', 256), failure.ActualValue);
     }
 
     [Theory]
@@ -307,6 +379,26 @@ public sealed class WindowsHostIdentitySourceTests
         AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
     }
 
+    [Fact]
+    public void ReadExactIdentity_ReportsRegistryExceptionTypeAndHResultOnly()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.ThrowAt = $"{BiosKey}|SystemManufacturer";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        HostIdentityFailureDetail failure = Assert.IsType<HostIdentityFailureDetail>(
+            result.HostIdentityFailure);
+        Assert.Equal(HostIdentityFailureReason.RegistryReadFailed, failure.Reason);
+        Assert.Equal("BIOS", failure.Source);
+        Assert.Equal("SystemManufacturer", failure.Field);
+        Assert.Equal(nameof(UnauthorizedAccessException), failure.ExceptionType);
+        Assert.Equal(new UnauthorizedAccessException().HResult, failure.HResult);
+        Assert.Null(failure.ExpectedValue);
+        Assert.Null(failure.ActualValue);
+    }
+
     [Theory]
     [MemberData(nameof(OverlappingRegistryValues))]
     public void ReadExactIdentity_BlocksCrossKeyDisagreement(string systemInformationLocation)
@@ -315,6 +407,25 @@ public sealed class WindowsHostIdentitySourceTests
         registry.Values[systemInformationLocation] = $"{registry.Values[systemInformationLocation]} ";
 
         AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
+    }
+
+    [Fact]
+    public void ReadExactIdentity_ReportsBiosVersionSourceDisagreement()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "4.01";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistrySourcesMismatch,
+                "BIOS/SystemInformation",
+                "BIOSVersion",
+                "3.01",
+                "4.01"),
+            result.HostIdentityFailure);
     }
 
     [Theory]
@@ -356,7 +467,19 @@ public sealed class WindowsHostIdentitySourceTests
         FakeWindowsPlatformEvidenceSource platform = new(
             ExactPlatform with { IsWindows = false });
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        HostIdentityReadResult result = new WindowsHostIdentitySource(
+            registry,
+            platform).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.PlatformNotSupported,
+                "Platform",
+                "IsWindows",
+                bool.TrueString,
+                bool.FalseString),
+            result.HostIdentityFailure);
         Assert.Empty(registry.Requests);
     }
 
@@ -406,7 +529,18 @@ public sealed class WindowsHostIdentitySourceTests
             Throw = true,
         };
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        HostIdentityReadResult result = new WindowsHostIdentitySource(
+            registry,
+            platform).ReadExactIdentity();
+
+        AssertIdentityBlocked(result);
+        HostIdentityFailureDetail failure = Assert.IsType<HostIdentityFailureDetail>(
+            result.HostIdentityFailure);
+        Assert.Equal(HostIdentityFailureReason.PlatformReadFailed, failure.Reason);
+        Assert.Equal("Platform", failure.Source);
+        Assert.Equal("Evidence", failure.Field);
+        Assert.Equal(nameof(InvalidOperationException), failure.ExceptionType);
+        Assert.Equal(new InvalidOperationException().HResult, failure.HResult);
         Assert.Empty(registry.Requests);
     }
 

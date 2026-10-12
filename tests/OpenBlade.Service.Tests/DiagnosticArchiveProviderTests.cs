@@ -2,13 +2,15 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
+using static OpenBlade.Service.Tests.VerifiedBladeProviderFixture;
 
 namespace OpenBlade.Service.Tests;
 
 public sealed class DiagnosticArchiveProviderTests
 {
     [Fact]
-    public async Task CreateAsync_UsesOnlyCurrentSnapshotsAndWritesExactlySixRedactedEntries()
+    public async Task CreateAsync_UsesOnlyCurrentSnapshotsAndWritesRedactedEntries()
     {
         const string secret = "S-1-5-21-sensitive-token";
         var runtime = new SnapshotOnlyRuntime(CreateStatus() with
@@ -65,6 +67,7 @@ public sealed class DiagnosticArchiveProviderTests
             CancellationToken.None);
 
         Assert.Equal(1, runtime.StatusReads);
+        Assert.Equal(1, runtime.VerificationDiagnosticReads);
         Assert.Equal(1, runtime.JournalDiagnosticReads);
         Assert.Equal(0, runtime.HardwareOrMutationCalls);
         Assert.EndsWith(".zip", result.SuggestedFileName, StringComparison.OrdinalIgnoreCase);
@@ -73,7 +76,7 @@ public sealed class DiagnosticArchiveProviderTests
 
         using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
         Assert.Equal(
-            ["versions.json", "device.json", "capabilities.json", "configuration.json", "command-results.json", "hyperboost-ownership.json", "logs.jsonl"],
+            ["versions.json", "device.json", "device-verification.json", "capabilities.json", "configuration.json", "command-results.json", "hyperboost-ownership.json", "logs.jsonl"],
             archive.Entries.Select(entry => entry.FullName));
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
@@ -90,6 +93,10 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal("1532", device.RootElement.GetProperty("vendorId").GetString());
         Assert.Equal("02C6", device.RootElement.GetProperty("productId").GetString());
         Assert.Equal(JsonValueKind.Null, device.RootElement.GetProperty("serialNumber").ValueKind);
+
+        using JsonDocument verification = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "device-verification.json"));
+        Assert.Equal(JsonValueKind.Null, verification.RootElement.GetProperty("latestAttempt").ValueKind);
 
         using JsonDocument configuration = JsonDocument.Parse(
             await ReadEntryAsync(archive, "configuration.json"));
@@ -412,6 +419,44 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Contains("32 KiB", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task CreateAsync_ExportsCachedVerificationFailureWithoutRefreshingHardware()
+    {
+        DiagnosticDeviceVerificationAttempt attempt = DiagnosticDeviceVerificationAttempt.FromProbe(
+            Probe(BatteryValidationProbeClassification.HostIdentityBlocked) with
+            {
+                Stage = BatteryValidationProbeStage.HostIdentity,
+                HostIdentityFailure = new HostIdentityFailureDetail(
+                    HostIdentityFailureReason.RegistrySourcesMismatch,
+                    "SystemInformation",
+                    "BIOSVersion",
+                    "4.01",
+                    "3.01"),
+            },
+            usedRecentlyVerifiedDevice: false);
+        var runtime = new SnapshotOnlyRuntime(
+            CreateStatus() with { DeviceVerified = false },
+            verificationDiagnostics: new DiagnosticDeviceVerification(attempt, attempt));
+        var provider = new DiagnosticArchiveProvider(
+            runtime,
+            new DiagnosticHistory(),
+            new FixedMetadataSource());
+
+        DiagnosticArchive result = await provider.CreateAsync(true, CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument verification = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "device-verification.json"));
+        JsonElement failure = verification.RootElement.GetProperty("latestAttempt")
+            .GetProperty("probeResult").GetProperty("hostIdentityFailure");
+        Assert.Equal("RegistrySourcesMismatch", failure.GetProperty("reason").GetString());
+        Assert.Equal("BIOSVersion", failure.GetProperty("field").GetString());
+        Assert.Equal("4.01", failure.GetProperty("expectedValue").GetString());
+        Assert.Equal("3.01", failure.GetProperty("actualValue").GetString());
+        Assert.Equal(1, runtime.VerificationDiagnosticReads);
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+    }
+
     private static async Task<string> ReadEntryAsync(ZipArchive archive, string name)
     {
         ZipArchiveEntry entry = Assert.Single(archive.Entries, item => item.FullName == name);
@@ -475,12 +520,14 @@ public sealed class DiagnosticArchiveProviderTests
     private sealed class SnapshotOnlyRuntime(
         ServiceStatusSnapshot status,
         Rz090581CapabilityDiagnostics? capabilityDiagnostics = null,
-        DiagnosticHyperBoostOwnershipJournal? hyperBoostJournalDiagnostics = null)
+        DiagnosticHyperBoostOwnershipJournal? hyperBoostJournalDiagnostics = null,
+        DiagnosticDeviceVerification? verificationDiagnostics = null)
         : IServiceControlRuntime
     {
         public int StatusReads { get; private set; }
         public int CapabilityDiagnosticReads { get; private set; }
         public int JournalDiagnosticReads { get; private set; }
+        public int VerificationDiagnosticReads { get; private set; }
         public int HardwareOrMutationCalls { get; private set; }
 
         public ServiceStatusSnapshot GetStatus()
@@ -493,6 +540,12 @@ public sealed class DiagnosticArchiveProviderTests
         {
             CapabilityDiagnosticReads++;
             return capabilityDiagnostics;
+        }
+
+        public DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics()
+        {
+            VerificationDiagnosticReads++;
+            return verificationDiagnostics ?? DiagnosticDeviceVerification.NotObserved;
         }
 
         public Task<DiagnosticHyperBoostOwnershipJournal>
