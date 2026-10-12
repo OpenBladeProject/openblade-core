@@ -60,6 +60,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenBlade.Platform\OpenBlade.Platform.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Session\OpenBlade.Session.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
