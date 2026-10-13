@@ -1209,6 +1209,25 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Status presentation hook was not found.");
         applyStatus.Invoke(window.ViewModel, [status, false]);
+        System.Reflection.FieldInfo changingCards = typeof(MainWindow).GetField(
+            "changingDashboardCards",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Dashboard preference guard was not found.");
+        changingCards.SetValue(window, true);
+        try
+        {
+            window.DashboardCards.Add(new DashboardCardOption(
+                DashboardCardKind.Fans, "Fans", string.Empty, true));
+        }
+        finally
+        {
+            changingCards.SetValue(window, false);
+        }
+        System.Reflection.MethodInfo refreshCards = typeof(MainWindow).GetMethod(
+            "RefreshDashboardCards",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Dashboard presentation hook was not found.");
+        refreshCards.Invoke(window, null);
     }
 
     private static XamlBorder? FindGpuAppCleanupCard(DependencyObject root)
