@@ -2409,7 +2409,7 @@
                             <InfoBar.ActionButton>
                                 <Button x:Uid="MainWindow_BlockedControlsCheckCurrentStateButton"
                                         IsEnabled="{x:Bind ViewModel.CanCheckCurrentState, Mode=OneWay}"
-                                        Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay}"
+                                        Visibility="{x:Bind ViewModel.ShowHardwareControlStateCheck, Mode=OneWay}"
                                         Click="OnCheckCurrentStateClick"
                                         AutomationProperties.Name="Check current state">
                                     <TextBlock x:Uid="MainWindow_BlockedControlsCheckCurrentStateLabel" Text="Check current state" />

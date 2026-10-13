@@ -10269,6 +10269,7 @@ public sealed partial class MainViewModelTests
         await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         Assert.Contains("Start service", viewModel.HardwareControlUnavailableMessage);
+        Assert.False(viewModel.ShowHardwareControlStateCheck);
 
         ServiceStatusSnapshot failed = CreateStatus(verified: true, blocked: true) with
         {
@@ -10286,6 +10287,7 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.CanControlHardware);
 
         Assert.True(viewModel.CanCheckCurrentState);
+        Assert.True(viewModel.ShowHardwareControlStateCheck);
 
         await PublishStatusAndWaitAsync(client, dispatcher, viewModel, failed with
         {
@@ -10305,16 +10307,21 @@ public sealed partial class MainViewModelTests
 
         client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<bool> check = viewModel.CheckCurrentStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task;
+        Assert.False(viewModel.CanCheckCurrentState);
+        Assert.True(viewModel.ShowHardwareControlStateCheck);
         client.PendingObservation.SetResult(CreateStatus(verified: true, blocked: false) with
         {
             Revision = 2,
         });
-        Assert.True(await viewModel.CheckCurrentStateAsync(CancellationToken.None));
+        Assert.True(await check);
         Assert.Equal(LiveReadingSensors.None, client.RequestedLiveReadings.Last());
         Assert.Equal(0, client.ReapplyChangedSettingsCalls);
         Assert.False(viewModel.HasHardwareControlUnavailableMessage);
         Assert.Empty(viewModel.HardwareControlUnavailableMessage);
         Assert.True(viewModel.CanControlHardware);
+        Assert.False(viewModel.ShowHardwareControlStateCheck);
     }
 
     [Fact]

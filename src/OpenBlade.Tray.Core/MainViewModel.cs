@@ -1215,6 +1215,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             SetField(ref isCheckCurrentStateOperationInProgress, value);
             Notify(nameof(CanCheckCurrentState));
+            Notify(nameof(ShowHardwareControlStateCheck));
         }
     }
 
@@ -1227,6 +1228,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 HyperBoostRestorePending: false,
             })
         && !IsCheckCurrentStateOperationInProgress;
+
+    public bool ShowHardwareControlStateCheck => HasHardwareControlUnavailableMessage
+        && latestStatus is
+        {
+            ControlAccess: SessionControlAccess.Active,
+            HyperBoostRestorePending: false,
+        }
+        && (CanCheckCurrentState || IsCheckCurrentStateOperationInProgress);
 
     public bool HasPendingHyperBoostRestore
     {
@@ -8304,6 +8313,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(CanReapplyChangedSettings), CanReapplyChangedSettings);
         NotifyComputed(nameof(CanRecoverHyperBoostRestore), CanRecoverHyperBoostRestore);
         NotifyComputed(nameof(CanCheckCurrentState), CanCheckCurrentState);
+        NotifyComputed(nameof(ShowHardwareControlStateCheck), ShowHardwareControlStateCheck);
         NotifyComputed(nameof(ShowReapplyChangedSettings), ShowReapplyChangedSettings);
         NotifyComputed(nameof(CanChangeThermalControlPolicy), CanChangeThermalControlPolicy);
         NotifyComputed(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure), CanAcknowledgeThermalPolicyUpgradeDisclosure);
