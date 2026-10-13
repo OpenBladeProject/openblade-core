@@ -10008,13 +10008,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.ReadStateFailure = new RazerProtocolException(
-            "Battery state query failed protocol validation (Checksum).",
+            "Thermal channel 2 query (0D/82) failed protocol validation (Checksum).",
             HidProtocolValidationFailure.Checksum);
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         const string expected =
-            "Verified device access failed: Battery state query failed protocol validation (Checksum).";
+            "Verified device access failed: Thermal channel 2 query (0D/82) failed protocol validation (Checksum).";
         Assert.Equal(expected, context.Runtime.GetStatus().Message);
         Assert.Equal(1, context.Device.StateReadCalls);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);

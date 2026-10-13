@@ -662,8 +662,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             catch (RazerProtocolException exception)
             {
                 throw new RazerProtocolException(
-                    $"Performance and fan state query failed protocol validation ({exception.ValidationFailure}).",
-                    exception.ValidationFailure);
+                    DescribeStateQueryFailure(exception, "Performance and fan state query"),
+                    exception.ValidationFailure)
+                {
+                    StateQuery = exception.StateQuery,
+                };
             }
             catch (ObjectDisposedException)
             {
@@ -750,8 +753,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             catch (RazerProtocolException exception)
             {
                 throw new RazerProtocolException(
-                    $"Battery state query failed protocol validation ({exception.ValidationFailure}).",
-                    exception.ValidationFailure);
+                    DescribeStateQueryFailure(exception, "Device state query"),
+                    exception.ValidationFailure)
+                {
+                    StateQuery = exception.StateQuery,
+                };
             }
             catch (ObjectDisposedException)
             {
@@ -818,9 +824,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 ConfirmedBatteryState protection =
-                    await port.QueryProtectionAsync(cancellationToken).ConfigureAwait(false);
+                    await ReadStateQueryAsync(
+                        DeviceStateQuery.BatteryProtection,
+                        () => port.QueryProtectionAsync(cancellationToken)).ConfigureAwait(false);
                 bool? temporary = port.SupportsTemporaryFullChargeQuery
-                    ? await port.QueryTemporaryFullChargeAsync(cancellationToken)
+                    ? await ReadStateQueryAsync(
+                        DeviceStateQuery.TemporaryFullCharge,
+                        () => port.QueryTemporaryFullChargeAsync(cancellationToken))
                         .ConfigureAwait(false)
                     : null;
                 ConfirmedBatteryState battery = new(
@@ -828,7 +838,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     protection.ChargeLimitPercent,
                     temporary);
                 ProductionPerformanceFanState performanceFan =
-                    await port.QueryPerformanceFanStateAsync(cancellationToken)
+                    await ReadStateQueryAsync(
+                        DeviceStateQuery.PerformanceAndFans,
+                        () => port.QueryPerformanceFanStateAsync(cancellationToken))
                         .ConfigureAwait(false);
                 GpuClockOffsetCapabilities? gpuOffsets =
                     await ReadManagedGpuClockOffsetsAsync(cancellationToken)
@@ -858,6 +870,45 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     },
                     lightingRead.OffConfirmationUnavailable);
             }
+        }
+
+        private static async Task<T> ReadStateQueryAsync<T>(
+            DeviceStateQuery query,
+            Func<Task<T>> readAsync)
+        {
+            try
+            {
+                return await readAsync().ConfigureAwait(false);
+            }
+            catch (RazerProtocolException exception)
+            {
+                throw new RazerProtocolException(
+                    "Device state query failed protocol validation.",
+                    exception.ValidationFailure)
+                {
+                    StateQuery = exception.StateQuery ?? query,
+                };
+            }
+        }
+
+        private static string DescribeStateQueryFailure(
+            RazerProtocolException exception,
+            string fallback)
+        {
+            string query = exception.StateQuery switch
+            {
+                DeviceStateQuery.BatteryProtection => "Battery protection query (07/92)",
+                DeviceStateQuery.TemporaryFullCharge => "Temporary full charge query (07/8F)",
+                DeviceStateQuery.PerformanceAndFans => "Performance and fan state query",
+                DeviceStateQuery.ThermalChannelOne => "Thermal channel 1 query (0D/82)",
+                DeviceStateQuery.ThermalChannelTwo => "Thermal channel 2 query (0D/82)",
+                DeviceStateQuery.ThermalChannelAgreement => "Thermal channel agreement (0D/82)",
+                DeviceStateQuery.CustomCpuPerformance => "Custom CPU performance query (0D/87)",
+                DeviceStateQuery.CustomGpuPerformance => "Custom GPU performance query (0D/87)",
+                DeviceStateQuery.CustomPerformanceCombination => "Custom performance combination (0D/87)",
+                _ => fallback,
+            };
+            return $"{query} failed protocol validation ({exception.ValidationFailure}).";
         }
 
         private async Task<ConfirmedDeviceState> ReadPerformanceFanStateOnceAsync(

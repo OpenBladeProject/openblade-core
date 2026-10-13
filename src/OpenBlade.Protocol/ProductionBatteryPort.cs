@@ -363,7 +363,11 @@ internal sealed class ProductionBatteryPort :
                     .ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+                ThrowReadFailure(
+                    result.Failure.Value,
+                    result.Diagnostic,
+                    cancellationToken,
+                    DeviceStateQuery.BatteryProtection);
             }
 
             return MapProtectionState(result.Value);
@@ -394,7 +398,11 @@ internal sealed class ProductionBatteryPort :
                 cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+                ThrowReadFailure(
+                    result.Failure.Value,
+                    result.Diagnostic,
+                    cancellationToken,
+                    DeviceStateQuery.TemporaryFullCharge);
             }
 
             return result.Value;
@@ -1896,7 +1904,10 @@ internal sealed class ProductionBatteryPort :
             poisoned = true;
             throw new RazerProtocolException(
                 "Thermal channels did not report one recognized matching state.",
-                HidProtocolValidationFailure.PayloadValidator);
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                StateQuery = DeviceStateQuery.ThermalChannelAgreement,
+            };
         }
 
         return state;
@@ -1951,7 +1962,10 @@ internal sealed class ProductionBatteryPort :
             poisoned = true;
             throw new RazerProtocolException(
                 "Custom performance returned a combination not admitted for this exact device.",
-                HidProtocolValidationFailure.PayloadValidator);
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                StateQuery = DeviceStateQuery.CustomPerformanceCombination,
+            };
         }
 
         return new ProductionPerformanceFanState(
@@ -1966,6 +1980,9 @@ internal sealed class ProductionBatteryPort :
         CustomPerformanceDomain domain,
         CancellationToken cancellationToken)
     {
+        DeviceStateQuery query = domain == CustomPerformanceDomain.Cpu
+            ? DeviceStateQuery.CustomCpuPerformance
+            : DeviceStateQuery.CustomGpuPerformance;
         var command = new RazerCommandSpec(
             CustomPerformanceProtocol.CommandClass,
             CustomPerformanceProtocol.QueryCommandId,
@@ -1982,7 +1999,7 @@ internal sealed class ProductionBatteryPort :
             cancellationToken).ConfigureAwait(false);
         if (result.Failure is not null)
         {
-            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken, query);
         }
 
         if (!CustomPerformanceProtocol.TryDecodeQuery(
@@ -1993,7 +2010,10 @@ internal sealed class ProductionBatteryPort :
             poisoned = true;
             throw new RazerProtocolException(
                 "Custom performance query failed payload validation.",
-                HidProtocolValidationFailure.PayloadValidator);
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                StateQuery = query,
+            };
         }
 
         return level;
@@ -2003,6 +2023,9 @@ internal sealed class ProductionBatteryPort :
         ThermalChannel channel,
         CancellationToken cancellationToken)
     {
+        DeviceStateQuery query = channel == ThermalChannel.First
+            ? DeviceStateQuery.ThermalChannelOne
+            : DeviceStateQuery.ThermalChannelTwo;
         var command = new RazerCommandSpec(
             ThermalModeProtocol.CommandClass,
             ThermalModeProtocol.QueryCommandId,
@@ -2019,7 +2042,7 @@ internal sealed class ProductionBatteryPort :
             cancellationToken).ConfigureAwait(false);
         if (result.Failure is not null)
         {
-            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken, query);
         }
 
         if (!ThermalModeProtocol.TryDecodeQuery(result.Value.Span, channel, out _))
@@ -2027,7 +2050,10 @@ internal sealed class ProductionBatteryPort :
             poisoned = true;
             throw new RazerProtocolException(
                 "Thermal query failed payload validation.",
-                HidProtocolValidationFailure.PayloadValidator);
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                StateQuery = query,
+            };
         }
 
         return result.Value;
@@ -2121,7 +2147,8 @@ internal sealed class ProductionBatteryPort :
     private void ThrowReadFailure(
         HidSessionFailureKind failure,
         HidSessionFailureDiagnostic? diagnostic,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DeviceStateQuery? query = null)
     {
         if (failure is not (
             HidSessionFailureKind.ConflictBlocked
@@ -2142,7 +2169,10 @@ internal sealed class ProductionBatteryPort :
                 throw new RazerProtocolException(
                     "Battery state query failed protocol validation.",
                     diagnostic?.ProtocolValidationFailure
-                        ?? HidProtocolValidationFailure.PayloadValidator);
+                        ?? HidProtocolValidationFailure.PayloadValidator)
+                {
+                    StateQuery = query,
+                };
             default:
                 throw new IOException("Battery state query failed closed.");
         }

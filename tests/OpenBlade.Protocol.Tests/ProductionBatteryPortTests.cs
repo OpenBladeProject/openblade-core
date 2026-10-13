@@ -1534,24 +1534,63 @@ public sealed class ProductionBatteryPortTests
             () => port.SetChargeLimitAsync(80, default));
 
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
+        Assert.Equal(DeviceStateQuery.ThermalChannelAgreement, error.StateQuery);
         Assert.Equal(WriteSubmissionState.Indeterminate, blockedWrite.SubmissionState);
         Assert.Equal(2, session.Commands.Count);
         Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
     }
 
-    [Fact]
-    public async Task UnknownThermalPayload_FailsClosedWithoutSecondRead()
+    [Theory]
+    [InlineData(true, (int)DeviceStateQuery.ThermalChannelOne, 1)]
+    [InlineData(false, (int)DeviceStateQuery.ThermalChannelTwo, 2)]
+    public async Task UnknownThermalPayload_ReportsExactChannelAndPoisonsFurtherGetters(
+        bool failFirst,
+        int expectedQuery,
+        int expectedCommandCount)
     {
-        var session = new ScriptedSession(
-            Success([0x01, 0x01, 0x08, 0x00]),
-            Success([0x01, 0x02, 0x00, 0x00]));
+        var session = failFirst
+            ? new ScriptedSession(Success([0x01, 0x01, 0x08, 0x00]))
+            : new ScriptedSession(
+                Success([0x01, 0x01, 0x00, 0x00]),
+                Success([0x01, 0x02, 0x08, 0x00]));
         await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
 
         RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
             () => port.QueryPerformanceFanStateAsync(default));
+        await Assert.ThrowsAsync<IOException>(() => port.QueryProtectionAsync(default));
 
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
-        Assert.Single(session.Commands);
+        Assert.Equal((DeviceStateQuery)expectedQuery, error.StateQuery);
+        Assert.Equal(expectedCommandCount, session.Commands.Count);
+    }
+
+    [Theory]
+    [InlineData(false, (int)DeviceStateQuery.BatteryProtection, 0x92)]
+    [InlineData(true, (int)DeviceStateQuery.TemporaryFullCharge, 0x8F)]
+    public async Task BatteryGetterProtocolFailure_ReportsExactQueryAndPreservesCategory(
+        bool temporaryFullCharge,
+        int expectedQuery,
+        int expectedCommandId)
+    {
+        var session = new ScriptedSession(ProtocolFailure(HidProtocolValidationFailure.Checksum));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            temporaryFullCharge ? AcceptedTemporaryReadEvidence() : NoTemporaryReadEvidence());
+
+        RazerProtocolException error = temporaryFullCharge
+            ? await Assert.ThrowsAsync<RazerProtocolException>(
+                () => port.QueryTemporaryFullChargeAsync(default))
+            : await Assert.ThrowsAsync<RazerProtocolException>(
+                () => port.QueryProtectionAsync(default));
+        await Assert.ThrowsAsync<IOException>(() => port.QueryProtectionAsync(default));
+
+        Assert.Equal(HidProtocolValidationFailure.Checksum, error.ValidationFailure);
+        Assert.Equal((DeviceStateQuery)expectedQuery, error.StateQuery);
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal(0x07, command.ClassId);
+        Assert.Equal((byte)expectedCommandId, command.CommandId);
+        Assert.Equal([0x00], command.Arguments.ToArray());
     }
 
     [Theory]
@@ -1825,6 +1864,65 @@ public sealed class ProductionBatteryPortTests
                 Convert.ToHexString(command.Arguments.Span))).ToArray());
     }
 
+    [Theory]
+    [InlineData(true, (int)DeviceStateQuery.CustomCpuPerformance, 3, "010100")]
+    [InlineData(false, (int)DeviceStateQuery.CustomGpuPerformance, 4, "010200")]
+    public async Task CustomPerformancePayloadFailure_ReportsExactComponentAndPoisonsFurtherGetters(
+        bool failCpu,
+        int expectedQuery,
+        int expectedCommandCount,
+        string expectedArguments)
+    {
+        var results = new List<HidSessionResult<ReadOnlyMemory<byte>>>
+        {
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, failCpu ? (byte)0x09 : (byte)0x01]),
+        };
+        if (!failCpu)
+        {
+            results.Add(Success([0x01, 0x02, 0x09]));
+        }
+        var session = new ScriptedSession([.. results]);
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => port.QueryPerformanceFanStateAsync(default));
+        await Assert.ThrowsAsync<IOException>(() => port.QueryProtectionAsync(default));
+
+        Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
+        Assert.Equal((DeviceStateQuery)expectedQuery, error.StateQuery);
+        Assert.Equal(expectedCommandCount, session.Commands.Count);
+        Assert.Equal(expectedArguments, Convert.ToHexString(session.Commands[^1].Arguments.Span));
+    }
+
+    [Fact]
+    public async Task UnsupportedCustomPerformanceCombination_ReportsCombinationQueryAndPoisonsFurtherGetters()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x01]),
+            Success([0x01, 0x02, 0x02]));
+        var capabilities = new CustomPerformanceCapabilities(
+            new HashSet<CustomPerformanceCombination>
+            {
+                new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+            });
+        await using var port = CreatePort(
+            session,
+            Catalog(CustomPerformanceFixtures()),
+            customPerformanceCapabilities: capabilities);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => port.QueryPerformanceFanStateAsync(default));
+        await Assert.ThrowsAsync<IOException>(() => port.QueryProtectionAsync(default));
+
+        Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
+        Assert.Equal(DeviceStateQuery.CustomPerformanceCombination, error.StateQuery);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
     [Fact]
     public async Task CustomPerformanceSetter_AppliesModeAndComponentsThenConfirms()
     {
@@ -1882,7 +1980,8 @@ public sealed class ProductionBatteryPortTests
         ProductionBatteryReadEvidence? evidence = null,
         FanSpeedRange? fanSpeedRange = null,
         IReadOnlySet<FanMode>? admittedFanModes = null,
-        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null) => new(
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
+        CustomPerformanceCapabilities? customPerformanceCapabilities = null) => new(
             session,
             catalog,
             evidence ?? NoTemporaryReadEvidence(),
@@ -1890,7 +1989,8 @@ public sealed class ProductionBatteryPortTests
             TimeSpan.FromSeconds(1),
             fanSpeedRange,
             admittedFanModes,
-            admittedAdapterPowerStates);
+            admittedAdapterPowerStates,
+            customPerformanceCapabilities);
 
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);
@@ -2036,6 +2136,20 @@ public sealed class ProductionBatteryPortTests
 
     private static HidSessionResult<ReadOnlyMemory<byte>> Success(byte[] payload) =>
         new(payload, null);
+
+    private static HidSessionResult<ReadOnlyMemory<byte>> ProtocolFailure(
+        HidProtocolValidationFailure validationFailure) =>
+        new(default, HidSessionFailureKind.ProtocolFailure)
+        {
+            Diagnostic = new HidSessionFailureDiagnostic(
+                HidSessionFailurePhase.ProtocolValidation,
+                HidSessionFailureKind.ProtocolFailure,
+                NativeWin32Error: null,
+                TransferredByteCount: null)
+            {
+                ProtocolValidationFailure = validationFailure,
+            },
+        };
 
     internal sealed class ScriptedSession(
         params HidSessionResult<ReadOnlyMemory<byte>>[] results) : IRazerCommandSession
