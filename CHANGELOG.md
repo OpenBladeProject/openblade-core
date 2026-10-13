@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Identify the exact battery or thermal query that blocks device controls in exported diagnostics.
+- Identify the exact battery or thermal query that blocks device controls in exported diagnostics. ([#735](https://github.com/OSSBlade/openblade-core/pull/735))
 
 ## [0.25.0] - 2026-10-13
 
