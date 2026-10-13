@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.25.2-nightly.85] - 2026-10-13
+
+No notable changelog entries were added since the previous nightly.
+
 ## [0.25.2-nightly.84] - 2026-10-13
 
 ### Fixed
@@ -2006,7 +2010,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.85...HEAD
+[0.25.2-nightly.85]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...v0.25.2-nightly.85
 [0.25.2-nightly.84]: https://github.com/OSSBlade/openblade-core/compare/v0.25.1-nightly.83...v0.25.2-nightly.84-attempt.2
 [0.25.1-nightly.83]: https://github.com/OSSBlade/openblade-core/compare/v0.25.0...v0.25.1-nightly.83
 [0.25.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.24.5...v0.25.0
