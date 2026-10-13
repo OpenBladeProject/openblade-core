@@ -7,6 +7,19 @@ internal enum RazerCommandStatus : byte
     NotSupported = 0x05,
 }
 
+internal enum DeviceStateQuery
+{
+    BatteryProtection,
+    TemporaryFullCharge,
+    PerformanceAndFans,
+    ThermalChannelOne,
+    ThermalChannelTwo,
+    ThermalChannelAgreement,
+    CustomCpuPerformance,
+    CustomGpuPerformance,
+    CustomPerformanceCombination,
+}
+
 public sealed class RazerProtocolException : Exception
 {
     public RazerProtocolException(
@@ -18,6 +31,8 @@ public sealed class RazerProtocolException : Exception
     }
 
     public HidProtocolValidationFailure ValidationFailure { get; }
+
+    internal DeviceStateQuery? StateQuery { get; init; }
 }
 
 internal sealed class RazerReport

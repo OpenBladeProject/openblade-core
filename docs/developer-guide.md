@@ -103,6 +103,13 @@ paths, serial numbers, exception messages, and raw HID reports are not collected
 by this verification record. The USB IDs in `device.json` identify the catalog
 model and do not establish successful HID verification.
 
+If device controls are disabled after identity verification succeeds, check
+`configuration.json`'s `status.message` and `command-results.json`. Protocol
+failures identify the rejected battery or thermal query and its validation
+category. Thermal diagnostics distinguish each channel from channel agreement
+and custom CPU/GPU settings. These records omit raw device responses and do not
+change write admission.
+
 ## Build and test
 
 You need Windows 11 x64 and the .NET 10 SDK.

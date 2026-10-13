@@ -6,6 +6,57 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 {
+    [Theory]
+    [InlineData(0, null, "Battery protection query (07/92)")]
+    [InlineData(1, null, "Temporary full charge query (07/8F)")]
+    [InlineData(2, null, "Performance and fan state query")]
+    [InlineData(2, (int)DeviceStateQuery.ThermalChannelOne, "Thermal channel 1 query (0D/82)")]
+    [InlineData(2, (int)DeviceStateQuery.ThermalChannelTwo, "Thermal channel 2 query (0D/82)")]
+    [InlineData(2, (int)DeviceStateQuery.ThermalChannelAgreement, "Thermal channel agreement (0D/82)")]
+    [InlineData(2, (int)DeviceStateQuery.CustomCpuPerformance, "Custom CPU performance query (0D/87)")]
+    [InlineData(2, (int)DeviceStateQuery.CustomGpuPerformance, "Custom GPU performance query (0D/87)")]
+    [InlineData(2, (int)DeviceStateQuery.CustomPerformanceCombination, "Custom performance combination (0D/87)")]
+    public async Task ReadState_PreservesRejectedQueryWithoutRawExceptionDetail(
+        int rejectingGetter,
+        int? query,
+        string expectedQuery)
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var raw = new RazerProtocolException(
+            "raw report, serial, and device path detail",
+            HidProtocolValidationFailure.PayloadValidator)
+        {
+            StateQuery = query is { } value ? (DeviceStateQuery)value : null,
+        };
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            ProtectionFailure = rejectingGetter == 0 ? raw : null,
+            TemporaryFailure = rejectingGetter == 1 ? raw : null,
+            PerformanceFanFailure = rejectingGetter == 2 ? raw : null,
+        };
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Equal(
+            $"{expectedQuery} failed protocol validation (PayloadValidator).",
+            error.Message);
+        Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
+        Assert.Null(error.InnerException);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.DisposeCount);
+        Assert.Equal(1, port.ProtectionQueryCount);
+        Assert.Equal(rejectingGetter >= 1 ? 1 : 0, port.TemporaryQueryCount);
+        Assert.Equal(rejectingGetter == 2 ? 1 : 0, port.PerformanceFanQueryCount);
+        Assert.Equal(0, port.SetLimitCount + port.SetPerformanceCount + port.SetFanModeCount);
+    }
+
     [Fact]
     public async Task ThermalExternalDriftValidation_NormalBuildNeverOpensHid()
     {
@@ -1641,8 +1692,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             () => device.ReadStateAsync(default));
 
         Assert.Equal(HidProtocolValidationFailure.TransactionMismatch, error.ValidationFailure);
+        Assert.Equal(DeviceStateQuery.BatteryProtection, error.StateQuery);
         Assert.Equal(
-            "Battery state query failed protocol validation (TransactionMismatch).",
+            "Battery protection query (07/92) failed protocol validation (TransactionMismatch).",
             error.Message);
         Assert.Equal(3, factory.OpenCount);
         Assert.Equal(1, first.DisposeCount);
@@ -1677,7 +1729,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         Assert.Equal(failure, error.ValidationFailure);
         Assert.Equal(
-            $"Battery state query failed protocol validation ({failure}).",
+            $"Battery protection query (07/92) failed protocol validation ({failure}).",
             error.Message);
         Assert.Equal(1, factory.OpenCount);
         Assert.Equal(1, rejected.DisposeCount);

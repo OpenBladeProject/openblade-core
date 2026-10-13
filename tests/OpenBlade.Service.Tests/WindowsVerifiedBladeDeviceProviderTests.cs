@@ -639,7 +639,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             () => device.ReadStateAsync(default));
 
         Assert.Equal(
-            "Battery state query failed protocol validation (Checksum).",
+            throwFromFactory
+                ? "Device state query failed protocol validation (Checksum)."
+                : "Battery protection query (07/92) failed protocol validation (Checksum).",
             error.Message);
         Assert.Equal(HidProtocolValidationFailure.Checksum, error.ValidationFailure);
         Assert.Null(error.InnerException);
