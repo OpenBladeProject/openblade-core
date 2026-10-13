@@ -10261,6 +10261,123 @@ public sealed partial class MainViewModelTests
         await PushAsync(client, dispatcher, status);
         Assert.Equal(status.Message, viewModel.ConnectionStatus);
     }
+    [Fact]
+    public async Task UnavailableControlGuidance_ExplainsReadFailureAndClearsOnRecovery()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        Assert.Contains("Start service", viewModel.HardwareControlUnavailableMessage);
+        Assert.False(viewModel.ShowHardwareControlStateCheck);
+
+        ServiceStatusSnapshot failed = CreateStatus(verified: true, blocked: true) with
+        {
+            ConfirmedState = null,
+            Message = "Battery protection query (07/92) failed protocol validation (PayloadValidator).",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, failed);
+        Assert.True(viewModel.HasHardwareControlUnavailableMessage);
+        Assert.Contains("Close Synapse if it is running", viewModel.HardwareControlUnavailableMessage);
+        Assert.Contains("Check current state", viewModel.HardwareControlUnavailableMessage);
+        Assert.Contains("export diagnostics", viewModel.HardwareControlUnavailableMessage);
+        Assert.DoesNotContain("PayloadValidator", viewModel.HardwareControlUnavailableMessage);
+        Assert.Equal(failed.Message, viewModel.ConnectionStatus);
+        Assert.False(viewModel.HasFanControlUnavailableMessage);
+        Assert.False(viewModel.CanControlHardware);
+
+        Assert.True(viewModel.CanCheckCurrentState);
+        Assert.True(viewModel.ShowHardwareControlStateCheck);
+
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, failed with
+        {
+            Message = "Checking connection",
+            ObservationReason = DeviceObservationReason.RefreshingControls,
+        });
+        Assert.Contains("checking", viewModel.HardwareControlUnavailableMessage);
+        Assert.DoesNotContain("Synapse", viewModel.HardwareControlUnavailableMessage);
+
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, failed with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            Message = "Unclassified charger",
+        });
+        Assert.Contains("could not identify the charger", viewModel.HardwareControlUnavailableMessage);
+        Assert.False(viewModel.CanControlHardware);
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<bool> check = viewModel.CheckCurrentStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task;
+        Assert.False(viewModel.CanCheckCurrentState);
+        Assert.True(viewModel.ShowHardwareControlStateCheck);
+        client.PendingObservation.SetResult(CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 2,
+        });
+        Assert.True(await check);
+        Assert.Equal(LiveReadingSensors.None, client.RequestedLiveReadings.Last());
+        Assert.Equal(0, client.ReapplyChangedSettingsCalls);
+        Assert.False(viewModel.HasHardwareControlUnavailableMessage);
+        Assert.Empty(viewModel.HardwareControlUnavailableMessage);
+        Assert.True(viewModel.CanControlHardware);
+        Assert.False(viewModel.ShowHardwareControlStateCheck);
+    }
+
+    [Fact]
+    public async Task FanControlGuidance_TracksPowerAndHyperBoostRestrictions()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var notifications = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is { } name)
+            {
+                notifications.Add(name);
+            }
+        };
+        ServiceStatusSnapshot ready = CreateStatus(verified: true, blocked: false);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.Empty(viewModel.FanControlUnavailableMessage);
+        Assert.True(viewModel.CanChangeFanMode);
+
+        foreach (PowerSource source in new[] { PowerSource.Battery, PowerSource.UsbC })
+        {
+            await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready with
+            {
+                ActivePowerSource = source,
+                Message = source.ToString(),
+            });
+            Assert.False(viewModel.CanChangeFanMode);
+            Assert.True(viewModel.HasFanControlUnavailableMessage);
+            Assert.Contains("Only Automatic", viewModel.FanControlUnavailableMessage);
+            Assert.Contains("AC charger", viewModel.FanControlUnavailableMessage);
+            Assert.Contains("Balanced", viewModel.FanControlUnavailableMessage);
+            Assert.Contains("RPM", viewModel.FanControlUnavailableMessage);
+            Assert.False(viewModel.HasHardwareControlUnavailableMessage);
+        }
+
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready with
+        {
+            ConfirmedState = ready.ConfirmedState! with
+            {
+                HyperBoostActive = true,
+            },
+            Message = "HyperBoost active",
+        });
+        Assert.False(viewModel.CanChangeFanMode);
+        Assert.Contains("Turn off HyperBoost", viewModel.FanControlUnavailableMessage);
+
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.True(viewModel.CanChangeFanMode);
+        Assert.False(viewModel.HasFanControlUnavailableMessage);
+        Assert.Contains(nameof(viewModel.FanControlUnavailableMessage), notifications);
+        Assert.Contains(nameof(viewModel.HasFanControlUnavailableMessage), notifications);
+    }
+
     private static ServiceStatusSnapshot CreateStatus(
         bool verified,
         bool blocked,

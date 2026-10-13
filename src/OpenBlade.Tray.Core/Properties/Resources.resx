@@ -1395,4 +1395,40 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>Review thermal control policy</value></data>
   <data name="Review policy" xml:space="preserve"><value>Review policy</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Review the new default. Restoration stays paused until you select Got it.</value></data>
+  <data name="HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode." xml:space="preserve">
+    <value>HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.</value>
+  </data>
+  <data name="Laptop controls are available in the active Windows user session. Switch to that user to change settings." xml:space="preserve">
+    <value>Laptop controls are available in the active Windows user session. Switch to that user to change settings.</value>
+  </data>
+  <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
+    <value>Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.</value>
+  </data>
+  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown." xml:space="preserve">
+    <value>Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown.</value>
+  </data>
+  <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
+    <value>OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation.</value>
+  </data>
+  <data name="OpenBlade cannot apply changes right now. Select Check current state. If controls stay unavailable, export diagnostics." xml:space="preserve">
+    <value>OpenBlade cannot apply changes right now. Select Check current state. If controls stay unavailable, export diagnostics.</value>
+  </data>
+  <data name="OpenBlade could not confirm a previous change. Select Check current state before trying again." xml:space="preserve">
+    <value>OpenBlade could not confirm a previous change. Select Check current state before trying again.</value>
+  </data>
+  <data name="OpenBlade could not identify the charger. Connect the laptop’s AC charger, then select Check current state." xml:space="preserve">
+    <value>OpenBlade could not identify the charger. Connect the laptop’s AC charger, then select Check current state.</value>
+  </data>
+  <data name="OpenBlade could not verify this laptop. Open Troubleshooting in About to check the detected model and connection." xml:space="preserve">
+    <value>OpenBlade could not verify this laptop. Open Troubleshooting in About to check the detected model and connection.</value>
+  </data>
+  <data name="OpenBlade couldn’t read the laptop’s current settings. Close Synapse if it is running, then select Check current state. If controls stay unavailable, export diagnostics." xml:space="preserve">
+    <value>OpenBlade couldn’t read the laptop’s current settings. Close Synapse if it is running, then select Check current state. If controls stay unavailable, export diagnostics.</value>
+  </data>
+  <data name="OpenBlade is checking the laptop’s current settings. Controls are unavailable while this check runs." xml:space="preserve">
+    <value>OpenBlade is checking the laptop’s current settings. Controls are unavailable while this check runs.</value>
+  </data>
+  <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
+    <value>Sign in to an interactive Windows session to change laptop settings.</value>
+  </data>
 </root>

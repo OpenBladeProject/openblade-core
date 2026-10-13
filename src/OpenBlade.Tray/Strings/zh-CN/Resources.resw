@@ -1996,4 +1996,16 @@
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>https://example.com</value>
   </data>
+  <data name="MainWindow_FanControlUnavailableInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>风扇控制可用性</value>
+  </data>
+  <data name="MainWindow_HardwareControlUnavailableInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>笔记本控制可用性</value>
+  </data>
+  <data name="MainWindow_BlockedControlsCheckCurrentStateButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>检查当前状态</value>
+  </data>
+  <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
+    <value>检查当前状态</value>
+  </data>
 </root>
