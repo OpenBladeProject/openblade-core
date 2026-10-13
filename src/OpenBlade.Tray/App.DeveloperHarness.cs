@@ -579,6 +579,7 @@ public partial class App
 
             System.Windows.Forms.Application.EnableVisualStyles();
             snapshotMainWindow = MainWindow.CreateLocalizationSnapshot();
+            ApplyControlAvailabilitySnapshotState(snapshotMainWindow);
             if (pseudoLocalizationRequested ||
                 !string.IsNullOrWhiteSpace(localizationLanguage))
             {
@@ -1172,6 +1173,42 @@ public partial class App
         RequireResponsiveSelector(
             card.Visibility == Visibility.Collapsed,
             "A successful empty NVIDIA scan did not collapse the card.");
+    }
+
+    private static void ApplyControlAvailabilitySnapshotState(MainWindow window)
+    {
+        string? state = Environment.GetEnvironmentVariable(
+            "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE");
+        if (string.IsNullOrEmpty(state))
+        {
+            return;
+        }
+        if (state is not ("read-failure" or "battery"))
+        {
+            throw new InvalidOperationException("Unknown control availability snapshot state.");
+        }
+
+        // Snapshot windows never start the service client. These states exercise
+        // the real UI with synthetic observations and perform no device access.
+        bool blocked = state == "read-failure";
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        ServiceStatusSnapshot status = new(
+            1, true, blocked, [], null, [], "Control availability snapshot",
+            DeviceCapabilities.SafeTargetDefaults(),
+            blocked ? null : new ConfirmedDeviceState(
+                PerformancePreset.BatterySaver, FanMode.Automatic, null, null),
+            profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.BatterySaver, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.Battery.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            PowerSource.Battery, null, null, null, null, false);
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
     }
 
     private static XamlBorder? FindGpuAppCleanupCard(DependencyObject root)

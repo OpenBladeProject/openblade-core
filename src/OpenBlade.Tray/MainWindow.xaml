@@ -871,6 +871,7 @@
                                                                         CompactMinWidth="150"
                                                                         ExpandedMinWindowWidth="800"
                                                                         AccessibleName="Fan mode"
+                                                                        AutomationProperties.HelpText="{x:Bind FanControlUnavailableMessage, Mode=OneWay}"
                                                                         IsEnabled="{x:Bind CanChangeFanMode, Mode=OneWay}"
                                                                         ItemsSource="{x:Bind AvailableActiveFanModeOptions, Mode=OneWay}"
                                                                         SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
@@ -878,6 +879,14 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
+                            <InfoBar x:Uid="MainWindow_FanControlUnavailableInfoBarText"
+                                     IsOpen="{x:Bind HasFanControlUnavailableMessage, Mode=OneWay}"
+                                     Visibility="{x:Bind HasFanControlUnavailableMessage, Mode=OneWay}"
+                                     Message="{x:Bind FanControlUnavailableMessage, Mode=OneWay}"
+                                     Severity="Informational"
+                                     IsClosable="False"
+                                     Margin="12,0,12,12"
+                                     AutomationProperties.Name="Fan control availability" />
                             <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
@@ -2388,6 +2397,25 @@
                                  IsClosable="True"
                                  Margin="0,0,0,12"
                                  AutomationProperties.Name="Operation error" />
+
+                        <InfoBar x:Uid="MainWindow_HardwareControlUnavailableInfoBarText"
+                                 IsOpen="{x:Bind ViewModel.HasHardwareControlUnavailableMessage, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.HasHardwareControlUnavailableMessage, Mode=OneWay}"
+                                 Message="{x:Bind ViewModel.HardwareControlUnavailableMessage, Mode=OneWay}"
+                                 Severity="Warning"
+                                 IsClosable="False"
+                                 Margin="0,0,0,12"
+                                 AutomationProperties.Name="Laptop control availability">
+                            <InfoBar.ActionButton>
+                                <Button x:Uid="MainWindow_BlockedControlsCheckCurrentStateButton"
+                                        IsEnabled="{x:Bind ViewModel.CanCheckCurrentState, Mode=OneWay}"
+                                        Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay}"
+                                        Click="OnCheckCurrentStateClick"
+                                        AutomationProperties.Name="Check current state">
+                                    <TextBlock x:Uid="MainWindow_BlockedControlsCheckCurrentStateLabel" Text="Check current state" />
+                                </Button>
+                            </InfoBar.ActionButton>
+                        </InfoBar>
 
                         <Border x:Name="DashboardEmptyState"
                                 Style="{StaticResource CardStyle}"

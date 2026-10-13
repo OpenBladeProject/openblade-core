@@ -1485,4 +1485,40 @@
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve">
     <value>[!! Révíéw thé néw défáúlt. Réstórátíón stáýs páúséd úntíl ýóú séléct Gót ít. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode." xml:space="preserve">
+    <value>[!! HýpérBóóst ís cóntróllíng thé fáns. Túrn óff HýpérBóóst tó chóósé á fán módé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Laptop controls are available in the active Windows user session. Switch to that user to change settings." xml:space="preserve">
+    <value>[!! Láptóp cóntróls áré áváíláblé ín thé áctívé Windows úsér séssíón. Swítch tó thát úsér tó chángé séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
+    <value>[!! Mánúál fán cóntról ís únáváíláblé fór thís láptóp’s cúrrént cápábílítíés. Fán RPM cán stíll bé shówn. Éxpórt díágnóstícs íf ýóú éxpéctéd mánúál cóntról. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown." xml:space="preserve">
+    <value>[!! Ónlý Áútómátíc fán cóntról ís áváíláblé ón báttérý ór ÚSB-C pówér. Cónnéct thé láptóp’s ÁC chárgér ánd úsé Báláncéd pérfórmáncé fór fíxéd spééd ór á mánúál fán cúrvé. Fán RPM cán stíll bé shówn. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
+    <value>[!! OpenBlade cán’t cónnéct tó íts sérvícé. Ópén Ábóút ánd séléct Stárt sérvícé. Íf ít stíll cánnót cónnéct, répáír thé ínstállátíón. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade cannot apply changes right now. Select Check current state. If controls stay unavailable, export diagnostics." xml:space="preserve">
+    <value>[!! OpenBlade cánnót ápplý chángés ríght nów. Séléct Chéck cúrrént státé. Íf cóntróls stáý únáváíláblé, éxpórt díágnóstícs. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not confirm a previous change. Select Check current state before trying again." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót cónfírm á prévíóús chángé. Séléct Chéck cúrrént státé béfóré trýíng ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not identify the charger. Connect the laptop’s AC charger, then select Check current state." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót ídéntífý thé chárgér. Cónnéct thé láptóp’s ÁC chárgér, thén séléct Chéck cúrrént státé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not verify this laptop. Open Troubleshooting in About to check the detected model and connection." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót vérífý thís láptóp. Ópén Tróúbléshóótíng ín Ábóút tó chéck thé détéctéd módél ánd cónnéctíón. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade couldn’t read the laptop’s current settings. Close Synapse if it is running, then select Check current state. If controls stay unavailable, export diagnostics." xml:space="preserve">
+    <value>[!! OpenBlade cóúldn’t réád thé láptóp’s cúrrént séttíngs. Clósé Sýnápsé íf ít ís rúnníng, thén séléct Chéck cúrrént státé. Íf cóntróls stáý únáváíláblé, éxpórt díágnóstícs. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is checking the laptop’s current settings. Controls are unavailable while this check runs." xml:space="preserve">
+    <value>[!! OpenBlade ís chéckíng thé láptóp’s cúrrént séttíngs. Cóntróls áré únáváíláblé whílé thís chéck rúns. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
+    <value>[!! Sígn ín tó án íntéráctívé Windows séssíón tó chángé láptóp séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

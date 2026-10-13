@@ -2017,4 +2017,16 @@
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>https://example.com</value>
   </data>
+  <data name="MainWindow_FanControlUnavailableInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Доступность управления вентиляторами</value>
+  </data>
+  <data name="MainWindow_HardwareControlUnavailableInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Доступность управления ноутбуком</value>
+  </data>
+  <data name="MainWindow_BlockedControlsCheckCurrentStateButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Проверить текущее состояние</value>
+  </data>
+  <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
+    <value>Проверить текущее состояние</value>
+  </data>
 </root>

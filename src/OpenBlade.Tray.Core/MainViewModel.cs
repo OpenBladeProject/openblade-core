@@ -641,6 +641,60 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanRequestHardwareControl => CanControlHardware
         || IsRetainedPowerSourceRecheck(latestStatus);
 
+    public bool HasHardwareControlUnavailableMessage =>
+        !string.IsNullOrEmpty(HardwareControlUnavailableMessage);
+
+    public string HardwareControlUnavailableMessage
+    {
+        get
+        {
+            if (CanRequestHardwareControl)
+            {
+                return string.Empty;
+            }
+            if (!IsConnected)
+            {
+                return TrayText.Get("OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation.");
+            }
+            if (latestStatus?.ControlAccess == SessionControlAccess.InactiveSession)
+            {
+                return TrayText.Get("Laptop controls are available in the active Windows user session. Switch to that user to change settings.");
+            }
+            if (latestStatus?.ControlAccess == SessionControlAccess.NotInteractive)
+            {
+                return TrayText.Get("Sign in to an interactive Windows session to change laptop settings.");
+            }
+            if (IsCheckingLaptopConnection(latestStatus))
+            {
+                return TrayText.Get("OpenBlade is checking the laptop’s current settings. Controls are unavailable while this check runs.");
+            }
+            if (latestStatus?.DeviceVerified != true)
+            {
+                return TrayText.Get("OpenBlade could not verify this laptop. Open Troubleshooting in About to check the detected model and connection.");
+            }
+            if (latestStatus.HyperBoostRestorePending)
+            {
+                return HyperBoostRestoreRecoveryText;
+            }
+            if (latestStatus.UnconfirmedWrites.Count > 0)
+            {
+                return TrayText.Get("OpenBlade could not confirm a previous change. Select Check current state before trying again.");
+            }
+            if (latestStatus.ActivePowerSource == PowerSource.ExternalUnknown)
+            {
+                return TrayText.Get("OpenBlade could not identify the charger. Connect the laptop’s AC charger, then select Check current state.");
+            }
+            if (latestStatus.WritesBlocked)
+            {
+                return latestStatus.ConfirmedState is null
+                    or { Performance: null, Fans: null, Battery: null, Lighting: null }
+                    ? TrayText.Get("OpenBlade couldn’t read the laptop’s current settings. Close Synapse if it is running, then select Check current state. If controls stay unavailable, export diagnostics.")
+                    : TrayText.Get("OpenBlade cannot apply changes right now. Select Check current state. If controls stay unavailable, export diagnostics.");
+            }
+            return string.Empty;
+        }
+    }
+
     public string ConnectionStatus
     {
         get => connectionStatus;
@@ -1165,7 +1219,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool CanCheckCurrentState => IsConnected
-        && HasUnconfirmedWrites
+        && (HasUnconfirmedWrites
+            || latestStatus is
+            {
+                WritesBlocked: true,
+                ControlAccess: SessionControlAccess.Active,
+                HyperBoostRestorePending: false,
+            })
         && !IsCheckCurrentStateOperationInProgress;
 
     public bool HasPendingHyperBoostRestore
@@ -2461,6 +2521,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyCommands();
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
+            NotifyFanControlAvailability();
         }
     }
 
@@ -2473,6 +2534,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CanEditFanControl
         && (AvailableActiveFanModeOptions.Count > 1
             || SelectedFanModeOption is null);
+
+    public bool HasFanControlUnavailableMessage =>
+        !string.IsNullOrEmpty(FanControlUnavailableMessage);
+
+    public string FanControlUnavailableMessage =>
+        HasHardwareControlUnavailableMessage || IsFanControlOperationInProgress
+            ? string.Empty
+            : HyperBoostActive
+                ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
+                : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
+                    ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown.")
+                    : !CanChangeFanMode
+                        ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
+                        : string.Empty;
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl
@@ -2821,6 +2896,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyTrayHoverLabel();
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
+            NotifyFanControlAvailability();
             NotifyCommands();
         }
     }
@@ -5313,6 +5389,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(SelectedFanMode));
         Notify(nameof(SelectedFanModeOption));
         Notify(nameof(CanChangeFanMode));
+        NotifyFanControlAvailability();
     }
 
     private void MarkDisconnected() =>
@@ -8211,11 +8288,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    private void NotifyFanControlAvailability()
+    {
+        NotifyComputed(nameof(FanControlUnavailableMessage), FanControlUnavailableMessage);
+        NotifyComputed(nameof(HasFanControlUnavailableMessage), HasFanControlUnavailableMessage);
+    }
+
     private void NotifyPresentationState()
     {
         NotifyComputed(nameof(IsServiceUnavailable), IsServiceUnavailable);
         NotifyComputed(nameof(ControlAccessStatus), ControlAccessStatus);
         NotifyComputed(nameof(CanRequestHardwareControl), CanRequestHardwareControl);
+        NotifyComputed(nameof(HardwareControlUnavailableMessage), HardwareControlUnavailableMessage);
+        NotifyComputed(nameof(HasHardwareControlUnavailableMessage), HasHardwareControlUnavailableMessage);
         NotifyComputed(nameof(CanReapplyChangedSettings), CanReapplyChangedSettings);
         NotifyComputed(nameof(CanRecoverHyperBoostRestore), CanRecoverHyperBoostRestore);
         NotifyComputed(nameof(CanCheckCurrentState), CanCheckCurrentState);
@@ -8236,6 +8321,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(SelectedLaptopPerformanceOption), SelectedLaptopPerformanceOption);
         NotifyComputed(nameof(CanEditFanControl), CanEditFanControl);
         NotifyComputed(nameof(CanChangeFanMode), CanChangeFanMode);
+        NotifyFanControlAvailability();
         NotifyGamingModeKeyPolicy();
         NotifyDashboardTelemetryValuesChanged();
         NotifyComputed(nameof(LiveReadingsRefreshToolTip), LiveReadingsRefreshToolTip);
