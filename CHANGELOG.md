@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Explain why laptop controls or manual fan modes are unavailable and offer a current-state check when controls are blocked. ([#737](https://github.com/OSSBlade/openblade-core/pull/737))
+
 ## [0.25.1-nightly.83] - 2026-10-13
 
 ### Fixed
