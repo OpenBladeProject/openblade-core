@@ -110,22 +110,31 @@ public sealed class Rz090528PadlessLoadedHyperBoostValidationCommandTests
         using var cancellation = new CancellationTokenSource();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int published = 0, disposed = 0;
-        var lane = new OwnedReadOnlyLane<string>(() => Interlocked.Increment(ref disposed), TimeSpan.FromMilliseconds(200));
+        // The lane deadline starts when the read is queued, before the test can
+        // observe the blocked read and cancel. Keep it far beyond any runner
+        // delay so cancellation, not the deadline, ends the read.
+        var lane = new OwnedReadOnlyLane<string>(() => Interlocked.Increment(ref disposed), TimeSpan.FromMinutes(5));
         Task<string> read = lane.InvokeAsync(() =>
         {
             entered.SetResult(); release.Wait(); return "late";
         }, _ => Interlocked.Increment(ref published), cancellation.Token).AsTask();
+        Task<bool> closing;
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
-            Assert.False(await lane.CloseAsync());
+            // The blocked read still owns the worker, so closing cannot finish
+            // or dispose until the read returns.
+            closing = lane.CloseAsync();
+            Assert.False(closing.IsCompleted);
+            Assert.False(lane.OperationQuiesced);
             Assert.Equal(0, Volatile.Read(ref disposed));
             await Assert.ThrowsAsync<InvalidOperationException>(() => lane.InvokeAsync(() => "retry", null, CancellationToken.None).AsTask());
         }
         finally { release.Set(); }
-        Assert.True(await lane.CloseAsync());
+        Assert.True(await closing.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.True(lane.OperationQuiesced);
         Assert.Equal(1, Volatile.Read(ref disposed));
         Assert.Equal(0, Volatile.Read(ref published));
     }
