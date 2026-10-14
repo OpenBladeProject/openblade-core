@@ -173,6 +173,8 @@ internal sealed class ProductionBatteryPort :
         : this(
             sharedCommandGate is null
                 ? actor.Session
+                : ReferenceEquals(sharedCommandGate, Rz090581FeatureCommandGate.Shared)
+                ? new Rz090581CommandSessionGate(actor.Session, sharedCommandGate)
                 : new Rz090528CommandSessionGate(actor.Session, sharedCommandGate),
             actor,
             catalog,
@@ -1077,7 +1079,12 @@ internal sealed class ProductionBatteryPort :
                         WriteSubmissionState.Indeterminate,
                         failurePhase,
                         "The adjustable fan write outcome is indeterminate after "
-                        + $"{stage} channel {stageIndex} of 2 ({failure}).");
+                        + $"{stage} channel {stageIndex} of 2 ({failure}).")
+                    {
+                        Diagnostic = result.Diagnostic,
+                        CommandClass = command.CommandClass,
+                        CommandId = command.CommandId,
+                    };
                 }
 
                 if (index < commands.Count - 1)
@@ -1516,7 +1523,8 @@ internal sealed class ProductionBatteryPort :
             {
                 BladeWriteException failure = MapWriteFailure(
                     result.Failure.Value,
-                    result.Diagnostic);
+                    result.Diagnostic,
+                    command);
                 if (failure.SubmissionState == WriteSubmissionState.Indeterminate)
                 {
                     poisoned = true;
@@ -2174,13 +2182,14 @@ internal sealed class ProductionBatteryPort :
                     StateQuery = query,
                 };
             default:
-                throw new IOException("Battery state query failed closed.");
+                throw new NativeDeviceReadException(failure, diagnostic, query);
         }
     }
 
     private BladeWriteException MapWriteFailure(
         HidSessionFailureKind failure,
-        HidSessionFailureDiagnostic? diagnostic)
+        HidSessionFailureDiagnostic? diagnostic,
+        RazerCommandDefinition command)
     {
         bool knownNotApplied = failure is
             HidSessionFailureKind.ConflictBlocked
@@ -2199,7 +2208,12 @@ internal sealed class ProductionBatteryPort :
                 : WriteSubmissionState.Indeterminate,
             knownNotApplied
                 ? "The battery write was definitively not applied."
-                : "The battery write outcome is indeterminate.");
+                : "The battery write outcome is indeterminate.")
+        {
+            Diagnostic = diagnostic,
+            CommandClass = command.CommandClass,
+            CommandId = command.CommandId,
+        };
     }
 
     private static BladeWriteException KnownNotApplied(string message) => new(

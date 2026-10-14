@@ -569,6 +569,29 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task ReadState_NativeFailureRetainsClosedDiagnosticAndRejectingQuery()
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.NativeIoFailure, 31, 0);
+        var native = new NativeDeviceReadException(
+            HidSessionFailureKind.NativeIoFailure, diagnostic, null);
+        var factory = new FakeQueryFactory(
+            FakeQueryPort.Throwing(native), FakeQueryPort.Throwing(native), FakeQueryPort.Throwing(native));
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        IOException error = await Assert.ThrowsAsync<IOException>(() => device.ReadStateAsync(default));
+
+        Assert.Contains("query=BatteryProtection", error.Message);
+        Assert.Contains("phase=GetCompletion", error.Message);
+        Assert.Contains("nativeError=31", error.Message);
+        Assert.Contains("bytes=0", error.Message);
+        var cause = Assert.IsType<NativeDeviceReadException>(error.InnerException);
+        Assert.Equal(diagnostic, cause.Diagnostic);
+        Assert.Equal(DeviceStateQuery.BatteryProtection, cause.StateQuery);
+    }
+
+    [Fact]
     public async Task ReadState_UnexpectedQueryFailureDoesNotExposeRawDetail()
     {
         var port = FakeQueryPort.Throwing("device path and raw report detail");

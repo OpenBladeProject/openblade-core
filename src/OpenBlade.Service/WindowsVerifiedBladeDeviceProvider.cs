@@ -668,6 +668,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     StateQuery = exception.StateQuery,
                 };
             }
+            catch (NativeDeviceReadException exception) when (exception.Diagnostic is not null || exception.StateQuery is not null)
+            {
+                throw new IOException(NativeFailureDescription.Describe(exception), exception);
+            }
             catch (ObjectDisposedException)
             {
                 throw;
@@ -759,6 +763,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     StateQuery = exception.StateQuery,
                 };
             }
+            catch (NativeDeviceReadException exception) when (exception.Diagnostic is not null || exception.StateQuery is not null)
+            {
+                throw new IOException(NativeFailureDescription.Describe(exception), exception);
+            }
             catch (ObjectDisposedException)
             {
                 throw;
@@ -812,7 +820,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             if (opened.Value is not { } port)
             {
-                ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                 throw new IOException("Battery state query did not provide a verified session.");
             }
 
@@ -820,7 +828,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 if (opened.Failure is not null)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                 }
 
                 ConfirmedBatteryState protection =
@@ -880,6 +888,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 return await readAsync().ConfigureAwait(false);
             }
+            catch (NativeDeviceReadException exception) when (exception.StateQuery is null)
+            {
+                throw new NativeDeviceReadException(exception.Failure, exception.Diagnostic, query);
+            }
             catch (RazerProtocolException exception)
             {
                 throw new RazerProtocolException(
@@ -918,7 +930,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             if (opened.Value is not { } port)
             {
-                ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                 throw new IOException(
                     "Performance and fan state query did not provide a verified session.");
             }
@@ -927,7 +939,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 if (opened.Failure is not null)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                 }
 
                 ProductionPerformanceFanState performanceFan =
@@ -1036,7 +1048,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     return AdapterPowerState.Unknown;
                 }
 
@@ -1044,7 +1056,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     if (opened.Failure is not null)
                     {
-                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     }
 
                     return await port.QueryAdapterPowerStateAsync(cancellationToken)
@@ -1071,7 +1083,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     return null;
                 }
 
@@ -1079,7 +1091,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     if (opened.Failure is not null)
                     {
-                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     }
 
                     return port.SupportsMcuVersionQuery
@@ -1117,7 +1129,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     return null;
                 }
 
@@ -1125,7 +1137,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     if (opened.Failure is not null)
                     {
-                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     }
 
                     return port.SupportsRz090581CapabilityDiagnosticsQuery
@@ -1162,7 +1174,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     return null;
                 }
 
@@ -1170,7 +1182,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     if (opened.Failure is not null)
                     {
-                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     }
 
                     return port.SupportsStartupAnimationQuery
@@ -1207,7 +1219,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     return null;
                 }
 
@@ -1215,7 +1227,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     if (opened.Failure is not null)
                     {
-                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     }
 
                     return port.SupportsFunctionKeyPrimaryQuery
@@ -1251,7 +1263,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     return null;
                 }
 
@@ -1259,7 +1271,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     if (opened.Failure is not null)
                     {
-                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
                     }
 
                     return port.SupportsGamingModeQuery
@@ -2301,14 +2313,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                                 .ConfigureAwait(false);
                         if (opened.Value is not { } port)
                         {
-                            throw MapWriteOpenFailure(opened.Failure);
+                            throw MapWriteOpenFailure(opened.Failure, opened.Diagnostic);
                         }
 
                         await using (port.ConfigureAwait(false))
                         {
                             if (opened.Failure is not null)
                             {
-                                throw MapWriteOpenFailure(opened.Failure);
+                                throw MapWriteOpenFailure(opened.Failure, opened.Diagnostic);
                             }
 
                             cancellationToken.ThrowIfCancellationRequested();
@@ -2523,7 +2535,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         private static void ThrowReadOpenFailure(
             HidSessionFailureKind? failure,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            HidSessionFailureDiagnostic? diagnostic = null)
         {
             switch (failure)
             {
@@ -2536,12 +2549,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     throw new FailClosedDeviceException(
                         "Battery state query was blocked by exact device identity verification.");
                 default:
-                    throw new IOException("Battery state query failed closed.");
+                    throw new NativeDeviceReadException(
+                        failure ?? HidSessionFailureKind.NativeIoFailure, diagnostic, null);
             }
         }
 
         private static BladeWriteException MapWriteOpenFailure(
-            HidSessionFailureKind? failure)
+            HidSessionFailureKind? failure,
+            HidSessionFailureDiagnostic? diagnostic = null)
         {
             WriteSubmissionState submissionState = failure is
                 HidSessionFailureKind.Timeout
@@ -2553,7 +2568,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 submissionState,
                 submissionState == WriteSubmissionState.KnownNotApplied
                     ? "The hardware write was blocked before submission."
-                    : "The hardware write could not establish an unambiguous verified session.");
+                    : "The hardware write could not establish an unambiguous verified session.")
+            {
+                Diagnostic = diagnostic,
+            };
         }
 
         private static Task RejectProductionWrite(string message) => Task.FromException(

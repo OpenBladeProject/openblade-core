@@ -261,6 +261,7 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan writeTimeout;
     private readonly IMatrixWriteTimingSink? timingSink;
+    private readonly SemaphoreSlim? sharedCommandGate;
     private readonly Task worker;
     private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
@@ -271,7 +272,8 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         TimeProvider timeProvider,
         TimeSpan writeTimeout,
         ControllerExclusivityPolicy exclusivityPolicy,
-        IMatrixWriteTimingSink? timingSink = null)
+        IMatrixWriteTimingSink? timingSink = null,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(io);
@@ -285,6 +287,7 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         this.writeTimeout = writeTimeout;
         this.exclusivityPolicy = exclusivityPolicy;
         this.timingSink = timingSink;
+        this.sharedCommandGate = sharedCommandGate;
         worker = RunAsync();
     }
 
@@ -298,6 +301,8 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
             }
         }
     }
+
+    internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
     public Task<HidSessionResult<HidUnit>> WriteAsync(
         Pid02E0MatrixReport report,
@@ -469,6 +474,58 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
             return Failure(cancellation.Value);
         }
 
+        if (sharedCommandGate is null)
+        {
+            return await ExecuteFeatureWriteAsync(
+                item,
+                deadline.Token,
+                claimedTimestamp,
+                guardStartedTimestamp,
+                guardCompletedTimestamp).ConfigureAwait(false);
+        }
+
+        using var gateCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            item.CancellationToken,
+            deadline.Token);
+        try
+        {
+            await sharedCommandGate.WaitAsync(gateCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (gateCancellation.IsCancellationRequested)
+        {
+            return Failure(
+                ClassifyCancellation(item.CancellationToken, deadline.Token)
+                    ?? HidSessionFailureKind.Canceled);
+        }
+
+        pendingNativeRetirement = null;
+        try
+        {
+            cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
+            return cancellation is null
+                ? await ExecuteFeatureWriteAsync(
+                    item,
+                    deadline.Token,
+                    claimedTimestamp,
+                    guardStartedTimestamp,
+                    guardCompletedTimestamp).ConfigureAwait(false)
+                : Failure(cancellation.Value);
+        }
+        finally
+        {
+            Rz090581FeatureCommandGate.ReleaseAfterRetirement(sharedCommandGate, pendingNativeRetirement);
+        }
+    }
+
+    private Task? pendingNativeRetirement;
+
+    private async Task<HidSessionResult<HidUnit>> ExecuteFeatureWriteAsync(
+        WorkItem item,
+        CancellationToken deadline,
+        long claimedTimestamp,
+        long guardStartedTimestamp,
+        long guardCompletedTimestamp)
+    {
         HidFeatureIoResult result;
         try
         {
@@ -477,10 +534,12 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
                 IoctlHidSetFeature,
                 item.Buffer,
                 item.CancellationToken,
-                deadline.Token).ConfigureAwait(false);
+                deadline).ConfigureAwait(false);
+            pendingNativeRetirement = result.NativeRetirement;
         }
         catch (NativeOperationFinalizationException exception)
         {
+            pendingNativeRetirement = exception.Result.NativeRetirement;
             Poison();
             NativeIoCompletion? completion = exception.Result.Completion;
             return DiagnosticFailure(
@@ -505,10 +564,10 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
                 managedHResult: exception.HResult);
         }
 
-        cancellation = ClassifyIoCancellation(
+        HidSessionFailureKind? cancellation = ClassifyIoCancellation(
             result,
             item.CancellationToken,
-            deadline.Token);
+            deadline);
         if (cancellation is not null)
         {
             if (result.WasSubmitted)

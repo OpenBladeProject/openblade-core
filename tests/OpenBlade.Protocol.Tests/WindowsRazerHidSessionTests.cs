@@ -18,6 +18,95 @@ public sealed class WindowsRazerHidSessionTests
         await actor.DisposeAsync();
     }
 
+    [Theory]
+    [InlineData(0, HidSessionFailurePhase.SetSubmit)]
+    [InlineData(1, HidSessionFailurePhase.GetSubmit)]
+    [InlineData(2, HidSessionFailurePhase.SetSubmit)]
+    public async Task ManagedIoFailurePreservesHResultWithoutExceptionText(
+        int path, HidSessionFailurePhase expectedPhase)
+    {
+        var exception = new InvalidOperationException("private exception text");
+        Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken, Task<HidFeatureIoResult>> failure =
+            (_, _, _, _, _) => Task.FromException<HidFeatureIoResult>(exception);
+        var io = path == 1 ? new ScriptedIo(SetSuccess(), failure) : new ScriptedIo(failure);
+        await using WindowsRazerHidSession actor = CreateActor(io);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = path == 2
+            ? await actor.SubmitBatchAsync([new(1, 1, [], 0)],
+                () => TransactionIdAssignment.Valid(1), Timeout, default)
+            : await actor.ExecuteAsync(new(1, 1, [], 0),
+                () => TransactionIdAssignment.Valid(1), Timeout, default);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, result.Failure);
+        Assert.Equal(new HidSessionFailureDiagnostic(expectedPhase,
+            HidSessionFailureKind.NativeIoFailure, exception.HResult, null), result.Diagnostic);
+        Assert.Equal(path == 1 ? 2 : 1, io.Calls.Count);
+    }
+
+    [Theory]
+    [InlineData(0, HidSessionFailurePhase.SetCompletion)]
+    [InlineData(1, HidSessionFailurePhase.GetCompletion)]
+    [InlineData(2, HidSessionFailurePhase.SetCompletion)]
+    public async Task FinalizationFailurePreservesCompletedNativeResult(
+        int path, HidSessionFailurePhase expectedPhase)
+    {
+        var retirement = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exception = new NativeOperationFinalizationException(
+            new HidFeatureIoResult(new NativeIoCompletion(false, 17, 31),
+                true, HidFeatureTermination.Completed)
+            { NativeRetirement = retirement.Task },
+            new InvalidOperationException("private cleanup text"));
+        Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken, Task<HidFeatureIoResult>> failure =
+            (_, _, _, _, _) => Task.FromException<HidFeatureIoResult>(exception);
+        var io = path == 1 ? new ScriptedIo(SetSuccess(), failure) : new ScriptedIo(failure);
+        await using WindowsRazerHidSession actor = CreateActor(io);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = path == 2
+            ? await actor.SubmitBatchAsync([new(1, 1, [], 0)],
+                () => TransactionIdAssignment.Valid(1), Timeout, default)
+            : await actor.ExecuteAsync(new(1, 1, [], 0),
+                () => TransactionIdAssignment.Valid(1), Timeout, default);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, result.Failure);
+        Assert.Equal(new HidSessionFailureDiagnostic(expectedPhase,
+            HidSessionFailureKind.NativeIoFailure, 31, 17), result.Diagnostic);
+        Assert.Same(retirement.Task, result.NativeRetirement);
+        Assert.Equal(path == 1 ? 2 : 1, io.Calls.Count);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task EarlyNativeCancellationPreservesRetirementBeyondSessionDisposal(int path)
+    {
+        var retirement = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var incomplete = new HidFeatureIoResult(null, true, HidFeatureTermination.DeadlineExpired)
+        {
+            NativeRetirement = retirement.Task,
+        };
+        var io = path == 1
+            ? new ScriptedIo(SetSuccess(), Result(incomplete))
+            : new ScriptedIo(Result(incomplete));
+        WindowsRazerHidSession actor = CreateActor(io);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = path == 2
+            ? await actor.SubmitBatchAsync([new(1, 1, [], 0)],
+                () => TransactionIdAssignment.Valid(1), Timeout, default)
+            : await actor.ExecuteAsync(new(1, 1, [], 0),
+                () => TransactionIdAssignment.Valid(1), Timeout, default);
+        await actor.DisposeAsync();
+
+        Assert.Equal(HidSessionFailureKind.Timeout, result.Failure);
+        Assert.Same(retirement.Task, result.NativeRetirement);
+        Assert.NotNull(result.NativeRetirement);
+        Assert.False(result.NativeRetirement.IsCompleted);
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, actor.Disposition);
+        Assert.Equal(path == 1 ? 2 : 1, io.Calls.Count);
+        retirement.SetResult();
+        Assert.True(result.NativeRetirement.IsCompletedSuccessfully);
+    }
+
     [Fact]
     public async Task HealthyPreSubmissionFailuresRemainHealthy()
     {
@@ -860,8 +949,9 @@ public sealed class WindowsRazerHidSessionTests
         bool faultSet,
         HidSessionFailurePhase phase)
     {
+        var exception = new IOException("native");
         Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken, Task<HidFeatureIoResult>> fault =
-            (_, _, _, _, _) => Task.FromException<HidFeatureIoResult>(new IOException("native"));
+            (_, _, _, _, _) => Task.FromException<HidFeatureIoResult>(exception);
         var io = faultSet
             ? new ScriptedIo(fault)
             : new ScriptedIo(SetSuccess(), fault);
@@ -877,7 +967,7 @@ public sealed class WindowsRazerHidSessionTests
             new HidSessionFailureDiagnostic(
                 phase,
                 HidSessionFailureKind.NativeIoFailure,
-                NativeWin32Error: null,
+                NativeWin32Error: exception.HResult,
                 TransferredByteCount: null),
             result.Diagnostic);
         await actor.DisposeAsync();

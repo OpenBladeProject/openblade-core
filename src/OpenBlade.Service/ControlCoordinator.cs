@@ -2329,19 +2329,19 @@ public sealed class ControlCoordinator
         ControlResultStatus.Failed,
         exception is null
             ? $"{name} write is indeterminate because readback did not match."
-            : $"{name} write is indeterminate: {exception.Message}");
+            : $"{name} write is indeterminate: {NativeFailureDescription.Describe(exception)}");
 
     private static ControlResult WriteRejected(string name, Exception exception) => new(
         ControlResultStatus.Failed,
-        $"{name} write was not applied: {exception.Message}");
+        $"{name} write was not applied: {NativeFailureDescription.Describe(exception)}");
 
     private static ControlResult CapabilityRefused(string name, Exception exception) => new(
         ControlResultStatus.Blocked,
-        $"{name} is unavailable: {exception.Message}");
+        $"{name} is unavailable: {NativeFailureDescription.Describe(exception)}");
 
     private static ControlResult ReadFailure(string name, Exception exception) => new(
         ControlResultStatus.Failed,
-        $"{name} could not be read before writing: {exception.Message}");
+        $"{name} could not be read before writing: {NativeFailureDescription.Describe(exception)}");
 
     private static ControlResult FinalReadbackChanged(string name) => new(
         ControlResultStatus.Failed,

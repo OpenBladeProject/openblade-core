@@ -493,6 +493,131 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         Assert.Equal(TimeSpan.FromMilliseconds(4), timing.ManagedCompletion);
     }
 
+    [Fact]
+    public async Task Writer_WaitsForFanSetGetResponseBeforeSubmittingMatrixFrame()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        var fanInner = new BlockingSetGetCommandSession();
+        var fanSession = new Rz090581CommandSessionGate(fanInner, gate);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> fanExchange = fanSession.ExecuteAsync(
+            new RazerCommandSpec(0x0D, 0x02, [0x01], 1),
+            static () => TransactionIdAssignment.Valid(1),
+            TimeSpan.FromSeconds(1),
+            CancellationToken.None);
+        await fanInner.SetSubmitted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        var io = new ScriptedIo();
+        var guard = new ScriptedGuard();
+        var owned = CreateOwnedHandle();
+        await using var writer = CreateWriter(
+            owned.Handle,
+            io,
+            guard,
+            sharedCommandGate: gate);
+
+        Task<HidSessionResult<HidUnit>> matrixWrite = writer.WriteAsync(
+            Report(2, MatrixRgb.Black),
+            CancellationToken.None);
+        await guard.Checked.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.False(io.FirstCallObserved.Task.IsCompleted);
+        Assert.Same(gate, writer.SharedCommandGate);
+        Assert.Equal((byte)1, fanInner.TransactionId);
+
+        fanInner.GetResponseReceived.TrySetResult();
+        Assert.Null((await fanExchange.WaitAsync(TimeSpan.FromSeconds(1))).Failure);
+        await io.FirstCallObserved.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Null((await matrixWrite.WaitAsync(TimeSpan.FromSeconds(1))).Failure);
+    }
+
+    [Fact]
+    public async Task Writer_CancelsWhileWaitingForSharedFeatureCommandGate()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        await gate.WaitAsync();
+        var io = new ScriptedIo();
+        var guard = new ScriptedGuard();
+        var owned = CreateOwnedHandle();
+        await using var writer = CreateWriter(
+            owned.Handle,
+            io,
+            guard,
+            sharedCommandGate: gate);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<HidSessionResult<HidUnit>> matrixWrite = writer.WriteAsync(
+            Report(1, MatrixRgb.Black),
+            cancellation.Token);
+        await guard.Checked.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        cancellation.Cancel();
+
+        Assert.Equal(
+            HidSessionFailureKind.Canceled,
+            (await matrixWrite.WaitAsync(TimeSpan.FromSeconds(1))).Failure);
+        Assert.Empty(io.Calls);
+        gate.Release();
+    }
+
+    [Fact]
+    public async Task Writer_ReleasesSharedFeatureCommandGateAfterNativeFailure()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        var io = new ScriptedIo
+        {
+            DefaultResult = new HidFeatureIoResult(
+                new NativeIoCompletion(false, 0, 87),
+                true,
+                HidFeatureTermination.Completed),
+        };
+        var owned = CreateOwnedHandle();
+        await using var writer = CreateWriter(
+            owned.Handle,
+            io,
+            sharedCommandGate: gate);
+
+        HidSessionResult<HidUnit> failed = await writer.WriteAsync(
+            Report(1, MatrixRgb.Black),
+            CancellationToken.None);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, failed.Failure);
+        var fanInner = new BlockingSetGetCommandSession();
+        var fanSession = new Rz090581CommandSessionGate(fanInner, gate);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> fanExchange = fanSession.ExecuteAsync(
+            new RazerCommandSpec(0x0D, 0x02, [0x01], 1),
+            static () => TransactionIdAssignment.Valid(2),
+            TimeSpan.FromSeconds(1),
+            CancellationToken.None);
+        await fanInner.SetSubmitted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        fanInner.GetResponseReceived.TrySetResult();
+        Assert.Null((await fanExchange.WaitAsync(TimeSpan.FromSeconds(1))).Failure);
+    }
+
+    [Fact]
+    public async Task Writer_KeepsSharedGateAfterManagedFailureAndHandleDisposalUntilNativeRetires()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        var retirement = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo
+        {
+            DefaultResult = new HidFeatureIoResult(null, true, HidFeatureTermination.DeadlineExpired)
+            {
+                NativeRetirement = retirement.Task,
+            },
+        };
+        var owned = CreateOwnedHandle();
+        var writer = CreateWriter(owned.Handle, io, sharedCommandGate: gate);
+
+        Assert.Equal(HidSessionFailureKind.Timeout,
+            (await writer.WriteAsync(Report(1, MatrixRgb.Black), CancellationToken.None)).Failure);
+        await writer.DisposeAsync();
+        Assert.True(owned.Handle.FileHandle.IsClosed);
+        Assert.False(await gate.WaitAsync(TimeSpan.FromMilliseconds(25)));
+
+        retirement.SetResult();
+        Assert.True(await gate.WaitAsync(TimeSpan.FromSeconds(1)));
+        gate.Release();
+    }
+
     private static WindowsPid02E0MatrixFeatureOpener CreateOpener(
         ScriptedCandidateNative native) =>
         new(
@@ -507,7 +632,8 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         ScriptedGuard? guard = null,
         ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
         TimeProvider? timeProvider = null,
-        IMatrixWriteTimingSink? timingSink = null) =>
+        IMatrixWriteTimingSink? timingSink = null,
+        SemaphoreSlim? sharedCommandGate = null) =>
         new(
             handle,
             io,
@@ -515,7 +641,8 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
             timeProvider ?? TimeProvider.System,
             TimeSpan.FromSeconds(3),
             policy,
-            timingSink);
+            timingSink,
+            sharedCommandGate);
 
     private static Pid02E0MatrixReport Report(byte transaction, MatrixRgb color) =>
         new(transaction, Pid02E0MatrixRenderers.RenderStatic(color));
@@ -567,9 +694,13 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
 
         internal int Calls { get; private set; }
 
+        internal TaskCompletionSource Checked { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public HardwareAccessDecision Check()
         {
             Calls++;
+            Checked.TrySetResult();
             onCheck?.Invoke();
             return decision;
         }
@@ -621,6 +752,35 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
                 Interlocked.Decrement(ref concurrentCalls);
             }
         }
+    }
+
+    private sealed class BlockingSetGetCommandSession : IRazerCommandSession
+    {
+        internal TaskCompletionSource SetSubmitted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource GetResponseReceived { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal byte? TransactionId { get; private set; }
+
+        public RazerCommandSessionDisposition Disposition =>
+            RazerCommandSessionDisposition.Healthy;
+
+        public async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            TransactionIdAssignment assignment = assignTransactionId();
+            TransactionId = assignment.TransactionId;
+            SetSubmitted.TrySetResult();
+            await GetResponseReceived.Task.WaitAsync(cancellationToken);
+            return new(new byte[command.ExpectedPayloadLength], null);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class TimingSink : IMatrixWriteTimingSink

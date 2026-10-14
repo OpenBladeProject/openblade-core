@@ -142,6 +142,21 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public void Rz090581ProductionFactoriesUseOneModelScopedFeatureCommandGate()
+    {
+        var battery = Assert.IsType<ProductionBatteryFactory>(
+            ProductionBatteryFactory.CreateWindowsReadOnly());
+        var lighting = Assert.IsType<ProductionLightingFactory>(
+            ProductionLightingFactory.CreateWindowsReadOnly());
+
+        Assert.Same(Rz090581FeatureCommandGate.Shared, battery.SharedCommandGate);
+        Assert.Same(Rz090581FeatureCommandGate.Shared, lighting.SharedCommandGate);
+        Assert.NotSame(
+            Rz090528CommandSessionGate.Shared,
+            Rz090581FeatureCommandGate.Shared);
+    }
+
+    [Fact]
     public void Rz090528ValidationCapabilities_AdmitCapturedRowEffectsBrightnessAndLogo()
     {
         DeviceCapabilities capabilities =
@@ -1424,6 +1439,38 @@ public sealed class ProductionLightingPortTests
 
         Assert.Null(opened.Value);
         Assert.Equal(HidSessionFailureKind.Timeout, opened.Failure);
+        Assert.Equal(diagnostic, opened.Diagnostic);
+    }
+
+    [Fact]
+    public async Task ProductionBatteryFactory_PreservesActorOpenDiagnostic()
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 31,
+            TransferredByteCount: 0);
+        var actorResult = new HidSessionResult<ValidationActor>(
+            null,
+            HidSessionFailureKind.NativeIoFailure)
+        {
+            Diagnostic = diagnostic,
+        };
+        var factory = new ProductionBatteryFactory(
+            DeviceCommandCatalog.Empty,
+            ProductionBatteryReadEvidence.Production,
+            static () => new ValidationRunContext(),
+            _ => new FixedLightingActorFactory(actorResult),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            new PendingDisposalRegistry());
+
+        HidSessionResult<IProductionBatteryPort> opened =
+            await factory.OpenAsync(CancellationToken.None);
+
+        Assert.Null(opened.Value);
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, opened.Failure);
         Assert.Equal(diagnostic, opened.Diagnostic);
     }
 

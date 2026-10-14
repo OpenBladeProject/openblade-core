@@ -496,12 +496,10 @@ internal sealed class WindowsRazerHidSession :
                 item.CancellationToken,
                 deadline.Token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception exception)
         {
             Poison();
-            return DiagnosticFailure(
-                HidSessionFailureKind.NativeIoFailure,
-                HidSessionFailurePhase.SetSubmit);
+            return IoExceptionFailure(isSet: true, exception);
         }
 
         if (setResult.Termination == HidFeatureTermination.Completed &&
@@ -511,7 +509,7 @@ internal sealed class WindowsRazerHidSession :
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 IoPhase(isSet: true, result: setResult),
-                setResult.Completion);
+                setResult.Completion, nativeRetirement: setResult.NativeRetirement);
         }
 
         cancellation = ClassifyIoCancellation(setResult, item.CancellationToken, deadline.Token);
@@ -526,7 +524,7 @@ internal sealed class WindowsRazerHidSession :
                 ? DiagnosticFailure(
                     cancellation.Value,
                     HidSessionFailurePhase.SetCompletion,
-                    setResult.Completion)
+                    setResult.Completion, nativeRetirement: setResult.NativeRetirement)
                 : Failure(cancellation.Value);
         }
 
@@ -536,7 +534,7 @@ internal sealed class WindowsRazerHidSession :
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 IoPhase(isSet: true, result: setResult),
-                setResult.Completion);
+                setResult.Completion, nativeRetirement: setResult.NativeRetirement);
         }
 
         cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
@@ -591,12 +589,10 @@ internal sealed class WindowsRazerHidSession :
                 item.CancellationToken,
                 deadline.Token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception exception)
         {
             Poison();
-            return DiagnosticFailure(
-                HidSessionFailureKind.NativeIoFailure,
-                HidSessionFailurePhase.GetSubmit);
+            return IoExceptionFailure(isSet: false, exception);
         }
 
         if (getResult.Termination == HidFeatureTermination.Completed &&
@@ -609,7 +605,7 @@ internal sealed class WindowsRazerHidSession :
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 IoPhase(isSet: false, result: getResult),
-                getResult.Completion);
+                getResult.Completion, nativeRetirement: getResult.NativeRetirement);
         }
 
         cancellation = ClassifyIoCancellation(getResult, item.CancellationToken, deadline.Token);
@@ -620,7 +616,7 @@ internal sealed class WindowsRazerHidSession :
                 ? DiagnosticFailure(
                     cancellation.Value,
                     HidSessionFailurePhase.GetCompletion,
-                    getResult.Completion)
+                    getResult.Completion, nativeRetirement: getResult.NativeRetirement)
                 : Failure(cancellation.Value);
         }
 
@@ -630,7 +626,7 @@ internal sealed class WindowsRazerHidSession :
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 IoPhase(isSet: false, result: getResult),
-                getResult.Completion);
+                getResult.Completion, nativeRetirement: getResult.NativeRetirement);
         }
 
         try
@@ -676,7 +672,7 @@ internal sealed class WindowsRazerHidSession :
                 HidSessionFailureKind.ProtocolFailure,
                 HidSessionFailurePhase.ProtocolValidation,
                 getResult.Completion,
-                error.ValidationFailure);
+                error.ValidationFailure, nativeRetirement: getResult.NativeRetirement);
         }
     }
 
@@ -772,12 +768,10 @@ internal sealed class WindowsRazerHidSession :
                     item.CancellationToken,
                     deadline.Token).ConfigureAwait(false);
             }
-            catch
+            catch (Exception exception)
             {
                 Poison();
-                return DiagnosticFailure(
-                    HidSessionFailureKind.NativeIoFailure,
-                    HidSessionFailurePhase.SetSubmit);
+                return IoExceptionFailure(isSet: true, exception);
             }
 
             if (setResult.Termination == HidFeatureTermination.Completed
@@ -787,7 +781,7 @@ internal sealed class WindowsRazerHidSession :
                 return DiagnosticFailure(
                     HidSessionFailureKind.NativeIoFailure,
                     IoPhase(isSet: true, result: setResult),
-                    setResult.Completion);
+                    setResult.Completion, nativeRetirement: setResult.NativeRetirement);
             }
 
             cancellation = ClassifyIoCancellation(
@@ -805,7 +799,7 @@ internal sealed class WindowsRazerHidSession :
                     ? DiagnosticFailure(
                         cancellation.Value,
                         HidSessionFailurePhase.SetCompletion,
-                        setResult.Completion)
+                        setResult.Completion, nativeRetirement: setResult.NativeRetirement)
                     : Failure(cancellation.Value);
             }
 
@@ -815,7 +809,7 @@ internal sealed class WindowsRazerHidSession :
                 return DiagnosticFailure(
                     HidSessionFailureKind.NativeIoFailure,
                     IoPhase(isSet: true, result: setResult),
-                    setResult.Completion);
+                    setResult.Completion, nativeRetirement: setResult.NativeRetirement);
             }
 
             cancellation = ClassifyCancellation(
@@ -937,18 +931,45 @@ internal sealed class WindowsRazerHidSession :
         HidSessionFailureKind failure,
         HidSessionFailurePhase phase,
         NativeIoCompletion? completion = null,
-        HidProtocolValidationFailure? protocolValidationFailure = null) =>
+        HidProtocolValidationFailure? protocolValidationFailure = null,
+        int? managedHResult = null,
+        Task? nativeRetirement = null) =>
         new(default, failure)
         {
+            NativeRetirement = nativeRetirement,
             Diagnostic = new HidSessionFailureDiagnostic(
                 phase,
                 failure,
-                completion?.ErrorCode,
+                completion?.ErrorCode ?? managedHResult,
                 completion?.BytesTransferred)
             {
                 ProtocolValidationFailure = protocolValidationFailure,
             },
         };
+
+    private static HidSessionResult<ReadOnlyMemory<byte>> IoExceptionFailure(
+        bool isSet,
+        Exception exception)
+    {
+        if (exception is NativeOperationFinalizationException finalization)
+        {
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                IoPhase(isSet, finalization.Result),
+                finalization.Result.Completion,
+                managedHResult: finalization.Result.Completion is null
+                    ? finalization.InnerException?.HResult
+                    : null,
+                nativeRetirement: finalization.Result.NativeRetirement);
+        }
+
+        // Match the matrix transport: negative values in the native-error slot
+        // preserve managed HRESULTs without recording arbitrary exception text.
+        return DiagnosticFailure(
+            HidSessionFailureKind.NativeIoFailure,
+            isSet ? HidSessionFailurePhase.SetSubmit : HidSessionFailurePhase.GetSubmit,
+            managedHResult: exception.HResult);
+    }
 
     private static HidSessionFailurePhase IoPhase(
         bool isSet,

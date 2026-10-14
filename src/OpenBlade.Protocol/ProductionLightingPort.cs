@@ -73,10 +73,13 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
         PendingDisposalRegistry pendingDisposals,
-        Func<bool>? driverModeWriteAllowed = null)
+        Func<bool>? driverModeWriteAllowed = null,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
-        session = actor.Session;
+        session = sharedCommandGate is null
+            ? actor.Session
+            : new Rz090581CommandSessionGate(actor.Session, sharedCommandGate);
         this.matrixWriter = matrixWriter;
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
