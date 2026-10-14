@@ -1366,7 +1366,7 @@
                                     Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1878,7 +1878,7 @@
                                    Margin="0,24,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1897,7 +1897,7 @@
                                                       IsOn="{x:Bind LightingTurnOffWithDisplayEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />

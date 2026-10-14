@@ -932,13 +932,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ServiceStatusSnapshot current = Volatile.Read(ref status)
             ?? throw new InvalidOperationException("The service runtime is not initialized.");
-        return ApplyConfigurationQuarantineAdvisory(current with
+        bool experimental = deviceProvider.IsExperimentalDevice;
+        bool paused = deviceProvider.IsExperimentalWritesPaused;
+        if (current.AllowExperimentalFeatures != experimental
+            || current.IsExperimentalDevice != experimental
+            || current.ExperimentalWritesPaused != paused
+            || paused && !current.WritesBlocked)
         {
-            AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
-            IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
-            ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,
-            WritesBlocked = current.WritesBlocked || deviceProvider.IsExperimentalWritesPaused,
-        });
+            current = current with
+            {
+                AllowExperimentalFeatures = experimental,
+                IsExperimentalDevice = experimental,
+                ExperimentalWritesPaused = paused,
+                WritesBlocked = current.WritesBlocked || paused,
+            };
+        }
+        return ApplyConfigurationQuarantineAdvisory(current);
     }
 
     public IDisposable RegisterProtocolCompatibilityClient()
@@ -4018,9 +4027,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     {
                         pendingLightingRestore = null;
                         pendingLightingRestoreFromLifecycle = false;
-                        experimentalLightingResumeAwaitingRequest = true;
+                        experimentalLightingResumeAwaitingRequest = observed.Lighting is not null;
                     }
-                    return !pendingWriteConfirmations.HasPending;
+                    return true;
                 }, StillAuthorized, token).ConfigureAwait(false);
             const string message = "Experimental controls resumed. Choose a setting to send a new request.";
             consecutiveDeviceProbeFailures = 0;
@@ -4044,7 +4053,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             throw;
         }
-        catch (Exception exception) when (exception is IOException or CapabilityUnavailableException)
+        catch (Exception exception)
         {
             string message = $"Experimental controls remain paused. {exception.Message}";
             PublishIfChanged(GetStatus() with { Message = message });
@@ -12418,8 +12427,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken,
         Func<bool>? stillControlsSession = null)
     {
-        if (lowPowerGate.IsActive || pendingWriteConfirmations.Blocks(DeviceSubsystem.Lighting)
-            || experimentalLightingResumeAwaitingRequest)
+        if (experimentalLightingResumeAwaitingRequest)
+        {
+            // Skip the old lighting intent while allowing fresh status observation.
+            return true;
+        }
+        if (lowPowerGate.IsActive || pendingWriteConfirmations.Blocks(DeviceSubsystem.Lighting))
         {
             return false;
         }
@@ -12837,6 +12850,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     return RecordRejectedIntent(exception);
                 }
+                // This is new user intent, so it may restore after the system wakes.
+                experimentalLightingResumeAwaitingRequest = false;
                 return DeferLightingIntentForLowPower();
             }
 

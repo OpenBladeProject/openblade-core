@@ -21,6 +21,8 @@ internal sealed partial class ExperimentalBladePort(
 
     internal void EnableQueryRecording() => queryRecordingEnabled = true;
 
+    internal bool IsDisposed => disposed;
+
     internal bool IsRecoverySessionDrained => session.Disposition == RazerCommandSessionDisposition.FullyDisposed;
 
     internal bool IsRecoverySessionHealthy => !disposed

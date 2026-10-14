@@ -563,7 +563,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
             ["lighting.refreshRate"] = status.LightingRefreshRate.ToString(),
-            ["experimental.automaticSupport"] = status.IsExperimentalDevice.ToString(),
+            ["experimental.supportPolicy"] = "AutomaticForRecognizedModels",
             ["experimental.writesPaused"] = status.ExperimentalWritesPaused.ToString(),
             ["experimental.deviceDetected"] = status.IsExperimentalDevice.ToString(),
             ["experimental.evidenceSource"] = status.ExperimentalSupportSource ?? "Unavailable",

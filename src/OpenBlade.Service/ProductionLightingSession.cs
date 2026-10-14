@@ -753,6 +753,15 @@ internal sealed class ProductionLightingSession
         CancellationToken cancellationToken)
     {
         await AwaitLightingPortRetirementCoreAsync(cancellationToken).ConfigureAwait(false);
+        if (lightingPort is ExperimentalBladePort { IsDisposed: true } experimentalPort)
+        {
+            if (!experimentalPort.IsRecoverySessionDrained)
+            {
+                // Keep ownership until native cleanup is confirmed; never reuse the closed port.
+                throw new IOException("Experimental session cleanup has not confirmed native operation drain.");
+            }
+            await DisposeLightingPortWithinDeadlineAsync().ConfigureAwait(false);
+        }
         if (lowPowerGate?.IsActive == true)
         {
             // A read during suspend may inspect a retained session, but must

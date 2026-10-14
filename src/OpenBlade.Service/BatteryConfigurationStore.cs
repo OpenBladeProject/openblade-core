@@ -442,7 +442,7 @@ public sealed class BatteryConfigurationStore
                 "The current battery preferences are missing thermal policy state.");
         }
         if (expectedSchemaVersion >= ProfileStore.ExperimentalFeaturesConsentSchemaVersion
-            && expectedSchemaVersion < 19
+            && expectedSchemaVersion < ProfileStore.AutomaticExperimentalSupportSchemaVersion
             && !preferencesElement.TryGetProperty("allowExperimentalFeatures", out _))
         {
             throw new InvalidDataException(

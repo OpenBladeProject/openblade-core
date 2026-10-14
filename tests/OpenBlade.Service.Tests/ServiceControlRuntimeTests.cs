@@ -5697,7 +5697,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Fact]
     public async Task ResumeExperimentalWrites_DoesNotReplayUncertainLightingThroughOwnershipPolicy()
     {
-        TestContext context = CreateWritableContext();
+        var gate = new LowPowerGate();
+        TestContext context = CreateWritableContext(lowPowerGate: gate);
         context.Provider.AvailableWhenExperimentalAllowed = true;
         context.Device.Capabilities = context.Device.Capabilities with
         {
@@ -5725,11 +5726,45 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             static () => true, CancellationToken.None);
         Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        typeof(ServiceControlRuntime).GetField("pendingLightingRestore",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(context.Runtime, target);
+        typeof(ServiceControlRuntime).GetField("pendingLightingRestoreFromLifecycle",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(context.Runtime, true);
+        int reads = context.Device.StateReadCalls;
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.True(context.Device.StateReadCalls > reads);
         Assert.Equal(writes, context.Device.TotalSetterCalls);
+        gate.Enter();
         ControlOperationResult newRequest = await context.Runtime.SetLightingOverrideAsync(
             new ManualOverride<LightingSettings>(target, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None);
-        Assert.True(newRequest.Status == ControlOperationStatus.Applied, newRequest.Message);
+        Assert.True(newRequest.Status == ControlOperationStatus.Stored, newRequest.Message);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        gate.Exit();
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
         Assert.True(context.Device.TotalSetterCalls > writes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResumeExperimentalWrites_UnexpectedCleanupFailureReportsBlocked(bool timeout)
+    {
+        TestContext context = CreateWritableContext();
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        context.Provider.IsExperimentalWritesPaused = true;
+        context.Provider.ResumeException = timeout
+            ? new TimeoutException("Injected cleanup timeout.")
+            : new ObjectDisposedException("Injected closed recovery session.");
+        int writes = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.ResumeExperimentalWritesAsync(
+            static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.True(context.Runtime.GetStatus().ExperimentalWritesPaused);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
     }
 
     [Theory]
@@ -29743,6 +29778,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public bool ExperimentalIdentityBlocked { get; set; }
         public bool IsExperimentalWritesPaused { get; set; }
         public bool ResumeReadFails { get; set; }
+        public Exception? ResumeException { get; set; }
         public DeviceCapabilities? ExperimentalCapabilities => (Device as CountingBladeDevice)?.Capabilities;
 
         public Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
@@ -29750,6 +29786,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             Func<bool> stillAuthorized, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            if (ResumeException is { } exception)
+            {
+                throw exception;
+            }
             if (ResumeReadFails)
             {
                 throw new IOException("Injected recovery query failure.");
