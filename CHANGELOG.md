@@ -9,6 +9,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Show “This laptop isn’t supported yet” on laptops OpenBlade doesn’t support. **Help add support** saves a short identity report and opens a support request form to attach it to. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 
+### Fixed
+
+- Show the actual failed identity check for a Razer Blade 16 (2026) in exported diagnostics, instead of a product-name mismatch against the Blade 16 (2025). ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
+
 ### Changed
 
 - Reduce the installed payload by using a shared .NET 10 Desktop Runtime. Setup prompts to install it when needed and keeps Visual C++ bundled. ([#743](https://github.com/OpenBladeProject/openblade-core/pull/743))
