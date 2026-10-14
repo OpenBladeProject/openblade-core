@@ -363,9 +363,9 @@ function Assert-OpenBladeInstallerBundle {
             '/burn:BurnManifest/burn:Chain/burn:ExePackage[@Id="OpenBladeDotNetRuntime"]', $namespaces)
         if (($null -eq $dotNetPackage) -or
             ($dotNetPackage.GetAttribute('InstallArguments') -ne '/install /quiet /norestart') -or
-            $dotNetPackage.HasAttribute('RepairArguments') -or
-            $dotNetPackage.HasAttribute('RepairCondition') -or
-            ($dotNetPackage.GetAttribute('Repairable') -eq 'yes') -or
+            ($dotNetPackage.GetAttribute('RepairArguments') -ne '') -or
+            ($dotNetPackage.GetAttribute('RepairCondition') -ne '') -or
+            ($dotNetPackage.GetAttribute('Repairable') -ne 'no') -or
             ($dotNetPackage.GetAttribute('Bundle') -ne 'yes') -or
             ($dotNetPackage.GetAttribute('Protocol') -ne 'burn') -or
             ($dotNetPackage.GetAttribute('DetectCondition') -ne
