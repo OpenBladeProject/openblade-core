@@ -30,7 +30,8 @@ internal sealed partial class ExperimentalBladePort
         if (!combination.IsWellFormed)
         {
             RecordQuery("CustomPerformance", "UnsupportedState", reported, "OutsideRepresentableCustomLevels");
-            return null;
+            throw ContentRejected("Experimental custom performance levels are not representable.",
+                DeviceStateQuery.CustomPerformanceCombination, cpu.Span, gpu.Span);
         }
         var result = new CustomPerformanceSettings(combination.Cpu, combination.Gpu);
         RecordQuery("CustomPerformance", "Confirmed", FormatCustomPerformance(result));

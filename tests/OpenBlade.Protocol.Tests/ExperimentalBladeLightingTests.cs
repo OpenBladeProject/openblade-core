@@ -132,6 +132,22 @@ public sealed class ExperimentalBladeLightingTests
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
         Assert.Contains(policy.Snapshot().Observations, item => item.Outcome == "UnsupportedState");
+        DeviceStateContentRejectedException rejection = Assert.IsType<DeviceStateContentRejectedException>(failure.InnerException);
+        Assert.Equal(DeviceStateQuery.KeyboardLightingEffect, rejection.Query);
+        Assert.StartsWith($"01 05 {effect:X2}", rejection.RejectedPayloadHex);
+    }
+
+    [Fact]
+    public async Task UnknownPaddedEffect_RetainsOnlyBoundedPayloadEvidence()
+    {
+        var session = new Session { Effect = 99, EffectReplyLength = 80 };
+        await using var port = Create(session, Enabled());
+        DeviceStateContentRejectedException rejection = await Assert.ThrowsAsync<DeviceStateContentRejectedException>(() =>
+            port.ReadStateAsync(CancellationToken.None));
+        Assert.Equal(DeviceStateQuery.KeyboardLightingEffect, rejection.Query);
+        Assert.Equal(16 * 3 - 1 + 4, rejection.RejectedPayloadHex.Length);
+        Assert.EndsWith(" ...", rejection.RejectedPayloadHex);
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
     }
 
     [Theory]
@@ -232,7 +248,10 @@ public sealed class ExperimentalBladeLightingTests
         var session = new Session { Raw = (byte)raw, Effect = 4 };
         var policy = Enabled();
         await using var port = Create(session, policy);
-        await Assert.ThrowsAsync<IOException>(() => port.ReadStateAsync(CancellationToken.None));
+        DeviceStateContentRejectedException rejection = await Assert.ThrowsAsync<DeviceStateContentRejectedException>(() =>
+            port.ReadStateAsync(CancellationToken.None));
+        Assert.Equal(DeviceStateQuery.KeyboardLightingCombination, rejection.Query);
+        Assert.StartsWith($"01 05 {raw:X2} / 01 05 04 01", rejection.RejectedPayloadHex);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(77), CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);

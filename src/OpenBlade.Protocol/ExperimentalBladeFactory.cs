@@ -267,8 +267,10 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     recordQueries: false);
                 try
                 {
-                    // Two independent selector queries must agree before exposing controls on this interface.
-                    await port.QueryPerformanceFanStateAsync(cancellationToken).ConfigureAwait(false);
+                    // Correctly correlated selectors identify the interface even when
+                    // mutable thermal state is not representable. Setters separately
+                    // require confirmed baselines before any hardware write.
+                    await port.ValidateControlInterfaceAsync(cancellationToken).ConfigureAwait(false);
                     if (selected is null)
                     {
                         selected = port;

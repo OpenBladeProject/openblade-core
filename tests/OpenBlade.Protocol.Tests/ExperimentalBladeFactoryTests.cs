@@ -105,14 +105,47 @@ public sealed class ExperimentalBladeFactoryTests
     }
 
     [Fact]
-    public async Task NoAdmittedInterface_RetainsDecodedUnsupportedModeReason()
+    public async Task UnsupportedMode_AdmitsInterfaceButRejectsThermalState()
     {
         var factory = Create(new Native(1), new Io { PerformanceMode = 99 });
         HidSessionResult<IProductionBatteryPort> result = await factory.OpenAsync(CancellationToken.None);
-        Assert.Null(result.Value);
-        Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
+        Assert.Null(result.Failure);
+        await using IProductionBatteryPort port = Assert.IsType<ExperimentalBladePort>(result.Value);
+        RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
+            port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        Assert.Equal(DeviceStateQuery.PerformanceAndFans, failure.StateQuery);
         Assert.Contains(factory.GetDiagnostics().Observations,
             item => item.Outcome == "UnsupportedState" && item.ConfirmedValue == "ReportedMode=99");
+    }
+
+    [Theory]
+    [InlineData(true, false, 1)]
+    [InlineData(false, true, 1)]
+    [InlineData(false, false, 2)]
+    public async Task WrongSelectorsTransportOrAmbiguousInterfaces_StillBlockAdmission(bool wrongSelector, bool failRead, int candidates)
+    {
+        var native = new Native(candidates);
+        var io = new Io { WrongSelector = wrongSelector, FailRead = failRead, PerformanceMode = 99 };
+        var factory = Create(native, io);
+        HidSessionResult<IProductionBatteryPort> result = await factory.OpenAsync(CancellationToken.None);
+        Assert.Null(result.Value);
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
+        Assert.All(native.DisposeCounts, count => Assert.Equal(1, count));
+        Assert.All(io.Commands, command => Assert.Equal((byte)0x82, command));
+    }
+
+    [Fact]
+    public async Task FailedControllerGuard_BlocksInterfaceAdmissionBeforeQueries()
+    {
+        var native = new Native(1);
+        var io = new Io();
+        var factory = new ExperimentalBladeFactory(ExperimentalBladeModels.All[0], new Identity(), native,
+            new Guard { Fail = true }, io, () => PowerSource.ExternalUnknown);
+        HidSessionResult<IProductionBatteryPort> result = await factory.OpenAsync(CancellationToken.None);
+        Assert.Equal(HidSessionFailureKind.ConflictDetectionFailed, result.Failure);
+        Assert.Null(result.Value);
+        Assert.Empty(io.Commands);
+        Assert.Equal(0, native.BoundCount);
     }
 
     private static ExperimentalBladeFactory Create(Native native, Io io) =>
@@ -127,7 +160,8 @@ public sealed class ExperimentalBladeFactoryTests
 
     private sealed class Guard : IHardwareAccessGuard
     {
-        public HardwareAccessDecision Check() => new([], null);
+        internal bool Fail { get; init; }
+        public HardwareAccessDecision Check() => new([], Fail ? "Unavailable" : null);
     }
 
     private sealed class Native : IHidCandidateNative
@@ -191,6 +225,8 @@ public sealed class ExperimentalBladeFactoryTests
         internal Action? AfterGet { get; init; }
         internal bool RejectSecondInterface { get; init; }
         internal byte PerformanceMode { get; init; }
+        internal bool WrongSelector { get; init; }
+        internal bool FailRead { get; init; }
 
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint controlCode,
             byte[] buffer, CancellationToken callerCancellation, CancellationToken deadlineCancellation)
@@ -202,7 +238,7 @@ public sealed class ExperimentalBladeFactoryTests
             }
             else
             {
-                if (RejectSecondInterface && handle.FileHandle.DangerousGetHandle() == new IntPtr(501))
+                if (FailRead || RejectSecondInterface && handle.FileHandle.DangerousGetHandle() == new IntPtr(501))
                 {
                     return Task.FromResult(new HidFeatureIoResult(new(false, 0, 31), false,
                         HidFeatureTermination.Completed));
@@ -211,6 +247,11 @@ public sealed class ExperimentalBladeFactoryTests
                 buffer[1] = 0x02;
                 buffer[11] = PerformanceMode;
                 buffer[89] ^= PerformanceMode;
+                if (WrongSelector)
+                {
+                    buffer[89] ^= buffer[10];
+                    buffer[10] = 0;
+                }
                 AfterGet?.Invoke();
             }
             return Task.FromResult(new HidFeatureIoResult(new(true, buffer.Length, 0), true,

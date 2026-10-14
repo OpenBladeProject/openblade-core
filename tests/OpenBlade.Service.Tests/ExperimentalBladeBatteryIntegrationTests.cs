@@ -9,6 +9,57 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ExperimentalBladeBatteryIntegrationTests
 {
+    [Theory]
+    [InlineData("battery", 0x02A0)]
+    [InlineData("battery", 0x029F)]
+    [InlineData("performance", 0x02A0)]
+    [InlineData("agreement", 0x02A0)]
+    [InlineData("custom", 0x02A0)]
+    public async Task ContentRejection_PreservesIndependentStateAfterDrainedReopen(string rejected, int productId)
+    {
+        var io = new Io { Raw = rejected == "battery" ? (byte)(productId == 0x029F ? 0xBC : 0x81) : (byte)0xD0 };
+        io.Mode = rejected == "performance" ? (byte)99 : rejected == "custom" ? (byte)4 : (byte)0;
+        io.DisagreeModes = rejected == "agreement";
+        io.InvalidCustom = rejected == "custom";
+        var native = new Native { ProductId = (ushort)productId };
+        io.Events = native.Events;
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io, native: native, productId: productId);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
+            device.ReadStateAsync(CancellationToken.None));
+        PartialDeviceStateRead partial = Assert.IsType<PartialDeviceStateRead>(failure.PartialState);
+        ConfirmedDeviceState state = partial.State;
+        if (rejected == "battery")
+        {
+            Assert.Null(state.Battery);
+            Assert.Equal(PerformancePreset.Balanced, state.Performance);
+            Assert.Equal(FanMode.Automatic, state.Fans);
+            Assert.Equal(new[] { DeviceSubsystem.Battery }, partial.UnavailableSubsystems);
+        }
+        else
+        {
+            Assert.Equal(80, state.Battery!.ChargeLimitPercent);
+            Assert.Null(state.Performance);
+            Assert.Null(state.Fans);
+            Assert.Null(state.HyperBoostActive);
+            Assert.Contains(DeviceSubsystem.Performance, partial.UnavailableSubsystems);
+            Assert.Contains(DeviceSubsystem.Fans, partial.UnavailableSubsystems);
+        }
+        if (productId == 0x02A0)
+        {
+            Assert.Equal(LightingEffect.Spectrum, state.Lighting!.Effect);
+            Assert.Equal(LogoLightingMode.Off, state.LogoLighting);
+        }
+        Assert.Empty(io.Setters);
+        Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
+        Assert.True(native.Events.IndexOf("close:501") < native.Events.IndexOf("open:502"));
+        Assert.Contains("close:501", native.Events);
+        Assert.Contains("open:502", native.Events);
+        Assert.DoesNotContain(native.Events.Skip(native.Events.IndexOf("close:501") + 1),
+            item => item.StartsWith("query:501:", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Provider_AdmitsRangeChangesFromOffAndConfirmsExactLimit()
     {
@@ -141,8 +192,17 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             io.Mode = 99;
         }
         bool accepted = false;
-        await Assert.ThrowsAsync<IOException>(() => provider.ResumeExperimentalWritesAsync(
+        Exception? failure = await Record.ExceptionAsync(() => provider.ResumeExperimentalWritesAsync(
             _ => { accepted = true; return true; }, () => true, CancellationToken.None));
+        Assert.NotNull(failure);
+        if (malformed == "lighting")
+        {
+            Assert.IsType<DeviceStateContentRejectedException>(failure);
+        }
+        else
+        {
+            Assert.IsType<RazerProtocolException>(failure);
+        }
         Assert.False(accepted);
         Assert.True(provider.IsExperimentalWritesPaused);
         Assert.Single(io.Setters);
@@ -199,10 +259,11 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         Assert.Empty(io.Commands);
     }
 
-    private static WindowsVerifiedBladeDeviceProvider CreateProvider(Io io, Identity? identity = null, Guard? guard = null, Native? native = null)
+    private static WindowsVerifiedBladeDeviceProvider CreateProvider(Io io, Identity? identity = null, Guard? guard = null, Native? native = null,
+        int productId = 0x02A0)
     {
-        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
-        var factory = new ExperimentalBladeFactory(model, identity ?? new Identity(), native ?? new Native(), guard ?? new Guard(), io,
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        var factory = new ExperimentalBladeFactory(model, identity ?? new Identity(model.ProductName), native ?? new Native(), guard ?? new Guard(), io,
             () => PowerSource.ExternalUnknown);
         return new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready, BatteryValidationFirmwareCompatibility.ModelScoped),
@@ -222,11 +283,11 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         return device;
     }
 
-    private sealed class Identity : IHostIdentitySource
+    private sealed class Identity(string productName = "Blade 18 - RZ09-0484") : IHostIdentitySource
     {
         internal bool Present { get; set; } = true;
         public HostIdentityReadResult ReadExactIdentity() => Present
-            ? new(new HostIdentityEvidence("Razer", "Blade 18 - RZ09-0484", null, "test"), null)
+            ? new(new HostIdentityEvidence("Razer", productName, null, "test"), null)
             : new(null, HidSessionFailureKind.IdentityBlocked);
     }
     private sealed class Guard : IHardwareAccessGuard
@@ -236,21 +297,27 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
     }
     private sealed class Native : IHidCandidateNative
     {
+        private int nextHandle = 500;
+        internal ushort ProductId { get; init; } = 0x02A0;
+        internal List<string> Events { get; } = [];
         internal int ActiveSessions { get; private set; }
         internal int ClosedSessions { get; private set; }
         public IReadOnlyList<string> EnumerateDevicePaths() => ["test"];
         public HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters) =>
-            new(new OpenedCandidateHandle(new SafeFileHandle(new IntPtr(501), ownsHandle: false)), null);
-        public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle) => new(0x1532, 0x02A0, 1, 2, 91);
+            new(new OpenedCandidateHandle(new SafeFileHandle(new IntPtr(++nextHandle), ownsHandle: false)), null);
+        public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle) => new(0x1532, ProductId, 1, 2, 91);
         public OpenedHidHandle BindSelected(OpenedCandidateHandle handle)
         {
             SafeFileHandle file = handle.TransferOwnership();
             var bound = (ThreadPoolBoundHandle)RuntimeHelpers.GetUninitializedObject(typeof(ThreadPoolBoundHandle));
             ActiveSessions++;
+            long id = file.DangerousGetHandle().ToInt64();
+            Events.Add($"open:{id}");
             return new(file, bound, () => { }, () =>
             {
                 ActiveSessions--;
                 ClosedSessions++;
+                Events.Add($"close:{id}");
                 file.Dispose();
             });
         }
@@ -261,6 +328,9 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         internal byte Raw { get; set; }
         internal byte Mode { get; set; }
         internal byte Effect { get; set; } = 3;
+        internal bool DisagreeModes { get; set; }
+        internal bool InvalidCustom { get; set; }
+        internal List<string>? Events { get; set; }
         internal bool FailNextSetterResponse { get; set; }
         internal Action? AfterLogoRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
@@ -272,6 +342,7 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             {
                 request = buffer.ToArray();
                 Commands.Add((request[7], request[8]));
+                Events?.Add($"query:{handle.FileHandle.DangerousGetHandle().ToInt64()}:{request[7]:X2}/{request[8]:X2}");
                 if (request[7] == 0x07 && request[8] == 0x12)
                 {
                     Raw = request[9];
@@ -293,7 +364,11 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                 }
                 else if (buffer[7] == 0x0D && buffer[8] == 0x82)
                 {
-                    buffer[11] = Mode;
+                    buffer[11] = DisagreeModes && buffer[10] == 2 ? (byte)5 : Mode;
+                }
+                else if (buffer[7] == 0x0D && buffer[8] == 0x87)
+                {
+                    buffer[11] = InvalidCustom ? (byte)99 : (byte)0;
                 }
                 else if (buffer[7] == 0x03 && buffer[8] == 0x83)
                 {

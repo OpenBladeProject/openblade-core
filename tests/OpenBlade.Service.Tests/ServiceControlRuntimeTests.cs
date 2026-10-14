@@ -5652,8 +5652,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(writes, context.Device.TotalSetterCalls);
     }
 
-    [Fact]
-    public async Task ExperimentalStartup_UnsupportedSavedManualFansDoNotResetPerformance()
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Silent, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Balanced, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Balanced, null)]
+    public async Task ExperimentalStartup_UnsupportedSavedManualFansDoNotResetPerformance(
+        PerformancePreset baselinePerformance, FanMode? baselineFans)
     {
         TestContext context = CreateContext(providerAvailable: true, initialize: false);
         context.Provider.AvailableWhenExperimentalAllowed = true;
@@ -5677,17 +5682,27 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PersistentOverrideState.Empty);
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
-            Performance = PerformancePreset.Silent,
-            Fans = FanMode.Automatic,
+            Performance = baselinePerformance,
+            Fans = baselineFans,
             HyperBoostActive = false,
         };
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         await context.Runtime.ReconcileStartupProfileAsync(CancellationToken.None);
 
-        Assert.Empty(context.Device.PerformanceWrites);
+        if (baselineFans == FanMode.Automatic && baselinePerformance != PerformancePreset.Silent)
+        {
+            Assert.Equal([PerformancePreset.Silent], context.Device.PerformanceWrites);
+        }
+        else
+        {
+            Assert.Empty(context.Device.PerformanceWrites);
+        }
         Assert.Empty(context.Device.FanWrites);
-        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(baselineFans == FanMode.Automatic
+            ? PerformancePreset.Silent : baselinePerformance, context.Device.ConfirmedState.Performance);
+        Assert.DoesNotContain(DeviceSubsystem.Fans, context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(FanMode.Fixed, context.Runtime.GetStatus().DesiredState.Fans.Value);
         Assert.Equal(PerformancePreset.Silent, context.Runtime.GetStatus().DesiredState.Performance.Value);
         Assert.Equal(FanMode.Fixed, context.Runtime.GetStatus().Profiles!.PluggedIn.Fans);
     }
@@ -5733,6 +5748,206 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(pending.HasPending);
         Assert.Equal(writes, context.Device.TotalSetterCalls);
     }
+
+    [Fact]
+    public async Task FreshLightingIntent_KnownNotAppliedReleasesResumeHoldForSafeTransition()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        SetExperimentalLightingResumeHold(context);
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        context.Device.LightingFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "Injected known-not-applied lighting write.");
+        int lightingWrites = context.Device.LightingSetCalls;
+
+        ControlOperationResult failed = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(target, OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(lightingWrites + 1, context.Device.LightingSetCalls);
+        context.Device.LightingFailure = null;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites + 2, context.Device.LightingSetCalls);
+        Assert.Equal(target, context.Device.ConfirmedState.Lighting);
+    }
+
+    [Fact]
+    public async Task UpdateProfiles_ActiveLightingEditReleasesResumeHold()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        SetExperimentalLightingResumeHold(context);
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { Lighting = target },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites + 1, context.Device.LightingSetCalls);
+        Assert.Equal(target, context.Device.ConfirmedState.Lighting);
+    }
+
+    [Fact]
+    public async Task UpdateProfiles_UnrelatedEditKeepsResumeLightingHold()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        ControlOperationResult initial = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { Lighting = target },
+            },
+            CancellationToken.None);
+        Assert.True(initial.Status == ControlOperationStatus.Stored, initial.Message);
+        SetExperimentalLightingResumeHold(context);
+        profiles = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with
+                {
+                    Performance = PerformancePreset.Silent,
+                },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task UpdateProfiles_InactiveLightingEditKeepsResumeLightingHold()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        SetExperimentalLightingResumeHold(context);
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                Battery = profiles.Battery with { Lighting = target },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task UpdateProfiles_LightingEditHiddenByOverrideKeepsResumeLightingHold()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        LightingSettings overrideLighting = LightingSettingsFactory.SpectrumCycling(45);
+        ControlOperationResult applied = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                overrideLighting,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        SetExperimentalLightingResumeHold(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+        };
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with
+                {
+                    Lighting = LightingSettingsFactory.SpectrumCycling(73),
+                },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task FreshLightingIntent_AmbiguousReadbackIsNotAutomaticallyReplayed()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult initial = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.SpectrumCycling(45),
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, initial.Status);
+        SetExperimentalLightingResumeHold(context);
+        context.Device.ReadStateFailureAfterLightingSet =
+            new IOException("Injected ambiguous lighting readback.");
+
+        ControlOperationResult failed = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Off(),
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().UnconfirmedWrites);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+    }
+
+    private TestContext CreateLightingResumeContext()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+                { LightingEffect.Off, LightingEffect.Spectrum },
+        };
+        TestContext context = CreateWritableContext(
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LightingEffects = capabilities.LightingEffects,
+        };
+        return context;
+    }
+
+    private static void SetExperimentalLightingResumeHold(TestContext context) =>
+        typeof(ServiceControlRuntime).GetField(
+            "experimentalLightingResumeAwaitingRequest",
+            System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(context.Runtime, true);
 
     [Fact]
     public async Task ResumeExperimentalWrites_DoesNotReplayUncertainLightingThroughOwnershipPolicy()

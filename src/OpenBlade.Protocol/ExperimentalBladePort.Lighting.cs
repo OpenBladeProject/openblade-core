@@ -60,13 +60,16 @@ internal sealed partial class ExperimentalBladePort
     private async Task<(LightingSettings Settings, byte Raw)> ReadKeyboardLightingAsync(CancellationToken token)
     {
         byte raw = await ReadBrightnessAsync(token).ConfigureAwait(false);
-        LightingEffect effect = await ReadEffectAsync(token).ConfigureAwait(false);
+        (LightingEffect effect, ReadOnlyMemory<byte> effectPayload) = await ReadEffectAsync(token).ConfigureAwait(false);
         byte percent = checked((byte)LightingBrightnessProtocol.RawToPercent(raw));
         if (effect != LightingEffect.Off && percent == 0)
         {
             RecordQuery("KeyboardLighting", "UnsupportedState", $"Effect={effect};Raw={raw};Percent=0",
                 "UnrepresentableZeroBrightnessEffect");
-            throw new IOException("The reported effect at zero brightness cannot form a confirmed lighting setting.");
+            throw new DeviceStateContentRejectedException(
+                "The reported effect at zero brightness cannot form a confirmed lighting setting.",
+                DeviceStateQuery.KeyboardLightingCombination,
+                DeviceStateContentRejection.FormatPayloads([1, 5, raw], effectPayload.Span));
         }
         LightingSettings settings = effect switch
         {
@@ -79,23 +82,29 @@ internal sealed partial class ExperimentalBladePort
         return (settings, raw);
     }
 
-    private async Task<LightingEffect> ReadEffectAsync(CancellationToken token)
+    private async Task<(LightingEffect Effect, ReadOnlyMemory<byte> Payload)> ReadEffectAsync(CancellationToken token)
     {
         ReadOnlyMemory<byte> payload = await ExchangeAsync("KeyboardLighting", 0x0F, 0x82,
             [1, 5, 0], false, token, variableResponse: true,
             payloadValidator: static value => value.Length is >= 3 and <= RazerReport.MaximumPayloadLength).ConfigureAwait(false);
         ReadOnlySpan<byte> bytes = payload.Span;
+        if (bytes[0] != 1 || bytes[1] != 5)
+        {
+            throw new IOException("Experimental keyboard effect returned an unexpected selector.");
+        }
         byte mode = bytes[2];
         int parameterStart = mode == 4 ? 4 : 3;
         bool parametersKnown = mode != 4 || bytes.Length >= 4 && bytes[3] == 1;
-        if (bytes[0] != 1 || bytes[1] != 5 || !parametersKnown
+        if (!parametersKnown
             || bytes.Length > parameterStart && bytes[parameterStart..].ContainsAnyExcept((byte)0)
             || mode is not (0 or 2 or 3 or 4))
         {
             RecordQuery("KeyboardLighting", "UnsupportedState",
                 $"PayloadLength={bytes.Length};Store={bytes[0]};Region={bytes[1]};Effect={mode};Parameter={(bytes.Length > 3 ? bytes[3].ToString() : "Unavailable")}",
                 "UnrepresentableEffectReadback");
-            throw new IOException("Experimental effect readback does not describe an admitted effect and parameters.");
+            throw new DeviceStateContentRejectedException(
+                "Experimental effect readback does not describe an admitted effect and parameters.",
+                DeviceStateQuery.KeyboardLightingEffect, DeviceStateContentRejection.FormatPayload(bytes));
         }
         LightingEffect effect = mode switch
         {
@@ -106,17 +115,22 @@ internal sealed partial class ExperimentalBladePort
             _ => throw new IOException("Experimental effect readback is unsupported."),
         };
         RecordQuery("KeyboardLighting", "Confirmed", $"{effect};PayloadLength={bytes.Length};Parameter={(mode == 4 ? "Rightward/Wire1" : "None")}");
-        return effect;
+        return (effect, payload);
     }
 
     private async Task<LogoLightingMode> ReadLogoAsync(CancellationToken token)
     {
         ReadOnlyMemory<byte> state = await ExchangeAsync("LogoLighting", 0x03, 0x80,
             [1, 4, 0], false, token).ConfigureAwait(false);
+        if (state.Span[0] != 1 || state.Span[1] != 4)
+        {
+            throw new IOException("Experimental logo power returned an unexpected selector.");
+        }
         if (!LogoLightingProtocol.TryDecodeState(state.Span, out bool enabled))
         {
             RecordQuery("LogoLighting", "UnsupportedState", failure: "LogoPowerSelectorOrValue");
-            throw new IOException("Experimental logo power readback is unsupported.");
+            throw new DeviceStateContentRejectedException("Experimental logo power readback is unsupported.",
+                DeviceStateQuery.LogoLightingState, DeviceStateContentRejection.FormatPayload(state.Span));
         }
         if (!enabled)
         {
@@ -125,10 +139,15 @@ internal sealed partial class ExperimentalBladePort
         }
         ReadOnlyMemory<byte> effect = await ExchangeAsync("LogoLighting", 0x03, 0x82,
             [1, 4, 0], false, token).ConfigureAwait(false);
+        if (effect.Span[0] != 1 || effect.Span[1] != 4)
+        {
+            throw new IOException("Experimental logo effect returned an unexpected selector.");
+        }
         if (!LogoLightingProtocol.TryDecodeMode(state.Span, effect.Span, out LogoLightingMode mode))
         {
             RecordQuery("LogoLighting", "UnsupportedState", failure: "LogoEffectSelectorOrValue");
-            throw new IOException("Experimental logo effect readback is unsupported.");
+            throw new DeviceStateContentRejectedException("Experimental logo effect readback is unsupported.",
+                DeviceStateQuery.LogoLightingEffect, DeviceStateContentRejection.FormatPayload(effect.Span));
         }
         RecordQuery("LogoLighting", "Confirmed", mode.ToString());
         return mode;
@@ -192,7 +211,7 @@ internal sealed partial class ExperimentalBladePort
                     payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,
                     requireEcho: false).ConfigureAwait(false);
                 submitted = true;
-                if (await ReadEffectAsync(cancellationToken).ConfigureAwait(false) != settings.Effect)
+                if ((await ReadEffectAsync(cancellationToken).ConfigureAwait(false)).Effect != settings.Effect)
                 {
                     throw new IOException("Independent keyboard effect readback did not confirm the requested effect.");
                 }

@@ -16,6 +16,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Preserve the selected performance mode on experimental laptops when a saved profile contains unavailable manual-fan settings, without switching to Balanced or writing fans. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Keep independent experimental controls available after unrecognized readings, allow unrelated profile edits with unavailable saved settings, and accept fresh lighting intent after resuming paused controls. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 
 ## [0.26.2-nightly.87] - 2026-10-14
 

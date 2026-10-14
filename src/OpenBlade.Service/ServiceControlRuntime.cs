@@ -1492,6 +1492,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             bool lightingWasSuppressed = lightingSuppressions.Count > 0;
             FanControlSettings priorFanIntent = ResolveCurrentFanIntent();
+            ConfirmedDeviceState profileResolutionState =
+                GetStatus().ConfirmedState ?? UnknownConfirmedState;
+            LightingSettings priorLightingIntent =
+                Automation.Resolve(profileResolutionState).Lighting.Value;
             try
             {
                 profiles = ProfileStore.NormalizeLegacyBatteryProfile(
@@ -1501,6 +1505,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 validator.Validate(profiles);
                 await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
+                if (Automation.Resolve(profileResolutionState).Lighting.Value
+                    != priorLightingIntent)
+                {
+                    experimentalLightingResumeAwaitingRequest = false;
+                }
                 if (ResolveCurrentFanIntent() != priorFanIntent)
                 {
                     AdvanceFanDesiredRevision();
@@ -12936,6 +12945,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return RecordRejectedIntent(exception);
             }
 
+            if (subsystem == DeviceSubsystem.Lighting)
+            {
+                // A durably accepted request replaces the paused lighting intent even when
+                // the new hardware apply is deferred, blocked, or known not to have applied.
+                experimentalLightingResumeAwaitingRequest = false;
+            }
+
             ServiceStatusSnapshot staged = GetStatus();
             string? deferredMessage = deferHardwareApply?.Invoke(powerSource, staged);
             if (deferredMessage is not null)
@@ -12969,10 +12985,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                     ?? UnknownConfirmedState))));
             if (result.Status == ControlOperationStatus.Applied)
             {
-                if (subsystem == DeviceSubsystem.Lighting)
-                {
-                    experimentalLightingResumeAwaitingRequest = false;
-                }
                 afterApply?.Invoke();
             }
             return result.Status == ControlOperationStatus.Applied
@@ -16527,7 +16539,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState? alternateExpected = null)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
-        DesiredDeviceState desired = expected ?? ResolveHardwareDesired(confirmed);
+        DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
+            expected ?? ResolveHardwareDesired(confirmed), confirmed);
+        if (alternateExpected is not null)
+        {
+            alternateExpected = ResolveExperimentalFanHardwareDesired(
+                alternateExpected, confirmed);
+        }
         bool lightingExternalBeforeObservation =
             driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         driftTracker.Observe(confirmed);
@@ -17374,7 +17392,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
     {
-        DesiredDeviceState desired = Automation.Resolve(confirmed);
+        DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
+            Automation.Resolve(confirmed), confirmed);
         // Experimental profiles cannot write fans. A retained unsupported manual-fan
         // setting must not turn the user's supported performance choice into Balanced.
         if (!deviceProvider.IsExperimentalDevice
@@ -17402,6 +17421,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Value = LightingSettingsFactory.Off(),
             },
         };
+    }
+
+    private DesiredDeviceState ResolveExperimentalFanHardwareDesired(
+        DesiredDeviceState desired,
+        ConfirmedDeviceState confirmed)
+    {
+        // Experimental mode commands retain an independently confirmed Automatic
+        // fan baseline. Unsupported saved fan intent remains visible and persisted,
+        // but cannot prevent a supported performance request or create false drift.
+        // A manual or unknown baseline is not projected: it still blocks the write.
+        return deviceProvider.IsExperimentalDevice
+            && deviceProvider.ExperimentalCapabilities is { } capabilities
+            && !capabilities.FanModes.Contains(desired.Fans.Value)
+            && confirmed.Fans == FanMode.Automatic
+            ? desired with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.Automatic,
+                    SettingValueSource.ConfirmedFirmwareState),
+                FanControl = FanControlSettings.Default,
+            }
+            : desired;
     }
 
     private Task TryPersistRememberedLightingIntentAsync(

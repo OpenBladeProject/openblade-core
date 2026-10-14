@@ -26,7 +26,11 @@ public sealed class ExperimentalBladePortTests
         var policy = Enabled();
         await using var port = Create(session, policy);
 
-        await Assert.ThrowsAsync<IOException>(() => port.QueryProtectionAsync(CancellationToken.None));
+        RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
+            port.QueryProtectionAsync(CancellationToken.None));
+        Assert.Equal(DeviceStateQuery.BatteryProtection, failure.StateQuery);
+        Assert.Equal("BC", failure.RejectedPayloadHex);
+        Assert.True(DeviceStateContentRejection.IsContentRejection(failure));
 
         ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations);
         Assert.Equal("UnsupportedState", observation.Outcome);
@@ -196,7 +200,10 @@ public sealed class ExperimentalBladePortTests
         var policy = Enabled();
         await using var port = Create(session, policy);
 
-        await Assert.ThrowsAsync<IOException>(() => port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
+            port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        Assert.Equal(DeviceStateQuery.ThermalChannelAgreement, failure.StateQuery);
+        Assert.Equal("00 01 00 00 / 00 02 05 00", failure.RejectedPayloadHex);
 
         ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations);
         Assert.Equal("InconsistentState", observation.Outcome);
@@ -357,6 +364,51 @@ public sealed class ExperimentalBladePortTests
     }
 
     private static ExperimentalFeaturesPolicy Enabled() => new(ExperimentalBladeModels.All[0]);
+
+    [Theory]
+    [InlineData(99, 99, 0, "PerformanceAndFans")]
+    [InlineData(0, 5, 0, "ThermalChannelAgreement")]
+    [InlineData(0, 0, 2, "ThermalChannelAgreement")]
+    public async Task UnsupportedThermalContent_RetainsTypedBoundedQueryEvidence(
+        byte firstMode, byte secondMode, byte fan, string expected)
+    {
+        var session = new Session([0, 1, firstMode, fan], [0, 2, secondMode, fan]);
+        await using var port = Create(session, Enabled());
+        RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
+            port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        Assert.Equal(expected, failure.StateQuery.ToString());
+        Assert.True(DeviceStateContentRejection.IsContentRejection(failure));
+        Assert.Contains($"00 01 {firstMode:X2} {fan:X2}", failure.RejectedPayloadHex);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Fact]
+    public async Task UnrepresentableBatteryBaseline_BlocksBeforeSetterWithoutPausing()
+    {
+        var session = new Session([0xBC]);
+        var policy = Enabled();
+        await using var port = Create(session, policy);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetChargeLimitAsync(80, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.True(policy.WritesAllowed);
+        Assert.Equal(0x92, Assert.Single(session.Commands).CommandId);
+    }
+
+    [Fact]
+    public async Task UnrepresentableThermalConfirmation_PausesAfterOneSequence()
+    {
+        var session = new Session([0, 1, 0, 0], [0, 2, 0, 0], [1, 1, 5, 0], [1, 2, 5, 0],
+            [0, 1, 99, 0], [0, 2, 99, 0]);
+        var policy = Enabled();
+        await using var port = Create(session, policy);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.IsType<RazerProtocolException>(failure.InnerException);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x02));
+    }
 
     private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy policy,
         Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null) =>

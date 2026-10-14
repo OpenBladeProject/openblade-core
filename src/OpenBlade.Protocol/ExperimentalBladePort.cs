@@ -142,7 +142,8 @@ internal sealed partial class ExperimentalBladePort(
             RecordQuery("BatteryProtection", "UnsupportedState",
                 confirmed: $"ReportedProtectionEnabled={flag};ReportedLimitPercent={percent};Raw={raw:X2}",
                 failure: "OutsideAdmittedBatteryStates");
-            throw new IOException("Experimental battery readback is outside this model's admitted states.");
+            throw ContentRejected("Experimental battery readback is outside this model's admitted states.",
+                DeviceStateQuery.BatteryProtection, payload.Span);
         }
         // Upstream 100% is no limit: write disabled 0x50. An enabled-at-100
         // baseline is also no limit; retain its actual flag/threshold in diagnostics.
@@ -165,20 +166,49 @@ internal sealed partial class ExperimentalBladePort(
         }
     }
 
-    private async Task<ProductionPerformanceFanState> ReadPerformanceAsync(CancellationToken cancellationToken)
+    internal async Task ValidateControlInterfaceAsync(CancellationToken cancellationToken)
+    {
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Interface identity depends on independently correlated selector replies,
+            // not mutable mode/fan values. Semantic rejection must leave unrelated
+            // getters available; thermal setters still require a decoded baseline.
+            await ReadPerformanceSelectorsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private async Task<(ReadOnlyMemory<byte> First, ReadOnlyMemory<byte> Second)>
+        ReadPerformanceSelectorsAsync(CancellationToken cancellationToken)
     {
         ReadOnlyMemory<byte> first = await ExchangeAsync("Performance", 0x0D, 0x82,
             [0, 1, 0, 0], false, cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> second = await ExchangeAsync("Performance", 0x0D, 0x82,
             [0, 2, 0, 0], false, cancellationToken).ConfigureAwait(false);
-        if (first.Span[1] != 1 || second.Span[1] != 2
-            || first.Span[2] != second.Span[2] || first.Span[3] != second.Span[3]
+        if (first.Span[1] != 1 || second.Span[1] != 2)
+        {
+            RecordQuery("Performance", "InconsistentState", failure: "UnexpectedSelector");
+            throw new IOException("Experimental performance reply did not match its requested selector.");
+        }
+        return (first, second);
+    }
+
+    private async Task<ProductionPerformanceFanState> ReadPerformanceAsync(CancellationToken cancellationToken)
+    {
+        (ReadOnlyMemory<byte> first, ReadOnlyMemory<byte> second) =
+            await ReadPerformanceSelectorsAsync(cancellationToken).ConfigureAwait(false);
+        if (first.Span[2] != second.Span[2] || first.Span[3] != second.Span[3]
             || first.Span[3] > 1)
         {
             RecordQuery("Performance", "InconsistentState",
                 confirmed: $"Selector1={first.Span[1]};Mode1={first.Span[2]};FanFlag1={first.Span[3]};Selector2={second.Span[1]};Mode2={second.Span[2]};FanFlag2={second.Span[3]}",
                 failure: "SelectorAgreement");
-            throw new IOException("Experimental performance selectors returned inconsistent state.");
+            throw ContentRejected("Experimental performance selectors returned inconsistent state.",
+                DeviceStateQuery.ThermalChannelAgreement, first.Span, second.Span);
         }
         byte mode = first.Span[2];
         bool hyperBoost = mode == 7 && model.ProductId == 0x02A0;
@@ -192,18 +222,19 @@ internal sealed partial class ExperimentalBladePort(
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
             2 when model.ProductId == 0x02A0 => PerformancePreset.Performance,
             7 when model.ProductId == 0x02A0 => null,
-            _ => UnsupportedPerformanceMode(mode),
+            _ => UnsupportedPerformanceMode(first.Span),
         };
         FanMode fans = first.Span[3] == 0 ? FanMode.Automatic : FanMode.Fixed;
         CustomPerformanceSettings? custom = mode == 4 && model.ProductId == 0x02A0
             ? await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false) : null;
-        // Custom without representable levels cannot form a valid confirmed IPC state.
-        // Keep the raw mode/levels in diagnostics while presenting unknown performance.
+        // Custom without model-specific levels cannot establish a restorable
+        // thermal baseline. Reject it like any other unrepresentable state.
         if (performance == PerformancePreset.Custom && custom is null)
         {
-            performance = null;
             RecordQuery("Performance", "UnsupportedState", $"ReportedMode=4;Fans={fans};CustomLevels=Unavailable",
                 "UnrepresentableCustomPerformance");
+            throw ContentRejected("Experimental Custom mode has no representable levels for this model.",
+                DeviceStateQuery.PerformanceAndFans, first.Span, second.Span);
         }
         else
         {
@@ -212,12 +243,23 @@ internal sealed partial class ExperimentalBladePort(
         return new(performance, fans) { HyperBoostActive = hyperBoost, CustomPerformance = custom };
     }
 
-    private PerformancePreset? UnsupportedPerformanceMode(byte mode)
+    private PerformancePreset? UnsupportedPerformanceMode(ReadOnlySpan<byte> payload)
     {
+        byte mode = payload[2];
         RecordQuery("Performance", "UnsupportedState", confirmed: $"ReportedMode={mode}",
             failure: "OutsideUpstreamPerformanceModes");
-        throw new IOException("Experimental performance mode is outside the upstream model definition.");
+        throw ContentRejected("Experimental performance mode is outside the upstream model definition.",
+            DeviceStateQuery.PerformanceAndFans, payload);
     }
+
+    private static RazerProtocolException ContentRejected(string message, DeviceStateQuery query,
+        ReadOnlySpan<byte> first, ReadOnlySpan<byte> second = default) =>
+        new(message, HidProtocolValidationFailure.PayloadValidator)
+        {
+            StateQuery = query,
+            RejectedPayloadHex = second.IsEmpty ? DeviceStateContentRejection.FormatPayload(first)
+                : DeviceStateContentRejection.FormatPayloads(first, second),
+        };
 
     public async Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)
     {

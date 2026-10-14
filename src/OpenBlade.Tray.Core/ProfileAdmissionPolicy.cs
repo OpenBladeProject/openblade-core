@@ -33,9 +33,10 @@ internal static class ProfileAdmissionPolicy
                 current.UsbC,
                 capabilities,
                 PowerSource.UsbC)
-            && HasBatteryCapability(capabilities)
-            && capabilities.ChargeLimits.Contains(
-                draft.BatteryPolicy.ChargeLimitPercent);
+            && (draft.BatteryPolicy == current.BatteryPolicy
+                || (HasBatteryCapability(capabilities)
+                    && capabilities.ChargeLimits.Contains(
+                        draft.BatteryPolicy.ChargeLimitPercent)));
     }
 
     private static bool ProfileSupportedOrUnchanged(
@@ -59,7 +60,9 @@ internal static class ProfileAdmissionPolicy
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
         && (draft.CustomPerformance is null
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
-        && ThermalCombinationSupported(draft.Performance, draft.Fans)
+        && (ThermalCombinationSupported(draft.Performance, draft.Fans)
+            || (draft.Fans == current.Fans
+                && !capabilities.FanModes.Contains(draft.Fans)))
         && (LightingSupported(draft.Lighting, capabilities)
             || draft.Lighting == current.Lighting);
 

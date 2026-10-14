@@ -84,17 +84,16 @@ public sealed class ExperimentalBladeCustomTests
     [InlineData(3, 2)]
     [InlineData(4, 2)]
     [InlineData(2, 2)]
-    public async Task UnrepresentableCustomReadback_ReportsUnknownPerformanceAndRetainsRawDiagnostic(byte cpu, byte gpu)
+    public async Task UnrepresentableCustomReadback_RejectsThermalStateAndRetainsRawDiagnostic(byte cpu, byte gpu)
     {
         var session = new Session { Mode = 4, Cpu = cpu, Gpu = gpu };
         var policy = Enabled();
         await using var port = Create(session, policy);
-        ProductionPerformanceFanState state = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
-        Assert.Null(state.Performance);
-        Assert.Null(state.CustomPerformance);
-        Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "Performance"
-            && item.Outcome == "UnsupportedState" && item.FailureCategory == "UnrepresentableCustomPerformance");
-        Assert.Equal(FanMode.Automatic, state.Fans);
+        RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
+            port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        Assert.Equal(DeviceStateQuery.CustomPerformanceCombination, failure.StateQuery);
+        Assert.Equal($"00 01 {cpu:X2} / 00 02 {gpu:X2}", failure.RejectedPayloadHex);
+        Assert.True(DeviceStateContentRejection.IsContentRejection(failure));
         Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "CustomPerformance"
             && item.Outcome == "UnsupportedState"
             && item.ConfirmedValue == $"CpuSelector=1;CpuLevel={cpu};GpuSelector=2;GpuLevel={gpu}");

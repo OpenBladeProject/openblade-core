@@ -63,20 +63,120 @@ public sealed class ProfileAdmissionPolicyTests
     }
 
     [Fact]
-    public void UnsupportedChargeLimitCannotBePreservedAsUnchanged()
+    public void UnchangedBatteryPolicyDoesNotBlockSupportedProfileEditWhenBatteryIsUnavailable()
     {
-        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
         DeviceCapabilities capabilities = SupportedCapabilities() with
         {
-            ChargeLimits = new HashSet<int> { 50 },
+            ChargeLimits = new HashSet<int>(),
         };
-        Assert.False(ProfileAdmissionPolicy.Supports(profiles, profiles, capabilities));
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+        };
+
+        Assert.True(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.Equal(current.BatteryPolicy, draft.BatteryPolicy);
+        Assert.False(ProfileAdmissionPolicy.Supports(
+            draft with { BatteryPolicy = BatteryPolicy.Create(75) },
+            current,
+            capabilities));
+    }
+
+    [Fact]
+    public void UnchangedLegacyBatteryPolicyDoesNotBlockSupportedProfileEdit()
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults() with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            ChargeLimits = new HashSet<int> { 80 },
+        };
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+        };
+
+        Assert.True(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.Equal(current.BatteryPolicy, draft.BatteryPolicy);
+        Assert.True(ProfileAdmissionPolicy.Supports(
+            draft with { BatteryPolicy = BatteryPolicy.Create(80) },
+            current,
+            capabilities));
+        Assert.False(ProfileAdmissionPolicy.Supports(
+            draft with { BatteryPolicy = BatteryPolicy.Create(70) },
+            current,
+            capabilities));
+    }
+
+    [Fact]
+    public void UnsupportedUnchangedFanIntentDoesNotBlockSupportedPerformanceEdit()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        FanControlSettings fanControl = new(
+            FanMode.Fixed,
+            4200,
+            ManualFanCurve.Default);
+        ProfileSet current = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Fixed,
+                FanControl = fanControl,
+            },
+        };
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            FanModes = new HashSet<FanMode>(),
+        };
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+        };
+
+        Assert.True(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.Equal(fanControl, draft.PluggedIn.FanControl);
+        Assert.Equal(current.BatteryPolicy, draft.BatteryPolicy);
+    }
+
+    [Fact]
+    public void WritableManualFanIntentStillRequiresBalancedPerformance()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet current = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Fans = FanMode.Fixed },
+        };
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+        };
+
+        Assert.False(ProfileAdmissionPolicy.Supports(
+            draft,
+            current,
+            SupportedCapabilities()));
     }
 
     [Fact]
     public void WholePercentLimitsAndOffMarkerAdmitProfilesBelowOneHundred()
     {
-        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet draft = current with
         {
             BatteryPolicy = BatteryPolicy.Create(99),
         };
@@ -86,20 +186,24 @@ public sealed class ProfileAdmissionPolicyTests
             SupportsBatteryProtectionOff = true,
         };
 
-        Assert.True(ProfileAdmissionPolicy.Supports(profiles, profiles, capabilities));
+        Assert.True(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
     }
 
     [Fact]
     public void OffMarkerAloneIsNotAUsableBatteryCapability()
     {
-        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet draft = current with
+        {
+            BatteryPolicy = BatteryPolicy.Create(99),
+        };
         DeviceCapabilities capabilities = SupportedCapabilities() with
         {
             ChargeLimits = new HashSet<int> { 100 },
             SupportsBatteryProtectionOff = true,
         };
 
-        Assert.False(ProfileAdmissionPolicy.Supports(profiles, profiles, capabilities));
+        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
     }
 
     private static DeviceCapabilities SupportedCapabilities() =>

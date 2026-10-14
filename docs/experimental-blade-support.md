@@ -20,7 +20,10 @@ Choose **Resume experimental controls** in the experimental-support notice.
 OpenBlade drains the previous session, checks the laptop again, and reads the
 current supported settings without writing them. When those checks succeed,
 you can choose a setting to send a new request. The uncertain command is not
-replayed automatically. Failed reads or checks leave the pause in place.
+replayed automatically. A new lighting choice or an active profile edit that changes the effective
+lighting releases the hold. Unrelated, inactive, and overridden profile edits
+keep it in place. Failed reads
+or checks leave the pause in place.
 
 ## Initial coverage
 
@@ -35,7 +38,9 @@ replayed automatically. Failed reads or checks leave the pause in place.
 Performance changes require confirmed Automatic fans and fresh external-power
 evidence. The mode command also selects Automatic fans; this backend cannot restore
 a prior manual-fan state. Saved manual-fan settings stay saved and do not force a
-switch to Balanced on these laptops. Manual fans, HyperBoost writes, and driver-dependent brightness integration
+switch to Balanced or block a supported performance choice while firmware fans
+are confirmed Automatic. Unrecognized readings leave only the affected controls
+unavailable and appear in diagnostics. Manual fans, HyperBoost writes, and driver-dependent brightness integration
 are not yet supported by this backend. Lighting and Custom controls below apply
 only to the exact Blade 18 profile.
 The 2020 Blade 15's battery commands are excluded because upstream reports that
