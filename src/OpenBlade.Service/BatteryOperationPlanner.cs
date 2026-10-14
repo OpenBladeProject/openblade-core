@@ -124,9 +124,11 @@ internal static class BatteryOperationPlanner
                 || confirmed is not
                 {
                     ProtectionEnabled: true,
-                    ChargeLimitPercent: var currentLimit,
+                    ChargeLimitPercent: int currentLimit,
                 }
-                || currentLimit != storedPolicy.ChargeLimitPercent)
+                || (currentLimit != storedPolicy.ChargeLimitPercent
+                    && !(capabilities.ChargeLimits.Contains(100)
+                        && capabilities.ChargeLimits.Contains(currentLimit))))
             {
                 return BlockedBatteryPlan("Battery protection");
             }

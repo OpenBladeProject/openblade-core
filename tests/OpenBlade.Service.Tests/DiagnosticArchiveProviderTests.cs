@@ -9,6 +9,39 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class DiagnosticArchiveProviderTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateAsync_ExportsExperimentalEvidenceWithoutProbingOrUploading(bool liveReadingsEnabled)
+    {
+        const string secret = "private-test-token";
+        var support = new DiagnosticExperimentalSupport(
+            "RZ09-0483", "UpstreamDerived", true, true,
+            [new(DateTimeOffset.UnixEpoch, "Battery", "Readback", "Mismatch", true, "80", "60", secret)]);
+        var runtime = new SnapshotOnlyRuntime(CreateStatus() with
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalWritesPaused = true,
+            ExperimentalSupportSource = "UpstreamDerived",
+        }, experimentalSupport: support);
+        var provider = new DiagnosticArchiveProvider(runtime, new DiagnosticHistory(), new FixedMetadataSource(secret));
+
+        DiagnosticArchive result = await provider.CreateAsync(liveReadingsEnabled, CancellationToken.None);
+
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+        Assert.InRange(result.ZipBytes.Length, 1, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        string content = await ReadEntryAsync(archive, "experimental-support.json");
+        Assert.DoesNotContain(secret, content);
+        using JsonDocument json = JsonDocument.Parse(content);
+        Assert.True(json.RootElement.GetProperty("support").GetProperty("writesPaused").GetBoolean());
+        Assert.Equal("UpstreamDerived", json.RootElement.GetProperty("support").GetProperty("evidenceLevel").GetString());
+        Assert.Equal("Mismatch", json.RootElement.GetProperty("support").GetProperty("observations")[0].GetProperty("outcome").GetString());
+        Assert.Equal(liveReadingsEnabled ? JsonValueKind.Object : JsonValueKind.Null,
+            json.RootElement.GetProperty("liveReadings").ValueKind);
+    }
+
     [Fact]
     public async Task CreateAsync_UsesOnlyCurrentSnapshotsAndWritesRedactedEntries()
     {
@@ -521,7 +554,8 @@ public sealed class DiagnosticArchiveProviderTests
         ServiceStatusSnapshot status,
         Rz090581CapabilityDiagnostics? capabilityDiagnostics = null,
         DiagnosticHyperBoostOwnershipJournal? hyperBoostJournalDiagnostics = null,
-        DiagnosticDeviceVerification? verificationDiagnostics = null)
+        DiagnosticDeviceVerification? verificationDiagnostics = null,
+        DiagnosticExperimentalSupport? experimentalSupport = null)
         : IServiceControlRuntime
     {
         public int StatusReads { get; private set; }
@@ -535,6 +569,9 @@ public sealed class DiagnosticArchiveProviderTests
             StatusReads++;
             return status;
         }
+
+        public DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics() =>
+            experimentalSupport ?? DiagnosticExperimentalSupport.NotDetected;
 
         public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics()
         {

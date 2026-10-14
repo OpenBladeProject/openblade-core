@@ -24,6 +24,8 @@ public sealed class IpcWireShapeManifestTests
             "property vbiosGpuName:System.String default=\"Unavailable\"",
             manifest,
             StringComparison.Ordinal);
+        Assert.Contains("property supportsBreathingColorSelection:System.Boolean member", manifest, StringComparison.Ordinal);
+        Assert.Contains("property supportsWaveDirectionSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         string? expectedHash = OpenBladeIpc.ProtocolVersion switch
         {
             47 => "182C004C3E7FBAFF946EAE2C1CFD6AE86D219A094E9DBC3BEF5A0F800D41F3D1",
@@ -40,6 +42,9 @@ public sealed class IpcWireShapeManifestTests
             58 => "0C102CB46ED625A92793ADD69ACBF5729AA7A2F77CE12A368FABF0754128B96A",
             59 => "DD8A55A0FE893A4F467D6DF4309B6F418C7AC83CE6667DC450394135A6905532",
             60 => "22C6B28A38E5DE7F74B1F60C2F9916422F5A63B5CF5CFB1FCC96827A2678A860",
+            61 => "C3F0F4511480412F4824E3ED87C513B4AA75AC4E4D2451A2032E7398B96AE107",
+            62 => "3B33107AAA562645CFC79B87AFDF660BF99A3D63532443783CAFC9693ABC11D7",
+            63 => "B72B084B5713FF350E1180DF6B229276BDC86B14AE2ECB9A70EEBCD327146E78",
             _ => null,
         };
 

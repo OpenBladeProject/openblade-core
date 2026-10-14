@@ -5582,6 +5582,27 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(verified.UnsupportedLaptop);
     }
 
+    [Theory]
+    [InlineData("SystemProductName")]
+    [InlineData("SystemManufacturer")]
+    public async Task ExperimentalIdentityMismatch_DoesNotAlsoPublishUnsupportedLaptop(string field)
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        context.Provider.ExperimentalIdentityBlocked = true;
+        context.Provider.Verification = HostIdentityVerification(
+            HostIdentityFailureReason.RegistryValueMismatch, field);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.True(status.IsExperimentalDevice);
+        Assert.False(status.DeviceVerified);
+        Assert.False(status.UnsupportedLaptop);
+        Assert.True(status.WritesBlocked);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
     private static DiagnosticDeviceVerification HostIdentityVerification(
         HostIdentityFailureReason reason,
         string field) => new(
@@ -5610,6 +5631,447 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     HostIdentityFailure: new HostIdentityFailureDetail(
                         reason, "BIOS", field, "Expected", "Actual"))),
             LastFailure: null);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExperimentalSupport_IsAutomaticAndLegacyToggleCannotDisableIt(bool requestedEnable)
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().IsExperimentalDevice);
+        Assert.True(context.Runtime.GetStatus().AllowExperimentalFeatures);
+        int writes = context.Device.TotalSetterCalls;
+        ControlOperationResult obsolete = await context.Runtime.SetExperimentalFeaturesAsync(
+            requestedEnable, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, obsolete.Status);
+        Assert.True(context.Runtime.GetStatus().AllowExperimentalFeatures);
+        Assert.True(context.Provider.TryGetVerifiedDevice(out _));
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Silent, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Balanced, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Balanced, null)]
+    public async Task ExperimentalStartup_UnsupportedSavedManualFansDoNotResetPerformance(
+        PerformancePreset baselinePerformance, FanMode? baselineFans)
+    {
+        TestContext context = CreateContext(providerAvailable: true, initialize: false);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent },
+            FanModes = new HashSet<FanMode>(),
+        };
+        BatteryConfiguration configuration = await context.Store.LoadAsync(CancellationToken.None);
+        ProfileSet profiles = configuration.Profiles with
+        {
+            PluggedIn = configuration.Profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+                Fans = FanMode.Fixed,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Fixed),
+            },
+        };
+        await context.Store.SaveProfilesAsync(profiles, CancellationToken.None);
+        context.Runtime.Initialize(configuration with { Profiles = profiles }, PowerSource.PluggedIn,
+            PersistentOverrideState.Empty);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = baselinePerformance,
+            Fans = baselineFans,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileStartupProfileAsync(CancellationToken.None);
+
+        if (baselineFans == FanMode.Automatic && baselinePerformance != PerformancePreset.Silent)
+        {
+            Assert.Equal([PerformancePreset.Silent], context.Device.PerformanceWrites);
+        }
+        else
+        {
+            Assert.Empty(context.Device.PerformanceWrites);
+        }
+        Assert.Empty(context.Device.FanWrites);
+        Assert.Equal(baselineFans == FanMode.Automatic
+            ? PerformancePreset.Silent : baselinePerformance, context.Device.ConfirmedState.Performance);
+        Assert.DoesNotContain(DeviceSubsystem.Fans, context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(FanMode.Fixed, context.Runtime.GetStatus().DesiredState.Fans.Value);
+        Assert.Equal(PerformancePreset.Silent, context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.Equal(FanMode.Fixed, context.Runtime.GetStatus().Profiles!.PluggedIn.Fans);
+    }
+
+    [Fact]
+    public async Task ResumeExperimentalWrites_ConfirmsStateWithoutSetterAndPermitsNewRequest()
+    {
+        TestContext context = CreateWritableContext();
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.IsExperimentalWritesPaused = true;
+        int writes = context.Device.TotalSetterCalls;
+        ControlOperationResult resumed = await context.Runtime.ResumeExperimentalWritesAsync(
+            static () => true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
+        Assert.False(context.Runtime.GetStatus().ExperimentalWritesPaused);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        ControlOperationResult next = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(75), CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, next.Status);
+        Assert.Equal(writes + 1, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ResumeExperimentalWrites_UnavailablePendingStateKeepsBothBlocks()
+    {
+        TestContext context = CreateWritableContext();
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        var pending = Assert.IsType<PendingWriteConfirmationTracker>(typeof(ServiceControlRuntime)
+            .GetField("pendingWriteConfirmations", System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
+        pending.Set(DeviceSubsystem.Battery, new PendingWriteConfirmation(
+            before.ActivePowerSource, before.DesiredState, before.ConfirmedState!));
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { Battery = null };
+        context.Provider.IsExperimentalWritesPaused = true;
+        int writes = context.Device.TotalSetterCalls;
+        ControlOperationResult result = await context.Runtime.ResumeExperimentalWritesAsync(
+            static () => true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.True(context.Provider.IsExperimentalWritesPaused);
+        Assert.True(pending.HasPending);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task FreshLightingIntent_KnownNotAppliedReleasesResumeHoldForSafeTransition()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        SetExperimentalLightingResumeHold(context);
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        context.Device.LightingFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "Injected known-not-applied lighting write.");
+        int lightingWrites = context.Device.LightingSetCalls;
+
+        ControlOperationResult failed = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(target, OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(lightingWrites + 1, context.Device.LightingSetCalls);
+        context.Device.LightingFailure = null;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites + 2, context.Device.LightingSetCalls);
+        Assert.Equal(target, context.Device.ConfirmedState.Lighting);
+    }
+
+    [Fact]
+    public async Task UpdateProfiles_ActiveLightingEditReleasesResumeHold()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        SetExperimentalLightingResumeHold(context);
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { Lighting = target },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites + 1, context.Device.LightingSetCalls);
+        Assert.Equal(target, context.Device.ConfirmedState.Lighting);
+    }
+
+    [Fact]
+    public async Task UpdateProfiles_UnrelatedEditKeepsResumeLightingHold()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        ControlOperationResult initial = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { Lighting = target },
+            },
+            CancellationToken.None);
+        Assert.True(initial.Status == ControlOperationStatus.Stored, initial.Message);
+        SetExperimentalLightingResumeHold(context);
+        profiles = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with
+                {
+                    Performance = PerformancePreset.Silent,
+                },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task UpdateProfiles_InactiveLightingEditKeepsResumeLightingHold()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        SetExperimentalLightingResumeHold(context);
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                Battery = profiles.Battery with { Lighting = target },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task UpdateProfiles_LightingEditHiddenByOverrideKeepsResumeLightingHold()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        LightingSettings overrideLighting = LightingSettingsFactory.SpectrumCycling(45);
+        ControlOperationResult applied = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                overrideLighting,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        SetExperimentalLightingResumeHold(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+        };
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with
+                {
+                    Lighting = LightingSettingsFactory.SpectrumCycling(73),
+                },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task FreshLightingIntent_AmbiguousReadbackIsNotAutomaticallyReplayed()
+    {
+        TestContext context = CreateLightingResumeContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult initial = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.SpectrumCycling(45),
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, initial.Status);
+        SetExperimentalLightingResumeHold(context);
+        context.Device.ReadStateFailureAfterLightingSet =
+            new IOException("Injected ambiguous lighting readback.");
+
+        ControlOperationResult failed = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Off(),
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().UnconfirmedWrites);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+    }
+
+    private TestContext CreateLightingResumeContext()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+                { LightingEffect.Off, LightingEffect.Spectrum },
+        };
+        TestContext context = CreateWritableContext(
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LightingEffects = capabilities.LightingEffects,
+        };
+        return context;
+    }
+
+    private static void SetExperimentalLightingResumeHold(TestContext context) =>
+        typeof(ServiceControlRuntime).GetField(
+            "experimentalLightingResumeAwaitingRequest",
+            System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(context.Runtime, true);
+
+    [Fact]
+    public async Task ResumeExperimentalWrites_DoesNotReplayUncertainLightingThroughOwnershipPolicy()
+    {
+        var gate = new LowPowerGate();
+        TestContext context = CreateWritableContext(lowPowerGate: gate);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetExternalLightingOverridePolicyAsync(true, CancellationToken.None);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        var automation = Assert.IsType<ProfileAutomationState>(typeof(ServiceControlRuntime)
+            .GetProperty("Automation", System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
+        ProfileSet profiles = automation.Profiles;
+        automation.UpdateProfiles(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Lighting = target },
+            Battery = profiles.Battery with { Lighting = target },
+        });
+        var pending = Assert.IsType<PendingWriteConfirmationTracker>(typeof(ServiceControlRuntime)
+            .GetField("pendingWriteConfirmations", System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
+        pending.Set(DeviceSubsystem.Lighting, new PendingWriteConfirmation(before.ActivePowerSource,
+            before.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(target, SettingValueSource.TemporaryOverride),
+            }, before.ConfirmedState!));
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.SpectrumCycling(45),
+        };
+        context.Provider.IsExperimentalWritesPaused = true;
+        int writes = context.Device.TotalSetterCalls;
+        ControlOperationResult resumed = await context.Runtime.ResumeExperimentalWritesAsync(
+            static () => true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        typeof(ServiceControlRuntime).GetField("pendingLightingRestore",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(context.Runtime, target);
+        typeof(ServiceControlRuntime).GetField("pendingLightingRestoreFromLifecycle",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(context.Runtime, true);
+        int reads = context.Device.StateReadCalls;
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.True(context.Device.StateReadCalls > reads);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+        writes = context.Device.TotalSetterCalls;
+        gate.Enter();
+        ControlOperationResult newRequest = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(target, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None);
+        Assert.True(newRequest.Status == ControlOperationStatus.Stored, newRequest.Message);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        gate.Exit();
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        Assert.True(context.Device.LightingSetCalls > lightingWrites);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResumeExperimentalWrites_UnexpectedCleanupFailureReportsBlocked(bool timeout)
+    {
+        TestContext context = CreateWritableContext();
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        context.Provider.IsExperimentalWritesPaused = true;
+        context.Provider.ResumeException = timeout
+            ? new TimeoutException("Injected cleanup timeout.")
+            : new ObjectDisposedException("Injected closed recovery session.");
+        int writes = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.ResumeExperimentalWritesAsync(
+            static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.True(context.Runtime.GetStatus().ExperimentalWritesPaused);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResumeExperimentalWrites_RejectsAuthorityLossOrReadFailureWithoutClearingPause(bool readFailure)
+    {
+        TestContext context = CreateWritableContext();
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        context.Provider.IsExperimentalWritesPaused = true;
+        context.Provider.ResumeReadFails = readFailure;
+        int writes = context.Device.TotalSetterCalls;
+        ControlOperationResult result = await context.Runtime.ResumeExperimentalWritesAsync(
+            () => readFailure, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.True(context.Runtime.GetStatus().ExperimentalWritesPaused);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EmptyCapabilityRefresh_PreservesOnlyStableModelCapabilities(bool experimental)
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Provider.AvailableWhenExperimentalAllowed = experimental;
+        DeviceCapabilities previous = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.Capabilities = previous;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Same(previous, context.Runtime.GetStatus().Capabilities);
+        DeviceCapabilities empty = DeviceCapabilities.Unavailable();
+        context.Device.Capabilities = empty;
+
+        await context.Runtime.ObserveAsync(includeLiveReadings: false, CancellationToken.None);
+
+        Assert.Same(experimental ? empty : previous, context.Runtime.GetStatus().Capabilities);
+    }
 
     [Fact]
     public async Task DisablingFirmwareCompatibilityOverride_RevokesOwnedRendererAfterUnknownProbe()
@@ -12453,6 +12915,45 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ExpandedChargeRange_EnablesProtectionFromOffAndRetainsTypedIntent()
+    {
+        TestContext context = CreateContext(providerAvailable: true, protectionEnabled: false);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+            SupportsBatteryProtectionOff = true,
+            SupportsTemporaryFullCharge = false,
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { Battery = ProtectionOff() };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(99), CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(["SetChargeLimit"], context.Device.BatterySetterCalls);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(99, status.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.True(status.ConfirmedState.Battery.ProtectionEnabled);
+        Assert.Equal(99, status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent);
+        Assert.True(status.DesiredState.Battery.ProtectionEnabled);
+        Assert.Equal(BatteryPolicy.Create(99), status.BatteryPolicyOverride);
+        Assert.True(status.BatteryProtectionOverride);
+    }
+
+    [Fact]
+    public async Task StableChargeRange_RejectsExpandedLimitWithoutSetter()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult result = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(99), CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Empty(context.Device.BatterySetterCalls);
+        Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+    }
+
+    [Fact]
     public async Task ScopedBatteryMismatch_PublishesProtectionOffAndLatchesBatteryDriftWithoutRetry()
     {
         TestContext context = CreateWritableContext();
@@ -16163,6 +16664,44 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
         Assert.False(status.WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task Observation_MapsExperimentalExternalOnlyForExperimentalDevice()
+    {
+        TestContext stable = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        stable.Device.AdapterPowerState = AdapterPowerState.ExperimentalExternal;
+        stable.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        stable.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            stable.Runtime.GetStatus().Profiles.PluggedIn.Lighting);
+
+        await stable.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(PowerSource.ExternalUnknown, stable.Runtime.GetStatus().ActivePowerSource);
+        Assert.True(stable.Runtime.GetStatus().WritesBlocked);
+
+        TestContext experimental = CreateContext(
+            providerAvailable: false,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        experimental.Provider.AvailableWhenExperimentalAllowed = true;
+        experimental.Device.AdapterPowerState = AdapterPowerState.ExperimentalExternal;
+        experimental.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        experimental.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            experimental.Runtime.GetStatus().Profiles.PluggedIn.Lighting);
+
+        await experimental.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(PowerSource.PluggedIn, experimental.Runtime.GetStatus().ActivePowerSource);
+        Assert.False(experimental.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(2, experimental.Device.AdapterPowerReadCalls);
     }
 
     [Fact]
@@ -29665,6 +30204,41 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool AllowUntestedFirmware { get; private set; }
 
+        public bool AvailableWhenExperimentalAllowed { get; set; }
+
+        public bool ExperimentalIdentityBlocked { get; set; }
+        public bool IsExperimentalWritesPaused { get; set; }
+        public bool ResumeReadFails { get; set; }
+        public Exception? ResumeException { get; set; }
+        public DeviceCapabilities? ExperimentalCapabilities => (Device as CountingBladeDevice)?.Capabilities;
+
+        public Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
+            Func<ConfirmedDeviceState, bool> acceptObservedState,
+            Func<bool> stillAuthorized, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            if (ResumeException is { } exception)
+            {
+                throw exception;
+            }
+            if (ResumeReadFails)
+            {
+                throw new IOException("Injected recovery query failure.");
+            }
+            ConfirmedDeviceState observed = Assert.IsType<CountingBladeDevice>(Device).ConfirmedState;
+            if (!IsExperimentalWritesPaused || !stillAuthorized() || !acceptObservedState(observed))
+            {
+                throw new CapabilityUnavailableException("Recovery is not admitted.");
+            }
+            IsExperimentalWritesPaused = false;
+            return Task.FromResult(observed);
+        }
+
+        public bool IsExperimentalDevice => AvailableWhenExperimentalAllowed;
+
+        public string? ExperimentalSupportSource => IsExperimentalDevice
+            ? "community-validation"
+            : null;
         public DiagnosticDeviceVerification Verification { get; set; } =
             DiagnosticDeviceVerification.NotObserved;
 
@@ -29757,11 +30331,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             verifiedDevice = Device;
             AfterTryGet?.Invoke();
             return Available
-                || (AvailableWhenUntestedFirmwareAllowed && AllowUntestedFirmware);
+                || (AvailableWhenUntestedFirmwareAllowed && AllowUntestedFirmware)
+                || (AvailableWhenExperimentalAllowed && !ExperimentalIdentityBlocked);
         }
 
         public void SetAllowUntestedFirmware(bool enabled) =>
             AllowUntestedFirmware = enabled;
+
 
         public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
         {

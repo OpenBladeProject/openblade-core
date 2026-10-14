@@ -11,6 +11,49 @@ public sealed class ProductionLightingSessionTests
     private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
 
     [Fact]
+    public async Task ClosedExperimentalPort_RemainsRetainedUntilNativeDrainCompletes()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+        var nativeSession = new UndrainedExperimentalSession();
+        var closedPort = new ExperimentalBladePort(nativeSession, new ValidationRunContext(), model,
+            new ExperimentalFeaturesPolicy(model), static () => true, static () => PowerSource.PluggedIn);
+        await closedPort.DisposeAsync();
+        var freshPort = new FakeLightingPort();
+        var factory = new FakeLightingFactory(freshPort);
+        var lighting = new ProductionLightingSession(factory, null, null,
+            static _ => Task.CompletedTask, static () => { });
+        typeof(ProductionLightingSession).GetField("lightingPort",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(lighting, closedPort);
+
+        await Assert.ThrowsAsync<IOException>(() => lighting.GetLightingPortCoreAsync(
+            ProductionLightingSession.LightingPortOperation.KeyboardLightingStateRead, CancellationToken.None));
+        Assert.Same(closedPort, lighting.RetainedPort);
+        Assert.Equal(0, factory.OpenCount);
+
+        nativeSession.Disposition = RazerCommandSessionDisposition.FullyDisposed;
+        Assert.Same(freshPort, await lighting.GetLightingPortCoreAsync(
+            ProductionLightingSession.LightingPortOperation.KeyboardLightingStateRead, CancellationToken.None));
+        Assert.Equal(1, factory.OpenCount);
+        await lighting.DisposeLightingPortWithinDeadlineAsync();
+    }
+
+    private sealed class UndrainedExperimentalSession : IRazerCommandSession
+    {
+        public RazerCommandSessionDisposition Disposition { get; set; } = RazerCommandSessionDisposition.Healthy;
+
+        public ValueTask DisposeAsync()
+        {
+            Disposition = RazerCommandSessionDisposition.Disposing;
+            return ValueTask.CompletedTask;
+        }
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId, TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken) => throw new InvalidOperationException("Closed session must not be reused.");
+    }
+
+    [Fact]
     public async Task ReadLightingState_DoesNotOpenBatteryPort()
     {
         var batteryFactory = new FakeQueryFactory();

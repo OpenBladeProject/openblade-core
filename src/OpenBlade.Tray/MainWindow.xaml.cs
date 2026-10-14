@@ -3137,6 +3137,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         SettingsAppearanceSection.StartBringIntoView();
     }
 
+    internal void ShowLocalizationSnapshotExperimentalControls() =>
+        LabFeaturesToggle.StartBringIntoView(new BringIntoViewOptions
+        {
+            AnimationDesired = false,
+            VerticalAlignmentRatio = 0,
+        });
+
     internal bool HasLocalizedCheckNowButton(
         string expectedContent,
         string expectedAccessibleName) =>

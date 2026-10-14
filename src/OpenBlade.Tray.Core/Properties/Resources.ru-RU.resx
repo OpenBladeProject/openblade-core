@@ -1431,6 +1431,12 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Войдите в интерактивный сеанс Windows, чтобы изменить настройки ноутбука.</value>
   </data>
+  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>На этом ноутбуке экспериментальная поддержка включается автоматически. Экспортируйте диагностику в разделе «О программе», чтобы помочь с тестированием.</value>
+  </data>
+  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>Экспериментальная запись приостановлена, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите экспериментальное управление. OpenBlade не станет повторять предыдущее изменение.</value>
+  </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>Ноутбук не поддерживается</value>
   </data>
