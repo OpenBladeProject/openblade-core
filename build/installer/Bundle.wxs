@@ -136,11 +136,14 @@
 
       <ExePackage
           Id="OpenBladeDotNetRuntime"
-          SourceFile="!(bindpath.OpenBladePrerequisites)\windowsdesktop-runtime-10.0.12-win-x64.exe"
-          DownloadUrl="https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.12/windowsdesktop-runtime-10.0.12-win-x64.exe"
+          Bundle="yes"
+          Protocol="burn"
+          SourceFile="!(bindpath.OpenBladePrerequisites)\windowsdesktop-runtime-$(OpenBladeMinimumDotNetRuntimeVersion)-win-x64.exe"
+          DownloadUrl="https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/$(OpenBladeMinimumDotNetRuntimeVersion)/windowsdesktop-runtime-$(OpenBladeMinimumDotNetRuntimeVersion)-win-x64.exe"
           DisplayName="!(loc.DotNetDesktopRuntimeDisplayName)"
           Description="!(loc.DotNetDesktopRuntimeDescription)"
           InstallArguments="/install /quiet /norestart"
+          RepairArguments="/repair /quiet /norestart"
           DetectCondition="OpenBladeDotNetRuntimeSufficient = 1"
           PerMachine="yes"
           Permanent="yes"

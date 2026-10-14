@@ -1,4 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.Win32;
 
 namespace OpenBlade.Setup;
@@ -20,11 +22,11 @@ internal interface IDotNetInstallRootSource
 internal sealed class WindowsDotNetInstallRootSource : IDotNetInstallRootSource
 {
     private const string InstalledVersionsKey = @"SOFTWARE\dotnet\Setup\InstalledVersions\x64";
-    private readonly Func<RegisteredDotNetRootReadResult> readRegisteredX64Root;
+    private readonly Func<RegistryView, RegisteredDotNetRootReadResult> readRegisteredX64Root;
     private readonly Func<string> readProgramFiles;
 
     internal WindowsDotNetInstallRootSource(
-        Func<RegisteredDotNetRootReadResult>? readRegisteredX64Root = null,
+        Func<RegistryView, RegisteredDotNetRootReadResult>? readRegisteredX64Root = null,
         Func<string>? readProgramFiles = null)
     {
         this.readRegisteredX64Root = readRegisteredX64Root ?? ReadRegisteredX64Root;
@@ -35,7 +37,8 @@ internal sealed class WindowsDotNetInstallRootSource : IDotNetInstallRootSource
     public IReadOnlyList<DotNetInstallRoot> GetInstallRoots()
     {
         List<DotNetInstallRoot> roots = [];
-        RegisteredDotNetRootReadResult registered = readRegisteredX64Root();
+        // The .NET apphost reads architecture-specific registrations from the 32-bit view.
+        RegisteredDotNetRootReadResult registered = readRegisteredX64Root(RegistryView.Registry32);
         if (!registered.Succeeded)
         {
             return roots;
@@ -73,13 +76,13 @@ internal sealed class WindowsDotNetInstallRootSource : IDotNetInstallRootSource
         }
     }
 
-    private static RegisteredDotNetRootReadResult ReadRegisteredX64Root()
+    private static RegisteredDotNetRootReadResult ReadRegisteredX64Root(RegistryView view)
     {
         try
         {
             using RegistryKey localMachine = RegistryKey.OpenBaseKey(
                 RegistryHive.LocalMachine,
-                RegistryView.Registry64);
+                view);
             using RegistryKey? installedVersions = localMachine.OpenSubKey(InstalledVersionsKey);
             return new(
                 Succeeded: true,
@@ -100,6 +103,7 @@ internal sealed class InstalledDotNetRuntimeAdmission : IDotNetRuntimeAdmission
     private const string DesktopFramework = "Microsoft.WindowsDesktop.App";
     private const string CoreRuntimeFile = "coreclr.dll";
     private const string DesktopRuntimeFile = "System.Windows.Forms.dll";
+    private const string DesktopRuntimeConfigFile = "Microsoft.WindowsDesktop.App.runtimeconfig.json";
     private readonly Version minimumVersion;
     private readonly IDotNetInstallRootSource roots;
 
@@ -135,19 +139,18 @@ internal sealed class InstalledDotNetRuntimeAdmission : IDotNetRuntimeAdmission
         foreach (DotNetInstallRoot root in roots.GetInstallRoots())
         {
             if (root.IsX64
-                && HasCompleteFramework(root.Path, CoreFramework, CoreRuntimeFile)
-                && HasCompleteFramework(root.Path, DesktopFramework, DesktopRuntimeFile))
+                && HasCompatibleRuntime(root.Path))
             {
                 return;
             }
         }
 
         throw new InvalidOperationException(SetupStrings.Format(
-            "OpenBlade requires the 64-bit .NET Desktop Runtime {0} or later. Run OpenBlade-Setup.exe to install or repair it, then try again.",
+            "OpenBlade requires the 64-bit .NET 10 Desktop Runtime ({0} or a newer 10.0 patch). Install or repair .NET 10 Desktop Runtime, then try again.",
             minimumVersion.ToString(3)));
     }
 
-    private bool HasCompleteFramework(string root, string framework, string requiredFile)
+    private bool HasCompatibleRuntime(string root)
     {
         try
         {
@@ -157,50 +160,125 @@ internal sealed class InstalledDotNetRuntimeAdmission : IDotNetRuntimeAdmission
             }
 
             string fullRoot = Path.GetFullPath(root);
-            string frameworkRoot = Path.Combine(fullRoot, "shared", framework);
-            if (!Directory.Exists(frameworkRoot))
+            if (!TrySelectLatestFramework(
+                    fullRoot,
+                    DesktopFramework,
+                    minimumVersion,
+                    out string? desktopDirectory)
+                || !HasRequiredFile(desktopDirectory, DesktopRuntimeFile)
+                || !TryReadCoreDependency(desktopDirectory, out Version? coreDependency)
+                || coreDependency.Major != minimumVersion.Major
+                || coreDependency.Minor != minimumVersion.Minor)
             {
                 return false;
             }
 
-            foreach (string versionDirectory in Directory.EnumerateDirectories(frameworkRoot))
-            {
-                string fullVersionDirectory = Path.GetFullPath(versionDirectory);
-                if (!string.Equals(
-                    Path.GetDirectoryName(fullVersionDirectory),
-                    Path.GetFullPath(frameworkRoot),
-                    StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                string versionName = Path.GetFileName(fullVersionDirectory);
-                if (!Version.TryParse(versionName, out Version? installedVersion)
-                    || installedVersion.Major != minimumVersion.Major
-                    || installedVersion.Minor != minimumVersion.Minor
-                    || installedVersion < minimumVersion)
-                {
-                    continue;
-                }
-
-                string runtimeFile = Path.GetFullPath(Path.Combine(fullVersionDirectory, requiredFile));
-                if (string.Equals(
-                    Path.GetDirectoryName(runtimeFile),
-                    fullVersionDirectory,
-                    StringComparison.OrdinalIgnoreCase)
-                    && File.Exists(runtimeFile))
-                {
-                    return true;
-                }
-            }
+            Version requiredCoreVersion = coreDependency > minimumVersion
+                ? coreDependency
+                : minimumVersion;
+            return TrySelectLatestFramework(
+                    fullRoot,
+                    CoreFramework,
+                    requiredCoreVersion,
+                    out string? coreDirectory)
+                && HasRequiredFile(coreDirectory, CoreRuntimeFile);
         }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
-            or System.Security.SecurityException)
+            or System.Security.SecurityException
+            or JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TrySelectLatestFramework(
+        string root,
+        string framework,
+        Version requiredVersion,
+        [NotNullWhen(true)] out string? selectedDirectory)
+    {
+        selectedDirectory = null;
+        Version? selectedVersion = null;
+        string frameworkRoot = Path.GetFullPath(Path.Combine(root, "shared", framework));
+        if (!Directory.Exists(frameworkRoot))
         {
             return false;
         }
 
-        return false;
+        foreach (string versionDirectory in Directory.EnumerateDirectories(frameworkRoot))
+        {
+            string fullVersionDirectory = Path.GetFullPath(versionDirectory);
+            if (!string.Equals(
+                Path.GetDirectoryName(fullVersionDirectory),
+                frameworkRoot,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string versionName = Path.GetFileName(fullVersionDirectory);
+            if (!Version.TryParse(versionName, out Version? installedVersion)
+                || installedVersion.Major != requiredVersion.Major
+                || installedVersion.Minor != requiredVersion.Minor
+                || installedVersion < requiredVersion
+                || selectedVersion is not null && installedVersion <= selectedVersion)
+            {
+                continue;
+            }
+
+            selectedVersion = installedVersion;
+            selectedDirectory = fullVersionDirectory;
+        }
+
+        return selectedDirectory is not null;
+    }
+
+    private static bool HasRequiredFile(string frameworkDirectory, string requiredFile)
+    {
+        string runtimeFile = Path.GetFullPath(Path.Combine(frameworkDirectory, requiredFile));
+        return string.Equals(
+            Path.GetDirectoryName(runtimeFile),
+            frameworkDirectory,
+            StringComparison.OrdinalIgnoreCase)
+            && File.Exists(runtimeFile);
+    }
+
+    private static bool TryReadCoreDependency(
+        string desktopDirectory,
+        [NotNullWhen(true)] out Version? requiredVersion)
+    {
+        requiredVersion = null;
+        string configPath = Path.GetFullPath(Path.Combine(desktopDirectory, DesktopRuntimeConfigFile));
+        if (!string.Equals(
+            Path.GetDirectoryName(configPath),
+            desktopDirectory,
+            StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(configPath))
+        {
+            return false;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(configPath));
+        if (document.RootElement.ValueKind != JsonValueKind.Object
+            || !document.RootElement.TryGetProperty("runtimeOptions", out JsonElement runtimeOptions)
+            || runtimeOptions.ValueKind != JsonValueKind.Object
+            || !runtimeOptions.TryGetProperty("rollForward", out JsonElement rollForward)
+            || rollForward.ValueKind != JsonValueKind.String
+            || !string.Equals(rollForward.GetString(), "LatestPatch", StringComparison.Ordinal)
+            || !runtimeOptions.TryGetProperty("framework", out JsonElement framework)
+            || framework.ValueKind != JsonValueKind.Object
+            || !framework.TryGetProperty("name", out JsonElement name)
+            || name.ValueKind != JsonValueKind.String
+            || !string.Equals(name.GetString(), CoreFramework, StringComparison.Ordinal)
+            || !framework.TryGetProperty("version", out JsonElement version)
+            || version.ValueKind != JsonValueKind.String
+            || !Version.TryParse(version.GetString(), out requiredVersion))
+        {
+            requiredVersion = null;
+            return false;
+        }
+
+        return true;
     }
 }

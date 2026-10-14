@@ -23,6 +23,13 @@ runtime is missing, the graphical installer asks to download and install it
 before replacing OpenBlade. Visual C++ and the Windows App SDK remain bundled.
 Setup and developer tools remain self-contained.
 
+The shared runtime must be a stable 10.0 patch at or above the published minimum.
+Setup uses the x64 location registered in the 32-bit registry view, as the .NET
+apphost does. It checks the selected Desktop runtime and its declared core-runtime
+dependency before staging the update. Repair can repair the pinned .NET prerequisite.
+If a newer shared runtime is damaged, repair that version with Microsoft's .NET 10
+Desktop Runtime installer, then retry OpenBlade setup.
+
 For an offline installer, run `build/Publish.ps1 -OfflineInstaller`. This embeds
 the same verified .NET prerequisite. Use this option for the Store package.
 

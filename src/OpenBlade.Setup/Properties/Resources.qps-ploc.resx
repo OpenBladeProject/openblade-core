@@ -39,7 +39,7 @@ Dó ýóú wánt tó cóntínúé? ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   <data name="Uninstall OpenBlade and keep saved profiles" xml:space="preserve">
     <value>[!! Únínstáll OpenBlade ánd kéép sávéd prófílés ~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="OpenBlade requires the 64-bit .NET Desktop Runtime {0} or later. Run OpenBlade-Setup.exe to install or repair it, then try again." xml:space="preserve">
-    <value>[!! OpenBlade réqúírés thé 64-bít .NÉT Désktóp Rúntímé {0} ór látér. Rún OpenBlade-Sétúp.éxé tó ínstáll ór répáír ít, thén trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="OpenBlade requires the 64-bit .NET 10 Desktop Runtime ({0} or a newer 10.0 patch). Install or repair .NET 10 Desktop Runtime, then try again." xml:space="preserve">
+    <value>[!! OpenBlade réqúírés thé 64-bít .NÉT 10 Désktóp Rúntímé ({0} ór á néwér 10.0 pátch). Ínstáll ór répáír .NÉT 10 Désktóp Rúntímé, thén trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

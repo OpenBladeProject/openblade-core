@@ -461,12 +461,17 @@ Assert-True ($bootstrapperSource.Contains('DetectPackageBegin += OnDetectPackage
     'Runtime readiness must be evaluated after searches and before package detection.'
 . (Join-Path $repository 'build\InstallerPrerequisites.ps1')
 $dotNetPrerequisite = Get-OpenBladeDotNetRuntimePrerequisite
-Assert-True ($dotNetPackage.GetAttribute('SourceFile').EndsWith('\' + $dotNetPrerequisite.FileName) -and
-    $dotNetPackage.GetAttribute('DownloadUrl') -eq $dotNetPrerequisite.Uri -and
+$dotNetSourceFile = $dotNetPackage.GetAttribute('SourceFile').Replace('$(OpenBladeMinimumDotNetRuntimeVersion)', $dotNetPrerequisite.Version)
+$dotNetDownloadUrl = $dotNetPackage.GetAttribute('DownloadUrl').Replace('$(OpenBladeMinimumDotNetRuntimeVersion)', $dotNetPrerequisite.Version)
+Assert-True ($dotNetSourceFile.EndsWith('\' + $dotNetPrerequisite.FileName) -and
+    $dotNetDownloadUrl -eq $dotNetPrerequisite.Uri -and
     $dotNetPackage.GetAttribute('Compressed') -eq '$(OpenBladeEmbedDotNetRuntime)' -and
     $dotNetPackage.GetAttribute('Permanent') -eq 'yes' -and
     $dotNetPackage.GetAttribute('Cache') -eq 'remove' -and
-    $dotNetPackage.GetAttribute('InstallArguments') -eq '/install /quiet /norestart') `
+    $dotNetPackage.GetAttribute('InstallArguments') -eq '/install /quiet /norestart' -and
+    $dotNetPackage.GetAttribute('RepairArguments') -eq '/repair /quiet /norestart' -and
+    $dotNetPackage.GetAttribute('Bundle') -eq 'yes' -and
+    $dotNetPackage.GetAttribute('Protocol') -eq 'burn') `
     'The .NET prerequisite must retain its pinned download, offline option, and shared-runtime ownership.'
 foreach ($entry in ([ordered]@{
         InstallArguments = '/install /quiet /norestart'
@@ -633,5 +638,43 @@ $installerProgressCodes = @(
 Assert-True (
     ($setupProgressCodes -join '|') -ceq ($installerProgressCodes -join '|')) `
     'The setup producer and installer consumer progress-code contracts differ.'
+
+. (Join-Path $repository 'build\InstallerValidation.ps1')
+[xml]$detectionManifest = @"
+<BurnManifest xmlns="http://wixtoolset.org/schemas/v4/2008/Burn">
+  <Variable Id="OpenBladeMinimumDotNetRuntimeVersion" Type="version" Value="$($dotNetPrerequisite.Version)" />
+  <Variable Id="OpenBladeDotNetRuntimeSufficient" Type="numeric" Value="0" />
+  <ExtensionSearch Id="OpenBladeDotNetDesktopRuntimeSearch" Variable="OpenBladeDotNetRuntimeVersion" ExtensionId="Wix4NetfxBootstrapperExtension_X64" />
+</BurnManifest>
+"@
+[xml]$detectionExtension = @"
+<BootstrapperExtensionData xmlns="http://wixtoolset.org/schemas/v4/BootstrapperExtensionData">
+  <BootstrapperExtension Id="Wix4NetfxBootstrapperExtension_X64">
+    <NetFxNetCoreSearch Id="OpenBladeDotNetDesktopRuntimeSearch" RuntimeType="2" Platform="1" MajorVersion="10" />
+  </BootstrapperExtension>
+</BootstrapperExtensionData>
+"@
+Assert-OpenBladeDotNetRuntimeDetection -Manifest $detectionManifest -ExtensionData $detectionExtension
+foreach ($mutation in @(
+        @{ Document = 'extension'; Element = 'NetFxNetCoreSearch'; Attribute = 'RuntimeType'; Value = '1' },
+        @{ Document = 'extension'; Element = 'NetFxNetCoreSearch'; Attribute = 'Platform'; Value = '0' },
+        @{ Document = 'extension'; Element = 'NetFxNetCoreSearch'; Attribute = 'MajorVersion'; Value = '11' },
+        @{ Document = 'extension'; Element = 'NetFxNetCoreSearch'; Attribute = 'Id'; Value = 'OtherSearch' },
+        @{ Document = 'manifest'; Element = 'ExtensionSearch'; Attribute = 'Variable'; Value = 'OtherVariable' },
+        @{ Document = 'manifest'; Element = 'ExtensionSearch'; Attribute = 'ExtensionId'; Value = 'OtherExtension' },
+        @{ Document = 'manifest'; Element = 'Variable'; Id = 'OpenBladeMinimumDotNetRuntimeVersion'; Attribute = 'Value'; Value = '10.0.11' },
+        @{ Document = 'manifest'; Element = 'Variable'; Id = 'OpenBladeMinimumDotNetRuntimeVersion'; Attribute = 'Type'; Value = 'string' },
+        @{ Document = 'manifest'; Element = 'Variable'; Id = 'OpenBladeDotNetRuntimeSufficient'; Attribute = 'Value'; Value = '1' })) {
+    [xml]$mutantManifest = $detectionManifest.OuterXml
+    [xml]$mutantExtension = $detectionExtension.OuterXml
+    $document = if ($mutation.Document -eq 'extension') { $mutantExtension } else { $mutantManifest }
+    $selector = "//*[local-name()='$($mutation.Element)']"
+    if ($mutation.ContainsKey('Id')) { $selector += "[@Id='$($mutation.Id)']" }
+    $document.SelectSingleNode($selector).SetAttribute($mutation.Attribute, $mutation.Value)
+    $rejected = $false
+    try { Assert-OpenBladeDotNetRuntimeDetection -Manifest $mutantManifest -ExtensionData $mutantExtension }
+    catch { $rejected = $true }
+    Assert-True $rejected "Compiled .NET search validation accepted $($mutation.Attribute)=$($mutation.Value)."
+}
 
 Write-Host 'Installer authoring tests passed.'

@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
@@ -28,7 +29,9 @@ public sealed class DotNetRuntimeAdmissionTests
         InvalidOperationException failure = Assert.Throws<InvalidOperationException>(
             () => CreateAdmission(new DotNetInstallRoot(tree.Root, IsX64: true)).EnsureAvailable());
 
-        Assert.Contains("64-bit .NET Desktop Runtime 10.0.12 or later", failure.Message);
+        Assert.Equal(
+            "OpenBlade requires the 64-bit .NET 10 Desktop Runtime (10.0.12 or a newer 10.0 patch). Install or repair .NET 10 Desktop Runtime, then try again.",
+            failure.Message);
     }
 
     [Theory]
@@ -55,6 +58,73 @@ public sealed class DotNetRuntimeAdmissionTests
     }
 
     [Fact]
+    public void MissingDesktopCoreDependencyConfig_IsRejected()
+    {
+        using RuntimeTree tree = new();
+        tree.WriteCompleteRuntime("10.0.12");
+        File.Delete(Directory.EnumerateFiles(
+            tree.Root,
+            "Microsoft.WindowsDesktop.App.runtimeconfig.json",
+            SearchOption.AllDirectories).Single());
+
+        Assert.Throws<InvalidOperationException>(
+            () => CreateAdmission(new DotNetInstallRoot(tree.Root, IsX64: true)).EnsureAvailable());
+    }
+
+    [Theory]
+    [InlineData("{ not-json }")]
+    [InlineData("[]")]
+    [InlineData("{\"runtimeOptions\":[]}")]
+    [InlineData("{\"runtimeOptions\":{\"rollForward\":\"LatestPatch\",\"framework\":[]}}")]
+    public void MalformedDesktopCoreDependencyConfig_IsRejected(string configuration)
+    {
+        using RuntimeTree tree = new();
+        tree.WriteCompleteRuntime("10.0.12");
+        string config = Directory.EnumerateFiles(
+            tree.Root,
+            "Microsoft.WindowsDesktop.App.runtimeconfig.json",
+            SearchOption.AllDirectories).Single();
+        File.WriteAllText(config, configuration);
+
+        InvalidOperationException failure = Assert.Throws<InvalidOperationException>(
+            () => CreateAdmission(new DotNetInstallRoot(tree.Root, IsX64: true)).EnsureAvailable());
+        Assert.Contains("Install or repair .NET 10 Desktop Runtime", failure.Message);
+    }
+
+    [Fact]
+    public void HigherDesktopCoreDependencyWithoutMatchingCore_IsRejected()
+    {
+        using RuntimeTree tree = new();
+        tree.WriteCoreRuntime("10.0.12");
+        tree.WriteDesktopRuntime("10.0.13", "10.0.13");
+
+        Assert.Throws<InvalidOperationException>(
+            () => CreateAdmission(new DotNetInstallRoot(tree.Root, IsX64: true)).EnsureAvailable());
+    }
+
+    [Fact]
+    public void HigherCompatibleCoreRuntime_IsAccepted()
+    {
+        using RuntimeTree tree = new();
+        tree.WriteCoreRuntime("10.0.14");
+        tree.WriteDesktopRuntime("10.0.13", "10.0.13");
+
+        CreateAdmission(new DotNetInstallRoot(tree.Root, IsX64: true)).EnsureAvailable();
+    }
+
+    [Fact]
+    public void NewerBrokenDesktopRuntimeOvershadowsOlderCompleteRuntime()
+    {
+        using RuntimeTree tree = new();
+        tree.WriteCompleteRuntime("10.0.12");
+        tree.WriteCoreRuntime("10.0.13");
+        tree.WriteDesktopRuntime("10.0.13", "10.0.13", includeRuntimeFile: false);
+
+        Assert.Throws<InvalidOperationException>(
+            () => CreateAdmission(new DotNetInstallRoot(tree.Root, IsX64: true)).EnsureAvailable());
+    }
+
+    [Fact]
     public void UnrootedRuntimeLocation_IsRejected()
     {
         Assert.Throws<InvalidOperationException>(
@@ -66,12 +136,18 @@ public sealed class DotNetRuntimeAdmissionTests
     {
         string registered = Path.GetFullPath(@"C:\registered-dotnet");
         string programFiles = Path.GetFullPath(@"C:\Program Files");
+        RegistryView? observedView = null;
         WindowsDotNetInstallRootSource source = new(
-            readRegisteredX64Root: () => new(Succeeded: true, Path: registered),
+            readRegisteredX64Root: view =>
+            {
+                observedView = view;
+                return new(Succeeded: true, Path: registered);
+            },
             readProgramFiles: () => programFiles);
 
         Assert.Equal([registered], source.GetInstallRoots().Select(root => root.Path));
         Assert.All(source.GetInstallRoots(), root => Assert.True(root.IsX64));
+        Assert.Equal(RegistryView.Registry32, observedView);
     }
 
     [Fact]
@@ -79,7 +155,7 @@ public sealed class DotNetRuntimeAdmissionTests
     {
         string programFiles = Path.GetFullPath(@"C:\Program Files");
         WindowsDotNetInstallRootSource source = new(
-            readRegisteredX64Root: () => new(Succeeded: true, Path: null),
+            readRegisteredX64Root: _ => new(Succeeded: true, Path: null),
             readProgramFiles: () => programFiles);
 
         Assert.Equal(
@@ -91,7 +167,7 @@ public sealed class DotNetRuntimeAdmissionTests
     public void WindowsRootSource_RegistryReadFailureDoesNotFallBack()
     {
         WindowsDotNetInstallRootSource source = new(
-            readRegisteredX64Root: () => new(Succeeded: false, Path: null),
+            readRegisteredX64Root: _ => new(Succeeded: false, Path: null),
             readProgramFiles: () => Path.GetFullPath(@"C:\Program Files"));
 
         Assert.Empty(source.GetInstallRoots());
@@ -106,7 +182,7 @@ public sealed class DotNetRuntimeAdmissionTests
         WriteCompleteRuntime(Path.Combine(programFiles, "dotnet"), "10.0.12");
         Directory.CreateDirectory(registered);
         WindowsDotNetInstallRootSource source = new(
-            readRegisteredX64Root: () => new(Succeeded: true, Path: registered),
+            readRegisteredX64Root: _ => new(Succeeded: true, Path: registered),
             readProgramFiles: () => programFiles);
 
         Assert.Throws<InvalidOperationException>(
@@ -184,19 +260,68 @@ public sealed class DotNetRuntimeAdmissionTests
             DotNetRuntimeAdmissionTests.WriteCompleteRuntime(Root, version);
         }
 
+        public void WriteCoreRuntime(string version)
+        {
+            DotNetRuntimeAdmissionTests.WriteCoreRuntime(Root, version);
+        }
+
+        public void WriteDesktopRuntime(
+            string version,
+            string coreDependency,
+            bool includeRuntimeFile = true)
+        {
+            DotNetRuntimeAdmissionTests.WriteDesktopRuntime(
+                Root,
+                version,
+                coreDependency,
+                includeRuntimeFile);
+        }
+
         public void Dispose() => Directory.Delete(Root, recursive: true);
 
     }
 
     private static void WriteCompleteRuntime(string root, string version)
     {
+        WriteCoreRuntime(root, version);
+        WriteDesktopRuntime(root, version, version);
+    }
+
+    private static void WriteCoreRuntime(string root, string version)
+    {
         WriteFile(Path.Combine(root, "shared", "Microsoft.NETCore.App", version, "coreclr.dll"));
-        WriteFile(Path.Combine(
+    }
+
+    private static void WriteDesktopRuntime(
+        string root,
+        string version,
+        string coreDependency,
+        bool includeRuntimeFile = true)
+    {
+        string desktopDirectory = Path.Combine(
             root,
-                "shared",
-                "Microsoft.WindowsDesktop.App",
-                version,
-                "System.Windows.Forms.dll"));
+            "shared",
+            "Microsoft.WindowsDesktop.App",
+            version);
+        if (includeRuntimeFile)
+        {
+            WriteFile(Path.Combine(desktopDirectory, "System.Windows.Forms.dll"));
+        }
+
+        Directory.CreateDirectory(desktopDirectory);
+        File.WriteAllText(
+            Path.Combine(desktopDirectory, "Microsoft.WindowsDesktop.App.runtimeconfig.json"),
+            $$"""
+            {
+              "runtimeOptions": {
+                "rollForward": "LatestPatch",
+                "framework": {
+                  "name": "Microsoft.NETCore.App",
+                  "version": "{{coreDependency}}"
+                }
+              }
+            }
+            """);
     }
 
     private static void WriteFile(string path)

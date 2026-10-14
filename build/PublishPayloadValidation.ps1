@@ -370,8 +370,8 @@ function Assert-FrameworkDependentProductPayload {
             throw "$application has an unexpected shared .NET framework count."
         }
         foreach ($expectedName in $expectedNames) {
-            $matches = @($frameworks | Where-Object { $_.name -eq $expectedName -and $_.version -eq $minimumVersion })
-            if ($matches.Count -ne 1) {
+            $frameworkMatches = @($frameworks | Where-Object { $_.name -eq $expectedName -and $_.version -eq $minimumVersion })
+            if ($frameworkMatches.Count -ne 1) {
                 throw "$application must require $expectedName $minimumVersion."
             }
         }

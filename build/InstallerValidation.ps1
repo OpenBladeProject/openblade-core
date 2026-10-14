@@ -40,6 +40,42 @@ function Get-WixCommandAssembly {
     return $wix
 }
 
+function Assert-OpenBladeDotNetRuntimeDetection {
+    param(
+        [Parameter(Mandatory)][xml]$Manifest,
+        [Parameter(Mandatory)][xml]$ExtensionData
+    )
+
+    $namespaces = [Xml.XmlNamespaceManager]::new($Manifest.NameTable)
+    $namespaces.AddNamespace('burn', 'http://wixtoolset.org/schemas/v4/2008/Burn')
+    $extensionNamespaces = [Xml.XmlNamespaceManager]::new($ExtensionData.NameTable)
+    $extensionNamespaces.AddNamespace('extension', 'http://wixtoolset.org/schemas/v4/BootstrapperExtensionData')
+    $prerequisite = Get-OpenBladeDotNetRuntimePrerequisite
+    $minimumVariable = $Manifest.SelectSingleNode(
+        '/burn:BurnManifest/burn:Variable[@Id="OpenBladeMinimumDotNetRuntimeVersion"]', $namespaces)
+    $readinessVariable = $Manifest.SelectSingleNode(
+        '/burn:BurnManifest/burn:Variable[@Id="OpenBladeDotNetRuntimeSufficient"]', $namespaces)
+    $search = $Manifest.SelectSingleNode(
+        '/burn:BurnManifest/burn:ExtensionSearch[@Id="OpenBladeDotNetDesktopRuntimeSearch"]', $namespaces)
+    $extensionSearch = $ExtensionData.SelectSingleNode(
+        '/extension:BootstrapperExtensionData/extension:BootstrapperExtension[@Id="Wix4NetfxBootstrapperExtension_X64"]/extension:NetFxNetCoreSearch[@Id="OpenBladeDotNetDesktopRuntimeSearch"]',
+        $extensionNamespaces)
+    if (($null -eq $minimumVariable) -or
+        ($minimumVariable.GetAttribute('Type') -ne 'version') -or
+        ($minimumVariable.GetAttribute('Value') -ne $prerequisite.Version) -or
+        ($null -eq $readinessVariable) -or
+        ($readinessVariable.GetAttribute('Type') -ne 'numeric') -or
+        ($readinessVariable.GetAttribute('Value') -ne '0') -or
+        ($null -eq $search) -or
+        ($search.GetAttribute('Variable') -ne 'OpenBladeDotNetRuntimeVersion') -or
+        ($search.GetAttribute('ExtensionId') -ne 'Wix4NetfxBootstrapperExtension_X64') -or
+        ($null -eq $extensionSearch) -or
+        ($extensionSearch.GetAttribute('RuntimeType') -ne '2') -or
+        ($extensionSearch.GetAttribute('Platform') -ne '1') -or
+        ($extensionSearch.GetAttribute('MajorVersion') -ne '10')) {
+        throw 'The compiled .NET search must detect the x64 Desktop Runtime with the pinned minimum version.'
+    }
+}
 function Assert-OpenBladeInstallerBundle {
     param(
         [Parameter(Mandatory)][string]$Installer,
@@ -126,6 +162,8 @@ function Assert-OpenBladeInstallerBundle {
         }
 
         [xml]$manifest = Get-Content -LiteralPath $manifestPath
+        [xml]$extensionData = Get-Content -LiteralPath (Join-Path $bootstrapperOutput 'BootstrapperExtensionData.xml')
+        Assert-OpenBladeDotNetRuntimeDetection -Manifest $manifest -ExtensionData $extensionData
         $namespaces = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
         $namespaces.AddNamespace('burn', 'http://wixtoolset.org/schemas/v4/2008/Burn')
         $condition = $manifest.SelectSingleNode(
@@ -325,6 +363,10 @@ function Assert-OpenBladeInstallerBundle {
             '/burn:BurnManifest/burn:Chain/burn:ExePackage[@Id="OpenBladeDotNetRuntime"]', $namespaces)
         if (($null -eq $dotNetPackage) -or
             ($dotNetPackage.GetAttribute('InstallArguments') -ne '/install /quiet /norestart') -or
+            ($dotNetPackage.GetAttribute('RepairArguments') -ne '/repair /quiet /norestart') -or
+            ($dotNetPackage.GetAttribute('Repairable') -ne 'yes') -or
+            ($dotNetPackage.GetAttribute('Bundle') -ne 'yes') -or
+            ($dotNetPackage.GetAttribute('Protocol') -ne 'burn') -or
             ($dotNetPackage.GetAttribute('DetectCondition') -ne
                 'OpenBladeDotNetRuntimeSufficient = 1') -or
             ($dotNetPackage.GetAttribute('Permanent') -ne 'yes') -or
