@@ -154,6 +154,41 @@ public sealed class DiagnosticArchiveSaverTests
         }
     }
 
+    [Fact]
+    public async Task SaveExactAsync_WritesInputBytesWithoutAppendingUserModeLogs()
+    {
+        string directory = CreateTemporaryDirectory();
+        string logs = Path.Combine(directory, "logs");
+        Directory.CreateDirectory(logs);
+        await File.WriteAllTextAsync(
+            Path.Combine(logs, "OpenBlade.Tray.log"),
+            "redacted tray warning");
+        string path = Path.Combine(directory, "report.zip");
+        try
+        {
+            var saver = new DiagnosticArchiveSaver(
+                new StubDestination(path),
+                logs);
+            DiagnosticArchive input = CreateValidArchive();
+
+            DiagnosticArchiveSaveResult result = await saver.SaveExactAsync(
+                input,
+                CancellationToken.None);
+
+            Assert.Equal(DiagnosticArchiveSaveStatus.Saved, result.Status);
+            Assert.Equal(path, result.DestinationPath);
+            Assert.Equal(input.ZipBytes, await File.ReadAllBytesAsync(path));
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            Assert.DoesNotContain(
+                archive.Entries,
+                entry => entry.FullName.StartsWith("user-mode-logs/", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static DiagnosticArchive CreateArchive() =>
         new("OpenBlade-diagnostics.zip", ArchiveBytes);
 

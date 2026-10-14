@@ -642,7 +642,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             {
                 Manufacturer: "Razer",
                 ProductName: "Blade 16 - RZ09-0581",
-                BiosVersion: { Length: > 0 },
             },
             Failure: null,
             FirmwareCompatibility: HostFirmwareCompatibility.Tested

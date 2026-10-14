@@ -10588,6 +10588,7 @@ public sealed partial class MainViewModelTests
         public Queue<ControlOperationResult> MutationResults { get; } = [];
         public ServiceStatusSnapshot? CurrentStatus { get; private set; }
         public ServiceStatusSnapshot? GetStatusResponse { get; set; }
+        public Exception? ExportFailure { get; init; }
         public DiagnosticArchive NextArchive { get; init; } = new(
             "OpenBlade-diagnostics.zip",
             [0x50, 0x4B, 0x03, 0x04]);
@@ -10660,6 +10661,10 @@ public sealed partial class MainViewModelTests
             ExportCalls++;
             LastExportLiveReadingsEnabled = liveReadingsEnabled;
             ExportStarted.TrySetResult();
+            if (ExportFailure is not null)
+            {
+                throw ExportFailure;
+            }
             if (BlockExports)
             {
                 await exportCompletion.Task.WaitAsync(token);
@@ -10922,6 +10927,8 @@ public sealed partial class MainViewModelTests
     {
         public int Calls { get; private set; }
         public DiagnosticArchive? Archive { get; private set; }
+        public int ExactCalls { get; private set; }
+        public DiagnosticArchive? ExactArchive { get; private set; }
         public Exception? Failure { get; init; }
         public DiagnosticArchiveSaveResult NextResult { get; init; } = new(
             DiagnosticArchiveSaveStatus.Saved,
@@ -10939,6 +10946,39 @@ public sealed partial class MainViewModelTests
                 throw Failure;
             }
             return Task.FromResult(NextResult);
+        }
+
+        public Task<DiagnosticArchiveSaveResult> SaveExactAsync(
+            DiagnosticArchive archive,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            ExactCalls++;
+            ExactArchive = archive;
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+            return Task.FromResult(NextResult);
+        }
+    }
+
+    private sealed class FakeExternalUriLauncher : IExternalUriLauncher
+    {
+        public List<Uri> Opened { get; } = [];
+        public int SavesAtLaunch { get; set; }
+        public Func<int>? SaveCounter { get; init; }
+        public bool Result { get; init; } = true;
+        public Exception? Failure { get; init; }
+
+        public Task<bool> OpenAsync(Uri uri, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Opened.Add(uri);
+            SavesAtLaunch = SaveCounter?.Invoke() ?? 0;
+            return Failure is not null
+                ? Task.FromException<bool>(Failure)
+                : Task.FromResult(Result);
         }
     }
 

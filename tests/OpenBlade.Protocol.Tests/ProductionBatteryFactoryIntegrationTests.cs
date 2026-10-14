@@ -34,6 +34,28 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090581ProductionPolicies_DoNotRequireABiosVersionWhenModelScoped()
+    {
+        HostIdentityReadResult baseline = ExactRz090581Identity(
+            "99.99",
+            HostFirmwareCompatibility.ModelScoped);
+        HostIdentityReadResult unknownBios = ExactRz090581Identity(
+            null,
+            HostFirmwareCompatibility.ModelScoped);
+
+        Assert.True(ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(unknownBios)
+            .SupportsRz090581CapabilityDiagnosticsQuery);
+        Assert.Equal(
+            ProductionBatteryFactory.GetRz090581HyperBoostCapabilities(baseline,
+                reversibleWritesAdmitted: true, padlessWritesAdmitted: true),
+            ProductionBatteryFactory.GetRz090581HyperBoostCapabilities(unknownBios,
+                reversibleWritesAdmitted: true, padlessWritesAdmitted: true));
+        Assert.Equal(
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(baseline).Order(),
+            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(unknownBios).Order());
+    }
+
+    [Fact]
     public void Rz090581CapabilityDiagnosticsAdmission_RequiresExactModelEvidence()
     {
         ProductionBatteryReadEvidence admitted =
@@ -299,7 +321,7 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     private static HostIdentityReadResult ExactRz090581Identity(
-        string biosVersion,
+        string? biosVersion,
         HostFirmwareCompatibility compatibility = HostFirmwareCompatibility.Tested) => new(
             new HostIdentityEvidence(
                 "Razer",

@@ -454,6 +454,11 @@ public sealed record ServiceStatusSnapshot(
     public IReadOnlyList<string>? HyperBoostBlockingControllers { get; init; }
 
     public ThermalConvergenceStatus? ThermalConvergence { get; init; }
+
+    // True only when the latest device check read this laptop's manufacturer
+    // or product name and it matches no admitted model. Read failures and
+    // other identity blocks leave it false. It never grants hardware access.
+    public bool UnsupportedLaptop { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

@@ -1521,4 +1521,28 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>[!! Sígn ín tó án íntéráctívé Windows séssíón tó chángé láptóp séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Laptop not supported" xml:space="preserve">
+    <value>[!! Láptóp nót súppórtéd ~~~~~~~ !!]</value>
+  </data>
+  <data name="Not supported" xml:space="preserve">
+    <value>[!! Nót súppórtéd ~~~~~ !!]</value>
+  </data>
+  <data name="Preparing the identity report..." xml:space="preserve">
+    <value>[!! Prépáríng thé ídéntítý répórt... ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Identity report not saved." xml:space="preserve">
+    <value>[!! Ídéntítý répórt nót sávéd. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Identity report saved to {0}. Attach it to the support form in your browser." xml:space="preserve">
+    <value>[!! Ídéntítý répórt sávéd tó {0}. Áttách ít tó thé súppórt fórm ín ýóúr brówsér. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Identity report saved to {0}. Open {1} and attach it to request support." xml:space="preserve">
+    <value>[!! Ídéntítý répórt sávéd tó {0}. Ópén {1} ánd áttách ít tó réqúést súppórt. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Identity report failed: {0}" xml:space="preserve">
+    <value>[!! Ídéntítý répórt fáíléd: {0} ~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens." xml:space="preserve">
+    <value>[!! OpenBlade cóntróls ónlý thé láptóp módéls ít hás béén téstéd ón. Tó hélp ádd thís óné, sávé á shórt ídéntítý répórt ánd áttách ít tó thé súppórt fórm thát ópéns. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

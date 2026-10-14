@@ -2417,6 +2417,24 @@
                             </InfoBar.ActionButton>
                         </InfoBar>
 
+                        <InfoBar x:Uid="MainWindow_UnsupportedLaptopInfoBarText"
+                                 IsOpen="{x:Bind ViewModel.IsUnsupportedLaptop, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.IsUnsupportedLaptop, Mode=OneWay}"
+                                 Title="This laptop isn’t supported yet"
+                                 Message="{x:Bind ViewModel.UnsupportedLaptopMessage}"
+                                 Severity="Informational"
+                                 IsClosable="False"
+                                 Margin="0,0,0,12"
+                                 AutomationProperties.Name="Unsupported laptop">
+                            <InfoBar.ActionButton>
+                                <Button x:Uid="MainWindow_UnsupportedLaptopHelpAddSupportButton"
+                                        Command="{x:Bind ViewModel.HelpAddSupportCommand}"
+                                        AutomationProperties.Name="Help add support">
+                                    <TextBlock x:Uid="MainWindow_UnsupportedLaptopHelpAddSupportLabel" Text="Help add support" />
+                                </Button>
+                            </InfoBar.ActionButton>
+                        </InfoBar>
+
                         <Border x:Name="DashboardEmptyState"
                                 Style="{StaticResource CardStyle}"
                                 Padding="22"

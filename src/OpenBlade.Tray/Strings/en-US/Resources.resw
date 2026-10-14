@@ -2029,4 +2029,16 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>Check current state</value>
   </data>
+  <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Help add support</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopHelpAddSupportLabel.Text" xml:space="preserve">
+    <value>Help add support</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopInfoBarText.Title" xml:space="preserve">
+    <value>This laptop isn’t supported yet</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Unsupported laptop</value>
+  </data>
 </root>

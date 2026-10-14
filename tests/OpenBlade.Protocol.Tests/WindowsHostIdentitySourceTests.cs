@@ -47,7 +47,12 @@ public sealed class WindowsHostIdentitySourceTests
     }
 
     public static TheoryData<string, string> RegistryValues => CreateRequestData(
-        request => $"{request.ExpectedValue}-wrong");
+        request => $"{request.ExpectedValue}-wrong",
+        includeBiosVersion: false);
+
+    public static TheoryData<string, string> ExactVersionsBiosVersionValues => CreateRequestData(
+        request => $"{request.ExpectedValue}-wrong",
+        biosVersionOnly: true);
 
     public static TheoryData<string, string> CaseDifferentRegistryValues
     {
@@ -70,7 +75,18 @@ public sealed class WindowsHostIdentitySourceTests
     public static TheoryData<string> RegistryValueLocations()
     {
         TheoryData<string> data = new();
-        foreach (RegistryValueRequest request in RequiredIdentityRequests)
+        foreach (RegistryValueRequest request in RequiredIdentityRequests.Where(IsNotBiosVersion))
+        {
+            data.Add(request.Location);
+        }
+
+        return data;
+    }
+
+    public static TheoryData<string> ExactVersionsBiosVersionLocations()
+    {
+        TheoryData<string> data = new();
+        foreach (RegistryValueRequest request in RequiredIdentityRequests.Where(IsBiosVersion))
         {
             data.Add(request.Location);
         }
@@ -82,7 +98,6 @@ public sealed class WindowsHostIdentitySourceTests
     {
         { $"{SystemInformationKey}|SystemManufacturer" },
         { $"{SystemInformationKey}|SystemProductName" },
-        { $"{SystemInformationKey}|BIOSVersion" },
     };
 
     [Fact]
@@ -100,7 +115,7 @@ public sealed class WindowsHostIdentitySourceTests
         Assert.Null(result.HostIdentityFailure);
         Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
         Assert.Equal(
-            ExpectedRequests.Select(request => request.Location).Order(),
+            ModelScopedRequests.Select(request => request.Location).Order(),
             registry.Requests.Select(request => request.Location).Order());
         Assert.All(registry.Requests, request =>
         {
@@ -249,10 +264,7 @@ public sealed class WindowsHostIdentitySourceTests
         registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "3.03";
         var policy = new FirmwareCompatibilityPolicy { AllowUntestedFirmware = true };
 
-        HostIdentityReadResult result = new WindowsHostIdentitySource(
-            registry,
-            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
-            policy).ReadExactIdentity();
+        HostIdentityReadResult result = CreateExactVersionsSource(registry, policy).ReadExactIdentity();
 
         AssertIdentityBlocked(result);
     }
@@ -282,7 +294,7 @@ public sealed class WindowsHostIdentitySourceTests
         Assert.Null(result.HostIdentityFailure);
         Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
         Assert.Equal(
-            ExpectedRequests.Select(request => request.Location),
+            ModelScopedRequests.Select(request => request.Location),
             registry.Requests.Select(request => request.Location));
     }
 
@@ -375,7 +387,7 @@ public sealed class WindowsHostIdentitySourceTests
         Assert.Null(result.Failure);
         Assert.Null(result.HostIdentityFailure);
         Assert.Equal(
-            ExpectedRequests.Select(request => request.Location),
+            ModelScopedRequests.Select(request => request.Location),
             registry.Requests.Select(request => request.Location));
     }
 
@@ -390,7 +402,7 @@ public sealed class WindowsHostIdentitySourceTests
         Assert.NotNull(result.Evidence);
         Assert.Null(result.Evidence.Value.Sku);
         Assert.Null(result.Failure);
-        Assert.Equal(ExpectedRequests.Count(), registry.Requests.Count);
+        Assert.Equal(ModelScopedRequests.Count(), registry.Requests.Count);
     }
 
     [Fact]
@@ -404,7 +416,7 @@ public sealed class WindowsHostIdentitySourceTests
         Assert.NotNull(result.Evidence);
         Assert.Null(result.Evidence.Value.Sku);
         Assert.Null(result.Failure);
-        Assert.Equal(ExpectedRequests.Count(), registry.Requests.Count);
+        Assert.Equal(ModelScopedRequests.Count(), registry.Requests.Count);
     }
 
     [Fact]
@@ -439,6 +451,110 @@ public sealed class WindowsHostIdentitySourceTests
         registry.ThrowAt = location;
 
         AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(ExactVersionsBiosVersionValues))]
+    public void ReadExactIdentity_ExactVersionsBlocksEveryMismatchedBiosVersion(
+        string location,
+        string wrongValue)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[location] = wrongValue;
+
+        AssertIdentityBlocked(CreateExactVersionsSource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(ExactVersionsBiosVersionLocations))]
+    public void ReadExactIdentity_ExactVersionsBlocksMissingBiosVersion(string location)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values.Remove(location);
+
+        AssertIdentityBlocked(CreateExactVersionsSource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(ExactVersionsBiosVersionLocations))]
+    public void ReadExactIdentity_ExactVersionsBlocksWrongTypeBiosVersionWithoutConvertingIt(
+        string location)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[location] = new StringConvertibleRegistryValue((string)registry.Values[location]!);
+
+        AssertIdentityBlocked(CreateExactVersionsSource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(ExactVersionsBiosVersionLocations))]
+    public void ReadExactIdentity_ExactVersionsBlocksAndContainsBiosVersionReadExceptions(
+        string location)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.ThrowAt = location;
+
+        AssertIdentityBlocked(CreateExactVersionsSource(registry).ReadExactIdentity());
+    }
+
+    [Fact]
+    public void ReadExactIdentity_ModelScopedAdmitsUnreadableBiosVersionWithNullEvidence()
+    {
+        string biosVersion = $"{BiosKey}|BIOSVersion";
+        string systemBiosVersion = $"{SystemInformationKey}|BIOSVersion";
+
+        FakeRegistryValueSource missing = CreateExactRegistry();
+        missing.Values.Remove(biosVersion);
+        FakeRegistryValueSource blank = CreateExactRegistry();
+        blank.Values[biosVersion] = " ";
+        FakeRegistryValueSource wrongType = CreateExactRegistry();
+        wrongType.Values[biosVersion] = new StringConvertibleRegistryValue("3.01");
+        FakeRegistryValueSource throwing = CreateExactRegistry();
+        throwing.ThrowAt = biosVersion;
+
+        foreach (FakeRegistryValueSource registry in new[] { missing, blank, wrongType, throwing })
+        {
+            HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+            Assert.NotNull(result.Evidence);
+            Assert.Null(result.Evidence.Value.BiosVersion);
+            Assert.Equal("RZ09-05819EN4", result.Evidence.Value.Sku);
+            Assert.Null(result.Failure);
+            Assert.Null(result.HostIdentityFailure);
+            Assert.Equal(HostFirmwareCompatibility.ModelScoped, result.FirmwareCompatibility);
+            Assert.DoesNotContain(registry.Requests, request => request.Location == systemBiosVersion);
+        }
+    }
+
+    [Fact]
+    public void ReadExactIdentity_ModelScopedIgnoresSystemInformationBiosVersion()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values.Remove($"{SystemInformationKey}|BIOSVersion");
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.Equal("3.01", result.Evidence?.BiosVersion);
+        Assert.Null(result.Failure);
+        Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_ModelScopedStillBlocksUnreadableManufacturerAndProductName()
+    {
+        foreach (string location in new[]
+        {
+            $"{BiosKey}|SystemManufacturer",
+            $"{BiosKey}|SystemProductName",
+            $"{SystemInformationKey}|SystemManufacturer",
+            $"{SystemInformationKey}|SystemProductName",
+        })
+        {
+            FakeRegistryValueSource registry = CreateExactRegistry();
+            registry.Values.Remove(location);
+
+            AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
+        }
     }
 
     [Fact]
@@ -477,7 +593,7 @@ public sealed class WindowsHostIdentitySourceTests
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "4.01";
 
-        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+        HostIdentityReadResult result = CreateExactVersionsSource(registry).ReadExactIdentity();
 
         AssertIdentityBlocked(result);
         Assert.Equal(
@@ -488,6 +604,26 @@ public sealed class WindowsHostIdentitySourceTests
                 "3.01",
                 "4.01"),
             result.HostIdentityFailure);
+        Assert.Equal(
+            ExpectedRequests.Select(request => request.Location),
+            registry.Requests.Select(request => request.Location));
+    }
+
+    [Fact]
+    public void ReadExactIdentity_ModelScopedIgnoresBiosVersionSourceDisagreement()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[$"{SystemInformationKey}|BIOSVersion"] = "4.01";
+
+        HostIdentityReadResult result = CreateSource(registry).ReadExactIdentity();
+
+        Assert.Equal("3.01", result.Evidence?.BiosVersion);
+        Assert.Null(result.Failure);
+        Assert.Null(result.HostIdentityFailure);
+        Assert.Equal(HostFirmwareCompatibility.Tested, result.FirmwareCompatibility);
+        Assert.DoesNotContain(
+            registry.Requests,
+            request => request.Location == $"{SystemInformationKey}|BIOSVersion");
     }
 
     [Theory]
@@ -607,11 +743,19 @@ public sealed class WindowsHostIdentitySourceTests
     }
 
     private static TheoryData<string, string> CreateRequestData(
-        Func<RegistryValueRequest, string> valueFactory)
+        Func<RegistryValueRequest, string> valueFactory,
+        bool includeBiosVersion = true,
+        bool biosVersionOnly = false)
     {
         TheoryData<string, string> data = new();
         foreach (RegistryValueRequest request in RequiredIdentityRequests)
         {
+            if ((!includeBiosVersion && IsBiosVersion(request))
+                || (biosVersionOnly && !IsBiosVersion(request)))
+            {
+                continue;
+            }
+
             data.Add(request.Location, valueFactory(request));
         }
 
@@ -629,11 +773,34 @@ public sealed class WindowsHostIdentitySourceTests
         return registry;
     }
 
+    private static IEnumerable<RegistryValueRequest> ModelScopedRequests =>
+        ExpectedRequests.Where(request =>
+            request.Location != $"{SystemInformationKey}|BIOSVersion");
+
+    private static bool IsBiosVersion(RegistryValueRequest request) =>
+        request.ValueName == "BIOSVersion";
+
+    private static bool IsNotBiosVersion(RegistryValueRequest request) =>
+        !IsBiosVersion(request);
+
     private static IEnumerable<RegistryValueRequest> RequiredIdentityRequests =>
         ExpectedRequests.Where(request => request.ValueName != "SystemSKU");
 
     private static WindowsHostIdentitySource CreateSource(FakeRegistryValueSource registry) =>
         new(registry, new FakeWindowsPlatformEvidenceSource(ExactPlatform));
+
+    private static WindowsHostIdentitySource CreateExactVersionsSource(
+        FakeRegistryValueSource registry,
+        FirmwareCompatibilityPolicy? policy = null) =>
+        new(
+            registry,
+            new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            new ExpectedHostIdentity(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05819EN4",
+                ["3.01", "4.00", "4.01"]),
+            policy);
 
     private static void AssertIdentityBlocked(HostIdentityReadResult result)
     {

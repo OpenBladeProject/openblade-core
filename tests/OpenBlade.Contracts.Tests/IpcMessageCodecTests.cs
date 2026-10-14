@@ -546,7 +546,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1133,7 +1133,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2250,6 +2250,7 @@ public sealed class IpcMessageCodecTests
             WritesBlocked = false,
             HyperBoostBlockingControllers = ["RazerAppEngine"],
             ObservationReason = DeviceObservationReason.RefreshingControls,
+            UnsupportedLaptop = true,
             ThermalConvergence = new ThermalConvergenceStatus(
                 ThermalControlPolicy.MaintainDesiredState,
                 ThermalPolicyUpgradeDisclosureState.Acknowledged,
@@ -2272,6 +2273,7 @@ public sealed class IpcMessageCodecTests
         Assert.False(projected.ContainsKey("thermalConvergence"));
         Assert.False(projected.ContainsKey("hyperBoostBlockingControllers"));
         Assert.False(projected.ContainsKey("observationReason"));
+        Assert.False(projected.ContainsKey("unsupportedLaptop"));
         Assert.Contains(
             "Update or repair",
             projected["message"]!.GetValue<string>(),
@@ -2296,6 +2298,35 @@ public sealed class IpcMessageCodecTests
 
         Assert.Equal(reason, actual.ObservationReason);
         Assert.Equal(expected.Message, actual.Message);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UnsupportedLaptop_RoundTripsAndMissingDefaultsToFalse(bool unsupported)
+    {
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus() with
+            {
+                DeviceVerified = false,
+                UnsupportedLaptop = unsupported,
+            }), CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        Assert.Equal(
+            unsupported,
+            Assert.IsType<JsonObject>(json["status"])["unsupportedLaptop"]!.GetValue<bool>());
+
+        using MemoryStream roundTrip = FrameJson(json.ToJsonString());
+        ServiceStatusEvent actual = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(roundTrip, CancellationToken.None));
+        Assert.Equal(unsupported, actual.Status.UnsupportedLaptop);
+
+        Assert.True(Assert.IsType<JsonObject>(json["status"]).Remove("unsupportedLaptop"));
+        using MemoryStream missing = FrameJson(json.ToJsonString());
+        ServiceStatusEvent legacy = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(missing, CancellationToken.None));
+        Assert.False(legacy.Status.UnsupportedLaptop);
     }
 
     [Fact]

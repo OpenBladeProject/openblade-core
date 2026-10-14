@@ -1,0 +1,55 @@
+name: Support my laptop
+description: Ask OpenBlade to support a Razer laptop it doesn't support yet.
+title: "Support my laptop: "
+labels: ["device-support"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping OpenBlade support more laptops. When OpenBlade shows **This laptop isn't supported yet**, select **Help add support**. OpenBlade saves `OpenBlade-identity-report.zip` and opens this form. Attach that file below.
+
+        The report contains OpenBlade's identity check and version details. It doesn't include serial numbers, user names, or folder paths.
+  - type: input
+    id: laptop-name
+    attributes:
+      label: Laptop name
+      description: The name on the box or in Razer Synapse.
+      placeholder: Razer Blade 18 (2023)
+    validations:
+      required: true
+  - type: input
+    id: model-number
+    attributes:
+      label: Model number
+      description: It starts with RZ09 and is printed on the label under the laptop.
+      placeholder: RZ09-0484
+    validations:
+      required: true
+  - type: input
+    id: bios-version
+    attributes:
+      label: BIOS version
+      description: Open System Information (`msinfo32`) and copy **BIOS Version/Date**.
+    validations:
+      required: true
+  - type: input
+    id: openblade-version
+    attributes:
+      label: OpenBlade version
+      description: Open OpenBlade and go to **About**.
+      placeholder: 0.26.0
+    validations:
+      required: true
+  - type: upload
+    id: identity-report
+    attributes:
+      label: Identity report
+      description: Attach `OpenBlade-identity-report.zip`. If OpenBlade has no **Help add support** button, update OpenBlade first.
+    validations:
+      required: true
+      accept: ".zip"
+  - type: textarea
+    id: synapse-features
+    attributes:
+      label: Synapse features (optional)
+      description: Which controls does Razer Synapse offer on this laptop? For example, performance modes, fan control, keyboard lighting, battery health, or HyperBoost.

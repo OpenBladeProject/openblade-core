@@ -1183,18 +1183,21 @@ public partial class App
         {
             return;
         }
-        if (state is not ("read-failure" or "battery"))
+        if (state is not ("read-failure" or "battery" or "unsupported"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
         }
 
         // Snapshot windows never start the service client. These states exercise
         // the real UI with synthetic observations and perform no device access.
-        bool blocked = state == "read-failure";
+        bool unsupported = state == "unsupported";
+        bool blocked = state == "read-failure" || unsupported;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         ServiceStatusSnapshot status = new(
-            1, true, blocked, [], null, [], "Control availability snapshot",
-            DeviceCapabilities.SafeTargetDefaults(),
+            1, !unsupported, blocked, [], null, [], "Control availability snapshot",
+            unsupported
+                ? DeviceCapabilities.Unavailable()
+                : DeviceCapabilities.SafeTargetDefaults(),
             blocked ? null : new ConfirmedDeviceState(
                 PerformancePreset.BatterySaver, FanMode.Automatic, null, null),
             profiles,
@@ -1203,7 +1206,10 @@ public partial class App
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.Battery.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            PowerSource.Battery, null, null, null, null, false);
+            PowerSource.Battery, null, null, null, null, false)
+        {
+            UnsupportedLaptop = unsupported,
+        };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
             "ApplyStatus",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
