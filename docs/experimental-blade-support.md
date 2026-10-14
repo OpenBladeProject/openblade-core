@@ -50,7 +50,9 @@ GPU clock offsets, and High/High are excluded. Custom changes require readable,
 representable starting levels, including the stored levels before entering Custom,
 and independent confirmation after each level change. Unsupported raw levels
 remain diagnostic observations rather than a guessed setting. HyperBoost remains
-observed-only. Manual fan behavior is unresolved.
+observed-only: it cannot be enabled, though choosing Balanced, Silent, or Performance
+can leave an existing firmware HyperBoost state. Custom requires an ordinary preset
+as its starting state. Manual fan behavior is unresolved.
 
 Blade 18 keyboard controls include brightness, Off, Spectrum, random-color
 Breathing, and Wave with upstream direction byte 1 (presented as Rightward).

@@ -23,6 +23,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 BatteryValidationFirmwareCompatibility.ModelScoped), factory, UnavailableFanRpmFactory());
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
         Assert.Null(await device.ReadMcuVersionAsync(CancellationToken.None));
+        Assert.Null(await device.ReadRz090581CapabilityDiagnosticsAsync(CancellationToken.None));
         Assert.Null(await device.ReadStartupAnimationAsync(CancellationToken.None));
         Assert.Null(await device.ReadFunctionKeyPrimaryAsync(CancellationToken.None));
         Assert.Null(await device.ReadGamingModeAsync(CancellationToken.None));
@@ -30,6 +31,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadMcuVersionAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadRz090581CapabilityDiagnosticsAsync(cancellation.Token));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadStartupAnimationAsync(cancellation.Token));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadFunctionKeyPrimaryAsync(cancellation.Token));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadGamingModeAsync(cancellation.Token));

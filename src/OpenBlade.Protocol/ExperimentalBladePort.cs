@@ -142,7 +142,6 @@ internal sealed partial class ExperimentalBladePort(
             _ => UnsupportedPerformanceMode(mode),
         };
         FanMode fans = first.Span[3] == 0 ? FanMode.Automatic : FanMode.Fixed;
-        RecordQuery("Performance", "Confirmed", confirmed: $"{(hyperBoost ? "HyperBoost" : performance?.ToString())}/{fans}");
         CustomPerformanceSettings? custom = mode == 4 && model.ProductId == 0x02A0
             ? await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false) : null;
         // Custom without representable levels cannot form a valid confirmed IPC state.
@@ -150,6 +149,12 @@ internal sealed partial class ExperimentalBladePort(
         if (performance == PerformancePreset.Custom && custom is null)
         {
             performance = null;
+            RecordQuery("Performance", "UnsupportedState", $"ReportedMode=4;Fans={fans};CustomLevels=Unavailable",
+                "UnrepresentableCustomPerformance");
+        }
+        else
+        {
+            RecordQuery("Performance", "Confirmed", confirmed: $"{(hyperBoost ? "HyperBoost" : performance?.ToString())}/{fans}");
         }
         return new(performance, fans) { HyperBoostActive = hyperBoost, CustomPerformance = custom };
     }

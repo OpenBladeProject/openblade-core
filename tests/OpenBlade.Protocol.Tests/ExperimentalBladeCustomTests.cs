@@ -88,6 +88,8 @@ public sealed class ExperimentalBladeCustomTests
         ProductionPerformanceFanState state = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
         Assert.Null(state.Performance);
         Assert.Null(state.CustomPerformance);
+        Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "Performance"
+            && item.Outcome == "UnsupportedState" && item.FailureCategory == "UnrepresentableCustomPerformance");
         Assert.Equal(FanMode.Automatic, state.Fans);
         Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "CustomPerformance"
             && item.Outcome == "UnsupportedState"

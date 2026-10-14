@@ -47,6 +47,35 @@ public sealed class ExperimentalBladeLightingTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LeavingOff_ConfirmsBrightnessBeforeEffectAndPreservesReadablePartialState(bool failEffect)
+    {
+        var session = new Session { Raw = 0, Effect = 0, FailEffect = failEffect };
+        var policy = Enabled();
+        await using var port = Create(session, policy);
+        if (failEffect)
+        {
+            BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None));
+            Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+            Assert.False(policy.WritesAllowed);
+            LightingSettings partial = Assert.IsType<LightingSettings>(await port.ReadStateAsync(CancellationToken.None));
+            Assert.Equal(LightingEffect.Off, partial.Effect);
+        }
+        else
+        {
+            await port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None);
+        }
+        Assert.Equal(128, session.Raw);
+        Assert.Equal(failEffect ? 0 : 3, session.Effect);
+        Assert.Equal(new byte[] { 0x03, 0x02 }, session.Commands.Where(command => command.CommandId < 0x80)
+            .Select(command => command.CommandId));
+        int brightness = session.Commands.FindIndex(command => command.CommandId == 0x03);
+        Assert.Equal(0x83, session.Commands[brightness + 1].CommandId);
+    }
+
+    [Theory]
     [InlineData(LightingEffect.Off)]
     [InlineData(LightingEffect.Breathing)]
     [InlineData(LightingEffect.Wave)]
@@ -238,6 +267,7 @@ public sealed class ExperimentalBladeLightingTests
         internal bool LogoOn { get; set; }
         internal byte LogoEffect { get; set; }
         internal bool IgnoreEffect { get; set; }
+        internal bool FailEffect { get; set; }
         internal bool IgnoreBrightness { get; set; }
         internal bool FailLogoPower { get; set; }
         internal byte[] AckPayload { get; set; } = [];
@@ -274,6 +304,11 @@ public sealed class ExperimentalBladeLightingTests
             }
             else if (command.ClassId == 0x0F && command.CommandId == 0x02)
             {
+                if (FailEffect)
+                {
+                    return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout)
+                    { Diagnostic = new(HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.Timeout, null, null) });
+                }
                 if (!IgnoreEffect)
                 {
                     Effect = args[2]; if (args.Length > 3)

@@ -2001,6 +2001,24 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task LightingParameterCapabilities_OmittedFieldsRetainFullPickerDefaults()
+    {
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus() with
+            { Capabilities = DeviceCapabilities.SafeTargetDefaults() }), CancellationToken.None);
+        JsonObject root = FramedJsonObject(stream);
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
+        capabilities.Remove("supportsBreathingColorSelection");
+        capabilities.Remove("supportsWaveDirectionSelection");
+        ServiceStatusEvent decoded = Assert.IsType<ServiceStatusEvent>(await IpcMessageCodec.ReadServerFrameAsync(
+            FrameJson(root.ToJsonString()), CancellationToken.None));
+        Assert.True(decoded.Status.Capabilities!.SupportsBreathingColorSelection);
+        Assert.True(decoded.Status.Capabilities.SupportsWaveDirectionSelection);
+    }
+
+    [Fact]
     public async Task HyperBoostBlockers_RoundTripAndOmittedFieldUsesConservativeFallback()
     {
         ServiceStatusSnapshot status = CreateStatus() with

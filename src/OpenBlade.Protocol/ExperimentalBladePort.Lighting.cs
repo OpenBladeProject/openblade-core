@@ -156,6 +156,26 @@ internal sealed partial class ExperimentalBladePort
                 ? null : await ReadLogoAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("KeyboardLighting", "Baseline", "Confirmed", requested: requested,
                 confirmed: $"{baseline.Effect};Raw={baselineRaw};Logo={baselineLogo?.ToString() ?? "Unchanged"}");
+            async Task ApplyBrightnessAsync()
+            {
+                if (baselineRaw == raw)
+                {
+                    return;
+                }
+                RequireWriteAdmission();
+                await ExchangeAsync("KeyboardBrightness", 0x03, 0x03, [1, 5, raw], true, cancellationToken).ConfigureAwait(false);
+                submitted = true;
+                if (await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false) != raw)
+                {
+                    throw new IOException("Independent keyboard brightness readback did not confirm the requested raw value.");
+                }
+            }
+            // Raise brightness before selecting a lit effect; select Off before
+            // lowering brightness to zero. A partial operation remains representable.
+            if (settings.Effect != LightingEffect.Off)
+            {
+                await ApplyBrightnessAsync().ConfigureAwait(false);
+            }
             if (baseline.Effect != settings.Effect)
             {
                 byte[] arguments = settings.Effect switch
@@ -177,15 +197,9 @@ internal sealed partial class ExperimentalBladePort
                     throw new IOException("Independent keyboard effect readback did not confirm the requested effect.");
                 }
             }
-            if (baselineRaw != raw)
+            if (settings.Effect == LightingEffect.Off)
             {
-                RequireWriteAdmission();
-                await ExchangeAsync("KeyboardBrightness", 0x03, 0x03, [1, 5, raw], true, cancellationToken).ConfigureAwait(false);
-                submitted = true;
-                if (await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false) != raw)
-                {
-                    throw new IOException("Independent keyboard brightness readback did not confirm the requested raw value.");
-                }
+                await ApplyBrightnessAsync().ConfigureAwait(false);
             }
             if (settings.LogoMode is { } logo && logo != baselineLogo)
             {
