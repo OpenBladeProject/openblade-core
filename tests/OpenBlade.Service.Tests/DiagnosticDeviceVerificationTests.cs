@@ -35,8 +35,8 @@ public sealed class DiagnosticDeviceVerificationTests
     [Theory]
     [InlineData("BIOS", "SystemProductName", "Blade 18 - RZ09-0484", true)]
     [InlineData("BIOS", "SystemManufacturer", "Contoso", true)]
-    // An admitted RZ09-0581 whose own probe could not read its BIOS identity
-    // can be reported by the RZ09-0528 fallback probe as a product-name mismatch.
+    // When the BIOS identity cannot be read while choosing the model, the first
+    // model's check can report another admitted model's name as a mismatch.
     [InlineData("BIOS", "SystemProductName", "Blade 16 - RZ09-0581", false)]
     [InlineData("BIOS", "SystemProductName", "Blade 16 - RZ09-0528", false)]
     // A Windows SystemInformation value that drifts from the BIOS value is not

@@ -131,7 +131,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
     internal static readonly HidOpenParameters MetadataOnlyOpenParameters =
         OperationalOpenParameters with { DesiredAccess = 0 };
 
-    private static readonly HidHandleIdentity ProductionExactIdentity = new(
+    internal static readonly HidHandleIdentity ProductionExactIdentity = new(
         VendorId: 0x1532,
         ProductId: 0x02E0,
         UsagePage: 0x0001,

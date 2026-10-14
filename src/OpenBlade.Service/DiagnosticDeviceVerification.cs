@@ -74,15 +74,14 @@ public sealed record DiagnosticDeviceVerification(
         }
         && !NamesAdmittedModel(failure);
 
-    // The service probes each admitted model in turn. When an admitted
-    // laptop's own probe cannot read its BIOS identity, the next model's
-    // probe can still report it as a product-name mismatch, but the observed
-    // value then names an admitted model.
+    // The service verifies the admitted model the BIOS names. If that first
+    // read fails, it verifies the first admitted model instead, and a later
+    // read can report another admitted model's name as a mismatch.
     private static bool NamesAdmittedModel(HostIdentityFailureDetail failure) =>
-        WindowsHostIdentitySource.AdmittedIdentities.Any(identity => string.Equals(
+        BatteryValidationFactory.AdmittedServiceModels.Any(model => string.Equals(
             failure.Field == "SystemManufacturer"
-                ? identity.Manufacturer
-                : identity.ProductName,
+                ? model.HostIdentity.Manufacturer
+                : model.HostIdentity.ProductName,
             failure.ActualValue,
             StringComparison.Ordinal));
 

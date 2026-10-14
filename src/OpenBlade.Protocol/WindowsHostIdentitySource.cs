@@ -4,7 +4,7 @@ using Microsoft.Win32;
 namespace OpenBlade.Protocol;
 
 internal readonly record struct HostIdentityEvidence(
-    string Manufacturer, string ProductName, string? Sku, string BiosVersion);
+    string Manufacturer, string ProductName, string? Sku, string? BiosVersion);
 
 internal readonly record struct HostIdentityReadResult(
     HostIdentityEvidence? Evidence,
@@ -93,7 +93,7 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
     private const int MaximumDiagnosticValueLength = 256;
     private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
     private const string SystemInformationKey = @"SYSTEM\CurrentControlSet\Control\SystemInformation";
-    private static readonly ExpectedHostIdentity ProductionIdentity = new(
+    internal static readonly ExpectedHostIdentity ProductionIdentity = new(
         "Razer",
         "Blade 16 - RZ09-0581",
         "RZ09-05819EN4",
@@ -105,11 +105,6 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         "RZ09-05289EN4",
         Array.AsReadOnly(new[] { "2.02" }),
         FirmwareAdmissionScope.ModelScoped);
-    // Every identity the service probes for. Diagnostics use it to tell a
-    // laptop that matches no admitted model from an admitted one that
-    // another model's probe reported as a mismatch.
-    internal static readonly IReadOnlyList<ExpectedHostIdentity> AdmittedIdentities =
-        Array.AsReadOnly(new[] { ProductionIdentity, Rz090528Identity });
     private readonly IRegistryValueSource registry;
     private readonly IWindowsPlatformEvidenceSource platform;
     private readonly ExpectedHostIdentity expected;
@@ -163,7 +158,12 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             return Blocked(failure);
         }
 
+        // SKU and BIOS version gate admission only when the expected identity
+        // pins exact versions. Otherwise they are read as diagnostic metadata.
+        bool exactVersions = expected.FirmwareAdmission == FirmwareAdmissionScope.ExactVersions;
         string? sku = null;
+        string? biosVersion = null;
+        string? systemBiosVersion = null;
         if (!TryReadExact(
                 BiosKey,
                 "BIOS",
@@ -178,7 +178,7 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
                 expected.ProductName,
                 out string biosProductName,
                 out failure)
-            || expected.FirmwareAdmission == FirmwareAdmissionScope.ExactVersions
+            || exactVersions
                 && !TryReadExact(
                     BiosKey,
                     "BIOS",
@@ -186,14 +186,17 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
                     expected.Sku,
                     out sku,
                     out failure)
-            || expected.FirmwareAdmission == FirmwareAdmissionScope.ModelScoped
+            || !exactVersions
                 && !TryReadOptionalValue(BiosKey, "SystemSKU", out sku)
-            || !TryReadValue(
-                BiosKey,
-                "BIOS",
-                "BIOSVersion",
-                out string biosVersion,
-                out failure)
+            || exactVersions
+                && !TryReadValue(
+                    BiosKey,
+                    "BIOS",
+                    "BIOSVersion",
+                    out biosVersion,
+                    out failure)
+            || !exactVersions
+                && !TryReadOptionalValue(BiosKey, "BIOSVersion", out biosVersion)
             || !TryReadExact(
                 SystemInformationKey,
                 "SystemInformation",
@@ -208,12 +211,13 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
                 expected.ProductName,
                 out string systemProductName,
                 out failure)
-            || !TryReadValue(
-                SystemInformationKey,
-                "SystemInformation",
-                "BIOSVersion",
-                out string systemBiosVersion,
-                out failure))
+            || exactVersions
+                && !TryReadValue(
+                    SystemInformationKey,
+                    "SystemInformation",
+                    "BIOSVersion",
+                    out systemBiosVersion,
+                    out failure))
         {
             return Blocked(failure!);
         }
@@ -230,14 +234,14 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
                 "SystemProductName", biosProductName, systemProductName));
         }
 
-        if (!string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
+        if (exactVersions
+            && !string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
         {
-            return Blocked(SourceMismatch("BIOSVersion", biosVersion, systemBiosVersion));
+            return Blocked(SourceMismatch("BIOSVersion", biosVersion!, systemBiosVersion!));
         }
 
-        bool testedFirmware = expected.ValidatedBiosVersions.Contains(
-            biosVersion,
-            StringComparer.Ordinal);
+        bool testedFirmware = biosVersion is not null
+            && expected.ValidatedBiosVersions.Contains(biosVersion, StringComparer.Ordinal);
         if (!testedFirmware
             && expected.FirmwareAdmission == FirmwareAdmissionScope.ExactVersions
             && compatibilityPolicy?.AllowUntestedFirmware != true)
@@ -262,6 +266,35 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
                 : expected.FirmwareAdmission == FirmwareAdmissionScope.ModelScoped
                     ? HostFirmwareCompatibility.ModelScoped
                     : HostFirmwareCompatibility.UntestedAllowed);
+    }
+
+    // The BIOS manufacturer and product name that choose which admitted model
+    // the service verifies. SKU is not read: it does not distinguish admitted
+    // models. Returns null when either value cannot be read; the full check
+    // then records the read failure.
+    internal static (string Manufacturer, string ProductName)? ReadBiosModelName(
+        IRegistryValueSource registry)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        try
+        {
+            return registry.Read(
+                    RegistryHive.LocalMachine,
+                    RegistryView.Registry64,
+                    BiosKey,
+                    "SystemManufacturer") is string manufacturer
+                && registry.Read(
+                    RegistryHive.LocalMachine,
+                    RegistryView.Registry64,
+                    BiosKey,
+                    "SystemProductName") is string productName
+                ? (manufacturer, productName)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     internal static bool IsExactRz090528WindowsHost() =>
