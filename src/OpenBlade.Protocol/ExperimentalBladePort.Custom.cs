@@ -51,6 +51,8 @@ internal sealed partial class ExperimentalBladePort
         {
             RequireWriteAdmission(thermal: true);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
+            // Mode entry also writes fan flag 0 (Automatic). This backend cannot
+            // restore a manual-fan baseline, so reject it before submitting a mode SET.
             if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
                     or PerformancePreset.Performance or PerformancePreset.Custom))

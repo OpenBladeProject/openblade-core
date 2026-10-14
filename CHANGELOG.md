@@ -12,15 +12,26 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Add experimental Blade 18 (2023) Performance and bounded Custom CPU/GPU controls, keyboard brightness, Off/Spectrum/random Breathing/Wave effects, and Off/Static/Breathing logo lighting. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Let users resume paused experimental controls after a fresh read-only check, then send a new request. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Include bounded experimental command results, source provenance, write-pause state, and cached telemetry in local diagnostic exports for pre-release tester reports. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+
+### Fixed
+
+- Preserve the selected performance mode on experimental laptops when a saved profile contains unavailable manual-fan settings, without switching to Balanced or writing fans. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+
+## [0.26.2-nightly.87] - 2026-10-14
+
+### Added
+
 - Show “This laptop isn’t supported yet” on laptops OpenBlade doesn’t support. **Help add support** saves a short identity report and opens a support request form to attach it to. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 
 ### Fixed
 
 - Recognize a supported laptop when Windows reports no BIOS version or two different ones. The BIOS version is checked only where a model explicitly requires it. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 - Show the actual failed identity check in exported diagnostics, instead of a product-name mismatch against another supported model. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
+- Keep the other controls working when the laptop reports a battery, performance or fan value OpenBlade doesn’t recognize. Only the affected controls stay unavailable, and HyperBoost shows as unknown instead of off until a later reading confirms it. The MCU firmware version is still read, and the status and exported diagnostics show the unrecognized value, including for keyboard and logo lighting. ([#752](https://github.com/OpenBladeProject/openblade-core/pull/752))
 
 ### Changed
 
+- Start OpenBlade as soon as you sign in. Setup now uses Task Scheduler instead of the Startup folder, which Windows delays, and removes the old startup shortcuts. ([#748](https://github.com/OpenBladeProject/openblade-core/pull/748))
 - Reduce the installed payload by using a shared .NET 10 Desktop Runtime. Setup prompts to install it when needed and keeps Visual C++ bundled. ([#743](https://github.com/OpenBladeProject/openblade-core/pull/743))
 
 ## [0.25.2-nightly.84] - 2026-10-13
@@ -2024,7 +2035,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...HEAD
+[0.26.2-nightly.87]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...v0.26.2-nightly.87
 [0.25.2-nightly.84]: https://github.com/OSSBlade/openblade-core/compare/v0.25.1-nightly.83...v0.25.2-nightly.84-attempt.2
 [0.25.1-nightly.83]: https://github.com/OSSBlade/openblade-core/compare/v0.25.0...v0.25.1-nightly.83
 [0.25.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.24.5...v0.25.0

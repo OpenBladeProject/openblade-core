@@ -81,7 +81,7 @@ public sealed record SetupProgressEvent
         SetupProgressCode.InspectPayload => "Inspecting and staging the OpenBlade payload",
         SetupProgressCode.ReadInstallState => "Reading the current service, shortcut, and registry state",
         SetupProgressCode.RemoveLegacyRegistration =>
-            "Removing superseded OpenBlade.lnk, OpenBlade.SessionAgent.lnk, and uninstall registry entries",
+            "Removing superseded OpenBlade sign-in tasks, startup shortcuts, and uninstall registry entries",
         SetupProgressCode.StopServiceForReplacement =>
             "Stopping Windows service OpenBlade for replacement",
         SetupProgressCode.StopTrayAndSessionAgent =>
@@ -96,14 +96,14 @@ public sealed record SetupProgressEvent
             "Creating and starting Windows service OpenBlade as LocalSystem",
         SetupProgressCode.VerifyServiceHealth => "Verifying the OpenBlade service health check",
         SetupProgressCode.CreateShortcuts =>
-            "Creating all-users OpenBlade.lnk and OpenBlade.SessionAgent.lnk shortcuts",
+            "Registering OpenBlade sign-in tasks and Start menu shortcuts",
         SetupProgressCode.WriteBundleOwnership =>
             @"Writing HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer registry values",
         SetupProgressCode.RestorePreviousState =>
             "Setup failed; restoring the previous installation state",
         SetupProgressCode.ReadUninstallState => "Reading the installed OpenBlade state",
         SetupProgressCode.RemoveShortcuts =>
-            "Removing all-users OpenBlade.lnk and OpenBlade.SessionAgent.lnk shortcuts",
+            "Removing OpenBlade sign-in tasks and startup shortcuts",
         SetupProgressCode.RemoveService => "Stopping and deleting Windows service OpenBlade",
         SetupProgressCode.RemoveDynamicLightingAndOwnership =>
             @"Removing Dynamic Lighting package OSSBlade.OpenBlade.DynamicLighting and HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer",

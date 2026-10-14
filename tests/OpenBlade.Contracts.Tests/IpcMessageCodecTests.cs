@@ -551,7 +551,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(62, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(63, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1138,7 +1138,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(62, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(63, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2350,6 +2350,59 @@ public sealed class IpcMessageCodecTests
 
         Assert.Equal(OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion, request.Version);
         Assert.Equal(requestId, request.RequestId);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(false)]
+    public async Task ConfirmedHyperBoostActivity_RoundTripsUnknownAsNull(bool? active)
+    {
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            ConfirmedState = new ConfirmedDeviceState(
+                active is null ? null : PerformancePreset.Balanced,
+                active is null ? null : FanMode.Automatic,
+                new ConfirmedBatteryState(true, 80, false),
+                null)
+            {
+                HyperBoostActive = active,
+            },
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.Equal(active, actual.ConfirmedState!.HyperBoostActive);
+    }
+
+    [Fact]
+    public void ConfirmedDeviceState_DefaultsHyperBoostToConfirmedInactive()
+    {
+        Assert.False(new ConfirmedDeviceState(null, null, null, null).HyperBoostActive);
+    }
+
+    [Fact]
+    public async Task WriteProtocol51ReadOnlyServerFrameAsync_ProjectsUnknownHyperBoostAsReadOnlyFalse()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            WritesBlocked = false,
+            ConfirmedState = new ConfirmedDeviceState(null, null, null, null)
+            {
+                HyperBoostActive = null,
+            },
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+
+        JsonObject root = FramedJsonObject(stream);
+        JsonObject projected = Assert.IsType<JsonObject>(root["status"]);
+        Assert.True(projected["writesBlocked"]!.GetValue<bool>());
+        JsonObject confirmed = Assert.IsType<JsonObject>(projected["confirmedState"]);
+        Assert.False(confirmed["hyperBoostActive"]!.GetValue<bool>());
     }
 
     [Fact]

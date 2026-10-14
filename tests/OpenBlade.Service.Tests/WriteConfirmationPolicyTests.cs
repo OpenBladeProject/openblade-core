@@ -165,6 +165,31 @@ public sealed class WriteConfirmationPolicyTests
     }
 
     [Theory]
+    [InlineData(DeviceSubsystem.Performance, true)]
+    [InlineData(DeviceSubsystem.Fans, true)]
+    [InlineData(DeviceSubsystem.Performance, false)]
+    [InlineData(DeviceSubsystem.Fans, false)]
+    public void PendingHyperBoost_UnknownActivityStaysPendingInsteadOfMismatch(
+        DeviceSubsystem subsystem,
+        bool expectedActive)
+    {
+        var expectation = new WriteConfirmationExpectation(
+            Desired(),
+            Confirmed(),
+            HyperBoostActive: expectedActive);
+        ConfirmedDeviceState unknown = Confirmed() with
+        {
+            Performance = null,
+            Fans = null,
+            HyperBoostActive = null,
+        };
+
+        Assert.Equal(
+            PendingConfirmationResult.Unavailable,
+            Match(subsystem, expectation, unknown));
+    }
+
+    [Theory]
     [InlineData(DeviceSubsystem.Performance)]
     [InlineData(DeviceSubsystem.Fans)]
     public void HyperBoostEntry_RequiresActiveBoostAndConfirmedAutomaticFans(DeviceSubsystem subsystem)

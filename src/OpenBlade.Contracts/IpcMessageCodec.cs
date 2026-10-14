@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 62;
+    public const int ProtocolVersion = 63;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -912,6 +912,21 @@ public static class IpcMessageCodec
                         "windowsPowerModes",
                         StringComparison.OrdinalIgnoreCase));
                 windowsPowerModes.IsRequired = true;
+            }
+
+            if (protocol51Projection
+                && typeInfo.Type == typeof(ConfirmedDeviceState))
+            {
+                // Protocol 51 clients only understand confirmed on or off. Their
+                // projection is read-only, so unknown HyperBoost is shown as
+                // inactive there and can never authorize a write.
+                JsonPropertyInfo hyperBoostActive = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "hyperBoostActive",
+                        StringComparison.OrdinalIgnoreCase));
+                hyperBoostActive.Get = static state =>
+                    ((ConfirmedDeviceState)state).HyperBoostActive ?? false;
             }
 
             if (protocol51Projection

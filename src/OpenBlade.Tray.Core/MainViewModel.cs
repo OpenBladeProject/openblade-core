@@ -296,6 +296,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isPerformanceOperationInProgress;
     private bool isHyperBoostOperationInProgress;
     private bool hyperBoostActive;
+    private bool isThermalStateUnknown;
     private PendingLightingHold? pendingLighting;
     private long lightingPresentationGeneration;
     private bool isLightingOperationInProgress;
@@ -2667,7 +2668,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanEditFanControl =>
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress
-        && !HyperBoostActive;
+        && !HyperBoostActive
+        && !IsThermalStateUnknown;
 
     public bool CanChangeFanMode =>
         CanEditFanControl
@@ -2682,6 +2684,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || IsUnsupportedLaptop
         || IsFanControlOperationInProgress
             ? string.Empty
+            : IsThermalStateUnknown
+                ? TrayText.Get("OpenBlade is waiting for a fresh, complete read of the laptop state.")
             : HyperBoostActive
                 ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
                 : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
@@ -2693,7 +2697,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanEditPerformance =>
         CanRequestHardwareControl
         && !IsPerformanceOperationInProgress
-        && !HyperBoostActive;
+        && !HyperBoostActive
+        && !IsThermalStateUnknown;
 
     public bool CanSelectLaptopPerformance =>
         !IsPerformanceOperationInProgress
@@ -3094,6 +3099,38 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    // The service reports null HyperBoost activity when the thermal getter was
+    // content-rejected. Performance, fans and HyperBoost are then unknown, so
+    // none of them is offered as an actionable control.
+    public bool IsThermalStateUnknown
+    {
+        get => isThermalStateUnknown;
+        private set
+        {
+            if (isThermalStateUnknown == value)
+            {
+                return;
+            }
+
+            SetField(ref isThermalStateUnknown, value);
+            RefreshLaptopPerformanceOptions();
+            Notify(nameof(CanToggleHyperBoost));
+            Notify(nameof(HyperBoostDescription));
+            NotifyHyperBoostAvailability();
+            Notify(nameof(CanEditPerformance));
+            Notify(nameof(CanSelectLaptopPerformance));
+            Notify(nameof(CanToggleGpuClockTuning));
+            Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(SelectedLaptopPerformanceOption));
+            Notify(nameof(ActivePerformanceLabel));
+            NotifyTrayHoverLabel();
+            Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
+            NotifyFanControlAvailability();
+            NotifyCommands();
+        }
+    }
+
     public bool IsHyperBoostOperationInProgress
     {
         get => isHyperBoostOperationInProgress;
@@ -3117,6 +3154,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool CanToggleHyperBoost =>
         CanMutate
+        && !IsThermalStateUnknown
         && !IsRetainedPowerSourceRecheck(latestStatus)
         && IsHyperBoostWritable
         && !IsHyperBoostOperationInProgress
@@ -3173,7 +3211,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return TrayText.Get("Interactive session required");
             }
 
-            if (IsCheckingLaptopConnection(status))
+            if (IsCheckingLaptopConnection(status) || IsThermalStateUnknown)
             {
                 return TrayText.Get(
                     "OpenBlade is waiting for a fresh, complete read of the laptop state.");
@@ -4652,6 +4690,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && Enum.IsDefined(value)
         && !IsPerformanceOperationInProgress
         && !HyperBoostActive
+        && !IsThermalStateUnknown
         && CanMutate
         && HasConfirmedPowerSource
         && CommandCapabilities.PerformancePresets.Contains(value)
@@ -4664,6 +4703,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && IsCustomPerformanceVisible
         && !IsPerformanceOperationInProgress
         && !HyperBoostActive
+        && !IsThermalStateUnknown
         && CanMutate
         && HasConfirmedPowerSource;
 
@@ -5200,6 +5240,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         UpdateOneShotReadbacks(status);
         HyperBoostActive = confirmed?.HyperBoostActive is true;
+        IsThermalStateUnknown = confirmed is { HyperBoostActive: null };
         SelectedPerformance = pendingPerformance?.Requested.Value
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = pendingFanControl?.Requested.Mode

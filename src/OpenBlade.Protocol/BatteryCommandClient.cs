@@ -82,6 +82,8 @@ internal sealed class BatteryCommandClient : IBatteryCommandClient
                     TransferredByteCount: null)
                 {
                     ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+                    RejectedPayloadHex =
+                        DeviceStateContentRejection.FormatPayload(response.Value.Span),
                 },
             };
     }

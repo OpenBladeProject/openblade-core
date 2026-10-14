@@ -234,6 +234,8 @@ internal sealed partial class ExperimentalBladePort(
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("Performance", "Baseline", "Confirmed", requested: value.ToString(),
                 confirmed: $"{(baseline.HyperBoostActive ? "HyperBoost" : baseline.Performance?.ToString())}/{baseline.Fans}");
+            // Mode entry also writes fan flag 0 (Automatic). This backend cannot
+            // restore a manual-fan baseline, so reject it before submitting a mode SET.
             if (baseline.Fans != FanMode.Automatic)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,

@@ -418,6 +418,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
     private sealed class SerializedBladeDevice :
         IBladeDevice,
+        IDeviceStateReadDiagnostics,
         IGpuClockOffsetManagementDevice,
         ISingleAttemptThermalDevice,
         IPadlessHyperBoostLifecycleValidationDevice,
@@ -728,6 +729,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     exception.ValidationFailure)
                 {
                     StateQuery = exception.StateQuery,
+                    RejectedPayloadHex = exception.RejectedPayloadHex,
                 };
             }
             catch (ObjectDisposedException)
@@ -747,6 +749,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 hardwareOperationGate.Release();
             }
         }
+
+        public IReadOnlyList<string> StateReadRejections =>
+            lightingSession.StateReadRejections;
 
         private async Task<PowerTransitionDeviceStateReadResult> ReadStateCoreAsync(
             bool confirmTransientLightingOff,
@@ -819,6 +824,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     exception.ValidationFailure)
                 {
                     StateQuery = exception.StateQuery,
+                    RejectedPayloadHex = exception.RejectedPayloadHex,
+                    PartialState = exception.PartialState,
                 };
             }
             catch (ObjectDisposedException)
@@ -865,9 +872,149 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        private static readonly IReadOnlySet<DeviceSubsystem> BatteryStateSubsystems =
+            new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery };
+
+        // One closed thermal query reports the firmware preset, fan mode and
+        // HyperBoost activity, so its rejection leaves all three unknown.
+        private static readonly IReadOnlySet<DeviceSubsystem> ThermalStateSubsystems =
+            new HashSet<DeviceSubsystem>
+            {
+                DeviceSubsystem.Performance,
+                DeviceSubsystem.Fans,
+            };
+
         private async Task<PowerTransitionDeviceStateReadResult>
             ReadBatteryStateOnceAsync(
             ProductionLightingSession.TransitionLightingReadResult? transitionLightingRead,
+            CancellationToken cancellationToken)
+        {
+            var failures = new List<DeviceStateReadFailure>();
+            var lease = new StatePortLease(this, cancellationToken);
+            await using (lease.ConfigureAwait(false))
+            {
+                IProductionBatteryPort initialPort = await lease.GetAsync().ConfigureAwait(false);
+                (bool protectionRead, ConfirmedBatteryState protection) = initialPort.SupportsProtectionQuery
+                    ? await ReadIsolatedStateQueryAsync(
+                        lease,
+                        DeviceStateQuery.BatteryProtection,
+                        BatteryStateSubsystems,
+                        port => port.QueryProtectionAsync(cancellationToken),
+                        failures).ConfigureAwait(false)
+                    : (false, null!);
+                ConfirmedBatteryState? battery = null;
+                if (protectionRead)
+                {
+                    // Without the protection baseline the battery subsystem is
+                    // already unknown, so the dependent override is not queried.
+                    IProductionBatteryPort port = await lease.GetAsync().ConfigureAwait(false);
+                    // Experimental profiles have no temporary override: the BHO
+                    // register is their complete admitted protection state.
+                    bool? temporary = batteryFactory is ExperimentalBladeFactory ? false : null;
+                    if (port.SupportsTemporaryFullChargeQuery)
+                    {
+                        (_, temporary) = await ReadIsolatedStateQueryAsync(
+                            lease,
+                            DeviceStateQuery.TemporaryFullCharge,
+                            BatteryStateSubsystems,
+                            current => current.QueryTemporaryFullChargeAsync(cancellationToken),
+                            failures).ConfigureAwait(false);
+                    }
+
+                    // The temporary override changes how the protection fields
+                    // must be interpreted, so a rejected override leaves the
+                    // whole battery state unknown rather than half confirmed.
+                    battery = failures.Count == 0
+                        ? new(
+                            protection.ProtectionEnabled,
+                            protection.ChargeLimitPercent,
+                            temporary)
+                        : null;
+                }
+
+                (bool performanceFanRead, ProductionPerformanceFanState performanceFanState) =
+                    await ReadIsolatedStateQueryAsync(
+                        lease,
+                        DeviceStateQuery.PerformanceAndFans,
+                        ThermalStateSubsystems,
+                        port => port.QueryPerformanceFanStateAsync(cancellationToken),
+                        failures).ConfigureAwait(false);
+                ProductionPerformanceFanState? performanceFan =
+                    performanceFanRead ? performanceFanState : null;
+                GpuClockOffsetCapabilities? gpuOffsets =
+                    await ReadManagedGpuClockOffsetsAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                ProductionLightingSession.TransitionLightingReadResult lightingRead =
+                    transitionLightingRead
+                        ?? new(
+                            await lightingSession.ReadLightingStateCoreAsync(cancellationToken)
+                                .ConfigureAwait(false),
+                            OffConfirmationUnavailable: false);
+                LogoLightingMode? logo =
+                    await lightingSession.ReadLogoLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                var state = new ConfirmedDeviceState(
+                    performanceFan?.Performance,
+                    performanceFan?.Fans,
+                    battery,
+                    lightingRead.State)
+                {
+                    // Null marks HyperBoost activity unknown, never off.
+                    HyperBoostActive = performanceFan?.HyperBoostActive,
+                    CustomPerformance = performanceFan?.CustomPerformance,
+                    GpuClockOffsets = gpuOffsets,
+                    LogoLighting = logo,
+                };
+                if (failures.Count == 0)
+                {
+                    return new(state, lightingRead.OffConfirmationUnavailable);
+                }
+
+                var partial = new PartialDeviceStateRead(
+                    state,
+                    lightingRead.OffConfirmationUnavailable,
+                    failures.ToArray());
+                throw new RazerProtocolException(
+                    partial.Message,
+                    HidProtocolValidationFailure.PayloadValidator)
+                {
+                    StateQuery = failures[0].Query,
+                    PartialState = partial,
+                };
+            }
+        }
+
+        // Each getter that receives a content rejection leaves only its own
+        // dependent fields unknown. Any other failure still escapes and fails
+        // the whole read exactly as before.
+        private static async Task<(bool Read, T Value)> ReadIsolatedStateQueryAsync<T>(
+            StatePortLease lease,
+            DeviceStateQuery query,
+            IReadOnlySet<DeviceSubsystem> subsystems,
+            Func<IProductionBatteryPort, Task<T>> readAsync,
+            List<DeviceStateReadFailure> failures)
+        {
+            IProductionBatteryPort port = await lease.GetAsync().ConfigureAwait(false);
+            try
+            {
+                return (true, await ReadStateQueryAsync(query, () => readAsync(port))
+                    .ConfigureAwait(false));
+            }
+            catch (RazerProtocolException exception) when (
+                DeviceStateContentRejection.IsContentRejection(exception))
+            {
+                failures.Add(new DeviceStateReadFailure(
+                    exception.StateQuery!.Value,
+                    subsystems,
+                    DeviceStateContentRejection.Describe(exception, "Device state query")));
+                // The rejected exchange poisons this verified session; later
+                // getters run only on a fresh exact-device reopen.
+                await lease.RetireAsync().ConfigureAwait(false);
+                return (false, default!);
+            }
+        }
+
+        private async Task<IProductionBatteryPort> OpenStatePortAsync(
             CancellationToken cancellationToken)
         {
             HidSessionResult<IProductionBatteryPort> opened =
@@ -878,63 +1025,39 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 throw new IOException("Battery state query did not provide a verified session.");
             }
 
-            await using (port.ConfigureAwait(false))
+            if (opened.Failure is not null)
             {
-                if (opened.Failure is not null)
+                await using (port.ConfigureAwait(false))
                 {
                     ThrowReadOpenFailure(opened.Failure, cancellationToken);
                 }
-
-                ConfirmedBatteryState? protection = port.SupportsProtectionQuery
-                    ? await ReadStateQueryAsync(
-                        DeviceStateQuery.BatteryProtection,
-                        () => port.QueryProtectionAsync(cancellationToken)).ConfigureAwait(false)
-                    : null;
-                bool? temporary = port.SupportsTemporaryFullChargeQuery
-                    ? await ReadStateQueryAsync(
-                        DeviceStateQuery.TemporaryFullCharge,
-                        () => port.QueryTemporaryFullChargeAsync(cancellationToken))
-                        .ConfigureAwait(false)
-                    // The experimental model contract exposes no temporary override.
-                    // Its BHO register is the complete admitted protection state.
-                    : batteryFactory is ExperimentalBladeFactory ? false : null;
-                ConfirmedBatteryState? battery = protection is null ? null : new(
-                    protection.ProtectionEnabled,
-                    protection.ChargeLimitPercent,
-                    temporary);
-                ProductionPerformanceFanState performanceFan =
-                    await ReadStateQueryAsync(
-                        DeviceStateQuery.PerformanceAndFans,
-                        () => port.QueryPerformanceFanStateAsync(cancellationToken))
-                        .ConfigureAwait(false);
-                GpuClockOffsetCapabilities? gpuOffsets =
-                    await ReadManagedGpuClockOffsetsAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                CustomPerformanceSettings? customPerformance =
-                    performanceFan.CustomPerformance;
-                ProductionLightingSession.TransitionLightingReadResult lightingRead =
-                    transitionLightingRead
-                        ?? new(
-                            await lightingSession.ReadLightingStateCoreAsync(cancellationToken)
-                                .ConfigureAwait(false),
-                            OffConfirmationUnavailable: false);
-                LogoLightingMode? logo =
-                    await lightingSession.ReadLogoLightingStateCoreAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                return new(
-                    new ConfirmedDeviceState(
-                        performanceFan.Performance,
-                        performanceFan.Fans,
-                        battery,
-                        lightingRead.State)
-                    {
-                        HyperBoostActive = performanceFan.HyperBoostActive,
-                        CustomPerformance = customPerformance,
-                        GpuClockOffsets = gpuOffsets,
-                        LogoLighting = logo,
-                    },
-                    lightingRead.OffConfirmationUnavailable);
             }
+
+            return port;
+        }
+
+        private sealed class StatePortLease(
+            SerializedBladeDevice owner,
+            CancellationToken cancellationToken) : IAsyncDisposable
+        {
+            private IProductionBatteryPort? current;
+
+            internal async Task<IProductionBatteryPort> GetAsync() =>
+                current ??= await owner.OpenStatePortAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+            internal async Task RetireAsync()
+            {
+                IProductionBatteryPort? retired = current;
+                current = null;
+                if (retired is not null)
+                {
+                    await retired.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+
+            public async ValueTask DisposeAsync() =>
+                await RetireAsync().ConfigureAwait(false);
         }
 
         private static async Task<T> ReadStateQueryAsync<T>(
@@ -952,29 +1075,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     exception.ValidationFailure)
                 {
                     StateQuery = exception.StateQuery ?? query,
+                    RejectedPayloadHex = exception.RejectedPayloadHex,
                 };
             }
         }
 
         private static string DescribeStateQueryFailure(
             RazerProtocolException exception,
-            string fallback)
-        {
-            string query = exception.StateQuery switch
-            {
-                DeviceStateQuery.BatteryProtection => "Battery protection query (07/92)",
-                DeviceStateQuery.TemporaryFullCharge => "Temporary full charge query (07/8F)",
-                DeviceStateQuery.PerformanceAndFans => "Performance and fan state query",
-                DeviceStateQuery.ThermalChannelOne => "Thermal channel 1 query (0D/82)",
-                DeviceStateQuery.ThermalChannelTwo => "Thermal channel 2 query (0D/82)",
-                DeviceStateQuery.ThermalChannelAgreement => "Thermal channel agreement (0D/82)",
-                DeviceStateQuery.CustomCpuPerformance => "Custom CPU performance query (0D/87)",
-                DeviceStateQuery.CustomGpuPerformance => "Custom GPU performance query (0D/87)",
-                DeviceStateQuery.CustomPerformanceCombination => "Custom performance combination (0D/87)",
-                _ => fallback,
-            };
-            return $"{query} failed protocol validation ({exception.ValidationFailure}).";
-        }
+            string fallback) =>
+            exception.PartialState?.Message
+                ?? DeviceStateContentRejection.Describe(exception, fallback);
 
         private async Task<ConfirmedDeviceState> ReadPerformanceFanStateOnceAsync(
             CancellationToken cancellationToken)

@@ -30,6 +30,10 @@ internal sealed class ProductionLightingSession
     // renderer port so a recycled exact-device session can reapply it.
     private int desiredPlaybackMuteState = -1;
     private int desiredLightingRefreshRate = (int)LightingRefreshRate.ThirtyHz;
+    // Sanitized evidence from the latest keyboard and logo state reads. They
+    // never change read outcomes; lighting stays unknown exactly as before.
+    private string? keyboardStateReadRejection;
+    private string? logoStateReadRejection;
 
     internal ProductionLightingSession(
         IProductionLightingPortFactory lightingFactory,
@@ -1084,9 +1088,11 @@ internal sealed class ProductionLightingSession
                 await GetLightingPortCoreAsync(
                     LightingPortOperation.KeyboardLightingStateRead,
                     cancellationToken).ConfigureAwait(false);
-            return port is null
+            LightingSettings? state = port is null
                 ? null
                 : await port.ReadStateAsync(cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref keyboardStateReadRejection, null);
+            return state;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1096,8 +1102,9 @@ internal sealed class ProductionLightingSession
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            Volatile.Write(ref keyboardStateReadRejection, RejectionDescription(exception));
             // Brightness uses the command interface while the host renderer
             // writes the matrix through a separate interface. A transient
             // brightness read must not dispose an otherwise healthy renderer.
@@ -1119,11 +1126,13 @@ internal sealed class ProductionLightingSession
                 await GetLightingPortCoreAsync(
                     LightingPortOperation.KeyboardLightingStateRead,
                     cancellationToken).ConfigureAwait(false);
-            return port is null
+            TransitionLightingReadResult result = port is null
                 ? new(null, OffConfirmationUnavailable: true)
                 : new(
                     await port.ReadStateAsync(cancellationToken).ConfigureAwait(false),
                     OffConfirmationUnavailable: false);
+            Volatile.Write(ref keyboardStateReadRejection, null);
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1133,13 +1142,34 @@ internal sealed class ProductionLightingSession
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            Volatile.Write(ref keyboardStateReadRejection, RejectionDescription(exception));
             await RetireUnusableLightingPortAfterReadFailureAsync()
                 .ConfigureAwait(false);
             return new(null, OffConfirmationUnavailable: true);
         }
     }
+
+    // Keyboard and logo read rejections from the latest state reads, as closed
+    // query identities with bounded payload hex. Channel failures add nothing.
+    internal IReadOnlyList<string> StateReadRejections
+    {
+        get
+        {
+            string?[] notes =
+            [
+                Volatile.Read(ref keyboardStateReadRejection),
+                Volatile.Read(ref logoStateReadRejection),
+            ];
+            return notes.OfType<string>().ToArray();
+        }
+    }
+
+    private static string? RejectionDescription(Exception exception) =>
+        exception is DeviceStateContentRejectedException rejection
+            ? rejection.Description
+            : null;
 
     private async Task RetireUnusableLightingPortAfterReadFailureAsync()
     {
@@ -1161,9 +1191,11 @@ internal sealed class ProductionLightingSession
                 await GetLightingPortCoreAsync(
                     LightingPortOperation.LogoLightingStateRead,
                     cancellationToken).ConfigureAwait(false);
-            return port is null
+            LogoLightingMode? logo = port is null
                 ? null
                 : await port.ReadLogoStateAsync(cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref logoStateReadRejection, null);
+            return logo;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1173,8 +1205,9 @@ internal sealed class ProductionLightingSession
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            Volatile.Write(ref logoStateReadRejection, RejectionDescription(exception));
             return null;
         }
     }

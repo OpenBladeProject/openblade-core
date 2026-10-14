@@ -5653,6 +5653,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ExperimentalStartup_UnsupportedSavedManualFansDoNotResetPerformance()
+    {
+        TestContext context = CreateContext(providerAvailable: true, initialize: false);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent },
+            FanModes = new HashSet<FanMode>(),
+        };
+        BatteryConfiguration configuration = await context.Store.LoadAsync(CancellationToken.None);
+        ProfileSet profiles = configuration.Profiles with
+        {
+            PluggedIn = configuration.Profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+                Fans = FanMode.Fixed,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Fixed),
+            },
+        };
+        await context.Store.SaveProfilesAsync(profiles, CancellationToken.None);
+        context.Runtime.Initialize(configuration with { Profiles = profiles }, PowerSource.PluggedIn,
+            PersistentOverrideState.Empty);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileStartupProfileAsync(CancellationToken.None);
+
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Empty(context.Device.FanWrites);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(PerformancePreset.Silent, context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.Equal(FanMode.Fixed, context.Runtime.GetStatus().Profiles!.PluggedIn.Fans);
+    }
+
+    [Fact]
     public async Task ResumeExperimentalWrites_ConfirmsStateWithoutSetterAndPermitsNewRequest()
     {
         TestContext context = CreateWritableContext();
@@ -10264,6 +10304,91 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
         Assert.Contains("PayloadValidator", context.Runtime.GetStatus().Message);
+    }
+
+    [Fact]
+    public async Task RepeatedBatteryContentRejection_PublishesOtherSubsystemsAndReadsMcuVersion()
+    {
+        var firmware = new FirmwareVersions(
+            "4.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.McuVersion = "1.5.0.0";
+        var partialState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            Battery: null,
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        const string rejection =
+            "Temporary full charge query (07/8F) returned unrecognized payload 05 (PayloadValidator).";
+        context.Device.ReadStateFailure = new RazerProtocolException(
+            rejection,
+            HidProtocolValidationFailure.PayloadValidator)
+        {
+            StateQuery = DeviceStateQuery.TemporaryFullCharge,
+            PartialState = new PartialDeviceStateRead(
+                partialState,
+                lightingOffConfirmationUnavailable: false,
+                [
+                    new DeviceStateReadFailure(
+                        DeviceStateQuery.TemporaryFullCharge,
+                        new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery },
+                        rejection),
+                ]),
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(2, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.True(status.DeviceVerified);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal(partialState, status.ConfirmedState);
+        Assert.Equal(
+            $"Verified device state observed. Battery state is unavailable and writes to it remain blocked: {rejection}",
+            status.Message);
+        Assert.Equal("1.5.0.0", status.Firmware?.McuVersion);
+        Assert.Equal(1, context.Device.McuVersionReadCalls);
+    }
+
+    [Fact]
+    public async Task LightingContentRejection_ReportsValueOnceWithoutBlockingWrites()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            Lighting: null);
+        const string keyboard =
+            "Keyboard brightness query (03/83) returned unrecognized payload 02 05 10 (PayloadValidator).";
+        const string logo =
+            "Logo lighting effect query (03/82) returned unrecognized payload 01 04 07 (PayloadValidator).";
+        context.Device.StateReadRejections = [keyboard, logo];
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        string expected = $"Lighting state could not be confirmed: {keyboard} {logo}";
+        Assert.True(status.DeviceVerified);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal($"Verified device state observed. {expected}", status.Message);
+        Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Detail == expected);
+
+        context.Device.StateReadRejections = [];
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal("Verified device state observed.", context.Runtime.GetStatus().Message);
     }
 
     [Fact]
@@ -19578,7 +19703,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             if (!gateEntered
                 && context.Device.HyperBoostSetCalls == 2
-                && !context.Device.ConfirmedState.HyperBoostActive)
+                && context.Device.ConfirmedState.HyperBoostActive == false)
             {
                 gateEntered = true;
                 lowPowerGate.Enter();
@@ -20860,6 +20985,82 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             HyperBoostOwnershipJournalState.RestorePending,
             journal.Journal?.State);
+    }
+
+    [Fact]
+    public async Task OwnedHyperBoost_UnknownThermalReadingKeepsOwnershipJournalAndBlocksHyperBoostWrites()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        HyperBoostOwnershipJournal? ownedJournal = journal.Journal;
+        Assert.Equal(HyperBoostOwnershipJournalState.OwnedConfirmed, ownedJournal?.State);
+        const string rejection =
+            "Thermal channel 1 query (0D/82) returned unrecognized payload 01 01 09 00 (PayloadValidator).";
+        ConfirmedDeviceState unknownThermal = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = null,
+            HyperBoostActive = null,
+            CustomPerformance = null,
+        };
+        context.Device.ReadStateFailure = new RazerProtocolException(
+            rejection,
+            HidProtocolValidationFailure.PayloadValidator)
+        {
+            StateQuery = DeviceStateQuery.ThermalChannelOne,
+            PartialState = new PartialDeviceStateRead(
+                unknownThermal,
+                lightingOffConfirmationUnavailable: false,
+                [
+                    new DeviceStateReadFailure(
+                        DeviceStateQuery.ThermalChannelOne,
+                        new HashSet<DeviceSubsystem>
+                        {
+                            DeviceSubsystem.Performance,
+                            DeviceSubsystem.Fans,
+                        },
+                        rejection),
+                ]),
+        };
+        int settersBeforeUnknown = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult exit = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(ControlOperationStatus.Blocked, exit.Status);
+        Assert.Equal(settersBeforeUnknown, context.Device.TotalSetterCalls);
+        Assert.Same(ownedJournal, journal.Journal);
+        Assert.Null(status.ConfirmedState?.HyperBoostActive);
+        Assert.DoesNotContain(DeviceSubsystem.Performance, status.ExternalChanges);
+        Assert.DoesNotContain(DeviceSubsystem.Fans, status.ExternalChanges);
+        Assert.Contains(rejection, status.Message, StringComparison.Ordinal);
+
+        // A later confirmed reading resumes ordinary owned HyperBoost handling.
+        context.Device.ReadStateFailure = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(true, context.Runtime.GetStatus().ConfirmedState?.HyperBoostActive);
+        Assert.Same(ownedJournal, journal.Journal);
     }
 
     [Fact]
@@ -23226,7 +23427,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.AfterReadState = () =>
         {
             if (context.Device.HyperBoostSetCalls >= 2
-                && !context.Device.ConfirmedState.HyperBoostActive
+                && context.Device.ConfirmedState.HyperBoostActive == false
                 && periodicRefresh is null)
             {
                 if (lowPowerEnteredDuringExit)
@@ -26179,7 +26380,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             if (!injectedIncompleteReadback
                 && context.Device.HyperBoostSetCalls == 2
-                && !context.Device.ConfirmedState.HyperBoostActive)
+                && context.Device.ConfirmedState.HyperBoostActive == false)
             {
                 injectedIncompleteReadback = true;
                 context.Device.ConfirmedState = context.Device.ConfirmedState with
@@ -26250,7 +26451,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             if (!injectedIncompleteReadback
                 && context.Device.HyperBoostSetCalls == 2
-                && !context.Device.ConfirmedState.HyperBoostActive)
+                && context.Device.ConfirmedState.HyperBoostActive == false)
             {
                 injectedIncompleteReadback = true;
                 context.Device.ConfirmedState = context.Device.ConfirmedState with
@@ -30016,8 +30217,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         IBladeDevice,
         IGpuClockOffsetManagementDevice,
         ISingleAttemptThermalDevice,
-        IThermalExternalDriftValidationDevice
+        IThermalExternalDriftValidationDevice,
+        IDeviceStateReadDiagnostics
     {
+        public IReadOnlyList<string> StateReadRejections { get; set; } = [];
+
         private GpuClockOffsetManagementState gpuClockOffsetManagementState =
             GpuClockOffsetManagementState.Relinquished;
 

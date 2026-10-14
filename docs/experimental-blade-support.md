@@ -33,7 +33,9 @@ replayed automatically. Failed reads or checks leave the pause in place.
 | Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, bounded Custom levels, keyboard brightness and built-in effects, logo lighting, 50–100% charge limits in 1% steps (100% turns protection off) |
 
 Performance changes require confirmed Automatic fans and fresh external-power
-evidence. Manual fans, HyperBoost writes, and driver-dependent brightness integration
+evidence. The mode command also selects Automatic fans; this backend cannot restore
+a prior manual-fan state. Saved manual-fan settings stay saved and do not force a
+switch to Balanced on these laptops. Manual fans, HyperBoost writes, and driver-dependent brightness integration
 are not yet supported by this backend. Lighting and Custom controls below apply
 only to the exact Blade 18 profile.
 The 2020 Blade 15's battery commands are excluded because upstream reports that
@@ -96,7 +98,7 @@ Independent performance queries must identify a unique responding interface.
 SKU and firmware versions are report metadata. Unknown models and ambiguous
 interfaces remain blocked.
 
-This update uses service IPC 62, configuration schema 19, and profile export
+This update uses service IPC 63, configuration schema 19, and profile export
 schema 11. Install the coordinated pre-release update; a tray-only replacement
 cannot update the shared contracts. Older experimental preferences migrate to automatic support.
 
