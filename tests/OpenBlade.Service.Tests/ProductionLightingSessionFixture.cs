@@ -199,6 +199,8 @@ internal static class ProductionLightingSessionFixture
 
         public LogoLightingMode? LogoState { get; init; }
 
+        public Exception? LogoReadFailure { get; set; }
+
         public int ReadLogoStateCalls { get; private set; }
 
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
@@ -239,7 +241,9 @@ internal static class ProductionLightingSessionFixture
             CancellationToken cancellationToken)
         {
             ReadLogoStateCalls++;
-            return Task.FromResult(LogoState);
+            return LogoReadFailure is null
+                ? Task.FromResult(LogoState)
+                : Task.FromException<LogoLightingMode?>(LogoReadFailure);
         }
 
         public Task SetLightingAsync(

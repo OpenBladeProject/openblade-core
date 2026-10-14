@@ -346,7 +346,9 @@ public sealed record ConfirmedDeviceState(
     ConfirmedBatteryState? Battery,
     LightingSettings? Lighting)
 {
-    public bool HyperBoostActive { get; init; }
+    // Null means the thermal getter that reports HyperBoost was content
+    // rejected, so HyperBoost activity is unknown rather than off.
+    public bool? HyperBoostActive { get; init; } = false;
 
     public CustomPerformanceSettings? CustomPerformance { get; init; }
 

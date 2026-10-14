@@ -292,7 +292,7 @@ public sealed class ControlCoordinator
             "GPU clock tuning",
             GpuClockTuningSettings.IsWellFormed(value),
             capabilities => capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite },
-            state => (!state.HyperBoostActive || ownsHyperBoost)
+            state => (state.HyperBoostActive == false || ownsHyperBoost)
                 && GpuClockTuningMatches(state, value),
             async token =>
             {
@@ -304,7 +304,7 @@ public sealed class ControlCoordinator
                     .ConfigureAwait(false);
             },
             cancellationToken,
-            initialStateBlockReason: state => state.HyperBoostActive && !ownsHyperBoost
+            initialStateBlockReason: state => state.HyperBoostActive != false && !ownsHyperBoost
                 ? "GPU clock tuning requires confirmed OpenBlade ownership of active HyperBoost."
                 : null,
             resolveIndeterminateWriteByReadback: true,
@@ -452,7 +452,7 @@ public sealed class ControlCoordinator
             acceptSetterCompletionWithoutReadback: true,
             setterCompletionEvidence: state =>
                 DeviceSubsystemOrder.IsManualFanMode(state.Fans)
-                && state.HyperBoostActive != true,
+                && state.HyperBoostActive == false,
             // ApplyScopedAsync evaluates this only after its post-write read
             // completes. A read failure keeps the continuation unconfirmed.
             setterCompletionEvidenceConfirmsReadback: true,
@@ -484,7 +484,7 @@ public sealed class ControlCoordinator
             acceptSetterCompletionWithoutReadback: true,
             setterCompletionEvidence: state =>
                 DeviceSubsystemOrder.IsManualFanMode(state.Fans)
-                && state.HyperBoostActive != true,
+                && state.HyperBoostActive == false,
             forceWrite: true,
             resolveIndeterminateWriteByReadback: false,
             reconcileUnconfirmableIndeterminateWrite: true,
@@ -864,7 +864,37 @@ public sealed class ControlCoordinator
         DeviceCapabilities capabilities;
         ConfirmedDeviceState initial;
         bool lightingReadUnavailable = false;
+        PartialDeviceStateRead? initialPartialRead = null;
         IReadOnlySet<DeviceSubsystem>? continuationScope = null;
+
+        // A content-rejected getter leaves only its dependent subsystems
+        // unknown; every channel or safety failure still escapes the read.
+        async Task<(PowerTransitionDeviceStateReadResult Read, PartialDeviceStateRead? Partial)>
+            ReadTransitionStateAsync(IBladeDevice readDevice)
+        {
+            try
+            {
+                PowerTransitionDeviceStateReadResult read =
+                    deviceStateReader is not null
+                        ? await deviceStateReader(readDevice, cancellationToken)
+                            .ConfigureAwait(false)
+                        : stateReader is not null
+                            ? await stateReader(cancellationToken).ConfigureAwait(false)
+                            : new(
+                                await readDevice.ReadStateAsync(cancellationToken)
+                                    .ConfigureAwait(false),
+                                LightingOffConfirmationUnavailable: false);
+                return (read, null);
+            }
+            catch (RazerProtocolException exception) when (
+                DeviceStateReadIsolation.PartialRead(exception) is { } partial)
+            {
+                return (
+                    new(partial.State, partial.LightingOffConfirmationUnavailable),
+                    partial);
+            }
+        }
+
         try
         {
             IBladeDevice initialDevice = thermalStepRunner?.CurrentDevice ?? device;
@@ -881,16 +911,9 @@ public sealed class ControlCoordinator
                 await RelinquishGpuClockOffsetManagementAsync(cancellationToken);
             }
 
-            PowerTransitionDeviceStateReadResult initialRead =
-                deviceStateReader is not null
-                    ? await deviceStateReader(initialDevice, cancellationToken)
-                        .ConfigureAwait(false)
-                    : stateReader is not null
-                        ? await stateReader(cancellationToken).ConfigureAwait(false)
-                        : new(
-                            await initialDevice.ReadStateAsync(cancellationToken)
-                                .ConfigureAwait(false),
-                            LightingOffConfirmationUnavailable: false);
+            PowerTransitionDeviceStateReadResult initialRead;
+            (initialRead, initialPartialRead) =
+                await ReadTransitionStateAsync(initialDevice).ConfigureAwait(false);
             initial = initialRead.State;
             lightingReadUnavailable =
                 initialRead.LightingOffConfirmationUnavailable;
@@ -941,7 +964,8 @@ public sealed class ControlCoordinator
                 lightingReadUnavailable,
                 transition,
                 cancellationToken,
-                continuationScope);
+                continuationScope,
+                initialPartialRead);
 
             if (transition.Attempted.Count == 0)
             {
@@ -960,19 +984,13 @@ public sealed class ControlCoordinator
             cancellationToken.ThrowIfCancellationRequested();
             ConfirmedDeviceState final;
             bool finalLightingReadUnavailable;
+            PartialDeviceStateRead? finalPartialRead;
             try
             {
                 IBladeDevice finalDevice = thermalStepRunner?.CurrentDevice ?? device;
-                PowerTransitionDeviceStateReadResult finalRead =
-                    deviceStateReader is not null
-                        ? await deviceStateReader(finalDevice, cancellationToken)
-                            .ConfigureAwait(false)
-                        : stateReader is not null
-                            ? await stateReader(cancellationToken).ConfigureAwait(false)
-                            : new(
-                                await finalDevice.ReadStateAsync(cancellationToken)
-                                    .ConfigureAwait(false),
-                                LightingOffConfirmationUnavailable: false);
+                PowerTransitionDeviceStateReadResult finalRead;
+                (finalRead, finalPartialRead) =
+                    await ReadTransitionStateAsync(finalDevice).ConfigureAwait(false);
                 final = finalRead.State;
                 finalLightingReadUnavailable =
                     finalRead.LightingOffConfirmationUnavailable;
@@ -1027,16 +1045,22 @@ public sealed class ControlCoordinator
                     deferredNotSubmitted: transition.DeferredNotSubmitted);
             }
 
-            IReadOnlySet<DeviceSubsystem> finalReadUnavailable =
-                finalLightingReadUnavailable
-                    ? new HashSet<DeviceSubsystem> { DeviceSubsystem.Lighting }
-                    : new HashSet<DeviceSubsystem>();
+            var finalReadUnavailable = new HashSet<DeviceSubsystem>();
+            if (finalLightingReadUnavailable)
+            {
+                finalReadUnavailable.Add(DeviceSubsystem.Lighting);
+            }
+            if (finalPartialRead is not null)
+            {
+                finalReadUnavailable.UnionWith(finalPartialRead.UnavailableSubsystems);
+            }
             ReconcileFinalReadback(
                 desired,
                 states,
                 final,
                 finalReadUnavailable,
-                transition);
+                transition,
+                finalPartialRead);
             HashSet<DeviceSubsystem> attemptedWithoutConfirmation =
                 transition.Attempted
                     .Where(subsystem =>
@@ -1183,7 +1207,8 @@ public sealed class ControlCoordinator
         bool lightingReadUnavailable,
         FullTransitionApplyState transition,
         CancellationToken cancellationToken,
-        IReadOnlySet<DeviceSubsystem>? continuationScope = null)
+        IReadOnlySet<DeviceSubsystem>? continuationScope = null,
+        PartialDeviceStateRead? initialPartialRead = null)
     {
         bool stopFurtherWrites = false;
         string? stopReason = null;
@@ -1203,12 +1228,19 @@ public sealed class ControlCoordinator
                     $"{pending.Name} is not part of the remaining transition work.");
                 continue;
             }
+            if (initialPartialRead?.MessageFor(subsystem) is { } readFailure)
+            {
+                // Only the subsystem whose getter was content-rejected stays
+                // unread; it is never written without a confirmed baseline.
+                transition.Provisional[subsystem] = ReadFailure(pending.Name, readFailure);
+                continue;
+            }
             if (automaticWriteExclusions?.Contains(subsystem) == true)
             {
                 transition.Provisional[subsystem] =
                     subsystem == DeviceSubsystem.Lighting && lightingReadUnavailable
                         ? AutomaticReadUnavailable(pending.Name)
-                        : initial.HyperBoostActive
+                        : initial.HyperBoostActive == true
                             && IsThermalSubsystem(subsystem)
                             ? PreservedForHyperBoost(pending.Name)
                         : ExternalChangePreserved(pending.Name);
@@ -1532,7 +1564,8 @@ public sealed class ControlCoordinator
         IReadOnlyDictionary<DeviceSubsystem, PendingSubsystem> states,
         ConfirmedDeviceState final,
         IReadOnlySet<DeviceSubsystem> finalReadUnavailable,
-        FullTransitionApplyState transition)
+        FullTransitionApplyState transition,
+        PartialDeviceStateRead? finalPartialRead = null)
     {
         transition.Matched.Clear();
         foreach (DeviceSubsystem subsystem in DeviceSubsystemOrder.Default)
@@ -1563,10 +1596,12 @@ public sealed class ControlCoordinator
                             : Indeterminate(
                                 pending.Name,
                                 new IOException(
-                                    "The final lighting state could not be confirmed."));
+                                    finalPartialRead?.MessageFor(subsystem)
+                                        ?? "The final lighting state could not be confirmed."));
                 }
                 else if (transition.Provisional[subsystem].Status
-                    == ControlResultStatus.Unchanged)
+                    == ControlResultStatus.Unchanged
+                    && finalPartialRead?.MessageFor(subsystem) is null)
                 {
                     transition.Provisional[subsystem] =
                         AutomaticReadUnavailable(pending.Name);
@@ -1656,7 +1691,10 @@ public sealed class ControlCoordinator
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
             EnsureGpuClockOffsetManagementContract(capabilities);
             cancellationToken.ThrowIfCancellationRequested();
-            initial = await device.ReadStateAsync(cancellationToken);
+            initial = await DeviceStateReadIsolation.ReadAsync(
+                device.ReadStateAsync,
+                DeviceStateReadIsolation.Battery,
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             BatteryOperationPlan plan = createPlan(capabilities, initial.Battery);
             if (!plan.Supported)
@@ -1734,7 +1772,10 @@ public sealed class ControlCoordinator
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            ConfirmedDeviceState final = await device.ReadStateAsync(cancellationToken);
+            ConfirmedDeviceState final = await DeviceStateReadIsolation.ReadAsync(
+                device.ReadStateAsync,
+                DeviceStateReadIsolation.Battery,
+                cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (plan.Matches(final.Battery))
             {
@@ -1826,8 +1867,15 @@ public sealed class ControlCoordinator
         bool initialStateReadCompleted = false;
         DeviceCapabilities? capabilities = null;
         ConfirmedDeviceState? initial = null;
-        Func<CancellationToken, Task<ConfirmedDeviceState>> readState =
+        Func<CancellationToken, Task<ConfirmedDeviceState>> rawReadState =
             stateReader ?? scopedStateReader ?? device.ReadStateAsync;
+        IReadOnlySet<DeviceSubsystem> readDependencies =
+            DeviceStateReadIsolation.DependenciesOf(subsystem);
+        Func<CancellationToken, Task<ConfirmedDeviceState>> readState =
+            token => DeviceStateReadIsolation.ReadAsync(
+                rawReadState,
+                readDependencies,
+                token);
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
@@ -2339,9 +2387,12 @@ public sealed class ControlCoordinator
         ControlResultStatus.Blocked,
         $"{name} is unavailable: {exception.Message}");
 
-    private static ControlResult ReadFailure(string name, Exception exception) => new(
+    private static ControlResult ReadFailure(string name, Exception exception) =>
+        ReadFailure(name, exception.Message);
+
+    private static ControlResult ReadFailure(string name, string reason) => new(
         ControlResultStatus.Failed,
-        $"{name} could not be read before writing: {exception.Message}");
+        $"{name} could not be read before writing: {reason}");
 
     private static ControlResult FinalReadbackChanged(string name) => new(
         ControlResultStatus.Failed,

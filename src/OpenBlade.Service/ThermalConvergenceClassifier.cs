@@ -29,7 +29,7 @@ internal static class ThermalConvergenceClassifier
     {
         ArgumentNullException.ThrowIfNull(desired);
         ArgumentNullException.ThrowIfNull(confirmed);
-        if (confirmed.HyperBoostActive)
+        if (confirmed.HyperBoostActive == true)
         {
             return new(
                 ThermalConvergenceObservationKind.ExternalHyperBoost,

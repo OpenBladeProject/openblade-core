@@ -9084,6 +9084,47 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task UnknownThermalState_OffersNoHyperBoostPerformanceOrFanAction()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot known = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false));
+        client.Publish(known);
+        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
+
+        client.Publish(known with
+        {
+            Revision = known.Revision + 1,
+            ConfirmedState = known.ConfirmedState! with
+            {
+                Performance = null,
+                Fans = null,
+                HyperBoostActive = null,
+                CustomPerformance = null,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsThermalStateUnknown);
+
+        Assert.False(viewModel.HyperBoostActive);
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.False(viewModel.CanEditPerformance);
+        Assert.False(viewModel.CanEditFanControl);
+        Assert.False(viewModel.CanSelectLaptopPerformance);
+        Assert.Equal(
+            "OpenBlade is waiting for a fresh, complete read of the laptop state.",
+            viewModel.HyperBoostUnavailableReason);
+        Assert.Equal(
+            "OpenBlade is waiting for a fresh, complete read of the laptop state.",
+            viewModel.FanControlUnavailableMessage);
+
+        client.Publish(known with { Revision = known.Revision + 2 });
+        await WaitUntilAsync(() => !viewModel.IsThermalStateUnknown
+            && viewModel.CanToggleHyperBoost);
+    }
+
+    [Fact]
     public async Task HyperBoostReadWrite_AdmittedPadlessBalancedPathCanToggle()
     {
         var client = new FakeServiceClient();
