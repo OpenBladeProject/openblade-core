@@ -1113,8 +1113,11 @@ public sealed class ControlCoordinator
         DeviceCapabilities capabilities,
         ConfirmedDeviceState initial)
     {
-        BatteryOperationPlan batteryPlan = BatteryOperationPlanner.CreateBatteryPlan(
+        DesiredBatteryState desiredBattery = BatteryOperationPlanner.WithoutStaleFullCharge(
             desired.Battery,
+            initial.Battery);
+        BatteryOperationPlan batteryPlan = BatteryOperationPlanner.CreateBatteryPlan(
+            desiredBattery,
             capabilities,
             initial.Battery);
         bool thermalCombinationSupported = IsVerifiedThermalCombination(
@@ -1181,11 +1184,11 @@ public sealed class ControlCoordinator
                 batteryPlan.Supported,
                 batteryPlan.InitiallyMatching,
                 token => batteryOperations.ApplyTransitionAsync(
-                    desired.Battery,
+                    desiredBattery,
                     capabilities,
                     initial.Battery,
                     token),
-                state => BatteryOperationPlanner.BatteryMatches(desired.Battery, state.Battery)),
+                state => BatteryOperationPlanner.BatteryMatches(desiredBattery, state.Battery)),
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)

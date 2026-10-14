@@ -14704,13 +14704,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preserveObservedExternalChanges
                     ? GetCoupledAutomaticWriteExclusions()
                     : pendingWriteConfirmations.GetWriteExclusions());
-            if (desired.Battery.TemporaryFullCharge
-                && !Automation.DesiredBattery.TemporaryFullCharge)
-            {
-                // The one-shot ended between resolving this transition and its
-                // readback; the resolved intent is stale, so never replay it.
-                exclusions.Add(DeviceSubsystem.Battery);
-            }
             if (confirmed.HyperBoostActive != false)
             {
                 // Unknown activity is excluded exactly like active HyperBoost.
@@ -16377,18 +16370,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private ConfirmedStateDriftTracker CreateDriftTracker() => new(RetireCompletedTemporaryFullCharge);
 
-    private DesiredDeviceState WithoutRetiredTemporaryFullCharge(DesiredDeviceState desired) =>
-        desired.Battery.TemporaryFullCharge
-        && automation is { DesiredBattery.TemporaryFullCharge: false }
-            ? desired with
-            {
-                Battery = new DesiredBatteryState(
-                    desired.Battery.ConfiguredPolicy,
-                    desired.Battery.ProtectionEnabled,
-                    false),
-            }
-            : desired;
-
     private bool RetireCompletedTemporaryFullCharge()
     {
         if (automation is not { DesiredBattery.TemporaryFullCharge: true } current)
@@ -16409,11 +16390,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool lightingExternalBeforeObservation =
             driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         driftTracker.Observe(confirmed);
-        DesiredDeviceState desired = WithoutRetiredTemporaryFullCharge(
-            expected ?? ResolveHardwareDesired(confirmed));
-        alternateExpected = alternateExpected is null
-            ? null
-            : WithoutRetiredTemporaryFullCharge(alternateExpected);
+        DesiredDeviceState desired = expected ?? ResolveHardwareDesired(confirmed);
 
         // Neither branch below re-examines Lighting once the initial comparison
         // has run (CompareInitialAutomaticValue/CompareTransitionAutomaticValue
