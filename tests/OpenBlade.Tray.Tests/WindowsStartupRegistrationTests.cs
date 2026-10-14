@@ -167,6 +167,103 @@ public sealed class WindowsStartupRegistrationTests : IDisposable
         Assert.False(await registration.IsEnabledAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task EnabledSignInTaskIsReportedAsEnabledWithoutWritingShortcut()
+    {
+        TestPaths paths = CreatePaths();
+        var writer = new RecordingShortcutWriter();
+        WindowsStartupRegistration registration = CreateRegistration(
+            paths,
+            writer,
+            new FakeTaskScheduler(SignInTaskState.Enabled));
+
+        Assert.True(await registration.IsEnabledAsync(CancellationToken.None));
+        await registration.SetEnabledAsync(true, CancellationToken.None);
+        Assert.Empty(writer.Requests);
+    }
+
+    [Fact]
+    public async Task EnableClearsOptOutWhenSignInTaskIsEnabled()
+    {
+        TestPaths paths = CreatePaths();
+        WriteFile(paths.DisabledMarker);
+        var writer = new RecordingShortcutWriter();
+        WindowsStartupRegistration registration = CreateRegistration(
+            paths,
+            writer,
+            new FakeTaskScheduler(SignInTaskState.Enabled));
+
+        await registration.SetEnabledAsync(true, CancellationToken.None);
+
+        Assert.False(File.Exists(paths.DisabledMarker));
+        Assert.Empty(writer.Requests);
+        Assert.True(await registration.IsEnabledAsync(CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(SignInTaskState.Missing)]
+    [InlineData(SignInTaskState.Disabled)]
+    public async Task EnableCreatesPerUserShortcutWhenSignInTaskIsNotEnabled(
+        SignInTaskState state)
+    {
+        TestPaths paths = CreatePaths();
+        WriteFile(paths.DisabledMarker);
+        var writer = new RecordingShortcutWriter(createShortcut: true);
+        WindowsStartupRegistration registration = CreateRegistration(
+            paths,
+            writer,
+            new FakeTaskScheduler(state));
+
+        await registration.SetEnabledAsync(true, CancellationToken.None);
+
+        ShortcutRequest request = Assert.Single(writer.Requests);
+        Assert.Equal(paths.UserShortcut, request.ShortcutPath);
+        Assert.False(File.Exists(paths.DisabledMarker));
+    }
+
+    [Fact]
+    public async Task DisableNeverRegistersOrDeletesSignInTasks()
+    {
+        TestPaths paths = CreatePaths();
+        WriteFile(paths.UserShortcut);
+        var scheduler = new FakeTaskScheduler(SignInTaskState.Enabled);
+        WindowsStartupRegistration registration = CreateRegistration(
+            paths,
+            new RecordingShortcutWriter(),
+            scheduler);
+
+        await registration.SetEnabledAsync(false, CancellationToken.None);
+
+        Assert.True(File.Exists(paths.DisabledMarker));
+        Assert.Equal(0, scheduler.RegisterCalls);
+        Assert.Equal(0, scheduler.DeleteCalls);
+        Assert.False(await registration.IsEnabledAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SchedulerFailuresAreTreatedAsNoTask()
+    {
+        foreach (Exception failure in new Exception[]
+        {
+            new System.Runtime.InteropServices.COMException("scheduler", unchecked((int)0x80070005)),
+            new UnauthorizedAccessException("denied"),
+        })
+        {
+            TestPaths paths = CreatePaths();
+            var writer = new RecordingShortcutWriter(createShortcut: true);
+            WindowsStartupRegistration registration = CreateRegistration(
+                paths,
+                writer,
+                new FakeTaskScheduler(SignInTaskState.Missing) { Failure = failure });
+
+            Assert.False(await registration.IsEnabledAsync(CancellationToken.None));
+            await registration.SetEnabledAsync(true, CancellationToken.None);
+            Assert.Single(writer.Requests);
+            Assert.True(await registration.IsEnabledAsync(CancellationToken.None));
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))
@@ -192,8 +289,10 @@ public sealed class WindowsStartupRegistrationTests : IDisposable
 
     private static WindowsStartupRegistration CreateRegistration(
         TestPaths paths,
-        IStartupShortcutWriter writer) => new(
+        IStartupShortcutWriter writer,
+        ISignInTaskScheduler? scheduler = null) => new(
             writer,
+            scheduler ?? new FakeTaskScheduler(),
             paths.StartupDirectory,
             paths.CommonStartupDirectory,
             paths.UserDataDirectory,
@@ -230,6 +329,28 @@ public sealed class WindowsStartupRegistrationTests : IDisposable
 
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeTaskScheduler(SignInTaskState state = SignInTaskState.Missing)
+        : ISignInTaskScheduler
+    {
+        public Exception? Failure { get; init; }
+        public int RegisterCalls { get; private set; }
+        public int DeleteCalls { get; private set; }
+
+        public SignInTaskState GetState(string taskName)
+        {
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+
+            return state;
+        }
+
+        public void Register(SignInTaskDefinition definition) => RegisterCalls++;
+
+        public void Delete(string taskName) => DeleteCalls++;
     }
 
     private sealed record TestPaths(

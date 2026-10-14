@@ -19,6 +19,7 @@ internal sealed class WindowsSetupFileOperations : ISetupFileOperations
 public sealed record WindowsSetupPlatformOptions(
     ISetupServiceControl? ServiceControl = null,
     IStartupShortcutWriter? ShortcutWriter = null,
+    ISignInTaskScheduler? SignInTaskScheduler = null,
     IAuthorizedUserSidWriter? SidWriter = null,
     ISetupServiceHealthProbe? HealthProbe = null,
     ISetupFileOperations? FileOperations = null,
@@ -47,6 +48,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly ISetupPayloadFileSystem payloadFileSystem;
     private readonly ISetupServiceControl serviceControl;
     private readonly IStartupShortcutWriter shortcutWriter;
+    private readonly ISignInTaskScheduler signInTaskScheduler;
     private readonly IAuthorizedUserSidWriter sidWriter;
     private readonly ISetupServiceHealthProbe healthProbe;
     private readonly ISetupFileOperations fileOperations;
@@ -69,6 +71,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         payloadFileSystem = options.PayloadFileSystem ?? new WindowsSetupPayloadFileSystem();
         serviceControl = options.ServiceControl ?? new ScSetupServiceControl();
         shortcutWriter = options.ShortcutWriter ?? new WindowsStartupShortcutWriter();
+        signInTaskScheduler = options.SignInTaskScheduler ?? new WindowsSignInTaskScheduler();
         sidWriter = options.SidWriter ?? new AtomicAuthorizedUserSidWriter();
         healthProbe = options.HealthProbe ?? new SetupServiceHealthProbe();
         fileOperations = options.FileOperations ?? new WindowsSetupFileOperations();
@@ -126,11 +129,21 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         CancellationToken cancellationToken)
     {
         SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
-        bool trayShortcutExisted = fileOperations.FileExists(paths.StartupFile)
-            || fileOperations.FileExists(paths.LegacyTrayStartupFile)
-            || fileOperations.FileExists(paths.LegacyStartupFile);
-        bool sessionAgentShortcutExisted = fileOperations.FileExists(paths.SessionAgentStartupFile)
-            || fileOperations.FileExists(paths.LegacySessionAgentStartupFile);
+        SetupStartupRegistration tray = signInTaskScheduler.GetState(SignInTaskNames.Tray)
+            != SignInTaskState.Missing
+            ? SetupStartupRegistration.SignInTask
+            : fileOperations.FileExists(paths.StartupFile)
+                || fileOperations.FileExists(paths.LegacyTrayStartupFile)
+                || fileOperations.FileExists(paths.LegacyStartupFile)
+                ? SetupStartupRegistration.Shortcut
+                : SetupStartupRegistration.None;
+        SetupStartupRegistration sessionAgent = signInTaskScheduler.GetState(SignInTaskNames.SessionAgent)
+            != SignInTaskState.Missing
+            ? SetupStartupRegistration.SignInTask
+            : fileOperations.FileExists(paths.SessionAgentStartupFile)
+                || fileOperations.FileExists(paths.LegacySessionAgentStartupFile)
+                ? SetupStartupRegistration.Shortcut
+                : SetupStartupRegistration.None;
         bool startMenuShortcutExisted = fileOperations.FileExists(paths.StartMenuFile);
         bool uninstallShortcutExisted = fileOperations.FileExists(paths.UninstallStartMenuFile);
         bool uninstallRegistrationExisted = uninstallRegistration.Exists();
@@ -144,8 +157,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         return new(
             new(state is not null, state == SetupServiceState.Running),
             new(
-                trayShortcutExisted,
-                sessionAgentShortcutExisted,
+                tray,
+                sessionAgent,
                 startMenuShortcutExisted,
                 uninstallShortcutExisted,
                 uninstallRegistrationExisted),
@@ -316,29 +329,91 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
     }
 
-    public async Task InstallStartupShortcutAsync(CancellationToken cancellationToken)
-    {
-        string trayExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe");
-        await shortcutWriter.CreateAsync(
-            new ShortcutRequest(
-                paths.StartupFile,
-                trayExecutable,
-                paths.InstallDirectory,
-                Arguments: StartupShortcutArguments.Tray),
-            cancellationToken);
-        if (!string.Equals(
-                paths.LegacyTrayStartupFile,
-                paths.StartupFile,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            fileOperations.DeleteFile(paths.LegacyTrayStartupFile);
-        }
-        fileOperations.DeleteFile(paths.LegacyStartupFile);
-    }
-
-    public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken)
+    public Task InstallTrayStartupAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        signInTaskScheduler.Register(new SignInTaskDefinition(
+            SignInTaskNames.Tray,
+            Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe"),
+            paths.InstallDirectory,
+            StartupShortcutArguments.Tray,
+            "Starts OpenBlade when you sign in."));
+        DeleteTrayStartupFiles();
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveTrayStartupAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        signInTaskScheduler.Delete(SignInTaskNames.Tray);
+        DeleteTrayStartupFiles();
+        return Task.CompletedTask;
+    }
+
+    public Task InstallSessionAgentStartupAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        signInTaskScheduler.Register(new SignInTaskDefinition(
+            SignInTaskNames.SessionAgent,
+            Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe"),
+            paths.InstallDirectory,
+            null,
+            "Starts the OpenBlade Session Agent when you sign in."));
+        DeleteSessionAgentStartupFiles();
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveSessionAgentStartupAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        signInTaskScheduler.Delete(SignInTaskNames.SessionAgent);
+        DeleteSessionAgentStartupFiles();
+        return Task.CompletedTask;
+    }
+
+    public async Task RestoreTrayStartupAsync(
+        SetupStartupRegistration prior,
+        CancellationToken cancellationToken)
+    {
+        switch (prior)
+        {
+            case SetupStartupRegistration.Shortcut:
+                await shortcutWriter.CreateAsync(
+                    new ShortcutRequest(
+                        paths.StartupFile,
+                        Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe"),
+                        paths.InstallDirectory,
+                        Arguments: StartupShortcutArguments.Tray),
+                    cancellationToken);
+                break;
+            case SetupStartupRegistration.SignInTask:
+                await InstallTrayStartupAsync(cancellationToken);
+                break;
+        }
+    }
+
+    public async Task RestoreSessionAgentStartupAsync(
+        SetupStartupRegistration prior,
+        CancellationToken cancellationToken)
+    {
+        switch (prior)
+        {
+            case SetupStartupRegistration.Shortcut:
+                await shortcutWriter.CreateAsync(
+                    new ShortcutRequest(
+                        paths.SessionAgentStartupFile,
+                        Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe"),
+                        paths.InstallDirectory),
+                    cancellationToken).ConfigureAwait(false);
+                break;
+            case SetupStartupRegistration.SignInTask:
+                await InstallSessionAgentStartupAsync(cancellationToken).ConfigureAwait(false);
+                break;
+        }
+    }
+
+    private void DeleteTrayStartupFiles()
+    {
         fileOperations.DeleteFile(paths.StartupFile);
         if (!string.Equals(
                 paths.LegacyTrayStartupFile,
@@ -348,33 +423,10 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             fileOperations.DeleteFile(paths.LegacyTrayStartupFile);
         }
         fileOperations.DeleteFile(paths.LegacyStartupFile);
-        return Task.CompletedTask;
     }
 
-    public async Task InstallSessionAgentStartupShortcutAsync(
-        CancellationToken cancellationToken)
+    private void DeleteSessionAgentStartupFiles()
     {
-        string sessionAgentExecutable = Path.Combine(
-            paths.InstallDirectory,
-            "OpenBlade.SessionAgent.exe");
-        await shortcutWriter.CreateAsync(
-            new ShortcutRequest(
-                paths.SessionAgentStartupFile,
-                sessionAgentExecutable,
-                paths.InstallDirectory),
-            cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(
-                paths.LegacySessionAgentStartupFile,
-                paths.SessionAgentStartupFile,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            fileOperations.DeleteFile(paths.LegacySessionAgentStartupFile);
-        }
-    }
-
-    public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
         fileOperations.DeleteFile(paths.SessionAgentStartupFile);
         if (!string.Equals(
                 paths.LegacySessionAgentStartupFile,
@@ -383,7 +435,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         {
             fileOperations.DeleteFile(paths.LegacySessionAgentStartupFile);
         }
-        return Task.CompletedTask;
     }
 
     public Task InstallStartMenuShortcutAsync(CancellationToken cancellationToken)

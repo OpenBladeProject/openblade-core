@@ -22,6 +22,8 @@
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
     <Compile Include="..\OpenBlade.Testing\UnavailableServiceClient.cs"
              Link="UnavailableServiceClient.cs" />
+    <Compile Include="..\..\src\OpenBlade.Setup\SignInTaskScheduler.cs"
+             Link="SignInTaskScheduler.cs" />
     <Compile Include="..\..\src\OpenBlade.Setup\StartupShortcutWriter.cs"
              Link="StartupShortcutWriter.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\TrayDashboardPreferenceEditor.cs"

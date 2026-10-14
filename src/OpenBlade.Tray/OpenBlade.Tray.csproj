@@ -58,6 +58,8 @@
     <ProjectReference Include="..\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\OpenBlade.Setup\SignInTaskScheduler.cs"
+             Link="SignInTaskScheduler.cs" />
     <Compile Include="..\OpenBlade.Setup\StartupShortcutWriter.cs"
              Link="StartupShortcutWriter.cs" />
     <Compile Include="..\..\build\localization\LocalizationSnapshotFailureEvidence.cs"

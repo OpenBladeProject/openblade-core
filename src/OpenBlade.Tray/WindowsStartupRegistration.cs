@@ -6,6 +6,7 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
 {
     private const string DisabledMarkerFileName = "tray-startup-disabled.flag";
     private readonly IStartupShortcutWriter shortcutWriter;
+    private readonly ISignInTaskScheduler taskScheduler;
     private readonly string shortcutPath;
     private readonly string commonShortcutPath;
     private readonly string legacyShortcutPath;
@@ -16,6 +17,7 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
     internal WindowsStartupRegistration()
         : this(
             new WindowsStartupShortcutWriter(),
+            new WindowsSignInTaskScheduler(),
             Environment.GetFolderPath(Environment.SpecialFolder.Startup),
             Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
             Path.Combine(
@@ -29,6 +31,7 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
 
     internal WindowsStartupRegistration(
         IStartupShortcutWriter shortcutWriter,
+        ISignInTaskScheduler taskScheduler,
         string startupDirectory,
         string commonStartupDirectory,
         string userDataDirectory,
@@ -37,6 +40,8 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
     {
         this.shortcutWriter = shortcutWriter
             ?? throw new ArgumentNullException(nameof(shortcutWriter));
+        this.taskScheduler = taskScheduler
+            ?? throw new ArgumentNullException(nameof(taskScheduler));
         ArgumentException.ThrowIfNullOrWhiteSpace(startupDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(commonStartupDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(userDataDirectory);
@@ -66,7 +71,7 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(
             !File.Exists(disabledMarkerPath)
-            && HasStartupShortcut());
+            && HasStartupLauncher());
     }
 
     public async Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
@@ -74,7 +79,7 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
         cancellationToken.ThrowIfCancellationRequested();
         if (enabled)
         {
-            if (!HasStartupShortcut())
+            if (!HasStartupLauncher())
             {
                 await shortcutWriter.CreateAsync(
                     new ShortcutRequest(
@@ -122,10 +127,25 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
         }
     }
 
-    private bool HasStartupShortcut() =>
-        File.Exists(commonShortcutPath)
+    private bool HasStartupLauncher() =>
+        TrayTaskEnabled()
+        || File.Exists(commonShortcutPath)
         || File.Exists(shortcutPath)
         || File.Exists(legacyShortcutPath);
+
+    // The all-users sign-in task is registered by setup. Any failure to query it
+    // (not elevated, scheduler unavailable) is treated as "no task".
+    private bool TrayTaskEnabled()
+    {
+        try
+        {
+            return taskScheduler.GetState(SignInTaskNames.Tray) == SignInTaskState.Enabled;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return false;
+        }
+    }
 
     private async Task WriteDisabledMarkerAsync(CancellationToken cancellationToken)
     {
