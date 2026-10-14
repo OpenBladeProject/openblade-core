@@ -33,4 +33,7 @@
   <data name="Uninstall OpenBlade and keep saved profiles" xml:space="preserve">
     <value>Удалить OpenBlade и сохранить профили</value>
   </data>
+  <data name="OpenBlade requires the 64-bit .NET 10 Desktop Runtime ({0} or a newer 10.0 patch). Install or repair .NET 10 Desktop Runtime, then try again." xml:space="preserve">
+    <value>Для OpenBlade требуется 64-разрядная среда выполнения .NET 10 Desktop Runtime ({0} или более новый выпуск 10.0). Установите или восстановите .NET 10 Desktop Runtime и повторите попытку.</value>
+  </data>
 </root>

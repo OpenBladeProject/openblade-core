@@ -1366,13 +1366,23 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void ProductionPublishRemainsSelfContainedWithoutLooseSetupRuntimeOrSymbols()
+    public void ProductionPublishUsesSharedDotNetForInstalledAppsAndSelfContainedTools()
     {
         string publish = ReadRepositoryFile("build", "Publish.ps1");
         string validation = ReadRepositoryFile("build", "PublishPayloadValidation.ps1");
         string serviceProject = ReadRepositoryFile("src", "OpenBlade.Service", "OpenBlade.Service.csproj");
+        string sessionAgentProject = ReadRepositoryFile(
+            "src",
+            "OpenBlade.SessionAgent",
+            "OpenBlade.SessionAgent.csproj");
+        string trayProject = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");
+        string setupProject = ReadRepositoryFile("src", "OpenBlade.Setup", "OpenBlade.Setup.csproj");
+        string buildProperties = ReadRepositoryFile("Directory.Build.props");
 
-        Assert.Contains("'--self-contained', 'true'", publish, StringComparison.Ordinal);
+        Assert.Contains(
+            "$installedPublishArguments = @('--self-contained', 'false')",
+            publish,
+            StringComparison.Ordinal);
         Assert.Contains("'--property:PublishTrimmed=false'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:DebugType=None'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:DebugSymbols=false'", publish, StringComparison.Ordinal);
@@ -1382,10 +1392,40 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("'--property:PublishSingleFile=true'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:EnableCompressionInSingleFile=true'", publish, StringComparison.Ordinal);
+        string normalizedPublish = publish.Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Contains("$payload ($installedPublishArguments + $serviceValidationArguments)", normalizedPublish);
+        Assert.Contains("$payload $installedPublishArguments", normalizedPublish);
         Assert.Contains(
-            "'src\\OpenBlade.Capture\\OpenBlade.Capture.csproj') `\n        $stagingDeveloperTools $productionPublishArguments",
-            publish.Replace("\r\n", "\n", StringComparison.Ordinal),
-            StringComparison.Ordinal);
+            "$stagingDeveloperTools ($productionPublishArguments + @('--self-contained', 'true'))",
+            normalizedPublish);
+        Assert.Contains(
+            "$stagingBundle ($productionPublishArguments + $setupPublishArguments + @('--self-contained', 'true'))",
+            normalizedPublish);
+        Assert.Contains("<SelfContained>false</SelfContained>", serviceProject);
+        Assert.Contains("<SelfContained>false</SelfContained>", sessionAgentProject);
+        Assert.Contains("<SelfContained>false</SelfContained>", trayProject);
+        Assert.Contains("<AppHostDotNetSearch>Global</AppHostDotNetSearch>", serviceProject);
+        Assert.Contains("<AppHostDotNetSearch>Global</AppHostDotNetSearch>", sessionAgentProject);
+        Assert.Contains("<AppHostDotNetSearch>Global</AppHostDotNetSearch>", trayProject);
+        Assert.Contains(
+            "<OpenBladeMinimumDotNetRuntimeVersion>10.0.12</OpenBladeMinimumDotNetRuntimeVersion>",
+            buildProperties);
+        Assert.Contains(
+            "<FrameworkReference Update=\"Microsoft.NETCore.App\" RuntimeFrameworkVersion=\"$(OpenBladeMinimumDotNetRuntimeVersion)\" />",
+            serviceProject);
+        Assert.Contains(
+            "<FrameworkReference Update=\"Microsoft.NETCore.App\" RuntimeFrameworkVersion=\"$(OpenBladeMinimumDotNetRuntimeVersion)\" />",
+            sessionAgentProject);
+        Assert.Contains(
+            "<FrameworkReference Update=\"Microsoft.NETCore.App\" RuntimeFrameworkVersion=\"$(OpenBladeMinimumDotNetRuntimeVersion)\" />",
+            trayProject);
+        Assert.Contains("<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>", sessionAgentProject);
+        Assert.Contains("<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>", trayProject);
+        Assert.Contains("<PublishTrimmed>false</PublishTrimmed>", sessionAgentProject);
+        Assert.Contains("<PublishTrimmed>false</PublishTrimmed>", trayProject);
+        Assert.Contains(
+            "<AssemblyMetadata Include=\"OpenBladeMinimumDotNetRuntimeVersion\"",
+            setupProject);
         Assert.Contains("Assert-ProductionBundleFootprint", publish, StringComparison.Ordinal);
         Assert.Contains("OpenBlade setup must publish as one compressed executable", validation, StringComparison.Ordinal);
         Assert.Contains("must not pre-copy Setup into the payload", validation, StringComparison.Ordinal);
@@ -1712,7 +1752,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void TrayExecutableIsPinnedUnpackagedSelfContainedWinUiAndContainsNoWpf()
+    public void TrayExecutableIsPinnedUnpackagedFrameworkDependentWinUiAndContainsNoWpf()
     {
         string project = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");
         string packageVersions = ReadRepositoryFile("Directory.Packages.props");
@@ -1723,7 +1763,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<UseWindowsForms>true</UseWindowsForms>", project, StringComparison.Ordinal);
         Assert.Contains("<WindowsPackageType>None</WindowsPackageType>", project, StringComparison.Ordinal);
         Assert.Contains("<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>", project, StringComparison.Ordinal);
-        Assert.Contains("<SelfContained>true</SelfContained>", project, StringComparison.Ordinal);
+        Assert.Contains("<SelfContained>false</SelfContained>", project, StringComparison.Ordinal);
+        Assert.Contains("<AppHostDotNetSearch>Global</AppHostDotNetSearch>", project, StringComparison.Ordinal);
+        Assert.Contains(
+            "<FrameworkReference Update=\"Microsoft.WindowsDesktop.App.WindowsForms\" RuntimeFrameworkVersion=\"$(OpenBladeMinimumDotNetRuntimeVersion)\" />",
+            project,
+            StringComparison.Ordinal);
         Assert.Contains("<RuntimeIdentifier>win-x64</RuntimeIdentifier>", project, StringComparison.Ordinal);
         Assert.Contains("<PlatformTarget>x64</PlatformTarget>", project, StringComparison.Ordinal);
         Assert.Contains("<Platforms>x64</Platforms>", project, StringComparison.Ordinal);

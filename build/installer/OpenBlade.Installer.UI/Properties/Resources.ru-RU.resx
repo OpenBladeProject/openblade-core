@@ -300,4 +300,13 @@
   <data name="This installer entry was removed. OpenBlade was already absent." xml:space="preserve">
     <value>Эта запись установщика удалена. OpenBlade уже отсутствовал.</value>
   </data>
+  <data name="Microsoft .NET 10 Desktop Runtime required" xml:space="preserve">
+    <value>Требуется среда выполнения Microsoft .NET 10 Desktop</value>
+  </data>
+  <data name="OpenBlade needs Microsoft .NET 10 Desktop Runtime. Setup will install it before installing OpenBlade. Continue?" xml:space="preserve">
+    <value>Для работы OpenBlade требуется среда выполнения Microsoft .NET 10 Desktop. Программа установки установит её перед установкой OpenBlade. Продолжить?</value>
+  </data>
+  <data name="Installing Microsoft .NET 10 Desktop Runtime…" xml:space="preserve">
+    <value>Установка среды выполнения Microsoft .NET 10 Desktop…</value>
+  </data>
 </root>

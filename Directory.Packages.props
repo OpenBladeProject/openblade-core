@@ -12,6 +12,7 @@
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" />
     <PackageVersion Include="WixToolset.BootstrapperApplicationApi" Version="7.0.0" />
     <PackageVersion Include="WixToolset.Util.wixext" Version="7.0.0" />
+    <PackageVersion Include="WixToolset.Netfx.wixext" Version="7.0.0" />
   </ItemGroup>
   <ItemGroup Label="Runtime">
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />

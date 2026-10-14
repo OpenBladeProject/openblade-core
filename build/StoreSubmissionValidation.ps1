@@ -110,6 +110,7 @@ function Write-OpenBladeStoreReadinessReport {
         [Parameter(Mandatory)][string]$Bundle,
         [Parameter(Mandatory)][string]$Installer,
         [Parameter(Mandatory)][string]$ReportPath,
+        [bool]$OfflineInstaller = $true,
         [string]$ContractPath = (
             Join-Path $PSScriptRoot 'store\OpenBlade.StoreSubmission.json'),
         [switch]$RequireSignatures,
@@ -209,6 +210,7 @@ function Write-OpenBladeStoreReadinessReport {
         schemaVersion = 1
         localPreflightPassed = $true
         signingComplete = ($unsignedFirstParty.Count -eq 0)
+        installerMatchesOfflineContract = $OfflineInstaller
         readyForPartnerCenterSubmission = $false
         storeContract = [ordered]@{
             appType = $contract.appType
@@ -230,6 +232,9 @@ function Write-OpenBladeStoreReadinessReport {
         }
         unsignedFirstParty = $unsignedFirstParty
         remainingExternalSteps = @(
+            if (-not $OfflineInstaller) {
+                'Publish with -OfflineInstaller to embed the .NET prerequisite before Store submission.'
+            }
             'Authenticode-sign first-party payloads before Burn embeds them, then sign the detached Burn engine and final installer.',
             'Publish the immutable installer at a versioned HTTPS URL.',
             'Confirm the privacy-policy URL returns HTTP 200 text/html with the rendered OpenBlade privacy heading, then enter it in Partner Center.',

@@ -2,6 +2,8 @@
 <WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-US">
   <String Id="VcRuntimeDisplayName" Value="Microsoft Visual C++ Redistributable" />
   <String Id="VcRuntimeDescription" Value="Installs the Microsoft Visual C++ runtime required by OpenBlade." />
+  <String Id="DotNetDesktopRuntimeDisplayName" Value="Microsoft .NET 10 Desktop Runtime" />
+  <String Id="DotNetDesktopRuntimeDescription" Value="Installs the shared Microsoft .NET 10 Desktop Runtime required by OpenBlade." />
   <String Id="OpenBladeSetupDisplayName" Value="OpenBlade setup" />
   <String Id="OpenBladeSetupDescription" Value="Installs, repairs, or removes OpenBlade." />
 </WixLocalization>
