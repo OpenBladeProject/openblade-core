@@ -559,6 +559,48 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
     }
 
     [Fact]
+    public async Task Writer_RechecksStrictControllerAccessAfterAcquiringSharedFeatureCommandGate()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        await gate.WaitAsync();
+        var conflicts = new List<string>();
+        int checks = 0;
+        var guard = new ScriptedGuard(
+            new HardwareAccessDecision(conflicts, null),
+            () =>
+            {
+                if (++checks == 2)
+                {
+                    conflicts.Add("Razer Synapse");
+                }
+            });
+        var io = new ScriptedIo();
+        var owned = CreateOwnedHandle();
+        await using var writer = CreateWriter(
+            owned.Handle,
+            io,
+            guard,
+            sharedCommandGate: gate);
+
+        Task<HidSessionResult<HidUnit>> matrixWrite = writer.WriteAsync(
+            Report(1, MatrixRgb.Black),
+            CancellationToken.None);
+        await guard.Checked.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(1, guard.Calls);
+
+        gate.Release();
+        HidSessionResult<HidUnit> result =
+            await matrixWrite.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, result.Failure);
+        Assert.Equal(HidSessionFailurePhase.Guard, result.Diagnostic?.Phase);
+        Assert.Equal(2, guard.Calls);
+        Assert.Empty(io.Calls);
+        Assert.True(gate.Wait(0));
+        gate.Release();
+    }
+
+    [Fact]
     public async Task Writer_ReleasesSharedFeatureCommandGateAfterNativeFailure()
     {
         using var gate = new SemaphoreSlim(1, 1);

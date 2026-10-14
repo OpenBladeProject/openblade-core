@@ -437,29 +437,10 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
             {
                 guardStartedTimestamp = timeProvider.GetTimestamp();
             }
-            HardwareAccessDecision access;
-            try
-            {
-                access = guard.Check();
-            }
-            catch
+            if (CheckControllerAccess() is { } guardFailure)
             {
                 return DiagnosticFailure(
-                    HidSessionFailureKind.ConflictDetectionFailed,
-                    HidSessionFailurePhase.Guard);
-            }
-
-            if (access.DetectionFailure is not null)
-            {
-                return DiagnosticFailure(
-                    HidSessionFailureKind.ConflictDetectionFailed,
-                    HidSessionFailurePhase.Guard);
-            }
-
-            if (access.Conflicts.Count != 0)
-            {
-                return DiagnosticFailure(
-                    HidSessionFailureKind.ConflictBlocked,
+                    guardFailure,
                     HidSessionFailurePhase.Guard);
             }
             if (timingSink is not null)
@@ -502,6 +483,19 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         try
         {
             cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
+            if (cancellation is not null)
+            {
+                return Failure(cancellation.Value);
+            }
+
+            if (CheckControllerAccess() is { } guardFailure)
+            {
+                return DiagnosticFailure(
+                    guardFailure,
+                    HidSessionFailurePhase.Guard);
+            }
+
+            cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
             return cancellation is null
                 ? await ExecuteFeatureWriteAsync(
                     item,
@@ -515,6 +509,33 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         {
             Rz090581FeatureCommandGate.ReleaseAfterRetirement(sharedCommandGate, pendingNativeRetirement);
         }
+    }
+
+    private HidSessionFailureKind? CheckControllerAccess()
+    {
+        if (exclusivityPolicy != ControllerExclusivityPolicy.Strict)
+        {
+            return null;
+        }
+
+        HardwareAccessDecision access;
+        try
+        {
+            access = guard.Check();
+        }
+        catch
+        {
+            return HidSessionFailureKind.ConflictDetectionFailed;
+        }
+
+        if (access.DetectionFailure is not null)
+        {
+            return HidSessionFailureKind.ConflictDetectionFailed;
+        }
+
+        return access.Conflicts.Count != 0
+            ? HidSessionFailureKind.ConflictBlocked
+            : null;
     }
 
     private Task? pendingNativeRetirement;
