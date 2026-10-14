@@ -62,7 +62,7 @@ All six protected installed-component hashes matched their pre-test values.
 No installed binaries were replaced. Final reconciliation completed at
 `2026-10-14T09:51:02.4690258Z`.
 
-## Scope
+## Scope of the initial round trip
 
 This result validates direct Performance/Automatic to fixed manual fans and
 direct return to Performance/Automatic on the tested device and AC conditions.
@@ -73,7 +73,7 @@ RZ09-0528, Custom power settings, HyperBoost, battery or USB-C transitions,
 shutdown and sleep/resume were not physically tested. The installed production
 Balanced gate remains unchanged; removing it is a separate product change.
 
-## Additional validation on 2026-10-14
+## Additional validation before the native I/O fix
 
 The installed service remained
 `0.26.1+86e0d91f964298a6f7a4051997838433d56f7d26` throughout these checks.
@@ -129,16 +129,74 @@ unresolved; the result must not be attributed to firmware or a competing app
 without further evidence. No raw archive or private configuration is included
 in this record.
 
-### Remaining checks
+## Validation after the native I/O fix
 
-The new target-only 5400/4000/5400, manual-to-Custom, manual-to-HyperBoost and
-70%-to-protection-Off scenarios have passed source tests but have not run on
-hardware. Service shutdown handback and saved-intent restart validation also
-remain unperformed because preparation failed. Additional hardware writes
-stopped after the reconciled original-state restoration.
+The coordinated local installation of
+`0.26.2+84e6300755cbfb5c3ca09d2629152a28d4f6fece`
+([PR #753](https://github.com/OpenBladeProject/openblade-core/pull/753))
+matched every published payload hash and preserved profiles and overrides.
+The exact source passed 7630 solution tests, a zero-warning solution build,
+163 installer UI tests, payload contracts, and independent source review.
+The developer transition tool remained at source
+`4b972e01e58abb598dda3414b0f1473719a1e954`.
 
-Sleep/resume was not initiated. It remains the final attended step and requires
-fresh approval immediately beforehand. Pad-removal behavior requires an actual
-pad and owned pad-required HyperBoost state; this session does not establish it.
-The production gates remain unchanged, and this evidence does not mark their
-removal production-ready.
+### Service-owned manual fans with Spectrum active: passed
+
+One typed persistent Fixed/5400 request returned Applied with confirmed manual
+readback while Spectrum rendering remained active at 30 Hz. The operator's
+six-second RPM window ended while the fans were still ramping, at 2700/2500 RPM.
+No setter was repeated. Later read-only observations confirmed three consecutive
+5300/5300 RPM samples, unchanged unrelated saved intent, full-power AC, no
+competing controller, no drift advisory, and no unconfirmed write.
+
+The earlier archive did not retain the native error or I/O phase. Source review
+found independent lighting, thermal, battery, and RPM sessions could overlap;
+PR #753 serializes them through confirmed native retirement and preserves native
+diagnostics. The successful attended retest supports this fix under the tested
+conditions, without establishing the unique cause of the earlier incident.
+
+### Direct thermal and battery round trips: passed
+
+The tray, Session Agent, and service stopped before the developer tool ran.
+Fresh identity, ownership, controller, and full-power AC admission applied to
+each setter and restoration. No USBPcap capture ran.
+
+| Round trip | Confirmed destination | Confirmed restoration |
+| --- | --- | --- |
+| Manual 5400 → targets 4000 → targets 5400 | Generic manual state; 4500/4500 RPM in the 4000 tolerance, then 5000/5000 in the 5400 tolerance | Exact paired Balanced/Automatic baseline |
+| Manual → Custom/Automatic | Paired Custom/Automatic; saved CPU Medium/GPU High levels unchanged | Paired Balanced/Automatic and unchanged stored Custom levels |
+| Manual → padless HyperBoost | Paired mode 7/Automatic | Exact paired Balanced/Automatic baseline |
+| Battery limit 80 → 70 → protection Off → 80 | Limit 70 and Off confirmed directly; temporary full charge remained false | Limit 80 with temporary full charge false |
+
+The target-only return used only the captured target commands, with no repeated
+manual-entry or Balanced preparation. Custom and HyperBoost were entered directly
+from confirmed manual state. No candidate needed an intermediate default. All
+four validators returned success, with no indeterminate partial write or manual
+recovery requirement. Generic manual readback and RPM tolerance do not expose an
+exact target register, fan subtype, or retained performance power limits.
+
+### Shutdown handback and saved-intent startup: passed
+
+The installed service successfully owned manual fans before shutdown. Independent
+paired readback with the service stopped confirmed firmware Automatic handback.
+After all developer round trips restored their baselines, service startup reapplied
+the saved Fixed/5400 intent and confirmed manual state. One typed request then
+cleared only the test fan overrides to their saved null values.
+
+Final readback matched the original Balanced/Automatic, no HyperBoost, battery
+protection 80%, temporary full charge false, and logo Off. Profiles and all saved
+overrides were unchanged. All six protected component hashes matched the
+post-fix/pre-validation baseline. The service, exactly one tray, and exactly one
+Session Agent were running. Reconciliation completed at
+`2026-10-14T14:27:36.1125860Z`.
+
+### Remaining attended scope
+
+Sleep/resume has not yet been initiated. It is the final physical step and
+requires fresh approval immediately beforehand. No Razer Laptop Cooling Pad is
+available, so pad removal from owned pad-required HyperBoost cannot be exercised.
+RZ09-0528, USB-C-specific behavior, and a manual-fan or HyperBoost AC/battery
+boundary remain untested in this session. Existing admitted lifecycle evidence
+and shared-handler source checks may be reused where the command sequence and
+conditions match; these results do not invent coverage for another backend.
+The production transition gates remain unchanged pending their implementation.
