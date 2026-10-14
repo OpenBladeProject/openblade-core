@@ -1201,6 +1201,7 @@ public partial class App
                 : DeviceCapabilities.SafeTargetDefaults() with
                 {
                     SupportsDirectManualFanTransitions = directManual,
+                    ChargeLimits = directManual ? new HashSet<int> { 80 } : new HashSet<int>(),
                 },
             blocked ? null : new ConfirmedDeviceState(
                 directManual ? PerformancePreset.Balanced : PerformancePreset.BatterySaver,
