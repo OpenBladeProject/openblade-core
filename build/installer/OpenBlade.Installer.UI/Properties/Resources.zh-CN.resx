@@ -300,4 +300,13 @@
   <data name="This installer entry was removed. OpenBlade was already absent." xml:space="preserve">
     <value>此安装项已移除。OpenBlade 原本就未安装。</value>
   </data>
+  <data name="Microsoft .NET 10 Desktop Runtime required" xml:space="preserve">
+    <value>需要 Microsoft .NET 10 桌面运行时</value>
+  </data>
+  <data name="OpenBlade needs Microsoft .NET 10 Desktop Runtime. Setup will install it before installing OpenBlade. Continue?" xml:space="preserve">
+    <value>OpenBlade 需要 Microsoft .NET 10 桌面运行时。安装程序将在安装 OpenBlade 之前安装该运行时。是否继续？</value>
+  </data>
+  <data name="Installing Microsoft .NET 10 Desktop Runtime…" xml:space="preserve">
+    <value>正在安装 Microsoft .NET 10 桌面运行时…</value>
+  </data>
 </root>

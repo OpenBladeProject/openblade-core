@@ -53,7 +53,7 @@ foreach ($requiredContract in @(
         "'--no-build'",
         "'--no-restore'",
         "-AllowedPrefix @('tests/Build.Tests/')",
-        "'--self-contained', 'true'",
+        "'--self-contained', `$selfContained",
         'produced different Protocol assemblies')) {
     if (-not $source.Contains($requiredContract)) {
         throw "Affected CI runner is missing '$requiredContract'."
@@ -129,7 +129,7 @@ try {
         $_[0] -eq 'publish'
     })
     Assert-Equal 1 $publishCall.Count 'Publish must execute once per selected component.'
-    if (($publishCall[0] -join '|') -notlike '*--self-contained|true*--output*OpenBlade.Tray*') {
+    if (($publishCall[0] -join '|') -notlike '*--self-contained|false*--output*OpenBlade.Tray*') {
         throw 'Affected component publish is missing its production output arguments.'
     }
 
@@ -143,6 +143,15 @@ try {
         -Lane Publish `
         -PlanJson $protocolPublishPlan `
         -ComponentOutputRoot $temporaryRoot
+    $protocolCalls = @($global:OpenBladeMockDotNetCalls | Where-Object { $_[0] -eq 'publish' })
+    foreach ($expectedPublish in @(
+            @{ Project = 'OpenBlade.Capture'; SelfContained = 'true' },
+            @{ Project = 'OpenBlade.Service'; SelfContained = 'false' })) {
+        $matchingCall = @($protocolCalls | Where-Object { ($_[1] -split '/')[-1] -eq ($expectedPublish.Project + '.csproj') })
+        if ($matchingCall.Count -ne 1 -or ($matchingCall[0] -join '|') -notlike "*--self-contained|$($expectedPublish.SelfContained)*") {
+            throw "$($expectedPublish.Project) did not use its production runtime boundary."
+        }
+    }
     [IO.File]::WriteAllBytes($captureProtocol, [byte[]](3, 2, 1))
     Assert-ThrowsLike -Pattern '*different Protocol assemblies*' -Message `
         'Protocol consumers must reject inconsistent published assemblies.' -Action {

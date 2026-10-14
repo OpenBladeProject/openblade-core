@@ -6,10 +6,12 @@
     <OutputName>OpenBlade-Setup</OutputName>
     <Cultures>en-US</Cultures>
     <AcceptEula>wix7</AcceptEula>
-    <DefineConstants>OpenBladeVersion=$(OpenBladeVersion)</DefineConstants>
+    <OpenBladeEmbedDotNetRuntime Condition="'$(OpenBladeEmbedDotNetRuntime)' == ''">no</OpenBladeEmbedDotNetRuntime>
+    <DefineConstants>OpenBladeVersion=$(OpenBladeVersion);OpenBladeMinimumDotNetRuntimeVersion=$(OpenBladeMinimumDotNetRuntimeVersion);OpenBladeEmbedDotNetRuntime=$(OpenBladeEmbedDotNetRuntime)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="WixToolset.Netfx.wixext" />
     <PackageReference Include="WixToolset.Util.wixext" />
   </ItemGroup>
 
@@ -32,6 +34,10 @@
            Text="OpenBladePrerequisites must point to the validated prerequisite directory." />
     <Error Condition="!Exists('$(OpenBladePrerequisites)\VC_redist.x64.exe')"
            Text="OpenBladePrerequisites is missing VC_redist.x64.exe." />
+    <Error Condition="'$(OpenBladeMinimumDotNetRuntimeVersion)' == ''"
+           Text="OpenBladeMinimumDotNetRuntimeVersion must define the minimum shared .NET Desktop Runtime version." />
+    <Error Condition="!Exists('$(OpenBladePrerequisites)\windowsdesktop-runtime-$(OpenBladeMinimumDotNetRuntimeVersion)-win-x64.exe')"
+           Text="OpenBladePrerequisites is missing windowsdesktop-runtime-$(OpenBladeMinimumDotNetRuntimeVersion)-win-x64.exe." />
     <Error Condition="'$(OpenBladeInstallerUi)' == ''"
            Text="OpenBladeInstallerUi must point to the published installer UI." />
     <Error Condition="!Exists('$(OpenBladeInstallerUi)\OpenBlade.Installer.UI.exe')"

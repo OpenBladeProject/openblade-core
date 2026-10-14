@@ -33,6 +33,7 @@ public sealed record WindowsSetupPlatformOptions(
     IDynamicLightingIdentityRegistration? DynamicLightingIdentityRegistration = null,
     string? SetupExecutablePath = null,
     ISetupProgressReporter? ProgressReporter = null,
+    IDotNetRuntimeAdmission? DotNetRuntimeAdmission = null,
     string? BundleOwnerId = null,
     string? CurrentUserSid = null);
 
@@ -56,6 +57,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IInstalledUninstallerWriter installedUninstallerWriter;
     private readonly IDynamicLightingIdentityRegistration dynamicLightingIdentityRegistration;
     private readonly ISetupProgressReporter progressReporter;
+    private readonly IDotNetRuntimeAdmission dotNetRuntimeAdmission;
     private readonly string setupExecutablePath;
     private readonly string currentUserSid;
 
@@ -81,6 +83,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         dynamicLightingIdentityRegistration = options.DynamicLightingIdentityRegistration
             ?? new DynamicLightingIdentityRegistration();
         progressReporter = options.ProgressReporter ?? NullSetupProgressReporter.Instance;
+        dotNetRuntimeAdmission = options.DotNetRuntimeAdmission
+            ?? InstalledDotNetRuntimeAdmission.CreateForCurrentBuild();
         setupExecutablePath = options.SetupExecutablePath
             ?? Environment.ProcessPath
             ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
@@ -173,13 +177,17 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     }
 
-    public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken) =>
-        SetupPayloadTransaction.StageAsync(
+    public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        dotNetRuntimeAdmission.EnsureAvailable();
+        return SetupPayloadTransaction.StageAsync(
             paths,
             payloadDirectory,
             payloadFileSystem,
             cancellationToken,
             progressReporter);
+    }
 
     public async Task RestoreServiceInstallStateAsync(
         SetupServiceInstallState priorState,
