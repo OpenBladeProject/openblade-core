@@ -38,6 +38,12 @@ try {
         function Get-AuthenticodeSignature { return $untrustedSignature }
         Assert-Rejected { Assert-OpenBladeDotNetRuntimePrerequisite -Path $testFile } 'valid Microsoft signature'
     }
+    $trustedSignature = [pscustomobject]@{
+        Status = 'Valid'
+        SignerCertificate = [pscustomobject]@{ Subject = 'CN=.NET, O=Microsoft Corporation, L=Redmond, S=Washington, C=US' }
+    }
+    function Get-AuthenticodeSignature { return $trustedSignature }
+    Assert-OpenBladeDotNetRuntimePrerequisite -Path $testFile
 }
 finally {
     Remove-Item Function:\Get-FileHash -ErrorAction SilentlyContinue

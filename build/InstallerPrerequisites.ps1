@@ -25,10 +25,11 @@ function Assert-OpenBladeDotNetRuntimePrerequisite {
     }
 
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    $microsoftPublisher = $null -ne $signature.SignerCertificate -and (
+        $signature.SignerCertificate.Subject.StartsWith('CN=.NET, O=Microsoft Corporation,', [StringComparison]::Ordinal) -or
+        $signature.SignerCertificate.Subject.StartsWith('CN=Microsoft Corporation,', [StringComparison]::Ordinal))
     if (($signature.Status -ne [Management.Automation.SignatureStatus]::Valid) -or
-        ($null -eq $signature.SignerCertificate) -or
-        (-not $signature.SignerCertificate.Subject.StartsWith(
-            'CN=Microsoft Corporation,', [StringComparison]::Ordinal))) {
+        (-not $microsoftPublisher)) {
         throw 'The .NET Desktop Runtime does not have a valid Microsoft signature.'
     }
 }
