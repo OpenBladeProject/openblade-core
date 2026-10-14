@@ -11,7 +11,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Show the actual failed identity check for a Razer Blade 16 (2026) in exported diagnostics, instead of a product-name mismatch against the Blade 16 (2025). ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
+- Recognize a supported laptop when Windows reports no BIOS version or two different ones. The BIOS version is checked only where a model explicitly requires it. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
+- Show the actual failed identity check in exported diagnostics, instead of a product-name mismatch against another supported model. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 
 ### Changed
 
