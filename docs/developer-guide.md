@@ -105,10 +105,12 @@ exact saved Performance/Automatic pair. AC and owner admission are renewed
 before every apply and restoration command. A failed or ambiguous submission
 or paired read stops further writes and reports unresolved restoration.
 
-Restart the installed components after confirmed restoration, then restore the
-original performance override and verify the original state. This test confirms
-direct entry and exit; generic manual readback does not establish that the
-Performance preset remains effective while manual fans are active.
+Restart the installed components after confirmed restoration and verify the
+original profile and overrides. If startup already restored them, confirm that
+state read-only; otherwise restore the saved override through typed service IPC.
+This test confirms direct entry and exit; generic manual readback does not
+establish that the Performance preset remains effective while manual fans are
+active. See the [recorded physical result](direct-fan-transition-validation.md).
 
 ## Diagnostics exports
 
