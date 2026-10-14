@@ -1112,6 +1112,101 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task DirectManualFanEntry_FromPerformanceUsesOnlyRequestedFanWrite()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                device.State = device.State with { Performance = null };
+            }
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyFanControlTransitionOutcomeAsync(
+                FanControlSettings.FromLegacy(FanMode.Automatic),
+                FanControlSettings.FromLegacy(FanMode.Fixed),
+                PerformancePreset.Performance,
+                customPerformanceIntent: null,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal([FanMode.Fixed], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Null(device.State.Performance);
+        Assert.Equal(FanMode.Fixed, device.State.Fans);
+    }
+
+    [Fact]
+    public async Task DirectManualSubtypeTransition_DoesNotWriteAutomaticOrBalanced()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = null,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyFanControlTransitionOutcomeAsync(
+                FanControlSettings.FromLegacy(FanMode.Fixed),
+                FanControlSettings.FromLegacy(FanMode.ManualCurve),
+                PerformancePreset.Performance,
+                customPerformanceIntent: null,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal([FanMode.ManualCurve], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
+    [Fact]
+    public async Task DirectManualSubtypeTransition_UnknownHyperBoostBlocksWithoutWrite()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = null,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = null,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlOutcomeAsync(
+            FanControlSettings.FromLegacy(FanMode.ManualCurve),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Contains("refreshed", outcome.Result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("HyperBoost off", outcome.Result.Message, StringComparison.Ordinal);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
+    [Fact]
     public async Task ManualFanSubtypeTransition_BridgesThroughAutomatic()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -1284,6 +1379,174 @@ public sealed class ControlCoordinatorTests
             device.Calls.IndexOf("SetFans") < device.Calls.IndexOf("SetPerformance"));
         Assert.Equal(PerformancePreset.Performance, device.State.Performance);
         Assert.Equal(FanMode.Automatic, device.State.Fans);
+    }
+
+    [Fact]
+    public async Task DirectAutomaticFanEntry_UsesSelectedPerformancePairOnly()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = null,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                device.State = device.State with { Fans = FanMode.Automatic };
+            }
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyFanControlTransitionOutcomeAsync(
+                FanControlSettings.FromLegacy(FanMode.Fixed),
+                FanControlSettings.FromLegacy(FanMode.Automatic),
+                PerformancePreset.Performance,
+                customPerformanceIntent: null,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Equal([PerformancePreset.Performance], device.PerformanceWrites);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.ConfirmedCoupledWrites!);
+        Assert.Equal(PerformancePreset.Performance, device.State.Performance);
+        Assert.Equal(FanMode.Automatic, device.State.Fans);
+    }
+
+    [Fact]
+    public async Task DirectAutomaticFanEntry_ZeroWriteDoesNotConfirmCoupledPerformance()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyFanControlTransitionOutcomeAsync(
+                FanControlSettings.FromLegacy(FanMode.Fixed),
+                FanControlSettings.FromLegacy(FanMode.Automatic),
+                PerformancePreset.Performance,
+                customPerformanceIntent: null,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Unchanged, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Empty(outcome.ConfirmedCoupledWrites!);
+    }
+
+    [Fact]
+    public async Task DirectPerformanceTransition_UnknownFansCannotConfirmCombinedState()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = null,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                PerformancePreset.Performance,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
+    [Fact]
+    public async Task DirectManualFanEntry_IndeterminateFailureDoesNotWriteDefaultsOrReplay()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        device.FanFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "fan acknowledgement was lost");
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyFanControlTransitionOutcomeAsync(
+                FanControlSettings.FromLegacy(FanMode.Automatic),
+                FanControlSettings.FromLegacy(FanMode.Fixed),
+                PerformancePreset.Performance,
+                customPerformanceIntent: null,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.Equal([FanMode.Fixed], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
+    [Fact]
+    public async Task DirectManualFanEntry_CancellationReportsOnlyRequestedFanWrite()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        using var cancellation = new CancellationTokenSource();
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                cancellation.Cancel();
+            }
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        IntentionalWriteCanceledException exception = await Assert.ThrowsAsync<
+            IntentionalWriteCanceledException>(
+            () => coordinator.ApplyFanControlTransitionOutcomeAsync(
+                FanControlSettings.FromLegacy(FanMode.Automatic),
+                FanControlSettings.FromLegacy(FanMode.Fixed),
+                PerformancePreset.Performance,
+                customPerformanceIntent: null,
+                cancellation.Token));
+
+        Assert.Equal([DeviceSubsystem.Fans], exception.WriteAttempted);
+        Assert.Equal([FanMode.Fixed], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
     }
 
     [Fact]
@@ -1835,6 +2098,210 @@ public sealed class ControlCoordinatorTests
             device.Calls.IndexOf("SetPerformance") < device.Calls.IndexOf("SetFans"));
         Assert.Null(device.State.Performance);
         Assert.Equal(FanMode.Maximum, device.State.Fans);
+    }
+
+    [Fact]
+    public async Task ApplyDesiredState_DirectManualEntryPreservesLatentPerformanceIntent()
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                device.State = device.State with { Performance = null };
+            }
+        };
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            PerformancePreset.Performance,
+            FanMode.Maximum);
+
+        FullTransitionApplyOutcome outcome = await coordinator
+            .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Unchanged, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal([FanMode.Maximum], device.FanControlWrites);
+        Assert.DoesNotContain(DeviceSubsystem.Performance, outcome.ReadbackMatched);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.ReadbackMatched);
+        Assert.Null(device.State.Performance);
+        Assert.Equal(FanMode.Maximum, device.State.Fans);
+    }
+
+    [Fact]
+    public async Task ApplyDesiredState_FailedDirectManualEntryDoesNotMatchLatentPerformance()
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        device.FanFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "firmware rejected fan mode");
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            PerformancePreset.Performance,
+            FanMode.Maximum);
+
+        FullTransitionApplyOutcome outcome = await coordinator
+            .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Unchanged, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Fans.Status);
+        Assert.DoesNotContain(DeviceSubsystem.Performance, outcome.ReadbackMatched);
+        Assert.DoesNotContain(DeviceSubsystem.Performance, outcome.WriteAttempted);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal([FanMode.Maximum], device.FanControlWrites);
+        Assert.Equal(PerformancePreset.Silent, outcome.Readback!.Performance);
+        Assert.Equal(FanMode.Automatic, outcome.Readback.Fans);
+    }
+
+    [Fact]
+    public async Task ApplyDesiredState_DirectManualExitAppliesCustomAutomaticPairOnce()
+    {
+        var custom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+            CustomPerformance = new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination>
+                {
+                    new(custom.Cpu, custom.Gpu),
+                }),
+        };
+        device.State = device.State with
+        {
+            Performance = null,
+            CustomPerformance = null,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                device.State = device.State with { Fans = FanMode.Automatic };
+            }
+        };
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            PerformancePreset.Custom,
+            FanMode.Automatic) with
+        {
+            CustomPerformance = custom,
+        };
+
+        FullTransitionApplyOutcome outcome = await coordinator
+            .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
+        Assert.Equal(2, outcome.WriteAttempted.Count);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.WriteAttempted);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.WriteAttempted);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.ReadbackMatched);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.ReadbackMatched);
+        Assert.Equal([PerformancePreset.Custom], device.PerformanceWrites);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Equal(PerformancePreset.Custom, device.State.Performance);
+        Assert.Equal(custom, device.State.CustomPerformance);
+        Assert.Equal(FanMode.Automatic, device.State.Fans);
+    }
+
+    [Fact]
+    public async Task ApplyDesiredState_DirectManualExitIndeterminateTracksBothComponents()
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        device.PerformanceFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "performance acknowledgement was lost");
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            PerformancePreset.Performance,
+            FanMode.Automatic);
+
+        FullTransitionApplyOutcome outcome = await coordinator
+            .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Fans.Status);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.WriteAttempted);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.WriteAttempted);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.ConfirmationUnavailable!);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.ConfirmationUnavailable!);
+        Assert.Equal([PerformancePreset.Performance], device.PerformanceWrites);
+        Assert.Empty(device.FanControlWrites);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public async Task ApplyDesiredState_DirectCapabilityBatteryBoundaryKeepsFansFirstRecipe(
+        PerformancePreset batteryPreset)
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            batteryPreset,
+            FanMode.Automatic);
+
+        FullTransitionApplyOutcome outcome = await coordinator
+            .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
+        Assert.Equal([FanMode.Automatic], device.FanControlWrites);
+        Assert.Equal([batteryPreset], device.PerformanceWrites);
+        Assert.True(
+            device.Calls.IndexOf("SetFans") < device.Calls.IndexOf("SetPerformance"));
+        Assert.Equal(batteryPreset, device.State.Performance);
+        Assert.Equal(FanMode.Automatic, device.State.Fans);
     }
 
     [Fact]

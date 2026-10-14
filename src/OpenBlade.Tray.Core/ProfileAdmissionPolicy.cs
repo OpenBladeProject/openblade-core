@@ -59,15 +59,17 @@ internal static class ProfileAdmissionPolicy
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
         && (draft.CustomPerformance is null
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
-        && ThermalCombinationSupported(draft.Performance, draft.Fans)
+        && ThermalCombinationSupported(draft.Performance, draft.Fans, capabilities)
         && (LightingSupported(draft.Lighting, capabilities)
             || draft.Lighting == current.Lighting);
 
     private static bool ThermalCombinationSupported(
         PerformancePreset performance,
-        FanMode fans) =>
+        FanMode fans,
+        DeviceCapabilities capabilities) =>
         fans == FanMode.Automatic
-        || (performance == PerformancePreset.Balanced
+        || ((capabilities.SupportsDirectManualFanTransitions
+                || performance == PerformancePreset.Balanced)
             && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum);
 
     internal static bool FanModeAvailable(PowerSource powerSource, FanMode fans) =>

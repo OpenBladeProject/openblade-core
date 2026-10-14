@@ -2496,7 +2496,7 @@ public sealed class CapabilityPresentationTests
     [Theory]
     [InlineData(PerformancePreset.Silent)]
     [InlineData(PerformancePreset.Performance)]
-    public async Task SaveProfiles_RejectsNonBalancedMaximumCombination(
+    public async Task SaveProfiles_LegacyCapabilitiesRejectNonBalancedMaximumCombination(
         PerformancePreset performance)
     {
         var client = new PresentationClient();
@@ -2518,6 +2518,45 @@ public sealed class CapabilityPresentationTests
         await save.ExecuteAsync(null);
 
         Assert.Null(client.SavedProfiles);
+    }
+
+    [Fact]
+    public async Task SaveProfiles_DirectManualFanTransitionsPersistIndependentAcChoices()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot legacy = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = ChargeLimits(),
+            });
+        await client.PublishAndWaitAsync(legacy);
+        viewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
+        viewModel.PluggedInFanModeEditor = FanMode.Maximum;
+        AsyncRelayCommand save = Assert.IsType<AsyncRelayCommand>(
+            viewModel.SaveProfilesCommand);
+
+        Assert.False(save.CanExecute(null));
+        await client.PublishAndWaitAsync(legacy with
+        {
+            Revision = legacy.Revision + 1,
+            Capabilities = legacy.Capabilities! with
+            {
+                SupportsDirectManualFanTransitions = true,
+            },
+        });
+
+        Assert.True(save.CanExecute(null));
+        await save.ExecuteAsync(null);
+
+        Assert.NotNull(client.SavedProfiles);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            client.SavedProfiles.PluggedIn.Performance);
+        Assert.Equal(FanMode.Maximum, client.SavedProfiles.PluggedIn.Fans);
     }
 
     [Fact]

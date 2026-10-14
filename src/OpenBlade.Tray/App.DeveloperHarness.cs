@@ -1183,13 +1183,14 @@ public partial class App
         {
             return;
         }
-        if (state is not ("read-failure" or "battery" or "unsupported"))
+        if (state is not ("read-failure" or "battery" or "unsupported" or "direct-manual"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
         }
 
         // Snapshot windows never start the service client. These states exercise
         // the real UI with synthetic observations and perform no device access.
+        bool directManual = state == "direct-manual";
         bool unsupported = state == "unsupported";
         bool blocked = state == "read-failure" || unsupported;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -1197,16 +1198,23 @@ public partial class App
             1, !unsupported, blocked, [], null, [], "Control availability snapshot",
             unsupported
                 ? DeviceCapabilities.Unavailable()
-                : DeviceCapabilities.SafeTargetDefaults(),
+                : DeviceCapabilities.SafeTargetDefaults() with
+                {
+                    SupportsDirectManualFanTransitions = directManual,
+                },
             blocked ? null : new ConfirmedDeviceState(
-                PerformancePreset.BatterySaver, FanMode.Automatic, null, null),
+                directManual ? PerformancePreset.Balanced : PerformancePreset.BatterySaver,
+                FanMode.Automatic, null, null),
             profiles,
             new DesiredDeviceState(
-                new ResolvedSetting<PerformancePreset>(PerformancePreset.BatterySaver, SettingValueSource.PowerProfile),
+                new ResolvedSetting<PerformancePreset>(
+                    directManual ? PerformancePreset.Balanced : PerformancePreset.BatterySaver,
+                    SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.Battery.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            PowerSource.Battery, null, null, null, null, false)
+            directManual ? PowerSource.PluggedIn : PowerSource.Battery,
+            null, null, null, null, false)
         {
             UnsupportedLaptop = unsupported,
         };
@@ -1215,6 +1223,16 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Status presentation hook was not found.");
         applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (directManual)
+        {
+            window.ViewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
+            window.ViewModel.PluggedInFanModeEditor = FanMode.Fixed;
+            if (!window.ViewModel.SaveProfilesCommand.CanExecute(null))
+            {
+                throw new InvalidOperationException(
+                    "The direct AC performance/manual-fan profile draft was not saveable.");
+            }
+        }
         System.Reflection.FieldInfo changingCards = typeof(MainWindow).GetField(
             "changingDashboardCards",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)

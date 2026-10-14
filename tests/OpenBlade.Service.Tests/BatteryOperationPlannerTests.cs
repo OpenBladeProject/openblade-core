@@ -72,7 +72,7 @@ public sealed class BatteryOperationPlannerTests
     }
 
     [Fact]
-    public async Task Transition_CancellationFollowUpRemainsBoundedWhenDesiredProtectionCannotBeApplied()
+    public async Task Transition_CancellationFollowUpDisablesProtectionWithoutLimitReset()
     {
         var device = AdmittedDevice();
         device.State = device.State with { Battery = new ConfirmedBatteryState(true, 80, true) };
@@ -81,8 +81,40 @@ public sealed class BatteryOperationPlannerTests
             new DesiredBatteryState(BatteryPolicy.Create(75), false, false),
             device.Capabilities, device.State.Battery, CancellationToken.None);
 
-        Assert.Equal(new[] { "SetTemporaryFullCharge" }, device.BatterySetterCalls);
-        Assert.Equal(new ConfirmedBatteryState(true, 80, false), device.State.Battery);
+        Assert.Equal(new[] { "SetTemporaryFullCharge", "SetProtectionOff" }, device.BatterySetterCalls);
+        Assert.Equal(new ConfirmedBatteryState(false, null, false), device.State.Battery);
+    }
+
+    [Fact]
+    public async Task ProtectionOff_DoesNotResetConfirmedLimitToStoredPolicy()
+    {
+        var device = AdmittedDevice();
+        device.State = device.State with { Battery = new ConfirmedBatteryState(true, 70, false) };
+
+        await new BatteryOperationExecutor(device).ApplyTransitionAsync(
+            new DesiredBatteryState(BatteryPolicy.Create(80), false, false),
+            device.Capabilities, device.State.Battery, CancellationToken.None);
+
+        Assert.Equal(new[] { "SetProtectionOff" }, device.BatterySetterCalls);
+        Assert.Equal(new ConfirmedBatteryState(false, null, false), device.State.Battery);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(55)]
+    public void ProtectionOff_RequiresAnAdmittedConfirmedCurrentLimit(int? currentLimit)
+    {
+        var device = AdmittedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            ChargeLimits = new HashSet<int> { 70, 75, 80 },
+        };
+        BatteryOperationPlan plan = BatteryOperationPlanner.CreateProtectionPlan(
+            false, BatteryPolicy.Create(80), device.Capabilities,
+            currentLimit is null ? null : new ConfirmedBatteryState(true, currentLimit, false));
+
+        Assert.False(plan.Supported);
+        Assert.IsType<BatteryOperation.None>(plan.Operation);
     }
 
     private static BatteryTestDevice AdmittedDevice()

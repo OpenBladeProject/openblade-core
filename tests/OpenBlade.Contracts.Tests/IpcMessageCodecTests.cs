@@ -483,6 +483,7 @@ public sealed class IpcMessageCodecTests
             SupportsBatteryProtectionOff: true,
             SupportsTemporaryFullCharge: false)
         {
+            SupportsDirectManualFanTransitions = true,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
             WritableSpecialKeySlots = SpecialKeySlotSet.All,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
@@ -546,10 +547,11 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(60, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(61, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
+        Assert.True(roundTrip.Capabilities.SupportsDirectManualFanTransitions);
         Assert.Equal(profiles.WindowsPowerModes, roundTrip.Profiles.WindowsPowerModes);
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(
             roundTrip.Capabilities.ObservedLightingEffects));
@@ -570,6 +572,37 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(profiles, roundTrip.Profiles);
         Assert.Equal(BatteryPolicy.Create(75), roundTrip.BatteryPolicyOverride);
         Assert.False(roundTrip.BatteryProtectionOverride);
+    }
+
+    [Fact]
+    public async Task Protocol61DirectManualFanTransitionCapability_OmittedDefaultsFalse()
+    {
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            new ServiceStatusEvent(
+                OpenBladeIpc.ProtocolVersion,
+                CreateStatus() with
+                {
+                    Capabilities = DeviceCapabilities.Unavailable() with
+                    {
+                        SupportsDirectManualFanTransitions = true,
+                    },
+                }),
+            CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        Assert.Equal(61, json["version"]!.GetValue<int>());
+        JsonObject status = Assert.IsType<JsonObject>(json["status"]);
+        JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
+        Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
+
+        using MemoryStream projectedFrame = FrameJson(json.ToJsonString());
+        ServiceStatusEvent decoded = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                projectedFrame,
+                CancellationToken.None));
+
+        Assert.False(decoded.Status.Capabilities!.SupportsDirectManualFanTransitions);
     }
 
     [Theory]
@@ -1133,7 +1166,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(60, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(61, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1726,11 +1759,11 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task WriteRequestAsync_RejectsPreviousProtocolVersion()
+    public async Task WriteRequestAsync_RejectsProtocol60()
     {
         using MemoryStream stream = new();
         ServiceRequest request = new GetStatusRequest(
-            OpenBladeIpc.ProtocolVersion - 1,
+            60,
             Guid.NewGuid());
 
         IpcProtocolVersionMismatchException exception =
@@ -1738,12 +1771,14 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+        Assert.Equal(61, exception.ExpectedVersion);
+        Assert.Equal(60, exception.ActualVersion);
     }
 
     [Fact]
-    public async Task ReadRequestAsync_RejectsImmediatelyPreviousProtocolPeer()
+    public async Task ReadRequestAsync_RejectsProtocol60Peer()
     {
-        int previousProtocolVersion = OpenBladeIpc.ProtocolVersion - 1;
+        const int previousProtocolVersion = 60;
         using MemoryStream stream = FrameJson(
             $$"""{"operation":"getStatus","version":{{previousProtocolVersion}},"requestId":"{{Guid.NewGuid()}}"}""");
 
@@ -1752,12 +1787,14 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+        Assert.Equal(61, exception.ExpectedVersion);
+        Assert.Equal(60, exception.ActualVersion);
     }
 
     [Fact]
-    public async Task ReadServerFrameAsync_RejectsImmediatelyPreviousProtocolPeer()
+    public async Task ReadServerFrameAsync_RejectsProtocol60Peer()
     {
-        int previousProtocolVersion = OpenBladeIpc.ProtocolVersion - 1;
+        const int previousProtocolVersion = 60;
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
             $$"""
@@ -1778,6 +1815,8 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+        Assert.Equal(61, exception.ExpectedVersion);
+        Assert.Equal(60, exception.ActualVersion);
     }
 
     [Theory]
@@ -2301,6 +2340,10 @@ public sealed class IpcMessageCodecTests
         ServiceStatusSnapshot status = CreateStatus() with
         {
             WritesBlocked = false,
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                SupportsDirectManualFanTransitions = true,
+            },
             HyperBoostBlockingControllers = ["RazerAppEngine"],
             ObservationReason = DeviceObservationReason.RefreshingControls,
             UnsupportedLaptop = true,
@@ -2327,6 +2370,8 @@ public sealed class IpcMessageCodecTests
         Assert.False(projected.ContainsKey("hyperBoostBlockingControllers"));
         Assert.False(projected.ContainsKey("observationReason"));
         Assert.False(projected.ContainsKey("unsupportedLaptop"));
+        JsonObject capabilities = Assert.IsType<JsonObject>(projected["capabilities"]);
+        Assert.False(capabilities.ContainsKey("supportsDirectManualFanTransitions"));
         Assert.Contains(
             "Update or repair",
             projected["message"]!.GetValue<string>(),

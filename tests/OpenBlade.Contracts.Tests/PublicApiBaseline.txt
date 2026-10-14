@@ -471,6 +471,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.HyperBoostBaseModeCapabilities get_HyperBoostBaseModes()
   method OpenBlade.Contracts.SpecialKeySlotSet get_WritableSpecialKeySlots()
   method System.Boolean get_SupportsBatteryProtectionOff()
+  method System.Boolean get_SupportsDirectManualFanTransitions()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsPlaybackMuteIndicator()
   method System.Boolean get_SupportsTemporaryFullCharge()
@@ -510,6 +511,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_SpecialKeyBindingsAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_SupportedLightingRefreshRates(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingRefreshRate> value)
   method System.Void set_SupportsBatteryProtectionOff(System.Boolean value)
+  method System.Void set_SupportsDirectManualFanTransitions(System.Boolean value)
   method System.Void set_SupportsKeyboardBrightness(System.Boolean value)
   method System.Void set_SupportsPlaybackMuteIndicator(System.Boolean value)
   method System.Void set_SupportsTemporaryFullCharge(System.Boolean value)
@@ -530,6 +532,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.HyperBoostBaseModeCapabilities HyperBoostBaseModes { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
+  property System.Boolean SupportsDirectManualFanTransitions { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsPlaybackMuteIndicator { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
@@ -1304,7 +1307,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 60
+  field const System.Int32 ProtocolVersion = 61
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

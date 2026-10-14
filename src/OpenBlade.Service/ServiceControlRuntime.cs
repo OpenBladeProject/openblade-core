@@ -2984,10 +2984,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 if (manualFanPerformanceBlocked
                     && DeviceSubsystemOrder.IsThermal(subsystem))
                 {
-                    // Restoring this pair would require a staged
-                    // Manual -> Automatic -> Performance -> Manual transition.
-                    // That transition remains deferred until it has exact-model
-                    // capture evidence and interactive hardware validation.
+                    // Firmware cannot confirm a performance selector while
+                    // the manual-fan selector is active. Preserve manual intent
+                    // rather than claim that a stored power mode was applied.
                     results[subsystem] = new ControlOperationResult(
                         ControlOperationStatus.Blocked,
                         subsystem == DeviceSubsystem.Performance
@@ -5633,6 +5632,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(ControlOperationStatus.Blocked, entryRefusal);
             }
 
+            // The admitted RZ09-0581 pair enters mode 7 directly; the saved
+            // intent is journal provenance, not a firmware entry prerequisite.
+            bool directHyperBoostEntry = enabled
+                && lifecycleValidation is null
+                && !journalRequiresCoolingPad
+                && current.Capabilities!.SupportsDirectManualFanTransitions;
+            PerformancePreset? directEntryIntent = directHyperBoostEntry
+                && DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans)
+                ? current.DesiredState.Performance.Value
+                : null;
             PerformancePreset requestedBaseMode = enabled
                 ? lifecycleValidation is not null
                     ? lifecycleTarget!.BaseMode
@@ -5641,6 +5650,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         && HyperBoostCapabilityPolicy.IsDirectEntryBase(
                             current.Capabilities!, journalRequiresCoolingPad, currentMode)
                         ? currentMode
+                        : directEntryIntent is { } savedMode
+                            && HyperBoostCapabilityPolicy.IsDirectEntryBase(
+                                current.Capabilities!, journalRequiresCoolingPad, savedMode)
+                            ? savedMode
                         : HyperBoostCapabilityPolicy.EntryBaseMode(
                                 current.Capabilities!,
                                 journalRequiresCoolingPad)
@@ -5668,6 +5681,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // from the current Silent, Balanced or Performance mode; it never switches mode first.
             if (enabled
                 && lifecycleValidation is null
+                && !directHyperBoostEntry
                 && !journalRequiresCoolingPad
                 && HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(current.Capabilities!) is not null
                 && !IsDirectPadlessEntry(confirmed, current.DesiredState, requestedBaseMode))
@@ -5885,8 +5899,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
                     : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
                 stillPreparing: stillPreparing);
-            if (enabled)
+            if (enabled && !directHyperBoostEntry)
             {
+                // Other admitted backends retain their own entry contract.
                 ScopedApplyOutcome automaticFans = await transitionRunner
                     .ApplyStepAsync(
                         DeviceSubsystem.Fans,
@@ -7142,7 +7157,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         if (preservedState?.Fans is { } preservedFans
-            && DeviceSubsystemOrder.IsManualFanMode(preservedFans))
+            && DeviceSubsystemOrder.IsManualFanMode(preservedFans)
+            && GetStatus().Capabilities?.SupportsDirectManualFanTransitions != true)
         {
             ScopedApplyOutcome automaticBaseline = await ApplyStepAsync(
                     DeviceSubsystem.Fans,
@@ -17215,7 +17231,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         DesiredDeviceState desired = Automation.Resolve(confirmed);
         if (Automation.PowerSource == PowerSource.PluggedIn
-            && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value))
+            && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
+            && GetStatus().Capabilities?.SupportsDirectManualFanTransitions != true)
         {
             desired = desired with
             {

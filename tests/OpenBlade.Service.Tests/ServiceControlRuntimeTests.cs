@@ -12688,24 +12688,39 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().BatteryProtectionOverride);
     }
 
-    [Fact]
-    public async Task BlockedProtectionIntent_CommitsNeitherProfilesNorPreference()
+    [Theory]
+    [InlineData(75, ControlOperationStatus.Applied)]
+    [InlineData(55, ControlOperationStatus.Blocked)]
+    public async Task ProtectionOff_UsesAdmittedCurrentLimitAndPreservesStoredPolicy(
+        int currentLimit, ControlOperationStatus expectedStatus)
     {
         TestContext context = CreateWritableContext();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            ChargeLimits = new HashSet<int> { 75, 80 },
+        };
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
-            Battery = new ConfirmedBatteryState(true, 75, false),
+            Battery = new ConfirmedBatteryState(true, currentLimit, false),
         };
 
         ControlOperationResult result = await context.Runtime.SetBatteryProtectionAsync(
             enabled: false,
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Empty(context.Device.BatterySetterCalls);
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.Equal(expectedStatus == ControlOperationStatus.Applied
+            ? new[] { "SetProtectionOff" }
+            : Array.Empty<string>(), context.Device.BatterySetterCalls);
         BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
         Assert.Null(committed.Preferences.ProtectionEnabled);
         Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
+        if (expectedStatus == ControlOperationStatus.Applied)
+        {
+            Assert.False(context.Runtime.GetStatus().DesiredState.Battery.ProtectionEnabled);
+            Assert.Equal(BatteryPolicy.Create(80),
+                context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+        }
     }
 
     [Fact]
@@ -28852,6 +28867,127 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal(2, writes);
         Assert.Equal(writes, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task DirectPadlessHyperBoost_ManualEntryAndExitPreserveIntentWithoutDefaultWrites()
+    {
+        (TestContext context, RecordingHyperBoostOwnershipJournalStore journal,
+            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync();
+        int performanceWrites = context.Device.PerformanceWrites.Count;
+        int fanWrites = context.Device.FanControlWrites.Count;
+
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(
+            true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
+        Assert.Equal(((PerformancePreset?)null, (FanMode?)FanMode.Fixed),
+            Assert.Single(context.Device.HyperBoostEntryStates));
+        Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
+        Assert.Equal(fanWrites, context.Device.FanControlWrites.Count);
+        Assert.Equal(PerformancePreset.Performance, journal.Journal!.BaseMode);
+        Assert.Equal(PerformancePreset.Performance, journal.Journal.RestoreIntent.Performance);
+        Assert.Equal(manual, journal.Journal.RestoreIntent.FanControl);
+
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(
+            false, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, disabled.Status);
+        Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
+        Assert.Equal(fanWrites + 1, context.Device.FanControlWrites.Count);
+        Assert.Equal(manual, context.Device.FanControlWrites[^1]);
+        Assert.Equal(PerformancePreset.Performance,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.Equal(manual, context.Runtime.GetStatus().DesiredState.FanControl);
+        Assert.Null(context.Device.ConfirmedState.Performance);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Theory]
+    [InlineData(WriteSubmissionState.KnownNotApplied)]
+    [InlineData(WriteSubmissionState.Indeterminate)]
+    public async Task DirectPadlessHyperBoost_FailedEntryDoesNotResetOrReplay(
+        WriteSubmissionState submissionState)
+    {
+        (TestContext context, RecordingHyperBoostOwnershipJournalStore journal,
+            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync();
+        int performanceWrites = context.Device.PerformanceWrites.Count;
+        int fanWrites = context.Device.FanControlWrites.Count;
+        context.Device.HyperBoostFailures.Enqueue(
+            new BladeWriteException(submissionState, "native exchange failed"));
+        if (submissionState == WriteSubmissionState.Indeterminate)
+        {
+            context.Device.AfterHyperBoostFailure = () =>
+                context.Device.BeforePerformanceFanStateReadResult = _ =>
+                    throw new IOException("confirmation unavailable");
+        }
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true, CancellationToken.None);
+
+        Assert.True(result.Status == (submissionState == WriteSubmissionState.KnownNotApplied
+            ? ControlOperationStatus.Blocked : ControlOperationStatus.Failed), result.Message);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
+        Assert.Equal(fanWrites, context.Device.FanControlWrites.Count);
+        Assert.Equal(manual, context.Runtime.GetStatus().DesiredState.FanControl);
+        if (submissionState == WriteSubmissionState.KnownNotApplied)
+        {
+            Assert.Null(journal.Journal);
+        }
+        else
+        {
+            Assert.NotNull(journal.Journal);
+            Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        }
+    }
+
+    private async Task<(TestContext Context, RecordingHyperBoostOwnershipJournalStore Journal,
+        FanControlSettings Manual)> CreateDirectManualHyperBoostContextAsync()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite)
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+            },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(PerformancePreset.Performance,
+                    OverrideLifetime.UntilPowerSourceChange),
+                CancellationToken.None)).Status);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Performance = null,
+                };
+            }
+        };
+        var manual = new FanControlSettings(FanMode.Fixed, 5400, ManualFanCurve.Default);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetFanControlOverrideAsync(
+                new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange),
+                manual, CancellationToken.None)).Status);
+        Assert.Equal(PerformancePreset.Performance,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+        return (context, journal, manual);
     }
 
     private static void ConfigurePadlessHyperBoost(

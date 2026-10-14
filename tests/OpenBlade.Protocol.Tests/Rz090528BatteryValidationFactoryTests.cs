@@ -166,6 +166,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.Empty(factory.Capabilities.LightingEffects);
         Assert.True(factory.Capabilities.SupportsBatteryProtectionOff);
         Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);
+        Assert.False(factory.Capabilities.SupportsDirectManualFanTransitions);
         Assert.True(factory.Capabilities.OneShotLaptopControls.SetEquals(
             [
                 OneShotLaptopControl.StartupAnimation,

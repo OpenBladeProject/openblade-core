@@ -50,6 +50,91 @@ public sealed class ProfileAdmissionPolicyTests
             usbC, usbC, SupportedCapabilities()));
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Silent, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Silent, FanMode.Maximum)]
+    [InlineData(PerformancePreset.Balanced, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Balanced, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Balanced, FanMode.Maximum)]
+    [InlineData(PerformancePreset.Performance, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Performance, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Performance, FanMode.Maximum)]
+    [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Custom, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Custom, FanMode.Maximum)]
+    public void DirectManualFanTransitionsAllowEveryAcPerformanceIntent(
+        PerformancePreset performance,
+        FanMode fans)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Performance = performance,
+                Fans = fans,
+                CustomPerformance = CustomPerformanceSettings.Default,
+            },
+        };
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+
+        Assert.True(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Performance)]
+    [InlineData(PerformancePreset.Custom)]
+    public void LegacyCapabilitiesKeepBalancedEntryForManualFans(
+        PerformancePreset performance)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Performance = performance,
+                Fans = FanMode.Maximum,
+                CustomPerformance = CustomPerformanceSettings.Default,
+            },
+        };
+
+        Assert.False(ProfileAdmissionPolicy.Supports(
+            draft,
+            current,
+            SupportedCapabilities()));
+    }
+
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public void DirectManualFanTransitionsRemainAcOnly(PowerSource powerSource)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        PowerProfile manual = powerSource switch
+        {
+            PowerSource.Battery => current.Battery with { Fans = FanMode.ManualCurve },
+            PowerSource.UsbC => current.UsbC with { Fans = FanMode.ManualCurve },
+            _ => throw new ArgumentOutOfRangeException(nameof(powerSource)),
+        };
+        ProfileSet draft = powerSource switch
+        {
+            PowerSource.Battery => current with { Battery = manual },
+            PowerSource.UsbC => current with { UsbC = manual },
+            _ => throw new ArgumentOutOfRangeException(nameof(powerSource)),
+        };
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+
+        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+    }
+
     [Fact]
     public void UnchangedInvalidEnumsAreStillRejected()
     {
