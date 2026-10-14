@@ -13,6 +13,40 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     private static readonly TimeSpan TestShutdownBudget = TimeSpan.FromMilliseconds(50);
 
     [Fact]
+    public async Task ExperimentalUnsupportedQueries_DoNotOpenOrProbeHidAndHonorCancellation()
+    {
+        var identity = new CountingExperimentalIdentity();
+        var factory = new ExperimentalBladeFactory(ExperimentalBladeModels.All[0], identity,
+            null!, null!, null!, () => PowerSource.ExternalUnknown);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready,
+                BatteryValidationFirmwareCompatibility.ModelScoped), factory, UnavailableFanRpmFactory());
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        Assert.Null(await device.ReadMcuVersionAsync(CancellationToken.None));
+        Assert.Null(await device.ReadStartupAnimationAsync(CancellationToken.None));
+        Assert.Null(await device.ReadFunctionKeyPrimaryAsync(CancellationToken.None));
+        Assert.Null(await device.ReadGamingModeAsync(CancellationToken.None));
+        Assert.Equal(0, identity.Reads);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadMcuVersionAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadStartupAnimationAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadFunctionKeyPrimaryAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadGamingModeAsync(cancellation.Token));
+        Assert.Equal(0, identity.Reads);
+    }
+
+    private sealed class CountingExperimentalIdentity : IHostIdentitySource
+    {
+        internal int Reads { get; private set; }
+        public HostIdentityReadResult ReadExactIdentity()
+        {
+            Reads++;
+            return new(null, HidSessionFailureKind.IdentityBlocked);
+        }
+    }
+
+    [Fact]
     public void VerificationDiagnostics_CachesExactHostFailureAndRetainsItAfterRecovery()
     {
         int probes = 0;

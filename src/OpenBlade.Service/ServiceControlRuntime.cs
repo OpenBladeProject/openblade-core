@@ -578,6 +578,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool recoveryUserConfigurationLoaded;
     private bool suppressInitialUserProfileApplyAfterUnexpectedExit;
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
+    // Revocation closes provider admission before waiting for queued operations or
+    // persistence. Only a later explicit, successfully saved enable may clear it.
+    private readonly object experimentalConsentGate = new();
+    private int experimentalConsentRevoked;
+    private long experimentalConsentRevocationGeneration;
     private string? activeUserSid;
     private Func<bool>? activeUserStillControlsSession;
     private ThermalConvergenceStateStore? thermalConvergenceStore;
@@ -887,8 +892,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             preferences = configuration.Preferences;
             deviceProvider.SetAllowUntestedFirmware(
                 configuration.Preferences.AllowUntestedFirmware);
-            deviceProvider.SetAllowExperimentalFeatures(
-                configuration.Preferences.AllowExperimentalFeatures);
+            ApplyLoadedExperimentalConsent(configuration.Preferences.AllowExperimentalFeatures);
             deviceProvider.SetLightingRefreshRate(
                 configuration.Preferences.LightingRefreshRate);
             this.persistentOverrides = persistentOverrides;
@@ -927,8 +931,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ServiceStatusSnapshot current = Volatile.Read(ref status)
             ?? throw new InvalidOperationException("The service runtime is not initialized.");
-        return ApplyConfigurationQuarantineAdvisory(current);
+        return ApplyExperimentalConsentRevocation(ApplyConfigurationQuarantineAdvisory(current));
     }
+
+    private void ApplyLoadedExperimentalConsent(bool enabled)
+    {
+        lock (experimentalConsentGate)
+        {
+            deviceProvider.SetAllowExperimentalFeatures(
+                enabled && experimentalConsentRevoked == 0);
+        }
+    }
+
+    private ServiceStatusSnapshot ApplyExperimentalConsentRevocation(ServiceStatusSnapshot current) =>
+        Volatile.Read(ref experimentalConsentRevoked) == 0
+            ? current
+            : current with
+            {
+                AllowExperimentalFeatures = false,
+                // Experimental writes currently admit only these performance and
+                // battery controls. Retain observed/read-only model differences.
+                Capabilities = deviceProvider.IsExperimentalDevice && current.Capabilities is { } capabilities
+                    ? capabilities with
+                    {
+                        PerformancePresets = new HashSet<PerformancePreset>(),
+                        ChargeLimits = new HashSet<int>(),
+                        SupportsBatteryProtectionOff = false,
+                    }
+                    : current.Capabilities,
+            };
 
     public IDisposable RegisterProtocolCompatibilityClient()
     {
@@ -1179,7 +1210,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preferences = context.Configuration.Preferences;
                 deviceProvider.SetAllowUntestedFirmware(
                     context.Configuration.Preferences.AllowUntestedFirmware);
-                deviceProvider.SetAllowExperimentalFeatures(
+                ApplyLoadedExperimentalConsent(
                     context.Configuration.Preferences.AllowExperimentalFeatures);
                 deviceProvider.SetLightingRefreshRate(
                     context.Configuration.Preferences.LightingRefreshRate);
@@ -3959,10 +3990,32 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string message = enabled
             ? "Experimental laptop controls are enabled for this Windows user."
             : "Experimental laptop controls are disabled.";
+        const string unsavedRevocationMessage =
+            "Experimental laptop controls are disabled for this service session; saving the preference has not been confirmed.";
+        long revocationGeneration;
+        lock (experimentalConsentGate)
+        {
+            if (!enabled)
+            {
+                experimentalConsentRevocationGeneration++;
+                Volatile.Write(ref experimentalConsentRevoked, 1);
+                deviceProvider.SetAllowExperimentalFeatures(false);
+            }
+            revocationGeneration = experimentalConsentRevocationGeneration;
+        }
+        if (!enabled)
+        {
+            PublishStatusUpdate(current => current with { Message = unsavedRevocationMessage });
+        }
 
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (enabled && revocationGeneration != Volatile.Read(ref experimentalConsentRevocationGeneration))
+            {
+                return new ControlOperationResult(ControlOperationStatus.Blocked,
+                    "A newer request disabled experimental laptop controls.");
+            }
             BatteryAutomationPreferences staged = preferences with
             {
                 AllowExperimentalFeatures = enabled,
@@ -3977,14 +4030,40 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             catch (ConfigurationQuarantinedException)
             {
-                return ConfigurationQuarantineBlocked();
+                ControlOperationResult blocked = ConfigurationQuarantineBlocked();
+                return enabled ? blocked : blocked with
+                {
+                    Message = $"{unsavedRevocationMessage} {blocked.Message}",
+                };
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (!enabled)
+            {
+                string failure = $"{unsavedRevocationMessage} {exception.Message}";
+                PublishStatusUpdate(current => current with { Message = failure });
+                history.RecordSummary(ControlOperationStatus.Failed, failure);
+                return new ControlOperationResult(ControlOperationStatus.Failed, failure);
             }
 
             preferences = staged;
-            // The provider owns the final admission gate for every experimental
-            // write path. Revocation is forwarded before any subsequent status
-            // observation so disabling consent cannot submit a cleanup write.
-            deviceProvider.SetAllowExperimentalFeatures(enabled);
+            lock (experimentalConsentGate)
+            {
+                if (enabled)
+                {
+                    // A disable may arrive while the enable is saving. Its runtime
+                    // admission takes precedence even if the older save completed.
+                    if (revocationGeneration != experimentalConsentRevocationGeneration)
+                    {
+                        return new ControlOperationResult(ControlOperationStatus.Blocked,
+                            "A newer request disabled experimental laptop controls; the saved enable is inactive for this service session.");
+                    }
+                    Volatile.Write(ref experimentalConsentRevoked, 0);
+                    deviceProvider.SetAllowExperimentalFeatures(true);
+                }
+            }
             consecutiveDeviceProbeFailures = ObservationFailureThreshold;
             PublishIfChanged(GetStatus() with
             {
@@ -15810,14 +15889,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceCapabilities capabilities =
             await device.ReadCapabilitiesAsync(cancellationToken);
         ServiceStatusSnapshot currentBeforeRead = GetStatus();
-        if (!HasAnyControlCapability(capabilities)
+        if (!deviceProvider.IsExperimentalDevice
+            && !HasAnyControlCapability(capabilities)
             && currentBeforeRead.DeviceVerified
             && currentBeforeRead.Capabilities is { } previousCapabilities
             && HasAnyControlCapability(previousCapabilities))
         {
-            // Capabilities are immutable for a connected model. A failed
-            // refresh must not make every UI control disappear until the
-            // next audit; each mutation still re-admits its own command.
+            // Stable-model capabilities are immutable for a connected model.
+            // Experimental capabilities are recomputed from current consent and
+            // recovery admission, so an empty result must replace prior controls.
+            // Each stable-model mutation still re-admits its own command.
             capabilities = previousCapabilities;
         }
         ConfirmedDeviceState confirmed = await ReadObservedStateAsync(
@@ -19120,7 +19201,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 UnconfirmedWrites = unconfirmedWrites,
                 HyperBoostRestorePending = hyperBoostRestorePending,
             };
-            candidate = ApplyConfigurationQuarantineAdvisory(candidate);
+            candidate = ApplyExperimentalConsentRevocation(
+                ApplyConfigurationQuarantineAdvisory(candidate));
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && candidate.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && exactFanControlOwnership.Disposition ==

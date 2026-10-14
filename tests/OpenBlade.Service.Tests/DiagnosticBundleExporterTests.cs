@@ -23,7 +23,9 @@ public sealed class DiagnosticBundleExporterTests
             new DiagnosticDeviceIdentity("RZ09-0483", "1532", "029F", null),
             new Dictionary<string, bool>(), new Dictionary<string, string>(), [], [], [secret, "support", "requestedValue", "capturedAt"],
             ExperimentalSupport: new DiagnosticExperimentalSupportSnapshot(
-                DateTimeOffset.UnixEpoch, support, PowerSource.PluggedIn, null, new LiveReadings(5000, 3000, 3100, 50, 45)));
+                DateTimeOffset.UnixEpoch, support, PowerSource.PluggedIn,
+                new ConfirmedDeviceState(PerformancePreset.Silent, FanMode.Automatic, null, null),
+                new LiveReadings(5000, 3000, 3100, 50, 45)));
         await using var destination = new MemoryStream();
 
         await DiagnosticBundleExporter.ExportAsync(destination, bundle);
@@ -33,6 +35,9 @@ public sealed class DiagnosticBundleExporterTests
         string content = await ReadEntryAsync(archive, "experimental-support.json");
         Assert.DoesNotContain(secret, content);
         using JsonDocument json = JsonDocument.Parse(content);
+        Assert.Equal("PluggedIn", json.RootElement.GetProperty("powerSource").GetString());
+        Assert.Equal("Silent", json.RootElement.GetProperty("confirmedState").GetProperty("performance").GetString());
+        Assert.Equal("Automatic", json.RootElement.GetProperty("confirmedState").GetProperty("fans").GetString());
         JsonElement observations = json.RootElement.GetProperty("support").GetProperty("observations");
         Assert.Equal(DiagnosticExperimentalSupport.MaxObservations, observations.GetArrayLength());
         Assert.Equal(DateTimeOffset.UnixEpoch.AddSeconds(48), observations[0].GetProperty("timestamp").GetDateTimeOffset());

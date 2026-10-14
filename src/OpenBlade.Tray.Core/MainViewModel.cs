@@ -1709,22 +1709,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool enabled,
         CancellationToken cancellationToken)
     {
-        ControlOperationStatus? resultStatus = null;
+        bool accepted = false;
         await RunOperationAsync(
-            async token =>
+            token => serviceClient.SetExperimentalFeaturesAsync(enabled, token),
+            cancellationToken,
+            onCompleted: result =>
             {
-                ControlOperationResult result = await serviceClient.SetExperimentalFeaturesAsync(enabled, token);
-                resultStatus = result.Status;
-                return result;
-            },
-            cancellationToken);
-        bool accepted = resultStatus is ControlOperationStatus.Applied or ControlOperationStatus.Stored;
-        if (accepted)
-        {
-            await dispatcher.InvokeAsync(
-                () => AllowExperimentalFeatures = enabled,
-                cancellationToken);
-        }
+                accepted = result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored;
+                if (accepted)
+                {
+                    AllowExperimentalFeatures = enabled;
+                }
+            });
 
         return accepted;
     }

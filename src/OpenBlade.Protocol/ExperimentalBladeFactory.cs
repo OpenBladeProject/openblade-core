@@ -143,6 +143,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         List<(OpenedCandidateHandle Handle, HidHandleIdentity Identity)> candidates = FindCandidates();
         ExperimentalBladePort? selected = null;
         bool ambiguous = false;
+        ExperimentalControlObservation? lastAdmissionFailure = null;
         try
         {
             foreach (var candidate in candidates)
@@ -170,7 +171,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     throw;
                 }
                 var port = new ExperimentalBladePort(session, context, model, policy,
-                    () => identity.ReadExactIdentity() is { Evidence: not null, Failure: null }, capturePowerSource);
+                    () => identity.ReadExactIdentity() is { Evidence: not null, Failure: null }, capturePowerSource,
+                    recordQueries: false);
                 try
                 {
                     // Two independent selector queries must agree before exposing controls on this interface.
@@ -187,6 +189,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 }
                 catch (IOException)
                 {
+                    // Keep a bounded typed reason only if no interface can be admitted.
+                    lastAdmissionFailure = port?.LastAdmissionFailure ?? lastAdmissionFailure;
                     // This descriptor is not the model's functional control interface.
                 }
                 finally
@@ -200,9 +204,17 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             cancellationToken.ThrowIfCancellationRequested();
             if (ambiguous || selected is null)
             {
+                if (selected is null && lastAdmissionFailure is { } failure)
+                {
+                    policy.Record(failure.Operation, "Query", failure.Outcome,
+                        confirmed: failure.ConfirmedValue, failure: failure.FailureCategory);
+                }
+                policy.Record("InterfaceAdmission", "Query", "Failed",
+                    failure: ambiguous ? "MultipleRespondingInterfaces" : "NoRespondingInterface");
                 return new(null, HidSessionFailureKind.IdentityBlocked);
             }
             ExperimentalBladePort admitted = selected;
+            admitted.EnableQueryRecording();
             selected = null;
             return new(admitted, null);
         }

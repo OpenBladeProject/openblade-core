@@ -11,6 +11,7 @@ public sealed class ExperimentalBladeIdentityTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void ExactDualRegistryIdentity_IsModelScopedWithoutInventedFirmwareValidation(int index)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All[index];

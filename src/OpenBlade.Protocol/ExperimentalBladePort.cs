@@ -9,11 +9,30 @@ internal sealed class ExperimentalBladePort(
     ExperimentalFeaturesPolicy policy,
     Func<bool> exactHostStillPresent,
     Func<PowerSource> capturePowerSource,
-    Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null) : IProductionBatteryPort
+    Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null,
+    bool recordQueries = true) : IProductionBatteryPort
 {
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly Func<TimeSpan, CancellationToken, Task> delayConfirmation = confirmationDelay ?? Task.Delay;
     private bool disposed;
+    private bool queryRecordingEnabled = recordQueries;
+
+    internal ExperimentalControlObservation? LastAdmissionFailure { get; private set; }
+
+    internal void EnableQueryRecording() => queryRecordingEnabled = true;
+
+    private void RecordQuery(string operation, string outcome, string? confirmed = null, string? failure = null)
+    {
+        if (queryRecordingEnabled)
+        {
+            policy.Record(operation, "Query", outcome, confirmed: confirmed, failure: failure);
+        }
+        else if (outcome != "Confirmed")
+        {
+            LastAdmissionFailure = new(DateTimeOffset.UtcNow, operation, "Query", outcome,
+                false, ConfirmedValue: confirmed, FailureCategory: failure);
+        }
+    }
 
     public DeviceCapabilities Capabilities => CreateCapabilities(model, policy.WritesAllowed);
 
@@ -21,7 +40,13 @@ internal sealed class ExperimentalBladePort(
         new(enabled ? new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent } : [],
             new HashSet<FanMode>(), new HashSet<LightingEffect>(),
             enabled && model.SupportsBatteryProtection ? new HashSet<int> { 80 } : [],
-            enabled && model.SupportsBatteryProtection, false);
+            enabled && model.SupportsBatteryProtection, false)
+        {
+            HyperBoostAccess = model.ProductId == 0x02A0 ? DeviceFeatureAccess.ObservedOnly : null,
+            ObservedLightingEffects = model.ProductId == 0x02A0
+                ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum, LightingEffect.Wave, LightingEffect.Breathing }
+                : new HashSet<LightingEffect>(),
+        };
 
     public bool SupportsProtectionQuery => model.SupportsBatteryProtection;
 
@@ -50,13 +75,13 @@ internal sealed class ExperimentalBladePort(
             [0], false, cancellationToken).ConfigureAwait(false);
         if (payload.Span[0] is not (0x50 or 0xD0))
         {
-            policy.Record("BatteryProtection", "Query", "UnsupportedState",
+            RecordQuery("BatteryProtection", "UnsupportedState",
                 confirmed: $"ReportedProtectionEnabled={(payload.Span[0] & 0x80) != 0};ReportedLimitPercent={payload.Span[0] & 0x7F}",
                 failure: "OutsideAdmittedBatteryStates");
             throw new IOException("Experimental battery readback is outside the admitted 80%/off states.");
         }
         bool enabled = payload.Span[0] == 0xD0;
-        policy.Record("BatteryProtection", "Query", "Confirmed", confirmed: enabled ? "80" : "Off");
+        RecordQuery("BatteryProtection", "Confirmed", confirmed: enabled ? "80" : "Off");
         return new(enabled, enabled ? 80 : null, null);
     }
 
@@ -83,12 +108,14 @@ internal sealed class ExperimentalBladePort(
             || first.Span[2] != second.Span[2] || first.Span[3] != second.Span[3]
             || first.Span[3] > 1)
         {
-            policy.Record("Performance", "Query", "InconsistentState",
+            RecordQuery("Performance", "InconsistentState",
                 confirmed: $"Selector1={first.Span[1]};Mode1={first.Span[2]};FanFlag1={first.Span[3]};Selector2={second.Span[1]};Mode2={second.Span[2]};FanFlag2={second.Span[3]}",
                 failure: "SelectorAgreement");
             throw new IOException("Experimental performance selectors returned inconsistent state.");
         }
-        PerformancePreset performance = first.Span[2] switch
+        byte mode = first.Span[2];
+        bool hyperBoost = mode == 7 && model.ProductId == 0x02A0;
+        PerformancePreset? performance = mode switch
         {
             0 => PerformancePreset.Balanced,
             4 => PerformancePreset.Custom,
@@ -96,11 +123,20 @@ internal sealed class ExperimentalBladePort(
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
             6 when model.ProductId == 0x02C5 => PerformancePreset.BatteryBalanced,
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
-            _ => throw new IOException("Experimental performance mode is outside the upstream model definition."),
+            2 when model.ProductId == 0x02A0 => PerformancePreset.Performance,
+            7 when model.ProductId == 0x02A0 => null,
+            _ => UnsupportedPerformanceMode(mode),
         };
         FanMode fans = first.Span[3] == 0 ? FanMode.Automatic : FanMode.Fixed;
-        policy.Record("Performance", "Query", "Confirmed", confirmed: $"{performance}/{fans}");
-        return new(performance, fans);
+        RecordQuery("Performance", "Confirmed", confirmed: $"{(hyperBoost ? "HyperBoost" : performance?.ToString())}/{fans}");
+        return new(performance, fans) { HyperBoostActive = hyperBoost };
+    }
+
+    private PerformancePreset? UnsupportedPerformanceMode(byte mode)
+    {
+        RecordQuery("Performance", "UnsupportedState", confirmed: $"ReportedMode={mode}",
+            failure: "OutsideUpstreamPerformanceModes");
+        throw new IOException("Experimental performance mode is outside the upstream model definition.");
     }
 
     public async Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)
@@ -116,7 +152,7 @@ internal sealed class ExperimentalBladePort(
             RequireWriteAdmission(thermal: true);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("Performance", "Baseline", "Confirmed", requested: value.ToString(),
-                confirmed: $"{baseline.Performance}/{baseline.Fans}");
+                confirmed: $"{(baseline.HyperBoostActive ? "HyperBoost" : baseline.Performance?.ToString())}/{baseline.Fans}");
             if (baseline.Fans != FanMode.Automatic)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
@@ -269,8 +305,15 @@ internal sealed class ExperimentalBladePort(
             bool possiblySubmitted = write && result.Diagnostic?.Phase != HidSessionFailurePhase.Guard
                 && result.Failure is not (HidSessionFailureKind.QueuedCanceled or HidSessionFailureKind.Exhausted
                     or HidSessionFailureKind.Disposed or HidSessionFailureKind.Poisoned);
-            policy.Record(operation, write ? "Submission" : "Query", "Failed", possiblySubmitted,
-                failure: $"{result.Failure}/{result.Diagnostic?.Phase}/{result.Diagnostic?.ProtocolValidationFailure}");
+            string failure = $"{result.Failure}/{result.Diagnostic?.Phase}/{result.Diagnostic?.ProtocolValidationFailure}";
+            if (write)
+            {
+                policy.Record(operation, "Submission", "Failed", possiblySubmitted, failure: failure);
+            }
+            else
+            {
+                RecordQuery(operation, "Failed", failure: failure);
+            }
             if (write)
             {
                 throw new BladeWriteException(possiblySubmitted ? WriteSubmissionState.Indeterminate

@@ -43,6 +43,34 @@ public sealed class ExperimentalBladeFactoryTests
         Assert.Equal((byte)0x82, io.Commands[0]);
     }
 
+    [Fact]
+    public async Task NonRespondingCandidate_DoesNotPolluteAcceptedInterfaceHistory()
+    {
+        var native = new Native(2);
+        var io = new Io { RejectSecondInterface = true };
+        var factory = Create(native, io);
+        HidSessionResult<IProductionBatteryPort> result = await factory.OpenAsync(CancellationToken.None);
+        Assert.Null(result.Failure);
+        Assert.NotNull(result.Value);
+        await using IProductionBatteryPort port = result.Value!;
+        Assert.Empty(factory.GetDiagnostics().Observations);
+        await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        ExperimentalControlObservation observation = Assert.Single(factory.GetDiagnostics().Observations);
+        Assert.Equal("Confirmed", observation.Outcome);
+        Assert.Equal("Performance", observation.Operation);
+    }
+
+    [Fact]
+    public async Task NoAdmittedInterface_RetainsDecodedUnsupportedModeReason()
+    {
+        var factory = Create(new Native(1), new Io { PerformanceMode = 99 });
+        HidSessionResult<IProductionBatteryPort> result = await factory.OpenAsync(CancellationToken.None);
+        Assert.Null(result.Value);
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
+        Assert.Contains(factory.GetDiagnostics().Observations,
+            item => item.Outcome == "UnsupportedState" && item.ConfirmedValue == "ReportedMode=99");
+    }
+
     private static ExperimentalBladeFactory Create(Native native, Io io) =>
         new(ExperimentalBladeModels.All[0], new Identity(), native, new Guard(), io,
             () => PowerSource.ExternalUnknown);
@@ -116,6 +144,8 @@ public sealed class ExperimentalBladeFactoryTests
         private byte[] lastRequest = [];
         internal List<byte> Commands { get; } = [];
         internal Action? AfterGet { get; init; }
+        internal bool RejectSecondInterface { get; init; }
+        internal byte PerformanceMode { get; init; }
 
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint controlCode,
             byte[] buffer, CancellationToken callerCancellation, CancellationToken deadlineCancellation)
@@ -127,8 +157,15 @@ public sealed class ExperimentalBladeFactoryTests
             }
             else
             {
+                if (RejectSecondInterface && handle.FileHandle.DangerousGetHandle() == new IntPtr(501))
+                {
+                    return Task.FromResult(new HidFeatureIoResult(new(false, 0, 31), false,
+                        HidFeatureTermination.Completed));
+                }
                 lastRequest.CopyTo(buffer, 0);
                 buffer[1] = 0x02;
+                buffer[11] = PerformanceMode;
+                buffer[89] ^= PerformanceMode;
                 AfterGet?.Invoke();
             }
             return Task.FromResult(new HidFeatureIoResult(new(true, buffer.Length, 0), true,

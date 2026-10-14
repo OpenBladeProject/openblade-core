@@ -289,6 +289,69 @@ public sealed class ExperimentalBladePortTests
         Assert.Equal("Readback", policy.Snapshot().Observations[0].Stage);
     }
 
+    [Fact]
+    public void RepeatedQueryFailures_DoNotEvictWriteEvidence()
+    {
+        var policy = Enabled();
+        policy.Record("Performance", "Readback", "Confirmed", true, "Silent", "Silent");
+        for (int index = 0; index < 100; index++)
+        {
+            policy.Record("Performance", "Query", "Failed", failure: "Timeout");
+        }
+        Assert.Equal(2, policy.Snapshot().Observations.Count);
+        policy.Record("Performance", "Query", "Confirmed", confirmed: "Silent/Automatic");
+        policy.Record("Performance", "Query", "Failed", failure: "Timeout");
+        Assert.Equal(4, policy.Snapshot().Observations.Count);
+        Assert.Equal("Readback", policy.Snapshot().Observations[0].Stage);
+    }
+
+    [Fact]
+    public async Task UnsupportedPerformanceMode_RecordsDecodedEvidenceAndBlocksMutation()
+    {
+        var session = new Session([0, 1, 99, 0], [0, 2, 99, 0]);
+        var policy = Enabled();
+        await using var port = Create(session, policy);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Contains(policy.Snapshot().Observations, item => item.ConfirmedValue == "ReportedMode=99");
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(7)]
+    public async Task Blade18_UsesItsUpstreamModesAndConfirmsSilent(int initialMode)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+        var session = new Session([0, 1, (byte)initialMode, 0], [0, 2, (byte)initialMode, 0],
+            [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]);
+        var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+        await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
+            () => PowerSource.ExternalUnknown);
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, port.Capabilities.HyperBoostAccess);
+        Assert.Empty(port.Capabilities.LightingEffects);
+        Assert.Contains(LightingEffect.Wave, port.Capabilities.ObservedLightingEffects);
+        Assert.DoesNotContain(PerformancePreset.Performance, port.Capabilities.PerformancePresets);
+        await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x02, 0x02, 0x82, 0x82 }, session.Commands.Select(item => item.CommandId));
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Fact]
+    public async Task Blade18_BatteryUsesIndependentReadbackAndSingleSetter()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+        var session = new Session([0x50], [0xD0], [0xD0]);
+        var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+        await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
+            () => PowerSource.ExternalUnknown);
+        await port.SetChargeLimitAsync(80, CancellationToken.None);
+        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(item => item.CommandId));
+    }
+
     private static ExperimentalFeaturesPolicy Enabled() => new(ExperimentalBladeModels.All[0]) { Enabled = true };
 
     private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy policy,

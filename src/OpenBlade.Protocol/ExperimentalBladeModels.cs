@@ -15,6 +15,8 @@ internal static class ExperimentalBladeModels
     public const string RazerCtlSource = "https://github.com/tdakhran/razer-ctl/tree/8e12e778d303d4ed01eeb2c1e99ce2e97f1c8917";
     public const string BladeControlSource = "https://github.com/jdsgnrinfo/blade-control/tree/bc48c916d4d6cc47df8c0e32a73ef454dda37cdd";
 
+    public const string Blade18Source = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
+
     public static IReadOnlyList<ExperimentalBladeModel> All { get; } = Array.AsReadOnly<ExperimentalBladeModel>(
     [
         new("RZ09-0483", "Blade 16 - RZ09-0483", 0x029F, true, RazerCtlSource),
@@ -25,6 +27,9 @@ internal static class ExperimentalBladeModels
         // Windows System Model reported by an owner:
         // https://learn.microsoft.com/en-us/answers/questions/3810665/intel-wi-fi-6-ax201-is-not-working
         new("RZ09-0328", "Blade 15 Base Model (Early 2020) - RZ09-0328", 0x0255, false, BladeControlSource),
+        // Exact-model owner report: https://github.com/sqmagellan/razer-ctl/issues/1
+        // Windows product: https://browser.geekbench.com/v6/cpu/6428586
+        new("RZ09-0484", "Blade 18 - RZ09-0484", 0x02A0, true, Blade18Source),
     ]);
 
     internal static IHostIdentitySource CreateIdentity(
@@ -52,7 +57,7 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
 {
     private readonly object sync = new();
     private readonly Queue<ExperimentalControlObservation> observations = new();
-    private readonly Dictionary<string, string?> lastConfirmedQueries = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string Outcome, string? Confirmed, string? Failure)> lastQueries = new(StringComparer.Ordinal);
     private int enabled;
     private int recoveryRequired;
 
@@ -71,14 +76,14 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     {
         lock (sync)
         {
-            if (stage == "Query" && outcome == "Confirmed")
+            if (stage == "Query")
             {
-                if (lastConfirmedQueries.TryGetValue(operation, out string? previous)
-                    && string.Equals(previous, confirmed, StringComparison.Ordinal))
+                var current = (outcome, confirmed, failure);
+                if (lastQueries.TryGetValue(operation, out var previous) && previous == current)
                 {
                     return;
                 }
-                lastConfirmedQueries[operation] = confirmed;
+                lastQueries[operation] = current;
             }
             while (observations.Count >= DiagnosticExperimentalSupport.MaxObservations)
             {

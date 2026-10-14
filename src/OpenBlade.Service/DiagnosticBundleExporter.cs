@@ -160,7 +160,8 @@ public static class DiagnosticBundleExporter
                 },
                 bundle.SensitiveTokens,
                 cancellationToken,
-                preservePropertyNames: true);
+                preservePropertyNames: true,
+                jsonOptions: VerificationJsonOptions);
         }
         await WriteLogEntryAsync(archive, bundle.LogLines, bundle.SensitiveTokens, cancellationToken);
     }
@@ -174,14 +175,16 @@ public static class DiagnosticBundleExporter
         T value,
         IReadOnlyCollection<string> sensitiveTokens,
         CancellationToken cancellationToken,
-        bool preservePropertyNames = false)
+        bool preservePropertyNames = false,
+        JsonSerializerOptions? jsonOptions = null)
     {
         string json = SerializeRedactedJson(
             value,
             sensitiveTokens,
             writeIndented: true,
             cancellationToken,
-            preservePropertyNames);
+            preservePropertyNames,
+            jsonOptions);
         return WriteTextEntryAsync(archive, name, json, cancellationToken);
     }
 
@@ -310,9 +313,10 @@ public static class DiagnosticBundleExporter
         IReadOnlyCollection<string> sensitiveTokens,
         bool writeIndented,
         CancellationToken cancellationToken,
-        bool preservePropertyNames = false)
+        bool preservePropertyNames = false,
+        JsonSerializerOptions? jsonOptions = null)
     {
-        byte[] serialized = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+        byte[] serialized = JsonSerializer.SerializeToUtf8Bytes(value, jsonOptions ?? JsonOptions);
         using JsonDocument document = JsonDocument.Parse(serialized);
         (string[] tokens, string replacement) =
             CreateRedactionPlan(sensitiveTokens);

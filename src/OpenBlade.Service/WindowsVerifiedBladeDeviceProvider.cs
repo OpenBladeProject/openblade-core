@@ -1079,6 +1079,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // These queries have no implementation in the experimental port.
+                // Returning unavailable avoids opening and probing HID for a known no-op.
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
+
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
@@ -1170,6 +1177,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // These queries have no implementation in the experimental port.
+                // Returning unavailable avoids opening and probing HID for a known no-op.
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
+
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
@@ -1215,6 +1229,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // These queries have no implementation in the experimental port.
+                // Returning unavailable avoids opening and probing HID for a known no-op.
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
+
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
@@ -1259,6 +1280,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // These queries have no implementation in the experimental port.
+                // Returning unavailable avoids opening and probing HID for a known no-op.
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
+
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
