@@ -1548,7 +1548,7 @@
                                                                         CompactMinWidth="150"
                                                                         ExpandedMinWindowWidth="800"
                                                                         AccessibleName="Breathing color mode"
-                                                                        ItemsSource="{x:Bind LightingBreathingColorModes}"
+                                                                        ItemsSource="{x:Bind LightingBreathingColorModes, Mode=OneWay}"
                                                                         SelectedItem="{x:Bind LightingBreathingColorModeEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>

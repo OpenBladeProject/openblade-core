@@ -545,6 +545,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,
+                        SupportsBreathingColorSelection = lighting.Capabilities.SupportsBreathingColorSelection,
+                        SupportsWaveDirectionSelection = lighting.Capabilities.SupportsWaveDirectionSelection,
                         SupportsPlaybackMuteIndicator =
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
                         KeyboardLightingLayoutId =

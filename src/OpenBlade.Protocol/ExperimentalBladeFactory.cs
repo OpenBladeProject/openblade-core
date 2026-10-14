@@ -32,6 +32,35 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
 
+    public IProductionLightingPortFactory CreateLightingFactory() => new ExperimentalLightingFactory(this);
+
+    private sealed class ExperimentalLightingFactory(ExperimentalBladeFactory owner) : IProductionLightingPortFactory
+    {
+        public DeviceCapabilities Capabilities => owner.Capabilities;
+
+        public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(CancellationToken token) =>
+            OpenAsync(() => true, token);
+
+        public async Task<HidSessionResult<IProductionLightingPort>> OpenAsync(Func<bool> writeAllowed, CancellationToken token)
+        {
+            if (owner.model.ProductId != 0x02A0)
+            {
+                return new(null, HidSessionFailureKind.IdentityBlocked);
+            }
+            HidSessionResult<IProductionBatteryPort> opened = await owner.OpenAsync(token).ConfigureAwait(false);
+            if (opened.Value is not ExperimentalBladePort port || opened.Failure is not null)
+            {
+                if (opened.Value is not null)
+                {
+                    await opened.Value.DisposeAsync().ConfigureAwait(false);
+                }
+                return new(null, opened.Failure ?? HidSessionFailureKind.IdentityBlocked) { Diagnostic = opened.Diagnostic };
+            }
+            port.SetAdditionalWriteAdmission(writeAllowed);
+            return new(port, null);
+        }
+    }
+
     public void SetEnabled(bool enabled) => policy.Enabled = enabled;
 
     public DiagnosticExperimentalSupport GetDiagnostics() => policy.Snapshot();

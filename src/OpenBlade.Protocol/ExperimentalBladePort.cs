@@ -2,7 +2,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-internal sealed class ExperimentalBladePort(
+internal sealed partial class ExperimentalBladePort(
     IRazerCommandSession session,
     ValidationRunContext context,
     ExperimentalBladeModel model,
@@ -10,7 +10,7 @@ internal sealed class ExperimentalBladePort(
     Func<bool> exactHostStillPresent,
     Func<PowerSource> capturePowerSource,
     Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null,
-    bool recordQueries = true) : IProductionBatteryPort
+    bool recordQueries = true) : IProductionBatteryPort, IProductionLightingPort
 {
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly Func<TimeSpan, CancellationToken, Task> delayConfirmation = confirmationDelay ?? Task.Delay;
@@ -34,14 +34,28 @@ internal sealed class ExperimentalBladePort(
         }
     }
 
+    private Func<bool>? additionalWriteAdmission;
+
+    internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
+
     public DeviceCapabilities Capabilities => CreateCapabilities(model, policy.WritesAllowed);
 
     internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
-        new(enabled ? new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent } : [],
-            new HashSet<FanMode>(), new HashSet<LightingEffect>(),
+        new(enabled ? model.ProductId == 0x02A0
+                ? new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance, PerformancePreset.Custom }
+                : new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent } : [],
+            new HashSet<FanMode>(), enabled && model.ProductId == 0x02A0
+                ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum, LightingEffect.Wave, LightingEffect.Breathing }
+                : new HashSet<LightingEffect>(),
             enabled && model.SupportsBatteryProtection ? new HashSet<int> { 80 } : [],
             enabled && model.SupportsBatteryProtection, false)
         {
+            CustomPerformance = enabled && model.ProductId == 0x02A0 ? CreateCustomCapabilities() : null,
+            SupportsKeyboardBrightness = enabled && model.ProductId == 0x02A0,
+            LogoLightingModes = enabled && model.ProductId == 0x02A0
+                ? new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>()) : new HashSet<LogoLightingMode>(),
+            SupportsBreathingColorSelection = model.ProductId != 0x02A0,
+            SupportsWaveDirectionSelection = model.ProductId != 0x02A0,
             HyperBoostAccess = model.ProductId == 0x02A0 ? DeviceFeatureAccess.ObservedOnly : null,
             ObservedLightingEffects = model.ProductId == 0x02A0
                 ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum, LightingEffect.Wave, LightingEffect.Breathing }
@@ -129,7 +143,15 @@ internal sealed class ExperimentalBladePort(
         };
         FanMode fans = first.Span[3] == 0 ? FanMode.Automatic : FanMode.Fixed;
         RecordQuery("Performance", "Confirmed", confirmed: $"{(hyperBoost ? "HyperBoost" : performance?.ToString())}/{fans}");
-        return new(performance, fans) { HyperBoostActive = hyperBoost };
+        CustomPerformanceSettings? custom = mode == 4 && model.ProductId == 0x02A0
+            ? await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false) : null;
+        // Custom without representable levels cannot form a valid confirmed IPC state.
+        // Keep the raw mode/levels in diagnostics while presenting unknown performance.
+        if (performance == PerformancePreset.Custom && custom is null)
+        {
+            performance = null;
+        }
+        return new(performance, fans) { HyperBoostActive = hyperBoost, CustomPerformance = custom };
     }
 
     private PerformancePreset? UnsupportedPerformanceMode(byte mode)
@@ -141,9 +163,10 @@ internal sealed class ExperimentalBladePort(
 
     public async Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)
     {
-        if (value is not (PerformancePreset.Balanced or PerformancePreset.Silent))
+        if (value is not (PerformancePreset.Balanced or PerformancePreset.Silent)
+            && !(value == PerformancePreset.Performance && model.ProductId == 0x02A0))
         {
-            throw new CapabilityUnavailableException("Only upstream-derived Balanced and Silent presets are enabled.");
+            throw new CapabilityUnavailableException("This preset is outside the exact experimental model definition.");
         }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
@@ -167,7 +190,13 @@ internal sealed class ExperimentalBladePort(
             {
                 return;
             }
-            byte mode = value == PerformancePreset.Balanced ? (byte)0 : (byte)5;
+            byte mode = value switch
+            {
+                PerformancePreset.Balanced => 0,
+                PerformancePreset.Silent => 5,
+                PerformancePreset.Performance => 2,
+                _ => throw new CapabilityUnavailableException("This preset has no experimental wire value."),
+            };
             foreach (byte selector in new byte[] { 1, 2 })
             {
                 RequireWriteAdmission(thermal: true);
@@ -253,7 +282,8 @@ internal sealed class ExperimentalBladePort(
 
     private void RequireWriteAdmission(bool thermal = false)
     {
-        if (!policy.WritesAllowed || !exactHostStillPresent() || thermal && !ExternalPowerPresent())
+        if (!policy.WritesAllowed || !exactHostStillPresent() || additionalWriteAdmission?.Invoke() == false
+            || thermal && !ExternalPowerPresent())
         {
             throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                 "Experimental consent, exact identity, or recovery admission blocked the write.");
@@ -277,14 +307,18 @@ internal sealed class ExperimentalBladePort(
     }
 
     private async Task<ReadOnlyMemory<byte>> ExchangeAsync(string operation, byte commandClass,
-        byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken)
+        byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken,
+        bool variableResponse = false, Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null,
+        bool requireEcho = true)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
-        var command = new RazerCommandSpec(commandClass, commandId, arguments, arguments.Length)
+        var command = new RazerCommandSpec(commandClass, commandId, arguments, arguments.Length, payloadValidator)
         {
             // Evaluated at the native submission boundary, including after queueing.
+            AllowVariableResponseLength = variableResponse,
             SubmissionAllowed = write ? () => policy.WritesAllowed && exactHostStillPresent()
+                && additionalWriteAdmission?.Invoke() != false
                 && (commandClass != 0x0D || ExternalPowerPresent()) : null,
         };
         HidSessionResult<ReadOnlyMemory<byte>> result;
@@ -322,8 +356,9 @@ internal sealed class ExperimentalBladePort(
             }
             throw new IOException($"Experimental {operation} exchange failed: {result.Failure}.");
         }
-        if (result.Value.Length != arguments.Length
-            || write && !result.Value.Span.SequenceEqual(arguments))
+        if ((!variableResponse && result.Value.Length != arguments.Length)
+            || payloadValidator is not null && !payloadValidator(result.Value)
+            || write && requireEcho && !result.Value.Span.SequenceEqual(arguments))
         {
             if (write)
             {
@@ -352,7 +387,6 @@ internal sealed class ExperimentalBladePort(
             _ => AdapterPowerState.Unknown,
         });
     }
-    public Task SetCustomPerformanceAsync(CustomPerformanceSettings value, CancellationToken cancellationToken) => Unavailable();
     public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken) => Unavailable();
     public Task SetFanControlAsync(FanControlSettings value, CancellationToken cancellationToken) => Unavailable();
     public Task SetFanTargetsAsync(int fan1Rpm, int fan2Rpm, CancellationToken cancellationToken) => Unavailable();

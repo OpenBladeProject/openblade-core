@@ -5663,6 +5663,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             SupportsBatteryProtectionOff: true, SupportsTemporaryFullCharge: false)
         {
             HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Spectrum },
+            SupportsKeyboardBrightness = true,
+            LogoLightingModes = new HashSet<LogoLightingMode> { LogoLightingMode.Static },
+            CustomPerformance = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>
+            { new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low) }),
         };
         await context.Runtime.SetExperimentalFeaturesAsync(true, CancellationToken.None);
 
@@ -5674,6 +5679,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Empty(capabilities.PerformancePresets);
         Assert.Empty(capabilities.ChargeLimits);
         Assert.False(capabilities.SupportsBatteryProtectionOff);
+        Assert.Empty(context.Runtime.GetStatus().Capabilities!.LightingEffects);
+        Assert.Empty(context.Runtime.GetStatus().Capabilities!.LogoLightingModes);
+        Assert.False(context.Runtime.GetStatus().Capabilities!.SupportsKeyboardBrightness);
+        Assert.Null(context.Runtime.GetStatus().Capabilities!.CustomPerformance);
         Assert.False(context.Provider.AllowExperimentalFeatures);
         Assert.Equal(DeviceFeatureAccess.ObservedOnly,
             context.Hub.Published[^1].Capabilities!.HyperBoostAccess);

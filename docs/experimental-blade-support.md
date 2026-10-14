@@ -26,11 +26,12 @@ preference has not been saved; a later explicit enable can restore consent.
 | Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, 80% battery protection or off |
 | Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, 80% battery protection or off |
 | Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced and Silent |
-| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, 80% battery protection or off |
+| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, bounded Custom levels, keyboard brightness and built-in effects, logo lighting, 80% battery protection or off |
 
 Performance changes require confirmed Automatic fans and fresh external-power
-evidence. Custom CPU/GPU levels, manual fans, keyboard lighting, HyperBoost, and
-driver-dependent brightness integration are not yet supported by this backend.
+evidence. Manual fans, HyperBoost writes, and driver-dependent brightness integration
+are not yet supported by this backend. Lighting and Custom controls below apply
+only to the exact Blade 18 profile.
 The 2020 Blade 15's battery commands are excluded because upstream reports that
 its firmware echoes them without applying them. This first battery implementation
 accepts only the observed 80% and off states.
@@ -42,12 +43,36 @@ changes also reject the firmware's battery-only modes rather than substituting
 AC mode commands.
 
 The Blade 18 profile comes from an exact-model owner report in the maintained
-razer-ctl fork. Its Performance and HyperBoost states can be observed, but only
-Balanced and Silent can be requested. Manual fan behavior remains unresolved;
-OpenBlade does not expose fan writes for it. The upstream report also confirms
-keyboard brightness, Spectrum/Wave/Breathing/Off effects, and logo lighting.
-The effects are recorded as observed capabilities; lighting and brightness writes
-remain unavailable in this backend.
+razer-ctl fork. It admits Balanced, Silent, and Performance. Custom CPU/GPU
+Low, Medium, and High levels use an explicit experimental extrapolation of the
+upstream protocol; they have not been confirmed on a Blade 18. Boost, Undervolt,
+GPU clock offsets, and High/High are excluded. Custom changes require readable,
+representable starting levels, including the stored levels before entering Custom,
+and independent confirmation after each level change. Unsupported raw levels
+remain diagnostic observations rather than a guessed setting. HyperBoost remains
+observed-only. Manual fan behavior is unresolved.
+
+Blade 18 keyboard controls include brightness, Off, Spectrum, random-color
+Breathing, and Wave with upstream direction byte 1 (presented as Rightward).
+Physical wave direction still needs tester confirmation. Logo controls include
+Off, Static, and Breathing. Native Fn keys stay under firmware control; OpenBlade
+does not change Driver mode or borrow another model's brightness-step sequence.
+Static keyboard colors and host-rendered effects are not yet admitted: upstream
+custom frames are documented as tested on the Blade 16, without an exact Blade 18
+frame/layout validation.
+
+Lighting changes require a readable starting effect and independent readback.
+Unknown effects, unsupported parameters, and a non-Off effect whose brightness
+rounds to 0% block changes and retain decoded diagnostics. Effect replies may
+contain known zero padding; brightness and logo exchanges currently require the
+exact three-byte reply shape. A different reply shape can block a query or pause
+writes even when the firmware accepted a setter.
+
+Returning to the same displayed brightness does not prove exact raw-register
+restoration: the 0–255 register is presented as integer percentages. An Off logo
+also hides its stored effect. Physical validation must preserve those values
+through an admitted developer path before claiming exact restoration. This change
+has not completed that validation.
 
 Admission checks Razer and the exact product name in both Windows registry
 sources, then the exact USB identity and 91-byte HID feature-report geometry.

@@ -95,8 +95,8 @@ internal static class ServiceComposition
                 () => ProductionBatteryFactory.CreateWindowsReadOnly(
                     provider.GetRequiredService<FirmwareCompatibilityPolicy>())));
         services.AddSingleton<IProductionLightingPortFactory>(provider =>
-            provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory
-                ? UnavailableExperimentalLightingFactory.Instance
+            provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory experimental
+                ? experimental.CreateLightingFactory()
                 : CreateProductionLightingFactory(
                     provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
         services.AddSingleton(provider =>
@@ -240,15 +240,8 @@ internal static class ServiceComposition
         return ProfileSetValidator.CreateForDeviceCapabilities(
             batteryFactory is ExperimentalBladeFactory experimental
                 ? experimental.PotentialCapabilities : batteryFactory.Capabilities,
-            lightingFactory.Capabilities);
-    }
-
-    private sealed class UnavailableExperimentalLightingFactory : IProductionLightingPortFactory
-    {
-        internal static readonly UnavailableExperimentalLightingFactory Instance = new();
-        public OpenBlade.Contracts.DeviceCapabilities Capabilities => OpenBlade.Contracts.DeviceCapabilities.Unavailable();
-        public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new HidSessionResult<IProductionLightingPort>(null, HidSessionFailureKind.IdentityBlocked));
+            batteryFactory is ExperimentalBladeFactory experimentalLighting
+                ? experimentalLighting.PotentialCapabilities : lightingFactory.Capabilities);
     }
 
     private sealed class UnavailableExperimentalFanRpmFactory : IFanRpmQueryRunFactory

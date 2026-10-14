@@ -8,6 +8,53 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class ExperimentalBladeFactoryTests
 {
     [Fact]
+    public async Task Blade18LightingAdapter_SharesConsentAndRetainedLowPowerAdmission()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var io = new Io();
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
+            new Guard(), io, () => PowerSource.ExternalUnknown);
+        IProductionLightingPortFactory lighting = factory.CreateLightingFactory();
+        Assert.Empty(lighting.Capabilities.LightingEffects);
+        Assert.Contains(LightingEffect.Spectrum, factory.PotentialCapabilities.LightingEffects);
+        factory.SetEnabled(true);
+        Assert.True(lighting.Capabilities.SupportsKeyboardBrightness);
+        bool active = true;
+        HidSessionResult<IProductionLightingPort> opened = await lighting.OpenAsync(() => active, CancellationToken.None);
+        Assert.Null(opened.Failure);
+        await using IProductionLightingPort port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+        Assert.Equal(new byte[] { 0x82, 0x82 }, io.Commands);
+        active = false;
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(77), CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(2, io.Commands.Count);
+        factory.SetEnabled(false);
+        Assert.Empty(port.Capabilities.LightingEffects);
+        Assert.False(port.Capabilities.SupportsKeyboardBrightness);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    [InlineData(0x02C5)]
+    [InlineData(0x0255)]
+    public async Task LightingAdapter_OtherExperimentalModelsDoNotOpenHid(int productId)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var io = new Io();
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
+            new Guard(), io, () => PowerSource.ExternalUnknown);
+        factory.SetEnabled(true);
+        HidSessionResult<IProductionLightingPort> result = await factory.CreateLightingFactory().OpenAsync(CancellationToken.None);
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
+        Assert.Empty(io.Commands);
+        Assert.Equal(0, native.BoundCount);
+    }
+
+    [Fact]
     public async Task CancellationAfterSelectingFirstInterface_ReturnsCanceledAndDisposesBothHandles()
     {
         using var cancellation = new CancellationTokenSource();
@@ -75,10 +122,10 @@ public sealed class ExperimentalBladeFactoryTests
         new(ExperimentalBladeModels.All[0], new Identity(), native, new Guard(), io,
             () => PowerSource.ExternalUnknown);
 
-    private sealed class Identity : IHostIdentitySource
+    private sealed class Identity(string product = "Blade 16 - RZ09-0483") : IHostIdentitySource
     {
         public HostIdentityReadResult ReadExactIdentity() => new(
-            new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0483", null, "test-firmware"), null);
+            new HostIdentityEvidence("Razer", product, null, "test-firmware"), null);
     }
 
     private sealed class Guard : IHardwareAccessGuard
@@ -90,6 +137,7 @@ public sealed class ExperimentalBladeFactoryTests
     {
         private readonly OpenedCandidateHandle[] handles;
         private readonly int[] reads;
+        internal ushort ProductId { get; init; } = 0x029F;
         internal int[] DisposeCounts { get; }
         internal int BoundCount { get; private set; }
         internal Action? BeforeSecondInterfaceRecheck { get; init; }
@@ -122,7 +170,7 @@ public sealed class ExperimentalBladeFactoryTests
             {
                 BeforeSecondInterfaceRecheck?.Invoke();
             }
-            return new(0x1532, 0x029F, 1, 2, 91);
+            return new(0x1532, ProductId, 1, 2, 91);
         }
 
         public OpenedHidHandle BindSelected(OpenedCandidateHandle handle)

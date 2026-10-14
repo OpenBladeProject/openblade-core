@@ -114,6 +114,8 @@ internal static class ServiceStatusSnapshotComparer
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
+            && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection
+            && left.SupportsWaveDirectionSelection == right.SupportsWaveDirectionSelection
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
             && string.Equals(

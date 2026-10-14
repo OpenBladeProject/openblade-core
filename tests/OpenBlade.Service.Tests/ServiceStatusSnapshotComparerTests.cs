@@ -107,6 +107,8 @@ public sealed class ServiceStatusSnapshotComparerTests
                     CustomPerformance = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>()),
                 },
             },
+            baseline with { Capabilities = baseline.Capabilities! with { SupportsBreathingColorSelection = false } },
+            baseline with { Capabilities = baseline.Capabilities! with { SupportsWaveDirectionSelection = false } },
             baseline with { ThermalConvergence = baseline.ThermalConvergence! with { ExplicitReapplyRequired = true } },
         ];
 

@@ -5,6 +5,36 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ProfileSetValidatorTests
 {
+    [Fact]
+    public void RestrictedLightingPolicy_RetainsSupportedProfilesAndRejectsUnsupportedParameters()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Breathing, LightingEffect.Wave },
+            SupportsBreathingColorSelection = false,
+            SupportsWaveDirectionSelection = false,
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities, capabilities);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        foreach (LightingSettings lighting in new[]
+        {
+            LightingSettingsFactory.BreathingRandom(77),
+            LightingSettingsFactory.Wave(LightingDirection.Rightward, 77),
+        })
+        {
+            validator.Validate(profiles with { PluggedIn = profiles.PluggedIn with { Lighting = lighting } });
+        }
+        foreach (LightingSettings lighting in new[]
+        {
+            LightingSettingsFactory.BreathingSingle(new RgbColor(1, 2, 3), 77),
+            LightingSettingsFactory.Wave(LightingDirection.Leftward, 77),
+        })
+        {
+            Assert.Throws<InvalidDataException>(() =>
+                validator.Validate(profiles with { PluggedIn = profiles.PluggedIn with { Lighting = lighting } }));
+        }
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(WindowsPowerMode.BestPowerEfficiency)]

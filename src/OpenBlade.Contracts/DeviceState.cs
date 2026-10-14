@@ -199,6 +199,11 @@ public sealed record DeviceCapabilities(
 {
     public bool SupportsKeyboardBrightness { get; init; }
 
+    // Older/full implementations support the complete parameter pickers by default.
+    public bool SupportsBreathingColorSelection { get; init; } = true;
+
+    public bool SupportsWaveDirectionSelection { get; init; } = true;
+
     public bool SupportsPlaybackMuteIndicator { get; init; }
 
     public FanSpeedRange? FanSpeedRange { get; init; }

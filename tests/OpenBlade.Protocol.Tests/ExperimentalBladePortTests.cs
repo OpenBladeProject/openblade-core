@@ -326,17 +326,20 @@ public sealed class ExperimentalBladePortTests
     public async Task Blade18_UsesItsUpstreamModesAndConfirmsSilent(int initialMode)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
-        var session = new Session([0, 1, (byte)initialMode, 0], [0, 2, (byte)initialMode, 0],
-            [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]);
+        byte[][] baseline = initialMode == 4
+            ? [[0, 1, 4, 0], [0, 2, 4, 0], [0, 1, 0], [0, 2, 0]]
+            : [[0, 1, (byte)initialMode, 0], [0, 2, (byte)initialMode, 0]];
+        var session = new Session([.. baseline, [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]]);
         var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
             () => PowerSource.ExternalUnknown);
         Assert.Equal(DeviceFeatureAccess.ObservedOnly, port.Capabilities.HyperBoostAccess);
-        Assert.Empty(port.Capabilities.LightingEffects);
+        Assert.Contains(LightingEffect.Spectrum, port.Capabilities.LightingEffects);
         Assert.Contains(LightingEffect.Wave, port.Capabilities.ObservedLightingEffects);
-        Assert.DoesNotContain(PerformancePreset.Performance, port.Capabilities.PerformancePresets);
+        Assert.Contains(PerformancePreset.Performance, port.Capabilities.PerformancePresets);
         await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
-        Assert.Equal(new byte[] { 0x82, 0x82, 0x02, 0x02, 0x82, 0x82 }, session.Commands.Select(item => item.CommandId));
+        Assert.Equal(initialMode == 4 ? new byte[] { 0x82, 0x82, 0x87, 0x87, 0x02, 0x02, 0x82, 0x82 }
+            : new byte[] { 0x82, 0x82, 0x02, 0x02, 0x82, 0x82 }, session.Commands.Select(item => item.CommandId));
         Assert.True(policy.WritesAllowed);
     }
 

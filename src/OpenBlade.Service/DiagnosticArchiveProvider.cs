@@ -427,6 +427,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
         result["lighting.keyboardBrightness"] = capabilities.SupportsKeyboardBrightness;
+        result["lighting.breathingColorSelection"] = capabilities.SupportsBreathingColorSelection;
+        result["lighting.waveDirectionSelection"] = capabilities.SupportsWaveDirectionSelection;
         result["lighting.playbackMuteIndicator"] = capabilities.SupportsPlaybackMuteIndicator;
         result["performance.customCombinations"] =
             capabilities.CustomPerformance?.IsWellFormed == true;

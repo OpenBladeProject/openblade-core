@@ -957,6 +957,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         PerformancePresets = new HashSet<PerformancePreset>(),
                         ChargeLimits = new HashSet<int>(),
                         SupportsBatteryProtectionOff = false,
+                        CustomPerformance = null,
+                        LightingEffects = new HashSet<LightingEffect>(),
+                        LogoLightingModes = new HashSet<LogoLightingMode>(),
+                        SupportsKeyboardBrightness = false,
                     }
                     : current.Capabilities,
             };

@@ -3847,7 +3847,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public LightingEffect LightingEffectEditor
     {
         get => lightingEditor.Effect;
-        set => lightingEditor.Effect = value;
+        set
+        {
+            lightingEditor.Effect = value;
+            ApplyLightingParameterDefaults();
+        }
     }
 
     public LightingEffectOption? SelectedLightingEffectOption
@@ -3861,6 +3865,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (value is not null)
             {
                 lightingEditor.SelectEffect(value.Effect);
+                ApplyLightingParameterDefaults();
             }
         }
     }
@@ -3925,8 +3930,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         set => lightingEditor.SecondaryColor = value;
     }
 
-    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes { get; } =
-        Enum.GetValues<BreathingColorMode>();
+    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes =>
+        Capabilities.SupportsBreathingColorSelection ? Enum.GetValues<BreathingColorMode>() : [BreathingColorMode.Random];
+
+    private void ApplyLightingParameterDefaults()
+    {
+        if (LightingEffectEditor == LightingEffect.Breathing && !Capabilities.SupportsBreathingColorSelection)
+        {
+            lightingEditor.BreathingColorMode = BreathingColorMode.Random;
+        }
+        if (LightingEffectEditor == LightingEffect.Wave && !Capabilities.SupportsWaveDirectionSelection)
+        {
+            lightingEditor.Direction = LightingDirection.Rightward;
+        }
+    }
 
     public BreathingColorMode LightingBreathingColorModeEditor
     {
@@ -3973,11 +3990,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public IReadOnlyList<LightingDirectionOption> LightingDirectionOptions =>
         LightingEffectEditor == LightingEffect.Tidal
             ? TidalLightingDirectionOptions
-            : StandardLightingDirectionOptions;
+            : LightingEffectEditor == LightingEffect.Wave && !Capabilities.SupportsWaveDirectionSelection
+                ? StandardLightingDirectionOptions.Where(option => option.Value == LightingDirection.Rightward).ToArray()
+                : StandardLightingDirectionOptions;
 
     public LightingDirectionOption SelectedLightingDirectionOption
     {
-        get => LightingDirectionOptions.First(option => option.Value == LightingDirectionEditor);
+        get => LightingDirectionOptions.FirstOrDefault(option => option.Value == LightingDirectionEditor)
+            ?? LightingDirectionOptions[0];
         set
         {
             if (value is not null)
@@ -4069,7 +4089,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool LightingShowsBrightness => LightingEffectEditor != LightingEffect.Off;
 
     public bool LightingShowsBreathingColorMode =>
-        LightingEffectEditor == LightingEffect.Breathing;
+        LightingEffectEditor == LightingEffect.Breathing && Capabilities.SupportsBreathingColorSelection;
 
     public bool LightingShowsStarlightColorMode =>
         LightingEffectEditor == LightingEffect.Starlight;
@@ -4104,7 +4124,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingEffectEditor == LightingEffect.Tidal;
 
     public bool LightingShowsDirection =>
-        LightingEffectEditor is LightingEffect.Tidal or LightingEffect.Wave;
+        LightingEffectEditor == LightingEffect.Tidal
+            || LightingEffectEditor == LightingEffect.Wave && Capabilities.SupportsWaveDirectionSelection;
 
     public bool LightingShowsRotationDirection =>
         LightingEffectEditor == LightingEffect.Wheel;
@@ -8820,6 +8841,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         NotifyComputed(nameof(LightingShowsBrightness), LightingShowsBrightness);
         NotifyComputed(nameof(LightingShowsBreathingColorMode), LightingShowsBreathingColorMode);
+        NotifyComputed(nameof(LightingBreathingColorModes), LightingBreathingColorModes);
         NotifyComputed(nameof(LightingShowsStarlightColorMode), LightingShowsStarlightColorMode);
         NotifyComputed(nameof(LightingShowsPrimaryColor), LightingShowsPrimaryColor);
         NotifyComputed(nameof(LightingShowsSecondaryColor), LightingShowsSecondaryColor);

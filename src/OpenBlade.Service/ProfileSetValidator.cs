@@ -13,7 +13,9 @@ public sealed class ProfileValidationPolicy
         IReadOnlySet<LightingEffect> supportedLightingEffects,
         CustomPerformanceCapabilities? customPerformance = null,
         FanSpeedRange? fanSpeedRange = null,
-        string? keyboardLightingLayoutId = null)
+        string? keyboardLightingLayoutId = null,
+        bool supportsBreathingColorSelection = true,
+        bool supportsWaveDirectionSelection = true)
     {
         ArgumentNullException.ThrowIfNull(supportedPerformanceFanCombinations);
         ArgumentNullException.ThrowIfNull(supportedLightingEffects);
@@ -27,6 +29,8 @@ public sealed class ProfileValidationPolicy
                     customPerformance.AllowedCombinations));
         FanSpeedRange = fanSpeedRange;
         KeyboardLightingLayoutId = keyboardLightingLayoutId;
+        SupportsBreathingColorSelection = supportsBreathingColorSelection;
+        SupportsWaveDirectionSelection = supportsWaveDirectionSelection;
     }
 
     public IReadOnlySet<PerformanceFanCombination> SupportedPerformanceFanCombinations { get; }
@@ -38,6 +42,10 @@ public sealed class ProfileValidationPolicy
     public FanSpeedRange? FanSpeedRange { get; }
 
     public string? KeyboardLightingLayoutId { get; }
+
+    public bool SupportsBreathingColorSelection { get; }
+
+    public bool SupportsWaveDirectionSelection { get; }
 
     public static ProfileValidationPolicy CreateUnverifiedSafeDefaults() => new(
         new HashSet<PerformanceFanCombination>
@@ -81,7 +89,9 @@ public sealed class ProfileValidationPolicy
             supportedLightingEffects,
             batteryCapabilities.CustomPerformance,
             batteryCapabilities.FanSpeedRange,
-            lightingCapabilities.KeyboardLightingLayoutId);
+            lightingCapabilities.KeyboardLightingLayoutId,
+            lightingCapabilities.SupportsBreathingColorSelection,
+            lightingCapabilities.SupportsWaveDirectionSelection);
     }
 }
 
@@ -381,6 +391,17 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         if (!LightingSettingsValidation.IsWellFormed(lighting))
         {
             throw Invalid($"The {name} lighting effect parameters are invalid.");
+        }
+
+        if (!validationPolicy.SupportsBreathingColorSelection
+            && lighting.Parameters is BreathingLightingParameters { ColorMode: not BreathingColorMode.Random })
+        {
+            throw Invalid($"The {name} lighting policy supports random Breathing only.");
+        }
+        if (!validationPolicy.SupportsWaveDirectionSelection
+            && lighting.Parameters is WaveLightingParameters { Direction: not LightingDirection.Rightward })
+        {
+            throw Invalid($"The {name} lighting policy supports the upstream Wave direction only.");
         }
 
         if (lighting.Parameters is SequenceLightingParameters sequence

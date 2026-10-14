@@ -6114,6 +6114,45 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task ExperimentalLightingParameters_OfferOnlyAdmittedModesAndUpdateOnCapabilityChanges()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false) with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                SupportsBreathingColorSelection = false,
+                SupportsWaveDirectionSelection = false,
+            },
+        };
+        client.Publish(initial);
+        await WaitUntilAsync(() => !viewModel.Capabilities.SupportsWaveDirectionSelection);
+        viewModel.LightingEffectEditor = LightingEffect.Breathing;
+        Assert.Equal(new[] { BreathingColorMode.Random }, viewModel.LightingBreathingColorModes);
+        Assert.Equal(BreathingColorMode.Random, viewModel.LightingBreathingColorModeEditor);
+        Assert.False(viewModel.LightingShowsBreathingColorMode);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+        viewModel.LightingEffectEditor = LightingEffect.Wave;
+        Assert.Equal(LightingDirection.Rightward, Assert.Single(viewModel.LightingDirectionOptions).Value);
+        Assert.Equal(LightingDirection.Rightward, viewModel.LightingDirectionEditor);
+        Assert.False(viewModel.LightingShowsDirection);
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Capabilities = initial.Capabilities! with
+            {
+                SupportsBreathingColorSelection = true,
+                SupportsWaveDirectionSelection = true,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.Capabilities.SupportsWaveDirectionSelection);
+        Assert.Equal(2, viewModel.LightingDirectionOptions.Count);
+        Assert.Equal(3, viewModel.LightingBreathingColorModes.Count);
+    }
+
+    [Fact]
     public async Task ExperimentalConsent_ExistingLabPreferenceAndRejectedEnableDoNotAuthorizeControls()
     {
         var client = new FakeServiceClient
