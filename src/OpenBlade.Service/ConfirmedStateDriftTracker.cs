@@ -14,6 +14,10 @@ public sealed class ConfirmedStateDriftTracker
     private ConfirmedBatteryState? battery;
     private bool? temporaryFullCharge;
     private LightingSettings? lighting;
+    private readonly Func<bool>? retireCompletedTemporaryFullCharge;
+
+    public ConfirmedStateDriftTracker(Func<bool>? retireCompletedTemporaryFullCharge = null) =>
+        this.retireCompletedTemporaryFullCharge = retireCompletedTemporaryFullCharge;
 
     public IReadOnlyList<DeviceSubsystem> ExternalChanges =>
         externalChangesSnapshot ??= new ReadOnlyCollection<DeviceSubsystem>(
@@ -109,6 +113,16 @@ public sealed class ConfirmedStateDriftTracker
                 || battery.ChargeLimitPercent != observed.ChargeLimitPercent))
         {
             AddExternalChange(DeviceSubsystem.Battery);
+        }
+
+        // A confirmed true-to-false readback is the firmware one-shot ending,
+        // whether by completion or an outside cancel. When the caller retires
+        // its matching intent, that end is not an external change.
+        if (temporaryFullCharge is true
+            && observed.TemporaryFullCharge is false
+            && retireCompletedTemporaryFullCharge?.Invoke() == true)
+        {
+            temporaryFullCharge = false;
         }
 
         ObserveValue(

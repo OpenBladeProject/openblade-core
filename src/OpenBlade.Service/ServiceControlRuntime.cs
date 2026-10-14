@@ -811,6 +811,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
         this.timeProvider = timeProvider ?? TimeProvider.System;
         resumeStateValidation = new ResumeStateValidationTracker(this.timeProvider);
+        driftTracker = CreateDriftTracker();
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
@@ -10792,7 +10793,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         unexpectedExitRecoveryDeferredForUserConfiguration = true;
         initialAutomaticComparisons.Clear();
-        driftTracker = new ConfirmedStateDriftTracker();
+        driftTracker = CreateDriftTracker();
         // An unexpected-exit classification reset is not hardware evidence.
         // Retain pending writes until a later full observation resolves them.
         ServiceStatusSnapshot current = GetStatus();
@@ -14703,6 +14704,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preserveObservedExternalChanges
                     ? GetCoupledAutomaticWriteExclusions()
                     : pendingWriteConfirmations.GetWriteExclusions());
+            if (desired.Battery.TemporaryFullCharge
+                && !Automation.DesiredBattery.TemporaryFullCharge)
+            {
+                // The one-shot ended between resolving this transition and its
+                // readback; the resolved intent is stale, so never replay it.
+                exclusions.Add(DeviceSubsystem.Battery);
+            }
             if (confirmed.HyperBoostActive != false)
             {
                 // Unknown activity is excluded exactly like active HyperBoost.
@@ -16367,16 +16375,45 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private ConfirmedStateDriftTracker CreateDriftTracker() => new(RetireCompletedTemporaryFullCharge);
+
+    private DesiredDeviceState WithoutRetiredTemporaryFullCharge(DesiredDeviceState desired) =>
+        desired.Battery.TemporaryFullCharge
+        && automation is { DesiredBattery.TemporaryFullCharge: false }
+            ? desired with
+            {
+                Battery = new DesiredBatteryState(
+                    desired.Battery.ConfiguredPolicy,
+                    desired.Battery.ProtectionEnabled,
+                    false),
+            }
+            : desired;
+
+    private bool RetireCompletedTemporaryFullCharge()
+    {
+        if (automation is not { DesiredBattery.TemporaryFullCharge: true } current)
+        {
+            return false;
+        }
+
+        current.CancelTemporaryFullCharge();
+        return true;
+    }
+
     private void ObserveAutomaticState(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState? expected = null,
         DesiredDeviceState? alternateExpected = null)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
-        DesiredDeviceState desired = expected ?? ResolveHardwareDesired(confirmed);
         bool lightingExternalBeforeObservation =
             driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         driftTracker.Observe(confirmed);
+        DesiredDeviceState desired = WithoutRetiredTemporaryFullCharge(
+            expected ?? ResolveHardwareDesired(confirmed));
+        alternateExpected = alternateExpected is null
+            ? null
+            : WithoutRetiredTemporaryFullCharge(alternateExpected);
 
         // Neither branch below re-examines Lighting once the initial comparison
         // has run (CompareInitialAutomaticValue/CompareTransitionAutomaticValue

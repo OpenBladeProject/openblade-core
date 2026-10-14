@@ -269,6 +269,50 @@ public sealed class ConfirmedStateDriftTrackerTests
         Assert.Empty(tracker.ExternalChanges);
     }
 
+    [Fact]
+    public void ConfirmedActiveToInactive_RetiresIntentInsteadOfLatching()
+    {
+        int retirements = 0;
+        var tracker = new ConfirmedStateDriftTracker(() =>
+        {
+            retirements++;
+            return true;
+        });
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, true)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, null)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, false)));
+
+        Assert.Equal(1, retirements);
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void InactiveWithoutConfirmedActiveBaseline_NeverRetiresIntent()
+    {
+        int retirements = 0;
+        var tracker = new ConfirmedStateDriftTracker(() =>
+        {
+            retirements++;
+            return true;
+        });
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, false)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, null)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, false)));
+
+        Assert.Equal(0, retirements);
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void ConfirmedActiveToInactive_WithoutIntentStillLatches()
+    {
+        var tracker = new ConfirmedStateDriftTracker(() => false);
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, true)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, false)));
+
+        Assert.Equal([DeviceSubsystem.Battery], tracker.ExternalChanges);
+    }
+
     private static ConfirmedDeviceState State(
         PerformancePreset? performance = null,
         FanMode? fans = null,
