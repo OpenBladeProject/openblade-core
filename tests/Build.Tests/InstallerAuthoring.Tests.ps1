@@ -469,8 +469,8 @@ Assert-True ($dotNetSourceFile.EndsWith('\' + $dotNetPrerequisite.FileName) -and
     $dotNetPackage.GetAttribute('Permanent') -eq 'yes' -and
     $dotNetPackage.GetAttribute('Cache') -eq 'remove' -and
     $dotNetPackage.GetAttribute('InstallArguments') -eq '/install /quiet /norestart' -and
-    $dotNetPackage.GetAttribute('RepairArguments') -eq '/repair /quiet /norestart' -and
-    $dotNetPackage.GetAttribute('RepairCondition') -eq 'OpenBladeDotNetRuntimeVersion = OpenBladeMinimumDotNetRuntimeVersion' -and
+    $dotNetPackage.GetAttribute('RepairArguments') -eq '' -and
+    $dotNetPackage.GetAttribute('RepairCondition') -eq '' -and
     $dotNetPackage.GetAttribute('Bundle') -eq 'yes' -and
     $dotNetPackage.GetAttribute('Protocol') -eq 'burn') `
     'The .NET prerequisite must retain its pinned download, offline option, and shared-runtime ownership.'

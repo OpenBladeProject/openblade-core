@@ -26,8 +26,9 @@ Setup and developer tools remain self-contained.
 The shared runtime must be a stable 10.0 patch at or above the published minimum.
 Setup uses the x64 location registered in the 32-bit registry view, as the .NET
 apphost does. It checks the selected Desktop runtime and its declared core-runtime
-dependency before staging the update. Repair can repair the pinned .NET prerequisite.
-If a newer shared runtime is damaged, repair that version with Microsoft's .NET 10
+dependency before staging the update. OpenBlade repair leaves an installed shared
+runtime alone.
+If the selected shared runtime is damaged, repair that version with Microsoft's .NET 10
 Desktop Runtime installer, then retry OpenBlade setup.
 
 For an offline installer, run `build/Publish.ps1 -OfflineInstaller`. This embeds
