@@ -44,6 +44,49 @@ If submission or readback is ambiguous, stop further writes and reconcile
 read-only. If restoration fails or cannot be confirmed, stop and report the
 unresolved state; never replay an uncertain write, guess, or widen authority.
 
+## Direct transitions
+
+Apply the requested destination through the shortest supported typed command
+sequence. Prefer direct transitions across performance, fans, HyperBoost,
+power-source changes, lifecycle cleanup, battery, lighting, and display controls.
+Do not reset to Balanced, Automatic, Off, or another default as a blanket entry
+requirement.
+
+Every prerequisite gate or intermediate hardware write must have a concrete
+reason: a firmware command contract, an observed direct-transition failure, or
+an actual cleanup or restoration dependency. Document that reason near the gate
+and in its focused test. A captured starting state is validation provenance,
+not proof that firmware requires that state. Missing profile permutations or a
+large validation matrix do not establish a prerequisite.
+
+When removing a gate, trace the complete path: protocol admission, service
+transitions, desired-state normalization, profile validation, recovery, and UI.
+Remove related forced defaults, redundant writes, and user-facing restrictions
+together. Preserve saved intent, and distinguish requested settings from what
+firmware can actually report; an unreadable field must not become a guessed
+confirmation.
+
+For transitions using commands already admitted for the exact device, resolve
+the new uncertainty with a short typed, reversible round trip. Validate each
+materially different command sequence or backend; do not require every profile,
+fan subtype, or connector combination when source inspection shows the same
+commands and relevant conditions. Record the device and conditions exercised,
+and any behavior left untested. Reuse existing capture evidence; require new
+captures only for an unknown command or a concrete unresolved result.
+
+Tests should assert the requested outcome, necessary ordering, and failure
+handling rather than preserve historical intermediate states. Expand validation
+only when a changed path, observed failure, or specific unresolved risk warrants
+it. During shutdown or confirmed low-power cleanup, reach the required firmware
+handoff directly instead of restoring user settings only to undo them again;
+keep those settings saved for the next active reconciliation.
+
+Direct transitions retain fresh exact-device, capability, controller, power,
+session, ownership, and applicable readback admission. If a failed or canceled
+operation may have submitted a write, or confirmation is ambiguous, stop and
+reconcile read-only; do not try an alternative sequence or replay the uncertain
+write. Existing authorization and attended sleep/resume requirements still apply.
+
 ## Product boundary
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
@@ -181,12 +224,11 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
 ## Hardware and capture safety
 
 - Treat all uncaptured write commands as unsafe and unsupported.
-- Keep validation proportionate. When the vendor software already offers a
-  transition and OpenBlade would send only captured commands, test it directly
-  through OpenBlade's typed, reversible path instead of first requiring new
-  vendor captures, annotations, or lifecycle studies. Add evidence steps only
-  for a concrete risk, such as an uncaptured command, an unrecoverable state,
-  or an unexplained readback.
+- Keep validation proportionate. For transitions using commands already admitted
+  for the exact device, prefer a direct test through OpenBlade's typed,
+  reversible path. Vendor UI availability or a new capture matrix is not a
+  prerequisite for that test. Add evidence steps only for a concrete risk, such
+  as an uncaptured command, an unrecoverable state, or an unexplained readback.
 - Read/query first. For a new write, save prior confirmed state, show the exact
   action, apply one value, read it back, and restore it.
 - Explicit approval for unattended hardware validation extends only to
