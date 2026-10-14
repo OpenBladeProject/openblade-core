@@ -71,7 +71,13 @@ internal static class WriteConfirmationPolicy
             return null;
         }
 
-        if (confirmed.HyperBoostActive != expected)
+        if (confirmed.HyperBoostActive is not bool observed)
+        {
+            // Unknown activity is never evidence against the pending write.
+            return PendingConfirmationResult.Unavailable;
+        }
+
+        if (observed != expected)
         {
             return PendingConfirmationResult.Mismatch;
         }

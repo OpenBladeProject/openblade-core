@@ -210,16 +210,16 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   method OpenBlade.Contracts.CustomPerformanceSettings get_CustomPerformance()
   method OpenBlade.Contracts.GpuClockOffsetCapabilities get_GpuClockOffsets()
   method OpenBlade.Contracts.LightingSettings get_Lighting()
-  method System.Boolean get_HyperBoostActive()
   method System.Nullable<OpenBlade.Contracts.FanMode> get_Fans()
   method System.Nullable<OpenBlade.Contracts.LogoLightingMode> get_LogoLighting()
   method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_Performance()
+  method System.Nullable<System.Boolean> get_HyperBoostActive()
   method System.Void Deconstruct(out System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance, out System.Nullable<OpenBlade.Contracts.FanMode> Fans, out OpenBlade.Contracts.ConfirmedBatteryState Battery, out OpenBlade.Contracts.LightingSettings Lighting)
   method System.Void set_Battery(OpenBlade.Contracts.ConfirmedBatteryState value)
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
   method System.Void set_Fans(System.Nullable<OpenBlade.Contracts.FanMode> value)
   method System.Void set_GpuClockOffsets(OpenBlade.Contracts.GpuClockOffsetCapabilities value)
-  method System.Void set_HyperBoostActive(System.Boolean value)
+  method System.Void set_HyperBoostActive(System.Nullable<System.Boolean> value)
   method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
   method System.Void set_LogoLighting(System.Nullable<OpenBlade.Contracts.LogoLightingMode> value)
   method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
@@ -233,10 +233,10 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   property OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance { get; init; }
   property OpenBlade.Contracts.GpuClockOffsetCapabilities GpuClockOffsets { get; init; }
   property OpenBlade.Contracts.LightingSettings Lighting { get; init; }
-  property System.Boolean HyperBoostActive { get; init; }
   property System.Nullable<OpenBlade.Contracts.FanMode> Fans { get; init; }
   property System.Nullable<OpenBlade.Contracts.LogoLightingMode> LogoLighting { get; init; }
   property System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance { get; init; }
+  property System.Nullable<System.Boolean> HyperBoostActive { get; init; }
 type sealed class OpenBlade.Contracts.ControlOperationResult
   interface System.IEquatable<OpenBlade.Contracts.ControlOperationResult>
   ctor (OpenBlade.Contracts.ControlOperationStatus Status, System.String Message)
@@ -1304,7 +1304,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 59
+  field const System.Int32 ProtocolVersion = 60
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

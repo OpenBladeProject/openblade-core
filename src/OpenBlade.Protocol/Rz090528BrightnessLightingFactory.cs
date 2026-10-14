@@ -1734,8 +1734,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 LogoStorageSelector,
                 out LogoLightingMode mode))
         {
-            throw new IOException(
-                "PID 02C6 logo response was malformed or unsupported.");
+            throw new DeviceStateContentRejectedException(
+                "PID 02C6 logo response was malformed or unsupported.",
+                DeviceStateQuery.LogoLightingCombination,
+                DeviceStateContentRejection.FormatPayloads(state.Span, effect.Span));
         }
 
         return mode;
@@ -1810,7 +1812,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             cancellationToken).ConfigureAwait(false);
         if (!LightingBrightnessProtocol.TryDecodeQuery(response.Span, out byte raw))
         {
-            throw new IOException("PID 02C6 brightness response was malformed.");
+            throw new DeviceStateContentRejectedException(
+                "PID 02C6 brightness response was malformed.",
+                DeviceStateQuery.KeyboardBrightness,
+                DeviceStateContentRejection.FormatPayload(response.Span));
         }
 
         return raw;
@@ -1881,8 +1886,10 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             throw result.Failure == HidSessionFailureKind.Timeout
                 ? new TimeoutException(
                     $"PID 02C6 lighting query {command.ClassId:X2}/{command.CommandId:X2} timed out.")
-                : new IOException(
-                    $"PID 02C6 lighting query {command.ClassId:X2}/{command.CommandId:X2} failed ({result.Failure}).");
+                : DeviceStateContentRejection.LightingReadFailure(
+                    $"PID 02C6 lighting query {command.ClassId:X2}/{command.CommandId:X2} failed ({result.Failure}).",
+                    command,
+                    result.Diagnostic);
         }
 
         WriteSubmissionState state = result.Failure is

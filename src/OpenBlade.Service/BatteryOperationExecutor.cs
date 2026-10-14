@@ -34,7 +34,10 @@ internal sealed class BatteryOperationExecutor(IBladeDevice device)
             return;
         }
 
-        ConfirmedBatteryState? refreshed = (await device.ReadStateAsync(cancellationToken)
+        ConfirmedBatteryState? refreshed = (await DeviceStateReadIsolation.ReadAsync(
+                device.ReadStateAsync,
+                DeviceStateReadIsolation.Battery,
+                cancellationToken)
             .ConfigureAwait(false)).Battery;
         if (refreshed?.TemporaryFullCharge is not false)
         {

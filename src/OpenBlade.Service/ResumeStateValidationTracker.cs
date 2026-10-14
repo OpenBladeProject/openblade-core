@@ -306,9 +306,11 @@ internal sealed class ResumeStateValidationTracker
         if (!baseline.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)
             && !baseline.ConfirmedWrites.Contains(DeviceSubsystem.Performance)
             && (baseline.Confirmed.Performance is not null
-                || baseline.Confirmed.HyperBoostActive)
+                || baseline.Confirmed.HyperBoostActive == true)
             && (observed.Performance is not null
-                || observed.HyperBoostActive)
+                || observed.HyperBoostActive == true)
+            && baseline.Confirmed.HyperBoostActive is not null
+            && observed.HyperBoostActive is not null
             && !baseline.GpuClockOffsetConfirmationInvalidated
             && (baseline.Confirmed.GpuClockOffsets is null
                 || observed.GpuClockOffsets is not null))
