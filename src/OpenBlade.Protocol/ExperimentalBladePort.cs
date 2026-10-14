@@ -50,6 +50,9 @@ internal sealed class ExperimentalBladePort(
             [0], false, cancellationToken).ConfigureAwait(false);
         if (payload.Span[0] is not (0x50 or 0xD0))
         {
+            policy.Record("BatteryProtection", "Query", "UnsupportedState",
+                confirmed: $"ReportedProtectionEnabled={(payload.Span[0] & 0x80) != 0};ReportedLimitPercent={payload.Span[0] & 0x7F}",
+                failure: "OutsideAdmittedBatteryStates");
             throw new IOException("Experimental battery readback is outside the admitted 80%/off states.");
         }
         bool enabled = payload.Span[0] == 0xD0;
@@ -80,6 +83,9 @@ internal sealed class ExperimentalBladePort(
             || first.Span[2] != second.Span[2] || first.Span[3] != second.Span[3]
             || first.Span[3] > 1)
         {
+            policy.Record("Performance", "Query", "InconsistentState",
+                confirmed: $"Selector1={first.Span[1]};Mode1={first.Span[2]};FanFlag1={first.Span[3]};Selector2={second.Span[1]};Mode2={second.Span[2]};FanFlag2={second.Span[3]}",
+                failure: "SelectorAgreement");
             throw new IOException("Experimental performance selectors returned inconsistent state.");
         }
         PerformancePreset performance = first.Span[2] switch

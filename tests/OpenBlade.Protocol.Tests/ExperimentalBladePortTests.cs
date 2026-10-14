@@ -19,6 +19,22 @@ public sealed class ExperimentalBladePortTests
     }
 
     [Fact]
+    public async Task UnsupportedBatteryRead_RecordsDecodedEvidenceWithoutEnablingWrites()
+    {
+        var session = new Session([0xBC]);
+        var policy = Enabled();
+        await using var port = Create(session, policy);
+
+        await Assert.ThrowsAsync<IOException>(() => port.QueryProtectionAsync(CancellationToken.None));
+
+        ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations);
+        Assert.Equal("UnsupportedState", observation.Outcome);
+        Assert.Contains("ReportedLimitPercent=60", observation.ConfirmedValue);
+        Assert.False(observation.Submitted);
+        Assert.All(session.Commands, command => Assert.Equal(0x92, command.CommandId));
+    }
+
+    [Fact]
     public async Task BatteryWrite_UsesBaselineThenIndependentGet()
     {
         var session = new Session([0x50], [0xD0], [0xD0]);
@@ -170,6 +186,22 @@ public sealed class ExperimentalBladePortTests
         await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
         Assert.Equal(new byte[] { 0x82, 0x82, 0x02, 0x02, 0x82, 0x82 },
             session.Commands.Select(command => command.CommandId));
+    }
+
+    [Fact]
+    public async Task PerformanceSelectorDisagreement_RecordsBothReportedModes()
+    {
+        var session = new Session([0, 1, 0, 0], [0, 2, 5, 0]);
+        var policy = Enabled();
+        await using var port = Create(session, policy);
+
+        await Assert.ThrowsAsync<IOException>(() => port.QueryPerformanceFanStateAsync(CancellationToken.None));
+
+        ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations);
+        Assert.Equal("InconsistentState", observation.Outcome);
+        Assert.Contains("Mode1=0", observation.ConfirmedValue);
+        Assert.Contains("Mode2=5", observation.ConfirmedValue);
+        Assert.False(observation.Submitted);
     }
 
     [Fact]

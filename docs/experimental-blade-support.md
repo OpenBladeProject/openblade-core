@@ -54,8 +54,9 @@ interfaces remain blocked.
 4. Return to the starting setting and check the result. If OpenBlade cannot
    confirm a write, stop further changes and export diagnostics before restarting.
    Do not repeat an uncertain write.
-5. Export diagnostics again and attach the ZIPs to the support issue with your
-   observations, including any difference between the displayed and actual result.
+5. Export diagnostics again and attach the ZIPs to the
+   [experimental support issue](https://github.com/OpenBladeProject/openblade-core/issues/741)
+   with your observations, including any difference between the displayed and actual result.
 
 OpenBlade checks replies and queries the resulting state independently. An
 ambiguous write or readback pauses further experimental writes for that service
