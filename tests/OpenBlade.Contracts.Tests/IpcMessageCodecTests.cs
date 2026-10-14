@@ -1982,6 +1982,24 @@ public sealed class IpcMessageCodecTests
         await AssertStatusWriteRejectedAsync(status);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingParameterCapabilities_RoundTrip(bool selectable)
+    {
+        ServiceStatusSnapshot original = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                SupportsBreathingColorSelection = selectable,
+                SupportsWaveDirectionSelection = selectable,
+            },
+        };
+        ServiceStatusSnapshot confirmed = await RoundTripStatusAsync(original);
+        Assert.Equal(selectable, confirmed.Capabilities!.SupportsBreathingColorSelection);
+        Assert.Equal(selectable, confirmed.Capabilities.SupportsWaveDirectionSelection);
+    }
+
     [Fact]
     public async Task HyperBoostBlockers_RoundTripAndOmittedFieldUsesConservativeFallback()
     {

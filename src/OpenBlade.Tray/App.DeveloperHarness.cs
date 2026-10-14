@@ -1243,7 +1243,8 @@ public partial class App
         // Synthetic, disconnected status exercises the restricted pickers without opening hardware.
         LightingSettings lighting = (wave
             ? LightingSettingsFactory.Wave(LightingDirection.Rightward, 77)
-            : LightingSettingsFactory.BreathingRandom(77)) with { LogoMode = LogoLightingMode.Static };
+            : LightingSettingsFactory.BreathingRandom(77)) with
+        { LogoMode = LogoLightingMode.Static };
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         profiles = profiles with { PluggedIn = profiles.PluggedIn with { Lighting = lighting } };
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
