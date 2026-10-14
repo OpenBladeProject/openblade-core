@@ -2029,4 +2029,25 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>[!! Chéck cúrrént státé ~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ExperimentalControlsTitle.Text" xml:space="preserve">
+    <value>[!! Éxpéríméntál láptóp cóntróls ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ExperimentalControlsDescription.Text" xml:space="preserve">
+    <value>[!! Énáblé cóntróls fór áddítíónál Bládé módéls béíng téstéd ín pré-réléásés. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ExperimentalControlsToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Énáblé éxpéríméntál láptóp cóntróls ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Éxpéríméntál láptóp súppórt ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ExperimentalConsent_Title" xml:space="preserve">
+    <value>[!! Énáblé éxpéríméntál láptóp cóntróls? ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ExperimentalConsent_Content" xml:space="preserve">
+    <value>[!! Thésé cóntróls úsé cómmúníty prótócól évídéncé ánd áré stíll béíng téstéd ón áddítíónál Bládé módéls. Séttíngs máy nót ápply ás éxpéctéd. ÓpénBládé récórds lócál díágnóstíc résúlts thát yóú cán chóósé tó éxpórt ánd sháré. Yóú cán túrn thésé cóntróls óff héré át ány tímé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ExperimentalConsent_Enable" xml:space="preserve">
+    <value>[!! Énáblé cóntróls ~~~~~ !!]</value>
+  </data>
 </root>

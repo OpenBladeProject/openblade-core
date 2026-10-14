@@ -1431,4 +1431,10 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Войдите в интерактивный сеанс Windows, чтобы изменить настройки ноутбука.</value>
   </data>
+  <data name="Experimental laptop controls are enabled. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>Экспериментальное управление включено. Экспортируйте диагностику в разделе «О программе», чтобы помочь с тестированием поддержки.</value>
+  </data>
+  <data name="This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls." xml:space="preserve">
+    <value>Для этого ноутбука доступна экспериментальная поддержка. Включите экспериментальное управление в настройках, чтобы попробовать доступные функции.</value>
+  </data>
 </root>

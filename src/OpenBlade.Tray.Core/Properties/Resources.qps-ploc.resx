@@ -1521,4 +1521,10 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>[!! Sígn ín tó án íntéráctívé Windows séssíón tó chángé láptóp séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Experimental laptop controls are enabled. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>[!! Éxpéríméntál láptóp cóntróls áré énábléd. Éxpórt díágnóstícs ín Ábóút tó hélp tést súppórt. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls." xml:space="preserve">
+    <value>[!! Thís láptóp hás éxpéríméntál súppórt. Énáblé éxpéríméntál láptóp cóntróls ín Séttíngs tó try thé áváíláblé cóntróls. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

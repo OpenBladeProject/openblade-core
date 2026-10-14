@@ -251,6 +251,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool alwaysOverrideExternalLightingChanges;
     private LightingRefreshRate lightingRefreshRate = LightingRefreshRate.ThirtyHz;
     private bool allowUntestedFirmware;
+    private bool allowExperimentalFeatures;
+    private bool isExperimentalDevice;
     private KeyboardLightingControlMode keyboardLightingControlMode;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
@@ -1523,6 +1525,36 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref allowUntestedFirmware, value);
     }
 
+    public bool AllowExperimentalFeatures
+    {
+        get => allowExperimentalFeatures;
+        private set
+        {
+            if (allowExperimentalFeatures != value)
+            {
+                SetField(ref allowExperimentalFeatures, value);
+                Notify(nameof(ExperimentalSupportNotice));
+            }
+        }
+    }
+
+    public bool IsExperimentalDevice
+    {
+        get => isExperimentalDevice;
+        private set
+        {
+            if (isExperimentalDevice != value)
+            {
+                SetField(ref isExperimentalDevice, value);
+                Notify(nameof(ExperimentalSupportNotice));
+            }
+        }
+    }
+
+    public string ExperimentalSupportNotice => AllowExperimentalFeatures
+        ? TrayText.Get("Experimental laptop controls are enabled. Export diagnostics in About to help test support.")
+        : TrayText.Get("This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls.");
+
     public KeyboardLightingControlMode KeyboardLightingControlMode
     {
         get => keyboardLightingControlMode;
@@ -1667,6 +1699,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await dispatcher.InvokeAsync(
                 () => AllowUntestedFirmware = enabled,
+                cancellationToken);
+        }
+
+        return accepted;
+    }
+
+    public async Task<bool> SetExperimentalFeaturesAsync(
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        ControlOperationStatus? resultStatus = null;
+        await RunOperationAsync(
+            async token =>
+            {
+                ControlOperationResult result = await serviceClient.SetExperimentalFeaturesAsync(enabled, token);
+                resultStatus = result.Status;
+                return result;
+            },
+            cancellationToken);
+        bool accepted = resultStatus is ControlOperationStatus.Applied or ControlOperationStatus.Stored;
+        if (accepted)
+        {
+            await dispatcher.InvokeAsync(
+                () => AllowExperimentalFeatures = enabled,
                 cancellationToken);
         }
 
@@ -5141,6 +5197,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             status.AlwaysOverrideExternalLightingChanges;
         LightingRefreshRate = status.LightingRefreshRate;
         AllowUntestedFirmware = status.AllowUntestedFirmware;
+        AllowExperimentalFeatures = status.AllowExperimentalFeatures;
+        IsExperimentalDevice = status.IsExperimentalDevice;
         KeyboardLightingControlMode = status.KeyboardLightingControlMode;
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)

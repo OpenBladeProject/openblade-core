@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 58;
+    public const int ProtocolVersion = 59;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -268,6 +268,7 @@ public static class IpcMessageCodec
             SetExternalLightingOverridePolicyRequest => true,
             SetLightingRefreshRateRequest set => Enum.IsDefined(set.RefreshRate),
             SetFirmwareCompatibilityOverrideRequest => true,
+            SetExperimentalFeaturesRequest => true,
             ReapplyChangedSettingsRequest => true,
             RecoverHyperBoostRestoreRequest => true,
             SetThermalControlPolicyRequest set => Enum.IsDefined(set.Policy),
@@ -887,6 +888,24 @@ public static class IpcMessageCodec
                         "observationReason",
                         StringComparison.OrdinalIgnoreCase));
                 observationReason.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo allowExperimentalFeatures = typeInfo.Properties.Single(
+                    property => string.Equals(
+                        property.Name,
+                        "allowExperimentalFeatures",
+                        StringComparison.OrdinalIgnoreCase));
+                allowExperimentalFeatures.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo isExperimentalDevice = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "isExperimentalDevice",
+                        StringComparison.OrdinalIgnoreCase));
+                isExperimentalDevice.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo experimentalSupportSource = typeInfo.Properties.Single(
+                    property => string.Equals(
+                        property.Name,
+                        "experimentalSupportSource",
+                        StringComparison.OrdinalIgnoreCase));
+                experimentalSupportSource.ShouldSerialize = static (_, _) => false;
             }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)

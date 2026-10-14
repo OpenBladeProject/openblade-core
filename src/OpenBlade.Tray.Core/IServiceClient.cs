@@ -132,6 +132,13 @@ public interface IServiceClient : IServiceStatusWatcher
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetExperimentalFeaturesAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Experimental laptop controls are unavailable."));
+
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(CancellationToken token);
 
     Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(CancellationToken token);

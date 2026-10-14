@@ -187,6 +187,25 @@ public sealed class ServiceStatusSnapshotComparerTests
             baseline, baseline with { Message = baseline.Message.ToUpperInvariant() }));
         Assert.False(ServiceStatusSnapshotComparer.Equivalent(
             baseline, baseline with { ServiceVersion = "VERSION" }));
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(
+            baseline,
+            baseline with { ExperimentalSupportSource = "COMMUNITY-VALIDATION" }));
+    }
+
+    [Fact]
+    public void Equivalent_DetectsExperimentalConsentAndDeviceState()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(
+            baseline,
+            baseline with { AllowExperimentalFeatures = true }));
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(
+            baseline,
+            baseline with { IsExperimentalDevice = true }));
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(
+            baseline,
+            baseline with { ExperimentalSupportSource = "community-validation" }));
     }
 
     private static ServiceStatusSnapshot CreateStatus()

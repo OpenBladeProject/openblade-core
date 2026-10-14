@@ -46,6 +46,10 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 Enabled: true),
+            new SetExperimentalFeaturesRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: true),
             new SetThermalControlPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -113,6 +117,7 @@ public sealed class ControlRequestHandlerTests
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
+            "SetExperimentalFeatures",
             "SetThermalControlPolicy", "AcknowledgeThermalPolicyUpgradeDisclosure",
             "ValidateThermalExternalDrift",
             "ReapplyChangedSettings",
@@ -687,6 +692,14 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(enabled);
             return Record("SetFirmwareCompatibilityOverride");
+        }
+
+        public Task<ControlOperationResult> SetExperimentalFeaturesAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            Assert.True(enabled);
+            return Record("SetExperimentalFeatures");
         }
 
         public Task<ControlOperationResult> SetThermalControlPolicyAsync(

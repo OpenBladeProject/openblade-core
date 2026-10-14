@@ -5556,6 +5556,43 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ExperimentalFeaturesConsent_PersistsGatesDeviceAndRevokesWithoutWrite()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+
+        ControlOperationResult enabled = await context.Runtime.SetExperimentalFeaturesAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, enabled.Status);
+        Assert.True(context.Provider.AllowExperimentalFeatures);
+        Assert.True(context.Runtime.GetStatus().AllowExperimentalFeatures);
+        Assert.True(context.Runtime.GetStatus().IsExperimentalDevice);
+        Assert.Equal(
+            "community-validation",
+            context.Runtime.GetStatus().ExperimentalSupportSource);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.True(saved.Preferences.AllowExperimentalFeatures);
+        int writesBeforeRevocation = context.Device.TotalSetterCalls;
+
+        ControlOperationResult disabled = await context.Runtime.SetExperimentalFeaturesAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, disabled.Status);
+        Assert.False(context.Provider.AllowExperimentalFeatures);
+        Assert.False(context.Runtime.GetStatus().AllowExperimentalFeatures);
+        Assert.True(context.Runtime.GetStatus().IsExperimentalDevice);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        Assert.Equal(writesBeforeRevocation, context.Device.TotalSetterCalls);
+        saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.False(saved.Preferences.AllowExperimentalFeatures);
+        Assert.Equal([false, true, false], context.Provider.ExperimentalConsentChanges);
+    }
+
+    [Fact]
     public async Task DisablingFirmwareCompatibilityOverride_RevokesOwnedRendererAfterUnknownProbe()
     {
         TestContext context = CreateContext(providerAvailable: false);
@@ -16022,6 +16059,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
         Assert.False(status.WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task Observation_MapsExperimentalExternalOnlyForExperimentalDevice()
+    {
+        TestContext stable = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        stable.Device.AdapterPowerState = AdapterPowerState.ExperimentalExternal;
+        stable.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        stable.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            stable.Runtime.GetStatus().Profiles.PluggedIn.Lighting);
+
+        await stable.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(PowerSource.ExternalUnknown, stable.Runtime.GetStatus().ActivePowerSource);
+        Assert.True(stable.Runtime.GetStatus().WritesBlocked);
+
+        TestContext experimental = CreateContext(
+            providerAvailable: false,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        experimental.Provider.AvailableWhenExperimentalAllowed = true;
+        experimental.Device.AdapterPowerState = AdapterPowerState.ExperimentalExternal;
+        experimental.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        experimental.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            experimental.Runtime.GetStatus().Profiles.PluggedIn.Lighting);
+
+        await experimental.Runtime.SetExperimentalFeaturesAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(PowerSource.PluggedIn, experimental.Runtime.GetStatus().ActivePowerSource);
+        Assert.False(experimental.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(2, experimental.Device.AdapterPowerReadCalls);
     }
 
     [Fact]
@@ -29448,6 +29525,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool AllowUntestedFirmware { get; private set; }
 
+        public bool AvailableWhenExperimentalAllowed { get; set; }
+
+        public bool AllowExperimentalFeatures { get; private set; }
+
+        public List<bool> ExperimentalConsentChanges { get; } = [];
+
+        public bool IsExperimentalDevice => AvailableWhenExperimentalAllowed;
+
+        public string? ExperimentalSupportSource => IsExperimentalDevice
+            ? "community-validation"
+            : null;
+
         public FirmwareCompatibilityStatus FirmwareCompatibility =>
             ReportUnknownFirmwareCompatibility
                 ? FirmwareCompatibilityStatus.Unknown
@@ -29534,11 +29623,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             verifiedDevice = Device;
             AfterTryGet?.Invoke();
             return Available
-                || (AvailableWhenUntestedFirmwareAllowed && AllowUntestedFirmware);
+                || (AvailableWhenUntestedFirmwareAllowed && AllowUntestedFirmware)
+                || (AvailableWhenExperimentalAllowed && AllowExperimentalFeatures);
         }
 
         public void SetAllowUntestedFirmware(bool enabled) =>
             AllowUntestedFirmware = enabled;
+
+        public void SetAllowExperimentalFeatures(bool enabled)
+        {
+            AllowExperimentalFeatures = enabled;
+            ExperimentalConsentChanges.Add(enabled);
+        }
 
         public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
         {

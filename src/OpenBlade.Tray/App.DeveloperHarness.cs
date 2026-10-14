@@ -597,6 +597,7 @@ public partial class App
                 "display",
                 "settings",
                 "settings-appearance",
+                "settings-experimental",
                 "about",
             };
             string? requestedPage = Environment.GetEnvironmentVariable(
@@ -649,10 +650,7 @@ public partial class App
                             : new Windows.Graphics.SizeInt32(1120, 820);
                 snapshotMainWindow.AppWindow.Resize(snapshotSize);
                 await WaitForSnapshotLayoutAsync();
-                string navigationDestination = string.Equals(
-                    destination,
-                    "settings-appearance",
-                    StringComparison.Ordinal)
+                string navigationDestination = destination is "settings-appearance" or "settings-experimental"
                     ? "settings"
                     : captureProfilesVariant
                         ? "profiles"
@@ -665,6 +663,11 @@ public partial class App
                     StringComparison.Ordinal))
                 {
                     snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
+                    await WaitForSnapshotLayoutAsync();
+                }
+                if (destination == "settings-experimental")
+                {
+                    snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
                     await WaitForSnapshotLayoutAsync();
                 }
                 await SaveSnapshotAsync(

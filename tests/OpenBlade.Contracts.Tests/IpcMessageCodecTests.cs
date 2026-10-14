@@ -153,6 +153,10 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             Enabled: true),
+        new SetExperimentalFeaturesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: true),
         new ReapplyChangedSettingsRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid()),
@@ -546,7 +550,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1133,7 +1137,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1277,6 +1281,38 @@ public sealed class IpcMessageCodecTests
         Assert.Equal("Unavailable", olderFrame.Status.Firmware?.TouchpadFirmwareVersion);
         Assert.Null(olderFrame.Status.Firmware?.ThunderboltFirmwareAccess);
         Assert.Null(olderFrame.Status.Firmware?.TouchpadFirmwareAccess);
+    }
+
+    [Fact]
+    public async Task ExperimentalStatus_NewReaderDefaultsFieldsOmittedByOlderFrame()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                AllowExperimentalFeatures = true,
+                IsExperimentalDevice = true,
+                ExperimentalSupportSource = "community-validation",
+            });
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        Assert.True(status.Remove("allowExperimentalFeatures"));
+        Assert.True(status.Remove("isExperimentalDevice"));
+        Assert.True(status.Remove("experimentalSupportSource"));
+
+        ServiceStatusEvent decoded = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.False(decoded.Status.AllowExperimentalFeatures);
+        Assert.False(decoded.Status.IsExperimentalDevice);
+        Assert.Null(decoded.Status.ExperimentalSupportSource);
     }
 
     [Fact]
@@ -2248,6 +2284,9 @@ public sealed class IpcMessageCodecTests
         ServiceStatusSnapshot status = CreateStatus() with
         {
             WritesBlocked = false,
+            AllowExperimentalFeatures = true,
+            IsExperimentalDevice = true,
+            ExperimentalSupportSource = "community-validation",
             HyperBoostBlockingControllers = ["RazerAppEngine"],
             ObservationReason = DeviceObservationReason.RefreshingControls,
             ThermalConvergence = new ThermalConvergenceStatus(
@@ -2272,6 +2311,9 @@ public sealed class IpcMessageCodecTests
         Assert.False(projected.ContainsKey("thermalConvergence"));
         Assert.False(projected.ContainsKey("hyperBoostBlockingControllers"));
         Assert.False(projected.ContainsKey("observationReason"));
+        Assert.False(projected.ContainsKey("allowExperimentalFeatures"));
+        Assert.False(projected.ContainsKey("isExperimentalDevice"));
+        Assert.False(projected.ContainsKey("experimentalSupportSource"));
         Assert.Contains(
             "Update or repair",
             projected["message"]!.GetValue<string>(),

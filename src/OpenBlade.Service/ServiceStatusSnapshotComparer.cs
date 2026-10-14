@@ -53,6 +53,12 @@ internal static class ServiceStatusSnapshotComparer
             == right.AlwaysOverrideExternalLightingChanges
         && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
+        && left.AllowExperimentalFeatures == right.AllowExperimentalFeatures
+        && left.IsExperimentalDevice == right.IsExperimentalDevice
+        && string.Equals(
+            left.ExperimentalSupportSource,
+            right.ExperimentalSupportSource,
+            StringComparison.Ordinal)
         && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.DisplayBrightnessHidAvailability
             == right.DisplayBrightnessHidAvailability

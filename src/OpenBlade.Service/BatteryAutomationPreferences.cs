@@ -18,7 +18,8 @@ public sealed record BatteryAutomationPreferences(
     ThermalControlPolicy ThermalControlPolicy =
         ThermalControlPolicy.MaintainDesiredState,
     ThermalPolicyUpgradeDisclosureState ThermalPolicyUpgradeDisclosure =
-        ThermalPolicyUpgradeDisclosureState.NotRequired);
+        ThermalPolicyUpgradeDisclosureState.NotRequired,
+    bool AllowExperimentalFeatures = false);
 
 public sealed record BatteryConfiguration(
     ProfileSet Profiles,

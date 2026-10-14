@@ -260,6 +260,11 @@ public sealed class ControlRequestHandler
                 await runtime.SetFirmwareCompatibilityOverrideAsync(
                     set.Enabled,
                     cancellationToken)),
+            SetExperimentalFeaturesRequest set => Result(
+                request.RequestId,
+                await runtime.SetExperimentalFeaturesAsync(
+                    set.Enabled,
+                    cancellationToken)),
             SetThermalControlPolicyRequest set => Result(
                 request.RequestId,
                 await runtime.SetThermalControlPolicyAsync(
@@ -393,6 +398,7 @@ public sealed class ControlRequestHandler
             AlwaysOverrideExternalLightingChanges = false,
             LightingRefreshRate = LightingRefreshRate.ThirtyHz,
             AllowUntestedFirmware = false,
+            AllowExperimentalFeatures = false,
             KeyboardLightingControlMode = KeyboardLightingControlMode.OpenBlade,
             PerformanceShortcutPreview = null,
             ThermalConvergence = null,

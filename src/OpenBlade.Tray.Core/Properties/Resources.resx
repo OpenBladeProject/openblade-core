@@ -1431,4 +1431,10 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Sign in to an interactive Windows session to change laptop settings.</value>
   </data>
+  <data name="Experimental laptop controls are enabled. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>Experimental laptop controls are enabled. Export diagnostics in About to help test support.</value>
+  </data>
+  <data name="This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls." xml:space="preserve">
+    <value>This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls.</value>
+  </data>
 </root>

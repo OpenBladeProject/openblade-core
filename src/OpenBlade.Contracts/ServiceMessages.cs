@@ -39,6 +39,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
 [JsonDerivedType(typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate")]
 [JsonDerivedType(typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride")]
+[JsonDerivedType(typeof(SetExperimentalFeaturesRequest), "setExperimentalFeatures")]
 [JsonDerivedType(typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings")]
 [JsonDerivedType(typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore")]
 [JsonDerivedType(typeof(SetThermalControlPolicyRequest), "setThermalControlPolicy")]
@@ -227,6 +228,12 @@ public sealed record SetLightingRefreshRateRequest(
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetFirmwareCompatibilityOverrideRequest(
+    int Version,
+    Guid RequestId,
+    bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetExperimentalFeaturesRequest(
     int Version,
     Guid RequestId,
     bool Enabled)
@@ -454,6 +461,12 @@ public sealed record ServiceStatusSnapshot(
     public IReadOnlyList<string>? HyperBoostBlockingControllers { get; init; }
 
     public ThermalConvergenceStatus? ThermalConvergence { get; init; }
+
+    public bool AllowExperimentalFeatures { get; init; }
+
+    public bool IsExperimentalDevice { get; init; }
+
+    public string? ExperimentalSupportSource { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

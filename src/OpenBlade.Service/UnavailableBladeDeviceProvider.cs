@@ -10,9 +10,20 @@ public sealed class UnavailableBladeDeviceProvider : IVerifiedBladeDeviceProvide
 
     public bool RequiresUntestedFirmwareOverride => false;
 
+    public bool IsExperimentalDevice => false;
+
+    public string? ExperimentalSupportSource => null;
+
     public void SetAllowUntestedFirmware(bool enabled)
     {
     }
+
+    public void SetAllowExperimentalFeatures(bool enabled)
+    {
+    }
+
+    public DiagnosticExperimentalSupport GetExperimentalSupportDiagnostics() =>
+        DiagnosticExperimentalSupport.NotDetected;
 
     public bool TryGetVerifiedDevice(out IBladeDevice device)
     {

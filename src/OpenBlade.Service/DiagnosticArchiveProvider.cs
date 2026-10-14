@@ -329,6 +329,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             await runtime.GetHyperBoostOwnershipJournalDiagnosticsAsync(
                     cancellationToken)
                 .ConfigureAwait(false);
+        DiagnosticExperimentalSupport experimentalSupport = runtime.GetCachedExperimentalSupportDiagnostics();
         DiagnosticHistorySnapshot historySnapshot = history.Snapshot();
         DiagnosticHostMetadata metadata = metadataSource.Capture();
         DiagnosticVersions versions = metadata.Versions;
@@ -353,7 +354,15 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             historySnapshot.LogLines,
             metadata.SensitiveTokens,
             hyperBoostJournalDiagnostics,
-            verification);
+            verification,
+            experimentalSupport.Detected
+                ? new DiagnosticExperimentalSupportSnapshot(
+                    metadata.CapturedAt,
+                    experimentalSupport,
+                    status.ActivePowerSource,
+                    status.ConfirmedState,
+                    liveReadingsEnabled ? status.LiveReadings : null)
+                : null);
 
         await using var destination = new MemoryStream();
         await DiagnosticBundleExporter.ExportAsync(destination, bundle, cancellationToken)
@@ -552,6 +561,12 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
             ["lighting.refreshRate"] = status.LightingRefreshRate.ToString(),
+            ["experimental.consentEnabled"] = status.AllowExperimentalFeatures.ToString(),
+            ["experimental.deviceDetected"] = status.IsExperimentalDevice.ToString(),
+            ["experimental.evidenceSource"] = status.ExperimentalSupportSource ?? "Unavailable",
+            ["experimental.validationBoundary"] = status.IsExperimentalDevice
+                ? "Upstream-derived; physical validation pending tester reports"
+                : "Not an experimental device",
             ["firmware.allowUntested"] = status.AllowUntestedFirmware.ToString(),
             ["firmware.compatibility"] = status.FirmwareCompatibility.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),

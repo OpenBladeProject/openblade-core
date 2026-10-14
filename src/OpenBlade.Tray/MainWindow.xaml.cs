@@ -78,6 +78,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingThermalControlPolicy;
     private bool changingLightingRefreshRate;
     private bool changingFirmwareCompatibilityOverride;
+    private bool changingExperimentalFeatures;
     private bool changingWindowsDynamicLighting;
     private bool changingDashboardCards;
     private bool trayDashboardCustomizationActive;
@@ -1356,6 +1357,55 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         ViewModel.LabFeaturesEnabled = toggle.IsOn;
         QueuePreferenceSave();
+    }
+
+    private async void OnExperimentalFeaturesToggled(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleExperimentalFeaturesToggledAsync(sender),
+            nameof(OnExperimentalFeaturesToggled));
+
+    private async Task HandleExperimentalFeaturesToggledAsync(object sender)
+    {
+        if (changingExperimentalFeatures
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.AllowExperimentalFeatures)
+        {
+            return;
+        }
+
+        changingExperimentalFeatures = true;
+        toggle.IsEnabled = false;
+        try
+        {
+            bool enabled = toggle.IsOn;
+            if (enabled)
+            {
+                var dialog = new ContentDialog
+                {
+                    XamlRoot = Root.XamlRoot,
+                    Title = LocalizedResources.Get("MainWindow_ExperimentalConsent_Title", "Enable experimental laptop controls?"),
+                    Content = LocalizedResources.Get(
+                        "MainWindow_ExperimentalConsent_Content",
+                        "These controls use community protocol evidence and are still being tested on additional Blade models. Settings may not apply as expected. OpenBlade records local diagnostic results that you can choose to export and share. You can turn these controls off here at any time."),
+                    PrimaryButtonText = LocalizedResources.Get("MainWindow_ExperimentalConsent_Enable", "Enable controls"),
+                    CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
+                    DefaultButton = ContentDialogButton.Close,
+                };
+                if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+            }
+
+            await ViewModel.SetExperimentalFeaturesAsync(enabled, CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.AllowExperimentalFeatures;
+            toggle.IsEnabled = true;
+            changingExperimentalFeatures = false;
+        }
     }
 
     private void OnUpdatePreferencesChanged(object? sender, EventArgs args) =>
@@ -3135,6 +3185,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         SettingsAppearanceSection.StartBringIntoView();
     }
+
+    internal void ShowLocalizationSnapshotExperimentalControls() =>
+        ExperimentalControlsRow.StartBringIntoView(new BringIntoViewOptions
+        {
+            AnimationDesired = false,
+            VerticalAlignmentRatio = 0,
+        });
 
     internal bool HasLocalizedCheckNowButton(
         string expectedContent,

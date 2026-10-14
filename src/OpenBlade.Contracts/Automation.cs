@@ -20,6 +20,7 @@ public enum AdapterPowerState
     UsbCPower80W = 7,
     UsbCPower90W = 8,
     Battery = 9,
+    ExperimentalExternal = 10,
 }
 
 public sealed record DesiredDeviceState(

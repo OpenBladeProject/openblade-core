@@ -13,7 +13,18 @@ public interface IVerifiedBladeDeviceProvider
 
     bool RequiresUntestedFirmwareOverride { get; }
 
+    bool IsExperimentalDevice => false;
+
+    string? ExperimentalSupportSource => null;
+
     void SetAllowUntestedFirmware(bool enabled);
+
+    void SetAllowExperimentalFeatures(bool enabled)
+    {
+    }
+
+    DiagnosticExperimentalSupport GetExperimentalSupportDiagnostics() =>
+        DiagnosticExperimentalSupport.NotDetected;
 
     void SetLightingRefreshRate(LightingRefreshRate refreshRate)
     {

@@ -221,6 +221,16 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Firmware compatibility override is unavailable."));
 
+    Task<ControlOperationResult> SetExperimentalFeaturesAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Experimental laptop controls are unavailable."));
+
+    DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics() =>
+        DiagnosticExperimentalSupport.NotDetected;
+
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(
         CancellationToken token) => Task.FromResult(
             new ControlOperationResult(
@@ -877,6 +887,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             preferences = configuration.Preferences;
             deviceProvider.SetAllowUntestedFirmware(
                 configuration.Preferences.AllowUntestedFirmware);
+            deviceProvider.SetAllowExperimentalFeatures(
+                configuration.Preferences.AllowExperimentalFeatures);
             deviceProvider.SetLightingRefreshRate(
                 configuration.Preferences.LightingRefreshRate);
             this.persistentOverrides = persistentOverrides;
@@ -1167,6 +1179,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preferences = context.Configuration.Preferences;
                 deviceProvider.SetAllowUntestedFirmware(
                     context.Configuration.Preferences.AllowUntestedFirmware);
+                deviceProvider.SetAllowExperimentalFeatures(
+                    context.Configuration.Preferences.AllowExperimentalFeatures);
                 deviceProvider.SetLightingRefreshRate(
                     context.Configuration.Preferences.LightingRefreshRate);
                 persistentOverrides = overrides;
@@ -1229,6 +1243,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         context.Configuration.Preferences.KeyboardLightingControlMode,
                     AllowUntestedFirmware =
                         context.Configuration.Preferences.AllowUntestedFirmware,
+                    AllowExperimentalFeatures =
+                        context.Configuration.Preferences.AllowExperimentalFeatures,
+                    IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
+                    ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
                     PerformanceShortcutPreview = null,
                 });
 
@@ -3932,6 +3950,79 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         return new ControlOperationResult(ControlOperationStatus.Stored, message);
     }
+
+    public async Task<ControlOperationResult> SetExperimentalFeaturesAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        string message = enabled
+            ? "Experimental laptop controls are enabled for this Windows user."
+            : "Experimental laptop controls are disabled.";
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            BatteryAutomationPreferences staged = preferences with
+            {
+                AllowExperimentalFeatures = enabled,
+            };
+            try
+            {
+                await ConfigurationStore.SaveConfigurationAsync(
+                        Automation.Profiles,
+                        staged,
+                        token)
+                    .ConfigureAwait(false);
+            }
+            catch (ConfigurationQuarantinedException)
+            {
+                return ConfigurationQuarantineBlocked();
+            }
+
+            preferences = staged;
+            // The provider owns the final admission gate for every experimental
+            // write path. Revocation is forwarded before any subsequent status
+            // observation so disabling consent cannot submit a cleanup write.
+            deviceProvider.SetAllowExperimentalFeatures(enabled);
+            consecutiveDeviceProbeFailures = ObservationFailureThreshold;
+            PublishIfChanged(GetStatus() with
+            {
+                AllowExperimentalFeatures = enabled,
+                IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
+                ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
+                Message = message,
+            });
+            history.RecordSummary(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+
+        try
+        {
+            await ObserveAsync(includeLiveReadings: false, token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            string refreshMessage =
+                $"{message} Laptop status will refresh automatically. {exception.Message}";
+            history.RecordSummary(ControlOperationStatus.Stored, refreshMessage);
+            return new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                refreshMessage);
+        }
+
+        return new ControlOperationResult(ControlOperationStatus.Stored, message);
+    }
+
+    public DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics() =>
+        deviceProvider.GetExperimentalSupportDiagnostics();
 
     public async Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
@@ -15295,6 +15386,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 AdapterPowerState.UsbCPower80W => PowerSource.UsbC,
                 AdapterPowerState.UsbCPower90W => PowerSource.UsbC,
                 AdapterPowerState.UsbCPower100W => PowerSource.UsbC,
+                AdapterPowerState.ExperimentalExternal
+                    when deviceProvider.IsExperimentalDevice => PowerSource.PluggedIn,
                 _ => PowerSource.ExternalUnknown,
             };
         }
@@ -15850,6 +15943,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FunctionKeyPrimary = observation.FunctionKeyPrimary,
             GamingModeEnabled = observation.GamingModeEnabled,
             BatteryHealth = batteryHealth,
+            IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
+            ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
             FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
             DisplayBrightnessHidAvailability =
                 displayBrightnessHidController.GetAvailability(),
@@ -16867,6 +16962,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             KeyboardDriverModeActive = deviceVerified
                 ? current.KeyboardDriverModeActive
                 : null,
+            IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
+            ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
             FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
             DisplayBrightnessHidAvailability =
                 displayBrightnessHidController.GetAvailability(),
@@ -16942,6 +17039,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             DisplayBrightnessHidAvailability:
                 displayBrightnessHidController.GetAvailability())
         {
+            AllowExperimentalFeatures = preferences.AllowExperimentalFeatures,
+            IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
+            ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
             FanControlOverride = Automation.FanControlOverride,
             BatteryPolicyOverride = Automation.BatteryPolicyOverride,
             BatteryProtectionOverride = Automation.BatteryProtectionOverride,

@@ -9,6 +9,37 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class DiagnosticBundleExporterTests
 {
+    [Fact]
+    public async Task ExportAsync_BoundsExperimentalObservationsAndRedactsTheirValues()
+    {
+        const string secret = "private-test-token";
+        var support = new DiagnosticExperimentalSupport(
+            "RZ09-0483", "Pinned upstream source", true, true,
+            Enumerable.Range(0, 80).Select(index => new ExperimentalControlObservation(
+                DateTimeOffset.UnixEpoch.AddSeconds(index), "Battery", "Readback", "Mismatch", true,
+                "80", "60", secret + new string('x', 800))).ToArray());
+        DiagnosticBundle bundle = new(
+            new DiagnosticVersions("0.26.0+test", "Windows 11", "2.03"),
+            new DiagnosticDeviceIdentity("RZ09-0483", "1532", "029F", null),
+            new Dictionary<string, bool>(), new Dictionary<string, string>(), [], [], [secret, "support", "requestedValue", "capturedAt"],
+            ExperimentalSupport: new DiagnosticExperimentalSupportSnapshot(
+                DateTimeOffset.UnixEpoch, support, PowerSource.PluggedIn, null, new LiveReadings(5000, 3000, 3100, 50, 45)));
+        await using var destination = new MemoryStream();
+
+        await DiagnosticBundleExporter.ExportAsync(destination, bundle);
+
+        destination.Position = 0;
+        using var archive = new ZipArchive(destination, ZipArchiveMode.Read, leaveOpen: true);
+        string content = await ReadEntryAsync(archive, "experimental-support.json");
+        Assert.DoesNotContain(secret, content);
+        using JsonDocument json = JsonDocument.Parse(content);
+        JsonElement observations = json.RootElement.GetProperty("support").GetProperty("observations");
+        Assert.Equal(DiagnosticExperimentalSupport.MaxObservations, observations.GetArrayLength());
+        Assert.Equal(DateTimeOffset.UnixEpoch.AddSeconds(48), observations[0].GetProperty("timestamp").GetDateTimeOffset());
+        Assert.All(observations.EnumerateArray(), item =>
+            Assert.InRange(item.GetProperty("failureCategory").GetString()!.Length, 1, 256));
+    }
+
     [Theory]
     [InlineData("RZ09-05819EN9", false, "RZ09-05819EN9")]
     [InlineData("S-1-5-21-private-sku", true, "[REDACTED]")]

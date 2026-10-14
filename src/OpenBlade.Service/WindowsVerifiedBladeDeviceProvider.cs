@@ -30,6 +30,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         ServiceComposition.CreateProductionLightingFactory;
 
     private readonly Func<BatteryValidationProbeResult> probe;
+    private readonly ExperimentalBladeFactory? experimentalFactory;
     private readonly FirmwareCompatibilityPolicy compatibilityPolicy;
     private readonly SerializedBladeDevice device;
     private readonly object providerLifecycleSync = new();
@@ -73,6 +74,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         }
 
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
+        experimentalFactory = batteryFactory as ExperimentalBladeFactory;
         this.compatibilityPolicy = compatibilityPolicy
             ?? new FirmwareCompatibilityPolicy();
         device = new SerializedBladeDevice(
@@ -98,6 +100,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 (int)FirmwareCompatibilityStatus.UntestedBlocked);
         }
     }
+
+    public bool IsExperimentalDevice => experimentalFactory is not null;
+
+    public string? ExperimentalSupportSource => experimentalFactory?.EvidenceSource;
+
+    public void SetAllowExperimentalFeatures(bool enabled) => experimentalFactory?.SetEnabled(enabled);
+
+    public DiagnosticExperimentalSupport GetExperimentalSupportDiagnostics() =>
+        experimentalFactory?.GetDiagnostics() ?? DiagnosticExperimentalSupport.NotDetected;
 
     public void SetLightingRefreshRate(LightingRefreshRate refreshRate) =>
         device.SetDesiredLightingRefreshRate(refreshRate);
@@ -823,17 +834,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     ThrowReadOpenFailure(opened.Failure, cancellationToken);
                 }
 
-                ConfirmedBatteryState protection =
-                    await ReadStateQueryAsync(
+                ConfirmedBatteryState? protection = port.SupportsProtectionQuery
+                    ? await ReadStateQueryAsync(
                         DeviceStateQuery.BatteryProtection,
-                        () => port.QueryProtectionAsync(cancellationToken)).ConfigureAwait(false);
+                        () => port.QueryProtectionAsync(cancellationToken)).ConfigureAwait(false)
+                    : null;
                 bool? temporary = port.SupportsTemporaryFullChargeQuery
                     ? await ReadStateQueryAsync(
                         DeviceStateQuery.TemporaryFullCharge,
                         () => port.QueryTemporaryFullChargeAsync(cancellationToken))
                         .ConfigureAwait(false)
                     : null;
-                ConfirmedBatteryState battery = new(
+                ConfirmedBatteryState? battery = protection is null ? null : new(
                     protection.ProtectionEnabled,
                     protection.ChargeLimitPercent,
                     temporary);

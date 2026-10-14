@@ -431,7 +431,7 @@ public sealed class BatteryConfigurationStore
         {
             throw new InvalidDataException("The battery preferences are missing.");
         }
-        if (expectedSchemaVersion >= ProfileStore.CurrentSchemaVersion
+        if (expectedSchemaVersion >= ProfileStore.ExperimentalFeaturesConsentPredecessorSchemaVersion
             && (!preferencesElement.TryGetProperty("thermalControlPolicy", out _)
                 || !preferencesElement.TryGetProperty(
                     "thermalPolicyUpgradeDisclosure",
@@ -439,6 +439,12 @@ public sealed class BatteryConfigurationStore
         {
             throw new InvalidDataException(
                 "The current battery preferences are missing thermal policy state.");
+        }
+        if (expectedSchemaVersion >= ProfileStore.CurrentSchemaVersion
+            && !preferencesElement.TryGetProperty("allowExperimentalFeatures", out _))
+        {
+            throw new InvalidDataException(
+                "The current battery preferences are missing experimental-feature consent.");
         }
 
         BatteryPreferencesDocument? document =
@@ -467,15 +473,21 @@ public sealed class BatteryConfigurationStore
                 "The current battery preference document contains a legacy setting.");
         }
 
-        BatteryAutomationPreferences preferences = expectedSchemaVersion
-            < ProfileStore.CurrentSchemaVersion
-                ? document.Preferences with
-                {
-                    ThermalControlPolicy = ThermalControlPolicy.MaintainDesiredState,
-                    ThermalPolicyUpgradeDisclosure =
-                        ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
-                }
-                : document.Preferences;
+        BatteryAutomationPreferences preferences = document.Preferences;
+        if (expectedSchemaVersion
+            < ProfileStore.ExperimentalFeaturesConsentPredecessorSchemaVersion)
+        {
+            preferences = preferences with
+            {
+                ThermalControlPolicy = ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosure =
+                    ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
+            };
+        }
+        if (expectedSchemaVersion < ProfileStore.CurrentSchemaVersion)
+        {
+            preferences = preferences with { AllowExperimentalFeatures = false };
+        }
         validator.ValidatePreferences(preferences);
         migrated = expectedSchemaVersion < ProfileStore.CurrentSchemaVersion
             || preferences.ProtectionEnabled.HasValue;

@@ -169,6 +169,24 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
+    public void ExperimentalFeaturesConsent_AllowsActiveStandardUserOnly()
+    {
+        var request = new SetExperimentalFeaturesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: true);
+
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 4, administrator: false),
+            new FixedSessionAuthority(4)));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 3, administrator: false),
+            new FixedSessionAuthority(4)));
+    }
+
+    [Fact]
     public void DisplayBrightnessHidUsage_AllowsOnlyActiveLocalInteractiveSession()
     {
         var request = new SetDisplayBrightnessHidUsageRequest(

@@ -405,6 +405,7 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   method virtual System.Boolean get_SupportsFunctionKeyPrimaryQuery()
   method virtual System.Boolean get_SupportsGamingModeQuery()
   method virtual System.Boolean get_SupportsMcuVersionQuery()
+  method virtual System.Boolean get_SupportsProtectionQuery()
   method virtual System.Boolean get_SupportsRz090581CapabilityDiagnosticsQuery()
   method virtual System.Boolean get_SupportsStartupAnimationQuery()
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Boolean requiresCoolingPad, System.Threading.CancellationToken cancellationToken)
@@ -419,6 +420,7 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   property System.Boolean SupportsFunctionKeyPrimaryQuery { get; }
   property System.Boolean SupportsGamingModeQuery { get; }
   property System.Boolean SupportsMcuVersionQuery { get; }
+  property System.Boolean SupportsProtectionQuery { get; }
   property System.Boolean SupportsRz090581CapabilityDiagnosticsQuery { get; }
   property System.Boolean SupportsStartupAnimationQuery { get; }
   property System.Boolean SupportsTemporaryFullChargeQuery { get; }

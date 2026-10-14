@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -40,6 +40,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy"),
             (typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate"),
             (typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride"),
+            (typeof(SetExperimentalFeaturesRequest), "setExperimentalFeatures"),
             (typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings"),
             (typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore"),
             (typeof(SetThermalControlPolicyRequest), "setThermalControlPolicy"),
@@ -79,7 +80,8 @@ public sealed class ServiceMessageContractTests
             "AlwaysOverrideExternalLightingChanges", "KeyboardDriverModeActive",
             "LightingRefreshRate",
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
-            "ControlAccess", "AllowUntestedFirmware", "FirmwareCompatibility",
+            "ControlAccess", "AllowUntestedFirmware", "AllowExperimentalFeatures",
+            "IsExperimentalDevice", "ExperimentalSupportSource", "FirmwareCompatibility",
             "DisplayBrightnessHidAvailability",
         ];
 
@@ -102,6 +104,9 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(BatteryHealthStatus), typeof(ServiceStatusSnapshot).GetProperty("BatteryHealth")!.PropertyType);
         Assert.Equal(typeof(SessionControlAccess), typeof(ServiceStatusSnapshot).GetProperty("ControlAccess")!.PropertyType);
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AllowUntestedFirmware")!.PropertyType);
+        Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AllowExperimentalFeatures")!.PropertyType);
+        Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("IsExperimentalDevice")!.PropertyType);
+        Assert.Equal(typeof(string), typeof(ServiceStatusSnapshot).GetProperty("ExperimentalSupportSource")!.PropertyType);
         Assert.Equal(typeof(FirmwareCompatibilityStatus), typeof(ServiceStatusSnapshot).GetProperty("FirmwareCompatibility")!.PropertyType);
         Assert.Equal(typeof(DisplayBrightnessHidAvailability), typeof(ServiceStatusSnapshot).GetProperty("DisplayBrightnessHidAvailability")!.PropertyType);
         Assert.Equal(typeof(BatteryPolicy), typeof(ServiceStatusSnapshot).GetProperty("BatteryPolicyOverride")!.PropertyType);
@@ -128,6 +133,16 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(
             ["Performance", "Fans"],
             Enum.GetNames<ThermalComponent>());
+    }
+
+    [Fact]
+    public void AdapterPowerState_ExperimentalExternalDoesNotClaimWattage()
+    {
+        Assert.Equal(10, (int)AdapterPowerState.ExperimentalExternal);
+        Assert.DoesNotContain(
+            "W",
+            AdapterPowerState.ExperimentalExternal.ToString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]

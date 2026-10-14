@@ -2417,6 +2417,15 @@
                             </InfoBar.ActionButton>
                         </InfoBar>
 
+                        <InfoBar x:Uid="MainWindow_ExperimentalSupportInfoBar" x:Name="ExperimentalSupportInfoBar"
+                                 IsOpen="{x:Bind ViewModel.IsExperimentalDevice, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.IsExperimentalDevice, Mode=OneWay}"
+                                 Message="{x:Bind ViewModel.ExperimentalSupportNotice, Mode=OneWay}"
+                                 Severity="Informational"
+                                 IsClosable="False"
+                                 Margin="0,0,0,12"
+                                 AutomationProperties.Name="Experimental laptop support" />
+
                         <Border x:Name="DashboardEmptyState"
                                 Style="{StaticResource CardStyle}"
                                 Padding="22"
@@ -3402,7 +3411,7 @@
                                                       Toggled="OnExternalLightingOverridePolicyToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -3467,6 +3476,23 @@
                                                       AutomationProperties.Name="Enable Lab experimental features"
                                                       IsOn="{x:Bind ViewModel.LabFeaturesEnabled, Mode=OneWay}"
                                                       Toggled="OnLabFeaturesToggled" />
+                                    </Grid>
+                                </Border>
+                                <Border x:Name="ExperimentalControlsRow" Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock x:Uid="MainWindow_ExperimentalControlsTitle" Text="Experimental laptop controls"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock x:Uid="MainWindow_ExperimentalControlsDescription"
+                                                       Text="Enable controls for additional Blade models being tested in pre-releases."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Uid="MainWindow_ExperimentalControlsToggle" x:Name="ExperimentalControlsToggle"
+                                                      Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                      AutomationProperties.Name="Enable experimental laptop controls"
+                                                      IsOn="{x:Bind ViewModel.AllowExperimentalFeatures, Mode=OneWay}"
+                                                      Toggled="OnExperimentalFeaturesToggled" />
                                     </Grid>
                                 </Border>
                             </StackPanel>

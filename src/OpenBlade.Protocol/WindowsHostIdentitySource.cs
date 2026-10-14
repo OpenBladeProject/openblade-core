@@ -137,7 +137,8 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             || string.IsNullOrWhiteSpace(expected.ProductName)
             || string.IsNullOrWhiteSpace(expected.Sku)
             || expected.ValidatedBiosVersions is null
-            || expected.ValidatedBiosVersions.Count == 0
+            || expected.FirmwareAdmission == FirmwareAdmissionScope.ExactVersions
+                && expected.ValidatedBiosVersions.Count == 0
             || expected.ValidatedBiosVersions.Any(string.IsNullOrWhiteSpace)
             || !Enum.IsDefined(expected.FirmwareAdmission))
         {

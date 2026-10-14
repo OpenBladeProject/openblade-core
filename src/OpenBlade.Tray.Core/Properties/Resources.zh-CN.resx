@@ -1431,4 +1431,10 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>请登录交互式 Windows 会话以更改笔记本设置。</value>
   </data>
+  <data name="Experimental laptop controls are enabled. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>实验性笔记本控制已启用。请在“关于”页面导出诊断信息，以帮助测试支持情况。</value>
+  </data>
+  <data name="This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls." xml:space="preserve">
+    <value>此笔记本具有实验性支持。请在设置中启用实验性笔记本控制，以试用可用的控制功能。</value>
+  </data>
 </root>

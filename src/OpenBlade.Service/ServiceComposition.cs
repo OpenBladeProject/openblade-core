@@ -85,7 +85,8 @@ internal static class ServiceComposition
 
         services.AddSingleton<FirmwareCompatibilityPolicy>();
         services.AddSingleton<IProductionBatteryPortFactory>(provider =>
-            CreateProductionBatteryFactory(
+            ExperimentalBladeFactory.CreateForCurrentHost(
+                () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource()) ?? CreateProductionBatteryFactory(
                 PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled,
                 BatteryValidationFactory
                     .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation,
@@ -94,25 +95,32 @@ internal static class ServiceComposition
                 () => ProductionBatteryFactory.CreateWindowsReadOnly(
                     provider.GetRequiredService<FirmwareCompatibilityPolicy>())));
         services.AddSingleton<IProductionLightingPortFactory>(provider =>
-            CreateProductionLightingFactory(
-                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+            provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory
+                ? UnavailableExperimentalLightingFactory.Instance
+                : CreateProductionLightingFactory(
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
         services.AddSingleton(provider =>
             CreateProfileSetValidator(
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>()));
         services.AddSingleton<IFanRpmQueryRunFactory>(provider =>
-            BatteryValidationFactory.CreateWindowsFanRpmForService(
-                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+            provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory
+                ? UnavailableExperimentalFanRpmFactory.Instance
+                : BatteryValidationFactory.CreateWindowsFanRpmForService(
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
         services.AddSingleton<IGpuClockOffsetController>(_ =>
             new NvidiaGpuClockOffsetController());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
         {
             FirmwareCompatibilityPolicy compatibilityPolicy =
                 provider.GetRequiredService<FirmwareCompatibilityPolicy>();
+            IProductionBatteryPortFactory batteryFactory =
+                provider.GetRequiredService<IProductionBatteryPortFactory>();
             return new WindowsVerifiedBladeDeviceProvider(
-                () => BatteryValidationFactory.ProbeWindowsForService(
-                    compatibilityPolicy),
-                provider.GetRequiredService<IProductionBatteryPortFactory>(),
+                batteryFactory is ExperimentalBladeFactory experimental
+                    ? experimental.Probe
+                    : () => BatteryValidationFactory.ProbeWindowsForService(compatibilityPolicy),
+                batteryFactory,
                 provider.GetRequiredService<IFanRpmQueryRunFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>(),
                 provider.GetRequiredService<IGpuClockOffsetController>(),
@@ -230,7 +238,23 @@ internal static class ServiceComposition
         ArgumentNullException.ThrowIfNull(batteryFactory);
         ArgumentNullException.ThrowIfNull(lightingFactory);
         return ProfileSetValidator.CreateForDeviceCapabilities(
-            batteryFactory.Capabilities,
+            batteryFactory is ExperimentalBladeFactory experimental
+                ? experimental.PotentialCapabilities : batteryFactory.Capabilities,
             lightingFactory.Capabilities);
+    }
+
+    private sealed class UnavailableExperimentalLightingFactory : IProductionLightingPortFactory
+    {
+        internal static readonly UnavailableExperimentalLightingFactory Instance = new();
+        public OpenBlade.Contracts.DeviceCapabilities Capabilities => OpenBlade.Contracts.DeviceCapabilities.Unavailable();
+        public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new HidSessionResult<IProductionLightingPort>(null, HidSessionFailureKind.IdentityBlocked));
+    }
+
+    private sealed class UnavailableExperimentalFanRpmFactory : IFanRpmQueryRunFactory
+    {
+        internal static readonly UnavailableExperimentalFanRpmFactory Instance = new();
+        public Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new HidSessionResult<IFanRpmQueryPort>(null, HidSessionFailureKind.IdentityBlocked));
     }
 }

@@ -6114,6 +6114,51 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task ExperimentalConsent_ExistingLabPreferenceAndRejectedEnableDoNotAuthorizeControls()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(ControlOperationStatus.Blocked, "Unavailable"),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher())
+        {
+            LabFeaturesEnabled = true,
+        };
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            IsExperimentalDevice = true,
+        });
+        await WaitUntilAsync(() => viewModel.IsExperimentalDevice);
+
+        Assert.False(viewModel.AllowExperimentalFeatures);
+        Assert.False(await viewModel.SetExperimentalFeaturesAsync(true, CancellationToken.None));
+        Assert.False(viewModel.AllowExperimentalFeatures);
+        Assert.True(client.ExperimentalFeaturesRequest);
+    }
+
+    [Fact]
+    public async Task ExperimentalConsent_FollowsServiceStatusAndRevocation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = "UpstreamDerived",
+        });
+        await WaitUntilAsync(() => viewModel.AllowExperimentalFeatures);
+        Assert.True(viewModel.IsExperimentalDevice);
+
+        Assert.True(await viewModel.SetExperimentalFeaturesAsync(false, CancellationToken.None));
+        Assert.False(viewModel.AllowExperimentalFeatures);
+        Assert.False(client.ExperimentalFeaturesRequest);
+        Assert.Contains("Enable experimental laptop controls", viewModel.ExperimentalSupportNotice);
+    }
+
+    [Fact]
     public async Task FirmwareCompatibilityOverride_ReflectsStatusAndSendsMutation()
     {
         var client = new FakeServiceClient();
@@ -10573,6 +10618,7 @@ public sealed partial class MainViewModelTests
         public int ThermalDisclosureAcknowledgementCalls { get; private set; }
         public LightingRefreshRate? LightingRefreshRate { get; private set; }
         public bool? FirmwareCompatibilityOverride { get; private set; }
+        public bool? ExperimentalFeaturesRequest { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
         public int RecoverHyperBoostRestoreCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
@@ -10810,6 +10856,13 @@ public sealed partial class MainViewModelTests
             CancellationToken token)
         {
             LightingRefreshRate = refreshRate;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetExperimentalFeaturesAsync(
+            bool enabled, CancellationToken token)
+        {
+            ExperimentalFeaturesRequest = enabled;
             return MutateAsync(token);
         }
 

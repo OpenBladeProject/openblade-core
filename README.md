@@ -32,6 +32,9 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 Available controls vary by model. See the
 [user guide](https://github.com/OSSBlade/openblade-docs) for compatibility details.
 
+Additional models have opt-in [experimental support](docs/experimental-blade-support.md)
+for testing through pre-releases.
+
 ## Features
 
 - Power modes, automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU
