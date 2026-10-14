@@ -2430,6 +2430,28 @@ public sealed class IpcMessageCodecTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task WriteProtocol51ReadOnlyServerFrameAsync_PreservesCompatibleDesiredOverride()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        BatteryPolicy policy = BatteryPolicy.Create(75);
+        ServiceStatusSnapshot status = baseline with
+        {
+            DesiredState = baseline.DesiredState with
+            {
+                Battery = new DesiredBatteryState(policy, true, false),
+            },
+            BatteryPolicyOverride = policy,
+        };
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
+        JsonObject projected = Assert.IsType<JsonObject>(FramedJsonObject(stream)["status"]);
+        Assert.Equal(75, projected["desiredState"]!["battery"]!["configuredPolicy"]!["chargeLimitPercent"]!.GetValue<int>());
+        Assert.Equal(75, projected["batteryPolicyOverride"]!["chargeLimitPercent"]!.GetValue<int>());
+        Assert.Equal(80, projected["profiles"]!["batteryPolicy"]!["chargeLimitPercent"]!.GetValue<int>());
+    }
+
     [Theory]
     [InlineData(DeviceObservationReason.None)]
     [InlineData(DeviceObservationReason.CheckingConnection)]

@@ -16,7 +16,15 @@ public sealed class ExperimentalBladeBatteryRangeTests
         var policy = new ExperimentalFeaturesPolicy(Model) { Enabled = true };
         await using var port = Create(session, policy);
         Assert.Equal(Enumerable.Range(50, 51), port.Capabilities.ChargeLimits.Order());
-        await port.SetChargeLimitAsync(percent, CancellationToken.None);
+        if (percent == 100)
+        {
+            // The production UI maps its 100% marker to the typed protection-off operation.
+            await port.SetProtectionOffAsync(CancellationToken.None);
+        }
+        else
+        {
+            await port.SetChargeLimitAsync(percent, CancellationToken.None);
+        }
         Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
         byte expected = percent == 100 ? (byte)0x50 : (byte)(0x80 | percent);
         Assert.Equal(new byte[] { expected }, session.Commands[1].Arguments.ToArray());

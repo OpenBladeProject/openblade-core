@@ -877,7 +877,9 @@ public static class IpcMessageCodec
             DesiredState = status.DesiredState with
             {
                 Battery = new DesiredBatteryState(
-                    projectedPolicy,
+                    IsProtocol51BatteryLimit(status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent)
+                        ? status.DesiredState.Battery.ConfiguredPolicy
+                        : projectedPolicy,
                     status.DesiredState.Battery.ProtectionEnabled,
                     status.DesiredState.Battery.TemporaryFullCharge),
             },

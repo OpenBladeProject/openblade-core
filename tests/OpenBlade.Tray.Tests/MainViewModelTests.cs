@@ -3470,11 +3470,11 @@ public sealed partial class MainViewModelTests
     public async Task PerformanceOptionsAndCommands_FollowActivePowerSource()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot pluggedIn = CreateStatus(verified: true, blocked: false);
-        client.Publish(pluggedIn);
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn);
 
         Assert.Equal(
             [
