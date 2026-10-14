@@ -86,6 +86,30 @@ RZ09-0528 have separate, model-specific stacks. WMI remains the fallback. See
 the [Razer driver package notes](razer-brightness-driver-package.md) for the
 validation and redistribution limits.
 
+## Direct fan-entry validation
+
+The developer-only RZ09-0581 validator tests Performance/Automatic to fixed
+5400 RPM using the captured manual-state and target commands, without a
+Balanced preparation write. First save the installed service state and confirm
+Performance/Automatic on full-power AC. Stop the installed tray, Session Agent,
+and service before running the validator so it is the only control-HID owner.
+
+```text
+OpenBlade.Capture validate-direct-fan-entry --confirm-target RZ09-0581:1532:02E0:<current-bios>
+```
+
+Use the observed BIOS value in the confirmation; it is recorded as provenance.
+The validator checks identity, controller and owner absence, and full-power AC,
+confirms paired manual state and settled RPM, then restores and confirms the
+exact saved Performance/Automatic pair. AC and owner admission are renewed
+before every apply and restoration command. A failed or ambiguous submission
+or paired read stops further writes and reports unresolved restoration.
+
+Restart the installed components after confirmed restoration, then restore the
+original performance override and verify the original state. This test confirms
+direct entry and exit; generic manual readback does not establish that the
+Performance preset remains effective while manual fans are active.
+
 ## Diagnostics exports
 
 Use **Export diagnostics** in the tray to collect device-verification evidence.

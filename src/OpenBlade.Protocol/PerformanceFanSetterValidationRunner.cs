@@ -38,6 +38,7 @@ public enum PerformanceFanValidationFailure
     BaselineNotBalanced,
     BaselineNotRequiredBaseMode = 21,
     SustainedValidationFailed = 22,
+    SafetyAdmissionLost = 23,
 }
 
 public sealed record PerformanceFanThermalPair(
@@ -115,6 +116,7 @@ internal enum PerformanceFanValidationSafetyFailure
     CoolingPadQueryFailed,
     CoolingPadOpaqueZeroRequired,
     Canceled,
+    ValidationOwnerUnavailable,
 }
 
 internal readonly record struct PerformanceFanValidationSafetyGateResult(
@@ -125,6 +127,8 @@ internal readonly record struct PerformanceFanValidationSafetyGateResult(
     PerformanceFanValidationSafetyFailure Failure)
 {
     internal OpenBlade.Contracts.AdapterPowerState AdapterPowerState { get; init; }
+
+    internal bool CoolingPadNotRequired { get; init; }
 
     internal PerformanceFanValidationSafetyGateResult(
         bool FullPowerAdapterConfirmed,
@@ -141,7 +145,7 @@ internal readonly record struct PerformanceFanValidationSafetyGateResult(
 
     internal bool Success => Failure == PerformanceFanValidationSafetyFailure.None
         && FullPowerAdapterConfirmed
-        && (CoolingPadAbsentConfirmed
+        && (CoolingPadNotRequired || CoolingPadAbsentConfirmed
             || CoolingPadPresentConfirmed && CoolingPadOpaqueZeroConfirmed);
 }
 
@@ -294,6 +298,8 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly Rz090528PadlessNoLoadValidation? padlessNoLoad;
     private readonly Rz090528PadlessLoadedValidation? padlessLoaded;
     private readonly Rz090528PadlessBatteryBoundaryValidation? padlessBatteryBoundary;
+    private readonly bool recheckSafetyBeforeEachWrite;
+    private readonly ThermalModeState? requiredBaselineState;
     private int started;
 
     internal PerformanceFanSetterValidationRunner(
@@ -315,7 +321,9 @@ internal sealed class PerformanceFanSetterValidationRunner
         ExactHyperBoostValidationObserver? exactObserver = null,
         Rz090528PadlessNoLoadValidation? padlessNoLoad = null,
         Rz090528PadlessLoadedValidation? padlessLoaded = null,
-        Rz090528PadlessBatteryBoundaryValidation? padlessBatteryBoundary = null)
+        Rz090528PadlessBatteryBoundaryValidation? padlessBatteryBoundary = null,
+        ThermalModeState? requiredBaselineState = null,
+        bool recheckSafetyBeforeEachWrite = false)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -348,6 +356,12 @@ internal sealed class PerformanceFanSetterValidationRunner
         this.fixedFanStateCheckEverySamples = fixedFanStateCheckEverySamples;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
         this.safetyGate = safetyGate;
+        this.requiredBaselineState = requiredBaselineState;
+        if (recheckSafetyBeforeEachWrite && safetyGate is null)
+        {
+            throw new ArgumentException("Per-write admission requires a safety gate.", nameof(safetyGate));
+        }
+        this.recheckSafetyBeforeEachWrite = recheckSafetyBeforeEachWrite;
         if ((sustainedPlan is null) != (thermalTelemetrySource is null)
             || sustainedPlan?.WorkloadKind ==
                     HyperBoostValidationWorkloadKind.ExternalReviewedLoad
@@ -503,6 +517,11 @@ internal sealed class PerformanceFanSetterValidationRunner
             }
 
             state.Baseline = baseline.Pair;
+            if (requiredBaselineState is { } required && baseline.State != required)
+            {
+                state.Failure = PerformanceFanValidationFailure.BaselineNotRequiredBaseMode;
+                return state.ToResult();
+            }
             if (baseline.State == ThermalModeState.FixedMaximum)
             {
                 state.Failure =
@@ -542,7 +561,7 @@ internal sealed class PerformanceFanSetterValidationRunner
                     return state.ToResult();
                 }
 
-                if (confirmedBaseline.State != RequiredHyperBoostBaseline(target)
+                if (confirmedBaseline.State != (requiredBaselineState ?? (IsHyperBoostTarget(target) ? RequiredHyperBoostBaseline(target) : baseline.State))
                     || confirmedBaseline.Pair != baseline.Pair)
                 {
                     state.Failure = PerformanceFanValidationFailure.BaselinePairMismatch;
@@ -607,6 +626,12 @@ internal sealed class PerformanceFanSetterValidationRunner
             IReadOnlyList<byte[]> applyPayloads = CreateApplyPayloads(target);
             for (int index = 0; index < applyPayloads.Count; index++)
             {
+                if (!await ValidateDirectWriteSafetyAsync(context, actor.Session, state, cancellationToken).ConfigureAwait(false))
+                {
+                    return state.ToResult();
+                }
+
+                state.ApplyWriteCount++;
                 byte[] payload = applyPayloads[index];
                 HidSessionResult<ReadOnlyMemory<byte>> write = await ExecuteAsync(
                     context,
@@ -826,6 +851,10 @@ internal sealed class PerformanceFanSetterValidationRunner
                 foreach (byte[] payload in CreateAutomaticStatePayloads(
                     baseline.State!.Value))
                 {
+                    if (!await ValidateDirectWriteSafetyAsync(context, actor.Session, state, cleanup.Token).ConfigureAwait(false))
+                    {
+                        return state.ToResult();
+                    }
                     state.RestoreWriteCount++;
                     HidSessionResult<ReadOnlyMemory<byte>> write = await ExecuteAsync(
                         context,
@@ -994,6 +1023,31 @@ internal sealed class PerformanceFanSetterValidationRunner
         }
     }
 
+    private async Task<bool> ValidateDirectWriteSafetyAsync(
+        ValidationRunContext context,
+        IRazerCommandSession session,
+        RunState state,
+        CancellationToken cancellationToken)
+    {
+        if (!recheckSafetyBeforeEachWrite)
+        {
+            return true;
+        }
+
+        PerformanceFanValidationSafetyGateResult safety = await safetyGate!.ValidateAsync(
+            context, session, cancellationToken).ConfigureAwait(false);
+        state.SafetyFailure = safety.Failure;
+        if (safety.Success)
+        {
+            return true;
+        }
+
+        state.Failure = PerformanceFanValidationFailure.SafetyAdmissionLost;
+        state.ManualRecoveryRequired = state.ApplyWriteCount > 0 || state.RestoreWriteCount > 0;
+        state.IndeterminatePartialWrite = state.ApplyWriteCount > 0 && !state.ApplyAcknowledged
+            || state.RestoreWriteCount > 0 && !state.RestoreAcknowledged;
+        return false;
+    }
     private async Task<PairRead> ReadPairAsync(
         ValidationRunContext context,
         IRazerCommandSession session,
@@ -2053,6 +2107,7 @@ internal sealed class PerformanceFanSetterValidationRunner
         { get; set; }
         internal HyperBoostPowerSourceBoundaryValidationResult? PowerSourceBoundaryValidation
         { get; set; }
+        internal int ApplyWriteCount { get; set; }
         internal int RestoreWriteCount { get; set; }
         internal PerformanceFanValidationFailure Failure { get; set; }
 

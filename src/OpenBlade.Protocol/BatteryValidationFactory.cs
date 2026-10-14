@@ -1047,6 +1047,29 @@ public static class BatteryValidationFactory
     }
 
 
+    internal static IPerformanceFanSetterValidationRunner CreateWindowsDirectFanEntryValidation()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var processes = new RunningProcessSource();
+        var services = new WindowsServiceSource();
+        var guard = new DirectFanValidationAccessGuard(
+            new WindowsHardwareAccessGuard(processes, services), processes, services);
+        var identity = new WindowsHostIdentitySource(
+            registry, new RuntimeWindowsPlatformEvidenceSource(registry));
+        var opener = new WindowsRazerHidSessionOpener(
+            identity, guard, native, ControllerExclusivityPolicy.Strict);
+        var actorFactory = new ValidationActorFactory(
+            opener, new OverlappedFeatureOperation(native), guard, TimeProvider.System,
+            DefaultExchangeTimeout, ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
+        return new PerformanceFanSetterValidationRunner(
+            static () => new ValidationRunContext(), actorFactory, TimeProvider.System,
+            DefaultExchangeTimeout, DefaultCleanupDrainTimeout,
+            safetyGate: new DirectFanValidationSafetyGate(guard, DefaultExchangeTimeout),
+            requiredBaselineState: ThermalModeState.PerformanceAutomatic,
+            recheckSafetyBeforeEachWrite: true);
+    }
     public static IPerformanceFanSetterValidationRunner
         CreateWindowsPerformanceFanSetterValidation()
     {

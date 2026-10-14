@@ -1666,6 +1666,23 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0].Equals("validate-direct-fan-entry", StringComparison.OrdinalIgnoreCase))
+{
+    var registry = new WindowsRegistryValueSource();
+    HostIdentityReadResult identity = new WindowsHostIdentitySource(
+        registry, new RuntimeWindowsPlatformEvidenceSource(registry)).ReadExactIdentity();
+    if (identity.Failure is not null || identity.Evidence?.BiosVersion is not { Length: > 0 } bios)
+    {
+        Console.Error.WriteLine("The exact RZ09-0581 host and BIOS provenance are unavailable.");
+        return 2;
+    }
+
+    IPerformanceFanSetterValidationRunner runner =
+        BatteryValidationFactory.CreateWindowsDirectFanEntryValidation();
+    var command = new PerformanceFanSetterValidationCommand(
+        runner.RunAsync, Console.Out, biosVersion: bios);
+    return await command.RunAsync(["fixed5400", .. args[1..]], CancellationToken.None);
+}
 if (args.Length > 0 && args[0].Equals(
     "validate-performance-fan",
     StringComparison.OrdinalIgnoreCase))
@@ -2174,6 +2191,7 @@ Console.WriteLine(
     "RZ09-0528:1532:02C6:2.02");
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-temporary-full-charge");
+Console.WriteLine("  OpenBlade.Capture validate-direct-fan-entry --confirm-target RZ09-0581:1532:02E0:<current-bios>");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-lighting-brightness");
