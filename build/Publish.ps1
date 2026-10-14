@@ -3,6 +3,8 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [string]$VcRedistPath,
+    [string]$DotNetRuntimePath,
+    [switch]$OfflineInstaller,
     [string]$SigningThumbprint,
     [string]$SignTool,
     [string]$MakeAppx,
@@ -133,7 +135,6 @@ function Invoke-OpenBladeSigning {
 $publishArguments = @(
     '--configuration', $Configuration,
     '--runtime', 'win-x64',
-    '--self-contained', 'true',
     '--property:PublishTrimmed=false',
     '--property:OpenBladePadlessHyperBoostLifecycleValidation=false'
 )
@@ -154,6 +155,7 @@ $productionPublishArguments = @(
     '--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU',
     '--property:OpenBladeIncludePseudoLocalization=false'
 )
+$installedPublishArguments = @('--self-contained', 'false') + $productionPublishArguments
 $serviceValidationArguments = @(
     if ($ThermalExternalDriftValidation) {
         '--property:OpenBladeThermalExternalDriftValidation=true',
@@ -192,11 +194,11 @@ try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
 
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
-        $payload ($productionPublishArguments + $serviceValidationArguments)
+        $payload ($installedPublishArguments + $serviceValidationArguments)
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
-        $payload $productionPublishArguments
+        $payload $installedPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
-        $payload $productionPublishArguments
+        $payload $installedPublishArguments
     $trayAssets = Join-Path $repository (
         'src\OpenBlade.Tray\obj\project.assets.json')
     Add-WindowsAppRuntimeNotificationResource `
@@ -208,9 +210,9 @@ try {
     # cannot produce byte-different Protocol assemblies solely because one
     # contains a portable-PDB debug directory.
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') `
-        $stagingDeveloperTools $productionPublishArguments
+        $stagingDeveloperTools ($productionPublishArguments + @('--self-contained', 'true'))
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') `
-        $stagingBundle ($productionPublishArguments + $setupPublishArguments)
+        $stagingBundle ($productionPublishArguments + $setupPublishArguments + @('--self-contained', 'true'))
     $forbiddenDevelopmentPayload = Get-ChildItem `
         -LiteralPath $stagingBundle `
         -Recurse `
@@ -269,6 +271,14 @@ try {
     [void](Copy-OpenBladeVcRedist `
         -SourcePath $VcRedistPath `
         -DestinationDirectory $stagingPrerequisites)
+    $dotNetPrerequisite = Get-OpenBladeDotNetRuntimePrerequisite
+    if ($dotNetPrerequisite.Version -ne [string]$buildProperties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion) {
+        throw 'The pinned .NET prerequisite and product runtime minimum do not match.'
+    }
+    [void](Copy-OpenBladeDotNetRuntime `
+        -SourcePath $DotNetRuntimePath `
+        -DestinationDirectory $stagingPrerequisites)
+    $embedDotNetRuntime = if ($OfflineInstaller) { 'yes' } else { 'no' }
 
     if ($signingEnabled) {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
@@ -291,6 +301,7 @@ try {
         '--property:NuGetAudit=false',
         "--property:OpenBladeBundle=$stagingBundle",
         "--property:OpenBladePrerequisites=$stagingPrerequisites",
+        "--property:OpenBladeEmbedDotNetRuntime=$embedDotNetRuntime",
         "--property:OpenBladeInstallerUi=$stagingInstallerUi",
         "--property:OpenBladeVersion=$($buildIdentity.BundleVersion)",
         '--output', $stagingInstallerOutput
@@ -313,6 +324,7 @@ try {
         -PublishedBundle $stagingBundle `
         -InstallerProject (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj') `
         -ExpectedVersion $buildIdentity.BundleVersion `
+        -OfflineInstaller:$OfflineInstaller `
         -ValidationRoot (Join-Path $stagingRoot 'installer-validation') `
         -PermittedRoot $artifacts
 
@@ -327,6 +339,7 @@ try {
         --property:NuGetAudit=false `
         --property:OpenBladeBundle=$stagingBundle `
         --property:OpenBladePrerequisites=$stagingPrerequisites `
+        --property:OpenBladeEmbedDotNetRuntime=$embedDotNetRuntime `
         --property:OpenBladeInstallerUi=$stagingInstallerUi `
         --property:OpenBladeVersion=$upgradeProbeVersion `
         --property:BaseIntermediateOutputPath=$stagingUpgradeProbeObj `
@@ -340,6 +353,7 @@ try {
         -PublishedBundle $stagingBundle `
         -InstallerProject (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj') `
         -ExpectedVersion $upgradeProbeVersion `
+        -OfflineInstaller:$OfflineInstaller `
         -ValidationRoot (Join-Path $stagingRoot 'upgrade-probe-validation') `
         -PermittedRoot $artifacts
 
@@ -348,6 +362,7 @@ try {
         -Installer $stagingInstaller `
         -ReportPath $stagingStoreReadiness `
         -RequireSignatures:$signingEnabled `
+        -OfflineInstaller:$OfflineInstaller `
         -VerifyPrivacyPolicy:$VerifyPrivacyPolicy | Out-Null
 
     if ($buildIdentity.Channel -eq 'Nightly') {

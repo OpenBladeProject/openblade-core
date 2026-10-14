@@ -164,11 +164,12 @@ switch ($Lane) {
         foreach ($project in $publishProjects) {
             $projectName = [IO.Path]::GetFileNameWithoutExtension($project)
             $output = Join-Path $outputRoot $projectName
+            $selfContained = if ($projectName -in @('OpenBlade.Service', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) { 'false' } else { 'true' }
             Invoke-DotNetChecked -Operation "restore $project" -Arguments @(
                 'restore', $project, '--runtime', 'win-x64', '-p:NuGetAudit=false')
             Invoke-DotNetChecked -Operation "publish $project" -Arguments @(
                 'publish', $project, '--configuration', 'Release',
-                '--runtime', 'win-x64', '--self-contained', 'true',
+                '--runtime', 'win-x64', '--self-contained', $selfContained,
                 '--property:PublishTrimmed=false', '--property:DebugType=None',
                 '--property:DebugSymbols=false',
                 '--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU',

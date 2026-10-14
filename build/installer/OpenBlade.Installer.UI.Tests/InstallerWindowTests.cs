@@ -703,6 +703,9 @@ public sealed class InstallerWindowTests
             string prerequisite = OpenBladeBootstrapperApplication.DescribePackageExecutionStatus(
                 "OpenBladeVcRuntime",
                 relatedVersion: null);
+            string dotNetRuntime = OpenBladeBootstrapperApplication.DescribePackageExecutionStatus(
+                "OpenBladeDotNetRuntime",
+                relatedVersion: null);
             string setup = OpenBladeBootstrapperApplication.DescribePackageExecutionStatus(
                 "OpenBladeSetup",
                 relatedVersion: null);
@@ -711,9 +714,115 @@ public sealed class InstallerWindowTests
                 "1.2.3");
 
             Assert.StartsWith("[!! ", prerequisite, StringComparison.Ordinal);
+            Assert.StartsWith("[!! ", dotNetRuntime, StringComparison.Ordinal);
             Assert.StartsWith("[!! ", setup, StringComparison.Ordinal);
             Assert.StartsWith("[!! ", related, StringComparison.Ordinal);
             Assert.Contains("1.2.3", related, StringComparison.Ordinal);
+        });
+    }
+
+    [Theory]
+    [InlineData(null, "10.0.12", false)]
+    [InlineData("", "10.0.12", false)]
+    [InlineData("10.0.11", "10.0.12", false)]
+    [InlineData("10.0.12", "10.0.12", true)]
+    [InlineData("10.0.13", "10.0.12", true)]
+    [InlineData("10.1.0", "10.0.12", false)]
+    [InlineData("10.0.13-preview.1", "10.0.12", false)]
+    [InlineData("11.0.0", "10.0.12", false)]
+    [InlineData("invalid", "10.0.12", false)]
+    [InlineData("10.0.12", null, false)]
+    public void DotNetDesktopRuntimeGateRequiresTheConfiguredMinimum(
+        string? installedVersion,
+        string? minimumVersion,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.IsDotNetDesktopRuntimeSufficient(
+                installedVersion,
+                minimumVersion));
+    }
+
+    [Theory]
+    [InlineData(false, 0L)]
+    [InlineData(true, 1L)]
+    public void DotNetRuntimeReadinessMapsToBurnNumericVariable(
+        bool runtimeSufficient,
+        long expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.DotNetRuntimeSufficientVariableValue(
+                runtimeSufficient));
+    }
+
+    [Theory]
+    [InlineData("OpenBladeVcRuntime", false)]
+    [InlineData("OpenBladeDotNetRuntime", true)]
+    [InlineData("OpenBladeSetup", false)]
+    public void DotNetRuntimeReadinessIsInitializedAtItsPackageDetectionBoundary(
+        string packageId,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.ShouldInitializeDotNetRuntimeReadiness(
+                packageId));
+    }
+
+    [Theory]
+    [InlineData(LaunchAction.Install, Display.Full, false, true)]
+    [InlineData(LaunchAction.Repair, Display.Full, false, true)]
+    [InlineData(LaunchAction.Uninstall, Display.Full, false, false)]
+    [InlineData(LaunchAction.Install, Display.None, false, false)]
+    [InlineData(LaunchAction.Install, Display.Passive, false, false)]
+    [InlineData(LaunchAction.Install, Display.Full, true, false)]
+    public void DotNetRuntimePromptIsLimitedToInteractiveInstallAndRepair(
+        LaunchAction action,
+        Display display,
+        bool runtimeSufficient,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.ShouldPromptForDotNetRuntime(
+                action,
+                display,
+                runtimeSufficient));
+    }
+
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    public void DeclinedRequiredRuntimeStopsBeforePlanning(
+        bool promptRequired,
+        bool consentGranted,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.ShouldProceedAfterDotNetRuntimePrompt(
+                promptRequired,
+                consentGranted));
+    }
+
+    [Theory]
+    [InlineData("zh-CN", "正在安装 Microsoft .NET 10 桌面运行时…")]
+    [InlineData("ru-RU", "Установка среды выполнения Microsoft .NET 10 Desktop…")]
+    public void DotNetRuntimeProgressIsLocalized(string cultureName, string expected)
+    {
+        RunWithUiCulture(cultureName, () =>
+        {
+            Assert.Equal(
+                expected,
+                OpenBladeBootstrapperApplication.DescribePackageExecutionStatus(
+                    "OpenBladeDotNetRuntime",
+                    relatedVersion: null));
+            Assert.NotEqual(
+                "Microsoft .NET 10 Desktop Runtime required",
+                InstallerStrings.Get("Microsoft .NET 10 Desktop Runtime required"));
         });
     }
 
@@ -1474,6 +1583,13 @@ public sealed class InstallerWindowTests
                 sameVersionMaintenance: false,
                 LaunchAction.Install,
                 "OpenBladeVcRuntime",
+                RequestState.Present));
+        Assert.Equal(
+            RequestState.Present,
+            OpenBladeBootstrapperApplication.SelectPackageRequestState(
+                sameVersionMaintenance: true,
+                LaunchAction.Repair,
+                "OpenBladeDotNetRuntime",
                 RequestState.Present));
         Assert.Equal(
             RequestState.ForcePresent,

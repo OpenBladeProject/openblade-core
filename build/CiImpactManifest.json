@@ -177,6 +177,10 @@
       "patterns": ["build/installer/*", "build/InstallerValidation.ps1", "build/Publish.ps1", "build/store/OpenBlade.StoreSubmission.json", "Directory.Packages.props", "OpenBlade.slnx", "src/OpenBlade.Setup/OpenBlade.Setup.csproj", "src/OpenBlade.Setup/SetupPaths.cs", "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico"]
     },
     {
+      "test": "tests/Build.Tests/InstallerPrerequisites.Tests.ps1",
+      "patterns": ["build/InstallerPrerequisites.ps1", "build/Publish.ps1", "build/installer/*", "Directory.Build.props", "tests/Build.Tests/InstallerPrerequisites.Tests.ps1"]
+    },
+    {
       "test": "tests/Build.Tests/InteractiveUsbPcapCaptureRunner.Tests.ps1",
       "patterns": ["captures"],
       "requiresCaptures": true

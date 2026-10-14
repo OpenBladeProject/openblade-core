@@ -6,7 +6,7 @@ Nightly release workflow. For ordinary source builds, use the commands in the
 
 ## Publish artifacts
 
-Create the graphical installer, self-contained `win-x64` production bundle,
+Create the graphical installer, `win-x64` production bundle,
 and separate developer tools:
 
 ```powershell
@@ -17,6 +17,14 @@ and separate developer tools:
 - Unpacked production bundle and command-line setup:
   `artifacts\win-x64\OpenBlade`
 - Developer tools: published separately by the same script
+
+The installed apps use a system-wide x64 .NET 10 Desktop Runtime. If a compatible
+runtime is missing, the graphical installer asks to download and install it
+before replacing OpenBlade. Visual C++ and the Windows App SDK remain bundled.
+Setup and developer tools remain self-contained.
+
+For an offline installer, run `build/Publish.ps1 -OfflineInstaller`. This embeds
+the same verified .NET prerequisite. Use this option for the Store package.
 
 Release signing is optional during development. For a public signed build,
 supply the certificate thumbprint to `Publish.ps1`. The script signs first-party
@@ -88,7 +96,8 @@ removal and deadlock.
 
 The unpacked production bundle remains available at
 `artifacts\win-x64\OpenBlade` for development and recovery. Run its setup from
-an elevated terminal when needed:
+an elevated terminal when needed. A standalone install requires the system-wide
+.NET Desktop Runtime already installed; use the graphical installer to obtain it:
 
 ```powershell
 .\artifacts\win-x64\OpenBlade\OpenBlade.Setup.exe install
@@ -106,7 +115,7 @@ If the graphical installer is gone but its ownership marker remains, use:
 
 ## Microsoft Store channel
 
-- The future Microsoft Store EXE listing uses the same offline installer.
+- The future Microsoft Store EXE listing uses the offline build described above.
 - Store installs use `/install /quiet /norestart`; direct downloads retain the
   graphical UI.
 - The Store caller cannot perform the normal-integrity relaunch required after

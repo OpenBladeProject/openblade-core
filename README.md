@@ -57,6 +57,7 @@ Update checks are optional, with Stable and Nightly channels.
    [latest release](https://github.com/OSSBlade/openblade-core/releases/latest).
 2. Double-click it and choose **Install**. Start it normally; setup asks for
    administrator permission when needed.
+   If .NET 10 Desktop Runtime is missing, setup offers to download and install it.
 3. Choose **Launch OpenBlade** to open the tray app.
 
 Uninstall through Windows Settings > Installed apps. You can keep your saved

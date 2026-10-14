@@ -482,6 +482,37 @@ try {
     Set-Content -LiteralPath (
         Join-Path $footprintPayload 'Microsoft.Windows.ApplicationModel.Resources.dll') `
         -Value 'runtime resource loader' -NoNewline
+    [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repository 'Directory.Build.props')
+    $runtimeVersion = [string]$buildProperties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion
+    foreach ($application in @('OpenBlade.Service', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
+        $frameworks = @([ordered]@{ name = 'Microsoft.NETCore.App'; version = $runtimeVersion })
+        if ($application -eq 'OpenBlade.Tray') {
+            $frameworks += [ordered]@{ name = 'Microsoft.WindowsDesktop.App'; version = $runtimeVersion }
+        }
+        @{ runtimeOptions = @{ frameworks = $frameworks; configProperties = @{ 'System.Diagnostics.Debugger.IsSupported' = $false } } } | ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $footprintPayload ($application + '.runtimeconfig.json'))
+    }
+    Assert-FrameworkDependentProductPayload -Payload $footprintPayload
+    Set-Content -LiteralPath (Join-Path $footprintPayload 'coreclr.dll') -Value 'unexpected private runtime'
+    $privateRuntimeRejected = $false
+    try { Assert-FrameworkDependentProductPayload -Payload $footprintPayload }
+    catch { $privateRuntimeRejected = $_.Exception.Message -match 'private runtime file' }
+    Assert-True $privateRuntimeRejected 'Production validation accepted a private CLR runtime.'
+    Remove-Item -LiteralPath (Join-Path $footprintPayload 'coreclr.dll')
+    $trayRuntimeConfig = Join-Path $footprintPayload 'OpenBlade.Tray.runtimeconfig.json'
+    $validRuntimeConfig = Get-Content -LiteralPath $trayRuntimeConfig -Raw
+    foreach ($invalidOptions in @(
+            @{ includedFrameworks = @(@{ name = 'Microsoft.NETCore.App'; version = $runtimeVersion }) },
+            @{ framework = @{ name = 'Microsoft.NETCore.App'; version = $runtimeVersion } },
+            @{ frameworks = @(@{ name = 'Microsoft.NETCore.App'; version = '9.0.0' },
+                @{ name = 'Microsoft.WindowsDesktop.App'; version = $runtimeVersion }) })) {
+        @{ runtimeOptions = $invalidOptions } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $trayRuntimeConfig
+        $invalidRuntimeRejected = $false
+        try { Assert-FrameworkDependentProductPayload -Payload $footprintPayload }
+        catch { $invalidRuntimeRejected = $true }
+        Assert-True $invalidRuntimeRejected 'Production validation accepted an incompatible runtime configuration.'
+    }
+    Set-Content -LiteralPath $trayRuntimeConfig -Value $validRuntimeConfig
     foreach ($culture in @('zh-CN', 'ru-RU')) {
         $cultureDirectory = Join-Path $footprintPayload $culture
         New-Item -ItemType Directory -Path $cultureDirectory -Force | Out-Null
