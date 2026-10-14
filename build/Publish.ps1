@@ -411,7 +411,7 @@ finally {
     }
 }
 
-Write-Host "Self-contained production bundle created at $bundle"
+Write-Host "Production bundle created at $bundle"
 Write-Host "Graphical production installer created at $installer"
 Write-Host "Microsoft Store readiness report created at $storeReadiness"
 Write-Host "Self-contained developer tools created at $developerTools"
