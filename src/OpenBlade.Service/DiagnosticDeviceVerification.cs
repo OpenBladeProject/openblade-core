@@ -74,10 +74,10 @@ public sealed record DiagnosticDeviceVerification(
         }
         && !NamesAdmittedModel(failure);
 
-    // The service probes each admitted model in turn and records the last
-    // result. An admitted laptop that fails a later check of its own model
-    // then appears as a product-name mismatch against the next model, but
-    // the observed value still names an admitted model.
+    // The service probes each admitted model in turn. When an admitted
+    // laptop's own probe cannot read its BIOS identity, the next model's
+    // probe can still report it as a product-name mismatch, but the observed
+    // value then names an admitted model.
     private static bool NamesAdmittedModel(HostIdentityFailureDetail failure) =>
         WindowsHostIdentitySource.AdmittedIdentities.Any(identity => string.Equals(
             failure.Field == "SystemManufacturer"

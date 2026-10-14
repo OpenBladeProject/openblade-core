@@ -1309,7 +1309,8 @@ public static class BatteryValidationFactory
             ControllerExclusivityPolicy.Advisory,
             compatibilityPolicy: compatibilityPolicy);
         if (production.Classification
-            != BatteryValidationProbeClassification.HostIdentityBlocked)
+                != BatteryValidationProbeClassification.HostIdentityBlocked
+            || PassedProductionBiosIdentity(production.HostIdentityFailure))
         {
             return production;
         }
@@ -1330,6 +1331,15 @@ public static class BatteryValidationFactory
                 FeatureReportByteLength: 91),
             compatibilityPolicy);
     }
+
+    // The RZ09-0528 probe can succeed only when the BIOS does not name an
+    // RZ09-0581. These failures occur after the RZ09-0581 BIOS manufacturer
+    // and product name matched, so the fallback could only fail at the
+    // product name and would hide the real failure from diagnostics.
+    private static bool PassedProductionBiosIdentity(HostIdentityFailureDetail? failure) =>
+        failure is { Source: "SystemInformation" }
+            or { Source: "BIOS", Field: "SystemSKU" or "BIOSVersion" }
+            or { Reason: HostIdentityFailureReason.RegistrySourcesMismatch };
 
     private static BatteryValidationProbeResult ProbeWindows(
         IRegistryValueSource registry,

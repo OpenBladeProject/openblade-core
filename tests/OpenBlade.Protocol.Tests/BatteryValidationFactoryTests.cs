@@ -649,6 +649,96 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public void ProbeWindowsForService_KeepsRz090581FailureAfterItsBiosIdentityMatched()
+    {
+        BatteryValidationProbeResult drifted = ProbeForService(new HostRegistryValueSource(
+            "Blade 16 - RZ09-0581",
+            systemInformationProductName: "Blade 16 - Other"));
+        BatteryValidationProbeResult missingBiosVersion = ProbeForService(
+            new HostRegistryValueSource("Blade 16 - RZ09-0581", biosVersion: null));
+        BatteryValidationProbeResult biosVersionSources = ProbeForService(
+            new HostRegistryValueSource(
+                "Blade 16 - RZ09-0581",
+                systemInformationBiosVersion: "3.02"));
+
+        Assert.Equal(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            drifted.Classification);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                "SystemInformation",
+                "SystemProductName",
+                "Blade 16 - RZ09-0581",
+                "Blade 16 - Other"),
+            drifted.HostIdentityFailure);
+        Assert.Equal(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            missingBiosVersion.Classification);
+        Assert.Equal(
+            (HostIdentityFailureReason.RegistryValueMissing, "BIOS", "BIOSVersion"),
+            (missingBiosVersion.HostIdentityFailure!.Reason,
+                missingBiosVersion.HostIdentityFailure.Source,
+                missingBiosVersion.HostIdentityFailure.Field));
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistrySourcesMismatch,
+                "BIOS/SystemInformation",
+                "BIOSVersion",
+                "3.01",
+                "3.02"),
+            biosVersionSources.HostIdentityFailure);
+    }
+
+    [Fact]
+    public void ProbeWindowsForService_FallsBackToRz090528WhenBiosNamesAnotherModel()
+    {
+        BatteryValidationProbeResult rz090528 = ProbeForService(
+            new HostRegistryValueSource("Blade 16 - RZ09-0528", biosVersion: "2.02"),
+            new ExactHidCandidateNative(new HidHandleIdentity(0x1532, 0x02C6, 0x0001, 0x0002, 91)));
+        BatteryValidationProbeResult unsupported = ProbeForService(
+            new HostRegistryValueSource("Blade 18 - RZ09-0484"));
+        BatteryValidationProbeResult rz090528Drifted = ProbeForService(
+            new HostRegistryValueSource(
+                "Blade 16 - RZ09-0528",
+                systemInformationProductName: "Blade 16 - Other",
+                biosVersion: "2.02"));
+        // A missing BIOS product name does not show the laptop is an RZ09-0581,
+        // so the RZ09-0528 probe still runs.
+        BatteryValidationProbeResult missingProductName = ProbeForService(
+            new HostRegistryValueSource(biosProductName: null));
+
+        Assert.Equal(BatteryValidationProbeClassification.Ready, rz090528.Classification);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                "SystemInformation",
+                "SystemProductName",
+                "Blade 16 - RZ09-0528",
+                "Blade 16 - Other"),
+            rz090528Drifted.HostIdentityFailure);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMissing,
+                "BIOS",
+                "SystemProductName",
+                "Blade 16 - RZ09-0528",
+                null),
+            missingProductName.HostIdentityFailure);
+        Assert.Equal(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            unsupported.Classification);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                "BIOS",
+                "SystemProductName",
+                "Blade 16 - RZ09-0528",
+                "Blade 18 - RZ09-0484"),
+            unsupported.HostIdentityFailure);
+    }
+
+    [Fact]
     public async Task CreateWindowsQuerySequenceForService_UsesAdvisoryAdmission()
     {
         IBatteryQuerySequenceRunFactory factory =
@@ -768,6 +858,45 @@ public sealed class BatteryValidationFactoryTests
                 "BIOSVersion" => biosVersion,
                 _ => null,
             };
+    }
+
+    private static BatteryValidationProbeResult ProbeForService(
+        IRegistryValueSource registry,
+        ExactHidCandidateNative? native = null) =>
+        BatteryValidationFactory.ProbeWindowsForService(
+            registry,
+            new ExactPlatformEvidenceSource(),
+            new EmptyProcessSource(),
+            new EmptyServiceSource(),
+            native ?? new ExactHidCandidateNative());
+
+    private sealed class HostRegistryValueSource(
+        string? biosProductName,
+        string? systemInformationProductName = null,
+        string? biosVersion = "3.01",
+        string? systemInformationBiosVersion = null) : IRegistryValueSource
+    {
+        public object? Read(
+            Microsoft.Win32.RegistryHive hive,
+            Microsoft.Win32.RegistryView view,
+            string key,
+            string valueName)
+        {
+            bool systemInformation = key.EndsWith(
+                "SystemInformation",
+                StringComparison.Ordinal);
+            return valueName switch
+            {
+                "SystemManufacturer" => "Razer",
+                "SystemProductName" when systemInformation =>
+                    systemInformationProductName ?? biosProductName,
+                "SystemProductName" => biosProductName,
+                "BIOSVersion" when systemInformation =>
+                    systemInformationBiosVersion ?? biosVersion,
+                "BIOSVersion" => biosVersion,
+                _ => null,
+            };
+        }
     }
 
     private sealed class ExactPlatformEvidenceSource : IWindowsPlatformEvidenceSource
