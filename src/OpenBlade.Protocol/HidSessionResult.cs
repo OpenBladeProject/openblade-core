@@ -47,6 +47,11 @@ public readonly record struct HidSessionFailureDiagnostic(
     int? TransferredByteCount)
 {
     public HidProtocolValidationFailure? ProtocolValidationFailure { get; init; }
+
+    // Uppercase hexadecimal of a transaction-matched response payload whose
+    // content the closed decoder rejected. It is bounded device-state
+    // evidence only and is never populated for framing or channel failures.
+    internal string? RejectedPayloadHex { get; init; }
 }
 
 public readonly record struct HidSessionResult<T>(

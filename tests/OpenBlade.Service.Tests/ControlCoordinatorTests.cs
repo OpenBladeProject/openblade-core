@@ -1878,6 +1878,213 @@ public sealed class ControlCoordinatorTests
             _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
         };
 
+    private const string RejectedTemporaryFullChargeMessage =
+        "Temporary full charge query (07/8F) returned unrecognized payload 05 (PayloadValidator).";
+
+    [Fact]
+    public async Task FullApply_ContentRejectedBatteryGetterFailsOnlyBattery()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateException = BatteryContentRejection;
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Fans = new ResolvedSetting<FanMode>(
+                FanMode.Automatic,
+                SettingValueSource.PowerProfile),
+        };
+
+        FullTransitionApplyOutcome outcome = await coordinator.ApplyDesiredStateOutcomeAsync(
+            desired,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Battery.Status);
+        Assert.Equal(
+            $"Battery could not be read before writing: {RejectedTemporaryFullChargeMessage}",
+            outcome.Results.Battery.Message);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Unchanged, outcome.Results.Fans.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Lighting.Status);
+        Assert.False(outcome.DeviceAccessFailed);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, outcome.WriteAttempted);
+        Assert.Equal(0, device.BatterySetCalls);
+        Assert.Equal(1, device.PerformanceSetCalls);
+        Assert.Equal(1, device.LightingSetCalls);
+        Assert.NotNull(outcome.Readback);
+        Assert.Null(outcome.Readback.Battery);
+        Assert.Equal(PerformancePreset.Balanced, outcome.Readback.Performance);
+    }
+
+    [Fact]
+    public async Task FullApply_ContentRejectedThermalGetterSkipsOnlyThermalSetters()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        const string thermalMessage =
+            "Thermal channel 2 query (0D/82) returned unrecognized payload 01 02 09 00 (PayloadValidator).";
+        device.ReadStateException = state => new RazerProtocolException(
+            thermalMessage,
+            HidProtocolValidationFailure.PayloadValidator)
+        {
+            StateQuery = DeviceStateQuery.ThermalChannelTwo,
+            PartialState = new PartialDeviceStateRead(
+                state with
+                {
+                    Performance = null,
+                    Fans = null,
+                    HyperBoostActive = null,
+                },
+                lightingOffConfirmationUnavailable: false,
+                [
+                    new DeviceStateReadFailure(
+                        DeviceStateQuery.ThermalChannelTwo,
+                        new HashSet<DeviceSubsystem>
+                        {
+                            DeviceSubsystem.Performance,
+                            DeviceSubsystem.Fans,
+                        },
+                        thermalMessage),
+                ]),
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        FullTransitionApplyOutcome outcome = await coordinator.ApplyDesiredStateOutcomeAsync(
+            CreateDesiredState(),
+            CancellationToken.None);
+
+        Assert.Equal(
+            $"Performance could not be read before writing: {thermalMessage}",
+            outcome.Results.Performance.Message);
+        Assert.Equal(
+            $"Fans could not be read before writing: {thermalMessage}",
+            outcome.Results.Fans.Message);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Battery.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Lighting.Status);
+        Assert.False(outcome.DeviceAccessFailed);
+        Assert.Equal(0, device.PerformanceSetCalls + device.FanSetCalls + device.GpuClockSetCalls);
+        Assert.Equal(1, device.BatterySetCalls);
+        Assert.Equal(1, device.LightingSetCalls);
+        Assert.NotNull(outcome.Readback);
+        Assert.Null(outcome.Readback.HyperBoostActive);
+        Assert.Equal(75, outcome.Readback.Battery?.ChargeLimitPercent);
+    }
+
+    [Fact]
+    public async Task FullApply_ChannelReadFailureStillFailsEverySubsystem()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateException = _ => new TimeoutException("Battery state query timed out.");
+        var coordinator = new ControlCoordinator(device);
+
+        FullTransitionApplyOutcome outcome = await coordinator.ApplyDesiredStateOutcomeAsync(
+            CreateDesiredState(),
+            CancellationToken.None);
+
+        foreach (ControlResult result in new[]
+        {
+            outcome.Results.Performance,
+            outcome.Results.Fans,
+            outcome.Results.Battery,
+            outcome.Results.Lighting,
+        })
+        {
+            Assert.Equal(ControlResultStatus.Failed, result.Status);
+            Assert.StartsWith("Device state could not be read before writing:", result.Message);
+        }
+        Assert.True(outcome.DeviceAccessFailed);
+        Assert.Null(outcome.Readback);
+        Assert.Equal(0, device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_ProceedsWhenOnlyBatteryGetterWasRejected()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateException = BatteryContentRejection;
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult result = await coordinator.ApplyPerformanceAsync(
+            PerformancePreset.Balanced,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, result.Status);
+        Assert.Equal(1, device.PerformanceSetCalls);
+        Assert.Equal(0, device.BatterySetCalls);
+    }
+
+    [Fact]
+    public async Task ScopedBattery_StopsBeforeSetterWhenItsGetterWasRejected()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateException = BatteryContentRejection;
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult result = await coordinator.ApplyChargeLimitAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, result.Status);
+        Assert.Equal(
+            $"Battery could not be read before writing: {RejectedTemporaryFullChargeMessage}",
+            result.Message);
+        Assert.Equal(0, device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ScopedFans_StopBeforeSetterWhenThermalGetterIsUnavailable()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        const string thermalMessage =
+            "Thermal channel 1 query (0D/82) returned unrecognized payload 01 07 00 00 (PayloadValidator).";
+        device.ReadStateException = state => new RazerProtocolException(
+            thermalMessage,
+            HidProtocolValidationFailure.PayloadValidator)
+        {
+            StateQuery = DeviceStateQuery.ThermalChannelOne,
+            PartialState = new PartialDeviceStateRead(
+                state with { Performance = null, Fans = null },
+                lightingOffConfirmationUnavailable: false,
+                [
+                    new DeviceStateReadFailure(
+                        DeviceStateQuery.ThermalChannelOne,
+                        new HashSet<DeviceSubsystem>
+                        {
+                            DeviceSubsystem.Performance,
+                            DeviceSubsystem.Fans,
+                        },
+                        thermalMessage),
+                ]),
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult fans = await coordinator.ApplyFanAsync(
+            FanMode.Maximum,
+            CancellationToken.None);
+        ControlResult battery = await coordinator.ApplyChargeLimitAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, fans.Status);
+        Assert.Equal($"Fans could not be read before writing: {thermalMessage}", fans.Message);
+        Assert.Equal(0, device.FanSetCalls + device.PerformanceSetCalls);
+        Assert.Equal(ControlResultStatus.Applied, battery.Status);
+        Assert.Equal(1, device.BatterySetCalls);
+    }
+
+    private static RazerProtocolException BatteryContentRejection(ConfirmedDeviceState state) =>
+        new(RejectedTemporaryFullChargeMessage, HidProtocolValidationFailure.PayloadValidator)
+        {
+            StateQuery = DeviceStateQuery.TemporaryFullCharge,
+            PartialState = new PartialDeviceStateRead(
+                state with { Battery = null },
+                lightingOffConfirmationUnavailable: false,
+                [
+                    new DeviceStateReadFailure(
+                        DeviceStateQuery.TemporaryFullCharge,
+                        new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery },
+                        RejectedTemporaryFullChargeMessage),
+                ]),
+        };
+
     private static RecordingBladeDevice CreateMismatchedDevice() => new()
     {
         State = new ConfirmedDeviceState(
@@ -2082,6 +2289,8 @@ public sealed class ControlCoordinatorTests
 
         public Exception? LightingFailure { get; set; }
 
+        public Func<ConfirmedDeviceState, Exception?>? ReadStateException { get; set; }
+
         public Action<int>? AfterReadState { get; set; }
 
         public Action<DeviceSubsystem>? AfterSetter { get; set; }
@@ -2132,6 +2341,11 @@ public sealed class ControlCoordinatorTests
                 || ReadStateFailureCalls.Contains(StateReadCalls))
             {
                 throw new IOException("readback failed");
+            }
+
+            if (ReadStateException?.Invoke(State) is { } readException)
+            {
+                throw readException;
             }
 
             AfterReadState?.Invoke(StateReadCalls);

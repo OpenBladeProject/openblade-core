@@ -18,6 +18,10 @@ internal enum DeviceStateQuery
     CustomCpuPerformance,
     CustomGpuPerformance,
     CustomPerformanceCombination,
+    KeyboardBrightness,
+    LogoLightingState,
+    LogoLightingEffect,
+    LogoLightingCombination,
 }
 
 public sealed class RazerProtocolException : Exception
@@ -33,6 +37,13 @@ public sealed class RazerProtocolException : Exception
     public HidProtocolValidationFailure ValidationFailure { get; }
 
     internal DeviceStateQuery? StateQuery { get; init; }
+
+    internal string? RejectedPayloadHex { get; init; }
+
+    // Present only when the combined state read completed every other getter
+    // after a content rejection. Callers that do not consume it keep the
+    // fail-closed whole-read behavior of an ordinary protocol exception.
+    internal PartialDeviceStateRead? PartialState { get; init; }
 }
 
 internal sealed class RazerReport

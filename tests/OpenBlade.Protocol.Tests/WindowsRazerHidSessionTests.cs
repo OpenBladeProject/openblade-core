@@ -1661,6 +1661,79 @@ public sealed class WindowsRazerHidSessionTests
     private const uint SetCode = 0x000B0191;
     private const uint GetCode = 0x000B0192;
 
+    [Fact]
+    public async Task PayloadValidatorRejection_RetainsOnlyBoundedRejectedPayload()
+    {
+        byte[] payload = Enumerable.Range(0, 20).Select(value => (byte)(value + 0xA0)).ToArray();
+        var io = new ScriptedIo(SetSuccess(), GetResult(Response(1, 0x07, 0x8F, payload)));
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            policy: ControllerExclusivityPolicy.Advisory);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(0x07, 0x8F, [0x00], payload.Length, _ => false),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Equal(
+            HidProtocolValidationFailure.PayloadValidator,
+            result.Diagnostic?.ProtocolValidationFailure);
+        Assert.Equal(
+            "A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 AA AB AC AD AE AF ...",
+            result.Diagnostic?.RejectedPayloadHex);
+    }
+
+    [Fact]
+    public async Task ThrowingPayloadValidator_RetainsNoPayloadAndIsNotIsolated()
+    {
+        var io = new ScriptedIo(SetSuccess(), GetResult(Response(1, 0x07, 0x8F, [0x05])));
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            policy: ControllerExclusivityPolicy.Advisory);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(0x07, 0x8F, [0x00], 1, _ => throw new InvalidOperationException("validator fault")),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Equal(
+            HidProtocolValidationFailure.PayloadValidator,
+            result.Diagnostic?.ProtocolValidationFailure);
+        Assert.Null(result.Diagnostic?.RejectedPayloadHex);
+        Assert.False(DeviceStateContentRejection.IsContentRejection(
+            new RazerProtocolException(
+                "validator fault",
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                StateQuery = DeviceStateQuery.TemporaryFullCharge,
+                RejectedPayloadHex = result.Diagnostic?.RejectedPayloadHex,
+            }));
+    }
+
+    [Fact]
+    public async Task ChannelValidationFailure_RetainsNoPayload()
+    {
+        var io = new ScriptedIo(SetSuccess(), GetResult(Response(2, 0x07, 0x8F, [0x05])));
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            policy: ControllerExclusivityPolicy.Advisory);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(0x07, 0x8F, [0x00], 1, _ => false),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Equal(
+            HidProtocolValidationFailure.TransactionMismatch,
+            result.Diagnostic?.ProtocolValidationFailure);
+        Assert.Null(result.Diagnostic?.RejectedPayloadHex);
+    }
+
     private static WindowsRazerHidSession CreateActor(
         ScriptedIo io,
         IHardwareAccessGuard? guard = null,

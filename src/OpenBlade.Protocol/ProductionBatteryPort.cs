@@ -1915,6 +1915,9 @@ internal sealed class ProductionBatteryPort :
                 HidProtocolValidationFailure.PayloadValidator)
             {
                 StateQuery = DeviceStateQuery.ThermalChannelAgreement,
+                RejectedPayloadHex = DeviceStateContentRejection.FormatPayloads(
+                    first.Span,
+                    second.Span),
             };
         }
 
@@ -1958,12 +1961,14 @@ internal sealed class ProductionBatteryPort :
             return MapThermalState(state);
         }
 
-        CustomPerformanceLevel cpu = await QueryCustomPerformanceLevelAsync(
-            CustomPerformanceDomain.Cpu,
-            cancellationToken).ConfigureAwait(false);
-        CustomPerformanceLevel gpu = await QueryCustomPerformanceLevelAsync(
-            CustomPerformanceDomain.Gpu,
-            cancellationToken).ConfigureAwait(false);
+        (CustomPerformanceLevel cpu, ReadOnlyMemory<byte> cpuPayload) =
+            await QueryCustomPerformanceLevelAsync(
+                CustomPerformanceDomain.Cpu,
+                cancellationToken).ConfigureAwait(false);
+        (CustomPerformanceLevel gpu, ReadOnlyMemory<byte> gpuPayload) =
+            await QueryCustomPerformanceLevelAsync(
+                CustomPerformanceDomain.Gpu,
+                cancellationToken).ConfigureAwait(false);
         var custom = new CustomPerformanceSettings(cpu, gpu);
         if (Capabilities.CustomPerformance?.Supports(custom) == false)
         {
@@ -1973,6 +1978,9 @@ internal sealed class ProductionBatteryPort :
                 HidProtocolValidationFailure.PayloadValidator)
             {
                 StateQuery = DeviceStateQuery.CustomPerformanceCombination,
+                RejectedPayloadHex = DeviceStateContentRejection.FormatPayloads(
+                    cpuPayload.Span,
+                    gpuPayload.Span),
             };
         }
 
@@ -1984,7 +1992,8 @@ internal sealed class ProductionBatteryPort :
         };
     }
 
-    private async Task<CustomPerformanceLevel> QueryCustomPerformanceLevelAsync(
+    private async Task<(CustomPerformanceLevel Level, ReadOnlyMemory<byte> Payload)>
+        QueryCustomPerformanceLevelAsync(
         CustomPerformanceDomain domain,
         CancellationToken cancellationToken)
     {
@@ -2021,10 +2030,12 @@ internal sealed class ProductionBatteryPort :
                 HidProtocolValidationFailure.PayloadValidator)
             {
                 StateQuery = query,
+                RejectedPayloadHex =
+                    DeviceStateContentRejection.FormatPayload(result.Value.Span),
             };
         }
 
-        return level;
+        return (level, result.Value);
     }
 
     private async Task<ReadOnlyMemory<byte>> QueryThermalChannelAsync(
@@ -2061,6 +2072,8 @@ internal sealed class ProductionBatteryPort :
                 HidProtocolValidationFailure.PayloadValidator)
             {
                 StateQuery = query,
+                RejectedPayloadHex =
+                    DeviceStateContentRejection.FormatPayload(result.Value.Span),
             };
         }
 
@@ -2180,6 +2193,7 @@ internal sealed class ProductionBatteryPort :
                         ?? HidProtocolValidationFailure.PayloadValidator)
                 {
                     StateQuery = query,
+                    RejectedPayloadHex = diagnostic?.RejectedPayloadHex,
                 };
             default:
                 throw new NativeDeviceReadException(failure, diagnostic, query);

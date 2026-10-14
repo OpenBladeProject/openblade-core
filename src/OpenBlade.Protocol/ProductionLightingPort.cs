@@ -930,7 +930,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             .ConfigureAwait(false);
         if (!LightingBrightnessProtocol.TryDecodeQuery(response.Span, out byte raw))
         {
-            throw new IOException("Lighting brightness response was malformed.");
+            throw new DeviceStateContentRejectedException(
+                "Lighting brightness response was malformed.",
+                DeviceStateQuery.KeyboardBrightness,
+                DeviceStateContentRejection.FormatPayload(response.Span));
         }
 
         lastKnownBrightnessRaw = raw;
@@ -995,7 +998,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             cancellationToken).ConfigureAwait(false);
         if (!LogoLightingProtocol.TryDecodeMode(state.Span, effect.Span, out LogoLightingMode mode))
         {
-            throw new IOException("Logo lighting response was malformed or unsupported.");
+            throw new DeviceStateContentRejectedException(
+                "Logo lighting response was malformed or unsupported.",
+                DeviceStateQuery.LogoLightingCombination,
+                DeviceStateContentRejection.FormatPayloads(state.Span, effect.Span));
         }
 
         return mode;
@@ -1189,7 +1195,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
         throw result.Failure == HidSessionFailureKind.Timeout
             ? new TimeoutException("Lighting brightness query timed out.")
-            : new IOException($"Lighting brightness query failed ({result.Failure}).");
+            : DeviceStateContentRejection.LightingReadFailure(
+                $"Lighting brightness query failed ({result.Failure}).",
+                command,
+                result.Diagnostic);
     }
 
     private async Task<ReadOnlyMemory<byte>> ExecuteWriteCoreAsync(

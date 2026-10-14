@@ -40,10 +40,11 @@ public sealed class TemporaryFullChargeCommandClientTests
     }
 
     [Theory]
-    [InlineData(new byte[] { })]
-    [InlineData(new byte[] { 0x01 })]
-    [InlineData(new byte[] { 0x00, 0x04 })]
-    public async Task QueryAsync_RejectsNonClosedPayload(byte[] payload)
+    [InlineData(new byte[] { }, "(empty)")]
+    [InlineData(new byte[] { 0x01 }, "01")]
+    [InlineData(new byte[] { 0x05 }, "05")]
+    [InlineData(new byte[] { 0x00, 0x04 }, "00 04")]
+    public async Task QueryAsync_RejectsNonClosedPayload(byte[] payload, string expectedHex)
     {
         var client = new TemporaryFullChargeCommandClient(
             new ScriptedSession(
@@ -55,6 +56,7 @@ public sealed class TemporaryFullChargeCommandClientTests
         Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator,
             result.Diagnostic?.ProtocolValidationFailure);
+        Assert.Equal(expectedHex, result.Diagnostic?.RejectedPayloadHex);
     }
 
     [Theory]

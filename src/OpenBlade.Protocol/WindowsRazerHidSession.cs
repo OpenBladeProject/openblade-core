@@ -629,6 +629,7 @@ internal sealed class WindowsRazerHidSession :
                 getResult.Completion, nativeRetirement: getResult.NativeRetirement);
         }
 
+        string? rejectedPayloadHex = null;
         try
         {
             if (getBuffer[0] != featureReportId)
@@ -650,6 +651,8 @@ internal sealed class WindowsRazerHidSession :
                 }
                 catch
                 {
+                    // A validator fault is not evidence about the reply content,
+                    // so no payload is retained and the read stays fail-closed.
                     throw new RazerProtocolException(
                         "Command payload validator failed.",
                         HidProtocolValidationFailure.PayloadValidator);
@@ -657,6 +660,10 @@ internal sealed class WindowsRazerHidSession :
 
                 if (!valid)
                 {
+                    // The envelope, correlation, status and length already
+                    // passed, so only the bounded payload content is retained.
+                    rejectedPayloadHex =
+                        DeviceStateContentRejection.FormatPayload(payload.Span);
                     throw new RazerProtocolException(
                         "Command payload validation failed.",
                         HidProtocolValidationFailure.PayloadValidator);
@@ -668,11 +675,20 @@ internal sealed class WindowsRazerHidSession :
         catch (RazerProtocolException error)
         {
             Poison();
-            return DiagnosticFailure(
+            HidSessionResult<ReadOnlyMemory<byte>> failure = DiagnosticFailure(
                 HidSessionFailureKind.ProtocolFailure,
                 HidSessionFailurePhase.ProtocolValidation,
                 getResult.Completion,
                 error.ValidationFailure, nativeRetirement: getResult.NativeRetirement);
+            return rejectedPayloadHex is null
+                ? failure
+                : failure with
+                {
+                    Diagnostic = failure.Diagnostic!.Value with
+                    {
+                        RejectedPayloadHex = rejectedPayloadHex,
+                    },
+                };
         }
     }
 

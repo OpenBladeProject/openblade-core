@@ -1532,6 +1532,62 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task RejectedBrightnessReply_KeepsIoFailureAndCarriesBoundedPayload()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            BrightnessResponse = [0x02, 0x05, 0x10],
+        };
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        IOException failure = await Assert.ThrowsAnyAsync<IOException>(
+            () => port.ReadStateAsync(default));
+
+        DeviceStateContentRejectedException rejection =
+            Assert.IsType<DeviceStateContentRejectedException>(failure);
+        Assert.Equal(DeviceStateQuery.KeyboardBrightness, rejection.Query);
+        Assert.Equal(
+            "Keyboard brightness query (03/83) returned unrecognized payload 02 05 10 (PayloadValidator).",
+            rejection.Description);
+    }
+
+    [Fact]
+    public async Task UnsupportedLogoStateAndEffect_CarriesBothBoundedPayloads()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            LogoEnabled = true,
+            LogoEffect = 0x07,
+        };
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        IOException failure = await Assert.ThrowsAnyAsync<IOException>(
+            () => port.ReadLogoStateAsync(default));
+
+        DeviceStateContentRejectedException rejection =
+            Assert.IsType<DeviceStateContentRejectedException>(failure);
+        Assert.Equal(DeviceStateQuery.LogoLightingCombination, rejection.Query);
+        Assert.Equal(
+            "Logo lighting state and effect (03/80, 03/82) returned unrecognized payload 01 04 01 / 01 04 07 (PayloadValidator).",
+            rejection.Description);
+    }
+
+    [Fact]
+    public async Task LightingChannelFailure_RemainsPlainIoFailureWithoutPayload()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            FailBrightnessQueryOnCall = 1,
+        };
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        IOException failure = await Assert.ThrowsAnyAsync<IOException>(
+            () => port.ReadStateAsync(default));
+
+        Assert.IsNotType<DeviceStateContentRejectedException>(failure);
+    }
+
+    [Fact]
     public async Task LightingWriteAppliesAndReadsBackRequestedLogoMode()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
@@ -3220,6 +3276,8 @@ public sealed class ProductionLightingPortTests
 
         internal byte[]? Transition84Response { get; set; }
 
+        internal byte[]? BrightnessResponse { get; set; }
+
         internal Exception? DisposeFailure { get; init; }
 
         internal RazerDeviceMode DeviceMode { get; set; } = RazerDeviceMode.Driver;
@@ -3301,8 +3359,8 @@ public sealed class ProductionLightingPortTests
 
             byte[] response = (command.ClassId, command.CommandId) switch
             {
-                (0x03, 0x83) =>
-                    [0x01, 0x05, BrightnessQueryOverrides.TryDequeue(out byte raw)
+                (0x03, 0x83) => BrightnessResponse
+                    ?? [0x01, 0x05, BrightnessQueryOverrides.TryDequeue(out byte raw)
                         ? raw
                         : Brightness],
                 (0x03, 0x03) => SetBrightness(command.Arguments.Span),
@@ -3339,6 +3397,8 @@ public sealed class ProductionLightingPortTests
                         {
                             ProtocolValidationFailure =
                                 HidProtocolValidationFailure.PayloadValidator,
+                            RejectedPayloadHex =
+                                DeviceStateContentRejection.FormatPayload(response),
                         },
                     });
             }

@@ -7,8 +7,6 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 {
     [Theory]
-    [InlineData(0, null, "Battery protection query (07/92)")]
-    [InlineData(1, null, "Temporary full charge query (07/8F)")]
     [InlineData(2, null, "Performance and fan state query")]
     [InlineData(2, (int)DeviceStateQuery.ThermalChannelOne, "Thermal channel 1 query (0D/82)")]
     [InlineData(2, (int)DeviceStateQuery.ThermalChannelTwo, "Thermal channel 2 query (0D/82)")]
@@ -55,6 +53,323 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(rejectingGetter >= 1 ? 1 : 0, port.TemporaryQueryCount);
         Assert.Equal(rejectingGetter == 2 ? 1 : 0, port.PerformanceFanQueryCount);
         Assert.Equal(0, port.SetLimitCount + port.SetPerformanceCount + port.SetFanModeCount);
+    }
+
+    [Fact]
+    public async Task ReadState_RejectedTemporaryFullChargeLeavesOnlyBatteryUnknown()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var rejected = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            TemporaryFailure = new RazerProtocolException(
+                "raw report, serial, and device path detail",
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                RejectedPayloadHex = "05",
+            },
+        };
+        var reopened = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var factory = new FakeProductionFactory(capabilities, rejected, reopened);
+        using var provider = ReadyProvider(factory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        const string expected =
+            "Temporary full charge query (07/8F) returned unrecognized payload 05 (PayloadValidator).";
+        Assert.Equal(expected, error.Message);
+        Assert.DoesNotContain("serial", error.Message, StringComparison.OrdinalIgnoreCase);
+        PartialDeviceStateRead partial = Assert.IsType<PartialDeviceStateRead>(error.PartialState);
+        Assert.Equal([DeviceSubsystem.Battery], partial.UnavailableSubsystems);
+        Assert.Equal(expected, partial.MessageFor(DeviceSubsystem.Battery));
+        Assert.Null(partial.State.Battery);
+        Assert.Equal(PerformancePreset.Balanced, partial.State.Performance);
+        Assert.Equal(FanMode.Automatic, partial.State.Fans);
+        Assert.False(partial.State.HyperBoostActive);
+        // The rejected exchange poisons its session, so the remaining getter
+        // runs on one fresh verified reopen and both sessions are released.
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, rejected.DisposeCount);
+        Assert.Equal(1, reopened.DisposeCount);
+        Assert.Equal(0, rejected.PerformanceFanQueryCount);
+        Assert.Equal(1, reopened.PerformanceFanQueryCount);
+        Assert.Equal(0, reopened.ProtectionQueryCount + reopened.TemporaryQueryCount);
+        Assert.Equal(0, rejected.SetLimitCount + reopened.SetLimitCount);
+    }
+
+    [Fact]
+    public async Task ReadState_RejectedBatteryProtectionSkipsOverrideAndReadsThermalState()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Silent },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var rejected = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            ProtectionFailure = new RazerProtocolException(
+                "rejected",
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                RejectedPayloadHex = "B9",
+            },
+        };
+        var reopened = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Silent,
+                FanMode.Automatic));
+        var factory = new FakeProductionFactory(capabilities, rejected, reopened);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Equal(
+            "Battery protection query (07/92) returned unrecognized payload B9 (PayloadValidator).",
+            error.Message);
+        Assert.NotNull(error.PartialState);
+        Assert.Null(error.PartialState.State.Battery);
+        Assert.Equal(PerformancePreset.Silent, error.PartialState.State.Performance);
+        Assert.Equal(0, rejected.TemporaryQueryCount + reopened.TemporaryQueryCount);
+        Assert.Equal(1, reopened.PerformanceFanQueryCount);
+    }
+
+    [Fact]
+    public async Task ReadState_ReopenFailureAfterContentRejectionFailsClosed()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var rejected = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            TemporaryFailure = new RazerProtocolException(
+                "rejected",
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                RejectedPayloadHex = "05",
+            },
+        };
+        var factory = new FakeProductionFactory(capabilities, rejected);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        Exception error = await Assert.ThrowsAnyAsync<Exception>(
+            () => device.ReadStateAsync(default));
+
+        Assert.IsNotType<RazerProtocolException>(error);
+        Assert.IsType<IOException>(error);
+        Assert.Equal(1, rejected.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadState_PayloadValidatorWithoutPayloadEvidenceFailsClosed()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var rejected = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            TemporaryFailure = new RazerProtocolException(
+                "defaulted category before any exchange",
+                HidProtocolValidationFailure.PayloadValidator),
+        };
+        var neverOpened = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false);
+        var factory = new FakeProductionFactory(capabilities, rejected, neverOpened);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Null(error.PartialState);
+        Assert.Equal(
+            "Temporary full charge query (07/8F) failed protocol validation (PayloadValidator).",
+            error.Message);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(0, rejected.PerformanceFanQueryCount);
+    }
+
+    [Fact]
+    public async Task ReadState_BatteryAndThermalRejectionsLeaveOnlyThoseSubsystemsUnknown()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var rejected = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            TemporaryFailure = new RazerProtocolException(
+                "rejected",
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                RejectedPayloadHex = "05",
+            },
+        };
+        var thermalRejected = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            PerformanceFanFailure = new RazerProtocolException(
+                "rejected",
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                StateQuery = DeviceStateQuery.ThermalChannelTwo,
+                RejectedPayloadHex = "02 09 00 00",
+            },
+        };
+        var factory = new FakeProductionFactory(capabilities, rejected, thermalRejected);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        PartialDeviceStateRead partial = Assert.IsType<PartialDeviceStateRead>(error.PartialState);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans, DeviceSubsystem.Battery],
+            partial.UnavailableSubsystems.Order().ToArray());
+        Assert.Equal(
+            "Thermal channel 2 query (0D/82) returned unrecognized payload 02 09 00 00 (PayloadValidator).",
+            partial.MessageFor(DeviceSubsystem.Fans));
+        Assert.Null(partial.State.Battery);
+        Assert.Null(partial.State.Performance);
+        Assert.Null(partial.State.Fans);
+        Assert.Null(partial.State.HyperBoostActive);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, thermalRejected.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadState_ThermalRejectionLeavesHyperBoostUnknownAndBatteryConfirmed()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var thermalRejected = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            PerformanceFanFailure = new RazerProtocolException(
+                "rejected",
+                HidProtocolValidationFailure.PayloadValidator)
+            {
+                StateQuery = DeviceStateQuery.ThermalChannelAgreement,
+                RejectedPayloadHex = "01 01 00 00 / 01 02 05 00",
+            },
+        };
+        var factory = new FakeProductionFactory(capabilities, thermalRejected);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        PartialDeviceStateRead partial = Assert.IsType<PartialDeviceStateRead>(error.PartialState);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            partial.UnavailableSubsystems.Order().ToArray());
+        Assert.Equal(
+            "Thermal channel agreement (0D/82) returned unrecognized payload 01 01 00 00 / 01 02 05 00 (PayloadValidator).",
+            error.Message);
+        Assert.Equal(new ConfirmedBatteryState(true, 80, false), partial.State.Battery);
+        Assert.Null(partial.State.Performance);
+        Assert.Null(partial.State.Fans);
+        Assert.Null(partial.State.HyperBoostActive);
+        Assert.Null(partial.State.CustomPerformance);
+        // The thermal getter is the last battery-port getter, so no reopen is needed.
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, thermalRejected.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadState_RejectedLightingLeavesBatteryAndThermalConfirmed()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var factory = new FakeProductionFactory(capabilities, port, secondPort);
+        var lightingPort = new ProductionLightingSessionFixture.FakeLightingPort
+        {
+            ReadFailure = new DeviceStateContentRejectedException(
+                "Lighting brightness query failed (ProtocolFailure).",
+                DeviceStateQuery.KeyboardBrightness,
+                "02 05 10"),
+            LogoReadFailure = new DeviceStateContentRejectedException(
+                "Logo lighting response was malformed or unsupported.",
+                DeviceStateQuery.LogoLightingCombination,
+                "01 04 01 / 01 04 07"),
+        };
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            factory,
+            new UnavailableFanRpmFactory(),
+            new ProductionLightingSessionFixture.FakeLightingFactory(lightingPort));
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Null(state.Lighting);
+        Assert.Equal(new ConfirmedBatteryState(true, 80, false), state.Battery);
+        Assert.Equal(PerformancePreset.Balanced, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(1, lightingPort.ReadStateCalls);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Null(state.LogoLighting);
+        IDeviceStateReadDiagnostics diagnostics =
+            Assert.IsAssignableFrom<IDeviceStateReadDiagnostics>(device);
+        Assert.Equal(
+            [
+                "Keyboard brightness query (03/83) returned unrecognized payload 02 05 10 (PayloadValidator).",
+                "Logo lighting state and effect (03/80, 03/82) returned unrecognized payload 01 04 01 / 01 04 07 (PayloadValidator).",
+            ],
+            diagnostics.StateReadRejections);
+        Assert.All(
+            diagnostics.StateReadRejections,
+            note => Assert.DoesNotContain("malformed", note, StringComparison.Ordinal));
+
+        // A later read without a content rejection (here a channel failure)
+        // carries no payload and clears the stale value.
+        lightingPort.ReadFailure = new IOException("Lighting brightness query timed out.");
+        lightingPort.LogoReadFailure = null;
+        _ = await device.ReadStateAsync(default);
+
+        Assert.Empty(diagnostics.StateReadRejections);
     }
 
     [Fact]
@@ -1704,7 +2019,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
     [Theory]
     [InlineData(HidProtocolValidationFailure.Checksum)]
-    [InlineData(HidProtocolValidationFailure.PayloadValidator)]
+    [InlineData(HidProtocolValidationFailure.Status)]
+    [InlineData(HidProtocolValidationFailure.PayloadLength)]
+    [InlineData(HidProtocolValidationFailure.ReportId)]
     public async Task OtherProtocolFailuresRemainSingleAttemptAndFailClosed(
         HidProtocolValidationFailure failure)
     {

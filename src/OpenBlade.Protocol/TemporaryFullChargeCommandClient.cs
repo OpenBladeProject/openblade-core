@@ -61,6 +61,8 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
                     TransferredByteCount: null)
                 {
                     ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+                    RejectedPayloadHex =
+                        DeviceStateContentRejection.FormatPayload(response.Value.Span),
                 },
             };
     }
