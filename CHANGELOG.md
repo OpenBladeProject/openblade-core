@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Read temporary full charge correctly on the Razer Blade 16 RZ09-0581 when Synapse has left it switched off after a charge finished. OpenBlade now shows it as off instead of reporting an unrecognized battery value and keeping battery controls unavailable. ([#PR](https://github.com/OpenBladeProject/openblade-core/pull/PR))
+- Read temporary full charge correctly on the Razer Blade 16 RZ09-0581 when Synapse has left it switched off after a charge finished. OpenBlade now shows it as off instead of reporting an unrecognized battery value and keeping battery controls unavailable. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
 
 ## [0.26.2-nightly.87] - 2026-10-14
 
