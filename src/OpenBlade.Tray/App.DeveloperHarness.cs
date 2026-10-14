@@ -1183,7 +1183,7 @@ public partial class App
         {
             return;
         }
-        if (state is not ("read-failure" or "battery" or "unsupported" or "direct-manual"))
+        if (state is not ("read-failure" or "battery" or "unsupported" or "direct-manual" or "battery-drift"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
         }
@@ -1191,6 +1191,8 @@ public partial class App
         // Snapshot windows never start the service client. These states exercise
         // the real UI with synthetic observations and perform no device access.
         bool directManual = state == "direct-manual";
+        bool driftedBattery = state == "battery-drift";
+        bool fullPower = directManual || driftedBattery;
         bool unsupported = state == "unsupported";
         bool blocked = state == "read-failure" || unsupported;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -1201,20 +1203,25 @@ public partial class App
                 : DeviceCapabilities.SafeTargetDefaults() with
                 {
                     SupportsDirectManualFanTransitions = directManual,
-                    ChargeLimits = directManual ? new HashSet<int> { 80 } : new HashSet<int>(),
+                    ChargeLimits = driftedBattery
+                        ? new HashSet<int> { 70, 80 }
+                        : directManual ? new HashSet<int> { 80 } : new HashSet<int>(),
+                    SupportsBatteryProtectionOff = driftedBattery,
                 },
             blocked ? null : new ConfirmedDeviceState(
-                directManual ? PerformancePreset.Balanced : PerformancePreset.BatterySaver,
-                FanMode.Automatic, null, null),
+                fullPower ? PerformancePreset.Balanced : PerformancePreset.BatterySaver,
+                FanMode.Automatic,
+                driftedBattery ? new ConfirmedBatteryState(true, 70, false) : null,
+                null),
             profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(
-                    directManual ? PerformancePreset.Balanced : PerformancePreset.BatterySaver,
+                    fullPower ? PerformancePreset.Balanced : PerformancePreset.BatterySaver,
                     SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.Battery.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            directManual ? PowerSource.PluggedIn : PowerSource.Battery,
+            fullPower ? PowerSource.PluggedIn : PowerSource.Battery,
             null, null, null, null, false)
         {
             UnsupportedLaptop = unsupported,
@@ -1224,6 +1231,11 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Status presentation hook was not found.");
         applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (driftedBattery && !window.ViewModel.CanChangeBatteryProtection)
+        {
+            throw new InvalidOperationException(
+                "Protection Off was unavailable for the admitted current battery limit.");
+        }
         if (directManual)
         {
             window.ViewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
@@ -1242,7 +1254,8 @@ public partial class App
         try
         {
             window.DashboardCards.Add(new DashboardCardOption(
-                DashboardCardKind.Fans, "Fans", string.Empty, true));
+                driftedBattery ? DashboardCardKind.Battery : DashboardCardKind.Fans,
+                driftedBattery ? "Battery" : "Fans", string.Empty, true));
         }
         finally
         {

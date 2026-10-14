@@ -4707,15 +4707,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         int storedLimit = status.DesiredState.Battery.ConfiguredPolicy
             .ChargeLimitPercent;
-        if (!capabilities.ChargeLimits.Contains(storedLimit))
-        {
-            return false;
-        }
-
         return confirmed.ProtectionEnabled
             ? capabilities.SupportsBatteryProtectionOff
-                && confirmed.ChargeLimitPercent == storedLimit
-            : confirmed.ChargeLimitPercent is null;
+                && confirmed.ChargeLimitPercent is { } currentLimit
+                && capabilities.ChargeLimits.Contains(currentLimit)
+            : confirmed.ChargeLimitPercent is null
+                && capabilities.ChargeLimits.Contains(storedLimit);
     }
 
     public Task StartAsync()

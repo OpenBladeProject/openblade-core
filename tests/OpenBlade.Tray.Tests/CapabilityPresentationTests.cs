@@ -2740,6 +2740,92 @@ public sealed class CapabilityPresentationTests
         Assert.False(client.SavedBatteryProtection);
     }
 
+    [Theory]
+    [InlineData(70, 80)]
+    [InlineData(80, 75)]
+    public async Task ProtectionOffCommandDoesNotRequireCurrentLimitToMatchStoredPolicy(
+        int currentLimit, int storedLimit)
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = new HashSet<int> { 70, 80 },
+                SupportsBatteryProtectionOff = true,
+            },
+            confirmedBattery: new ConfirmedBatteryState(true, currentLimit, false));
+        status = status with
+        {
+            DesiredState = status.DesiredState with
+            {
+                Battery = new DesiredBatteryState(BatteryPolicy.Create(storedLimit), true, false),
+            },
+        };
+        await client.PublishAndWaitAsync(status);
+        AsyncRelayCommand command = Assert.IsType<AsyncRelayCommand>(
+            viewModel.ToggleBatteryProtectionCommand);
+
+        Assert.True(viewModel.CanChangeBatteryProtection);
+        Assert.True(command.CanExecute(null));
+        await command.ExecuteAsync(null);
+
+        Assert.False(client.SavedBatteryProtection);
+        Assert.Null(client.SavedBatteryPolicy);
+    }
+
+    [Fact]
+    public async Task ProtectionOffCommandRejectsUnadmittedCurrentLimit()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        await client.PublishAndWaitAsync(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = new HashSet<int> { 80 },
+                SupportsBatteryProtectionOff = true,
+            },
+            confirmedBattery: new ConfirmedBatteryState(true, 75, false)));
+
+        Assert.False(viewModel.CanChangeBatteryProtection);
+        Assert.False(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
+        Assert.Null(client.SavedBatteryProtection);
+    }
+
+    [Fact]
+    public async Task ProtectionOnCommandRequiresAdmissionOfStoredLimit()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = new HashSet<int> { 80 },
+                SupportsBatteryProtectionOff = true,
+            },
+            confirmedBattery: new ConfirmedBatteryState(false, null, false));
+        await client.PublishAndWaitAsync(status with
+        {
+            DesiredState = status.DesiredState with
+            {
+                Battery = new DesiredBatteryState(BatteryPolicy.Create(75), true, false),
+            },
+        });
+
+        Assert.False(viewModel.CanChangeBatteryProtection);
+        Assert.False(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
+        Assert.Null(client.SavedBatteryProtection);
+    }
+
     [Fact]
     public async Task UnknownTemporaryStateDisablesEveryBatteryMutation()
     {
