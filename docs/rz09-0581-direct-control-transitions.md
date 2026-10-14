@@ -13,6 +13,8 @@ projection omits the field; Session Agent IPC versions remain unchanged.
 
 - Automatic to Fixed, Maximum, or Manual Curve uses the existing paired manual
   entry and target commands. An already-manual state needs only target updates.
+  A known battery selector retained after reconnecting AC needs fresh admitted
+  full-power adapter readback before each command; it needs no preset reset.
 - Changing manual fan subtype preserves manual state and submits the requested
   targets. It does not cycle through Automatic and Balanced.
 - Manual to Automatic applies the selected AC performance pair directly. Custom
@@ -23,7 +25,8 @@ projection omits the field; Session Agent IPC versions remain unchanged.
   first command. When manual firmware state hides the performance selector,
   the saved mode is restoration intent, not guessed firmware confirmation.
 - Battery Protection Off uses its admitted command from the current supported
-  limit. Re-enabling applies the stored limit; temporary full-charge cancellation
+  limit, independently of the unused stored limit. Re-enabling requires and
+  applies an admitted stored limit; temporary full-charge cancellation
   remains a necessary dependency when it is active.
 
 ## Profiles, readback, and recovery

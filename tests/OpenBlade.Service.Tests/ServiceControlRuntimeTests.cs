@@ -28944,6 +28944,294 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task DirectPadlessHyperBoost_AdmittedCustomAutomaticEntryDoesNotBridge()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite)
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+            },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Custom,
+                    OverrideLifetime.UntilPowerSourceChange,
+                    CustomPerformanceSettings.Default),
+                CancellationToken.None)).Status);
+        int performanceWrites = context.Device.PerformanceWrites.Count;
+        int fanWrites = context.Device.FanControlWrites.Count;
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal((PerformancePreset.Custom, FanMode.Automatic),
+            Assert.Single(context.Device.HyperBoostEntryStates));
+        Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
+        Assert.Equal(fanWrites, context.Device.FanControlWrites.Count);
+        Assert.Equal(PerformancePreset.Custom, journal.Journal?.BaseMode);
+    }
+
+    [Fact]
+    public async Task DirectPadlessHyperBoost_BatteryRestoreFromManualUsesFanFirst()
+    {
+        (TestContext context, RecordingHyperBoostOwnershipJournalStore journal,
+            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync();
+        int performanceWrites = context.Device.PerformanceWrites.Count;
+        int fanWrites = context.Device.FanControlWrites.Count;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans
+                && context.Device.ConfirmedState.Fans == FanMode.Automatic)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Performance = PerformancePreset.Balanced,
+                };
+            }
+        };
+        context.Device.HyperBoostFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "Injected indeterminate direct entry."));
+        context.Device.AfterHyperBoostFailure = () =>
+        {
+            context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = manual.Mode,
+                HyperBoostActive = false,
+            };
+        };
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(fanWrites + 1, context.Device.FanControlWrites.Count);
+        Assert.Equal(FanMode.Automatic, context.Device.FanControlWrites[^1].Mode);
+        Assert.Equal(performanceWrites + 1, context.Device.PerformanceWrites.Count);
+        Assert.Equal(PerformancePreset.BatterySaver,
+            context.Device.PerformanceWrites[^1]);
+        Assert.Equal(PerformancePreset.BatterySaver,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task DirectPadlessHyperBoost_RestoreWithoutFreshAutomaticCapabilityWritesNothing()
+    {
+        (TestContext context, RecordingHyperBoostOwnershipJournalStore journal,
+            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync();
+        int performanceWrites = context.Device.PerformanceWrites.Count;
+        int fanWrites = context.Device.FanControlWrites.Count;
+        context.Device.HyperBoostFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "Injected indeterminate direct entry."));
+        context.Device.AfterHyperBoostFailure = () =>
+        {
+            context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = manual.Mode,
+                HyperBoostActive = false,
+            };
+            context.Device.Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                LightingEffects = new HashSet<LightingEffect>
+                {
+                    LightingEffect.Off,
+                    LightingEffect.Static,
+                },
+            };
+        };
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
+        Assert.Equal(fanWrites, context.Device.FanControlWrites.Count);
+        Assert.NotNull(journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task HardwareDesired_UnknownCapabilitiesPreserveManualPerformanceIntent()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        var custom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+        var manual = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+        _ = await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+            new PerformanceOverride(
+                PerformancePreset.Custom,
+                OverrideLifetime.Persistent,
+                custom),
+            CancellationToken.None);
+        _ = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.Persistent),
+            manual,
+            CancellationToken.None);
+        System.Reflection.MethodInfo resolver = typeof(ServiceControlRuntime)
+            .GetMethod(
+                "ResolveHardwareDesired",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!;
+
+        var desired = Assert.IsType<DesiredDeviceState>(resolver.Invoke(
+            context.Runtime,
+            [context.Device.ConfirmedState]));
+
+        Assert.Equal(PerformancePreset.Custom, desired.Performance.Value);
+        Assert.Equal(custom, desired.CustomPerformance);
+        Assert.Equal(manual, desired.FanControl);
+    }
+
+    [Fact]
+    public async Task HardwareDesired_LightingOnlyCapabilitiesPreserveManualPerformanceIntent()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var custom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+        var manual = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+        System.Reflection.FieldInfo automationField = typeof(ServiceControlRuntime)
+            .GetField(
+                "automation",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!;
+        var automation = Assert.IsType<ProfileAutomationState>(
+            automationField.GetValue(context.Runtime));
+        automation.SetPerformanceOverride(new PerformanceOverride(
+            PerformancePreset.Custom,
+            OverrideLifetime.Persistent,
+            custom));
+        automation.SetFanOverride(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.Persistent),
+            manual);
+        System.Reflection.MethodInfo resolver = typeof(ServiceControlRuntime)
+            .GetMethod(
+                "ResolveHardwareDesired",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!;
+
+        var desired = Assert.IsType<DesiredDeviceState>(resolver.Invoke(
+            context.Runtime,
+            [context.Device.ConfirmedState]));
+
+        Assert.Equal(PerformancePreset.Custom, desired.Performance.Value);
+        Assert.Equal(custom, desired.CustomPerformance);
+        Assert.Equal(manual, desired.FanControl);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectManualFanTransitionIgnoresUnrelatedPerformanceIntentChange(
+        bool changeManualSubtype)
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        if (changeManualSubtype)
+        {
+            Assert.Equal(ControlOperationStatus.Applied,
+                (await context.Runtime.SetFanControlOverrideAsync(
+                    new ManualOverride<FanMode>(
+                        FanMode.Fixed,
+                        OverrideLifetime.UntilPowerSourceChange),
+                    new FanControlSettings(
+                        FanMode.Fixed,
+                        3700,
+                        ManualFanCurve.Default),
+                    CancellationToken.None)).Status);
+        }
+        int performanceWrites = context.Device.PerformanceWrites.Count;
+        bool changed = false;
+        context.Device.BeforePerformanceFanStateReadResult = _ =>
+        {
+            if (changed)
+            {
+                return;
+            }
+
+            changed = true;
+            System.Reflection.FieldInfo automationField = typeof(ServiceControlRuntime)
+                .GetField(
+                    "automation",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic)!;
+            var automation = Assert.IsType<ProfileAutomationState>(
+                automationField.GetValue(context.Runtime));
+            automation.SetPerformanceOverride(
+                new ManualOverride<PerformancePreset>(
+                    PerformancePreset.Silent,
+                    OverrideLifetime.UntilPowerSourceChange));
+        };
+        FanMode targetMode = changeManualSubtype
+            ? FanMode.ManualCurve
+            : FanMode.Fixed;
+        var manual = new FanControlSettings(
+            targetMode,
+            3700,
+            ManualFanCurve.Default);
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                targetMode,
+                OverrideLifetime.UntilPowerSourceChange),
+            manual,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(manual, context.Device.FanControlWrites[^1]);
+        Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
+        Assert.Equal(PerformancePreset.Silent,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+    }
+
     private async Task<(TestContext Context, RecordingHyperBoostOwnershipJournalStore Journal,
         FanControlSettings Manual)> CreateDirectManualHyperBoostContextAsync()
     {

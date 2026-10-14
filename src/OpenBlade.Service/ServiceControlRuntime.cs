@@ -2041,12 +2041,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FanControlSettings requested = desired.FanControl
                     ?? FanControlSettings.FromLegacy(desired.Fans.Value);
                 FanControlSettings prior = previous ?? requested;
+                DeviceCapabilities? capabilities = GetStatus().Capabilities;
+                bool supportsDirectManualFanTransitions = capabilities is not null
+                    && capabilities.PerformancePresets.Count > 0
+                    && capabilities.FanModes.Count > 0
+                    && capabilities.SupportsDirectManualFanTransitions;
                 bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(
                     requested.Mode);
                 bool priorManual = DeviceSubsystemOrder.IsManualFanMode(prior.Mode);
-                bool performanceMayChange = requestedManual
-                        && (!priorManual || prior.Mode != requested.Mode)
-                    || requested.Mode == FanMode.Automatic && priorManual;
+                bool performanceMayChange = requested.Mode == FanMode.Automatic
+                        && priorManual
+                    || !supportsDirectManualFanTransitions
+                        && requestedManual
+                        && (!priorManual || prior.Mode != requested.Mode);
                 return performanceMayChange
                     ? new[]
                     {
@@ -7156,9 +7163,30 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 IsDeferredHyperBoostRestoreRetryEligible(fans));
         }
 
-        if (preservedState?.Fans is { } preservedFans
-            && DeviceSubsystemOrder.IsManualFanMode(preservedFans)
-            && GetStatus().Capabilities?.SupportsDirectManualFanTransitions != true)
+        bool preservedManualFans = preservedState?.Fans is { } preservedFans
+            && DeviceSubsystemOrder.IsManualFanMode(preservedFans);
+        bool destinationRequiresAutomaticFanBaseline = intent.Performance is
+            PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced;
+        bool requiresAutomaticFanBridge = false;
+        if (preservedManualFans)
+        {
+            DeviceCapabilities freshCapabilities = await transitionRunner.CurrentDevice
+                .ReadCapabilitiesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!freshCapabilities.FanModes.Contains(FanMode.Automatic))
+            {
+                return new HyperBoostIntentRestorationResult(
+                    Succeeded: false,
+                    preservedState,
+                    "The fresh device capabilities did not confirm Automatic fan control. No restoration write was attempted.",
+                    DeferredRetryEligible: false);
+            }
+            requiresAutomaticFanBridge =
+                !freshCapabilities.SupportsDirectManualFanTransitions
+                || destinationRequiresAutomaticFanBaseline;
+        }
+
+        if (requiresAutomaticFanBridge)
         {
             ScopedApplyOutcome automaticBaseline = await ApplyStepAsync(
                     DeviceSubsystem.Fans,
@@ -17230,9 +17258,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
     {
         DesiredDeviceState desired = Automation.Resolve(confirmed);
+        DeviceCapabilities? capabilities = GetStatus().Capabilities;
         if (Automation.PowerSource == PowerSource.PluggedIn
             && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
-            && GetStatus().Capabilities?.SupportsDirectManualFanTransitions != true)
+            && capabilities is not null
+            && capabilities.PerformancePresets.Count > 0
+            && capabilities.FanModes.Count > 0
+            && !capabilities.SupportsDirectManualFanTransitions)
         {
             desired = desired with
             {

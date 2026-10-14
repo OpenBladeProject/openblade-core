@@ -978,6 +978,121 @@ public sealed class ProductionBatteryPortTests
                 Convert.ToHexString(command.Arguments.Span)).ToArray());
     }
 
+    [Theory]
+    [InlineData(0x03)]
+    [InlineData(0x06)]
+    public async Task DirectManualFanSetter_BatteryAutomaticRechecksFullPowerBeforeEveryWrite(
+        byte thermalMode)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, thermalMode, 0x00]),
+            Success([0x01, 0x02, thermalMode, 0x00]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x01, 0x28]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x02, 0x28]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanControlAsync(
+            new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+            default);
+
+        Assert.Equal(
+            [0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x8C, 0x01, 0x8C, 0x01],
+            session.Commands.Select(command => command.CommandId).ToArray());
+    }
+
+    [Theory]
+    [InlineData(0x03)]
+    [InlineData(0x06)]
+    public async Task DirectManualFanSetter_BatteryAutomaticRejectsFreshBatteryPower(
+        byte thermalMode)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, thermalMode, 0x00]),
+            Success([0x01, 0x02, thermalMode, 0x00]),
+            Success([0x00, 0x11]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            supportsDirectManualFanTransitions: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal([0x82, 0x82, 0x8C],
+            session.Commands.Select(command => command.CommandId).ToArray());
+    }
+
+    [Fact]
+    public async Task DirectManualFanSetter_BatteryAutomaticPowerLossAfterEntryIsIndeterminate()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x03, 0x00]),
+            Success([0x01, 0x02, 0x03, 0x00]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x00, 0x11]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            supportsDirectManualFanTransitions: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Equal([0x82, 0x82, 0x8C, 0x02, 0x8C],
+            session.Commands.Select(command => command.CommandId).ToArray());
+        int commandCount = session.Commands.Count;
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+                default));
+        Assert.Equal(commandCount, session.Commands.Count);
+    }
+
+    [Fact]
+    public void DirectManualFanAutomaticEntry_RejectsMissingOrHyperBoostPerformanceIdentity()
+    {
+        Assert.False(ProductionBatteryPort.IsDirectManualFanAutomaticEntryState(
+            new ProductionPerformanceFanState(null, FanMode.Automatic)));
+        Assert.False(ProductionBatteryPort.IsDirectManualFanAutomaticEntryState(
+            new ProductionPerformanceFanState(
+                PerformancePreset.Performance,
+                FanMode.Automatic)
+            {
+                HyperBoostActive = true,
+            }));
+        Assert.True(ProductionBatteryPort.IsDirectManualFanAutomaticEntryState(
+            new ProductionPerformanceFanState(
+                PerformancePreset.BatterySaver,
+                FanMode.Automatic)));
+    }
+
     [Fact]
     public async Task DirectManualFanSetter_SecondEntryFailureRemainsIndeterminate()
     {

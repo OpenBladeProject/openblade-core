@@ -113,7 +113,8 @@ internal static class BatteryOperationPlanner
 
         bool storedLimitAdmitted = capabilities.ChargeLimits.Contains(
             storedPolicy.ChargeLimitPercent);
-        if (!storedLimitAdmitted || confirmed?.TemporaryFullCharge is not false)
+        if (enabled && !storedLimitAdmitted
+            || confirmed?.TemporaryFullCharge is not false)
         {
             return BlockedBatteryPlan("Battery protection");
         }

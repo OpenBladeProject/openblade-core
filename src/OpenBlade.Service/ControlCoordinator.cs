@@ -590,6 +590,17 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: true);
         }
 
+        if (!transitionCapabilities.FanModes.Contains(requested.Mode))
+        {
+            return new ScopedApplyOutcome(
+                Unsupported("Fans"),
+                null,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                Capabilities: transitionCapabilities,
+                DeviceAccessFailed: false);
+        }
+
         bool supportsDirectManualFanTransitions =
             transitionCapabilities.SupportsDirectManualFanTransitions;
         if (supportsDirectManualFanTransitions
@@ -1704,6 +1715,7 @@ public sealed class ControlCoordinator
                 ReadbackMatched: false,
                 Capabilities: null,
                 DeviceAccessFailed: true,
+                ConfirmationUnavailable: true,
                 WriteSubmissionState: exception.SubmissionState,
                 WriteFailurePhase: exception.FailurePhase);
         }
@@ -1719,7 +1731,9 @@ public sealed class ControlCoordinator
                 WriteAttempted: true,
                 ReadbackMatched: false,
                 Capabilities: null,
-                DeviceAccessFailed: IsTerminalDeviceFailure(exception));
+                DeviceAccessFailed: IsTerminalDeviceFailure(exception),
+                ConfirmationUnavailable: true,
+                WriteSubmissionState: WriteSubmissionState.Indeterminate);
         }
     }
 
@@ -1837,10 +1851,9 @@ public sealed class ControlCoordinator
             }
             else if (transition.Provisional[subsystem].Status == ControlResultStatus.Unchanged)
             {
-                if (IsLatentManualPerformance(
+                if (IsLatentManualPerformanceIntent(
                         subsystem,
                         desired,
-                        final,
                         supportsDirectManualFanTransitions))
                 {
                     transition.Matched.Remove(subsystem);
@@ -1862,16 +1875,6 @@ public sealed class ControlCoordinator
             }
         }
     }
-
-    private static bool IsLatentManualPerformance(
-        DeviceSubsystem subsystem,
-        DesiredDeviceState desired,
-        ConfirmedDeviceState state,
-        bool supportsDirectManualFanTransitions) =>
-        supportsDirectManualFanTransitions
-        && subsystem == DeviceSubsystem.Performance
-        && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
-        && DeviceSubsystemOrder.IsManualFanMode(state.Fans);
 
     private static bool IsLatentManualPerformanceIntent(
         DeviceSubsystem subsystem,
@@ -2697,7 +2700,10 @@ public sealed class ControlCoordinator
         && (DeviceSubsystemOrder.IsManualFanMode(state.Fans)
             || state.Fans == FanMode.Automatic
                 && state.Performance is { } performance
-                && IsAutomaticAcPerformancePreset(performance));
+                && (IsAutomaticAcPerformancePreset(performance)
+                    || performance is
+                        PerformancePreset.BatterySaver or
+                        PerformancePreset.BatteryBalanced));
 
     private static bool FanModeMatches(FanMode? confirmed, FanMode desired) =>
         desired == FanMode.Automatic

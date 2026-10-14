@@ -1179,6 +1179,39 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task DirectManualTransition_UnavailableRecipeCapabilitiesDoNotSelectLegacyBridge()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.CapabilityReads.Enqueue(DeviceCapabilities.Unavailable());
+        device.CapabilityReads.Enqueue(device.Capabilities);
+        device.State = device.State with
+        {
+            Performance = null,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyFanControlTransitionOutcomeAsync(
+                FanControlSettings.FromLegacy(FanMode.Fixed),
+                FanControlSettings.FromLegacy(FanMode.ManualCurve),
+                PerformancePreset.Performance,
+                customPerformanceIntent: null,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Equal(["Capabilities"], device.Calls);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
+    [Fact]
     public async Task DirectManualSubtypeTransition_UnknownHyperBoostBlocksWithoutWrite()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -2140,6 +2173,49 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(FanMode.Maximum, device.State.Fans);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public async Task ApplyDesiredState_DirectManualEntryFromKnownBatteryAutomaticUsesFanWriteOnly(
+        PerformancePreset batteryPreset)
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = batteryPreset,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                device.State = device.State with { Performance = null };
+            }
+        };
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            PerformancePreset.Performance,
+            FanMode.Fixed);
+
+        FullTransitionApplyOutcome outcome = await coordinator
+            .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Unchanged, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal([FanMode.Fixed], device.FanControlWrites);
+        Assert.DoesNotContain(DeviceSubsystem.Performance, outcome.ReadbackMatched);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.ReadbackMatched);
+        Assert.Null(device.State.Performance);
+        Assert.Equal(FanMode.Fixed, device.State.Fans);
+    }
+
     [Fact]
     public async Task ApplyDesiredState_FailedDirectManualEntryDoesNotMatchLatentPerformance()
     {
@@ -2161,17 +2237,22 @@ public sealed class ControlCoordinatorTests
         DesiredDeviceState desired = CreateThermalDesired(
             device.State,
             PerformancePreset.Performance,
-            FanMode.Maximum);
+            FanMode.Maximum) with
+        {
+            Battery = new DesiredBatteryState(BatteryPolicy.Create(80), true, false),
+        };
 
         FullTransitionApplyOutcome outcome = await coordinator
             .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
 
         Assert.Equal(ControlResultStatus.Unchanged, outcome.Results.Performance.Status);
         Assert.Equal(ControlResultStatus.Failed, outcome.Results.Fans.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Battery.Status);
         Assert.DoesNotContain(DeviceSubsystem.Performance, outcome.ReadbackMatched);
         Assert.DoesNotContain(DeviceSubsystem.Performance, outcome.WriteAttempted);
         Assert.Empty(device.PerformanceWrites);
         Assert.Equal([FanMode.Maximum], device.FanControlWrites);
+        Assert.Equal(["SetChargeLimit"], device.BatterySetterCalls);
         Assert.Equal(PerformancePreset.Silent, outcome.Readback!.Performance);
         Assert.Equal(FanMode.Automatic, outcome.Readback.Fans);
     }
@@ -2250,6 +2331,60 @@ public sealed class ControlCoordinatorTests
             WriteSubmissionState.Indeterminate,
             "performance acknowledgement was lost");
         var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            PerformancePreset.Performance,
+            FanMode.Automatic);
+
+        FullTransitionApplyOutcome outcome = await coordinator
+            .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Fans.Status);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.WriteAttempted);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.WriteAttempted);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.ConfirmationUnavailable!);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.ConfirmationUnavailable!);
+        Assert.Equal([PerformancePreset.Performance], device.PerformanceWrites);
+        Assert.Empty(device.FanControlWrites);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ApplyDesiredState_RunnerDirectManualExitIndeterminateTracksBothComponents(
+        bool typedFailure)
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        device.PerformanceFailure = typedFailure
+            ? new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "performance acknowledgement was lost")
+            : new IOException("performance transport failed after submission");
+        var runner = new ThermalTransitionStepRunner(
+            Guid.NewGuid(),
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            device,
+            (attemptDevice, currentRunner) => new ControlCoordinator(
+                attemptDevice,
+                scopedStateReader: null,
+                thermalStepRunner: currentRunner),
+            (_, _) => Task.FromResult(
+                ThermalRetryAdmission.Block("Unexpected thermal retry.")));
+        var coordinator = new ControlCoordinator(
+            device,
+            scopedStateReader: null,
+            thermalStepRunner: runner);
         DesiredDeviceState desired = CreateThermalDesired(
             device.State,
             PerformancePreset.Performance,
@@ -2725,6 +2860,8 @@ public sealed class ControlCoordinatorTests
 
         public List<FanMode> FanControlWrites { get; } = [];
 
+        public Queue<DeviceCapabilities> CapabilityReads { get; } = [];
+
         public DeviceCapabilities Capabilities { get; set; } =
             DeviceCapabilities.SafeTargetDefaults() with
             {
@@ -2796,7 +2933,10 @@ public sealed class ControlCoordinatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Calls.Add("Capabilities");
-            return Task.FromResult(Capabilities);
+            return Task.FromResult(
+                CapabilityReads.Count > 0
+                    ? CapabilityReads.Dequeue()
+                    : Capabilities);
         }
 
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken)

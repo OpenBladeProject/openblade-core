@@ -99,6 +99,29 @@ public sealed class BatteryOperationPlannerTests
         Assert.Equal(new ConfirmedBatteryState(false, null, false), device.State.Battery);
     }
 
+    [Fact]
+    public async Task ProtectionOff_DoesNotRequireAdmissionOfUnusedStoredLimit()
+    {
+        var device = AdmittedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            ChargeLimits = new HashSet<int> { 80 },
+        };
+        device.State = device.State with { Battery = new ConfirmedBatteryState(true, 80, false) };
+        BatteryPolicy stored = BatteryPolicy.Create(75);
+
+        await new BatteryOperationExecutor(device).ApplyTransitionAsync(
+            new DesiredBatteryState(stored, false, false),
+            device.Capabilities, device.State.Battery, CancellationToken.None);
+
+        Assert.Equal(new[] { "SetProtectionOff" }, device.BatterySetterCalls);
+        Assert.Equal(new ConfirmedBatteryState(false, null, false), device.State.Battery);
+        BatteryOperationPlan enable = BatteryOperationPlanner.CreateProtectionPlan(
+            true, stored, device.Capabilities, device.State.Battery);
+        Assert.False(enable.Supported);
+        Assert.IsType<BatteryOperation.None>(enable.Operation);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(55)]
