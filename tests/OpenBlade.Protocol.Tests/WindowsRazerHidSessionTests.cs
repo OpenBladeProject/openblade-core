@@ -9,6 +9,59 @@ public sealed class WindowsRazerHidSessionTests
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
+    public async Task VariableEffectResponse_RequiresValidatorAndRetainsExactEnvelopeChecks()
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(1, 0x0F, 0x82, [1, 5, 3, 0, 0, 0]));
+        await using var actor = CreateActor(io);
+        var command = new RazerCommandSpec(0x0F, 0x82, new byte[] { 1, 5, 0 }, 3,
+            payload => payload.Length == 6 && payload.Span[0] == 1 && payload.Span[1] == 5)
+        { AllowVariableResponseLength = true };
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(command,
+            () => TransactionIdAssignment.Valid(1), Timeout, CancellationToken.None);
+        Assert.Null(result.Failure);
+        Assert.Equal(6, result.Value.Length);
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+    }
+
+    [Theory]
+    [InlineData(false, HidProtocolValidationFailure.PayloadLength)]
+    [InlineData(true, HidProtocolValidationFailure.PayloadValidator)]
+    public async Task VariableResponse_DefaultRemainsExactAndSemanticRejectionPoisons(bool variable, HidProtocolValidationFailure expected)
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(1, 0x0F, 0x82, [1, 6, 3, 0]));
+        await using var actor = CreateActor(io);
+        var command = new RazerCommandSpec(0x0F, 0x82, new byte[] { 1, 5, 0 }, 3,
+            payload => payload.Span[1] == 5)
+        { AllowVariableResponseLength = variable };
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(command,
+            () => TransactionIdAssignment.Valid(1), Timeout, CancellationToken.None);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Equal(expected, result.Diagnostic?.ProtocolValidationFailure);
+        Assert.NotEqual(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+        HidSessionResult<ReadOnlyMemory<byte>> subsequent = await actor.ExecuteAsync(command,
+            () => TransactionIdAssignment.Valid(2), Timeout, CancellationToken.None);
+        Assert.Contains(subsequent.Failure, new HidSessionFailureKind?[]
+        {
+            HidSessionFailureKind.Poisoned, HidSessionFailureKind.Disposed
+        });
+        Assert.Equal(2, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task VariableResponse_WithoutValidatorIsRejectedBeforeNativeIo()
+    {
+        var io = new ScriptedIo();
+        await using var actor = CreateActor(io);
+        var command = new RazerCommandSpec(0x0F, 0x82, new byte[] { 1, 5, 0 }, 3)
+        { AllowVariableResponseLength = true };
+        Assert.Throws<ArgumentException>(() =>
+        {
+            _ = actor.ExecuteAsync(command, () => TransactionIdAssignment.Valid(1), Timeout, CancellationToken.None);
+        });
+        Assert.Empty(io.Calls);
+    }
+
+    [Fact]
     public async Task NewActorReportsHealthyDisposition()
     {
         IRazerCommandSession actor = CreateActor(new ScriptedIo());

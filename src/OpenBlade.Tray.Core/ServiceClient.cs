@@ -298,6 +298,13 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
+    public Task<ControlOperationResult> ResumeExperimentalWritesAsync(
+        CancellationToken token) => SendMutationAsync(
+            new ResumeExperimentalWritesRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
+            token);
+
     public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
         CancellationToken token) => SendMutationAsync(
             new ReapplyChangedSettingsRequest(

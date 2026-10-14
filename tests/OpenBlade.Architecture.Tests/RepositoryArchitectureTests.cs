@@ -28,6 +28,7 @@ public sealed class RepositoryArchitectureTests
                 && !pair.Key.EndsWith("BatteryValidationFactory.cs")
                 && !pair.Key.EndsWith("ProductionBatteryFactory.cs")
                 && !pair.Key.EndsWith("ProductionLightingFactory.cs")
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "ExperimentalBladeFactory.cs")
                 && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528HyperBoostValidation.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528PadlessHyperBoostValidation.cs")
@@ -43,6 +44,7 @@ public sealed class RepositoryArchitectureTests
         Assert.Equal(
             [
                 "BatteryValidationFactory.cs",
+                "ExperimentalBladeFactory.cs",
                 "GetterCandidateProbeRunner.cs",
                 "ProductionBatteryFactory.cs",
                 "ProductionLightingFactory.cs",

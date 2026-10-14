@@ -199,6 +199,11 @@ public sealed record DeviceCapabilities(
 {
     public bool SupportsKeyboardBrightness { get; init; }
 
+    // Older/full implementations support the complete parameter pickers by default.
+    public bool SupportsBreathingColorSelection { get; init; } = true;
+
+    public bool SupportsWaveDirectionSelection { get; init; } = true;
+
     public bool SupportsPlaybackMuteIndicator { get; init; }
 
     public FanSpeedRange? FanSpeedRange { get; init; }
@@ -276,6 +281,7 @@ public sealed record DeviceCapabilities(
             ? !LightingEffects.Contains(LightingEffect.Sequence)
             : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)
                 && LightingEffects.Contains(LightingEffect.Sequence))
+        && (!ChargeLimits.Contains(100) || SupportsBatteryProtectionOff)
         && IsValidEnumSet(SupportedLightingRefreshRates)
         && IsValidEnumSet(ObservedLightingEffects)
         && IsValidEnumSet(LogoLightingModes)
@@ -296,9 +302,9 @@ public sealed record DeviceCapabilities(
         }
 
         int[] values = limits.ToArray();
-        return values.Length <= 7
+        return values.Length <= 51
             && values.Distinct().Count() == values.Length
-            && values.All(value => value is >= 50 and <= 80 && value % 5 == 0);
+            && values.All(value => value is >= 50 and <= 100);
     }
 
     public static DeviceCapabilities Unavailable() => new(

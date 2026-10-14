@@ -54,6 +54,13 @@ internal static class ServiceStatusSnapshotComparer
             == right.AlwaysOverrideExternalLightingChanges
         && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
+        && left.AllowExperimentalFeatures == right.AllowExperimentalFeatures
+        && left.ExperimentalWritesPaused == right.ExperimentalWritesPaused
+        && left.IsExperimentalDevice == right.IsExperimentalDevice
+        && string.Equals(
+            left.ExperimentalSupportSource,
+            right.ExperimentalSupportSource,
+            StringComparison.Ordinal)
         && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.DisplayBrightnessHidAvailability
             == right.DisplayBrightnessHidAvailability
@@ -109,6 +116,8 @@ internal static class ServiceStatusSnapshotComparer
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
+            && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection
+            && left.SupportsWaveDirectionSelection == right.SupportsWaveDirectionSelection
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
             && string.Equals(

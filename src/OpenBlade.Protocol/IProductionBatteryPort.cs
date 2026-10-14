@@ -15,6 +15,8 @@ public interface IProductionBatteryPort : IAsyncDisposable
 {
     DeviceCapabilities Capabilities { get; }
 
+    bool SupportsProtectionQuery => true;
+
     bool SupportsTemporaryFullChargeQuery { get; }
 
     bool SupportsMcuVersionQuery => false;

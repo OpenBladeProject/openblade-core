@@ -13,7 +13,25 @@ public interface IVerifiedBladeDeviceProvider
 
     bool RequiresUntestedFirmwareOverride { get; }
 
+    bool IsExperimentalDevice => false;
+
+    string? ExperimentalSupportSource => null;
+
     void SetAllowUntestedFirmware(bool enabled);
+
+    bool IsExperimentalWritesPaused => false;
+
+    DeviceCapabilities? ExperimentalCapabilities => null;
+
+    Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
+        Func<ConfirmedDeviceState, bool> acceptObservedState,
+        Func<bool> stillAuthorized,
+        CancellationToken cancellationToken) =>
+        Task.FromException<ConfirmedDeviceState>(new CapabilityUnavailableException(
+            "This provider has no paused experimental controls."));
+
+    DiagnosticExperimentalSupport GetExperimentalSupportDiagnostics() =>
+        DiagnosticExperimentalSupport.NotDetected;
 
     void SetLightingRefreshRate(LightingRefreshRate refreshRate)
     {

@@ -33,9 +33,10 @@ internal static class ProfileAdmissionPolicy
                 current.UsbC,
                 capabilities,
                 PowerSource.UsbC)
-            && HasBatteryCapability(capabilities)
-            && capabilities.ChargeLimits.Contains(
-                draft.BatteryPolicy.ChargeLimitPercent);
+            && (draft.BatteryPolicy == current.BatteryPolicy
+                || (HasBatteryCapability(capabilities)
+                    && capabilities.ChargeLimits.Contains(
+                        draft.BatteryPolicy.ChargeLimitPercent)));
     }
 
     private static bool ProfileSupportedOrUnchanged(
@@ -59,7 +60,9 @@ internal static class ProfileAdmissionPolicy
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
         && (draft.CustomPerformance is null
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
-        && ThermalCombinationSupported(draft.Performance, draft.Fans)
+        && (ThermalCombinationSupported(draft.Performance, draft.Fans)
+            || (draft.Fans == current.Fans
+                && !capabilities.FanModes.Contains(draft.Fans)))
         && (LightingSupported(draft.Lighting, capabilities)
             || draft.Lighting == current.Lighting);
 
@@ -98,7 +101,8 @@ internal static class ProfileAdmissionPolicy
 
     internal static bool HasBatteryCapability(DeviceCapabilities? capabilities) =>
         capabilities is not null
-        && capabilities.ChargeLimits.Count is > 0 and <= 7
+        && capabilities.ChargeLimits.Count is > 0 and <= 51
+        && capabilities.ChargeLimits.Any(value => value < 100)
         && capabilities.ChargeLimits.All(
-            value => value is >= 50 and <= 80 && value % 5 == 0);
+            value => value is >= 50 and <= 100);
 }

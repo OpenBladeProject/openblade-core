@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 60;
+    public const int ProtocolVersion = 63;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -268,6 +268,8 @@ public static class IpcMessageCodec
             SetExternalLightingOverridePolicyRequest => true,
             SetLightingRefreshRateRequest set => Enum.IsDefined(set.RefreshRate),
             SetFirmwareCompatibilityOverrideRequest => true,
+            SetExperimentalFeaturesRequest => true,
+            ResumeExperimentalWritesRequest => true,
             ReapplyChangedSettingsRequest => true,
             RecoverHyperBoostRestoreRequest => true,
             SetThermalControlPolicyRequest set => Enum.IsDefined(set.Policy),
@@ -841,15 +843,60 @@ public static class IpcMessageCodec
         new("IPC message body is invalid.", exception);
 
     private static ServiceStatusSnapshot ProjectProtocol51ReadOnlyStatus(
-        ServiceStatusSnapshot status) => status with
+        ServiceStatusSnapshot status)
+    {
+        BatteryPolicy projectedPolicy = IsProtocol51BatteryLimit(
+            status.Profiles.BatteryPolicy.ChargeLimitPercent)
+                ? status.Profiles.BatteryPolicy
+                : BatteryPolicy.Create(80);
+        DeviceCapabilities? projectedCapabilities = status.Capabilities is null
+            ? null
+            : status.Capabilities with
+            {
+                ChargeLimits = status.Capabilities.ChargeLimits
+                    .Where(IsProtocol51BatteryLimit)
+                    .ToHashSet(),
+            };
+        ConfirmedDeviceState? projectedConfirmedState = status.ConfirmedState is null
+            ? null
+            : status.ConfirmedState with
+            {
+                Battery = status.ConfirmedState.Battery is
+                { ChargeLimitPercent: int confirmedLimit }
+                    && !IsProtocol51BatteryLimit(confirmedLimit)
+                        ? null
+                        : status.ConfirmedState.Battery,
+            };
+
+        return status with
         {
             WritesBlocked = true,
             Message = "OpenBlade was updated. Update or repair the app to restore hardware control.",
+            Capabilities = projectedCapabilities,
+            ConfirmedState = projectedConfirmedState,
+            Profiles = status.Profiles with { BatteryPolicy = projectedPolicy },
+            DesiredState = status.DesiredState with
+            {
+                Battery = new DesiredBatteryState(
+                    IsProtocol51BatteryLimit(status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent)
+                        ? status.DesiredState.Battery.ConfiguredPolicy
+                        : projectedPolicy,
+                    status.DesiredState.Battery.ProtectionEnabled,
+                    status.DesiredState.Battery.TemporaryFullCharge),
+            },
+            BatteryPolicyOverride = status.BatteryPolicyOverride is { } batteryOverride
+                && IsProtocol51BatteryLimit(batteryOverride.ChargeLimitPercent)
+                    ? batteryOverride
+                    : null,
             ThermalConvergence = null,
             HyperBoostBlockingControllers = null,
             ObservationReason = DeviceObservationReason.None,
             UnsupportedLaptop = false,
         };
+
+        static bool IsProtocol51BatteryLimit(int value) =>
+            value is >= 50 and <= 80 && value % 5 == 0;
+    }
 
     private static JsonSerializerOptions CreateSerializerOptions(
         bool protocol51Projection)
@@ -903,6 +950,27 @@ public static class IpcMessageCodec
                         "observationReason",
                         StringComparison.OrdinalIgnoreCase));
                 observationReason.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo allowExperimentalFeatures = typeInfo.Properties.Single(
+                    property => string.Equals(
+                        property.Name,
+                        "allowExperimentalFeatures",
+                        StringComparison.OrdinalIgnoreCase));
+                allowExperimentalFeatures.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo experimentalWritesPaused = typeInfo.Properties.Single(property =>
+                    string.Equals(property.Name, "experimentalWritesPaused", StringComparison.OrdinalIgnoreCase));
+                experimentalWritesPaused.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo isExperimentalDevice = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "isExperimentalDevice",
+                        StringComparison.OrdinalIgnoreCase));
+                isExperimentalDevice.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo experimentalSupportSource = typeInfo.Properties.Single(
+                    property => string.Equals(
+                        property.Name,
+                        "experimentalSupportSource",
+                        StringComparison.OrdinalIgnoreCase));
+                experimentalSupportSource.ShouldSerialize = static (_, _) => false;
                 JsonPropertyInfo unsupportedLaptop = typeInfo.Properties.Single(property =>
                     string.Equals(
                         property.Name,
@@ -1022,15 +1090,14 @@ public static class IpcMessageCodec
             {
                 if (reader.TokenType != JsonTokenType.Number
                     || !reader.TryGetInt32(out int value)
-                    || value is < 50 or > 80
-                    || value % 5 != 0
+                    || value is < 50 or > 100
                     || previous.HasValue && value <= previous.Value)
                 {
                     throw new JsonException("Charge limits are invalid.");
                 }
 
                 values.Add(value);
-                if (values.Count > 7)
+                if (values.Count > 51)
                 {
                     throw new JsonException("Too many charge limits were supplied.");
                 }
