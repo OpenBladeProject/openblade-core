@@ -5,13 +5,18 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent animated keyboard lighting from overlapping fan and battery command exchanges on RZ09-0581. Exported diagnostics now retain the query or command and native I/O error details when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
+
+## [0.26.2-nightly.87] - 2026-10-14
+
 ### Added
 
 - Show “This laptop isn’t supported yet” on laptops OpenBlade doesn’t support. **Help add support** saves a short identity report and opens a support request form to attach it to. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 
 ### Fixed
 
-- Prevent animated keyboard lighting from overlapping fan and battery command exchanges on RZ09-0581. Exported diagnostics now retain the query or command and native I/O error details when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
 - Recognize a supported laptop when Windows reports no BIOS version or two different ones. The BIOS version is checked only where a model explicitly requires it. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 - Show the actual failed identity check in exported diagnostics, instead of a product-name mismatch against another supported model. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 - Keep the other controls working when the laptop reports a battery, performance or fan value OpenBlade doesn’t recognize. Only the affected controls stay unavailable, and HyperBoost shows as unknown instead of off until a later reading confirms it. The MCU firmware version is still read, and the status and exported diagnostics show the unrecognized value, including for keyboard and logo lighting. ([#752](https://github.com/OpenBladeProject/openblade-core/pull/752))
@@ -2022,7 +2027,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...HEAD
+[0.26.2-nightly.87]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...v0.26.2-nightly.87
 [0.25.2-nightly.84]: https://github.com/OSSBlade/openblade-core/compare/v0.25.1-nightly.83...v0.25.2-nightly.84-attempt.2
 [0.25.1-nightly.83]: https://github.com/OSSBlade/openblade-core/compare/v0.25.0...v0.25.1-nightly.83
 [0.25.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.24.5...v0.25.0
