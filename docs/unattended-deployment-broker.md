@@ -160,6 +160,10 @@ legacy `OpenBlade.lnk`, `OpenBlade.SessionAgent.lnk`, and `OpenBlade.cmd` entrie
 from its own Startup known folder before relaunch. Cleanup failure prevents the
 client from reporting success or launching either process.
 
+Setup starts the tray and Session Agent at sign-in through two all-users Task
+Scheduler tasks, `OpenBlade Tray` and `OpenBlade Session Agent`, and removes
+Startup-folder shortcuts left by older versions.
+
 The reserved version deliberately makes a developer bundle newer than normal
 release versions on that enrolled machine. Returning the machine to a Stable or
 Nightly installation is therefore an attended maintenance action; this tool is

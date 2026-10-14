@@ -16,6 +16,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Start OpenBlade as soon as you sign in. Setup now uses Task Scheduler instead of the Startup folder, which Windows delays, and removes the old startup shortcuts. ([#748](https://github.com/OpenBladeProject/openblade-core/pull/748))
 - Reduce the installed payload by using a shared .NET 10 Desktop Runtime. Setup prompts to install it when needed and keeps Visual C++ bundled. ([#743](https://github.com/OpenBladeProject/openblade-core/pull/743))
 
 ## [0.25.2-nightly.84] - 2026-10-13
