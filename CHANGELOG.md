@@ -5,6 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add opt-in experimental Balanced/Silent controls for the Blade 16 (2023), Blade 14 (2023 and 2025), and Blade 15 Base (2020), with 80% battery protection on the supported experimental models. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Include bounded experimental command results, source provenance, consent, and cached telemetry in local diagnostic exports for pre-release tester reports. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+
 ## [0.25.2-nightly.84] - 2026-10-13
 
 ### Fixed
