@@ -105,6 +105,18 @@ Assert-Contains $linkedSetup.TestProjects `
     'tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj' `
     'Linked Setup source must run Tray tests.'
 
+$linkedSignInTask = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'src/OpenBlade.Setup/SignInTaskScheduler.cs')
+Assert-Contains $linkedSignInTask.QualityProjects `
+    'src/OpenBlade.Setup/OpenBlade.Setup.csproj' `
+    'Linked Setup source must keep its owning project.'
+Assert-Contains $linkedSignInTask.QualityProjects `
+    'src/OpenBlade.Tray/OpenBlade.Tray.csproj' `
+    'Linked Setup source must also build the Tray.'
+Assert-Contains $linkedSignInTask.TestProjects `
+    'tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj' `
+    'Linked Setup source must run Tray tests.'
+
 $linkedTray = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'src/OpenBlade.Tray/WindowsRegistryReader.cs')
 Assert-Contains $linkedTray.TestProjects `

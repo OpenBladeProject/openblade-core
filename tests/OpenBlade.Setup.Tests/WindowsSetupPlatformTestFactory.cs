@@ -22,11 +22,13 @@ internal static class WindowsSetupPlatformTestFactory
         ISetupProgressReporter? progressReporter = null,
         IDotNetRuntimeAdmission? dotNetRuntimeAdmission = null,
         string? setupExecutablePath = null,
-        string? currentUserSid = null) =>
+        string? currentUserSid = null,
+        ISignInTaskScheduler? signInTaskScheduler = null) =>
         new(
             new WindowsSetupPlatformOptions(
                 ServiceControl: serviceControl,
                 ShortcutWriter: shortcutWriter,
+                SignInTaskScheduler: signInTaskScheduler ?? new InMemorySignInTaskScheduler(),
                 SidWriter: sidWriter,
                 HealthProbe: healthProbe,
                 FileOperations: fileOperations,
@@ -52,4 +54,17 @@ internal static class WindowsSetupPlatformTestFactory
         {
         }
     }
+}
+
+internal sealed class InMemorySignInTaskScheduler : ISignInTaskScheduler
+{
+    private readonly Dictionary<string, SignInTaskState> states = [];
+
+    public SignInTaskState GetState(string taskName) =>
+        states.TryGetValue(taskName, out SignInTaskState state) ? state : SignInTaskState.Missing;
+
+    public void Register(SignInTaskDefinition definition) =>
+        states[definition.TaskName] = SignInTaskState.Enabled;
+
+    public void Delete(string taskName) => states.Remove(taskName);
 }

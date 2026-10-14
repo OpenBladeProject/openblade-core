@@ -14,9 +14,16 @@ public interface ISetupPayloadTransaction : IAsyncDisposable
 
 public sealed record SetupServiceInstallState(bool Existed, bool WasRunning);
 
+public enum SetupStartupRegistration
+{
+    None,
+    Shortcut,
+    SignInTask,
+}
+
 public sealed record SetupStartupInstallState(
-    bool TrayShortcutExisted,
-    bool SessionAgentShortcutExisted,
+    SetupStartupRegistration Tray,
+    SetupStartupRegistration SessionAgent,
     bool StartMenuShortcutExisted,
     bool UninstallShortcutExisted = false,
     bool UninstallRegistrationExisted = false);
@@ -44,10 +51,12 @@ public interface ISetupPlatform
     Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken);
     Task InstallServiceAsync(CancellationToken cancellationToken);
     Task VerifyServiceHealthAsync(CancellationToken cancellationToken);
-    Task InstallStartupShortcutAsync(CancellationToken cancellationToken);
-    Task RemoveStartupShortcutAsync(CancellationToken cancellationToken);
-    Task InstallSessionAgentStartupShortcutAsync(CancellationToken cancellationToken);
-    Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken);
+    Task InstallTrayStartupAsync(CancellationToken cancellationToken);
+    Task RemoveTrayStartupAsync(CancellationToken cancellationToken);
+    Task InstallSessionAgentStartupAsync(CancellationToken cancellationToken);
+    Task RemoveSessionAgentStartupAsync(CancellationToken cancellationToken);
+    Task RestoreTrayStartupAsync(SetupStartupRegistration prior, CancellationToken cancellationToken);
+    Task RestoreSessionAgentStartupAsync(SetupStartupRegistration prior, CancellationToken cancellationToken);
     Task InstallStartMenuShortcutAsync(CancellationToken cancellationToken);
     Task RemoveStartMenuShortcutAsync(CancellationToken cancellationToken);
     Task InstallUninstallShortcutAsync(CancellationToken cancellationToken);
@@ -113,8 +122,8 @@ public sealed class SetupCommandRunner(
 
                 mutationStarted = true;
                 progress.Report(SetupProgressCode.RemoveLegacyRegistration);
-                await platform.RemoveStartupShortcutAsync(cancellationToken);
-                await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
+                await platform.RemoveTrayStartupAsync(cancellationToken);
+                await platform.RemoveSessionAgentStartupAsync(cancellationToken);
                 await platform.RemoveStartMenuShortcutAsync(cancellationToken);
                 await platform.RemoveUninstallShortcutAsync(cancellationToken);
                 await platform.RemoveUninstallRegistrationAsync(cancellationToken);
@@ -136,14 +145,14 @@ public sealed class SetupCommandRunner(
                 progress.Report(SetupProgressCode.VerifyServiceHealth);
                 await platform.VerifyServiceHealthAsync(cancellationToken);
                 progress.Report(SetupProgressCode.CreateShortcuts);
-                await platform.InstallSessionAgentStartupShortcutAsync(cancellationToken);
+                await platform.InstallSessionAgentStartupAsync(cancellationToken);
                 await platform.InstallStartMenuShortcutAsync(cancellationToken);
                 if (!invocation.BundleManaged)
                 {
                     await platform.InstallUninstallShortcutAsync(cancellationToken);
                     await platform.InstallUninstallRegistrationAsync(cancellationToken);
                 }
-                await platform.InstallStartupShortcutAsync(cancellationToken);
+                await platform.InstallTrayStartupAsync(cancellationToken);
                 if (invocation.BundleManaged)
                 {
                     progress.Report(SetupProgressCode.WriteBundleOwnership);
@@ -163,10 +172,10 @@ public sealed class SetupCommandRunner(
                 if (mutationStarted)
                 {
                     await RecoverAsync(
-                        () => platform.RemoveStartupShortcutAsync(recoveryToken),
+                        () => platform.RemoveTrayStartupAsync(recoveryToken),
                         recoveryFailures);
                     await RecoverAsync(
-                        () => platform.RemoveSessionAgentStartupShortcutAsync(recoveryToken),
+                        () => platform.RemoveSessionAgentStartupAsync(recoveryToken),
                         recoveryFailures);
                     await RecoverAsync(
                         () => platform.RemoveStartMenuShortcutAsync(recoveryToken),
@@ -220,16 +229,18 @@ public sealed class SetupCommandRunner(
                         await RecoverAsync(() => platform.RemoveServiceAsync(recoveryToken), recoveryFailures);
                     }
 
-                    if (priorLifecycle?.Startup is { SessionAgentShortcutExisted: true })
+                    if (priorLifecycle is not null)
                     {
                         await RecoverAsync(
-                            () => platform.InstallSessionAgentStartupShortcutAsync(recoveryToken),
+                            () => platform.RestoreSessionAgentStartupAsync(
+                                priorLifecycle.Startup.SessionAgent,
+                                recoveryToken),
                             recoveryFailures);
-                    }
-
-                    if (priorLifecycle?.Startup is { TrayShortcutExisted: true })
-                    {
-                        await RecoverAsync(() => platform.InstallStartupShortcutAsync(recoveryToken), recoveryFailures);
+                        await RecoverAsync(
+                            () => platform.RestoreTrayStartupAsync(
+                                priorLifecycle.Startup.Tray,
+                                recoveryToken),
+                            recoveryFailures);
                     }
 
                     if (priorLifecycle?.Startup is { StartMenuShortcutExisted: true })
@@ -309,8 +320,8 @@ public sealed class SetupCommandRunner(
                 + "Use Windows Installed apps or OpenBlade-Setup.exe to remove it.");
         }
         progress.Report(SetupProgressCode.RemoveShortcuts);
-        await platform.RemoveStartupShortcutAsync(cancellationToken);
-        await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
+        await platform.RemoveTrayStartupAsync(cancellationToken);
+        await platform.RemoveSessionAgentStartupAsync(cancellationToken);
         await platform.RemoveStartMenuShortcutAsync(cancellationToken);
         progress.Report(SetupProgressCode.RemoveService);
         await platform.RemoveServiceAsync(cancellationToken);

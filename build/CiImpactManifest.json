@@ -80,9 +80,9 @@
       "reason": "Production C# changes must satisfy repository-wide architecture contracts."
     },
     {
-      "patterns": ["src/OpenBlade.Setup/StartupShortcutWriter.cs"],
+      "patterns": ["src/OpenBlade.Setup/StartupShortcutWriter.cs", "src/OpenBlade.Setup/SignInTaskScheduler.cs"],
       "seedProjects": ["src/OpenBlade.Tray/OpenBlade.Tray.csproj"],
-      "reason": "The Tray links StartupShortcutWriter directly."
+      "reason": "The Tray links shared Setup startup sources directly."
     },
     {
       "patterns": [

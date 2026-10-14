@@ -129,8 +129,8 @@ public sealed class WindowsSetupPlatformServiceTests
         SetupInstallLifecycleState prior =
             await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
 
-        Assert.True(prior.Startup.TrayShortcutExisted);
-        Assert.True(prior.Startup.SessionAgentShortcutExisted);
+        Assert.Equal(SetupStartupRegistration.Shortcut, prior.Startup.Tray);
+        Assert.Equal(SetupStartupRegistration.Shortcut, prior.Startup.SessionAgent);
         Assert.Empty(files.DeletedFiles);
     }
 
@@ -267,157 +267,372 @@ public sealed class WindowsSetupPlatformServiceTests
             serviceControl.Operations);
     }
 
+    private static SetupPaths UserPaths() => SetupPaths.Create(
+        @"C:\Program Files",
+        @"C:\ProgramData",
+        @"C:\Users\jack\AppData\Local",
+        @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup",
+        @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup");
+
+    private static SetupPaths SystemPaths() => SetupPaths.CreateLocalSystem(
+        @"C:\Program Files",
+        @"C:\ProgramData",
+        @"C:\Windows\System32\config\systemprofile\AppData\Local",
+        @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup");
+
     [Fact]
-    public async Task InstallStartupShortcut_CreatesRealLinkToTrayWithInstallWorkingDirectory()
+    public async Task InstallTrayStartup_RegistersExactSignInTask()
     {
-        RecordingShortcutWriter shortcutWriter = new();
+        RecordingSignInTaskScheduler scheduler = new();
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
-            new RecordingServiceControl(),
-            shortcutWriter);
+            fileOperations: new RecordingFileOperations(),
+            paths: UserPaths(),
+            signInTaskScheduler: scheduler);
 
-        await platform.InstallStartupShortcutAsync(CancellationToken.None);
+        await platform.InstallTrayStartupAsync(CancellationToken.None);
 
-        string installDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "OpenBlade");
-        ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
+        SignInTaskDefinition definition = Assert.Single(scheduler.Registered);
         Assert.Equal(
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
-                "OpenBlade.lnk"),
-            request.ShortcutPath);
-        Assert.Equal(Path.Combine(installDirectory, "OpenBlade.Tray.exe"), request.TargetPath);
-        Assert.Equal(installDirectory, request.WorkingDirectory);
-        Assert.Equal(StartupShortcutArguments.Tray, request.Arguments);
+            new SignInTaskDefinition(
+                "OpenBlade Tray",
+                @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
+                @"C:\Program Files\OpenBlade",
+                StartupShortcutArguments.Tray,
+                "Starts OpenBlade when you sign in."),
+            definition);
     }
 
     [Fact]
-    public async Task InstallStartupShortcut_RemovesLegacyPerUserEntries()
+    public async Task InstallTrayStartup_RemovesCommonLegacyPerUserAndCmdEntries()
     {
         RecordingFileOperations files = new();
+        SetupPaths paths = UserPaths();
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
-            new RecordingServiceControl(),
-            new RecordingShortcutWriter(),
-            fileOperations: files);
+            fileOperations: files,
+            paths: paths);
 
-        await platform.InstallStartupShortcutAsync(CancellationToken.None);
+        await platform.InstallTrayStartupAsync(CancellationToken.None);
 
-        Assert.Contains(
-            files.DeletedFiles,
-            path => path.EndsWith("OpenBlade.cmd", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(
-            files.DeletedFiles,
-            path => path.Equals(
-                Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.Startup),
-                    "OpenBlade.lnk"),
-                StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(
+            [paths.StartupFile, paths.LegacyTrayStartupFile, paths.LegacyStartupFile],
+            files.DeletedFiles);
     }
 
     [Fact]
-    public async Task InstallStartupShortcut_CreateFailureKeepsLegacyPerUserEntries()
+    public async Task InstallTrayStartup_LocalSystemPathsDeleteEachFileOnce()
     {
-        var files = new RecordingFileOperations();
-        var shortcutWriter = new RecordingShortcutWriter
+        RecordingFileOperations files = new();
+        SetupPaths paths = SystemPaths();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: files,
+            paths: paths);
+
+        await platform.InstallTrayStartupAsync(CancellationToken.None);
+
+        Assert.Equal([paths.StartupFile, paths.LegacyStartupFile], files.DeletedFiles);
+    }
+
+    [Fact]
+    public async Task InstallTrayStartup_RegisterFailureKeepsExistingFiles()
+    {
+        RecordingFileOperations files = new();
+        RecordingSignInTaskScheduler scheduler = new()
         {
-            Failure = new IOException("create failed"),
+            RegisterFailure = new InvalidOperationException("register failed"),
         };
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
-            new RecordingServiceControl(),
-            shortcutWriter,
-            fileOperations: files);
+            fileOperations: files,
+            signInTaskScheduler: scheduler);
 
-        await Assert.ThrowsAsync<IOException>(() =>
-            platform.InstallStartupShortcutAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            platform.InstallTrayStartupAsync(CancellationToken.None));
 
         Assert.Empty(files.DeletedFiles);
     }
 
     [Fact]
-    public async Task InstallSessionAgentStartupShortcut_CreatesIndependentMandatoryLink()
+    public async Task InstallSessionAgentStartup_RegistersExactSignInTaskWithoutArguments()
+    {
+        RecordingSignInTaskScheduler scheduler = new();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: new RecordingFileOperations(),
+            paths: UserPaths(),
+            signInTaskScheduler: scheduler);
+
+        await platform.InstallSessionAgentStartupAsync(CancellationToken.None);
+
+        SignInTaskDefinition definition = Assert.Single(scheduler.Registered);
+        Assert.Equal(
+            new SignInTaskDefinition(
+                "OpenBlade Session Agent",
+                @"C:\Program Files\OpenBlade\OpenBlade.SessionAgent.exe",
+                @"C:\Program Files\OpenBlade",
+                null,
+                "Starts the OpenBlade Session Agent when you sign in."),
+            definition);
+    }
+
+    [Fact]
+    public async Task InstallSessionAgentStartup_RemovesCommonAndLegacyLinks()
+    {
+        RecordingFileOperations files = new();
+        SetupPaths paths = UserPaths();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: files,
+            paths: paths);
+
+        await platform.InstallSessionAgentStartupAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [paths.SessionAgentStartupFile, paths.LegacySessionAgentStartupFile],
+            files.DeletedFiles);
+    }
+
+    [Fact]
+    public async Task InstallSessionAgentStartup_RegisterFailureKeepsExistingFiles()
+    {
+        RecordingFileOperations files = new();
+        RecordingSignInTaskScheduler scheduler = new()
+        {
+            RegisterFailure = new InvalidOperationException("register failed"),
+        };
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: files,
+            signInTaskScheduler: scheduler);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            platform.InstallSessionAgentStartupAsync(CancellationToken.None));
+
+        Assert.Empty(files.DeletedFiles);
+    }
+
+    [Fact]
+    public async Task RemoveTrayStartup_DeletesTaskAndAllStartupFiles()
+    {
+        RecordingFileOperations files = new();
+        RecordingSignInTaskScheduler scheduler = new();
+        SetupPaths paths = UserPaths();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: files,
+            paths: paths,
+            signInTaskScheduler: scheduler);
+
+        await platform.RemoveTrayStartupAsync(CancellationToken.None);
+
+        Assert.Equal(["OpenBlade Tray"], scheduler.Deleted);
+        Assert.Equal(
+            [paths.StartupFile, paths.LegacyTrayStartupFile, paths.LegacyStartupFile],
+            files.DeletedFiles);
+    }
+
+    [Fact]
+    public async Task RemoveSessionAgentStartup_DeletesOnlyAgentTaskAndFiles()
+    {
+        RecordingFileOperations files = new();
+        RecordingSignInTaskScheduler scheduler = new();
+        SetupPaths paths = UserPaths();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: files,
+            paths: paths,
+            signInTaskScheduler: scheduler);
+
+        await platform.RemoveSessionAgentStartupAsync(CancellationToken.None);
+
+        Assert.Equal(["OpenBlade Session Agent"], scheduler.Deleted);
+        Assert.Equal(
+            [paths.SessionAgentStartupFile, paths.LegacySessionAgentStartupFile],
+            files.DeletedFiles);
+    }
+
+    [Fact]
+    public async Task CaptureInstallLifecycle_NothingPresent_ReportsNone()
+    {
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(paths: UserPaths());
+
+        SetupInstallLifecycleState prior =
+            await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+
+        Assert.Equal(SetupStartupRegistration.None, prior.Startup.Tray);
+        Assert.Equal(SetupStartupRegistration.None, prior.Startup.SessionAgent);
+    }
+
+    [Theory]
+    [InlineData(SignInTaskState.Enabled)]
+    [InlineData(SignInTaskState.Disabled)]
+    public async Task CaptureInstallLifecycle_TaskPresent_BeatsShortcutPerComponent(
+        SignInTaskState state)
+    {
+        RecordingFileOperations files = new() { FileExistsResult = true };
+        RecordingSignInTaskScheduler scheduler = new();
+        scheduler.States["OpenBlade Tray"] = state;
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: files,
+            paths: UserPaths(),
+            signInTaskScheduler: scheduler);
+
+        SetupInstallLifecycleState prior =
+            await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+
+        Assert.Equal(SetupStartupRegistration.SignInTask, prior.Startup.Tray);
+        Assert.Equal(SetupStartupRegistration.Shortcut, prior.Startup.SessionAgent);
+        Assert.Empty(files.DeletedFiles);
+        Assert.Empty(scheduler.Registered);
+    }
+
+    [Fact]
+    public async Task CaptureInstallLifecycle_SessionAgentTaskOnly_DoesNotAffectTray()
+    {
+        RecordingSignInTaskScheduler scheduler = new();
+        scheduler.States["OpenBlade Session Agent"] = SignInTaskState.Enabled;
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: new RecordingFileOperations(),
+            paths: UserPaths(),
+            signInTaskScheduler: scheduler);
+
+        SetupInstallLifecycleState prior =
+            await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+
+        Assert.Equal(SetupStartupRegistration.None, prior.Startup.Tray);
+        Assert.Equal(SetupStartupRegistration.SignInTask, prior.Startup.SessionAgent);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CaptureInstallLifecycle_LegacyShortcutOnly_ReportsShortcut(bool localSystem)
+    {
+        SetupPaths paths = localSystem ? SystemPaths() : UserPaths();
+        RecordingFileOperations trayFiles = new();
+        trayFiles.ExistingFiles.Add(paths.LegacyTrayStartupFile);
+        WindowsSetupPlatform trayPlatform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: trayFiles,
+            paths: paths);
+        RecordingFileOperations agentFiles = new();
+        agentFiles.ExistingFiles.Add(paths.LegacySessionAgentStartupFile);
+        WindowsSetupPlatform agentPlatform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: agentFiles,
+            paths: paths);
+
+        SetupInstallLifecycleState tray =
+            await trayPlatform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+        SetupInstallLifecycleState agent =
+            await agentPlatform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+
+        Assert.Equal(SetupStartupRegistration.Shortcut, tray.Startup.Tray);
+        Assert.Equal(SetupStartupRegistration.None, tray.Startup.SessionAgent);
+        Assert.Equal(SetupStartupRegistration.None, agent.Startup.Tray);
+        Assert.Equal(SetupStartupRegistration.Shortcut, agent.Startup.SessionAgent);
+    }
+
+    [Fact]
+    public async Task CaptureInstallLifecycle_LegacyCmdOnly_ReportsTrayShortcut()
+    {
+        SetupPaths paths = UserPaths();
+        RecordingFileOperations files = new();
+        files.ExistingFiles.Add(paths.LegacyStartupFile);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            fileOperations: files,
+            paths: paths);
+
+        SetupInstallLifecycleState prior =
+            await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+
+        Assert.Equal(SetupStartupRegistration.Shortcut, prior.Startup.Tray);
+        Assert.Equal(SetupStartupRegistration.None, prior.Startup.SessionAgent);
+    }
+
+    [Fact]
+    public async Task RestoreTrayStartup_Shortcut_WritesOnlyCommonLinkAndNoTask()
     {
         RecordingShortcutWriter shortcutWriter = new();
+        RecordingSignInTaskScheduler scheduler = new();
+        SetupPaths paths = UserPaths();
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
-            new RecordingServiceControl(),
-            shortcutWriter);
+            shortcutWriter: shortcutWriter,
+            paths: paths,
+            signInTaskScheduler: scheduler);
 
-        await platform.InstallSessionAgentStartupShortcutAsync(CancellationToken.None);
+        await platform.RestoreTrayStartupAsync(
+            SetupStartupRegistration.Shortcut,
+            CancellationToken.None);
 
-        string installDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "OpenBlade");
         ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
-        Assert.EndsWith("OpenBlade.SessionAgent.lnk", request.ShortcutPath, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(Path.Combine(installDirectory, "OpenBlade.SessionAgent.exe"), request.TargetPath);
-        Assert.Equal(installDirectory, request.WorkingDirectory);
+        Assert.Equal(paths.StartupFile, request.ShortcutPath);
+        Assert.Equal(@"C:\Program Files\OpenBlade\OpenBlade.Tray.exe", request.TargetPath);
+        Assert.Equal(@"C:\Program Files\OpenBlade", request.WorkingDirectory);
+        Assert.Equal(StartupShortcutArguments.Tray, request.Arguments);
+        Assert.Empty(scheduler.Registered);
     }
 
     [Fact]
-    public async Task InstallSessionAgentStartupShortcut_CreateFailureKeepsLegacyLink()
+    public async Task RestoreSessionAgentStartup_Shortcut_WritesOnlyCommonLinkAndNoTask()
     {
-        var files = new RecordingFileOperations();
-        var shortcutWriter = new RecordingShortcutWriter
-        {
-            Failure = new IOException("create failed"),
-        };
+        RecordingShortcutWriter shortcutWriter = new();
+        RecordingSignInTaskScheduler scheduler = new();
+        SetupPaths paths = UserPaths();
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
-            new RecordingServiceControl(),
-            shortcutWriter,
-            fileOperations: files);
+            shortcutWriter: shortcutWriter,
+            paths: paths,
+            signInTaskScheduler: scheduler);
 
-        await Assert.ThrowsAsync<IOException>(() =>
-            platform.InstallSessionAgentStartupShortcutAsync(CancellationToken.None));
+        await platform.RestoreSessionAgentStartupAsync(
+            SetupStartupRegistration.Shortcut,
+            CancellationToken.None);
 
+        ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
+        Assert.Equal(paths.SessionAgentStartupFile, request.ShortcutPath);
+        Assert.Equal(
+            @"C:\Program Files\OpenBlade\OpenBlade.SessionAgent.exe",
+            request.TargetPath);
+        Assert.Equal(@"C:\Program Files\OpenBlade", request.WorkingDirectory);
+        Assert.Null(request.Arguments);
+        Assert.Empty(scheduler.Registered);
+    }
+
+    [Fact]
+    public async Task RestoreStartup_SignInTask_RegistersBothTasksWithoutShortcuts()
+    {
+        RecordingShortcutWriter shortcutWriter = new();
+        RecordingSignInTaskScheduler scheduler = new();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            shortcutWriter: shortcutWriter,
+            fileOperations: new RecordingFileOperations(),
+            paths: UserPaths(),
+            signInTaskScheduler: scheduler);
+
+        await platform.RestoreTrayStartupAsync(
+            SetupStartupRegistration.SignInTask,
+            CancellationToken.None);
+        await platform.RestoreSessionAgentStartupAsync(
+            SetupStartupRegistration.SignInTask,
+            CancellationToken.None);
+
+        Assert.Equal(
+            ["OpenBlade Tray", "OpenBlade Session Agent"],
+            scheduler.Registered.Select(task => task.TaskName));
+        Assert.Empty(shortcutWriter.Requests);
+    }
+
+    [Fact]
+    public async Task RestoreStartup_None_DoesNothing()
+    {
+        RecordingShortcutWriter shortcutWriter = new();
+        RecordingSignInTaskScheduler scheduler = new();
+        RecordingFileOperations files = new();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            shortcutWriter: shortcutWriter,
+            fileOperations: files,
+            signInTaskScheduler: scheduler);
+
+        await platform.RestoreTrayStartupAsync(SetupStartupRegistration.None, CancellationToken.None);
+        await platform.RestoreSessionAgentStartupAsync(
+            SetupStartupRegistration.None,
+            CancellationToken.None);
+
+        Assert.Empty(shortcutWriter.Requests);
+        Assert.Empty(scheduler.Registered);
+        Assert.Empty(scheduler.Deleted);
         Assert.Empty(files.DeletedFiles);
-    }
-
-    [Fact]
-    public async Task RemoveStartupShortcut_RemovesCurrentAndLegacyStartupEntries()
-    {
-        RecordingFileOperations files = new();
-        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
-            new RecordingServiceControl(),
-            new RecordingShortcutWriter(),
-            fileOperations: files);
-
-        await platform.RemoveStartupShortcutAsync(CancellationToken.None);
-
-        Assert.Equal(3, files.DeletedFiles.Count);
-        Assert.Contains(
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
-                "OpenBlade.lnk"),
-            files.DeletedFiles,
-            StringComparer.OrdinalIgnoreCase);
-        Assert.Contains(
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Startup),
-                "OpenBlade.lnk"),
-            files.DeletedFiles,
-            StringComparer.OrdinalIgnoreCase);
-        Assert.Contains(
-            files.DeletedFiles,
-            path => path.EndsWith("OpenBlade.cmd", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public async Task RemoveSessionAgentStartupShortcut_RemovesOnlyAgentEntry()
-    {
-        RecordingFileOperations files = new();
-        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(fileOperations: files);
-
-        await platform.RemoveSessionAgentStartupShortcutAsync(CancellationToken.None);
-
-        Assert.Equal(2, files.DeletedFiles.Count);
-        Assert.All(files.DeletedFiles, removed => Assert.EndsWith(
-            "OpenBlade.SessionAgent.lnk",
-            removed,
-            StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(
-            files.DeletedFiles,
-            removed => removed.StartsWith(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
-                StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -746,6 +961,36 @@ public sealed class WindowsSetupPlatformServiceTests
         }
     }
 
+    private sealed class RecordingSignInTaskScheduler : ISignInTaskScheduler
+    {
+        public Dictionary<string, SignInTaskState> States { get; } = [];
+        public List<SignInTaskDefinition> Registered { get; } = [];
+        public List<string> Deleted { get; } = [];
+        public Exception? RegisterFailure { get; init; }
+
+        public SignInTaskState GetState(string taskName) =>
+            States.TryGetValue(taskName, out SignInTaskState state)
+                ? state
+                : SignInTaskState.Missing;
+
+        public void Register(SignInTaskDefinition definition)
+        {
+            if (RegisterFailure is not null)
+            {
+                throw RegisterFailure;
+            }
+
+            Registered.Add(definition);
+            States[definition.TaskName] = SignInTaskState.Enabled;
+        }
+
+        public void Delete(string taskName)
+        {
+            Deleted.Add(taskName);
+            States.Remove(taskName);
+        }
+    }
+
     private sealed class RecordingShortcutWriter : IStartupShortcutWriter
     {
         public List<ShortcutRequest> Requests { get; } = [];
@@ -791,8 +1036,9 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         public List<string> DeletedFiles { get; } = [];
         public bool FileExistsResult { get; init; }
+        public HashSet<string> ExistingFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-        public bool FileExists(string path) => FileExistsResult;
+        public bool FileExists(string path) => FileExistsResult || ExistingFiles.Contains(path);
 
         public void DeleteFile(string path) => DeletedFiles.Add(path);
     }

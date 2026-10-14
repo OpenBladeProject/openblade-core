@@ -1034,10 +1034,12 @@ public sealed class SetupPayloadTransactionTests
 
         public Task InstallServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task VerifyServiceHealthAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task InstallStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task InstallSessionAgentStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallTrayStartupAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveTrayStartupAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallSessionAgentStartupAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveSessionAgentStartupAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RestoreTrayStartupAsync(SetupStartupRegistration prior, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RestoreSessionAgentStartupAsync(SetupStartupRegistration prior, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallStartMenuShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveStartMenuShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallUninstallShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
