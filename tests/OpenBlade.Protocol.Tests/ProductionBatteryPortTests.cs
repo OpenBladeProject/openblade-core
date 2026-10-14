@@ -1674,6 +1674,29 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task QueryTemporaryFullCharge_CompletedMarkerIsInactiveOnlyWithModelScopedEvidence()
+    {
+        var scopedSession = new ScriptedSession(Success([0x08]));
+        await using var scoped = CreatePort(
+            scopedSession,
+            Catalog(),
+            ProductionBatteryReadEvidence.Rz090581ModelScoped);
+
+        Assert.False(await scoped.QueryTemporaryFullChargeAsync(default));
+        RazerCommandSpec query = Assert.Single(scopedSession.Commands);
+        Assert.Equal((0x07, 0x8F), (query.ClassId, query.CommandId));
+
+        var productionSession = new ScriptedSession(Success([0x08]));
+        await using var production = CreatePort(
+            productionSession,
+            Catalog(),
+            ProductionBatteryReadEvidence.Production);
+
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => production.QueryTemporaryFullChargeAsync(default));
+    }
+
+    [Fact]
     public async Task ProtectionOff_RequiresBothTrustedActionAndTemporaryReadEvidence()
     {
         DeviceCommandCatalog catalog = Catalog(

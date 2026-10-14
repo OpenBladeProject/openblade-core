@@ -14,24 +14,31 @@ internal interface ITemporaryFullChargeCommandClient
 
 internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCommandClient
 {
-    private static readonly RazerCommandSpec QueryCommand = new(
-        0x07,
-        0x8F,
-        [0x00],
-        1,
-        static payload => TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out _));
 
+    private readonly RazerCommandSpec queryCommand;
+    private readonly bool acceptCompletedMarker;
     private readonly IRazerCommandSession session;
     private readonly TimeSpan exchangeTimeout;
 
     internal TemporaryFullChargeCommandClient(
         IRazerCommandSession session,
-        TimeSpan exchangeTimeout)
+        TimeSpan exchangeTimeout,
+        bool acceptCompletedMarker = false)
     {
         ArgumentNullException.ThrowIfNull(session);
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
         this.session = session;
         this.exchangeTimeout = exchangeTimeout;
+        this.acceptCompletedMarker = acceptCompletedMarker;
+        queryCommand = new RazerCommandSpec(
+            0x07,
+            0x8F,
+            [0x00],
+            1,
+            payload => TemporaryFullChargeProtocol.TryDecodeQuery(
+                payload.Span,
+                out _,
+                acceptCompletedMarker));
     }
 
     public async Task<HidSessionResult<bool>> QueryAsync(
@@ -40,7 +47,7 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
     {
         TransactionIdAssignment assignment = TransactionIdAssignment.Valid(transactionId);
         HidSessionResult<ReadOnlyMemory<byte>> response = await session.ExecuteAsync(
-            QueryCommand,
+            queryCommand,
             () => assignment,
             exchangeTimeout,
             cancellationToken).ConfigureAwait(false);
@@ -50,7 +57,10 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
             return new(default, response.Failure) { Diagnostic = response.Diagnostic };
         }
 
-        return TemporaryFullChargeProtocol.TryDecodeQuery(response.Value.Span, out bool active)
+        return TemporaryFullChargeProtocol.TryDecodeQuery(
+            response.Value.Span,
+            out bool active,
+            acceptCompletedMarker)
             ? new(active, null)
             : new(default, HidSessionFailureKind.ProtocolFailure)
             {

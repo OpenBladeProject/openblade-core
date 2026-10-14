@@ -59,6 +59,54 @@ public sealed class TemporaryFullChargeCommandClientTests
         Assert.Equal(expectedHex, result.Diagnostic?.RejectedPayloadHex);
     }
 
+    [Fact]
+    public async Task QueryAsync_CompletedMarkerIsInactiveOnlyWithModelScopedAllowance()
+    {
+        var scoped = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0x08 }, null));
+        var scopedClient = new TemporaryFullChargeCommandClient(
+            scoped,
+            ExchangeTimeout,
+            acceptCompletedMarker: true);
+
+        HidSessionResult<bool> accepted = await scopedClient.QueryAsync(1, default);
+
+        Assert.Null(accepted.Failure);
+        Assert.False(accepted.Value);
+        Assert.True(Assert.Single(scoped.Calls).Command.PayloadValidator!(
+            new byte[] { 0x08 }));
+
+        var strictSession = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0x08 }, null));
+        var strict = new TemporaryFullChargeCommandClient(strictSession, ExchangeTimeout);
+        HidSessionResult<bool> rejected = await strict.QueryAsync(1, default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, rejected.Failure);
+        Assert.Equal("08", rejected.Diagnostic?.RejectedPayloadHex);
+        Assert.False(Assert.Single(strictSession.Calls).Command.PayloadValidator!(
+            new byte[] { 0x08 }));
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0x01 }, "01")]
+    [InlineData(new byte[] { 0x0C }, "0C")]
+    [InlineData(new byte[] { 0xFF }, "FF")]
+    public async Task QueryAsync_ModelScopedAllowanceStillRejectsOtherValues(
+        byte[] payload,
+        string expectedHex)
+    {
+        var client = new TemporaryFullChargeCommandClient(
+            new ScriptedSession(
+                new HidSessionResult<ReadOnlyMemory<byte>>(payload, null)),
+            ExchangeTimeout,
+            acceptCompletedMarker: true);
+
+        HidSessionResult<bool> result = await client.QueryAsync(1, default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Equal(expectedHex, result.Diagnostic?.RejectedPayloadHex);
+    }
+
     [Theory]
     [InlineData(false, 0x00)]
     [InlineData(true, 0x04)]

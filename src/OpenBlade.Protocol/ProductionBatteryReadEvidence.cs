@@ -9,6 +9,7 @@ internal enum ProductionBatteryQueryCapability
     FunctionKeyPrimary,
     GamingMode,
     Rz090581CapabilityDiagnostics,
+    Rz090581TemporaryFullChargeCompletedMarker,
 }
 
 internal sealed class ProductionBatteryReadEvidence
@@ -31,6 +32,8 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.GamingMode);
         SupportsRz090581CapabilityDiagnosticsQuery = capabilities.Contains(
             ProductionBatteryQueryCapability.Rz090581CapabilityDiagnostics);
+        AcceptsTemporaryFullChargeCompletedMarker = capabilities.Contains(
+            ProductionBatteryQueryCapability.Rz090581TemporaryFullChargeCompletedMarker);
     }
 
     public static ProductionBatteryReadEvidence Production { get; } = new(
@@ -54,6 +57,7 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.FunctionKeyPrimary,
             ProductionBatteryQueryCapability.GamingMode,
             ProductionBatteryQueryCapability.Rz090581CapabilityDiagnostics,
+            ProductionBatteryQueryCapability.Rz090581TemporaryFullChargeCompletedMarker,
         });
 
     public bool SupportsTemporaryFullChargeQuery { get; }
@@ -69,4 +73,7 @@ internal sealed class ProductionBatteryReadEvidence
     public bool SupportsGamingModeQuery { get; }
 
     public bool SupportsRz090581CapabilityDiagnosticsQuery { get; }
+
+    /// <summary>Exact RZ09-0581 only: 07/8F value 0x08 decodes as inactive.</summary>
+    public bool AcceptsTemporaryFullChargeCompletedMarker { get; }
 }

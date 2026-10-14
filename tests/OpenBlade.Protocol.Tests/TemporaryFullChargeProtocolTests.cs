@@ -49,4 +49,30 @@ public sealed class TemporaryFullChargeProtocolTests
     {
         Assert.False(TemporaryFullChargeProtocol.TryDecodeQuery(payload, out _));
     }
+
+    [Fact]
+    public void TryDecodeQuery_CompletedMarkerIsInactiveOnlyWhenModelScopedAllowanceIsSet()
+    {
+        Assert.False(TemporaryFullChargeProtocol.TryDecodeQuery([0x08], out _));
+        Assert.True(TemporaryFullChargeProtocol.TryDecodeQuery(
+            [0x08],
+            out bool active,
+            acceptCompletedMarker: true));
+        Assert.False(active);
+    }
+
+    [Theory]
+    [InlineData(new byte[] { })]
+    [InlineData(new byte[] { 0x01 })]
+    [InlineData(new byte[] { 0x0C })]
+    [InlineData(new byte[] { 0xFF })]
+    [InlineData(new byte[] { 0x08, 0x00 })]
+    public void TryDecodeQuery_ModelScopedAllowanceAdmitsNothingBeyondExactCompletedMarker(
+        byte[] payload)
+    {
+        Assert.False(TemporaryFullChargeProtocol.TryDecodeQuery(
+            payload,
+            out _,
+            acceptCompletedMarker: true));
+    }
 }

@@ -55,3 +55,26 @@ or demonstrate that MCU 1.7.0.0 introduced them.
 
 Only this sanitized summary is committed. Machine-local snapshots and diagnostic
 archives remain private.
+
+## Temporary full charge reading 08 (Synapse shows it as off)
+
+On 2026-10-14 an RZ09-0581 (BIOS 4.01, MCU 1.7.0.0, OpenBlade 0.26.2-nightly.87)
+returned `08` for the temporary-full-charge query (07/8F), which OpenBlade rejected
+because it accepted only `00` (off) and `04` (on).
+
+- Synapse 4 "Allow system to fully charge once" unchecked, Battery Health Optimizer
+  on at 80 percent: 07/8F returned `08`.
+- Checking the box in Synapse: OpenBlade read `04`, reconciled to its saved desired
+  state, cancelled, and read back `00`.
+- Unchecking it again: 07/8F returned `00`, with the battery confirmed at 80 percent,
+  protection on, and full charge off.
+
+Synapse therefore presents `08` as off. OpenBlade never writes `08`; any 07/0F write
+clears it. Admission is scoped to the exact RZ09-0581 (`1532:02E0`) through its model
+read evidence: exactly `08` decodes as inactive, and every other value, and `08` on
+the RZ09-0528, stays rejected. Writes are unchanged (enable `04`, cancel `00`).
+
+Unproven hypothesis: firmware sets `08` when a temporary full charge completes at 100
+percent and Battery Health Optimizer re-enables. To confirm, enable full charge once
+below 100 percent while plugged in, let it reach 100 percent, export state with Synapse
+closed, and expect `08`.

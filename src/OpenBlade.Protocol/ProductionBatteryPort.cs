@@ -305,7 +305,10 @@ internal sealed class ProductionBatteryPort :
         }
 
         batteryCommands = new BatteryCommandClient(session, exchangeTimeout);
-        temporaryCommands = new TemporaryFullChargeCommandClient(session, exchangeTimeout);
+        temporaryCommands = new TemporaryFullChargeCommandClient(
+            session,
+            exchangeTimeout,
+            readEvidence.AcceptsTemporaryFullChargeCompletedMarker);
         adapterPowerCommands = new AdapterPowerCommandClient(session, exchangeTimeout);
         mcuVersionCommands = new McuVersionCommandClient(session, exchangeTimeout);
         rz090581CapabilityDiagnosticsCommands =
