@@ -1535,6 +1535,7 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
         Assert.Equal(DeviceStateQuery.ThermalChannelAgreement, error.StateQuery);
+        Assert.Equal("01 01 00 00 / 01 02 05 00", error.RejectedPayloadHex);
         Assert.Equal(WriteSubmissionState.Indeterminate, blockedWrite.SubmissionState);
         Assert.Equal(2, session.Commands.Count);
         Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
@@ -1560,6 +1561,7 @@ public sealed class ProductionBatteryPortTests
         await Assert.ThrowsAsync<IOException>(() => port.QueryProtectionAsync(default));
 
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
+        Assert.Equal(failFirst ? "01 01 08 00" : "01 02 08 00", error.RejectedPayloadHex);
         Assert.Equal((DeviceStateQuery)expectedQuery, error.StateQuery);
         Assert.Equal(expectedCommandCount, session.Commands.Count);
     }
@@ -1591,6 +1593,57 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(0x07, command.ClassId);
         Assert.Equal((byte)expectedCommandId, command.CommandId);
         Assert.Equal([0x00], command.Arguments.ToArray());
+    }
+
+    [Theory]
+    [InlineData(false, new byte[] { 0xB3 }, "B3")]
+    [InlineData(true, new byte[] { 0x05 }, "05")]
+    public async Task BatteryGetterContentRejection_SurfacesBoundedRejectedPayload(
+        bool temporaryFullCharge,
+        byte[] payload,
+        string expectedHex)
+    {
+        var session = new ScriptedSession(Success(payload));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            temporaryFullCharge ? AcceptedTemporaryReadEvidence() : NoTemporaryReadEvidence());
+
+        RazerProtocolException error = temporaryFullCharge
+            ? await Assert.ThrowsAsync<RazerProtocolException>(
+                () => port.QueryTemporaryFullChargeAsync(default))
+            : await Assert.ThrowsAsync<RazerProtocolException>(
+                () => port.QueryProtectionAsync(default));
+        await Assert.ThrowsAsync<IOException>(() => port.QueryProtectionAsync(default));
+
+        Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
+        Assert.Equal(expectedHex, error.RejectedPayloadHex);
+        Assert.True(DeviceStateContentRejection.IsContentRejection(error));
+        Assert.Equal(
+            temporaryFullCharge
+                ? "Temporary full charge query (07/8F) returned unrecognized payload 05 (PayloadValidator)."
+                : "Battery protection query (07/92) returned unrecognized payload B3 (PayloadValidator).",
+            DeviceStateContentRejection.Describe(error, "Device state query"));
+    }
+
+    [Fact]
+    public async Task BatteryGetterChannelFailure_CarriesNoPayloadAndIsNotContentRejection()
+    {
+        var session = new ScriptedSession(
+            ProtocolFailure(HidProtocolValidationFailure.TransactionMismatch));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedTemporaryReadEvidence());
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => port.QueryTemporaryFullChargeAsync(default));
+
+        Assert.Null(error.RejectedPayloadHex);
+        Assert.False(DeviceStateContentRejection.IsContentRejection(error));
+        Assert.Equal(
+            "Temporary full charge query (07/8F) failed protocol validation (TransactionMismatch).",
+            DeviceStateContentRejection.Describe(error, "Device state query"));
     }
 
     [Theory]
@@ -1920,6 +1973,7 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
         Assert.Equal(DeviceStateQuery.CustomPerformanceCombination, error.StateQuery);
+        Assert.Equal("01 01 01 / 01 02 02", error.RejectedPayloadHex);
         Assert.Equal(4, session.Commands.Count);
     }
 

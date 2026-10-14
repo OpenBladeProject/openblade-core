@@ -99,12 +99,14 @@ public sealed class BatteryCommandClientTests
     }
 
     [Theory]
-    [InlineData(new byte[] { })]
-    [InlineData(new byte[] { 0xB2, 0x00 })]
-    [InlineData(new byte[] { 0x00 })]
-    [InlineData(new byte[] { 0xB3 })]
-    [InlineData(new byte[] { 0xFF })]
-    public async Task QueryAsync_ReturnsProtocolFailureForInvalidPayload(byte[] payload)
+    [InlineData(new byte[] { }, "(empty)")]
+    [InlineData(new byte[] { 0xB2, 0x00 }, "B2 00")]
+    [InlineData(new byte[] { 0x00 }, "00")]
+    [InlineData(new byte[] { 0xB3 }, "B3")]
+    [InlineData(new byte[] { 0xFF }, "FF")]
+    public async Task QueryAsync_ReturnsProtocolFailureForInvalidPayload(
+        byte[] payload,
+        string expectedHex)
     {
         var client = new BatteryCommandClient(new ScriptedSession(Success(payload)), ExchangeTimeout);
 
@@ -120,6 +122,7 @@ public sealed class BatteryCommandClientTests
                 TransferredByteCount: null)
             {
                 ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+                RejectedPayloadHex = expectedHex,
             },
             result.Diagnostic);
     }
