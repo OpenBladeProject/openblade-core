@@ -25,6 +25,10 @@ public interface IDiagnosticArchiveSaver
     Task<DiagnosticArchiveSaveResult> SaveAsync(
         DiagnosticArchive archive,
         CancellationToken token);
+
+    Task<DiagnosticArchiveSaveResult> SaveExactAsync(
+        DiagnosticArchive archive,
+        CancellationToken token);
 }
 
 public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
@@ -47,8 +51,19 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
         this.userModeLogDirectory = userModeLogDirectory;
     }
 
-    public async Task<DiagnosticArchiveSaveResult> SaveAsync(
+    public Task<DiagnosticArchiveSaveResult> SaveAsync(
         DiagnosticArchive archive,
+        CancellationToken token) =>
+        SaveCoreAsync(archive, appendUserModeLogs: true, token);
+
+    public Task<DiagnosticArchiveSaveResult> SaveExactAsync(
+        DiagnosticArchive archive,
+        CancellationToken token) =>
+        SaveCoreAsync(archive, appendUserModeLogs: false, token);
+
+    private async Task<DiagnosticArchiveSaveResult> SaveCoreAsync(
+        DiagnosticArchive archive,
+        bool appendUserModeLogs,
         CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(archive);
@@ -82,10 +97,12 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
             $".{Path.GetFileName(destinationPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
-            byte[] archiveBytes = UserModeDiagnosticLogAppender.TryAppendLogs(
-                archive.ZipBytes,
-                userModeLogDirectory,
-                token);
+            byte[] archiveBytes = appendUserModeLogs
+                ? UserModeDiagnosticLogAppender.TryAppendLogs(
+                    archive.ZipBytes,
+                    userModeLogDirectory,
+                    token)
+                : archive.ZipBytes;
             await using (var stream = new FileStream(
                 temporaryPath,
                 FileMode.CreateNew,

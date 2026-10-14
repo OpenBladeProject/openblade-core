@@ -2008,4 +2008,16 @@
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>检查当前状态</value>
   </data>
+  <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>协助添加支持</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopHelpAddSupportLabel.Text" xml:space="preserve">
+    <value>协助添加支持</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopInfoBarText.Title" xml:space="preserve">
+    <value>暂不支持此笔记本电脑</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>不支持的笔记本电脑</value>
+  </data>
 </root>

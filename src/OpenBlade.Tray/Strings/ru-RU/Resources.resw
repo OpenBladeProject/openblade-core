@@ -2029,4 +2029,16 @@
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>Проверить текущее состояние</value>
   </data>
+  <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Помочь добавить поддержку</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopHelpAddSupportLabel.Text" xml:space="preserve">
+    <value>Помочь добавить поддержку</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopInfoBarText.Title" xml:space="preserve">
+    <value>Этот ноутбук пока не поддерживается</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Неподдерживаемый ноутбук</value>
+  </data>
 </root>

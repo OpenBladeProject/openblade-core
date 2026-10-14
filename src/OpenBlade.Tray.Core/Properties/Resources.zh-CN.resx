@@ -1431,4 +1431,28 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>请登录交互式 Windows 会话以更改笔记本设置。</value>
   </data>
+  <data name="Laptop not supported" xml:space="preserve">
+    <value>不支持此笔记本电脑</value>
+  </data>
+  <data name="Not supported" xml:space="preserve">
+    <value>不支持</value>
+  </data>
+  <data name="Preparing the identity report..." xml:space="preserve">
+    <value>正在准备设备信息报告…</value>
+  </data>
+  <data name="Identity report not saved." xml:space="preserve">
+    <value>设备信息报告未保存。</value>
+  </data>
+  <data name="Identity report saved to {0}. Attach it to the support form in your browser." xml:space="preserve">
+    <value>设备信息报告已保存到 {0}。请将其附加到浏览器中打开的支持表单。</value>
+  </data>
+  <data name="Identity report saved to {0}. Open {1} and attach it to request support." xml:space="preserve">
+    <value>设备信息报告已保存到 {0}。请打开 {1} 并附加该报告以申请支持。</value>
+  </data>
+  <data name="Identity report failed: {0}" xml:space="preserve">
+    <value>设备信息报告失败：{0}</value>
+  </data>
+  <data name="OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens." xml:space="preserve">
+    <value>OpenBlade 只控制已测试过的笔记本电脑型号。若要帮助添加此型号，请保存一份简短的设备信息报告，并将其附加到随后打开的支持表单。</value>
+  </data>
 </root>
