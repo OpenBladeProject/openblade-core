@@ -5708,6 +5708,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.SetExternalLightingOverridePolicyAsync(true, CancellationToken.None);
         ServiceStatusSnapshot before = context.Runtime.GetStatus();
         LightingSettings target = LightingSettingsFactory.SpectrumCycling(73);
+        var automation = Assert.IsType<ProfileAutomationState>(typeof(ServiceControlRuntime)
+            .GetProperty("Automation", System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
+        ProfileSet profiles = automation.Profiles;
+        automation.UpdateProfiles(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Lighting = target },
+            Battery = profiles.Battery with { Lighting = target },
+        });
         var pending = Assert.IsType<PendingWriteConfirmationTracker>(typeof(ServiceControlRuntime)
             .GetField("pendingWriteConfirmations", System.Reflection.BindingFlags.Instance
                 | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
@@ -5736,6 +5745,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
         Assert.True(context.Device.StateReadCalls > reads);
         Assert.Equal(writes, context.Device.TotalSetterCalls);
+        int lightingWrites = context.Device.LightingSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+        writes = context.Device.TotalSetterCalls;
         gate.Enter();
         ControlOperationResult newRequest = await context.Runtime.SetLightingOverrideAsync(
             new ManualOverride<LightingSettings>(target, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None);
@@ -5743,7 +5758,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(writes, context.Device.TotalSetterCalls);
         gate.Exit();
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
-        Assert.True(context.Device.TotalSetterCalls > writes);
+        Assert.True(context.Device.LightingSetCalls > lightingWrites);
     }
 
     [Theory]

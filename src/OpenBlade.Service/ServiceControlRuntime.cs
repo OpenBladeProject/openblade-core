@@ -14825,7 +14825,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 exclusions.Add(DeviceSubsystem.Lighting);
             }
-            if (IsKeyboardLightingDelegated)
+            if (IsKeyboardLightingDelegated || experimentalLightingResumeAwaitingRequest)
             {
                 exclusions.Add(DeviceSubsystem.Lighting);
             }
