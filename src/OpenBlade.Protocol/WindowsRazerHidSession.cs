@@ -9,6 +9,10 @@ internal readonly record struct RazerCommandSpec(
 {
     internal Func<bool>? SubmissionAllowed { get; init; }
 
+    // Some firmware effect commands return a status-only ACK or a padded state.
+    // Callers must supply an explicit bounded semantic validator for this opt-in.
+    internal bool AllowVariableResponseLength { get; init; }
+
     internal RazerCommandSpec(
         byte classId,
         byte commandId,
@@ -231,6 +235,7 @@ internal sealed class WindowsRazerHidSession :
             command.PayloadValidator)
         {
             SubmissionAllowed = command.SubmissionAllowed,
+            AllowVariableResponseLength = command.AllowVariableResponseLength,
         };
         var item = new WorkItem(
             snapshot,
@@ -289,6 +294,7 @@ internal sealed class WindowsRazerHidSession :
                 command.PayloadValidator)
             {
                 SubmissionAllowed = command.SubmissionAllowed,
+                AllowVariableResponseLength = command.AllowVariableResponseLength,
             };
             offset += length;
         }
@@ -303,6 +309,11 @@ internal sealed class WindowsRazerHidSession :
             throw new ArgumentOutOfRangeException(
                 nameof(command),
                 "Command arguments cannot exceed 80 bytes.");
+        }
+
+        if (command.AllowVariableResponseLength && command.PayloadValidator is null)
+        {
+            throw new ArgumentException("Variable responses require a bounded payload validator.", nameof(command));
         }
 
         if (command.ExpectedPayloadLength is < 0 or > RazerReport.MaximumPayloadLength)
@@ -641,7 +652,7 @@ internal sealed class WindowsRazerHidSession :
 
             ReadOnlyMemory<byte> payload = request.ValidateResponse(
                 getBuffer.AsSpan(1, RazerReport.ReportLength),
-                item.Command.ExpectedPayloadLength);
+                item.Command.AllowVariableResponseLength ? null : item.Command.ExpectedPayloadLength);
             if (item.Command.PayloadValidator is not null)
             {
                 bool valid;

@@ -5,7 +5,7 @@ Automatic preparation step on RZ09-0581. The production factory advertises
 `SupportsDirectManualFanTransitions` only for the trusted embedded fixture,
 exact live identity, and complete captured manual state/target command set.
 Other backends retain their existing thermal transition path. An omitted
-capability defaults to false. The strict service codec requires IPC version 61
+capability defaults to false. The strict service codec requires IPC version 64
 for the new field and a coordinated component update. The protocol-51 read-only
 projection omits the field; Session Agent IPC versions remain unchanged.
 

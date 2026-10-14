@@ -2008,6 +2008,15 @@
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>检查当前状态</value>
   </data>
+  <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>实验性笔记本支持</value>
+  </data>
+  <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>恢复实验性控制</value>
+  </data>
+  <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
+    <value>恢复实验性控制</value>
+  </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>协助添加支持</value>
   </data>

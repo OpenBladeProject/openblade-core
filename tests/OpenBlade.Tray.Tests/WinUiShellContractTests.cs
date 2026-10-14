@@ -6,6 +6,67 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void ExperimentalSupportIsAutomaticAndPausedWritesExposeOneExplicitResumeAction()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement resume = UidElement(
+            document,
+            "Button",
+            "MainWindow_ResumeExperimentalWritesButton");
+
+        Assert.Equal(
+            "{x:Bind ViewModel.ResumeExperimentalWritesCommand}",
+            Attribute(resume, "Command"));
+        Assert.Equal(
+            "{x:Bind ViewModel.ExperimentalWritesPaused, Mode=OneWay}",
+            Attribute(resume, "Visibility"));
+        Assert.Equal("Resume experimental controls", Attribute(resume, "AutomationProperties.Name"));
+        Assert.Contains(
+            resume.Descendants(),
+            element => element.Name.LocalName == "ProgressRing"
+                && Attribute(element, "IsActive")
+                    == "{x:Bind ViewModel.IsResumeExperimentalWritesOperationInProgress, Mode=OneWay}");
+        Assert.DoesNotContain(
+            document.Descendants(),
+            element => Attribute(element, "Uid") is
+                "MainWindow_ExperimentalControlsToggle"
+                or "MainWindow_ExperimentalControlsTitle"
+                or "MainWindow_ExperimentalControlsDescription");
+
+        XElement labFeatures = UidElement(
+            document,
+            "TextBlock",
+            "MainWindow_TextBlockLabFeatures");
+        XElement labRow = labFeatures.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+        Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(labRow, "Style"));
+
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.DoesNotContain("OnExperimentalFeaturesToggled", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExperimentalConsent", source, StringComparison.Ordinal);
+
+        foreach (string culture in new[] { "en-US", "ru-RU", "zh-CN", "qps-ploc" })
+        {
+            XDocument resources = XDocument.Parse(ReadRepositoryFile(
+                "src",
+                "OpenBlade.Tray",
+                "Strings",
+                culture,
+                "Resources.resw"));
+            string[] keys = resources.Descendants("data")
+                .Select(element => (string?)element.Attribute("name"))
+                .OfType<string>()
+                .ToArray();
+            Assert.Contains(
+                "MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
+                keys);
+            Assert.Contains("MainWindow_ResumeExperimentalWritesLabel.Text", keys);
+            Assert.DoesNotContain("MainWindow_ExperimentalConsent_Title", keys);
+        }
+    }
+
+    [Fact]
     public void FanTemperatureToggleKeepsProgrammaticSynchronizationOutOfCommitPath()
     {
         XDocument document = XDocument.Parse(
@@ -4172,6 +4233,14 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain(" MHz", sliderSectionXaml, StringComparison.Ordinal);
         Assert.DoesNotContain(" %", sliderSectionXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ChargeLimitSliderRow\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "Maximum=\"{x:Bind ViewModel.ChargeLimitMaximumPercent, Mode=OneWay}\"",
+            sliderSectionXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "StepFrequency=\"{x:Bind ViewModel.ChargeLimitStepPercent, Mode=OneWay}\"",
+            sliderSectionXaml,
+            StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingBrightnessSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains(
             "AutomationProperties.Name=\"Keyboard brightness\"",

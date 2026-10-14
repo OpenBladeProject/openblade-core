@@ -30,6 +30,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         ServiceComposition.CreateProductionLightingFactory;
 
     private readonly Func<BatteryValidationProbeResult> probe;
+    private readonly ExperimentalBladeFactory? experimentalFactory;
     private readonly FirmwareCompatibilityPolicy compatibilityPolicy;
     private readonly SerializedBladeDevice device;
     private readonly object providerLifecycleSync = new();
@@ -73,6 +74,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         }
 
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
+        experimentalFactory = batteryFactory as ExperimentalBladeFactory;
         this.compatibilityPolicy = compatibilityPolicy
             ?? new FirmwareCompatibilityPolicy();
         device = new SerializedBladeDevice(
@@ -98,6 +100,23 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 (int)FirmwareCompatibilityStatus.UntestedBlocked);
         }
     }
+
+    public bool IsExperimentalDevice => experimentalFactory is not null;
+
+    public string? ExperimentalSupportSource => experimentalFactory?.EvidenceSource;
+
+    public bool IsExperimentalWritesPaused => experimentalFactory?.IsWritesPaused == true;
+
+    public DeviceCapabilities? ExperimentalCapabilities => experimentalFactory?.Capabilities;
+
+    public Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
+        Func<ConfirmedDeviceState, bool> acceptObservedState,
+        Func<bool> stillAuthorized,
+        CancellationToken cancellationToken) =>
+        device.ResumeExperimentalWritesAsync(acceptObservedState, stillAuthorized, cancellationToken);
+
+    public DiagnosticExperimentalSupport GetExperimentalSupportDiagnostics() =>
+        experimentalFactory?.GetDiagnostics() ?? DiagnosticExperimentalSupport.NotDetected;
 
     public void SetLightingRefreshRate(LightingRefreshRate refreshRate) =>
         device.SetDesiredLightingRefreshRate(refreshRate);
@@ -505,6 +524,47 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 () => hardwareOperationGate.Release());
         }
 
+        internal async Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
+            Func<ConfirmedDeviceState, bool> acceptObservedState,
+            Func<bool> stillAuthorized,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(acceptObservedState);
+            ArgumentNullException.ThrowIfNull(stillAuthorized);
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (batteryFactory is not ExperimentalBladeFactory factory)
+                {
+                    throw new CapabilityUnavailableException("This provider has no experimental controls.");
+                }
+                // Experimental lighting owns no Driver-mode writes. Drop any retained
+                // failed session before fresh recovery admission and later manual work.
+                if (lightingSession.RetainedPort is { } retained)
+                {
+                    if (retained is not ExperimentalBladePort experimentalPort)
+                    {
+                        throw new CapabilityUnavailableException("Experimental recovery cannot retire an unrelated lighting port.");
+                    }
+                    await experimentalPort.DisposeAsync().ConfigureAwait(false);
+                    if (!experimentalPort.IsRecoverySessionDrained)
+                    {
+                        throw new IOException("Experimental session cleanup has not confirmed native operation drain.");
+                    }
+                    await lightingSession.DisposeLightingPortWithinDeadlineAsync().ConfigureAwait(false);
+                }
+                return await factory.ResumeWritesAsync(acceptObservedState, () =>
+                {
+                    ThrowIfClosingOrDisposed();
+                    return stillAuthorized();
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
             CancellationToken cancellationToken)
         {
@@ -535,6 +595,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,
+                        SupportsBreathingColorSelection = lighting.Capabilities.SupportsBreathingColorSelection,
+                        SupportsWaveDirectionSelection = lighting.Capabilities.SupportsWaveDirectionSelection,
                         SupportsPlaybackMuteIndicator =
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
                         KeyboardLightingLayoutId =
@@ -839,20 +901,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             var lease = new StatePortLease(this, cancellationToken);
             await using (lease.ConfigureAwait(false))
             {
-                (bool protectionRead, ConfirmedBatteryState protection) =
-                    await ReadIsolatedStateQueryAsync(
+                IProductionBatteryPort initialPort = await lease.GetAsync().ConfigureAwait(false);
+                (bool protectionRead, ConfirmedBatteryState protection) = initialPort.SupportsProtectionQuery
+                    ? await ReadIsolatedStateQueryAsync(
                         lease,
                         DeviceStateQuery.BatteryProtection,
                         BatteryStateSubsystems,
                         port => port.QueryProtectionAsync(cancellationToken),
-                        failures).ConfigureAwait(false);
+                        failures).ConfigureAwait(false)
+                    : (false, null!);
                 ConfirmedBatteryState? battery = null;
                 if (protectionRead)
                 {
                     // Without the protection baseline the battery subsystem is
                     // already unknown, so the dependent override is not queried.
                     IProductionBatteryPort port = await lease.GetAsync().ConfigureAwait(false);
-                    bool? temporary = null;
+                    // Experimental profiles have no temporary override: the BHO
+                    // register is their complete admitted protection state.
+                    bool? temporary = batteryFactory is ExperimentalBladeFactory ? false : null;
                     if (port.SupportsTemporaryFullChargeQuery)
                     {
                         (_, temporary) = await ReadIsolatedStateQueryAsync(
@@ -1188,6 +1254,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // These queries have no implementation in the experimental port.
+                // Returning unavailable avoids opening and probing HID for a known no-op.
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
+
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
@@ -1234,6 +1307,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
@@ -1279,6 +1356,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // These queries have no implementation in the experimental port.
+                // Returning unavailable avoids opening and probing HID for a known no-op.
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
+
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
@@ -1324,6 +1408,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // These queries have no implementation in the experimental port.
+                // Returning unavailable avoids opening and probing HID for a known no-op.
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
+
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
@@ -1368,6 +1459,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // These queries have no implementation in the experimental port.
+                // Returning unavailable avoids opening and probing HID for a known no-op.
+                if (batteryFactory is ExperimentalBladeFactory)
+                {
+                    return null;
+                }
+
                 HidSessionResult<IProductionBatteryPort> opened =
                     await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)

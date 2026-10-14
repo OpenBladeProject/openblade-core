@@ -597,12 +597,12 @@ public sealed record BatteryPolicy
 {
     public BatteryPolicy(int chargeLimitPercent)
     {
-        if (chargeLimitPercent is < 50 or > 80 || chargeLimitPercent % 5 != 0)
+        if (chargeLimitPercent is < 50 or > 99)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(chargeLimitPercent),
                 chargeLimitPercent,
-                "Charge limit must be from 50 to 80 percent in 5 percent steps.");
+                "Enabled charge limits must be from 50 to 99 percent. No limit is represented by protection off.");
         }
 
         ChargeLimitPercent = chargeLimitPercent;

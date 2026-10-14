@@ -947,9 +947,18 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("OnDashboardChargeLimitKeyUp", Attribute(chargeLimit, "KeyUp"));
         Assert.Null(Attribute(chargeLimit, "ValueChanged"));
         Assert.Equal("OnBatteryProtectionToggled", Attribute(batteryProtection, "Toggled"));
-        Assert.Equal("50", Attribute(chargeLimit, "Minimum"));
-        Assert.Equal("80", Attribute(chargeLimit, "Maximum"));
-        Assert.Equal("5", Attribute(chargeLimit, "StepFrequency"));
+        Assert.Equal(
+            "{x:Bind ChargeLimitMinimumPercent, Mode=OneWay}",
+            Attribute(chargeLimit, "Minimum"));
+        Assert.Equal(
+            "{x:Bind ChargeLimitMaximumPercent, Mode=OneWay}",
+            Attribute(chargeLimit, "Maximum"));
+        Assert.Equal(
+            "{x:Bind ChargeLimitStepPercent, Mode=OneWay}",
+            Attribute(chargeLimit, "StepFrequency"));
+        Assert.Equal(
+            "{x:Bind ChargeLimitStepPercent, Mode=OneWay}",
+            Attribute(chargeLimit, "SmallChange"));
         Assert.Equal("StepValues", Attribute(chargeLimit, "SnapsTo"));
         Assert.Equal(
             "{StaticResource InlineCardSliderStyle}",
@@ -2700,8 +2709,8 @@ public sealed class CapabilityPresentationTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off },
-                new HashSet<int> { 50, 79 }, true, true)));
-        await WaitUntilAsync(() => viewModel.Capabilities.ChargeLimits.Contains(79));
+                new HashSet<int> { 50, 101 }, true, true)));
+        await WaitUntilAsync(() => viewModel.Capabilities.ChargeLimits.Contains(101));
 
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.Empty(viewModel.ChargeLimitOptions);
