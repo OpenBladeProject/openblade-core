@@ -67,14 +67,18 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   eligible OpenBlade-owned producers.
 
 Production admission is scoped to the exact Razer product name and HID identity.
-SKU is optional diagnostic metadata, so configuration variants of an admitted
-product are not rejected by SKU. Hardware-specific backends retain their own
-device and driver checks. BIOS, EC, and MCU
+The service reads the BIOS manufacturer and product name to choose which
+admitted model to verify, then checks only that model's exact identity. SKU and
+BIOS version are optional diagnostic metadata: configuration variants are not
+rejected by SKU, and a missing, unreadable, or disagreeing BIOS version does not
+block admission. Hardware-specific backends retain their own device and driver
+checks. BIOS, EC, and MCU
 versions remain evidence provenance: no shipped capability is restricted to a
 firmware version, so an untested BIOS is admitted and reported as model-scoped.
-Capture tools are kept outside the installed product, may pin an exact BIOS
-version for reproducibility, and raw captures are never production admission
-artifacts.
+Only an identity that explicitly pins exact versions checks SKU and BIOS
+version. Capture tools are kept outside the installed product, may pin an exact
+BIOS version for reproducibility, and raw captures are never production
+admission artifacts.
 
 When an admitted laptop's exact Razer driver stack is already present,
 OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
@@ -102,6 +106,16 @@ redaction; exception evidence contains only the type and error code. Device
 paths, serial numbers, exception messages, and raw HID reports are not collected
 by this verification record. The USB IDs in `device.json` identify the catalog
 model and do not establish successful HID verification.
+
+When the latest probe read a BIOS manufacturer or product name that matches no
+admitted model, the service status sets `UnsupportedLaptop`. Registry read
+failures, platform failures, firmware blocks, and failed checks on an admitted
+model leave it false. The tray then
+shows **This laptop isn't supported yet** with **Help add support**. That action
+uses the same export, keeps only `versions.json` and `device-verification.json`,
+saves them as `OpenBlade-identity-report.zip` without tray logs, and opens the
+**Support my laptop** issue form. `device.json` is left out because it has a
+serial-number field.
 
 If device controls are disabled after identity verification succeeds, check
 `configuration.json`'s `status.message` and `command-results.json`. Protocol

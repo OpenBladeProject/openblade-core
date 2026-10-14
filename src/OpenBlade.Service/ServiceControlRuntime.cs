@@ -19204,6 +19204,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     || unconfirmedWrites.Count > 0,
                 UnconfirmedWrites = unconfirmedWrites,
                 HyperBoostRestorePending = hyperBoostRestorePending,
+                UnsupportedLaptop = !updated.DeviceVerified
+                    && !deviceProvider.IsExperimentalDevice
+                    && deviceProvider.GetCachedDeviceVerificationDiagnostics()
+                        .LatestAttemptFoundUnsupportedLaptop,
             };
             candidate = ApplyExperimentalConsentRevocation(
                 ApplyConfigurationQuarantineAdvisory(candidate));

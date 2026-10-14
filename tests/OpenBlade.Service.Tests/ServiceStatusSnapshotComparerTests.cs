@@ -162,6 +162,18 @@ public sealed class ServiceStatusSnapshotComparerTests
     }
 
     [Fact]
+    public void Equivalent_DetectsUnsupportedLaptopChanges()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot unsupported = baseline with { UnsupportedLaptop = true };
+
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, unsupported));
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(unsupported, baseline));
+        Assert.True(ServiceStatusSnapshotComparer.Equivalent(
+            unsupported, unsupported with { }));
+    }
+
+    [Fact]
     public void Equivalent_IgnoresRevisionButDetectsTelemetryAndObservationState()
     {
         ServiceStatusSnapshot baseline = CreateStatus();

@@ -2,6 +2,10 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
+internal sealed record AdmittedServiceModel(
+    ExpectedHostIdentity HostIdentity,
+    HidHandleIdentity HandleIdentity);
+
 public static class BatteryValidationFactory
 {
     private static readonly TimeSpan DefaultExchangeTimeout = TimeSpan.FromSeconds(3);
@@ -1292,6 +1296,24 @@ public static class BatteryValidationFactory
             native,
             ControllerExclusivityPolicy.Strict);
 
+    // Every model the service admits. The service verifies the one whose BIOS
+    // manufacturer and product name match, or the first when none does.
+    // Diagnostics also use it to tell an unadmitted laptop from an admitted one.
+    internal static IReadOnlyList<AdmittedServiceModel> AdmittedServiceModels { get; } =
+    [
+        new(
+            WindowsHostIdentitySource.ProductionIdentity,
+            WindowsRazerHidEvidenceEvaluator.ProductionExactIdentity),
+        new(
+            WindowsHostIdentitySource.Rz090528Identity,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02C6,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: 91)),
+    ];
+
     internal static BatteryValidationProbeResult ProbeWindowsForService(
         IRegistryValueSource registry,
         IWindowsPlatformEvidenceSource platform,
@@ -1300,20 +1322,7 @@ public static class BatteryValidationFactory
         IHidCandidateNative native,
         FirmwareCompatibilityPolicy? compatibilityPolicy = null)
     {
-        BatteryValidationProbeResult production = ProbeWindows(
-            registry,
-            platform,
-            processSource,
-            serviceSource,
-            native,
-            ControllerExclusivityPolicy.Advisory,
-            compatibilityPolicy: compatibilityPolicy);
-        if (production.Classification
-            != BatteryValidationProbeClassification.HostIdentityBlocked)
-        {
-            return production;
-        }
-
+        AdmittedServiceModel model = SelectServiceModel(registry);
         return ProbeWindows(
             registry,
             platform,
@@ -1321,14 +1330,34 @@ public static class BatteryValidationFactory
             serviceSource,
             native,
             ControllerExclusivityPolicy.Advisory,
-            WindowsHostIdentitySource.Rz090528Identity,
-            new HidHandleIdentity(
-                VendorId: 0x1532,
-                ProductId: 0x02C6,
-                UsagePage: 0x0001,
-                Usage: 0x0002,
-                FeatureReportByteLength: 91),
+            model.HostIdentity,
+            model.HandleIdentity,
             compatibilityPolicy);
+    }
+
+    // Choosing the model is not admission: the chosen model's full check
+    // re-reads and verifies every identity value and the exact HID device.
+    private static AdmittedServiceModel SelectServiceModel(IRegistryValueSource registry)
+    {
+        if (WindowsHostIdentitySource.ReadBiosModelName(registry) is { } bios)
+        {
+            foreach (AdmittedServiceModel model in AdmittedServiceModels)
+            {
+                if (string.Equals(
+                        model.HostIdentity.Manufacturer,
+                        bios.Manufacturer,
+                        StringComparison.Ordinal)
+                    && string.Equals(
+                        model.HostIdentity.ProductName,
+                        bios.ProductName,
+                        StringComparison.Ordinal))
+                {
+                    return model;
+                }
+            }
+        }
+
+        return AdmittedServiceModels[0];
     }
 
     private static BatteryValidationProbeResult ProbeWindows(

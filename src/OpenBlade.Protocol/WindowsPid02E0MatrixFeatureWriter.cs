@@ -216,8 +216,8 @@ internal sealed class WindowsPid02E0MatrixFeatureOpener
         {
             HostFirmwareCompatibility.Tested =>
                 TargetBladeDevice.IsValidatedBiosVersion(evidence.BiosVersion),
-            HostFirmwareCompatibility.ModelScoped =>
-                !string.IsNullOrWhiteSpace(evidence.BiosVersion),
+            // Model-scoped admission does not depend on the BIOS version.
+            HostFirmwareCompatibility.ModelScoped => true,
             HostFirmwareCompatibility.UntestedAllowed =>
                 !string.IsNullOrWhiteSpace(evidence.BiosVersion),
             _ => false,

@@ -159,15 +159,17 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         Assert.True(blockedCandidate.FileHandle.IsClosed);
     }
 
-    [Fact]
-    public async Task Opener_AcceptsModelScopedFirmwareWithoutOverride()
+    [Theory]
+    [InlineData("99.99")]
+    [InlineData(null)]
+    public async Task Opener_AcceptsModelScopedFirmwareWithoutOverride(string? biosVersion)
     {
         var native = new ScriptedCandidateNative();
         OpenedCandidateHandle candidate = native.Add("mi03", ExactMatrix);
         var opener = new WindowsPid02E0MatrixFeatureOpener(
             new ScriptedHost(ExactHost with
             {
-                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "99.99" },
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = biosVersion },
                 FirmwareCompatibility = HostFirmwareCompatibility.ModelScoped,
             }),
             new ScriptedGuard(),

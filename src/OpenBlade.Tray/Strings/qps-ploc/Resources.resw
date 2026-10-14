@@ -2050,4 +2050,16 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_ExperimentalConsent_Enable" xml:space="preserve">
     <value>[!! Énáblé cóntróls ~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Hélp ádd súppórt ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopHelpAddSupportLabel.Text" xml:space="preserve">
+    <value>[!! Hélp ádd súppórt ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopInfoBarText.Title" xml:space="preserve">
+    <value>[!! Thís láptóp ísn’t súppórtéd ýét ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Únsúppórtéd láptóp ~~~~~~ !!]</value>
+  </data>
 </root>

@@ -25,6 +25,7 @@ internal static class ServiceStatusSnapshotComparer
         && left.ExternalChanges.SequenceEqual(right.ExternalChanges)
         && left.UnconfirmedWrites.SequenceEqual(right.UnconfirmedWrites)
         && left.HyperBoostRestorePending == right.HyperBoostRestorePending
+        && left.UnsupportedLaptop == right.UnsupportedLaptop
         && ThermalConvergenceEqual(
             left.ThermalConvergence,
             right.ThermalConvergence)

@@ -163,7 +163,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             sessionAgentVersion: InstalledComponentVersion.ReadSibling(
                 "OpenBlade.SessionAgent.exe"),
             installedServiceVersion: InstalledComponentVersion.ReadSibling(
-                "OpenBlade.Service.exe"));
+                "OpenBlade.Service.exe"),
+            externalUriLauncher: new WinUiExternalUriLauncher());
         UpdateViewModel = new UpdateCheckViewModel(
             new GitHubReleaseUpdateClient(),
             uiVersion);

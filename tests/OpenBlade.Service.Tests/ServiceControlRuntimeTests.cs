@@ -5555,6 +5555,82 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(saved.Preferences.AllowUntestedFirmware);
     }
 
+    [Theory]
+    [InlineData(HostIdentityFailureReason.RegistryValueMismatch, "SystemProductName", true)]
+    [InlineData(HostIdentityFailureReason.RegistryValueMismatch, "SystemManufacturer", true)]
+    [InlineData(HostIdentityFailureReason.RegistryReadFailed, "SystemProductName", false)]
+    [InlineData(HostIdentityFailureReason.RegistryValueMismatch, "SystemSKU", false)]
+    public async Task UnsupportedLaptop_FollowsLatestHostIdentityMismatchOnlyWhileUnverified(
+        HostIdentityFailureReason reason,
+        string field,
+        bool expectedUnsupported)
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Provider.Verification = HostIdentityVerification(reason, field);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot blocked = context.Runtime.GetStatus();
+        Assert.False(blocked.DeviceVerified);
+        Assert.Equal(expectedUnsupported, blocked.UnsupportedLaptop);
+
+        context.Provider.Available = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot verified = context.Runtime.GetStatus();
+        Assert.True(verified.DeviceVerified);
+        Assert.False(verified.UnsupportedLaptop);
+    }
+
+    [Theory]
+    [InlineData("SystemProductName")]
+    [InlineData("SystemManufacturer")]
+    public async Task ExperimentalIdentityMismatch_DoesNotAlsoPublishUnsupportedLaptop(string field)
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        context.Provider.Verification = HostIdentityVerification(
+            HostIdentityFailureReason.RegistryValueMismatch, field);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.True(status.IsExperimentalDevice);
+        Assert.False(status.DeviceVerified);
+        Assert.False(status.UnsupportedLaptop);
+        Assert.True(status.WritesBlocked);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    private static DiagnosticDeviceVerification HostIdentityVerification(
+        HostIdentityFailureReason reason,
+        string field) => new(
+            new DiagnosticDeviceVerificationAttempt(
+                DateTimeOffset.UtcNow,
+                "HostIdentity",
+                "HostIdentityBlocked",
+                "blocked",
+                new BatteryValidationProbeResult(
+                    BatteryValidationProbeStage.HostIdentity,
+                    BatteryValidationProbeClassification.HostIdentityBlocked,
+                    HostIdentityMatched: false,
+                    ConflictCheckPassed: false,
+                    EnumeratedCandidateCount: 0,
+                    CandidateOpenAttemptCount: 0,
+                    CandidateOpenSuccessCount: 0,
+                    CandidateOpenWin32Error: null,
+                    CandidateAccessFallbackCount: 0,
+                    IdentityReadCount: 0,
+                    VendorMatchCount: 0,
+                    ProductMatchCount: 0,
+                    UsagePageMatchCount: 0,
+                    UsageMatchCount: 0,
+                    FeatureLengthMatchCount: 0,
+                    ExactMatchCount: 0,
+                    HostIdentityFailure: new HostIdentityFailureDetail(
+                        reason, "BIOS", field, "Expected", "Actual"))),
+            LastFailure: null);
+
     [Fact]
     public async Task ExperimentalFeaturesConsent_PersistsGatesDeviceAndRevokesWithoutWrite()
     {
@@ -29795,6 +29871,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public string? ExperimentalSupportSource => IsExperimentalDevice
             ? "community-validation"
             : null;
+        public DiagnosticDeviceVerification Verification { get; set; } =
+            DiagnosticDeviceVerification.NotObserved;
+
+        public DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
+            Verification;
 
         public FirmwareCompatibilityStatus FirmwareCompatibility =>
             ReportUnknownFirmwareCompatibility

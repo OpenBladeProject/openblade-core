@@ -214,6 +214,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
     private readonly IDiagnosticArchiveSaver diagnosticArchiveSaver;
+    private readonly IExternalUriLauncher externalUriLauncher;
     private readonly IStartupRegistration startupRegistration;
     private readonly TimeProvider timeProvider;
     private readonly string uiVersion;
@@ -411,12 +412,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         string? uiVersion = null,
         string? sessionAgentVersion = null,
         string? installedServiceVersion = null,
-        string? applicationBaseDirectory = null)
+        string? applicationBaseDirectory = null,
+        IExternalUriLauncher? externalUriLauncher = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         this.diagnosticArchiveSaver = diagnosticArchiveSaver
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveSaver));
+        this.externalUriLauncher = externalUriLauncher
+            ?? new UnavailableExternalUriLauncher();
         this.startupRegistration = startupRegistration
             ?? throw new ArgumentNullException(nameof(startupRegistration));
         lightingEditor.Changed += OnLightingEditorChanged;
@@ -520,6 +524,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ExportDiagnosticsCommand = CreateCommand(
             ExportDiagnosticsAsync,
             _ => Volatile.Read(ref disposed) == 0 && IsConnected);
+        HelpAddSupportCommand = CreateCommand(
+            HelpAddSupportAsync,
+            _ => Volatile.Read(ref disposed) == 0 && IsUnsupportedLaptop);
         SetStartAtSignInCommand = CreateCommand(
             SetStartAtSignInAsync,
             parameter => parameter is bool requested
@@ -566,6 +573,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             (AsyncRelayCommand)SaveLaptopProfileDraftCommand,
             (AsyncRelayCommand)DiscardLaptopProfileDraftCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
+            (AsyncRelayCommand)HelpAddSupportCommand,
             (AsyncRelayCommand)SetStartAtSignInCommand,
             (AsyncRelayCommand)SetThermalControlPolicyCommand,
             (AsyncRelayCommand)AcknowledgeThermalPolicyUpgradeDisclosureCommand,
@@ -580,6 +588,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             CancellationToken token) =>
             Task.FromException<DiagnosticArchiveSaveResult>(
                 new InvalidOperationException("A diagnostic archive saver was not configured."));
+
+        public Task<DiagnosticArchiveSaveResult> SaveExactAsync(
+            DiagnosticArchive archive,
+            CancellationToken token) =>
+            SaveAsync(archive, token);
+    }
+
+    private sealed class UnavailableExternalUriLauncher : IExternalUriLauncher
+    {
+        public Task<bool> OpenAsync(Uri uri, CancellationToken token) =>
+            Task.FromException<bool>(
+                new InvalidOperationException("An external link launcher was not configured."));
     }
 
     private sealed class UnavailableStartupRegistration : IStartupRegistration
@@ -647,6 +667,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanRequestHardwareControl => CanControlHardware
         || IsRetainedPowerSourceRecheck(latestStatus);
 
+    public string UnsupportedLaptopMessage => TrayText.Get(
+        "OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens.");
+
+    public bool IsUnsupportedLaptop =>
+        IsConnected
+        && latestStatus is { DeviceVerified: false, UnsupportedLaptop: true };
+
     public bool HasHardwareControlUnavailableMessage =>
         !string.IsNullOrEmpty(HardwareControlUnavailableMessage);
 
@@ -661,6 +688,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (!IsConnected)
             {
                 return TrayText.Get("OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation.");
+            }
+            if (IsUnsupportedLaptop)
+            {
+                return string.Empty;
             }
             if (latestStatus?.ControlAccess == SessionControlAccess.InactiveSession)
             {
@@ -1925,6 +1956,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             return latestStatus?.DeviceVerified == true
                 ? TrayText.Get("Verified Razer Blade")
+                : IsUnsupportedLaptop
+                ? TrayText.Get("Not supported")
                 : TrayText.Get("Not detected");
         }
     }
@@ -1985,7 +2018,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         FirmwareCompatibilityStatus.UntestedBlocked
         or FirmwareCompatibilityStatus.UntestedAllowed;
 
-    private string UnavailableLaptopReason => IsFirmwareAdmissionBlocked
+    private string UnavailableLaptopReason => IsUnsupportedLaptop
+        ? TrayText.Get("Laptop not supported")
+        : IsFirmwareAdmissionBlocked
         ? TrayText.Get("Incompatible firmware")
         : TrayText.Get("Laptop not found");
 
@@ -2604,7 +2639,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         !string.IsNullOrEmpty(FanControlUnavailableMessage);
 
     public string FanControlUnavailableMessage =>
-        HasHardwareControlUnavailableMessage || IsFanControlOperationInProgress
+        HasHardwareControlUnavailableMessage
+        || IsUnsupportedLaptop
+        || IsFanControlOperationInProgress
             ? string.Empty
             : HyperBoostActive
                 ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
@@ -4512,6 +4549,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public ICommand SaveLaptopProfileDraftCommand { get; }
     public ICommand DiscardLaptopProfileDraftCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
+    public ICommand HelpAddSupportCommand { get; }
     public ICommand SetStartAtSignInCommand { get; }
     public ICommand SetThermalControlPolicyCommand { get; }
     public ICommand AcknowledgeThermalPolicyUpgradeDisclosureCommand { get; }
@@ -7414,6 +7452,86 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    private async Task HelpAddSupportAsync(object? parameter, CancellationToken token)
+    {
+        string? savedPath = null;
+        try
+        {
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    OperationStatusMessage = TrayText.Get("Preparing the identity report...");
+                    TroubleshootingRecentErrorStatus = string.Empty;
+                },
+                token);
+            DiagnosticArchive diagnostics = await serviceClient.ExportDiagnosticsAsync(
+                liveReadingsEnabled: false,
+                token);
+            DiagnosticArchive report = UnsupportedLaptopReport.Create(diagnostics);
+            DiagnosticArchiveSaveResult result = await diagnosticArchiveSaver.SaveExactAsync(
+                report,
+                token);
+            if (result.Status == DiagnosticArchiveSaveStatus.Canceled)
+            {
+                await dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        OperationStatusMessage = TrayText.Get("Identity report not saved.");
+                        TroubleshootingRecentErrorStatus = string.Empty;
+                    },
+                    token);
+                return;
+            }
+
+            if (result.Status != DiagnosticArchiveSaveStatus.Saved
+                || string.IsNullOrWhiteSpace(result.DestinationPath))
+            {
+                throw new InvalidDataException(
+                    TrayText.Get("The diagnostic saver returned an invalid result."));
+            }
+
+            savedPath = result.DestinationPath;
+            bool opened = await externalUriLauncher.OpenAsync(
+                UnsupportedLaptopReport.IssueFormUri,
+                token);
+            string message = opened
+                ? TrayText.Format(
+                    "Identity report saved to {0}. Attach it to the support form in your browser.",
+                    savedPath)
+                : SavedWithoutBrowserMessage(savedPath);
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    OperationStatusMessage = message;
+                    TroubleshootingRecentErrorStatus = string.Empty;
+                },
+                token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            string message = savedPath is null
+                ? TrayText.Format("Identity report failed: {0}", exception.Message)
+                : SavedWithoutBrowserMessage(savedPath);
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    OperationStatusMessage = message;
+                    TroubleshootingRecentErrorStatus = FormatTroubleshootingValue(message);
+                },
+                token);
+        }
+
+        static string SavedWithoutBrowserMessage(string path) =>
+            TrayText.Format(
+                "Identity report saved to {0}. Open {1} and attach it to request support.",
+                path,
+                UnsupportedLaptopReport.IssueFormUri);
+    }
+
     private void LoadLightingEditor(
         LightingSettings value,
         bool startUnconfirmedEffectAtDefaultBrightness = false)
@@ -8538,6 +8656,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(CanRequestHardwareControl), CanRequestHardwareControl);
         NotifyComputed(nameof(HardwareControlUnavailableMessage), HardwareControlUnavailableMessage);
         NotifyComputed(nameof(HasHardwareControlUnavailableMessage), HasHardwareControlUnavailableMessage);
+        NotifyComputed(nameof(IsUnsupportedLaptop), IsUnsupportedLaptop);
         NotifyComputed(nameof(CanReapplyChangedSettings), CanReapplyChangedSettings);
         NotifyComputed(nameof(CanRecoverHyperBoostRestore), CanRecoverHyperBoostRestore);
         NotifyComputed(nameof(CanCheckCurrentState), CanCheckCurrentState);

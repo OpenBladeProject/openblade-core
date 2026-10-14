@@ -31,6 +31,9 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 
 Available controls vary by model. See the
 [user guide](https://github.com/OSSBlade/openblade-docs) for compatibility details.
+On another Razer laptop, select **Help add support** in OpenBlade and attach the
+saved report to the
+[support request](https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml).
 
 Additional models have opt-in [experimental support](docs/experimental-blade-support.md)
 for testing through pre-releases.

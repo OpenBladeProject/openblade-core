@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 60;
+    public const int ProtocolVersion = 61;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -890,6 +890,7 @@ public static class IpcMessageCodec
             ThermalConvergence = null,
             HyperBoostBlockingControllers = null,
             ObservationReason = DeviceObservationReason.None,
+            UnsupportedLaptop = false,
         };
 
         static bool IsProtocol51BatteryLimit(int value) =>
@@ -951,6 +952,12 @@ public static class IpcMessageCodec
                         "experimentalSupportSource",
                         StringComparison.OrdinalIgnoreCase));
                 experimentalSupportSource.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo unsupportedLaptop = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "unsupportedLaptop",
+                        StringComparison.OrdinalIgnoreCase));
+                unsupportedLaptop.ShouldSerialize = static (_, _) => false;
             }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)

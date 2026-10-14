@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
@@ -27,7 +28,7 @@ public static class TargetBladeDevice
     internal static IReadOnlyList<string> ValidatedBiosVersions { get; } =
         Array.AsReadOnly(ValidatedBiosVersionValues);
 
-    internal static bool IsValidatedBiosVersion(string? biosVersion) =>
+    internal static bool IsValidatedBiosVersion([NotNullWhen(true)] string? biosVersion) =>
         biosVersion is not null
         && ValidatedBiosVersionValues.Contains(biosVersion, StringComparer.Ordinal);
 

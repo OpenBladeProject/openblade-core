@@ -92,7 +92,7 @@ Independent performance queries must identify a unique responding interface.
 SKU and firmware versions are report metadata. Unknown models and ambiguous
 interfaces remain blocked.
 
-This update uses service IPC 60, configuration schema 18, and profile export
+This update uses service IPC 61, configuration schema 18, and profile export
 schema 11. Install the coordinated pre-release update; a tray-only replacement
 cannot update the shared contracts. Existing experimental consent is preserved.
 

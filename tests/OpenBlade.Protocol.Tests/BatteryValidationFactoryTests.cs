@@ -649,6 +649,120 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public void AdmittedServiceModels_ListsEachAdmittedModelOnce()
+    {
+        Assert.Equal(
+            new[] { "Blade 16 - RZ09-0581", "Blade 16 - RZ09-0528" },
+            BatteryValidationFactory.AdmittedServiceModels
+                .Select(model => model.HostIdentity.ProductName)
+                .ToArray());
+        Assert.Equal(
+            new[] { 0x02E0, 0x02C6 },
+            BatteryValidationFactory.AdmittedServiceModels
+                .Select(model => (int)model.HandleIdentity.ProductId)
+                .ToArray());
+        // Selection uses only the manufacturer and product name, so each pair
+        // must name exactly one model.
+        Assert.Equal(
+            BatteryValidationFactory.AdmittedServiceModels.Count,
+            BatteryValidationFactory.AdmittedServiceModels
+                .Select(model => (model.HostIdentity.Manufacturer, model.HostIdentity.ProductName))
+                .Distinct()
+                .Count());
+    }
+
+    [Fact]
+    public void ProbeWindowsForService_VerifiesTheModelTheBiosNames()
+    {
+        BatteryValidationProbeResult rz090581Drifted = ProbeForService(
+            new HostRegistryValueSource(
+                "Blade 16 - RZ09-0581",
+                systemInformationProductName: "Blade 16 - Other"));
+        BatteryValidationProbeResult rz090528 = ProbeForService(
+            new HostRegistryValueSource("Blade 16 - RZ09-0528", biosVersion: "2.02"),
+            new ExactHidCandidateNative(new HidHandleIdentity(0x1532, 0x02C6, 0x0001, 0x0002, 91)));
+        BatteryValidationProbeResult rz090528Drifted = ProbeForService(
+            new HostRegistryValueSource(
+                "Blade 16 - RZ09-0528",
+                systemInformationProductName: "Blade 16 - Other",
+                biosVersion: "2.02"));
+
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                "SystemInformation",
+                "SystemProductName",
+                "Blade 16 - RZ09-0581",
+                "Blade 16 - Other"),
+            rz090581Drifted.HostIdentityFailure);
+        Assert.Equal(BatteryValidationProbeClassification.Ready, rz090528.Classification);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                "SystemInformation",
+                "SystemProductName",
+                "Blade 16 - RZ09-0528",
+                "Blade 16 - Other"),
+            rz090528Drifted.HostIdentityFailure);
+    }
+
+    [Fact]
+    public void ProbeWindowsForService_DoesNotGateModelScopedAdmissionOnSkuOrBiosVersion()
+    {
+        BatteryValidationProbeResult[] results =
+        [
+            ProbeForService(new HostRegistryValueSource("Blade 16 - RZ09-0581", biosVersion: null)),
+            ProbeForService(new HostRegistryValueSource(
+                "Blade 16 - RZ09-0581",
+                systemInformationBiosVersion: "3.02")),
+            ProbeForService(new HostRegistryValueSource("Blade 16 - RZ09-0581", biosVersion: "9.99")),
+            ProbeForService(new HostRegistryValueSource(
+                "Blade 16 - RZ09-0581",
+                sku: "RZ09-05813XYZ")),
+        ];
+
+        Assert.All(results, result => Assert.Equal(
+            BatteryValidationProbeClassification.Ready,
+            result.Classification));
+    }
+
+    [Fact]
+    public void ProbeWindowsForService_ChecksTheFirstModelWhenTheBiosNamesNone()
+    {
+        BatteryValidationProbeResult unsupported = ProbeForService(
+            new HostRegistryValueSource("Blade 18 - RZ09-0484"));
+        BatteryValidationProbeResult missingProductName = ProbeForService(
+            new HostRegistryValueSource(biosProductName: null));
+        BatteryValidationProbeResult unreadable = ProbeForService(
+            new ThrowingRegistryValueSource());
+
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMismatch,
+                "BIOS",
+                "SystemProductName",
+                "Blade 16 - RZ09-0581",
+                "Blade 18 - RZ09-0484"),
+            unsupported.HostIdentityFailure);
+        Assert.Equal(
+            new HostIdentityFailureDetail(
+                HostIdentityFailureReason.RegistryValueMissing,
+                "BIOS",
+                "SystemProductName",
+                "Blade 16 - RZ09-0581",
+                null),
+            missingProductName.HostIdentityFailure);
+        Assert.Equal(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            unreadable.Classification);
+        Assert.Equal(
+            (HostIdentityFailureReason.RegistryReadFailed, "BIOS", "SystemManufacturer"),
+            (unreadable.HostIdentityFailure!.Reason,
+                unreadable.HostIdentityFailure.Source,
+                unreadable.HostIdentityFailure.Field));
+    }
+
+    [Fact]
     public async Task CreateWindowsQuerySequenceForService_UsesAdvisoryAdmission()
     {
         IBatteryQuerySequenceRunFactory factory =
@@ -768,6 +882,47 @@ public sealed class BatteryValidationFactoryTests
                 "BIOSVersion" => biosVersion,
                 _ => null,
             };
+    }
+
+    private static BatteryValidationProbeResult ProbeForService(
+        IRegistryValueSource registry,
+        ExactHidCandidateNative? native = null) =>
+        BatteryValidationFactory.ProbeWindowsForService(
+            registry,
+            new ExactPlatformEvidenceSource(),
+            new EmptyProcessSource(),
+            new EmptyServiceSource(),
+            native ?? new ExactHidCandidateNative());
+
+    private sealed class HostRegistryValueSource(
+        string? biosProductName,
+        string? systemInformationProductName = null,
+        string? biosVersion = "3.01",
+        string? systemInformationBiosVersion = null,
+        string? sku = null) : IRegistryValueSource
+    {
+        public object? Read(
+            Microsoft.Win32.RegistryHive hive,
+            Microsoft.Win32.RegistryView view,
+            string key,
+            string valueName)
+        {
+            bool systemInformation = key.EndsWith(
+                "SystemInformation",
+                StringComparison.Ordinal);
+            return valueName switch
+            {
+                "SystemManufacturer" => "Razer",
+                "SystemProductName" when systemInformation =>
+                    systemInformationProductName ?? biosProductName,
+                "SystemProductName" => biosProductName,
+                "BIOSVersion" when systemInformation =>
+                    systemInformationBiosVersion ?? biosVersion,
+                "BIOSVersion" => biosVersion,
+                "SystemSKU" => sku,
+                _ => null,
+            };
+        }
     }
 
     private sealed class ExactPlatformEvidenceSource : IWindowsPlatformEvidenceSource
