@@ -1047,6 +1047,70 @@ public static class BatteryValidationFactory
     }
 
 
+    internal static DirectThermalTransitionValidationRunner CreateWindowsDirectThermalTransitionValidation()
+    {
+        var (actors, safety, native) = CreateDirectTransitionActors();
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read() ?? throw new UnvalidatedCommandException("The admitted thermal fixture is unavailable."),
+            TrustedFixtureHashRegistry.Production);
+        DeviceCommandCatalog hyperBoost = CapturedFixtureFile.LoadCatalog(
+            HyperBoostFixtureSource.Read() ?? throw new UnvalidatedCommandException("The admitted HyperBoost fixture is unavailable."),
+            TrustedFixtureHashRegistry.HyperBoostProduction,
+            new DeviceIdentity(TargetBladeDevice.Model, TargetBladeDevice.VendorId, TargetBladeDevice.ProductId, "4.00"));
+        return new DirectThermalTransitionValidationRunner(actors, safety, catalog, hyperBoost,
+            TimeProvider.System, DefaultExchangeTimeout, DefaultCleanupDrainTimeout,
+            new DirectHyperBoostTransitionSafetyGate(safety,
+                new PadAbsentHyperBoostSafetyGate(new WindowsCoolingPadPhysicalPresenceSource(native), DefaultExchangeTimeout)));
+    }
+
+    internal static DirectBatteryTransitionValidationRunner CreateWindowsDirectBatteryTransitionValidation()
+    {
+        var (actors, safety, _) = CreateDirectTransitionActors();
+        return new DirectBatteryTransitionValidationRunner(static () => new ValidationRunContext(),
+            actors, safety, TimeProvider.System, DefaultCleanupDrainTimeout);
+    }
+
+    internal static IPerformanceFanDiscriminatorQueryRunner CreateWindowsDirectThermalStateQuery()
+    {
+        var (actors, _, _) = CreateDirectTransitionActors();
+        return new PerformanceFanDiscriminatorQueryRunner(static () => new ValidationRunContext(),
+            actors, TimeProvider.System, DefaultExchangeTimeout, DefaultCleanupDrainTimeout,
+            powerSourceOnly: true);
+    }
+
+    private static (ValidationActorFactory Actors, IPerformanceFanValidationSafetyGate Safety, WindowsHidNative Native)
+        CreateDirectTransitionActors()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var processes = new RunningProcessSource();
+        var services = new WindowsServiceSource();
+        var guard = new DirectFanValidationAccessGuard(
+            new WindowsHardwareAccessGuard(processes, services), processes, services);
+        var identity = new WindowsHostIdentitySource(
+            registry, new RuntimeWindowsPlatformEvidenceSource(registry));
+        var opener = new WindowsRazerHidSessionOpener(identity, guard, native, ControllerExclusivityPolicy.Strict);
+        var actors = new ValidationActorFactory(opener, new OverlappedFeatureOperation(native),
+            guard, TimeProvider.System, DefaultExchangeTimeout, ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
+        return (actors, new DirectFanValidationSafetyGate(guard, DefaultExchangeTimeout), native);
+    }
+
+    // Pad-less HyperBoost is a separate admitted path. Never substitute unknown pad
+    // presence or ordinary fan admission for its eligibility check.
+    private sealed class DirectHyperBoostTransitionSafetyGate(
+        IPerformanceFanValidationSafetyGate ownerAndPower,
+        IPerformanceFanValidationSafetyGate padEligibility) : IPerformanceFanValidationSafetyGate
+    {
+        public async Task<PerformanceFanValidationSafetyGateResult> ValidateAsync(
+            ValidationRunContext context, IRazerCommandSession session, CancellationToken cancellationToken)
+        {
+            PerformanceFanValidationSafetyGateResult owner = await ownerAndPower.ValidateAsync(
+                context, session, cancellationToken).ConfigureAwait(false);
+            return owner.Success ? await padEligibility.ValidateAsync(context, session, cancellationToken)
+                .ConfigureAwait(false) : owner;
+        }
+    }
     internal static IPerformanceFanSetterValidationRunner CreateWindowsDirectFanEntryValidation()
     {
         var native = new WindowsHidNative();

@@ -1666,6 +1666,51 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0] is "validate-direct-thermal-transition" or "validate-direct-battery-off" or "query-direct-thermal-state")
+{
+    var registry = new WindowsRegistryValueSource();
+    HostIdentityReadResult identity = new WindowsHostIdentitySource(
+        registry, new RuntimeWindowsPlatformEvidenceSource(registry)).ReadExactIdentity();
+    if (identity.Failure is not null || identity.Evidence?.BiosVersion is not { Length: > 0 } bios)
+    {
+        Console.Error.WriteLine("The exact RZ09-0581 host and BIOS provenance are unavailable.");
+        return 2;
+    }
+
+    if (args[0] == "query-direct-thermal-state")
+    {
+        IPerformanceFanDiscriminatorQueryRunner query = BatteryValidationFactory.CreateWindowsDirectThermalStateQuery();
+        var queryCommand = new PerformanceFanDiscriminatorQueryCommand(query.RunAsync, Console.Out,
+            new DeviceIdentity(TargetBladeDevice.Model, TargetBladeDevice.VendorId, TargetBladeDevice.ProductId, bios));
+        return await queryCommand.RunAsync(args[1..], CancellationToken.None);
+    }
+
+    bool battery = args[0] == "validate-direct-battery-off";
+    var scenarios = new HashSet<string>(battery ? ["protection-off-drift"]
+        : ["manual-targets", "manual-custom", "manual-hyperboost"], StringComparer.Ordinal);
+    var command = new DirectTransitionValidationCommand(args[0], scenarios, bios,
+        async (scenario, token) =>
+        {
+            if (battery)
+            {
+                DirectBatteryTransitionValidationResult result = await BatteryValidationFactory
+                    .CreateWindowsDirectBatteryTransitionValidation().RunAsync(token);
+                return (result, result.Success);
+            }
+
+            DirectThermalTransitionScenario target = scenario switch
+            {
+                "manual-targets" => DirectThermalTransitionScenario.ManualTargetRoundTrip,
+                "manual-custom" => DirectThermalTransitionScenario.ManualToCustomAutomatic,
+                "manual-hyperboost" => DirectThermalTransitionScenario.ManualToHyperBoost,
+                _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+            };
+            DirectThermalTransitionValidationResult thermal = await BatteryValidationFactory
+                .CreateWindowsDirectThermalTransitionValidation().RunAsync(target, token);
+            return (thermal, thermal.Success);
+        }, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
 if (args.Length > 0 && args[0].Equals("validate-direct-fan-entry", StringComparison.OrdinalIgnoreCase))
 {
     var registry = new WindowsRegistryValueSource();
@@ -2192,6 +2237,9 @@ Console.WriteLine(
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture validate-direct-fan-entry --confirm-target RZ09-0581:1532:02E0:<current-bios>");
+Console.WriteLine("  OpenBlade.Capture validate-direct-thermal-transition <manual-targets|manual-custom|manual-hyperboost> --confirm-target RZ09-0581:1532:02E0:<current-bios>");
+Console.WriteLine("  OpenBlade.Capture validate-direct-battery-off protection-off-drift --confirm-target RZ09-0581:1532:02E0:<current-bios>");
+Console.WriteLine("  OpenBlade.Capture query-direct-thermal-state");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-lighting-brightness");
