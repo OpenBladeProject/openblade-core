@@ -97,6 +97,13 @@ try {
         'The readiness report must carry the absolute privacy-policy URL.'
     Assert-True (Test-Path -LiteralPath $reportPath -PathType Leaf) `
         'The Store readiness JSON report was not written.'
+    Assert-True $report.installerMatchesOfflineContract 'An offline package should match the Store contract.'
+    $onlineReport = Write-OpenBladeStoreReadinessReport `
+        -Bundle $bundle -Installer $installer -ReportPath $reportPath -OfflineInstaller:$false
+    Assert-True (-not $onlineReport.installerMatchesOfflineContract) `
+        'An online prerequisite package must not claim to match the offline Store contract.'
+    Assert-True (@($onlineReport.remainingExternalSteps | Where-Object { $_ -match '-OfflineInstaller' }).Count -eq 1) `
+        'Online packages must retain the offline publication requirement for Store submission.'
 
     $verifiedReport = Write-OpenBladeStoreReadinessReport `
         -Bundle $bundle `

@@ -1,4 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Bundle
       Id="OSSBlade.OpenBlade"
@@ -51,6 +52,27 @@
         Type="string"
         Value=""
         Persisted="yes" />
+
+    <Variable
+        Name="OpenBladeMinimumDotNetRuntimeVersion"
+        Type="version"
+        Value="$(OpenBladeMinimumDotNetRuntimeVersion)"
+        Hidden="no"
+        Persisted="no" />
+
+    <Variable
+        Name="OpenBladeDotNetRuntimeSufficient"
+        Type="numeric"
+        Value="0"
+        Hidden="no"
+        Persisted="no" />
+
+    <netfx:DotNetCoreSearch
+        Id="OpenBladeDotNetDesktopRuntimeSearch"
+        Variable="OpenBladeDotNetRuntimeVersion"
+        RuntimeType="desktop"
+        Platform="x64"
+        MajorVersion="10" />
 
     <util:RegistrySearch
         Id="OpenBladeBundleOwnershipSearch"
@@ -109,6 +131,22 @@
           DetectCondition="OpenBladeVcRuntimeInstalled AND OpenBladeVcRuntimeMajor AND OpenBladeVcRuntimeMinor AND OpenBladeVcRuntimeBuild AND OpenBladeVcRuntimeInstalled = 1 AND (OpenBladeVcRuntimeMajor &gt; 14 OR (OpenBladeVcRuntimeMajor = 14 AND (OpenBladeVcRuntimeMinor &gt; 50 OR (OpenBladeVcRuntimeMinor = 50 AND OpenBladeVcRuntimeBuild &gt;= 35719))))"
           PerMachine="yes"
           Permanent="yes"
+          Cache="remove"
+          Vital="yes" />
+
+      <ExePackage
+          Id="OpenBladeDotNetRuntime"
+          Bundle="yes"
+          Protocol="burn"
+          SourceFile="!(bindpath.OpenBladePrerequisites)\windowsdesktop-runtime-$(OpenBladeMinimumDotNetRuntimeVersion)-win-x64.exe"
+          DownloadUrl="https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/$(OpenBladeMinimumDotNetRuntimeVersion)/windowsdesktop-runtime-$(OpenBladeMinimumDotNetRuntimeVersion)-win-x64.exe"
+          DisplayName="!(loc.DotNetDesktopRuntimeDisplayName)"
+          Description="!(loc.DotNetDesktopRuntimeDescription)"
+          InstallArguments="/install /quiet /norestart"
+          DetectCondition="OpenBladeDotNetRuntimeSufficient = 1"
+          PerMachine="yes"
+          Permanent="yes"
+          Compressed="$(OpenBladeEmbedDotNetRuntime)"
           Cache="remove"
           Vital="yes" />
 

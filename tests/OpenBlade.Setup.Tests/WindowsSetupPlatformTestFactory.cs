@@ -20,6 +20,7 @@ internal static class WindowsSetupPlatformTestFactory
         IInstalledUninstallerWriter? installedUninstallerWriter = null,
         IDynamicLightingIdentityRegistration? dynamicLightingIdentityRegistration = null,
         ISetupProgressReporter? progressReporter = null,
+        IDotNetRuntimeAdmission? dotNetRuntimeAdmission = null,
         string? setupExecutablePath = null,
         string? currentUserSid = null) =>
         new(
@@ -39,6 +40,16 @@ internal static class WindowsSetupPlatformTestFactory
                 InstalledUninstallerWriter: installedUninstallerWriter,
                 DynamicLightingIdentityRegistration: dynamicLightingIdentityRegistration,
                 ProgressReporter: progressReporter,
+                DotNetRuntimeAdmission: dotNetRuntimeAdmission ?? AcceptingDotNetRuntimeAdmission.Instance,
                 SetupExecutablePath: setupExecutablePath,
                 CurrentUserSid: currentUserSid));
+
+    private sealed class AcceptingDotNetRuntimeAdmission : IDotNetRuntimeAdmission
+    {
+        internal static AcceptingDotNetRuntimeAdmission Instance { get; } = new();
+
+        public void EnsureAvailable()
+        {
+        }
+    }
 }

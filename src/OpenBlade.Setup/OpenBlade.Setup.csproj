@@ -21,6 +21,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AssemblyMetadata Include="OpenBladeMinimumDotNetRuntimeVersion"
+                      Value="$(OpenBladeMinimumDotNetRuntimeVersion)" />
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
   </ItemGroup>
 

@@ -348,6 +348,48 @@ function Assert-LightingValidationProtocolPair {
     }
 }
 
+function Assert-FrameworkDependentProductPayload {
+    param([Parameter(Mandatory)][string]$Payload)
+
+    [xml]$properties = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Directory.Build.props')
+    $minimumVersion = [string]$properties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion
+    foreach ($application in @('OpenBlade.Service', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
+        $configurationPath = Join-Path $Payload ($application + '.runtimeconfig.json')
+        $configuration = Get-Content -LiteralPath $configurationPath -Raw | ConvertFrom-Json
+        $options = $configuration.runtimeOptions
+        if ($options.PSObject.Properties.Name -contains 'includedFrameworks') {
+            throw "$application must use the shared .NET runtime, not included frameworks."
+        }
+        $frameworks = @(
+            if ($options.PSObject.Properties.Name -contains 'framework') { $options.framework }
+            if ($options.PSObject.Properties.Name -contains 'frameworks') { $options.frameworks }
+        )
+        $expectedNames = @('Microsoft.NETCore.App')
+        if ($application -eq 'OpenBlade.Tray') { $expectedNames += 'Microsoft.WindowsDesktop.App' }
+        if ($frameworks.Count -ne $expectedNames.Count) {
+            throw "$application has an unexpected shared .NET framework count."
+        }
+        foreach ($expectedName in $expectedNames) {
+            $frameworkMatches = @($frameworks | Where-Object { $_.name -eq $expectedName -and $_.version -eq $minimumVersion })
+            if ($frameworkMatches.Count -ne 1) {
+                throw "$application must require $expectedName $minimumVersion."
+            }
+        }
+        if ($application -eq 'OpenBlade.Tray' -and
+            (-not ($options.PSObject.Properties.Name -contains 'configProperties') -or
+                -not ($options.configProperties.PSObject.Properties.Name -contains 'System.Diagnostics.Debugger.IsSupported') -or
+                $options.configProperties.'System.Diagnostics.Debugger.IsSupported' -ne $false)) {
+            throw 'The Tray must retain its debugger-support memory fix.'
+        }
+    }
+    foreach ($privateRuntime in @('coreclr.dll', 'clrjit.dll', 'hostfxr.dll', 'hostpolicy.dll',
+            'System.Private.CoreLib.dll', 'System.Windows.Forms.dll')) {
+        if (Test-Path -LiteralPath (Join-Path $Payload $privateRuntime) -PathType Leaf) {
+            throw "OpenBlade production payload contains private runtime file '$privateRuntime'."
+        }
+    }
+}
+
 function Assert-ProductionBundleFootprint {
     param([Parameter(Mandatory)][string]$Bundle)
 
@@ -366,6 +408,7 @@ function Assert-ProductionBundleFootprint {
     }
 
     $payload = Join-Path $Bundle 'payload'
+    Assert-FrameworkDependentProductPayload -Payload $payload
     $installedSetup = Join-Path $payload 'OpenBlade.Setup.exe'
     if (Test-Path -LiteralPath $installedSetup -PathType Leaf) {
         throw 'OpenBlade bundle must not pre-copy Setup into the payload; elevated setup installs its verified executable transactionally.'

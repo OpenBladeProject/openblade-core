@@ -300,4 +300,13 @@
   <data name="Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again." xml:space="preserve">
     <value>[!! Windows Ínstállér díd nót plán thís ínstállér éntrý fór rémóvál. Ánóthér ínstállér máý stíll dépénd ón ít. Rémóvé áný dépéndént OpenBlade ínstállér éntrý fírst, thén trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Microsoft .NET 10 Desktop Runtime required" xml:space="preserve">
+    <value>[!! Mícrósóft .NÉT 10 Désktóp Rúntímé réqúíréd ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade needs Microsoft .NET 10 Desktop Runtime. Setup will install it before installing OpenBlade. Continue?" xml:space="preserve">
+    <value>[!! OpenBlade nééds Mícrósóft .NÉT 10 Désktóp Rúntímé. Sétúp wíll ínstáll ít béfóré ínstállíng OpenBlade. Cóntínúé? ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Installing Microsoft .NET 10 Desktop Runtime…" xml:space="preserve">
+    <value>[!! Ínstállíng Mícrósóft .NÉT 10 Désktóp Rúntímé… ~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

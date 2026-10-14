@@ -44,11 +44,18 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private const string LaunchWorkingFolderVariable = "LaunchWorkingFolder";
     private const string BundleLogVariable = "WixBundleLog";
     private const string BundleVersionVariable = "WixBundleVersion";
+    private const string DotNetDesktopRuntimeVersionVariable =
+        "OpenBladeDotNetRuntimeVersion";
+    private const string MinimumDotNetRuntimeVersionVariable =
+        "OpenBladeMinimumDotNetRuntimeVersion";
+    private const string DotNetRuntimeSufficientVariable =
+        "OpenBladeDotNetRuntimeSufficient";
     private const string LocalDevCompatibilityStableBundleCode =
         "{54764E2D-D6B4-47A7-A6D6-A1EA6721640A}";
     private const string LocalDevCompatibilityStableBundleVersion = "0.19.18";
     private const string OpenBladeSetupPackage = "OpenBladeSetup";
     private const string OpenBladeVcRuntimePackage = "OpenBladeVcRuntime";
+    private const string OpenBladeDotNetRuntimePackage = "OpenBladeDotNetRuntime";
     private const int ProductVersionConflict = unchecked((int)0x80070666);
     private const int InstallerConfigurationCorrupt = unchecked((int)0x8007064A);
     private readonly IUninstallPostconditionProbe uninstallPostconditionProbe =
@@ -70,6 +77,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private bool sameVersionMaintenance;
     private bool uninstallRunningBundleInstalled;
     private bool uninstallSetupPackagePlanned;
+    private bool dotNetDesktopRuntimeSufficient;
     private int phaseCount = 2;
     private int cacheProgress;
     private int executeProgress;
@@ -98,6 +106,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     public OpenBladeBootstrapperApplication()
     {
         DetectBegin += OnDetectBegin;
+        DetectPackageBegin += OnDetectPackageBegin;
         DetectRelatedBundle += OnDetectRelatedBundle;
         DetectComplete += OnDetectComplete;
         PlanBegin += OnPlanBegin;
@@ -156,6 +165,20 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
                 action))
         {
             RejectNewerVersionReplacement();
+            return;
+        }
+
+        bool runtimePromptRequired = ShouldPromptForDotNetRuntime(
+            action,
+            command.Display,
+            dotNetDesktopRuntimeSufficient);
+        bool runtimeConsentGranted = !runtimePromptRequired
+            || window?.ConfirmDotNetRuntimeInstall() == true;
+        if (!ShouldProceedAfterDotNetRuntimePrompt(
+                runtimePromptRequired,
+                runtimeConsentGranted))
+        {
+            AddDetail("Microsoft .NET 10 Desktop Runtime installation was declined before planning.");
             return;
         }
 
@@ -384,6 +407,21 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
     }
 
+    private void OnDetectPackageBegin(object? sender, DetectPackageBeginEventArgs e)
+    {
+        if (ShouldInitializeDotNetRuntimeReadiness(e.PackageId))
+        {
+            dotNetDesktopRuntimeSufficient = IsDotNetDesktopRuntimeSufficient(
+                TryGetVariable(DotNetDesktopRuntimeVersionVariable),
+                TryGetVariable(MinimumDotNetRuntimeVersionVariable));
+            Engine.SetVariableNumeric(
+                DotNetRuntimeSufficientVariable,
+                DotNetRuntimeSufficientVariableValue(dotNetDesktopRuntimeSufficient));
+        }
+
+        e.Cancel = cancellationRequested;
+    }
+
     private void OnDetectComplete(object? sender, DetectCompleteEventArgs e)
     {
         if (Failed(e.Status))
@@ -418,6 +456,12 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         string? installedVersion = TryGetVariable(InstalledVersionVariable);
+        dotNetDesktopRuntimeSufficient = IsDotNetDesktopRuntimeSufficient(
+            TryGetVariable(DotNetDesktopRuntimeVersionVariable),
+            TryGetVariable(MinimumDotNetRuntimeVersionVariable));
+        AddDetail(dotNetDesktopRuntimeSufficient
+            ? "Microsoft .NET 10 Desktop Runtime satisfies the required version."
+            : "Microsoft .NET 10 Desktop Runtime must be installed or updated.");
         if (installedVersion is not null
             && IsNewerVersion(bundleVersion, installedVersion)
             && (newerRelatedBundleVersion is null
@@ -1117,6 +1161,14 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return InstallerStrings.Get("Installing required Windows components…");
         }
 
+        if (string.Equals(
+                packageId,
+                OpenBladeDotNetRuntimePackage,
+                StringComparison.Ordinal))
+        {
+            return InstallerStrings.Get("Installing Microsoft .NET 10 Desktop Runtime…");
+        }
+
         if (string.Equals(packageId, OpenBladeSetupPackage, StringComparison.Ordinal))
         {
             return InstallerStrings.Get("Applying OpenBlade changes…");
@@ -1352,6 +1404,45 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         LaunchAction action) =>
         newerVersionDetected
         && action is LaunchAction.Install or LaunchAction.Repair;
+
+    internal static bool IsDotNetDesktopRuntimeSufficient(
+        string? installedVersion,
+        string? minimumVersion)
+    {
+        Version? installed = string.IsNullOrWhiteSpace(installedVersion)
+            ? null
+            : ParseBurnComparableVersion(installedVersion!);
+        Version? minimum = string.IsNullOrWhiteSpace(minimumVersion)
+            ? null
+            : ParseBurnComparableVersion(minimumVersion!);
+        return installed is not null
+            && minimum is not null
+            && installed.Major == minimum.Major
+            && installed.Minor == minimum.Minor
+            && installed >= minimum;
+    }
+
+    internal static long DotNetRuntimeSufficientVariableValue(bool runtimeSufficient) =>
+        runtimeSufficient ? 1L : 0L;
+
+    internal static bool ShouldInitializeDotNetRuntimeReadiness(string packageId) =>
+        string.Equals(
+            packageId,
+            OpenBladeDotNetRuntimePackage,
+            StringComparison.Ordinal);
+
+    internal static bool ShouldPromptForDotNetRuntime(
+        LaunchAction action,
+        Display display,
+        bool runtimeSufficient) =>
+        !runtimeSufficient
+        && display == Display.Full
+        && action is LaunchAction.Install or LaunchAction.Repair;
+
+    internal static bool ShouldProceedAfterDotNetRuntimePrompt(
+        bool promptRequired,
+        bool consentGranted) =>
+        !promptRequired || consentGranted;
 
     internal static int SelectRelatedBundleConflictStatus(bool multipleRegistrations) =>
         multipleRegistrations ? InstallerConfigurationCorrupt : ProductVersionConflict;

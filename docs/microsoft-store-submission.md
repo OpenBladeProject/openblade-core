@@ -1,7 +1,7 @@
 # Microsoft Store EXE submission
 
 OpenBlade uses the Microsoft Store's existing EXE route. The Store invokes the
-same offline WiX Burn bundle used for direct downloads; OpenBlade is not
+offline WiX Burn bundle built with `build/Publish.ps1 -OfflineInstaller`; OpenBlade is not
 repackaged as MSIX.
 
 ## Package fields
@@ -29,9 +29,9 @@ synchronized with the deployed documentation and Partner Center.
 ## Package behavior
 
 - The bundle is an offline installer: every package and payload is embedded,
-  including the pinned, Microsoft-signed Visual C++ runtime required by the
+  including the pinned, Microsoft-signed .NET 10 Desktop Runtime and Visual C++ runtime required by the
   unpackaged Windows App SDK deployment.
-- Interactive direct downloads show WixStdBA. Partner Center supplies
+- Interactive direct downloads show OpenBlade Setup and download .NET when needed. Partner Center supplies
   `/install /quiet /norestart`, which explicitly selects installation, suppresses
   installer UI, and prevents an automatic
   restart.

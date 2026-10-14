@@ -11,6 +11,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Add experimental Blade 18 (2023) Performance and bounded Custom CPU/GPU controls, keyboard brightness, Off/Spectrum/random Breathing/Wave effects, and Off/Static/Breathing logo lighting. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Include bounded experimental command results, source provenance, consent, and cached telemetry in local diagnostic exports for pre-release tester reports. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 
+### Changed
+
+- Reduce the installed payload by using a shared .NET 10 Desktop Runtime. Setup prompts to install it when needed and keeps Visual C++ bundled. ([#743](https://github.com/OpenBladeProject/openblade-core/pull/743))
+
 ## [0.25.2-nightly.84] - 2026-10-13
 
 ### Fixed

@@ -37,6 +37,9 @@ public sealed class SetupPayloadTransactionTests
 
     [Theory]
     [InlineData("OpenBlade.Service.exe")]
+    [InlineData("OpenBlade.Service.dll")]
+    [InlineData("OpenBlade.Service.deps.json")]
+    [InlineData("OpenBlade.Service.runtimeconfig.json")]
     [InlineData("OpenBlade.Platform.dll")]
     [InlineData("OpenBlade.SessionAgent.exe")]
     [InlineData("OpenBlade.SessionAgent.dll")]
@@ -128,6 +131,10 @@ public sealed class SetupPayloadTransactionTests
         tree.WriteInstall(@"Themes\Light.xaml", [3]);
         tree.WriteInstall("obsolete.txt", [4]);
         tree.WriteInstall("OpenBlade.Capture.exe", [5]);
+        tree.WriteInstall("hostfxr.dll", [6]);
+        tree.WriteInstall(@"host\fxr\10.0.1\hostfxr.dll", [7]);
+        tree.WriteInstall(@"shared\Microsoft.NETCore.App\10.0.1\coreclr.dll", [8]);
+        tree.WriteInstall(@"shared\Microsoft.WindowsDesktop.App\10.0.1\System.Windows.Forms.dll", [9]);
         Assert.False(File.Exists(Path.Combine(tree.Payload, "OpenBlade.Capture.exe")));
         byte[] expectedAsset = File.ReadAllBytes(
             Path.Combine(tree.Payload, @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png"));
@@ -142,6 +149,9 @@ public sealed class SetupPayloadTransactionTests
         Assert.Equal(ReadManifest(tree.Payload), ReadManifest(tree.Install));
         Assert.False(File.Exists(Path.Combine(tree.Install, "OpenBlade.Capture.exe")));
         Assert.False(File.Exists(Path.Combine(tree.Install, "PresentationCore.dll")));
+        Assert.False(File.Exists(Path.Combine(tree.Install, "hostfxr.dll")));
+        Assert.False(Directory.Exists(Path.Combine(tree.Install, "host")));
+        Assert.False(Directory.Exists(Path.Combine(tree.Install, "shared")));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.failed.*"));
@@ -533,6 +543,12 @@ public sealed class SetupPayloadTransactionTests
         using TestTree tree = new();
         tree.CreateCompletePayload();
         tree.WriteInstall("old.bin", [5, 5, 5]);
+        tree.WriteInstall("hostfxr.dll", [6, 6, 6]);
+        tree.WriteInstall(@"host\fxr\10.0.1\hostfxr.dll", [7, 7, 7]);
+        tree.WriteInstall(@"shared\Microsoft.NETCore.App\10.0.1\coreclr.dll", [8, 8, 8]);
+        tree.WriteInstall(
+            @"shared\Microsoft.WindowsDesktop.App\10.0.1\System.Windows.Forms.dll",
+            [9, 9, 9]);
         SortedDictionary<string, string> before = ReadManifest(tree.Install);
 
         await using ISetupPayloadTransaction transaction =
@@ -541,6 +557,10 @@ public sealed class SetupPayloadTransactionTests
         await transaction.RollbackAsync(CancellationToken.None);
 
         Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.True(File.Exists(Path.Combine(tree.Install, "hostfxr.dll")));
+        Assert.True(File.Exists(Path.Combine(
+            tree.Install,
+            @"shared\Microsoft.NETCore.App\10.0.1\coreclr.dll")));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.failed.*"));
     }
@@ -854,6 +874,9 @@ public sealed class SetupPayloadTransactionTests
         private static readonly string[] RequiredFiles =
         [
             "OpenBlade.Service.exe",
+            "OpenBlade.Service.dll",
+            "OpenBlade.Service.deps.json",
+            "OpenBlade.Service.runtimeconfig.json",
             "OpenBlade.Platform.dll",
             "OpenBlade.SessionAgent.exe",
             "OpenBlade.SessionAgent.dll",

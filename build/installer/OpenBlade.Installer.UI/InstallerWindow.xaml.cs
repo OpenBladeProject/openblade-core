@@ -136,6 +136,16 @@ internal partial class InstallerWindow : Window
         QueueFocus(ProgressCancelButton);
     }
 
+    public bool ConfirmDotNetRuntimeInstall() =>
+        MessageBox.Show(
+            this,
+            InstallerStrings.Get(
+                "OpenBlade needs Microsoft .NET 10 Desktop Runtime. Setup will install it before installing OpenBlade. Continue?"),
+            InstallerStrings.Get("Microsoft .NET 10 Desktop Runtime required"),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Information,
+            MessageBoxResult.Yes) == MessageBoxResult.Yes;
+
     public void SetProgress(int percentage, string? message = null)
     {
         OverallProgress.Value = Math.Max(0, Math.Min(100, percentage));

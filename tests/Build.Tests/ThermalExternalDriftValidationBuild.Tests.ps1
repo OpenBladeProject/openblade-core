@@ -42,7 +42,7 @@ foreach ($publishFragment in @(
         'Thermal external-drift validation installers are restricted to the LocalDev channel.',
         '--property:OpenBladeThermalExternalDriftValidation=true',
         '--property:OpenBladeThermalExternalDriftValidation=false',
-        '$payload ($productionPublishArguments + $serviceValidationArguments)')) {
+        '$payload ($installedPublishArguments + $serviceValidationArguments)')) {
     if ($publish.IndexOf($publishFragment, [StringComparison]::Ordinal) -lt 0) {
         throw "Coordinated publishing is missing validation boundary: $publishFragment"
     }

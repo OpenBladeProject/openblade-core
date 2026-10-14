@@ -4,6 +4,9 @@ $ErrorActionPreference = 'Stop'
 if (-not (Get-Command Get-CanonicalPublishPath -ErrorAction SilentlyContinue)) {
     . (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
 }
+if (-not (Get-Command Get-OpenBladeDotNetRuntimePrerequisite -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot 'InstallerPrerequisites.ps1')
+}
 
 function Get-WixCommandAssembly {
     param([Parameter(Mandatory)][string]$InstallerProject)
@@ -37,12 +40,49 @@ function Get-WixCommandAssembly {
     return $wix
 }
 
+function Assert-OpenBladeDotNetRuntimeDetection {
+    param(
+        [Parameter(Mandatory)][xml]$Manifest,
+        [Parameter(Mandatory)][xml]$ExtensionData
+    )
+
+    $namespaces = [Xml.XmlNamespaceManager]::new($Manifest.NameTable)
+    $namespaces.AddNamespace('burn', 'http://wixtoolset.org/schemas/v4/2008/Burn')
+    $extensionNamespaces = [Xml.XmlNamespaceManager]::new($ExtensionData.NameTable)
+    $extensionNamespaces.AddNamespace('extension', 'http://wixtoolset.org/schemas/v4/BootstrapperExtensionData')
+    $prerequisite = Get-OpenBladeDotNetRuntimePrerequisite
+    $minimumVariable = $Manifest.SelectSingleNode(
+        '/burn:BurnManifest/burn:Variable[@Id="OpenBladeMinimumDotNetRuntimeVersion"]', $namespaces)
+    $readinessVariable = $Manifest.SelectSingleNode(
+        '/burn:BurnManifest/burn:Variable[@Id="OpenBladeDotNetRuntimeSufficient"]', $namespaces)
+    $search = $Manifest.SelectSingleNode(
+        '/burn:BurnManifest/burn:ExtensionSearch[@Id="OpenBladeDotNetDesktopRuntimeSearch"]', $namespaces)
+    $extensionSearch = $ExtensionData.SelectSingleNode(
+        '/extension:BootstrapperExtensionData/extension:BootstrapperExtension[@Id="Wix4NetfxBootstrapperExtension_X64"]/extension:NetFxNetCoreSearch[@Id="OpenBladeDotNetDesktopRuntimeSearch"]',
+        $extensionNamespaces)
+    if (($null -eq $minimumVariable) -or
+        ($minimumVariable.GetAttribute('Type') -ne 'version') -or
+        ($minimumVariable.GetAttribute('Value') -ne $prerequisite.Version) -or
+        ($null -eq $readinessVariable) -or
+        ($readinessVariable.GetAttribute('Type') -ne 'numeric') -or
+        ($readinessVariable.GetAttribute('Value') -ne '0') -or
+        ($null -eq $search) -or
+        ($search.GetAttribute('Variable') -ne 'OpenBladeDotNetRuntimeVersion') -or
+        ($search.GetAttribute('ExtensionId') -ne 'Wix4NetfxBootstrapperExtension_X64') -or
+        ($null -eq $extensionSearch) -or
+        ($extensionSearch.GetAttribute('RuntimeType') -ne '2') -or
+        ($extensionSearch.GetAttribute('Platform') -ne '1') -or
+        ($extensionSearch.GetAttribute('MajorVersion') -ne '10')) {
+        throw 'The compiled .NET search must detect the x64 Desktop Runtime with the pinned minimum version.'
+    }
+}
 function Assert-OpenBladeInstallerBundle {
     param(
         [Parameter(Mandatory)][string]$Installer,
         [Parameter(Mandatory)][string]$PublishedBundle,
         [Parameter(Mandatory)][string]$InstallerProject,
         [Parameter(Mandatory)][string]$ExpectedVersion,
+        [switch]$OfflineInstaller,
         [Parameter(Mandatory)][string]$ValidationRoot,
         [Parameter(Mandatory)][string]$PermittedRoot
     )
@@ -122,6 +162,8 @@ function Assert-OpenBladeInstallerBundle {
         }
 
         [xml]$manifest = Get-Content -LiteralPath $manifestPath
+        [xml]$extensionData = Get-Content -LiteralPath (Join-Path $bootstrapperOutput 'BootstrapperExtensionData.xml')
+        Assert-OpenBladeDotNetRuntimeDetection -Manifest $manifest -ExtensionData $extensionData
         $namespaces = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
         $namespaces.AddNamespace('burn', 'http://wixtoolset.org/schemas/v4/2008/Burn')
         $condition = $manifest.SelectSingleNode(
@@ -314,6 +356,51 @@ function Assert-OpenBladeInstallerBundle {
             ($vcPackage.GetAttribute('Scope') -ne 'perMachine') -or
             ($vcPackage.GetAttribute('Vital') -ne 'yes')) {
             throw "The Burn manifest has an unexpected Visual C++ runtime package."
+        }
+
+        $dotNetPrerequisite = Get-OpenBladeDotNetRuntimePrerequisite
+        $dotNetPackage = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:Chain/burn:ExePackage[@Id="OpenBladeDotNetRuntime"]', $namespaces)
+        if (($null -eq $dotNetPackage) -or
+            ($dotNetPackage.GetAttribute('InstallArguments') -ne '/install /quiet /norestart') -or
+            ($dotNetPackage.GetAttribute('RepairArguments') -ne '') -or
+            ($dotNetPackage.GetAttribute('RepairCondition') -ne '') -or
+            ($dotNetPackage.GetAttribute('Repairable') -ne 'no') -or
+            ($dotNetPackage.GetAttribute('Bundle') -ne 'yes') -or
+            ($dotNetPackage.GetAttribute('Protocol') -ne 'burn') -or
+            ($dotNetPackage.GetAttribute('DetectCondition') -ne
+                'OpenBladeDotNetRuntimeSufficient = 1') -or
+            ($dotNetPackage.GetAttribute('Permanent') -ne 'yes') -or
+            ($dotNetPackage.GetAttribute('Cache') -ne 'remove') -or
+            ($dotNetPackage.GetAttribute('Scope') -ne 'perMachine') -or
+            ($dotNetPackage.GetAttribute('Vital') -ne 'yes')) {
+            throw 'The Burn manifest has an unexpected .NET Desktop Runtime prerequisite.'
+        }
+        $packages = @($manifest.SelectNodes('/burn:BurnManifest/burn:Chain/burn:ExePackage', $namespaces))
+        $dotNetIndex = [Array]::IndexOf($packages, $dotNetPackage)
+        $setupIndex = [Array]::IndexOf($packages, $package)
+        if ($dotNetIndex -lt 0 -or $dotNetIndex -ge $setupIndex) {
+            throw 'The .NET prerequisite must run before OpenBlade setup.'
+        }
+        $dotNetReference = $dotNetPackage.SelectSingleNode('burn:PayloadRef', $namespaces)
+        if ($null -eq $dotNetReference) { throw 'The .NET prerequisite has no payload reference.' }
+        $dotNetPayload = $manifest.SelectSingleNode(
+            "/burn:BurnManifest/burn:Payload[@Id='$($dotNetReference.GetAttribute('Id'))']", $namespaces)
+        $expectedPackaging = if ($OfflineInstaller) { 'embedded' } else { 'external' }
+        if (($null -eq $dotNetPayload) -or
+            ($dotNetPayload.GetAttribute('FilePath') -ne $dotNetPrerequisite.FileName) -or
+            ($dotNetPayload.GetAttribute('Packaging') -ne $expectedPackaging) -or
+            ($dotNetPayload.GetAttribute('DownloadUrl') -ne $dotNetPrerequisite.Uri) -or
+            (-not [string]::Equals($dotNetPayload.GetAttribute('Hash'),
+                $dotNetPrerequisite.Sha512, [StringComparison]::OrdinalIgnoreCase))) {
+            throw 'The .NET prerequisite must preserve the pinned download, hash, and packaging mode.'
+        }
+        $embeddedDotNet = Join-Path (Join-Path $payloadOutput 'WixAttachedContainer') $dotNetPrerequisite.FileName
+        if ($OfflineInstaller) {
+            Assert-OpenBladeDotNetRuntimePrerequisite -Path $embeddedDotNet
+        }
+        elseif (Test-Path -LiteralPath $embeddedDotNet) {
+            throw 'The online installer unexpectedly embeds the .NET runtime.'
         }
 
         $vcSearch = $manifest.SelectSingleNode(
