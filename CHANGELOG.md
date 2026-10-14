@@ -13,7 +13,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Recognize a supported laptop when Windows reports no BIOS version or two different ones. The BIOS version is checked only where a model explicitly requires it. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 - Show the actual failed identity check in exported diagnostics, instead of a product-name mismatch against another supported model. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
-- Keep the other controls working when the laptop reports a battery, performance or fan value OpenBlade doesn’t recognize. Only the affected controls stay unavailable, and HyperBoost shows as unknown instead of off until a later reading confirms it. The MCU firmware version is still read, and the status and exported diagnostics show the unrecognized value, including for keyboard and logo lighting. ([#PR](https://github.com/OpenBladeProject/openblade-core/pull/PR))
+- Keep the other controls working when the laptop reports a battery, performance or fan value OpenBlade doesn’t recognize. Only the affected controls stay unavailable, and HyperBoost shows as unknown instead of off until a later reading confirms it. The MCU firmware version is still read, and the status and exported diagnostics show the unrecognized value, including for keyboard and logo lighting. ([#752](https://github.com/OpenBladeProject/openblade-core/pull/752))
 
 ### Changed
 
