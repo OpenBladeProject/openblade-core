@@ -875,6 +875,52 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task DirectMaximumFanSetter_EntersFromPerformanceAutomaticThenWritesTargets()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x02, 0x00]),
+            Success([0x01, 0x02, 0x02, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x01, 0x01, 0x36]),
+            Success([0x01, 0x02, 0x36]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanModeAsync(FanMode.Maximum, default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "01010001", "01020001", "010136", "010236"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Fact]
+    public async Task DirectMaximumFanSetter_AlreadyManualWritesOnlyTargets()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x01, 0x01, 0x36]),
+            Success([0x01, 0x02, 0x36]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanModeAsync(FanMode.Maximum, default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "010136", "010236"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+        Assert.Equal([0x82, 0x82, 0x01, 0x01],
+            session.Commands.Select(command => command.CommandId).ToArray());
+    }
+
+    [Fact]
     public async Task FixedFanSetterBuildsCapturedTargetPayloadForBothChannels()
     {
         byte[] state1 = [0x01, 0x01, 0x00, 0x01];

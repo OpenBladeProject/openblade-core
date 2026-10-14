@@ -877,6 +877,15 @@ internal sealed class ProductionBatteryPort :
                 $"Fan mode '{value}' is not admitted for production use."));
         }
 
+        if (value == FanMode.Maximum
+            && Capabilities.SupportsDirectManualFanTransitions)
+        {
+            return SetFanTargetsWithStateAsync(
+                fanSpeedRange.MaximumRpm,
+                fanSpeedRange.MaximumRpm,
+                cancellationToken);
+        }
+
         IReadOnlyList<string>? actions = value switch
         {
             // The verified command that exits fixed maximum on this device is
