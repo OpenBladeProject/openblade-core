@@ -12569,6 +12569,45 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ExpandedChargeRange_EnablesProtectionFromOffAndRetainsTypedIntent()
+    {
+        TestContext context = CreateContext(providerAvailable: true, protectionEnabled: false);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+            SupportsBatteryProtectionOff = true,
+            SupportsTemporaryFullCharge = false,
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { Battery = ProtectionOff() };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(99), CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(["SetChargeLimit"], context.Device.BatterySetterCalls);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(99, status.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.True(status.ConfirmedState.Battery.ProtectionEnabled);
+        Assert.Equal(99, status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent);
+        Assert.True(status.DesiredState.Battery.ProtectionEnabled);
+        Assert.Equal(BatteryPolicy.Create(99), status.BatteryPolicyOverride);
+        Assert.True(status.BatteryProtectionOverride);
+    }
+
+    [Fact]
+    public async Task StableChargeRange_RejectsExpandedLimitWithoutSetter()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult result = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(99), CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Empty(context.Device.BatterySetterCalls);
+        Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+    }
+
+    [Fact]
     public async Task ScopedBatteryMismatch_PublishesProtectionOffAndLatchesBatteryDriftWithoutRetry()
     {
         TestContext context = CreateWritableContext();

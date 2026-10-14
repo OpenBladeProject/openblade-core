@@ -13,7 +13,8 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 17;
+    internal const int CurrentSchemaVersion = 18;
+    internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
     internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
     internal const int FrozenThermalPolicyPredecessorSchemaVersion = 15;
     internal const int LegacyWindowsPowerModeSchemaVersion = 14;
@@ -264,8 +265,22 @@ public sealed class ProfileStore
             throw new InvalidDataException("The profile schema version is unsupported.");
         }
 
+        if (schemaVersion <= ExperimentalFeaturesConsentSchemaVersion)
+        {
+            ValidateLegacyBatteryPolicy(profiles);
+        }
         validator.Validate(profiles);
         return profiles;
+    }
+
+    internal static void ValidateLegacyBatteryPolicy(ProfileSet profiles)
+    {
+        int chargeLimit = profiles.BatteryPolicy.ChargeLimitPercent;
+        if (chargeLimit is < 50 or > 80 || chargeLimit % 5 != 0)
+        {
+            throw new InvalidDataException(
+                "Profile schemas 1 through 17 require a battery charge limit from 50 to 80 percent in 5 percent steps.");
+        }
     }
 
     internal static ProfileSet NormalizeLegacyBatteryProfile(

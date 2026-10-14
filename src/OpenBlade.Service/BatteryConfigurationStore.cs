@@ -395,6 +395,7 @@ public sealed class BatteryConfigurationStore
             profiles,
             out _,
             batteryProtectionDefault: true);
+        ProfileStore.ValidateLegacyBatteryPolicy(profiles);
         validator.Validate(profiles);
         return profiles;
     }
@@ -440,7 +441,7 @@ public sealed class BatteryConfigurationStore
             throw new InvalidDataException(
                 "The current battery preferences are missing thermal policy state.");
         }
-        if (expectedSchemaVersion >= ProfileStore.CurrentSchemaVersion
+        if (expectedSchemaVersion >= ProfileStore.ExperimentalFeaturesConsentSchemaVersion
             && !preferencesElement.TryGetProperty("allowExperimentalFeatures", out _))
         {
             throw new InvalidDataException(
@@ -484,7 +485,7 @@ public sealed class BatteryConfigurationStore
                     ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
             };
         }
-        if (expectedSchemaVersion < ProfileStore.CurrentSchemaVersion)
+        if (expectedSchemaVersion < ProfileStore.ExperimentalFeaturesConsentSchemaVersion)
         {
             preferences = preferences with { AllowExperimentalFeatures = false };
         }

@@ -2171,6 +2171,138 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task ExperimentalWholePercentCapabilitiesExposeOnePercentSliderRange()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+                SupportsBatteryProtectionOff = true,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ChargeLimitMaximumPercent == 100);
+
+        Assert.Equal(50, viewModel.ChargeLimitMinimumPercent);
+        Assert.Equal(100, viewModel.ChargeLimitMaximumPercent);
+        Assert.Equal(1, viewModel.ChargeLimitStepPercent);
+        Assert.Equal(51, viewModel.ChargeLimitOptions.Count);
+    }
+
+    [Fact]
+    public async Task ExperimentalProfileEditorAcceptsNinetyNineButRejectsOffMarker()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+                SupportsBatteryProtectionOff = true,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ChargeLimitMaximumPercent == 100);
+
+        viewModel.ProfileChargeLimitEditor = 99;
+        Assert.True(viewModel.SaveProfilesCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
+            .ExecuteAsync(null);
+        Assert.Equal(BatteryPolicy.Create(99), client.LastProfiles?.BatteryPolicy);
+
+        viewModel.ProfileChargeLimitEditor = 100;
+        Assert.False(viewModel.SaveProfilesCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ExperimentalProtectionOffDisplaysOneHundredAndCanRestoreLimit()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+                SupportsBatteryProtectionOff = true,
+            },
+            Profiles = status.Profiles with
+            {
+                PluggedIn = status.Profiles.PluggedIn with { BatteryProtectionEnabled = false },
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(false, null, false),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ChargeLimitPercent == 100);
+
+        Assert.True(viewModel.CanAdjustChargeLimit);
+        Assert.True(viewModel.SetChargeLimitCommand.CanExecute(99));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(99);
+
+        Assert.Equal(BatteryPolicy.Create(99), client.BatteryPolicy);
+        Assert.Null(client.BatteryProtectionEnabled);
+        Assert.True(viewModel.HasBatteryProtectionProfileDraft);
+    }
+
+    [Fact]
+    public async Task ExperimentalOneHundredTurnsProtectionOffWithoutCreatingPolicy()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+                SupportsBatteryProtectionOff = true,
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 73, false),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ChargeLimitMaximumPercent == 100);
+        viewModel.ChargeLimitPercent = 100;
+
+        Assert.True(viewModel.SetChargeLimitCommand.CanExecute(100));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(100);
+
+        Assert.False(client.BatteryProtectionEnabled);
+        Assert.Null(client.BatteryPolicy);
+        Assert.True(viewModel.HasBatteryProtectionProfileDraft);
+        Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
+    }
+
+    [Fact]
+    public async Task StableChargeCapabilitiesKeepFivePercentRange()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(50, viewModel.ChargeLimitMinimumPercent);
+        Assert.Equal(80, viewModel.ChargeLimitMaximumPercent);
+        Assert.Equal(5, viewModel.ChargeLimitStepPercent);
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(100));
+    }
+
+    [Fact]
     public async Task ExternallyChangedProtectionOffStillReportsProtectionOff()
     {
         var client = new FakeServiceClient();

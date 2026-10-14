@@ -846,7 +846,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         DeviceStateQuery.TemporaryFullCharge,
                         () => port.QueryTemporaryFullChargeAsync(cancellationToken))
                         .ConfigureAwait(false)
-                    : null;
+                    // The experimental model contract exposes no temporary override.
+                    // Its BHO register is the complete admitted protection state.
+                    : batteryFactory is ExperimentalBladeFactory ? false : null;
                 ConfirmedBatteryState? battery = protection is null ? null : new(
                     protection.ProtectionEnabled,
                     protection.ChargeLimitPercent,

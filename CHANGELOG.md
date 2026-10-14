@@ -8,6 +8,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Add opt-in experimental Balanced/Silent controls for the Blade 16 (2023), Blade 14 (2023 and 2025), Blade 15 Base (2020), and Blade 18 (2023), with 80% battery protection on the supported experimental models. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Add experimental Blade 18 (2023) charge limits from 50–100% in 1% steps, with 100% turning protection off, decoded baselines, and independent exact-limit readback. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Add experimental Blade 18 (2023) Performance and bounded Custom CPU/GPU controls, keyboard brightness, Off/Spectrum/random Breathing/Wave effects, and Off/Static/Breathing logo lighting. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Include bounded experimental command results, source provenance, consent, and cached telemetry in local diagnostic exports for pre-release tester reports. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 

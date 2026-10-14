@@ -26,15 +26,15 @@ preference has not been saved; a later explicit enable can restore consent.
 | Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, 80% battery protection or off |
 | Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, 80% battery protection or off |
 | Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced and Silent |
-| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, bounded Custom levels, keyboard brightness and built-in effects, logo lighting, 80% battery protection or off |
+| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, bounded Custom levels, keyboard brightness and built-in effects, logo lighting, 50–100% charge limits in 1% steps (100% turns protection off) |
 
 Performance changes require confirmed Automatic fans and fresh external-power
 evidence. Manual fans, HyperBoost writes, and driver-dependent brightness integration
 are not yet supported by this backend. Lighting and Custom controls below apply
 only to the exact Blade 18 profile.
 The 2020 Blade 15's battery commands are excluded because upstream reports that
-its firmware echoes them without applying them. This first battery implementation
-accepts only the observed 80% and off states.
+its firmware echoes them without applying them. The other experimental battery profiles
+accept only the observed 80% and off states.
 
 For experimental models, the Plugged In profile covers externally powered
 operation. Barrel-versus-USB-C classification and adapter wattage are unavailable.
@@ -53,6 +53,16 @@ remain diagnostic observations rather than a guessed setting. HyperBoost remains
 observed-only: it cannot be enabled, though choosing Balanced, Silent, or Performance
 can leave an existing firmware HyperBoost state. Custom requires an ordinary preset
 as its starting state. Manual fan behavior is unresolved.
+
+Blade 18 charge limits cover every whole percentage from 50% to 100%. Selecting
+100% turns protection off; saved protected limits cover 50–99%. The exact-model
+owner report confirms 80% and off. The expanded range is an explicit experimental
+extrapolation from the maintained fork's battery-care encoding and Blade 16 tests.
+A change first decodes the starting protection flag and threshold, sends one
+setter, then independently reads the exact resulting limit. Setter acknowledgement
+alone does not confirm the change. Unsupported enabled thresholds block changes
+and retain the raw flag and threshold in diagnostics. Temporary full charge is
+not available on this model.
 
 Blade 18 keyboard controls include brightness, Off, Spectrum, random-color
 Breathing, and Wave with upstream direction byte 1 (presented as Rightward).
@@ -81,6 +91,10 @@ sources, then the exact USB identity and 91-byte HID feature-report geometry.
 Independent performance queries must identify a unique responding interface.
 SKU and firmware versions are report metadata. Unknown models and ambiguous
 interfaces remain blocked.
+
+This update uses service IPC 60, configuration schema 18, and profile export
+schema 11. Install the coordinated pre-release update; a tray-only replacement
+cannot update the shared contracts. Existing experimental consent is preserved.
 
 ## Send a useful test report
 

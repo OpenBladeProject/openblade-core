@@ -2777,7 +2777,39 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public bool CanAdjustChargeLimit => CanSetChargeLimit(ChargeLimitPercent);
+    public bool CanAdjustChargeLimit
+    {
+        get
+        {
+            DeviceCapabilities capabilities = CommandCapabilities;
+            if (IsChargeLimitOperationInProgress
+                || !CanMutate
+                || !HasConfirmedPowerSource
+                || latestStatus?.ConfirmedState?.Battery is not
+                {
+                    TemporaryFullCharge: false,
+                } confirmed)
+            {
+                return false;
+            }
+
+            bool hasProtectedLimit = capabilities.ChargeLimits.Any(value => value < 100);
+            if (!ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
+                || !hasProtectedLimit)
+            {
+                return false;
+            }
+
+            return confirmed switch
+            {
+                { ProtectionEnabled: true, ChargeLimitPercent: int currentLimit } =>
+                    capabilities.ChargeLimits.Contains(currentLimit),
+                { ProtectionEnabled: false, ChargeLimitPercent: null } =>
+                    capabilities.ChargeLimits.Contains(100),
+                _ => false,
+            };
+        }
+    }
 
     public long ChargeLimitEditorRevision => chargeLimitEditorRevision;
 
@@ -2810,8 +2842,28 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public IReadOnlyList<int> ChargeLimitOptions
     {
         get => chargeLimitOptions;
-        private set => SetField(ref chargeLimitOptions, value);
+        private set
+        {
+            if (ReferenceEquals(chargeLimitOptions, value))
+            {
+                return;
+            }
+            SetField(ref chargeLimitOptions, value);
+
+            Notify(nameof(ChargeLimitMinimumPercent));
+            Notify(nameof(ChargeLimitMaximumPercent));
+            Notify(nameof(ChargeLimitStepPercent));
+        }
     }
+
+    public int ChargeLimitMinimumPercent =>
+        ChargeLimitOptions.Where(value => value < 100).DefaultIfEmpty(50).Min();
+
+    public int ChargeLimitMaximumPercent => ChargeLimitOptions.Contains(100)
+        ? 100
+        : ChargeLimitOptions.Where(value => value < 100).DefaultIfEmpty(80).Max();
+
+    public int ChargeLimitStepPercent => ChargeLimitOptions.Contains(100) ? 1 : 5;
 
     public bool BatteryProtectionEnabled
     {
@@ -5777,17 +5829,42 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || !HasConfirmedPowerSource
             || status?.ConfirmedState?.Battery is not
             {
-                ProtectionEnabled: true,
-                ChargeLimitPercent: int currentLimit,
                 TemporaryFullCharge: false,
-            })
+            } confirmed)
         {
             return false;
         }
 
-        return ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
-            && capabilities.ChargeLimits.Contains(currentLimit)
-            && capabilities.ChargeLimits.Contains(value);
+        if (!ProfileAdmissionPolicy.HasBatteryCapability(capabilities))
+        {
+            return false;
+        }
+
+        if (value == 100)
+        {
+            return capabilities.ChargeLimits.Contains(100)
+                && capabilities.SupportsBatteryProtectionOff
+                && confirmed is
+                {
+                    ProtectionEnabled: true,
+                    ChargeLimitPercent: int currentLimit,
+                }
+                && capabilities.ChargeLimits.Contains(currentLimit);
+        }
+
+        if (!capabilities.ChargeLimits.Contains(value))
+        {
+            return false;
+        }
+
+        return confirmed switch
+        {
+            { ProtectionEnabled: true, ChargeLimitPercent: int currentLimit } =>
+                capabilities.ChargeLimits.Contains(currentLimit),
+            { ProtectionEnabled: false, ChargeLimitPercent: null } =>
+                capabilities.ChargeLimits.Contains(100),
+            _ => false,
+        };
     }
 
     private void SetTemporaryFullChargeState(bool? value)
@@ -6336,6 +6413,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         };
         int requestedLimit = request.Value;
         long editorRevisionAtStart = request.EditorRevision;
+        if (requestedLimit == 100)
+        {
+            await SetProtectionOffFromChargeLimitAsync(
+                requestedLimit,
+                editorRevisionAtStart,
+                token);
+            return;
+        }
+
+        PowerSource sourceAtStart = ActivePowerSource;
+        bool enablesProtection = CommandCapabilities.ChargeLimits.Contains(100);
         BatteryPolicy requestedPolicy = BatteryPolicy.Create(requestedLimit);
         long revisionAtStart = latestAcceptedRevision;
         ControlOperationStatus? resultStatus = null;
@@ -6380,7 +6468,65 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     LoadChargeLimitEditor(latestStatus);
                 }
+                if (enablesProtection)
+                {
+                    MarkActiveProfileDraft(sourceAtStart, batteryProtectionEnabled: true);
+                }
                 NotifyBatteryProfileDraft();
+            },
+            token);
+    }
+
+    private async Task SetProtectionOffFromChargeLimitAsync(
+        int requestedLimit,
+        long editorRevisionAtStart,
+        CancellationToken token)
+    {
+        PowerSource sourceAtStart = ActivePowerSource;
+        long revisionAtStart = latestAcceptedRevision;
+        ControlOperationStatus? resultStatus = null;
+        IsChargeLimitOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetBatteryProtectionAsync(
+                    false,
+                    cancellationToken),
+                token,
+                result => resultStatus = result.Status);
+        }
+        finally
+        {
+            IsChargeLimitOperationInProgress = false;
+        }
+
+        await dispatcher.InvokeAsync(
+            () =>
+            {
+                if (resultStatus != ControlOperationStatus.Applied)
+                {
+                    RevertUnappliedChargeLimitEdit(
+                        requestedLimit,
+                        editorRevisionAtStart);
+                    return;
+                }
+
+                bool editorStillShowsRequest = chargeLimitPercent == requestedLimit
+                    && chargeLimitEditorRevision == editorRevisionAtStart;
+                if (editorStillShowsRequest)
+                {
+                    chargeLimitEditorDirty = false;
+                }
+                MarkActiveProfileDraft(
+                    sourceAtStart,
+                    batteryProtectionEnabled: false);
+                if (editorStillShowsRequest
+                    && latestStatus is not null
+                    && latestAcceptedRevision > revisionAtStart)
+                {
+                    LoadChargeLimitEditor(latestStatus);
+                }
+                NotifyCommands();
             },
             token);
     }
@@ -7160,8 +7306,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ProfileSet? candidate = parameter as ProfileSet;
         if (candidate is null)
         {
-            if (ProfileChargeLimitEditor is < 50 or > 80
-                || ProfileChargeLimitEditor % 5 != 0)
+            if (ProfileChargeLimitEditor is < 50 or > 99)
             {
                 draft = null!;
                 return false;
@@ -7306,8 +7451,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void LoadChargeLimitEditor(ServiceStatusSnapshot status)
     {
-        int value = status.ConfirmedState?.Battery?.ChargeLimitPercent
-            ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
+        ConfirmedBatteryState? confirmed = status.ConfirmedState?.Battery;
+        int value = confirmed is { ProtectionEnabled: false }
+            && CommandCapabilities.ChargeLimits.Contains(100)
+                ? 100
+                : confirmed?.ChargeLimitPercent
+                    ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
         SetField(ref chargeLimitPercent, value, nameof(ChargeLimitPercent));
         NotifyCommands();
     }

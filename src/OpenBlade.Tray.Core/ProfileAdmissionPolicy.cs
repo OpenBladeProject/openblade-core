@@ -98,7 +98,8 @@ internal static class ProfileAdmissionPolicy
 
     internal static bool HasBatteryCapability(DeviceCapabilities? capabilities) =>
         capabilities is not null
-        && capabilities.ChargeLimits.Count is > 0 and <= 7
+        && capabilities.ChargeLimits.Count is > 0 and <= 51
+        && capabilities.ChargeLimits.Any(value => value < 100)
         && capabilities.ChargeLimits.All(
-            value => value is >= 50 and <= 80 && value % 5 == 0);
+            value => value is >= 50 and <= 100);
 }

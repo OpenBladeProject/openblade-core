@@ -550,7 +550,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(60, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1137,7 +1137,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(60, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1450,8 +1450,8 @@ public sealed class IpcMessageCodecTests
     [InlineData("[80,80]")]
     [InlineData("[80,75]")]
     [InlineData("[45]")]
-    [InlineData("[85]")]
-    [InlineData("[52]")]
+    [InlineData("[49]")]
+    [InlineData("[101]")]
     [InlineData("[50,55,60,65,70,75,80,80]")]
     public async Task ReadServerFrameAsync_RejectsInvalidRawChargeLimits(string chargeLimitsJson)
     {
@@ -1469,6 +1469,43 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(
                 FrameJson(root.ToJsonString()),
                 CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ExpandedBatteryPolicyAndFullCapabilityRangeRoundTrip()
+    {
+        BatteryPolicy policy = BatteryPolicy.Create(99);
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot expected = baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+                SupportsBatteryProtectionOff = true,
+            },
+            ConfirmedState = new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(true, 99, false),
+                null),
+            Profiles = baseline.Profiles with { BatteryPolicy = policy },
+            DesiredState = baseline.DesiredState with
+            {
+                Battery = new DesiredBatteryState(
+                    policy,
+                    protectionEnabled: true,
+                    temporaryFullCharge: false),
+            },
+            BatteryPolicyOverride = policy,
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.Equal(Enumerable.Range(50, 51), actual.Capabilities!.ChargeLimits.Order());
+        Assert.Equal(policy, actual.Profiles.BatteryPolicy);
+        Assert.Equal(policy, actual.DesiredState.Battery.ConfiguredPolicy);
+        Assert.Equal(99, actual.ConfirmedState?.Battery?.ChargeLimitPercent);
+        Assert.Equal(policy, actual.BatteryPolicyOverride);
     }
 
     [Theory]
@@ -2317,9 +2354,30 @@ public sealed class IpcMessageCodecTests
     [Fact]
     public async Task WriteProtocol51ReadOnlyServerFrameAsync_OmitsNewStateAndBlocksWrites()
     {
-        ServiceStatusSnapshot status = CreateStatus() with
+        ServiceStatusSnapshot baseline = CreateStatus();
+        BatteryPolicy experimentalPolicy = BatteryPolicy.Create(99);
+        ServiceStatusSnapshot status = baseline with
         {
             WritesBlocked = false,
+            Capabilities = baseline.Capabilities! with
+            {
+                ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+                SupportsBatteryProtectionOff = true,
+            },
+            ConfirmedState = new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(true, 99, false),
+                null),
+            Profiles = baseline.Profiles with { BatteryPolicy = experimentalPolicy },
+            DesiredState = baseline.DesiredState with
+            {
+                Battery = new DesiredBatteryState(
+                    experimentalPolicy,
+                    protectionEnabled: true,
+                    temporaryFullCharge: false),
+            },
+            BatteryPolicyOverride = experimentalPolicy,
             AllowExperimentalFeatures = true,
             IsExperimentalDevice = true,
             ExperimentalSupportSource = "community-validation",
@@ -2350,6 +2408,22 @@ public sealed class IpcMessageCodecTests
         Assert.False(projected.ContainsKey("allowExperimentalFeatures"));
         Assert.False(projected.ContainsKey("isExperimentalDevice"));
         Assert.False(projected.ContainsKey("experimentalSupportSource"));
+        Assert.Equal(
+            new[] { 50, 55, 60, 65, 70, 75, 80 },
+            projected["capabilities"]!["chargeLimits"]!
+                .AsArray()
+                .Select(value => value!.GetValue<int>()));
+        Assert.Equal(
+            80,
+            projected["profiles"]!["batteryPolicy"]!["chargeLimitPercent"]!
+                .GetValue<int>());
+        Assert.Equal(
+            80,
+            projected["desiredState"]!["battery"]!["configuredPolicy"]!
+                ["chargeLimitPercent"]!
+                .GetValue<int>());
+        Assert.Null(projected["confirmedState"]!["battery"]);
+        Assert.Null(projected["batteryPolicyOverride"]);
         Assert.Contains(
             "Update or repair",
             projected["message"]!.GetValue<string>(),

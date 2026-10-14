@@ -73,6 +73,35 @@ public sealed class ProfileAdmissionPolicyTests
         Assert.False(ProfileAdmissionPolicy.Supports(profiles, profiles, capabilities));
     }
 
+    [Fact]
+    public void WholePercentLimitsAndOffMarkerAdmitProfilesBelowOneHundred()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            BatteryPolicy = BatteryPolicy.Create(99),
+        };
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+            SupportsBatteryProtectionOff = true,
+        };
+
+        Assert.True(ProfileAdmissionPolicy.Supports(profiles, profiles, capabilities));
+    }
+
+    [Fact]
+    public void OffMarkerAloneIsNotAUsableBatteryCapability()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            ChargeLimits = new HashSet<int> { 100 },
+            SupportsBatteryProtectionOff = true,
+        };
+
+        Assert.False(ProfileAdmissionPolicy.Supports(profiles, profiles, capabilities));
+    }
+
     private static DeviceCapabilities SupportedCapabilities() =>
         DeviceCapabilities.SafeTargetDefaults() with
         {

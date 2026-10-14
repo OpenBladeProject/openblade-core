@@ -4172,6 +4172,14 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain(" MHz", sliderSectionXaml, StringComparison.Ordinal);
         Assert.DoesNotContain(" %", sliderSectionXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ChargeLimitSliderRow\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "Maximum=\"{x:Bind ViewModel.ChargeLimitMaximumPercent, Mode=OneWay}\"",
+            sliderSectionXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "StepFrequency=\"{x:Bind ViewModel.ChargeLimitStepPercent, Mode=OneWay}\"",
+            sliderSectionXaml,
+            StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingBrightnessSliderRow\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains(
             "AutomationProperties.Name=\"Keyboard brightness\"",

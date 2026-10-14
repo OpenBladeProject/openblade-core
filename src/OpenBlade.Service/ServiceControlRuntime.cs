@@ -9406,12 +9406,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? null
                 : new DesiredBatteryState(
                     value,
-                    current.ProtectionEnabled,
+                    GetStatus().Capabilities?.ChargeLimits.Contains(100) == true || current.ProtectionEnabled,
                     temporaryFullCharge: false),
             (coordinator, staged, cancellationToken) =>
-                coordinator.ApplyChargeLimitOutcomeAsync(
-                    staged.ConfiguredPolicy,
-                    cancellationToken),
+                GetStatus().Capabilities?.ChargeLimits.Contains(100) == true
+                    ? coordinator.ApplyBatteryOutcomeAsync(staged, cancellationToken)
+                    : coordinator.ApplyChargeLimitOutcomeAsync(staged.ConfiguredPolicy, cancellationToken),
             token,
             "Charge-limit changes are blocked while temporary full charge is active.");
     }

@@ -47,7 +47,8 @@ internal sealed partial class ExperimentalBladePort(
             new HashSet<FanMode>(), enabled && model.ProductId == 0x02A0
                 ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum, LightingEffect.Wave, LightingEffect.Breathing }
                 : new HashSet<LightingEffect>(),
-            enabled && model.SupportsBatteryProtection ? new HashSet<int> { 80 } : [],
+            enabled && model.SupportsBatteryProtection ? model.ProductId == 0x02A0
+                ? Enumerable.Range(50, 51).ToHashSet() : new HashSet<int> { 80 } : [],
             enabled && model.SupportsBatteryProtection, false)
         {
             CustomPerformance = enabled && model.ProductId == 0x02A0 ? CreateCustomCapabilities() : null,
@@ -87,16 +88,25 @@ internal sealed partial class ExperimentalBladePort(
     {
         ReadOnlyMemory<byte> payload = await ExchangeAsync("BatteryProtection", 0x07, 0x92,
             [0], false, cancellationToken).ConfigureAwait(false);
-        if (payload.Span[0] is not (0x50 or 0xD0))
+        byte raw = payload.Span[0];
+        int percent = raw & 0x7F;
+        bool flag = (raw & 0x80) != 0;
+        bool admitted = model.ProductId == 0x02A0
+            ? !flag || percent is >= 50 and <= 100
+            : raw is 0x50 or 0xD0;
+        if (!admitted)
         {
             RecordQuery("BatteryProtection", "UnsupportedState",
-                confirmed: $"ReportedProtectionEnabled={(payload.Span[0] & 0x80) != 0};ReportedLimitPercent={payload.Span[0] & 0x7F}",
+                confirmed: $"ReportedProtectionEnabled={flag};ReportedLimitPercent={percent};Raw={raw:X2}",
                 failure: "OutsideAdmittedBatteryStates");
-            throw new IOException("Experimental battery readback is outside the admitted 80%/off states.");
+            throw new IOException("Experimental battery readback is outside this model's admitted states.");
         }
-        bool enabled = payload.Span[0] == 0xD0;
-        RecordQuery("BatteryProtection", "Confirmed", confirmed: enabled ? "80" : "Off");
-        return new(enabled, enabled ? 80 : null, null);
+        // Upstream 100% is no limit: write disabled 0x50. An enabled-at-100
+        // baseline is also no limit; retain its actual flag/threshold in diagnostics.
+        bool enabled = flag && percent < 100;
+        RecordQuery("BatteryProtection", "Confirmed",
+            confirmed: $"Effective={(enabled ? percent.ToString() : "Off")};ReportedProtectionEnabled={flag};ReportedLimitPercent={percent};Raw={raw:X2}");
+        return new(enabled, enabled ? percent : null, null);
     }
 
     public async Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(CancellationToken cancellationToken)
@@ -226,13 +236,16 @@ internal sealed partial class ExperimentalBladePort(
         }
     }
 
-    public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) => percent == 80
-        ? SetBatteryAsync(true, cancellationToken)
-        : Task.FromException(new CapabilityUnavailableException("Only the upstream-derived 80% limit is enabled."));
+    public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) =>
+        model.ProductId == 0x02A0 ? percent is >= 50 and <= 100
+            ? SetBatteryAsync(percent == 100 ? null : percent, cancellationToken)
+            : Task.FromException(new CapabilityUnavailableException("Blade 18 limits must be from 50 to 100 percent."))
+        : percent == 80 ? SetBatteryAsync(80, cancellationToken)
+        : Task.FromException(new CapabilityUnavailableException("Only the upstream-derived 80% limit is enabled for this model."));
 
-    public Task SetProtectionOffAsync(CancellationToken cancellationToken) => SetBatteryAsync(false, cancellationToken);
+    public Task SetProtectionOffAsync(CancellationToken cancellationToken) => SetBatteryAsync(null, cancellationToken);
 
-    private async Task SetBatteryAsync(bool enabled, CancellationToken cancellationToken)
+    private async Task SetBatteryAsync(int? limit, CancellationToken cancellationToken)
     {
         if (!model.SupportsBatteryProtection)
         {
@@ -240,19 +253,20 @@ internal sealed partial class ExperimentalBladePort(
         }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
-        string requested = enabled ? "80" : "Off";
+        bool enabled = limit.HasValue;
+        string requested = enabled ? limit!.Value.ToString() : "Off";
         try
         {
             RequireWriteAdmission();
             ConfirmedBatteryState baseline = await ReadBatteryAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("BatteryProtection", "Baseline", "Confirmed", requested: requested,
-                confirmed: baseline.ProtectionEnabled ? "80" : "Off");
-            if (baseline.ProtectionEnabled == enabled)
+                confirmed: baseline.ProtectionEnabled ? baseline.ChargeLimitPercent!.Value.ToString() : "Off");
+            if (baseline.ProtectionEnabled == enabled && baseline.ChargeLimitPercent == limit)
             {
                 return;
             }
             RequireWriteAdmission();
-            await ExchangeAsync("BatteryProtection", 0x07, 0x12, [enabled ? (byte)0xD0 : (byte)0x50],
+            await ExchangeAsync("BatteryProtection", 0x07, 0x12, [enabled ? checked((byte)(0x80 | limit!.Value)) : (byte)0x50],
                 true, cancellationToken).ConfigureAwait(false);
             submitted = true;
             // 029F firmware may return the previous valid state for 1-2 seconds after a SET.
@@ -267,7 +281,7 @@ internal sealed partial class ExperimentalBladePort(
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 ConfirmedBatteryState confirmed = await ReadBatteryAsync(cancellationToken).ConfigureAwait(false);
-                if (confirmed.ProtectionEnabled == enabled)
+                if (confirmed.ProtectionEnabled == enabled && confirmed.ChargeLimitPercent == limit)
                 {
                     policy.Record("BatteryProtection", "Readback", "Confirmed", true, requested, requested);
                     return;

@@ -1186,6 +1186,11 @@ public partial class App
         {
             return;
         }
+        if (state is "blade18-battery" or "blade18-battery-off")
+        {
+            ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
+            return;
+        }
         if (state is "blade18-breathing" or "blade18-wave")
         {
             ApplyExperimentalLightingSnapshotState(window, state == "blade18-wave");
@@ -1236,6 +1241,36 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Dashboard presentation hook was not found.");
         refreshCards.Invoke(window, null);
+    }
+
+    private static void ApplyExperimentalBatterySnapshotState(MainWindow window, bool off)
+    {
+        // Disconnected, synthetic observations: no service or hardware access.
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with { BatteryPolicy = BatteryPolicy.Create(73) };
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+            SupportsBatteryProtectionOff = true,
+        };
+        var status = new ServiceStatusSnapshot(
+            1, true, false, [], null, [], "Experimental Blade 18 battery preview", capabilities,
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic,
+                new ConfirmedBatteryState(!off, off ? null : 73, false), null), profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, !off, false)),
+            PowerSource.ExternalUnknown, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = "UpstreamDerived",
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
     }
 
     private static void ApplyExperimentalLightingSnapshotState(MainWindow window, bool wave)

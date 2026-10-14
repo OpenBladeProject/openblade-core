@@ -422,10 +422,9 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid("The battery policy is missing.");
         }
 
-        if (batteryPolicy.ChargeLimitPercent is < 50 or > 80
-            || batteryPolicy.ChargeLimitPercent % 5 != 0)
+        if (batteryPolicy.ChargeLimitPercent is < 50 or > 99)
         {
-            throw Invalid("The battery charge limit must be from 50 to 80 percent in 5 percent steps.");
+            throw Invalid("The enabled battery charge limit must be from 50 to 99 percent.");
         }
     }
 
