@@ -105,6 +105,11 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         "RZ09-05289EN4",
         Array.AsReadOnly(new[] { "2.02" }),
         FirmwareAdmissionScope.ModelScoped);
+    // Every identity the service probes for. Diagnostics use it to tell a
+    // laptop that matches no admitted model from an admitted one whose own
+    // check failed and was then reported by another model's probe.
+    internal static readonly IReadOnlyList<ExpectedHostIdentity> AdmittedIdentities =
+        Array.AsReadOnly(new[] { ProductionIdentity, Rz090528Identity });
     private readonly IRegistryValueSource registry;
     private readonly IWindowsPlatformEvidenceSource platform;
     private readonly ExpectedHostIdentity expected;

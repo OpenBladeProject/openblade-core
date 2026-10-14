@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
@@ -54,6 +55,36 @@ public sealed record DiagnosticDeviceVerification(
     DiagnosticDeviceVerificationAttempt? LastFailure)
 {
     public string EvidenceSource => "CachedServiceAdvisoryProbe";
+
+    // True only when the latest probe read the laptop's BIOS manufacturer or
+    // product name and it matched no admitted model. A registry read failure,
+    // a missing value, a platform failure, a source mismatch or a firmware
+    // block is not proof that the laptop is unsupported, so those stay false.
+    [JsonIgnore]
+    public bool LatestAttemptFoundUnsupportedLaptop =>
+        LatestAttempt?.ProbeResult is
+        {
+            Classification: BatteryValidationProbeClassification.HostIdentityBlocked,
+            HostIdentityFailure:
+            {
+                Reason: HostIdentityFailureReason.RegistryValueMismatch,
+                Source: "BIOS",
+                Field: "SystemManufacturer" or "SystemProductName",
+            } failure,
+        }
+        && !NamesAdmittedModel(failure);
+
+    // The service probes each admitted model in turn and records the last
+    // result. An admitted laptop that fails a later check of its own model
+    // then appears as a product-name mismatch against the next model, but
+    // the observed value still names an admitted model.
+    private static bool NamesAdmittedModel(HostIdentityFailureDetail failure) =>
+        WindowsHostIdentitySource.AdmittedIdentities.Any(identity => string.Equals(
+            failure.Field == "SystemManufacturer"
+                ? identity.Manufacturer
+                : identity.ProductName,
+            failure.ActualValue,
+            StringComparison.Ordinal));
 
     public static DiagnosticDeviceVerification NotObserved { get; } = new(null, null);
 }

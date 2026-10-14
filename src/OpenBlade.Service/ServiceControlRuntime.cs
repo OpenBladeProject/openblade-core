@@ -19019,6 +19019,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     || unconfirmedWrites.Count > 0,
                 UnconfirmedWrites = unconfirmedWrites,
                 HyperBoostRestorePending = hyperBoostRestorePending,
+                UnsupportedLaptop = !updated.DeviceVerified
+                    && deviceProvider.GetCachedDeviceVerificationDiagnostics()
+                        .LatestAttemptFoundUnsupportedLaptop,
             };
             candidate = ApplyConfigurationQuarantineAdvisory(candidate);
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)

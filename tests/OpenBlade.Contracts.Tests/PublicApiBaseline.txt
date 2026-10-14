@@ -1304,7 +1304,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 58
+  field const System.Int32 ProtocolVersion = 59
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1879,6 +1879,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Boolean get_DeviceVerified()
   method System.Boolean get_FullChargeOverride()
   method System.Boolean get_HyperBoostRestorePending()
+  method System.Boolean get_UnsupportedLaptop()
   method System.Boolean get_WritesBlocked()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> get_ExternalChanges()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> get_UnconfirmedWrites()
@@ -1937,6 +1938,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_StartupAnimationEnabled(System.Nullable<System.Boolean> value)
   method System.Void set_ThermalConvergence(OpenBlade.Contracts.ThermalConvergenceStatus value)
   method System.Void set_UnconfirmedWrites(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
+  method System.Void set_UnsupportedLaptop(System.Boolean value)
   method System.Void set_WritesBlocked(System.Boolean value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -1972,6 +1974,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property System.Boolean DeviceVerified { get; init; }
   property System.Boolean FullChargeOverride { get; init; }
   property System.Boolean HyperBoostRestorePending { get; init; }
+  property System.Boolean UnsupportedLaptop { get; init; }
   property System.Boolean WritesBlocked { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> UnconfirmedWrites { get; init; }

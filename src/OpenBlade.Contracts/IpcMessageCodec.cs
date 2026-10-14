@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 58;
+    public const int ProtocolVersion = 59;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -848,6 +848,7 @@ public static class IpcMessageCodec
             ThermalConvergence = null,
             HyperBoostBlockingControllers = null,
             ObservationReason = DeviceObservationReason.None,
+            UnsupportedLaptop = false,
         };
 
     private static JsonSerializerOptions CreateSerializerOptions(
@@ -887,6 +888,12 @@ public static class IpcMessageCodec
                         "observationReason",
                         StringComparison.OrdinalIgnoreCase));
                 observationReason.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo unsupportedLaptop = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "unsupportedLaptop",
+                        StringComparison.OrdinalIgnoreCase));
+                unsupportedLaptop.ShouldSerialize = static (_, _) => false;
             }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
