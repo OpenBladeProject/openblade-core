@@ -78,3 +78,13 @@ Unproven hypothesis: firmware sets `08` when a temporary full charge completes a
 percent and Battery Health Optimizer re-enables. To confirm, enable full charge once
 below 100 percent while plugged in, let it reach 100 percent, export state with Synapse
 closed, and expect `08`.
+
+A first local attempt on 2026-10-14 was inconclusive. The test used a second RZ09-0581
+(MCU 1.7.0.0), plugged in throughout, with Synapse not running. OpenBlade enabled temporary
+full charge at 79 percent, and the readback confirmed `04`. The battery reached 99 to 100
+percent after about 50 minutes. For the next 100 minutes, 07/8F still read `04` and
+Windows never reported the battery as fully charged. OpenBlade then cancelled the mode,
+the readback confirmed `00`, and the saved 80 percent limit and protection state were
+unchanged. `08` never appeared. It may need a complete charge, an unplug, or the Fn+B
+shortcut path. The admission above rests on Synapse showing `08` as off, not on this
+hypothesis.
