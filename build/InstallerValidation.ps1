@@ -365,6 +365,8 @@ function Assert-OpenBladeInstallerBundle {
             ($dotNetPackage.GetAttribute('InstallArguments') -ne '/install /quiet /norestart') -or
             ($dotNetPackage.GetAttribute('RepairArguments') -ne '/repair /quiet /norestart') -or
             ($dotNetPackage.GetAttribute('Repairable') -ne 'yes') -or
+            ($dotNetPackage.GetAttribute('RepairCondition') -ne
+                'OpenBladeDotNetRuntimeVersion = OpenBladeMinimumDotNetRuntimeVersion') -or
             ($dotNetPackage.GetAttribute('Bundle') -ne 'yes') -or
             ($dotNetPackage.GetAttribute('Protocol') -ne 'burn') -or
             ($dotNetPackage.GetAttribute('DetectCondition') -ne

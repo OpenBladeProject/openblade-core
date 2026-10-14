@@ -144,6 +144,7 @@
           Description="!(loc.DotNetDesktopRuntimeDescription)"
           InstallArguments="/install /quiet /norestart"
           RepairArguments="/repair /quiet /norestart"
+          RepairCondition="OpenBladeDotNetRuntimeVersion = OpenBladeMinimumDotNetRuntimeVersion"
           DetectCondition="OpenBladeDotNetRuntimeSufficient = 1"
           PerMachine="yes"
           Permanent="yes"
