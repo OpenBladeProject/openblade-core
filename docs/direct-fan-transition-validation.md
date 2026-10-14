@@ -190,13 +190,49 @@ post-fix/pre-validation baseline. The service, exactly one tray, and exactly one
 Session Agent were running. Reconciliation completed at
 `2026-10-14T14:27:36.1125860Z`.
 
-### Remaining attended scope
+### Final integrated installation and attended sleep/resume: passed
 
-Sleep/resume has not yet been initiated. It is the final physical step and
-requires fresh approval immediately beforehand. No Razer Laptop Cooling Pad is
-available, so pad removal from owned pad-required HyperBoost cannot be exercised.
-RZ09-0528, USB-C-specific behavior, and a manual-fan or HyperBoost AC/battery
-boundary remain untested in this session. Existing admitted lifecycle evidence
-and shared-handler source checks may be reused where the command sequence and
-conditions match; these results do not invent coverage for another backend.
+After main advanced with the device-state isolation fix, the Native I/O branch
+was refreshed and its product version advanced to 0.26.3. Exact source
+`bb78ad517b6d6c11fb3ab38e40af964f40a2be1c` passed 7680 solution tests, a
+zero-warning build, independent integration reviews, and the unchanged publish
+workflow. The coordinated local installation matched all payload hashes and
+preserved saved intent. The old read-only operator rejected the newer IPC
+version after installation; rebuilding it against matching contracts completed
+verification without rerunning Setup or a setter.
+
+The present user gave fresh approval before the final attended step. One typed
+manual fan request returned Applied on this exact installed source, with fresh
+manual-state, Driver, Spectrum, ownership, controller, and AC admission. The
+first sleep attempt was reported as prevented by a building workload. The user
+paused it and explicitly requested a retry. Fresh read-only admission confirmed
+the existing preparation; no fan setter was replayed for the retry.
+
+The user confirmed successful sleep and wake. Windows recorded Modern Standby
+entry at `2026-10-14T14:56:43.6126039Z` and exit at
+`2026-10-14T14:58:10.0536629Z`. Fresh post-resume observations confirmed active
+control, generic manual fan state, saved Fixed/5400 intent, Driver mode, and
+Spectrum ownership, with no competing controller, drift, or unconfirmed write.
+The service's ResumeValidation record confirmed retained Fans and Battery
+state. Lighting was excluded from its baseline comparison because writes occurred
+after that baseline; a fresh observation independently confirmed Spectrum
+ownership. Performance was unavailable for comparison in generic manual mode.
+Exact post-resume fan targets and settled target RPM were not measured.
+
+One typed request restored the original null fan overrides. Final readback
+matched the complete original observable state, profiles, and all saved
+overrides. Every installed payload hash matched the pre-test final-build
+manifest, with the service and exactly one Tray and Session Agent running.
+The retained command history contained no NativeIoFailure. Final reconciliation
+completed at `2026-10-14T15:02:16.4204740Z`.
+
+### Completed and unavailable scope
+
+All available planned round trips and the final attended sleep/resume check
+completed. No Razer Laptop Cooling Pad is available, so pad removal from owned
+pad-required HyperBoost remains untested. RZ09-0528, USB-C-specific behavior,
+and manual-fan or HyperBoost AC/battery boundaries were not physically exercised
+in this session. Existing admitted lifecycle evidence and shared-handler source
+checks may be reused where commands and conditions match; these results do not
+invent coverage for another backend or prove deep-standby residency.
 The production transition gates remain unchanged pending their implementation.
