@@ -11,6 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevent animated keyboard lighting from overlapping fan and battery command exchanges on RZ09-0581. Exported diagnostics now retain the query or command and native I/O error details when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
 - Recognize a supported laptop when Windows reports no BIOS version or two different ones. The BIOS version is checked only where a model explicitly requires it. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 - Show the actual failed identity check in exported diagnostics, instead of a product-name mismatch against another supported model. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 
