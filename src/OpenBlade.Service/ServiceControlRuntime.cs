@@ -16536,6 +16536,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceSubsystem subsystem,
         PendingWriteConfirmation pending)
     {
+        if (subsystem == DeviceSubsystem.Battery
+            && pending.BatteryIntentCommit is not { FullChargeOnly: true })
+        {
+            // Automatic planning never enables a one-shot that already ended,
+            // so the confirmation target must not require it either.
+            pending = pending with
+            {
+                Target = pending.Target with
+                {
+                    Battery = BatteryOperationPlanner.WithoutStaleFullCharge(
+                        pending.Target.Battery,
+                        pending.PreWriteState.Battery),
+                },
+            };
+        }
+
         pendingWriteConfirmations.Set(subsystem, pending);
         // The caller holds operationGate. Retain attribution even if a later
         // observation resolves this write before resume validation begins.
