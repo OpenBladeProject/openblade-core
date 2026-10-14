@@ -13,7 +13,7 @@ public sealed class ExperimentalBladeBatteryRangeTests
     public async Task EveryWholePercent_UsesBaselineOneSetterAndIndependentReadback(int percent)
     {
         var session = new Session { Raw = percent == 77 ? (byte)0xD0 : (byte)0xCD };
-        var policy = new ExperimentalFeaturesPolicy(Model) { Enabled = true };
+        var policy = new ExperimentalFeaturesPolicy(Model);
         await using var port = Create(session, policy);
         Assert.Equal(Enumerable.Range(50, 51), port.Capabilities.ChargeLimits.Order());
         if (percent == 100)
@@ -52,7 +52,7 @@ public sealed class ExperimentalBladeBatteryRangeTests
         Assert.Equal(limit, state.ChargeLimitPercent);
         Assert.Contains(policy.Snapshot().Observations, item => item.ConfirmedValue!.Contains($"Raw={raw:X2}"));
         Assert.All(session.Commands, command => Assert.Equal(0x92, command.CommandId));
-        Assert.Empty(port.Capabilities.ChargeLimits);
+        Assert.Equal(Enumerable.Range(50, 51), port.Capabilities.ChargeLimits.Order());
     }
 
     [Theory]
@@ -63,7 +63,7 @@ public sealed class ExperimentalBladeBatteryRangeTests
     public async Task UnsupportedEnabledBaseline_BlocksEverySetterAndRetainsRawEvidence(int raw)
     {
         var session = new Session { Raw = (byte)raw };
-        var policy = new ExperimentalFeaturesPolicy(Model) { Enabled = true };
+        var policy = new ExperimentalFeaturesPolicy(Model);
         await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
@@ -80,7 +80,8 @@ public sealed class ExperimentalBladeBatteryRangeTests
     public async Task OutOfRangeRequest_IsRejectedBeforeAnyTraffic(int percent)
     {
         var session = new Session();
-        await using var port = Create(session, new(Model) { Enabled = true });
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        await using var port = Create(session, policy);
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(percent, CancellationToken.None));
         Assert.Empty(session.Commands);
     }
@@ -89,10 +90,12 @@ public sealed class ExperimentalBladeBatteryRangeTests
     [InlineData(50)]
     [InlineData(99)]
     [InlineData(100)]
-    public async Task ConsentOff_BlocksRangeWritesBeforeBaseline(int percent)
+    public async Task RecoveryPaused_BlocksRangeWritesBeforeBaseline(int percent)
     {
         var session = new Session();
-        await using var port = Create(session, new(Model));
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        policy.RequireRecovery();
+        await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(percent, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.Empty(session.Commands);
@@ -102,7 +105,7 @@ public sealed class ExperimentalBladeBatteryRangeTests
     public async Task EchoWithDifferentEnabledLimit_LatchesRecoveryWithoutReplayingSetter()
     {
         var session = new Session { Raw = 0xC6, IgnoreSetter = true };
-        var policy = new ExperimentalFeaturesPolicy(Model) { Enabled = true };
+        var policy = new ExperimentalFeaturesPolicy(Model);
         await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
@@ -117,8 +120,8 @@ public sealed class ExperimentalBladeBatteryRangeTests
     public async Task RevocationAtNativeBoundary_BlocksRangeSetterWithoutSubmission()
     {
         var session = new Session();
-        var policy = new ExperimentalFeaturesPolicy(Model) { Enabled = true };
-        session.BeforeSubmission = command => { if (command.CommandId == 0x12) { policy.Enabled = false; } };
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        session.BeforeSubmission = command => { if (command.CommandId == 0x12) { policy.RequireRecovery(); } };
         await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
@@ -131,7 +134,7 @@ public sealed class ExperimentalBladeBatteryRangeTests
         foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(item => item.ProductId != 0x02A0))
         {
             var session = new Session();
-            var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+            var policy = new ExperimentalFeaturesPolicy(model);
             await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true, () => PowerSource.ExternalUnknown);
             Assert.DoesNotContain(99, port.Capabilities.ChargeLimits);
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));

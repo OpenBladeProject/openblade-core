@@ -8,10 +8,12 @@ public sealed class ExperimentalBladeLightingTests
     private static ExperimentalBladeModel Model => ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
 
     [Fact]
-    public async Task ConsentOff_BlocksLightingBeforeAnyTraffic()
+    public async Task RecoveryPaused_BlocksLightingBeforeAnyTraffic()
     {
         var session = new Session();
-        await using var port = Create(session, new ExperimentalFeaturesPolicy(Model));
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        policy.RequireRecovery();
+        await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
@@ -23,7 +25,7 @@ public sealed class ExperimentalBladeLightingTests
     {
         var model = ExperimentalBladeModels.All[0];
         var session = new Session();
-        var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true, () => PowerSource.PluggedIn);
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None));
@@ -190,7 +192,7 @@ public sealed class ExperimentalBladeLightingTests
     {
         var session = new Session();
         var policy = Enabled();
-        session.BeforeSubmission = command => { if (command.CommandId < 0x80) { policy.Enabled = false; } };
+        session.BeforeSubmission = command => { if (command.CommandId < 0x80) { policy.RequireRecovery(); } };
         await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(70), CancellationToken.None));
@@ -253,7 +255,7 @@ public sealed class ExperimentalBladeLightingTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => port.ReadStateAsync(CancellationToken.None));
     }
 
-    private static ExperimentalFeaturesPolicy Enabled() => new(Model) { Enabled = true };
+    private static ExperimentalFeaturesPolicy Enabled() => new(Model);
     private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy policy) =>
         new(session, new(), Model, policy, () => true, () => PowerSource.PluggedIn);
 

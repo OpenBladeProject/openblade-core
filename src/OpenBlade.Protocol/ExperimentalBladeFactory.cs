@@ -2,7 +2,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-/// <summary>Exact-model, upstream-derived controls for explicit experimental opt-in.</summary>
+/// <summary>Exact-model, upstream-derived experimental controls.</summary>
 internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 {
     private readonly ExperimentalBladeModel model;
@@ -61,7 +61,70 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         }
     }
 
-    public void SetEnabled(bool enabled) => policy.Enabled = enabled;
+    public bool IsWritesPaused => policy.IsPaused;
+
+    public async Task<ConfirmedDeviceState> ResumeWritesAsync(
+        Func<ConfirmedDeviceState, bool> acceptObservedState,
+        Func<bool> stillAuthorized,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(acceptObservedState);
+        ArgumentNullException.ThrowIfNull(stillAuthorized);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!policy.IsPaused || !stillAuthorized())
+        {
+            throw new CapabilityUnavailableException("Experimental writes are not paused or recovery is no longer authorized.");
+        }
+        policy.Record("WriteRecovery", "Recovery", "Started");
+        try
+        {
+            // Always open a new session: the session that failed may be poisoned.
+            HidSessionResult<IProductionBatteryPort> opened = await OpenAsync(cancellationToken).ConfigureAwait(false);
+            if (opened.Value is not ExperimentalBladePort port)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new IOException($"Experimental recovery admission failed: {opened.Failure}.");
+            }
+            ConfirmedDeviceState observed;
+            await using (port.ConfigureAwait(false))
+            {
+                if (opened.Failure is not null)
+                {
+                    throw new IOException($"Experimental recovery admission failed: {opened.Failure}.");
+                }
+                observed = await port.ReadRecoveryStateAsync(cancellationToken).ConfigureAwait(false);
+                if (!port.IsRecoverySessionHealthy)
+                {
+                    throw new IOException("Experimental recovery session did not remain healthy.");
+                }
+            }
+            // Finish all native work and cleanup before committing runtime reconciliation.
+            cancellationToken.ThrowIfCancellationRequested();
+            HardwareAccessDecision access = guard.Check();
+            if (!port.IsRecoverySessionDrained
+                || identity.ReadExactIdentity() is not { Evidence: not null, Failure: null }
+                || access.DetectionFailure is not null || access.Conflicts.Count != 0 || !stillAuthorized())
+            {
+                throw new CapabilityUnavailableException("Fresh recovery safety admission failed.");
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!acceptObservedState(observed))
+            {
+                throw new CapabilityUnavailableException("The confirmed state could not be reconciled for recovery.");
+            }
+            // Acceptance synchronously commits reconciliation under the runtime gate.
+            // No asynchronous work or fallible admission may split that commit.
+            policy.CompleteRecovery();
+            policy.Record("WriteRecovery", "Recovery", "Resumed");
+            return observed;
+        }
+        catch (Exception exception)
+        {
+            policy.Record("WriteRecovery", "Recovery", "Failed", failure: exception.GetType().Name);
+            cancellationToken.ThrowIfCancellationRequested();
+            throw;
+        }
+    }
 
     public DiagnosticExperimentalSupport GetDiagnostics() => policy.Snapshot();
 

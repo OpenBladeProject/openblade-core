@@ -55,6 +55,7 @@ internal static class ServiceStatusSnapshotComparer
         && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
         && left.AllowExperimentalFeatures == right.AllowExperimentalFeatures
+        && left.ExperimentalWritesPaused == right.ExperimentalWritesPaused
         && left.IsExperimentalDevice == right.IsExperimentalDevice
         && string.Equals(
             left.ExperimentalSupportSource,

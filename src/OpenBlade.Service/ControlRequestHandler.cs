@@ -276,6 +276,9 @@ public sealed class ControlRequestHandler
                 await runtime.AcknowledgeThermalPolicyUpgradeDisclosureAsync(
                     stillControlsActiveLocalSession,
                     cancellationToken)),
+            ResumeExperimentalWritesRequest => Result(
+                request.RequestId,
+                await runtime.ResumeExperimentalWritesAsync(stillControlsActiveLocalSession, cancellationToken)),
             ReapplyChangedSettingsRequest => Result(
                 request.RequestId,
                 await runtime.ReapplyChangedSettingsAsync(
@@ -398,7 +401,8 @@ public sealed class ControlRequestHandler
             AlwaysOverrideExternalLightingChanges = false,
             LightingRefreshRate = LightingRefreshRate.ThirtyHz,
             AllowUntestedFirmware = false,
-            AllowExperimentalFeatures = false,
+            AllowExperimentalFeatures = snapshot.IsExperimentalDevice,
+            ExperimentalWritesPaused = snapshot.ExperimentalWritesPaused,
             KeyboardLightingControlMode = KeyboardLightingControlMode.OpenBlade,
             PerformanceShortcutPreview = null,
             ThermalConvergence = null,

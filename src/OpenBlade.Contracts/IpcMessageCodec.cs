@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 61;
+    public const int ProtocolVersion = 62;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -269,6 +269,7 @@ public static class IpcMessageCodec
             SetLightingRefreshRateRequest set => Enum.IsDefined(set.RefreshRate),
             SetFirmwareCompatibilityOverrideRequest => true,
             SetExperimentalFeaturesRequest => true,
+            ResumeExperimentalWritesRequest => true,
             ReapplyChangedSettingsRequest => true,
             RecoverHyperBoostRestoreRequest => true,
             SetThermalControlPolicyRequest set => Enum.IsDefined(set.Policy),
@@ -940,6 +941,9 @@ public static class IpcMessageCodec
                         "allowExperimentalFeatures",
                         StringComparison.OrdinalIgnoreCase));
                 allowExperimentalFeatures.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo experimentalWritesPaused = typeInfo.Properties.Single(property =>
+                    string.Equals(property.Name, "experimentalWritesPaused", StringComparison.OrdinalIgnoreCase));
+                experimentalWritesPaused.ShouldSerialize = static (_, _) => false;
                 JsonPropertyInfo isExperimentalDevice = typeInfo.Properties.Single(property =>
                     string.Equals(
                         property.Name,

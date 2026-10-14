@@ -22,6 +22,7 @@ public sealed class DiagnosticArchiveProviderTests
         {
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
+            ExperimentalWritesPaused = true,
             ExperimentalSupportSource = "UpstreamDerived",
         }, experimentalSupport: support);
         var provider = new DiagnosticArchiveProvider(runtime, new DiagnosticHistory(), new FixedMetadataSource(secret));
@@ -34,7 +35,7 @@ public sealed class DiagnosticArchiveProviderTests
         string content = await ReadEntryAsync(archive, "experimental-support.json");
         Assert.DoesNotContain(secret, content);
         using JsonDocument json = JsonDocument.Parse(content);
-        Assert.True(json.RootElement.GetProperty("support").GetProperty("consentEnabled").GetBoolean());
+        Assert.True(json.RootElement.GetProperty("support").GetProperty("writesPaused").GetBoolean());
         Assert.Equal("UpstreamDerived", json.RootElement.GetProperty("support").GetProperty("evidenceLevel").GetString());
         Assert.Equal("Mismatch", json.RootElement.GetProperty("support").GetProperty("observations")[0].GetProperty("outcome").GetString());
         Assert.Equal(liveReadingsEnabled ? JsonValueKind.Object : JsonValueKind.Null,

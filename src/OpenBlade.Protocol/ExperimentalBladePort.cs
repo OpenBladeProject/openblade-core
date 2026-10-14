@@ -21,6 +21,47 @@ internal sealed partial class ExperimentalBladePort(
 
     internal void EnableQueryRecording() => queryRecordingEnabled = true;
 
+    internal bool IsRecoverySessionDrained => session.Disposition == RazerCommandSessionDisposition.FullyDisposed;
+
+    internal bool IsRecoverySessionHealthy => !disposed
+        && session.Disposition == RazerCommandSessionDisposition.Healthy;
+
+    internal async Task<ConfirmedDeviceState> ReadRecoveryStateAsync(CancellationToken cancellationToken)
+    {
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ProductionPerformanceFanState performance = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
+            if (performance.Performance is null && !performance.HyperBoostActive || performance.Fans is null)
+            {
+                throw new IOException("Experimental performance readback cannot form a confirmed recovery state.");
+            }
+            ConfirmedBatteryState? battery = model.SupportsBatteryProtection
+                ? await ReadBatteryAsync(cancellationToken).ConfigureAwait(false) : null;
+            if (battery is not null)
+            {
+                battery = new ConfirmedBatteryState(battery.ProtectionEnabled, battery.ChargeLimitPercent, false);
+            }
+            LightingSettings? lighting = null;
+            LogoLightingMode? logo = null;
+            if (model.ProductId == 0x02A0)
+            {
+                lighting = (await ReadKeyboardLightingAsync(cancellationToken).ConfigureAwait(false)).Settings;
+                logo = await ReadLogoAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return new(performance.Performance, performance.Fans, battery, lighting)
+            {
+                HyperBoostActive = performance.HyperBoostActive,
+                CustomPerformance = performance.CustomPerformance,
+                LogoLighting = logo,
+            };
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     private void RecordQuery(string operation, string outcome, string? confirmed = null, string? failure = null)
     {
         if (queryRecordingEnabled)
@@ -305,7 +346,7 @@ internal sealed partial class ExperimentalBladePort(
             || thermal && !ExternalPowerPresent())
         {
             throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                "Experimental consent, exact identity, or recovery admission blocked the write.");
+                "Experimental exact identity or recovery admission blocked the write.");
         }
     }
 

@@ -336,7 +336,7 @@ public sealed class ServiceClientTests
                 LightingRefreshRate.SixtyHz,
                 timeout.Token),
             await client.SetFirmwareCompatibilityOverrideAsync(true, timeout.Token),
-            await client.SetExperimentalFeaturesAsync(true, timeout.Token),
+            await client.ResumeExperimentalWritesAsync(timeout.Token),
             await client.ReapplyChangedSettingsAsync(timeout.Token),
             await client.RecoverHyperBoostRestoreAsync(timeout.Token),
             await client.SetLightingSuppressionAsync(
@@ -396,8 +396,7 @@ public sealed class ServiceClientTests
                 Assert.IsType<SetLightingRefreshRateRequest>(request).RefreshRate),
             request => Assert.True(
                 Assert.IsType<SetFirmwareCompatibilityOverrideRequest>(request).Enabled),
-            request => Assert.True(
-                Assert.IsType<SetExperimentalFeaturesRequest>(request).Enabled),
+            request => Assert.IsType<ResumeExperimentalWritesRequest>(request),
             request => Assert.IsType<ReapplyChangedSettingsRequest>(request),
             request => Assert.IsType<RecoverHyperBoostRestoreRequest>(request),
             request =>

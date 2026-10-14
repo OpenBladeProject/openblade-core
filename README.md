@@ -35,7 +35,7 @@ On another Razer laptop, select **Help add support** in OpenBlade and attach the
 saved report to the
 [support request](https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml).
 
-Additional models have opt-in [experimental support](docs/experimental-blade-support.md)
+Additional models have [experimental support](docs/experimental-blade-support.md)
 for testing through pre-releases.
 
 ## Features

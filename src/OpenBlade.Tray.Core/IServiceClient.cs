@@ -132,12 +132,11 @@ public interface IServiceClient : IServiceStatusWatcher
         bool enabled,
         CancellationToken token);
 
-    Task<ControlOperationResult> SetExperimentalFeaturesAsync(
-        bool enabled,
+    Task<ControlOperationResult> ResumeExperimentalWritesAsync(
         CancellationToken token) => Task.FromResult(
             new ControlOperationResult(
                 ControlOperationStatus.Blocked,
-                "Experimental laptop controls are unavailable."));
+                "Experimental writes cannot be resumed."));
 
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(CancellationToken token);
 

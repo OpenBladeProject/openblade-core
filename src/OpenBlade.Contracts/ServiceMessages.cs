@@ -40,6 +40,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate")]
 [JsonDerivedType(typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride")]
 [JsonDerivedType(typeof(SetExperimentalFeaturesRequest), "setExperimentalFeatures")]
+[JsonDerivedType(typeof(ResumeExperimentalWritesRequest), "resumeExperimentalWrites")]
 [JsonDerivedType(typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings")]
 [JsonDerivedType(typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore")]
 [JsonDerivedType(typeof(SetThermalControlPolicyRequest), "setThermalControlPolicy")]
@@ -237,6 +238,9 @@ public sealed record SetExperimentalFeaturesRequest(
     int Version,
     Guid RequestId,
     bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ResumeExperimentalWritesRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
 public sealed record ReapplyChangedSettingsRequest(int Version, Guid RequestId)
@@ -462,7 +466,10 @@ public sealed record ServiceStatusSnapshot(
 
     public ThermalConvergenceStatus? ThermalConvergence { get; init; }
 
+    // Legacy status member: recognized experimental models are enabled automatically.
     public bool AllowExperimentalFeatures { get; init; }
+
+    public bool ExperimentalWritesPaused { get; init; }
 
     public bool IsExperimentalDevice { get; init; }
 

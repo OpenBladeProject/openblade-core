@@ -169,7 +169,7 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
-    public void ExperimentalFeaturesConsent_AllowsActiveStandardUserOnly()
+    public void LegacyExperimentalRequest_AllowsActiveStandardUserOnly()
     {
         var request = new SetExperimentalFeaturesRequest(
             OpenBladeIpc.ProtocolVersion,
@@ -184,6 +184,18 @@ public sealed class ServiceRequestAccessPolicyTests
             request,
             Client(sessionId: 3, administrator: false),
             new FixedSessionAuthority(4)));
+    }
+
+    [Fact]
+    public void ExperimentalResume_RequiresActiveLocalInteractiveSession()
+    {
+        var request = new ResumeExperimentalWritesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(request, Client(4), new FixedSessionAuthority(4)));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(request, Client(3), new FixedSessionAuthority(4)));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(request,
+            Client(4) with { LogonKind = ServiceClientLogonKind.RemoteInteractive }, new FixedSessionAuthority(4)));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(request,
+            Client(4) with { LogonKind = ServiceClientLogonKind.LocalSystem }, new FixedSessionAuthority(4)));
     }
 
     [Fact]

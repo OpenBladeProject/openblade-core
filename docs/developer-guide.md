@@ -124,7 +124,7 @@ category. Thermal diagnostics distinguish each channel from channel agreement
 and custom CPU/GPU settings. These records omit raw device responses and do not
 change write admission.
 
-Experimental devices also export bounded command-stage observations, consent,
+Experimental devices also export bounded command-stage observations, write-pause state,
 source provenance, and cached telemetry. See the [experimental support and tester
 guide](experimental-blade-support.md). Experimental authority remains separate
 from physically validated command admission.

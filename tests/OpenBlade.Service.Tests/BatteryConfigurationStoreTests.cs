@@ -590,7 +590,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadAsync_Schema16DefaultsExperimentalConsentOffAndPreservesPolicy()
+    public async Task LoadAsync_Schema16EnablesAutomaticSupportAndPreservesPolicy()
     {
         Paths paths = CreatePaths();
         Directory.CreateDirectory(directory);
@@ -626,7 +626,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
-        Assert.False(loaded.Preferences.AllowExperimentalFeatures);
+        Assert.True(loaded.Preferences.AllowExperimentalFeatures);
         Assert.Equal(ThermalControlPolicy.Strict, loaded.Preferences.ThermalControlPolicy);
         Assert.Equal(
             ThermalPolicyUpgradeDisclosureState.Acknowledged,
@@ -636,14 +636,20 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Equal(
             ProfileStore.CurrentSchemaVersion,
             persisted.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.False(
+        Assert.True(
             persisted.RootElement.GetProperty("preferences")
                 .GetProperty("allowExperimentalFeatures")
                 .GetBoolean());
     }
 
-    [Fact]
-    public async Task LoadAsync_Schema17PreservesExplicitExperimentalConsent()
+    [Theory]
+    [InlineData(17, false)]
+    [InlineData(17, true)]
+    [InlineData(18, false)]
+    [InlineData(18, true)]
+    [InlineData(19, false)]
+    [InlineData(19, true)]
+    public async Task LoadAsync_ExperimentalPreferenceUsesAutomaticSupport(int priorSchema, bool priorEnable)
     {
         Paths paths = CreatePaths();
         Directory.CreateDirectory(directory);
@@ -651,7 +657,6 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         {
             WriteIndented = true,
         };
-        int priorSchema = ProfileStore.ExperimentalFeaturesConsentSchemaVersion;
         byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
             new ProfileDocument(priorSchema, ProfileDefaults.CreateSafeDefaults()),
             options);
@@ -662,7 +667,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
                     ThermalControlPolicy: ThermalControlPolicy.Strict,
                     ThermalPolicyUpgradeDisclosure:
                         ThermalPolicyUpgradeDisclosureState.Acknowledged,
-                    AllowExperimentalFeatures: true)),
+                    AllowExperimentalFeatures: priorEnable)),
             options);
         byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryConfigurationCommit(
@@ -679,6 +684,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
         Assert.True(loaded.Preferences.AllowExperimentalFeatures);
+        using JsonDocument canonical = JsonDocument.Parse(await File.ReadAllBytesAsync(paths.Preferences));
+        Assert.True(canonical.RootElement.GetProperty("preferences").GetProperty("allowExperimentalFeatures").GetBoolean());
         foreach (string path in paths.All)
         {
             using JsonDocument document = JsonDocument.Parse(
@@ -768,7 +775,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadAsync_CurrentSchemaMissingExperimentalConsentIsQuarantined()
+    public async Task LoadAsync_CurrentSchemaMissingLegacyExperimentalPreferenceUsesAutomaticSupport()
     {
         Paths paths = CreatePaths();
         Directory.CreateDirectory(directory);
@@ -804,10 +811,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
             CancellationToken.None);
 
-        Assert.Equal(ConfigurationLoadDisposition.Quarantined, loaded.Disposition);
-        Assert.Equal(
-            ConfigurationQuarantineReason.InvalidDocument,
-            loaded.QuarantineReason);
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.True(loaded.Preferences.AllowExperimentalFeatures);
     }
 
     [Fact]

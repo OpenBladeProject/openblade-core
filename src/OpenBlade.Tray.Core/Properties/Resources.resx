@@ -1431,11 +1431,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Sign in to an interactive Windows session to change laptop settings.</value>
   </data>
-  <data name="Experimental laptop controls are enabled. Export diagnostics in About to help test support." xml:space="preserve">
-    <value>Experimental laptop controls are enabled. Export diagnostics in About to help test support.</value>
+  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>This laptop has experimental support enabled automatically. Export diagnostics in About to help test support.</value>
   </data>
-  <data name="This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls." xml:space="preserve">
-    <value>This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls.</value>
+  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>Laptop not supported</value>

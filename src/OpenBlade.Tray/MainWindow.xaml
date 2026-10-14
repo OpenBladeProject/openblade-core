@@ -1366,7 +1366,7 @@
                                     Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1878,7 +1878,7 @@
                                    Margin="0,24,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1897,7 +1897,7 @@
                                                       IsOn="{x:Bind LightingTurnOffWithDisplayEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -2424,7 +2424,23 @@
                                  Severity="Informational"
                                  IsClosable="False"
                                  Margin="0,0,0,12"
-                                 AutomationProperties.Name="Experimental laptop support" />
+                                 AutomationProperties.Name="Experimental laptop support">
+                            <InfoBar.ActionButton>
+                                <Button x:Uid="MainWindow_ResumeExperimentalWritesButton"
+                                        Command="{x:Bind ViewModel.ResumeExperimentalWritesCommand}"
+                                        Visibility="{x:Bind ViewModel.ExperimentalWritesPaused, Mode=OneWay}"
+                                        AutomationProperties.Name="Resume experimental controls">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ProgressRing Width="16"
+                                                      Height="16"
+                                                      IsActive="{x:Bind ViewModel.IsResumeExperimentalWritesOperationInProgress, Mode=OneWay}"
+                                                      Visibility="{x:Bind ViewModel.IsResumeExperimentalWritesOperationInProgress, Mode=OneWay}" />
+                                        <TextBlock x:Uid="MainWindow_ResumeExperimentalWritesLabel"
+                                                   Text="Resume experimental controls" />
+                                    </StackPanel>
+                                </Button>
+                            </InfoBar.ActionButton>
+                        </InfoBar>
                         <InfoBar x:Uid="MainWindow_UnsupportedLaptopInfoBarText"
                                  IsOpen="{x:Bind ViewModel.IsUnsupportedLaptop, Mode=OneWay}"
                                  Visibility="{x:Bind ViewModel.IsUnsupportedLaptop, Mode=OneWay}"
@@ -3428,7 +3444,7 @@
                                                       Toggled="OnExternalLightingOverridePolicyToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -3493,23 +3509,6 @@
                                                       AutomationProperties.Name="Enable Lab experimental features"
                                                       IsOn="{x:Bind ViewModel.LabFeaturesEnabled, Mode=OneWay}"
                                                       Toggled="OnLabFeaturesToggled" />
-                                    </Grid>
-                                </Border>
-                                <Border x:Name="ExperimentalControlsRow" Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock x:Uid="MainWindow_ExperimentalControlsTitle" Text="Experimental laptop controls"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock x:Uid="MainWindow_ExperimentalControlsDescription"
-                                                       Text="Enable controls for additional Blade models being tested in pre-releases."
-                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                        </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ExperimentalControlsToggle" x:Name="ExperimentalControlsToggle"
-                                                      Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}"
-                                                      AutomationProperties.Name="Enable experimental laptop controls"
-                                                      IsOn="{x:Bind ViewModel.AllowExperimentalFeatures, Mode=OneWay}"
-                                                      Toggled="OnExperimentalFeaturesToggled" />
                                     </Grid>
                                 </Border>
                             </StackPanel>

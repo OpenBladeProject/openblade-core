@@ -19,9 +19,16 @@ public interface IVerifiedBladeDeviceProvider
 
     void SetAllowUntestedFirmware(bool enabled);
 
-    void SetAllowExperimentalFeatures(bool enabled)
-    {
-    }
+    bool IsExperimentalWritesPaused => false;
+
+    DeviceCapabilities? ExperimentalCapabilities => null;
+
+    Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
+        Func<ConfirmedDeviceState, bool> acceptObservedState,
+        Func<bool> stillAuthorized,
+        CancellationToken cancellationToken) =>
+        Task.FromException<ConfirmedDeviceState>(new CapabilityUnavailableException(
+            "This provider has no paused experimental controls."));
 
     DiagnosticExperimentalSupport GetExperimentalSupportDiagnostics() =>
         DiagnosticExperimentalSupport.NotDetected;

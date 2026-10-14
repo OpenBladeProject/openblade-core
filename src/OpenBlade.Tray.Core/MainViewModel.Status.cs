@@ -53,8 +53,8 @@ public sealed partial class MainViewModel
             == right.AlwaysOverrideExternalLightingChanges
         && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
-        && left.AllowExperimentalFeatures == right.AllowExperimentalFeatures
         && left.IsExperimentalDevice == right.IsExperimentalDevice
+        && left.ExperimentalWritesPaused == right.ExperimentalWritesPaused
         && string.Equals(left.ExperimentalSupportSource, right.ExperimentalSupportSource, StringComparison.Ordinal)
         && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.DisplayBrightnessHidAvailability

@@ -1186,6 +1186,11 @@ public partial class App
         {
             return;
         }
+        if (state == "blade18-paused")
+        {
+            ApplyExperimentalBatterySnapshotState(window, off: false, paused: true);
+            return;
+        }
         if (state is "blade18-battery" or "blade18-battery-off")
         {
             ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
@@ -1249,7 +1254,7 @@ public partial class App
         refreshCards.Invoke(window, null);
     }
 
-    private static void ApplyExperimentalBatterySnapshotState(MainWindow window, bool off)
+    private static void ApplyExperimentalBatterySnapshotState(MainWindow window, bool off, bool paused = false)
     {
         // Disconnected, synthetic observations: no service or hardware access.
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with { BatteryPolicy = BatteryPolicy.Create(73) };
@@ -1259,7 +1264,8 @@ public partial class App
             SupportsBatteryProtectionOff = true,
         };
         var status = new ServiceStatusSnapshot(
-            1, true, false, [], null, [], "Experimental Blade 18 battery preview", capabilities,
+            1, true, paused, [], null, [], "Experimental Blade 18 battery preview",
+            paused ? DeviceCapabilities.Unavailable() : capabilities,
             new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic,
                 new ConfirmedBatteryState(!off, off ? null : 73, false), null), profiles,
             new DesiredDeviceState(
@@ -1271,6 +1277,7 @@ public partial class App
         {
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
+            ExperimentalWritesPaused = paused,
             ExperimentalSupportSource = "UpstreamDerived",
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(

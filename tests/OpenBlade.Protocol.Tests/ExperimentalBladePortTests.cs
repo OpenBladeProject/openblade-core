@@ -6,10 +6,11 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class ExperimentalBladePortTests
 {
     [Fact]
-    public async Task ConsentDisabled_DoesNotSubmitQueriesOrWritesFromSetter()
+    public async Task RecoveryPaused_DoesNotSubmitQueriesOrWritesFromSetter()
     {
         var session = new Session();
         var policy = new ExperimentalFeaturesPolicy(ExperimentalBladeModels.All[0]);
+        policy.RequireRecovery();
         await using var port = Create(session, policy);
         Assert.Empty(port.Capabilities.PerformancePresets);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
@@ -136,11 +137,11 @@ public sealed class ExperimentalBladePortTests
     }
 
     [Fact]
-    public async Task ConsentRevokedAfterBaseline_BlocksSetter()
+    public async Task RecoveryRequiredAfterBaseline_BlocksSetter()
     {
         var session = new Session([0x50]);
         var policy = Enabled();
-        session.AfterCommand = command => policy.Enabled = false;
+        session.AfterCommand = command => policy.RequireRecovery();
         await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetChargeLimitAsync(80, CancellationToken.None));
@@ -149,7 +150,7 @@ public sealed class ExperimentalBladePortTests
     }
 
     [Fact]
-    public async Task ConsentRevokedAtSubmissionBoundary_DoesNotSendSetter()
+    public async Task RecoveryRequiredAtSubmissionBoundary_DoesNotSendSetter()
     {
         var session = new Session([0x50]);
         var policy = Enabled();
@@ -157,7 +158,7 @@ public sealed class ExperimentalBladePortTests
         {
             if (command.CommandId == 0x12)
             {
-                policy.Enabled = false;
+                policy.RequireRecovery();
             }
         };
         await using var port = Create(session, policy);
@@ -232,7 +233,7 @@ public sealed class ExperimentalBladePortTests
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C5);
         var session = new Session([0, 1, 6, 0], [0, 2, 6, 0]);
-        var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
             () => PowerSource.ExternalUnknown);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
@@ -254,7 +255,7 @@ public sealed class ExperimentalBladePortTests
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x0255);
         var session = new Session();
-        var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
             () => PowerSource.ExternalUnknown);
         Assert.False(port.SupportsProtectionQuery);
@@ -330,7 +331,7 @@ public sealed class ExperimentalBladePortTests
             ? [[0, 1, 4, 0], [0, 2, 4, 0], [0, 1, 0], [0, 2, 0]]
             : [[0, 1, (byte)initialMode, 0], [0, 2, (byte)initialMode, 0]];
         var session = new Session([.. baseline, [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]]);
-        var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
             () => PowerSource.ExternalUnknown);
         Assert.Equal(DeviceFeatureAccess.ObservedOnly, port.Capabilities.HyperBoostAccess);
@@ -348,14 +349,14 @@ public sealed class ExperimentalBladePortTests
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
         var session = new Session([0x50], [0xD0], [0xD0]);
-        var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
             () => PowerSource.ExternalUnknown);
         await port.SetChargeLimitAsync(80, CancellationToken.None);
         Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(item => item.CommandId));
     }
 
-    private static ExperimentalFeaturesPolicy Enabled() => new(ExperimentalBladeModels.All[0]) { Enabled = true };
+    private static ExperimentalFeaturesPolicy Enabled() => new(ExperimentalBladeModels.All[0]);
 
     private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy policy,
         Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null) =>

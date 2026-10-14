@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(61, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(62, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -41,6 +41,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate"),
             (typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride"),
             (typeof(SetExperimentalFeaturesRequest), "setExperimentalFeatures"),
+            (typeof(ResumeExperimentalWritesRequest), "resumeExperimentalWrites"),
             (typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings"),
             (typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore"),
             (typeof(SetThermalControlPolicyRequest), "setThermalControlPolicy"),
@@ -81,7 +82,7 @@ public sealed class ServiceMessageContractTests
             "LightingRefreshRate",
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
             "ControlAccess", "AllowUntestedFirmware", "AllowExperimentalFeatures",
-            "IsExperimentalDevice", "ExperimentalSupportSource", "FirmwareCompatibility",
+            "IsExperimentalDevice", "ExperimentalSupportSource", "ExperimentalWritesPaused", "FirmwareCompatibility",
             "DisplayBrightnessHidAvailability",
         ];
 
@@ -106,6 +107,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AllowUntestedFirmware")!.PropertyType);
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AllowExperimentalFeatures")!.PropertyType);
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("IsExperimentalDevice")!.PropertyType);
+        Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("ExperimentalWritesPaused")!.PropertyType);
         Assert.Equal(typeof(string), typeof(ServiceStatusSnapshot).GetProperty("ExperimentalSupportSource")!.PropertyType);
         Assert.Equal(typeof(FirmwareCompatibilityStatus), typeof(ServiceStatusSnapshot).GetProperty("FirmwareCompatibility")!.PropertyType);
         Assert.Equal(typeof(DisplayBrightnessHidAvailability), typeof(ServiceStatusSnapshot).GetProperty("DisplayBrightnessHidAvailability")!.PropertyType);

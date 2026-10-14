@@ -256,8 +256,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool alwaysOverrideExternalLightingChanges;
     private LightingRefreshRate lightingRefreshRate = LightingRefreshRate.ThirtyHz;
     private bool allowUntestedFirmware;
-    private bool allowExperimentalFeatures;
     private bool isExperimentalDevice;
+    private bool experimentalWritesPaused;
     private KeyboardLightingControlMode keyboardLightingControlMode;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
@@ -305,6 +305,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isReapplyChangedSettingsOperationInProgress;
     private bool isHyperBoostRestoreRecoveryInProgress;
     private bool isCheckCurrentStateOperationInProgress;
+    private bool isResumeExperimentalWritesOperationInProgress;
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
     private bool isGamingModeOperationInProgress;
@@ -547,6 +548,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 await AcknowledgeThermalPolicyUpgradeDisclosureAsync(token);
             },
             _ => CanAcknowledgeThermalPolicyUpgradeDisclosure);
+        ResumeExperimentalWritesCommand = CreateCommand(
+            async (_, token) =>
+            {
+                await ResumeExperimentalWritesAsync(token);
+            },
+            _ => CanResumeExperimentalWrites);
         ApplyOneShotLaptopControlCommand = CreateCommand(
             ApplyOneShotLaptopControlAsync,
             CanApplyOneShotLaptopControl);
@@ -577,6 +584,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             (AsyncRelayCommand)SetStartAtSignInCommand,
             (AsyncRelayCommand)SetThermalControlPolicyCommand,
             (AsyncRelayCommand)AcknowledgeThermalPolicyUpgradeDisclosureCommand,
+            (AsyncRelayCommand)ResumeExperimentalWritesCommand,
             (AsyncRelayCommand)ApplyOneShotLaptopControlCommand,
         ];
     }
@@ -1560,19 +1568,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref allowUntestedFirmware, value);
     }
 
-    public bool AllowExperimentalFeatures
-    {
-        get => allowExperimentalFeatures;
-        private set
-        {
-            if (allowExperimentalFeatures != value)
-            {
-                SetField(ref allowExperimentalFeatures, value);
-                Notify(nameof(ExperimentalSupportNotice));
-            }
-        }
-    }
-
     public bool IsExperimentalDevice
     {
         get => isExperimentalDevice;
@@ -1582,13 +1577,52 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 SetField(ref isExperimentalDevice, value);
                 Notify(nameof(ExperimentalSupportNotice));
+                Notify(nameof(CanResumeExperimentalWrites));
             }
         }
     }
 
-    public string ExperimentalSupportNotice => AllowExperimentalFeatures
-        ? TrayText.Get("Experimental laptop controls are enabled. Export diagnostics in About to help test support.")
-        : TrayText.Get("This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls.");
+    public bool ExperimentalWritesPaused
+    {
+        get => experimentalWritesPaused;
+        private set
+        {
+            if (experimentalWritesPaused == value)
+            {
+                return;
+            }
+
+            SetField(ref experimentalWritesPaused, value);
+            Notify(nameof(ExperimentalSupportNotice));
+            Notify(nameof(CanResumeExperimentalWrites));
+        }
+    }
+
+    public bool IsResumeExperimentalWritesOperationInProgress
+    {
+        get => isResumeExperimentalWritesOperationInProgress;
+        private set
+        {
+            if (isResumeExperimentalWritesOperationInProgress == value)
+            {
+                return;
+            }
+
+            SetField(ref isResumeExperimentalWritesOperationInProgress, value);
+            Notify(nameof(CanResumeExperimentalWrites));
+            NotifyCommands();
+        }
+    }
+
+    public bool CanResumeExperimentalWrites => IsConnected
+        && IsExperimentalDevice
+        && ExperimentalWritesPaused
+        && latestStatus?.ControlAccess == SessionControlAccess.Active
+        && !IsResumeExperimentalWritesOperationInProgress;
+
+    public string ExperimentalSupportNotice => ExperimentalWritesPaused
+        ? TrayText.Get("Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.")
+        : TrayText.Get("This laptop has experimental support enabled automatically. Export diagnostics in About to help test support.");
 
     public KeyboardLightingControlMode KeyboardLightingControlMode
     {
@@ -1740,24 +1774,29 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return accepted;
     }
 
-    public async Task<bool> SetExperimentalFeaturesAsync(
-        bool enabled,
+    public async Task<bool> ResumeExperimentalWritesAsync(
         CancellationToken cancellationToken)
     {
-        bool accepted = false;
-        await RunOperationAsync(
-            token => serviceClient.SetExperimentalFeaturesAsync(enabled, token),
-            cancellationToken,
-            onCompleted: result =>
-            {
-                accepted = result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored;
-                if (accepted)
-                {
-                    AllowExperimentalFeatures = enabled;
-                }
-            });
+        if (!CanResumeExperimentalWrites)
+        {
+            return false;
+        }
 
-        return accepted;
+        IsResumeExperimentalWritesOperationInProgress = true;
+        try
+        {
+            bool accepted = false;
+            await RunOperationAsync(
+                serviceClient.ResumeExperimentalWritesAsync,
+                cancellationToken,
+                onCompleted: result => accepted = result.Status is
+                    ControlOperationStatus.Applied or ControlOperationStatus.Stored);
+            return accepted;
+        }
+        finally
+        {
+            IsResumeExperimentalWritesOperationInProgress = false;
+        }
     }
 
     public async Task<bool> ReapplyChangedSettingsAsync(
@@ -4553,6 +4592,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public ICommand SetStartAtSignInCommand { get; }
     public ICommand SetThermalControlPolicyCommand { get; }
     public ICommand AcknowledgeThermalPolicyUpgradeDisclosureCommand { get; }
+    public ICommand ResumeExperimentalWritesCommand { get; }
     public ICommand ApplyOneShotLaptopControlCommand { get; }
 
     public ApplyOneShotLaptopControl StartupAnimationOnAction { get; } = new(
@@ -5308,8 +5348,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             status.AlwaysOverrideExternalLightingChanges;
         LightingRefreshRate = status.LightingRefreshRate;
         AllowUntestedFirmware = status.AllowUntestedFirmware;
-        AllowExperimentalFeatures = status.AllowExperimentalFeatures;
         IsExperimentalDevice = status.IsExperimentalDevice;
+        ExperimentalWritesPaused = status.ExperimentalWritesPaused;
         KeyboardLightingControlMode = status.KeyboardLightingControlMode;
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
@@ -8659,6 +8699,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(IsUnsupportedLaptop), IsUnsupportedLaptop);
         NotifyComputed(nameof(CanReapplyChangedSettings), CanReapplyChangedSettings);
         NotifyComputed(nameof(CanRecoverHyperBoostRestore), CanRecoverHyperBoostRestore);
+        NotifyComputed(nameof(CanResumeExperimentalWrites), CanResumeExperimentalWrites);
         NotifyComputed(nameof(CanCheckCurrentState), CanCheckCurrentState);
         NotifyComputed(nameof(ShowHardwareControlStateCheck), ShowHardwareControlStateCheck);
         NotifyComputed(nameof(ShowReapplyChangedSettings), ShowReapplyChangedSettings);

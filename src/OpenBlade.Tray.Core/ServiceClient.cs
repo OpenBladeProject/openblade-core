@@ -298,13 +298,11 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
-    public Task<ControlOperationResult> SetExperimentalFeaturesAsync(
-        bool enabled,
+    public Task<ControlOperationResult> ResumeExperimentalWritesAsync(
         CancellationToken token) => SendMutationAsync(
-            new SetExperimentalFeaturesRequest(
+            new ResumeExperimentalWritesRequest(
                 OpenBladeIpc.ProtocolVersion,
-                Guid.NewGuid(),
-                enabled),
+                Guid.NewGuid()),
             token);
 
     public Task<ControlOperationResult> ReapplyChangedSettingsAsync(

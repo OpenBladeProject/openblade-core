@@ -13,7 +13,7 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 18;
+    internal const int CurrentSchemaVersion = 19;
     internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
     internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
     internal const int FrozenThermalPolicyPredecessorSchemaVersion = 15;

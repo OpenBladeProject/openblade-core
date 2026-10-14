@@ -105,7 +105,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
     public string? ExperimentalSupportSource => experimentalFactory?.EvidenceSource;
 
-    public void SetAllowExperimentalFeatures(bool enabled) => experimentalFactory?.SetEnabled(enabled);
+    public bool IsExperimentalWritesPaused => experimentalFactory?.IsWritesPaused == true;
+
+    public DeviceCapabilities? ExperimentalCapabilities => experimentalFactory?.Capabilities;
+
+    public Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
+        Func<ConfirmedDeviceState, bool> acceptObservedState,
+        Func<bool> stillAuthorized,
+        CancellationToken cancellationToken) =>
+        device.ResumeExperimentalWritesAsync(acceptObservedState, stillAuthorized, cancellationToken);
 
     public DiagnosticExperimentalSupport GetExperimentalSupportDiagnostics() =>
         experimentalFactory?.GetDiagnostics() ?? DiagnosticExperimentalSupport.NotDetected;
@@ -513,6 +521,47 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 lowPowerGate,
                 EnterHardwareOperationAsync,
                 () => hardwareOperationGate.Release());
+        }
+
+        internal async Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
+            Func<ConfirmedDeviceState, bool> acceptObservedState,
+            Func<bool> stillAuthorized,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(acceptObservedState);
+            ArgumentNullException.ThrowIfNull(stillAuthorized);
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (batteryFactory is not ExperimentalBladeFactory factory)
+                {
+                    throw new CapabilityUnavailableException("This provider has no experimental controls.");
+                }
+                // Experimental lighting owns no Driver-mode writes. Drop any retained
+                // failed session before fresh recovery admission and later manual work.
+                if (lightingSession.RetainedPort is { } retained)
+                {
+                    if (retained is not ExperimentalBladePort experimentalPort)
+                    {
+                        throw new CapabilityUnavailableException("Experimental recovery cannot retire an unrelated lighting port.");
+                    }
+                    await experimentalPort.DisposeAsync().ConfigureAwait(false);
+                    if (!experimentalPort.IsRecoverySessionDrained)
+                    {
+                        throw new IOException("Experimental session cleanup has not confirmed native operation drain.");
+                    }
+                    await lightingSession.DisposeLightingPortWithinDeadlineAsync().ConfigureAwait(false);
+                }
+                return await factory.ResumeWritesAsync(acceptObservedState, () =>
+                {
+                    ThrowIfClosingOrDisposed();
+                    return stillAuthorized();
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(

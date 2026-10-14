@@ -359,7 +359,7 @@ public sealed class BatteryConfigurationStore
                 ConfigurationQuarantineReason.MixedSchema);
         }
 
-        preferences = preferences with { ProtectionEnabled = null };
+        preferences = preferences with { ProtectionEnabled = null, AllowExperimentalFeatures = true };
         return new CommittedSnapshot(
             new BatteryConfiguration(profiles, preferences, Recovered: false),
             profileJson,
@@ -442,10 +442,11 @@ public sealed class BatteryConfigurationStore
                 "The current battery preferences are missing thermal policy state.");
         }
         if (expectedSchemaVersion >= ProfileStore.ExperimentalFeaturesConsentSchemaVersion
+            && expectedSchemaVersion < 19
             && !preferencesElement.TryGetProperty("allowExperimentalFeatures", out _))
         {
             throw new InvalidDataException(
-                "The current battery preferences are missing experimental-feature consent.");
+                "The current battery preferences are missing the legacy experimental preference.");
         }
 
         BatteryPreferencesDocument? document =
@@ -485,13 +486,12 @@ public sealed class BatteryConfigurationStore
                     ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
             };
         }
-        if (expectedSchemaVersion < ProfileStore.ExperimentalFeaturesConsentSchemaVersion)
-        {
-            preferences = preferences with { AllowExperimentalFeatures = false };
-        }
+        bool normalizedAutomaticSupport = !preferences.AllowExperimentalFeatures;
+        preferences = preferences with { AllowExperimentalFeatures = true };
         validator.ValidatePreferences(preferences);
         migrated = expectedSchemaVersion < ProfileStore.CurrentSchemaVersion
-            || preferences.ProtectionEnabled.HasValue;
+            || preferences.ProtectionEnabled.HasValue
+            || normalizedAutomaticSupport;
         return preferences;
     }
 
@@ -502,7 +502,7 @@ public sealed class BatteryConfigurationStore
         byte[]? committedPreferenceJson = null,
         AggregateSnapshot? priorSnapshot = null)
     {
-        preferences = preferences with { ProtectionEnabled = null };
+        preferences = preferences with { ProtectionEnabled = null, AllowExperimentalFeatures = true };
         byte[] profileJson = SerializeProfiles(profiles);
         byte[] preferenceJson = committedPreferenceJson ??
             JsonSerializer.SerializeToUtf8Bytes(

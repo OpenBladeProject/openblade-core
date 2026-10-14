@@ -18,10 +18,6 @@ public sealed class UnavailableBladeDeviceProvider : IVerifiedBladeDeviceProvide
     {
     }
 
-    public void SetAllowExperimentalFeatures(bool enabled)
-    {
-    }
-
     public DiagnosticExperimentalSupport GetExperimentalSupportDiagnostics() =>
         DiagnosticExperimentalSupport.NotDetected;
 

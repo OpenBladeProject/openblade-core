@@ -50,6 +50,7 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 Enabled: true),
+            new ResumeExperimentalWritesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new SetThermalControlPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -118,6 +119,7 @@ public sealed class ControlRequestHandlerTests
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
             "SetExperimentalFeatures",
+            "ResumeExperimentalWrites",
             "SetThermalControlPolicy", "AcknowledgeThermalPolicyUpgradeDisclosure",
             "ValidateThermalExternalDrift",
             "ReapplyChangedSettings",
@@ -304,6 +306,7 @@ public sealed class ControlRequestHandlerTests
             ServiceClientLogonKind.LocalSystem);
         ServiceRequest[] requests =
         [
+            new ResumeExperimentalWritesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new SetThermalControlPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -700,6 +703,13 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(enabled);
             return Record("SetExperimentalFeatures");
+        }
+
+        public Task<ControlOperationResult> ResumeExperimentalWritesAsync(
+            Func<bool> stillControlsSession, CancellationToken token)
+        {
+            Assert.True(stillControlsSession());
+            return Record("ResumeExperimentalWrites");
         }
 
         public Task<ControlOperationResult> SetThermalControlPolicyAsync(

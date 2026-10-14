@@ -4,19 +4,23 @@ Pre-releases include community-derived controls for additional Blade laptops.
 These models have not completed OpenBlade physical validation. Test reports help
 us determine which controls can become fully supported.
 
-## Enable controls
+## Automatic controls
 
-Open **Settings → Experimental laptop controls**, turn the switch on, and choose
-**Enable controls** after reading the explanation. The switch starts off. An
-existing **Lab features** preference does not grant this permission.
+OpenBlade enables the available experimental controls when it recognizes an exact
+laptop profile below. There is no Settings switch or consent dialog. An older
+saved experimental preference does not disable these controls.
 
-The service saves consent in the current Windows user's configuration and
-enforces it for direct commands and automation, including queued writes. Turning
-the switch off blocks subsequent experimental writes. It does not undo settings
-already applied to the laptop. Revocation closes write admission immediately, even
-if another operation is running or saving the preference fails. A failed save
-keeps controls disabled for the current service session and reports that the
-preference has not been saved; a later explicit enable can restore consent.
+The same model, interface, current-state, and competing-controller checks apply
+to each change. A command that OpenBlade cannot confirm pauses experimental
+writes and records the result in local diagnostics.
+
+## Resume paused controls
+
+Choose **Resume experimental controls** in the experimental-support notice.
+OpenBlade drains the previous session, checks the laptop again, and reads the
+current supported settings without writing them. When those checks succeed,
+you can choose a setting to send a new request. The uncertain command is not
+replayed automatically. Failed reads or checks leave the pause in place.
 
 ## Initial coverage
 
@@ -92,29 +96,29 @@ Independent performance queries must identify a unique responding interface.
 SKU and firmware versions are report metadata. Unknown models and ambiguous
 interfaces remain blocked.
 
-This update uses service IPC 61, configuration schema 18, and profile export
+This update uses service IPC 62, configuration schema 19, and profile export
 schema 11. Install the coordinated pre-release update; a tray-only replacement
-cannot update the shared contracts. Existing experimental consent is preserved.
+cannot update the shared contracts. Older experimental preferences migrate to automatic support.
 
 ## Send a useful test report
 
 1. Use a pre-release built from this change. In **About**, note the OpenBlade
    version and detected model. Close Synapse before testing.
-2. Before enabling controls, use **About → Export diagnostics** to save a baseline
+2. Use **About → Export diagnostics** to save a baseline
    report. Note the current Synapse settings separately if needed.
-3. Enable experimental controls. Try one available setting and note the time,
+3. Try one available setting and note the time,
    power source, starting setting, requested setting, and visible result.
 4. Return to the starting setting and check the result. If OpenBlade cannot
-   confirm a write, stop further changes and export diagnostics before restarting.
-   Do not repeat an uncertain write.
+   confirm a write, export diagnostics before choosing **Resume experimental
+   controls**. After a successful current-state check, choose a new setting.
 5. Export diagnostics again and attach the ZIPs to the
    [experimental support issue](https://github.com/OpenBladeProject/openblade-core/issues/741)
    with your observations, including any difference between the displayed and actual result.
 
 OpenBlade checks replies and queries the resulting state independently. An
 ambiguous write or readback pauses further experimental writes for that service
-run. Restarting begins a new run; collect diagnostics first to preserve failure
-evidence. A successful reply alone is not physical validation. Sleep/resume tests
+run. Resume checks the current state before allowing another request; collect
+diagnostics first to preserve failure evidence. A successful reply alone is not physical validation. Sleep/resume tests
 must be attended by a user who can resume the laptop.
 
 ## Diagnostic evidence
@@ -125,7 +129,7 @@ remain local until the user chooses to share them. There is no background upload
 Alongside the existing version, firmware, capability, configuration, command
 history, and device-verification files, experimental devices include
 `experimental-support.json`. It records the pinned source, an `UpstreamDerived`
-evidence level, consent, and the last 32 typed observations. These describe
+evidence level, write-pause state, and the last 32 typed observations. These describe
 queries, baselines, submissions, independent readbacks, and failures, with
 requested and confirmed values when available.
 

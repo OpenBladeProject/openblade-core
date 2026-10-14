@@ -2008,26 +2008,14 @@
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>检查当前状态</value>
   </data>
-  <data name="MainWindow_ExperimentalControlsTitle.Text" xml:space="preserve">
-    <value>实验性笔记本控制</value>
-  </data>
-  <data name="MainWindow_ExperimentalControlsDescription.Text" xml:space="preserve">
-    <value>启用正在预发布版本中测试的其他 Blade 型号的控制功能。</value>
-  </data>
-  <data name="MainWindow_ExperimentalControlsToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>启用实验性笔记本控制</value>
-  </data>
   <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>实验性笔记本支持</value>
   </data>
-  <data name="MainWindow_ExperimentalConsent_Title" xml:space="preserve">
-    <value>启用实验性笔记本控制？</value>
+  <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>恢复实验性控制</value>
   </data>
-  <data name="MainWindow_ExperimentalConsent_Content" xml:space="preserve">
-    <value>这些控制功能基于社区提供的协议证据，仍在其他 Blade 型号上进行测试。设置可能无法按预期生效。OpenBlade 会在本地记录诊断结果，您可以自行选择导出并分享。您可以随时在此关闭这些控制功能。</value>
-  </data>
-  <data name="MainWindow_ExperimentalConsent_Enable" xml:space="preserve">
-    <value>启用控制</value>
+  <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
+    <value>恢复实验性控制</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>协助添加支持</value>

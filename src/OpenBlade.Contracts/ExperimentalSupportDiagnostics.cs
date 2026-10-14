@@ -14,7 +14,7 @@ public sealed record DiagnosticExperimentalSupport(
     string? ModelNumber,
     string? EvidenceSource,
     bool Detected,
-    bool ConsentEnabled,
+    bool WritesPaused,
     IReadOnlyList<ExperimentalControlObservation> Observations)
 {
     public const int MaxObservations = 32;

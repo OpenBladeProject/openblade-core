@@ -2,7 +2,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-/// <summary>Upstream evidence permits opted-in testing, not a physical-validation claim.</summary>
+/// <summary>Upstream evidence permits experimental controls, not a physical-validation claim.</summary>
 internal sealed record ExperimentalBladeModel(
     string ModelNumber,
     string ProductName,
@@ -58,18 +58,16 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     private readonly object sync = new();
     private readonly Queue<ExperimentalControlObservation> observations = new();
     private readonly Dictionary<string, (string Outcome, string? Confirmed, string? Failure)> lastQueries = new(StringComparer.Ordinal);
-    private int enabled;
     private int recoveryRequired;
 
-    internal bool Enabled
-    {
-        get => Volatile.Read(ref enabled) != 0;
-        set => Volatile.Write(ref enabled, value ? 1 : 0);
-    }
+    internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
 
-    internal bool WritesAllowed => Enabled && Volatile.Read(ref recoveryRequired) == 0;
+    internal bool WritesAllowed => !IsPaused;
 
     internal void RequireRecovery() => Volatile.Write(ref recoveryRequired, 1);
+
+    // The caller owns the provider hardware gate and has reconciled fresh readback.
+    internal void CompleteRecovery() => Volatile.Write(ref recoveryRequired, 0);
 
     internal void Record(string operation, string stage, string outcome, bool submitted = false,
         string? requested = null, string? confirmed = null, string? failure = null)
@@ -98,7 +96,7 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     {
         lock (sync)
         {
-            return new(model.ModelNumber, model.EvidenceSource, true, Enabled, observations.ToArray());
+            return new(model.ModelNumber, model.EvidenceSource, true, IsPaused, observations.ToArray());
         }
     }
 }

@@ -23,7 +23,7 @@ public sealed class ExperimentalBladeCustomTests
         foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(item => item.ProductId != 0x02A0))
         {
             var session = new Session();
-            var policy = new ExperimentalFeaturesPolicy(model) { Enabled = true };
+            var policy = new ExperimentalFeaturesPolicy(model);
             await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true, () => PowerSource.PluggedIn);
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetCustomPerformanceAsync(Requested, CancellationToken.None));
             Assert.Empty(session.Commands);
@@ -34,10 +34,14 @@ public sealed class ExperimentalBladeCustomTests
     [InlineData(false, PowerSource.PluggedIn)]
     [InlineData(true, PowerSource.Battery)]
     [InlineData(true, (PowerSource)99)]
-    public async Task ConsentAndPowerAdmission_PrecedeAllTraffic(bool enabled, PowerSource power)
+    public async Task RecoveryAndPowerAdmission_PrecedeAllTraffic(bool enabled, PowerSource power)
     {
         var session = new Session();
-        var policy = new ExperimentalFeaturesPolicy(Model) { Enabled = enabled };
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        if (!enabled)
+        {
+            policy.RequireRecovery();
+        }
         await using var port = Create(session, policy, () => power);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetCustomPerformanceAsync(Requested, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
@@ -241,7 +245,7 @@ public sealed class ExperimentalBladeCustomTests
     }
 
     [Fact]
-    public async Task ConsentRevokedAtCpuSubmission_PreventsLevelWritesAfterModeChange()
+    public async Task RecoveryRequiredAtCpuSubmission_PreventsLevelWritesAfterModeChange()
     {
         var session = new Session();
         var policy = Enabled();
@@ -249,14 +253,13 @@ public sealed class ExperimentalBladeCustomTests
         {
             if (command.CommandId == 0x07)
             {
-                policy.Enabled = false;
+                policy.RequireRecovery();
             }
         };
         await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetCustomPerformanceAsync(Requested, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x07);
-        policy.Enabled = true;
         Assert.False(policy.WritesAllowed);
     }
 
@@ -280,7 +283,7 @@ public sealed class ExperimentalBladeCustomTests
         Assert.False(policy.WritesAllowed);
     }
 
-    private static ExperimentalFeaturesPolicy Enabled() => new(Model) { Enabled = true };
+    private static ExperimentalFeaturesPolicy Enabled() => new(Model);
 
     private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy policy, Func<PowerSource>? power = null) =>
         new(session, new(), Model, policy, () => true, power ?? (() => PowerSource.PluggedIn));

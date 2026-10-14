@@ -157,6 +157,7 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             Enabled: true),
+        new ResumeExperimentalWritesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         new ReapplyChangedSettingsRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid()),
@@ -550,7 +551,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(61, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(62, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1137,7 +1138,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(61, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(62, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2407,6 +2408,7 @@ public sealed class IpcMessageCodecTests
         Assert.False(projected.ContainsKey("hyperBoostBlockingControllers"));
         Assert.False(projected.ContainsKey("observationReason"));
         Assert.False(projected.ContainsKey("allowExperimentalFeatures"));
+        Assert.False(projected.ContainsKey("experimentalWritesPaused"));
         Assert.False(projected.ContainsKey("isExperimentalDevice"));
         Assert.False(projected.ContainsKey("experimentalSupportSource"));
         Assert.Equal(

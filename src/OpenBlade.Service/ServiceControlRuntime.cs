@@ -231,6 +231,11 @@ public interface IServiceControlRuntime
     DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics() =>
         DiagnosticExperimentalSupport.NotDetected;
 
+    Task<ControlOperationResult> ResumeExperimentalWritesAsync(
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked,
+                "Experimental write recovery is unavailable."));
+
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(
         CancellationToken token) => Task.FromResult(
             new ControlOperationResult(
@@ -539,6 +544,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private int pendingSessionAdmissions;
     private LightingSettings? pendingLightingRestore;
     private bool pendingLightingRestoreFromLifecycle;
+    private bool experimentalLightingResumeAwaitingRequest;
     private LightingSettings? faultedLightingRecoveryCandidate;
     private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
     private bool lightingSuppressionWritePending;
@@ -578,11 +584,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool recoveryUserConfigurationLoaded;
     private bool suppressInitialUserProfileApplyAfterUnexpectedExit;
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
-    // Revocation closes provider admission before waiting for queued operations or
-    // persistence. Only a later explicit, successfully saved enable may clear it.
-    private readonly object experimentalConsentGate = new();
-    private int experimentalConsentRevoked;
-    private long experimentalConsentRevocationGeneration;
     private string? activeUserSid;
     private Func<bool>? activeUserStillControlsSession;
     private ThermalConvergenceStateStore? thermalConvergenceStore;
@@ -892,7 +893,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             preferences = configuration.Preferences;
             deviceProvider.SetAllowUntestedFirmware(
                 configuration.Preferences.AllowUntestedFirmware);
-            ApplyLoadedExperimentalConsent(configuration.Preferences.AllowExperimentalFeatures);
+
             deviceProvider.SetLightingRefreshRate(
                 configuration.Preferences.LightingRefreshRate);
             this.persistentOverrides = persistentOverrides;
@@ -931,39 +932,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ServiceStatusSnapshot current = Volatile.Read(ref status)
             ?? throw new InvalidOperationException("The service runtime is not initialized.");
-        return ApplyExperimentalConsentRevocation(ApplyConfigurationQuarantineAdvisory(current));
-    }
-
-    private void ApplyLoadedExperimentalConsent(bool enabled)
-    {
-        lock (experimentalConsentGate)
+        return ApplyConfigurationQuarantineAdvisory(current with
         {
-            deviceProvider.SetAllowExperimentalFeatures(
-                enabled && experimentalConsentRevoked == 0);
-        }
+            AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
+            IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
+            ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,
+            WritesBlocked = current.WritesBlocked || deviceProvider.IsExperimentalWritesPaused,
+        });
     }
-
-    private ServiceStatusSnapshot ApplyExperimentalConsentRevocation(ServiceStatusSnapshot current) =>
-        Volatile.Read(ref experimentalConsentRevoked) == 0
-            ? current
-            : current with
-            {
-                AllowExperimentalFeatures = false,
-                // Experimental writes currently admit only these performance and
-                // battery controls. Retain observed/read-only model differences.
-                Capabilities = deviceProvider.IsExperimentalDevice && current.Capabilities is { } capabilities
-                    ? capabilities with
-                    {
-                        PerformancePresets = new HashSet<PerformancePreset>(),
-                        ChargeLimits = new HashSet<int>(),
-                        SupportsBatteryProtectionOff = false,
-                        CustomPerformance = null,
-                        LightingEffects = new HashSet<LightingEffect>(),
-                        LogoLightingModes = new HashSet<LogoLightingMode>(),
-                        SupportsKeyboardBrightness = false,
-                    }
-                    : current.Capabilities,
-            };
 
     public IDisposable RegisterProtocolCompatibilityClient()
     {
@@ -1214,8 +1190,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preferences = context.Configuration.Preferences;
                 deviceProvider.SetAllowUntestedFirmware(
                     context.Configuration.Preferences.AllowUntestedFirmware);
-                ApplyLoadedExperimentalConsent(
-                    context.Configuration.Preferences.AllowExperimentalFeatures);
+
                 deviceProvider.SetLightingRefreshRate(
                     context.Configuration.Preferences.LightingRefreshRate);
                 persistentOverrides = overrides;
@@ -1278,10 +1253,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         context.Configuration.Preferences.KeyboardLightingControlMode,
                     AllowUntestedFirmware =
                         context.Configuration.Preferences.AllowUntestedFirmware,
-                    AllowExperimentalFeatures =
-                        context.Configuration.Preferences.AllowExperimentalFeatures,
+                    AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
                     IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
                     ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
+                    ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,
                     PerformanceShortcutPreview = null,
                 });
 
@@ -3986,122 +3961,100 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return new ControlOperationResult(ControlOperationStatus.Stored, message);
     }
 
-    public async Task<ControlOperationResult> SetExperimentalFeaturesAsync(
-        bool enabled,
-        CancellationToken token)
+    // Retained for older callers; this request no longer changes admission or preferences.
+    public Task<ControlOperationResult> SetExperimentalFeaturesAsync(bool enabled, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked,
+            "Experimental support is enabled automatically for recognized laptops."));
+    }
+
+    public async Task<ControlOperationResult> ResumeExperimentalWritesAsync(
+        Func<bool> stillControlsSession, CancellationToken token)
     {
         EnsureInitialized();
-        string message = enabled
-            ? "Experimental laptop controls are enabled for this Windows user."
-            : "Experimental laptop controls are disabled.";
-        const string unsavedRevocationMessage =
-            "Experimental laptop controls are disabled for this service session; saving the preference has not been confirmed.";
-        long revocationGeneration;
-        lock (experimentalConsentGate)
-        {
-            if (!enabled)
-            {
-                experimentalConsentRevocationGeneration++;
-                Volatile.Write(ref experimentalConsentRevoked, 1);
-                deviceProvider.SetAllowExperimentalFeatures(false);
-            }
-            revocationGeneration = experimentalConsentRevocationGeneration;
-        }
-        if (!enabled)
-        {
-            PublishStatusUpdate(current => current with { Message = unsavedRevocationMessage });
-        }
-
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            if (enabled && revocationGeneration != Volatile.Read(ref experimentalConsentRevocationGeneration))
+            bool StillAdmitted() => stillControlsSession()
+                && !lowPowerGate.IsActive
+                && !thermalConvergenceShutdown
+                && ConfigurationIsAdmitted
+                && deviceProvider.IsExperimentalDevice
+                && !hyperBoostRestorePending
+                && !hyperBoostJournalSafetyBlock;
+            if (!StillAdmitted() || !deviceProvider.IsExperimentalWritesPaused)
             {
                 return new ControlOperationResult(ControlOperationStatus.Blocked,
-                    "A newer request disabled experimental laptop controls.");
+                    "Experimental controls cannot be resumed in the current state.");
             }
-            BatteryAutomationPreferences staged = preferences with
+            PowerSource observedWindowsPower = powerStateProvider.CapturePowerSource();
+            PowerSource source = await ResolveCurrentPowerSourceAsync(token).ConfigureAwait(false);
+            if (source == PowerSource.ExternalUnknown
+                || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
-                AllowExperimentalFeatures = enabled,
-            };
-            try
-            {
-                await ConfigurationStore.SaveConfigurationAsync(
-                        Automation.Profiles,
-                        staged,
-                        token)
-                    .ConfigureAwait(false);
+                return new ControlOperationResult(ControlOperationStatus.Blocked,
+                    "OpenBlade could not verify the laptop and its power source.");
             }
-            catch (ConfigurationQuarantinedException)
-            {
-                ControlOperationResult blocked = ConfigurationQuarantineBlocked();
-                return enabled ? blocked : blocked with
+            bool StillAuthorized() => StillAdmitted()
+                && powerStateProvider.CapturePowerSource() == observedWindowsPower;
+            bool uncertainLighting = pendingWriteConfirmations.Blocks(DeviceSubsystem.Lighting)
+                || pendingLightingRestore is not null;
+            ConfirmedDeviceState confirmed = await deviceProvider.ResumeExperimentalWritesAsync(
+                observed =>
                 {
-                    Message = $"{unsavedRevocationMessage} {blocked.Message}",
-                };
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception) when (!enabled)
-            {
-                string failure = $"{unsavedRevocationMessage} {exception.Message}";
-                PublishStatusUpdate(current => current with { Message = failure });
-                history.RecordSummary(ControlOperationStatus.Failed, failure);
-                return new ControlOperationResult(ControlOperationStatus.Failed, failure);
-            }
-
-            preferences = staged;
-            lock (experimentalConsentGate)
-            {
-                if (enabled)
-                {
-                    // A disable may arrive while the enable is saving. Its runtime
-                    // admission takes precedence even if the older save completed.
-                    if (revocationGeneration != experimentalConsentRevocationGeneration)
+                    if (!StillAuthorized()
+                        || pendingWriteConfirmations.Snapshot().Any(entry => entry.Value.Match(
+                            entry.Key, observed, source, Automation, managementState: null)
+                                == PendingConfirmationResult.Unavailable))
                     {
-                        return new ControlOperationResult(ControlOperationStatus.Blocked,
-                            "A newer request disabled experimental laptop controls; the saved enable is inactive for this service session.");
+                        return false;
                     }
-                    Volatile.Write(ref experimentalConsentRevoked, 0);
-                    deviceProvider.SetAllowExperimentalFeatures(true);
-                }
-            }
-            consecutiveDeviceProbeFailures = ObservationFailureThreshold;
+                    ReconcilePendingWriteConfirmations(observed, source, device);
+                    // The user may submit a new request; do not continue the paused transition.
+                    pendingTransitionContinuation = null;
+                    if (uncertainLighting)
+                    {
+                        pendingLightingRestore = null;
+                        pendingLightingRestoreFromLifecycle = false;
+                        experimentalLightingResumeAwaitingRequest = true;
+                    }
+                    return !pendingWriteConfirmations.HasPending;
+                }, StillAuthorized, token).ConfigureAwait(false);
+            const string message = "Experimental controls resumed. Choose a setting to send a new request.";
+            consecutiveDeviceProbeFailures = 0;
             PublishIfChanged(GetStatus() with
             {
-                AllowExperimentalFeatures = enabled,
-                IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
-                ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
+                DeviceVerified = true,
+                WritesBlocked = false,
+                ConfirmedState = confirmed,
+                Capabilities = deviceProvider.ExperimentalCapabilities,
+                ActivePowerSource = source,
+                DesiredState = Automation.Resolve(confirmed),
+                ExternalChanges = driftTracker.ExternalChanges.ToArray(),
+                ExperimentalWritesPaused = false,
+                ObservationReason = DeviceObservationReason.None,
                 Message = message,
             });
-            history.RecordSummary(ControlOperationStatus.Stored, message);
-        }
-        finally
-        {
-            operationGate.Release();
-        }
-
-        try
-        {
-            await ObserveAsync(includeLiveReadings: false, token).ConfigureAwait(false);
+            history.RecordSummary(ControlOperationStatus.Applied, message);
+            return new ControlOperationResult(ControlOperationStatus.Applied, message);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is IOException or CapabilityUnavailableException)
         {
-            string refreshMessage =
-                $"{message} Laptop status will refresh automatically. {exception.Message}";
-            history.RecordSummary(ControlOperationStatus.Stored, refreshMessage);
-            return new ControlOperationResult(
-                ControlOperationStatus.Stored,
-                refreshMessage);
+            string message = $"Experimental controls remain paused. {exception.Message}";
+            PublishIfChanged(GetStatus() with { Message = message });
+            history.RecordSummary(ControlOperationStatus.Blocked, message);
+            return new ControlOperationResult(ControlOperationStatus.Blocked, message);
         }
-
-        return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        finally
+        {
+            operationGate.Release();
+        }
     }
 
     public DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics() =>
@@ -12465,7 +12418,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken,
         Func<bool>? stillControlsSession = null)
     {
-        if (lowPowerGate.IsActive || pendingWriteConfirmations.Blocks(DeviceSubsystem.Lighting))
+        if (lowPowerGate.IsActive || pendingWriteConfirmations.Blocks(DeviceSubsystem.Lighting)
+            || experimentalLightingResumeAwaitingRequest)
         {
             return false;
         }
@@ -12965,6 +12919,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                     ?? UnknownConfirmedState))));
             if (result.Status == ControlOperationStatus.Applied)
             {
+                if (subsystem == DeviceSubsystem.Lighting)
+                {
+                    experimentalLightingResumeAwaitingRequest = false;
+                }
                 afterApply?.Invoke();
             }
             return result.Status == ControlOperationStatus.Applied
@@ -15900,7 +15858,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && HasAnyControlCapability(previousCapabilities))
         {
             // Stable-model capabilities are immutable for a connected model.
-            // Experimental capabilities are recomputed from current consent and
+            // Experimental capabilities are recomputed from current recovery state and
             // recovery admission, so an empty result must replace prior controls.
             // Each stable-model mutation still re-admits its own command.
             capabilities = previousCapabilities;
@@ -16030,6 +15988,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             BatteryHealth = batteryHealth,
             IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
             ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
+            ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,
             FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
             DisplayBrightnessHidAvailability =
                 displayBrightnessHidController.GetAvailability(),
@@ -17049,6 +17008,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : null,
             IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
             ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
+            ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,
             FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
             DisplayBrightnessHidAvailability =
                 displayBrightnessHidController.GetAvailability(),
@@ -17124,9 +17084,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             DisplayBrightnessHidAvailability:
                 displayBrightnessHidController.GetAvailability())
         {
-            AllowExperimentalFeatures = preferences.AllowExperimentalFeatures,
+            AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
             IsExperimentalDevice = deviceProvider.IsExperimentalDevice,
             ExperimentalSupportSource = deviceProvider.ExperimentalSupportSource,
+            ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,
             FanControlOverride = Automation.FanControlOverride,
             BatteryPolicyOverride = Automation.BatteryPolicyOverride,
             BatteryProtectionOverride = Automation.BatteryProtectionOverride,
@@ -19201,16 +19162,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 WritesBlocked = updated.WritesBlocked
                     || hyperBoostJournalSafetyBlock
-                    || unconfirmedWrites.Count > 0,
+                    || unconfirmedWrites.Count > 0
+                    || deviceProvider.IsExperimentalWritesPaused,
                 UnconfirmedWrites = unconfirmedWrites,
                 HyperBoostRestorePending = hyperBoostRestorePending,
+                AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
+                ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,
                 UnsupportedLaptop = !updated.DeviceVerified
                     && !deviceProvider.IsExperimentalDevice
                     && deviceProvider.GetCachedDeviceVerificationDiagnostics()
                         .LatestAttemptFoundUnsupportedLaptop,
             };
-            candidate = ApplyExperimentalConsentRevocation(
-                ApplyConfigurationQuarantineAdvisory(candidate));
+            candidate = ApplyConfigurationQuarantineAdvisory(candidate);
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && candidate.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && exactFanControlOwnership.Disposition ==

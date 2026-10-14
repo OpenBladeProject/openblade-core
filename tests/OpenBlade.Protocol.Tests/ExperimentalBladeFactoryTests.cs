@@ -8,7 +8,7 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class ExperimentalBladeFactoryTests
 {
     [Fact]
-    public async Task Blade18LightingAdapter_SharesConsentAndRetainedLowPowerAdmission()
+    public async Task Blade18LightingAdapter_AutomaticallyAdmitsControlsAndRetainsLowPowerAdmission()
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
         var native = new Native(1) { ProductId = model.ProductId };
@@ -16,9 +16,8 @@ public sealed class ExperimentalBladeFactoryTests
         var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
             new Guard(), io, () => PowerSource.ExternalUnknown);
         IProductionLightingPortFactory lighting = factory.CreateLightingFactory();
-        Assert.Empty(lighting.Capabilities.LightingEffects);
+        Assert.Contains(LightingEffect.Spectrum, lighting.Capabilities.LightingEffects);
         Assert.Contains(LightingEffect.Spectrum, factory.PotentialCapabilities.LightingEffects);
-        factory.SetEnabled(true);
         Assert.True(lighting.Capabilities.SupportsKeyboardBrightness);
         bool active = true;
         HidSessionResult<IProductionLightingPort> opened = await lighting.OpenAsync(() => active, CancellationToken.None);
@@ -30,9 +29,8 @@ public sealed class ExperimentalBladeFactoryTests
             port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(77), CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.Equal(2, io.Commands.Count);
-        factory.SetEnabled(false);
-        Assert.Empty(port.Capabilities.LightingEffects);
-        Assert.False(port.Capabilities.SupportsKeyboardBrightness);
+        Assert.Contains(LightingEffect.Spectrum, port.Capabilities.LightingEffects);
+        Assert.True(port.Capabilities.SupportsKeyboardBrightness);
     }
 
     [Theory]
@@ -47,7 +45,6 @@ public sealed class ExperimentalBladeFactoryTests
         var io = new Io();
         var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
             new Guard(), io, () => PowerSource.ExternalUnknown);
-        factory.SetEnabled(true);
         HidSessionResult<IProductionLightingPort> result = await factory.CreateLightingFactory().OpenAsync(CancellationToken.None);
         Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
         Assert.Empty(io.Commands);

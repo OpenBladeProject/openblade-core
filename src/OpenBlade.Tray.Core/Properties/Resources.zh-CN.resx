@@ -1431,11 +1431,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>请登录交互式 Windows 会话以更改笔记本设置。</value>
   </data>
-  <data name="Experimental laptop controls are enabled. Export diagnostics in About to help test support." xml:space="preserve">
-    <value>实验性笔记本控制已启用。请在“关于”页面导出诊断信息，以帮助测试支持情况。</value>
+  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>此笔记本电脑会自动启用实验性支持。请在“关于”页面导出诊断信息以帮助测试。</value>
   </data>
-  <data name="This laptop has experimental support. Enable experimental laptop controls in Settings to try the available controls." xml:space="preserve">
-    <value>此笔记本具有实验性支持。请在设置中启用实验性笔记本控制，以试用可用的控制功能。</value>
+  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>由于 OpenBlade 无法确认某项更改，实验性写入已暂停。请先检查当前状态，再恢复实验性控制。OpenBlade 不会重试之前的更改。</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>不支持此笔记本电脑</value>

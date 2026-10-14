@@ -6285,48 +6285,114 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task ExperimentalConsent_ExistingLabPreferenceAndRejectedEnableDoNotAuthorizeControls()
+    public async Task ExperimentalSupport_IsAutomaticAndIndependentOfLabPreference()
     {
-        var client = new FakeServiceClient
-        {
-            NextResult = new ControlOperationResult(ControlOperationStatus.Blocked, "Unavailable"),
-        };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher())
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher)
         {
             LabFeaturesEnabled = true,
         };
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(verified: false, blocked: true) with
-        {
-            IsExperimentalDevice = true,
-        });
-        await WaitUntilAsync(() => viewModel.IsExperimentalDevice);
+        await PublishStatusAndWaitAsync(
+            client,
+            dispatcher,
+            viewModel,
+            CreateStatus(verified: true, blocked: false) with
+            {
+                IsExperimentalDevice = true,
+                Message = "Experimental support ready",
+            });
 
-        Assert.False(viewModel.AllowExperimentalFeatures);
-        Assert.False(await viewModel.SetExperimentalFeaturesAsync(true, CancellationToken.None));
-        Assert.False(viewModel.AllowExperimentalFeatures);
-        Assert.True(client.ExperimentalFeaturesRequest);
+        Assert.True(viewModel.IsExperimentalDevice);
+        Assert.False(viewModel.ExperimentalWritesPaused);
+        Assert.False(viewModel.CanResumeExperimentalWrites);
+        Assert.Contains("enabled automatically", viewModel.ExperimentalSupportNotice);
     }
 
     [Fact]
-    public async Task ExperimentalConsent_FollowsServiceStatusAndRevocation()
+    public async Task ExperimentalWritesPaused_ActiveSessionCanResumeExplicitly()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(verified: true, blocked: false) with
-        {
-            IsExperimentalDevice = true,
-            AllowExperimentalFeatures = true,
-            ExperimentalSupportSource = "UpstreamDerived",
-        });
-        await WaitUntilAsync(() => viewModel.AllowExperimentalFeatures);
-        Assert.True(viewModel.IsExperimentalDevice);
+        await PublishStatusAndWaitAsync(
+            client,
+            dispatcher,
+            viewModel,
+            CreateStatus(verified: true, blocked: true) with
+            {
+                IsExperimentalDevice = true,
+                ExperimentalWritesPaused = true,
+                ExperimentalSupportSource = "UpstreamDerived",
+                Message = "Experimental writes paused",
+            });
 
-        Assert.True(await viewModel.SetExperimentalFeaturesAsync(false, CancellationToken.None));
-        Assert.False(viewModel.AllowExperimentalFeatures);
-        Assert.False(client.ExperimentalFeaturesRequest);
-        Assert.Contains("Enable experimental laptop controls", viewModel.ExperimentalSupportNotice);
+        Assert.True(viewModel.ExperimentalWritesPaused);
+        Assert.True(viewModel.CanResumeExperimentalWrites);
+        Assert.Contains("will not retry", viewModel.ExperimentalSupportNotice);
+        Assert.True(await viewModel.ResumeExperimentalWritesAsync(CancellationToken.None));
+        Assert.Equal(1, client.ResumeExperimentalWritesCalls);
+        Assert.False(viewModel.IsResumeExperimentalWritesOperationInProgress);
+    }
+
+    [Fact]
+    public async Task ResumeExperimentalWrites_CancellationRestoresCommandAvailability()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        await PublishStatusAndWaitAsync(
+            client,
+            dispatcher,
+            viewModel,
+            CreateStatus(verified: true, blocked: true) with
+            {
+                IsExperimentalDevice = true,
+                ExperimentalWritesPaused = true,
+                Message = "Experimental writes paused",
+            });
+        using var cancellation = new CancellationTokenSource();
+
+        Task<bool> resume = viewModel.ResumeExperimentalWritesAsync(cancellation.Token);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(viewModel.IsResumeExperimentalWritesOperationInProgress);
+        Assert.False(viewModel.CanResumeExperimentalWrites);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resume);
+        Assert.True(client.MutationCanceled);
+        Assert.False(viewModel.IsResumeExperimentalWritesOperationInProgress);
+        Assert.True(viewModel.CanResumeExperimentalWrites);
+    }
+
+    [Fact]
+    public async Task ResumeExperimentalWrites_ReadFailureLeavesPauseVisible()
+    {
+        var client = new FakeServiceClient
+        {
+            MutationFailure = new IOException("readback unavailable"),
+        };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        await PublishStatusAndWaitAsync(
+            client,
+            dispatcher,
+            viewModel,
+            CreateStatus(verified: true, blocked: true) with
+            {
+                IsExperimentalDevice = true,
+                ExperimentalWritesPaused = true,
+                Message = "Experimental writes paused",
+            });
+
+        Assert.False(await viewModel.ResumeExperimentalWritesAsync(CancellationToken.None));
+        Assert.True(viewModel.ExperimentalWritesPaused);
+        Assert.True(viewModel.CanResumeExperimentalWrites);
+        Assert.Contains("readback unavailable", viewModel.OperationStatusMessage);
     }
 
     [Fact]
@@ -10758,7 +10824,7 @@ public sealed partial class MainViewModelTests
         public void Advance(TimeSpan amount) => now += amount;
     }
 
-    private sealed class FakeServiceClient : OpenBlade.Testing.UnavailableServiceClient
+    private sealed class FakeServiceClient : OpenBlade.Testing.UnavailableServiceClient, IServiceClient
     {
         private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
         private readonly TaskCompletionSource mutationCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -10789,7 +10855,7 @@ public sealed partial class MainViewModelTests
         public int ThermalDisclosureAcknowledgementCalls { get; private set; }
         public LightingRefreshRate? LightingRefreshRate { get; private set; }
         public bool? FirmwareCompatibilityOverride { get; private set; }
-        public bool? ExperimentalFeaturesRequest { get; private set; }
+        public int ResumeExperimentalWritesCalls { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
         public int RecoverHyperBoostRestoreCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
@@ -11035,10 +11101,10 @@ public sealed partial class MainViewModelTests
             return MutateAsync(token);
         }
 
-        public override Task<ControlOperationResult> SetExperimentalFeaturesAsync(
-            bool enabled, CancellationToken token)
+        public Task<ControlOperationResult> ResumeExperimentalWritesAsync(
+            CancellationToken token)
         {
-            ExperimentalFeaturesRequest = enabled;
+            ResumeExperimentalWritesCalls++;
             return MutateAsync(token);
         }
 
