@@ -116,6 +116,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .Order()
             .ToArray();
 
+    private static readonly IReadOnlyList<BreathingColorMode> KnownBreathingColorModes =
+        Enum.GetValues<BreathingColorMode>();
+    private static readonly IReadOnlyList<BreathingColorMode> RandomBreathingColorModes =
+        [BreathingColorMode.Random];
     private static readonly IReadOnlyList<LogoLightingMode> KnownLogoLightingModes =
         Enum.GetValues<LogoLightingMode>()
             .Where(Enum.IsDefined)
@@ -3931,7 +3935,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes =>
-        Capabilities.SupportsBreathingColorSelection ? Enum.GetValues<BreathingColorMode>() : [BreathingColorMode.Random];
+        Capabilities.SupportsBreathingColorSelection ? KnownBreathingColorModes : RandomBreathingColorModes;
 
     private void ApplyLightingParameterDefaults()
     {
