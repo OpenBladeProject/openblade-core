@@ -69,6 +69,8 @@ internal static class DeviceStateContentRejection
         DeviceStateQuery.CustomGpuPerformance => "Custom GPU performance query (0D/87)",
         DeviceStateQuery.CustomPerformanceCombination => "Custom performance combination (0D/87)",
         DeviceStateQuery.KeyboardBrightness => "Keyboard brightness query (03/83)",
+        DeviceStateQuery.KeyboardLightingEffect => "Keyboard effect query (0F/82)",
+        DeviceStateQuery.KeyboardLightingCombination => "Keyboard brightness and effect (03/83, 0F/82)",
         DeviceStateQuery.LogoLightingState => "Logo lighting state query (03/80)",
         DeviceStateQuery.LogoLightingEffect => "Logo lighting effect query (03/82)",
         DeviceStateQuery.LogoLightingCombination => "Logo lighting state and effect (03/80, 03/82)",

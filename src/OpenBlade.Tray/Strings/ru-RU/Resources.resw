@@ -2029,6 +2029,15 @@
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>Проверить текущее состояние</value>
   </data>
+  <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Экспериментальная поддержка ноутбука</value>
+  </data>
+  <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Возобновить экспериментальное управление</value>
+  </data>
+  <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
+    <value>Возобновить экспериментальное управление</value>
+  </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Помочь добавить поддержку</value>
   </data>

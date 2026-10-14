@@ -132,6 +132,12 @@ public interface IServiceClient : IServiceStatusWatcher
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> ResumeExperimentalWritesAsync(
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Experimental writes cannot be resumed."));
+
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(CancellationToken token);
 
     Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(CancellationToken token);

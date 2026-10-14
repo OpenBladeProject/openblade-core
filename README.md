@@ -35,6 +35,9 @@ On another Razer laptop, select **Help add support** in OpenBlade and attach the
 saved report to the
 [support request](https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml).
 
+Additional models have [experimental support](docs/experimental-blade-support.md)
+for testing through pre-releases.
+
 ## Features
 
 - Power modes, automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU

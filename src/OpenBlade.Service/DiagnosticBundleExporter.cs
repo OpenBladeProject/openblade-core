@@ -66,6 +66,13 @@ public sealed record DiagnosticHyperBoostOwnershipJournal(
         Sha256: null);
 }
 
+public sealed record DiagnosticExperimentalSupportSnapshot(
+    DateTimeOffset CapturedAt,
+    DiagnosticExperimentalSupport Support,
+    PowerSource PowerSource,
+    ConfirmedDeviceState? ConfirmedState,
+    LiveReadings? LiveReadings);
+
 public sealed record DiagnosticBundle(
     DiagnosticVersions Versions,
     DiagnosticDeviceIdentity Device,
@@ -75,7 +82,8 @@ public sealed record DiagnosticBundle(
     IReadOnlyList<string> LogLines,
     IReadOnlyCollection<string> SensitiveTokens,
     DiagnosticHyperBoostOwnershipJournal? HyperBoostOwnership = null,
-    DiagnosticDeviceVerification? DeviceVerification = null);
+    DiagnosticDeviceVerification? DeviceVerification = null,
+    DiagnosticExperimentalSupportSnapshot? ExperimentalSupport = null);
 
 public static class DiagnosticBundleExporter
 {
@@ -125,21 +133,58 @@ public static class DiagnosticBundleExporter
                 sensitiveTokens: [],
                 cancellationToken);
         }
+        if (bundle.ExperimentalSupport is { } experimental)
+        {
+            await WriteJsonEntryAsync(
+                archive,
+                "experimental-support.json",
+                experimental with
+                {
+                    Support = experimental.Support with
+                    {
+                        ModelNumber = ClampExperimentalText(experimental.Support.ModelNumber),
+                        EvidenceSource = ClampExperimentalText(experimental.Support.EvidenceSource),
+                        EvidenceLevel = ClampExperimentalText(experimental.Support.EvidenceLevel) ?? "Unavailable",
+                        Observations = experimental.Support.Observations
+                            .TakeLast(DiagnosticExperimentalSupport.MaxObservations)
+                            .Select(item => item with
+                            {
+                                Operation = ClampExperimentalText(item.Operation) ?? "Unavailable",
+                                Stage = ClampExperimentalText(item.Stage) ?? "Unavailable",
+                                Outcome = ClampExperimentalText(item.Outcome) ?? "Unavailable",
+                                RequestedValue = ClampExperimentalText(item.RequestedValue),
+                                ConfirmedValue = ClampExperimentalText(item.ConfirmedValue),
+                                FailureCategory = ClampExperimentalText(item.FailureCategory),
+                            }).ToArray(),
+                    },
+                },
+                bundle.SensitiveTokens,
+                cancellationToken,
+                preservePropertyNames: true,
+                jsonOptions: VerificationJsonOptions);
+        }
         await WriteLogEntryAsync(archive, bundle.LogLines, bundle.SensitiveTokens, cancellationToken);
     }
+
+    private static string? ClampExperimentalText(string? value) =>
+        value is null || value.Length <= 256 ? value : value[..256];
 
     private static Task WriteJsonEntryAsync<T>(
         ZipArchive archive,
         string name,
         T value,
         IReadOnlyCollection<string> sensitiveTokens,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preservePropertyNames = false,
+        JsonSerializerOptions? jsonOptions = null)
     {
         string json = SerializeRedactedJson(
             value,
             sensitiveTokens,
             writeIndented: true,
-            cancellationToken);
+            cancellationToken,
+            preservePropertyNames,
+            jsonOptions);
         return WriteTextEntryAsync(archive, name, json, cancellationToken);
     }
 
@@ -267,9 +312,11 @@ public static class DiagnosticBundleExporter
         T value,
         IReadOnlyCollection<string> sensitiveTokens,
         bool writeIndented,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preservePropertyNames = false,
+        JsonSerializerOptions? jsonOptions = null)
     {
-        byte[] serialized = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+        byte[] serialized = JsonSerializer.SerializeToUtf8Bytes(value, jsonOptions ?? JsonOptions);
         using JsonDocument document = JsonDocument.Parse(serialized);
         (string[] tokens, string replacement) =
             CreateRedactionPlan(sensitiveTokens);
@@ -284,7 +331,8 @@ public static class DiagnosticBundleExporter
                 document.RootElement,
                 tokens,
                 replacement,
-                cancellationToken);
+                cancellationToken,
+                preservePropertyNames);
         }
 
         return Encoding.UTF8.GetString(destination.ToArray());
@@ -311,7 +359,8 @@ public static class DiagnosticBundleExporter
         JsonElement element,
         IReadOnlyList<string> sensitiveTokens,
         string replacement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preservePropertyNames = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         switch (element.ValueKind)
@@ -320,16 +369,16 @@ public static class DiagnosticBundleExporter
                 writer.WriteStartObject();
                 foreach (JsonProperty property in element.EnumerateObject())
                 {
-                    writer.WritePropertyName(RedactString(
-                        property.Name,
-                        sensitiveTokens,
-                        replacement));
+                    writer.WritePropertyName(preservePropertyNames
+                        ? property.Name
+                        : RedactString(property.Name, sensitiveTokens, replacement));
                     WriteRedactedElement(
                         writer,
                         property.Value,
                         sensitiveTokens,
                         replacement,
-                        cancellationToken);
+                        cancellationToken,
+                        preservePropertyNames);
                 }
 
                 writer.WriteEndObject();
@@ -343,7 +392,8 @@ public static class DiagnosticBundleExporter
                         item,
                         sensitiveTokens,
                         replacement,
-                        cancellationToken);
+                        cancellationToken,
+                        preservePropertyNames);
                 }
 
                 writer.WriteEndArray();

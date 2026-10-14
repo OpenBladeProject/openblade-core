@@ -597,6 +597,7 @@ public partial class App
                 "display",
                 "settings",
                 "settings-appearance",
+                "settings-experimental",
                 "about",
             };
             string? requestedPage = Environment.GetEnvironmentVariable(
@@ -649,10 +650,7 @@ public partial class App
                             : new Windows.Graphics.SizeInt32(1120, 820);
                 snapshotMainWindow.AppWindow.Resize(snapshotSize);
                 await WaitForSnapshotLayoutAsync();
-                string navigationDestination = string.Equals(
-                    destination,
-                    "settings-appearance",
-                    StringComparison.Ordinal)
+                string navigationDestination = destination is "settings-appearance" or "settings-experimental"
                     ? "settings"
                     : captureProfilesVariant
                         ? "profiles"
@@ -665,6 +663,11 @@ public partial class App
                     StringComparison.Ordinal))
                 {
                     snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
+                    await WaitForSnapshotLayoutAsync();
+                }
+                if (destination == "settings-experimental")
+                {
+                    snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
                     await WaitForSnapshotLayoutAsync();
                 }
                 await SaveSnapshotAsync(
@@ -1183,6 +1186,21 @@ public partial class App
         {
             return;
         }
+        if (state == "blade18-paused")
+        {
+            ApplyExperimentalBatterySnapshotState(window, off: false, paused: true);
+            return;
+        }
+        if (state is "blade18-battery" or "blade18-battery-off")
+        {
+            ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
+            return;
+        }
+        if (state is "blade18-breathing" or "blade18-wave")
+        {
+            ApplyExperimentalLightingSnapshotState(window, state == "blade18-wave");
+            return;
+        }
         if (state is not ("read-failure" or "battery" or "unsupported"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
@@ -1234,6 +1252,81 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Dashboard presentation hook was not found.");
         refreshCards.Invoke(window, null);
+    }
+
+    private static void ApplyExperimentalBatterySnapshotState(MainWindow window, bool off, bool paused = false)
+    {
+        // Disconnected, synthetic observations: no service or hardware access.
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with { BatteryPolicy = BatteryPolicy.Create(73) };
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+            SupportsBatteryProtectionOff = true,
+        };
+        var status = new ServiceStatusSnapshot(
+            1, true, paused, [], null, [], "Experimental Blade 18 battery preview",
+            paused ? DeviceCapabilities.Unavailable() : capabilities,
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic,
+                new ConfirmedBatteryState(!off, off ? null : 73, false), null), profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, !off, false)),
+            PowerSource.ExternalUnknown, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalWritesPaused = paused,
+            ExperimentalSupportSource = "UpstreamDerived",
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+    }
+
+    private static void ApplyExperimentalLightingSnapshotState(MainWindow window, bool wave)
+    {
+        // Synthetic, disconnected status exercises the restricted pickers without opening hardware.
+        LightingSettings lighting = (wave
+            ? LightingSettingsFactory.Wave(LightingDirection.Rightward, 77)
+            : LightingSettingsFactory.BreathingRandom(77)) with
+        { LogoMode = LogoLightingMode.Static };
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with { PluggedIn = profiles.PluggedIn with { Lighting = lighting } };
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance },
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum, LightingEffect.Breathing, LightingEffect.Wave },
+            SupportsKeyboardBrightness = true,
+            LogoLightingModes = new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>()),
+            SupportsBreathingColorSelection = false,
+            SupportsWaveDirectionSelection = false,
+        };
+        ServiceStatusSnapshot status = new(
+            1, true, false, [], null, [], "Experimental Blade 18 lighting preview",
+            capabilities,
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, null, lighting)
+            { LogoLighting = LogoLightingMode.Static },
+            profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            PowerSource.ExternalUnknown, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = "UpstreamDerived",
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+        window.ViewModel.LightingEffectEditor = lighting.Effect;
     }
 
     private static XamlBorder? FindGpuAppCleanupCard(DependencyObject root)

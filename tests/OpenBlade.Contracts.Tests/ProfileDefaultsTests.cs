@@ -45,8 +45,8 @@ public sealed class ProfileDefaultsTests
 
     [Theory]
     [InlineData(49)]
-    [InlineData(52)]
-    [InlineData(85)]
+    [InlineData(100)]
+    [InlineData(101)]
     public void BatteryPolicy_RejectsUnsafeChargeLimits(int limit)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => BatteryPolicy.Create(limit));
@@ -54,9 +54,11 @@ public sealed class ProfileDefaultsTests
 
     [Theory]
     [InlineData(50)]
+    [InlineData(51)]
     [InlineData(65)]
     [InlineData(80)]
-    public void BatteryPolicy_AcceptsVendorRangeInFivePercentSteps(int limit)
+    [InlineData(99)]
+    public void BatteryPolicy_AcceptsWholePercentEnabledLimits(int limit)
     {
         BatteryPolicy policy = BatteryPolicy.Create(limit);
 

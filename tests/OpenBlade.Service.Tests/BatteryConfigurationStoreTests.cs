@@ -239,7 +239,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             AlwaysOverrideExternalLightingChanges: true,
             LastKnownLighting: lastKnown,
             AllowUntestedFirmware: true,
-            LightingRefreshRate: LightingRefreshRate.SixtyHz);
+            LightingRefreshRate: LightingRefreshRate.SixtyHz,
+            AllowExperimentalFeatures: true);
 
         await store.SaveConfigurationAsync(
             initial.Profiles,
@@ -260,6 +261,10 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.True(
             persisted.RootElement.GetProperty("preferences")
                 .GetProperty("allowUntestedFirmware")
+                .GetBoolean());
+        Assert.True(
+            persisted.RootElement.GetProperty("preferences")
+                .GetProperty("allowExperimentalFeatures")
                 .GetBoolean());
         Assert.Equal(
             (int)LightingRefreshRate.SixtyHz,
@@ -582,6 +587,232 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
                 ProfileStore.CurrentSchemaVersion,
                 document.RootElement.GetProperty("schemaVersion").GetInt32());
         }
+    }
+
+    [Fact]
+    public async Task LoadAsync_Schema16EnablesAutomaticSupportAndPreservesPolicy()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        int priorSchema = ProfileStore.ExperimentalFeaturesConsentPredecessorSchemaVersion;
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(priorSchema, ProfileDefaults.CreateSafeDefaults()),
+            options);
+        byte[] preferences = Encoding.UTF8.GetBytes(
+            $$"""
+              {
+                "schemaVersion": {{priorSchema}},
+                "preferences": {
+                  "thermalControlPolicy": {{(int)ThermalControlPolicy.Strict}},
+                  "thermalPolicyUpgradeDisclosure": {{(int)ThermalPolicyUpgradeDisclosureState.Acknowledged}}
+                }
+              }
+              """);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                priorSchema,
+                Hash(profiles),
+                Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.True(loaded.Preferences.AllowExperimentalFeatures);
+        Assert.Equal(ThermalControlPolicy.Strict, loaded.Preferences.ThermalControlPolicy);
+        Assert.Equal(
+            ThermalPolicyUpgradeDisclosureState.Acknowledged,
+            loaded.Preferences.ThermalPolicyUpgradeDisclosure);
+        using JsonDocument persisted = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Preferences));
+        Assert.Equal(
+            ProfileStore.CurrentSchemaVersion,
+            persisted.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.True(
+            persisted.RootElement.GetProperty("preferences")
+                .GetProperty("allowExperimentalFeatures")
+                .GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(17, false)]
+    [InlineData(17, true)]
+    [InlineData(18, false)]
+    [InlineData(18, true)]
+    [InlineData(19, false)]
+    [InlineData(19, true)]
+    public async Task LoadAsync_ExperimentalPreferenceUsesAutomaticSupport(int priorSchema, bool priorEnable)
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(priorSchema, ProfileDefaults.CreateSafeDefaults()),
+            options);
+        byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryPreferencesDocument(
+                priorSchema,
+                new BatteryAutomationPreferences(
+                    ThermalControlPolicy: ThermalControlPolicy.Strict,
+                    ThermalPolicyUpgradeDisclosure:
+                        ThermalPolicyUpgradeDisclosureState.Acknowledged,
+                    AllowExperimentalFeatures: priorEnable)),
+            options);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                priorSchema,
+                Hash(profiles),
+                Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.True(loaded.Preferences.AllowExperimentalFeatures);
+        using JsonDocument canonical = JsonDocument.Parse(await File.ReadAllBytesAsync(paths.Preferences));
+        Assert.True(canonical.RootElement.GetProperty("preferences").GetProperty("allowExperimentalFeatures").GetBoolean());
+        foreach (string path in paths.All)
+        {
+            using JsonDocument document = JsonDocument.Parse(
+                await File.ReadAllBytesAsync(path));
+            Assert.Equal(
+                ProfileStore.CurrentSchemaVersion,
+                document.RootElement.GetProperty("schemaVersion").GetInt32());
+        }
+    }
+
+    [Fact]
+    public async Task LoadAsync_Schema17RejectsExpandedBatteryPolicyAndPreservesAggregate()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        int priorSchema = ProfileStore.ExperimentalFeaturesConsentSchemaVersion;
+        ProfileSet expanded = ProfileDefaults.CreateSafeDefaults() with
+        {
+            BatteryPolicy = BatteryPolicy.Create(99),
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(priorSchema, expanded),
+            options);
+        byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryPreferencesDocument(
+                priorSchema,
+                new BatteryAutomationPreferences(
+                    ThermalControlPolicy: ThermalControlPolicy.Strict,
+                    ThermalPolicyUpgradeDisclosure:
+                        ThermalPolicyUpgradeDisclosureState.Acknowledged,
+                    AllowExperimentalFeatures: true)),
+            options);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                priorSchema,
+                Hash(profiles),
+                Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+        FileSnapshot preserved = await ReadSnapshotAsync(paths);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, loaded.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.InvalidDocument, loaded.QuarantineReason);
+        AssertSnapshotEqual(preserved, await ReadSnapshotAsync(paths));
+    }
+
+    [Fact]
+    public async Task SaveConfigurationAsync_Schema18PersistsExpandedBatteryPolicy()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            BatteryPolicy = BatteryPolicy.Create(99),
+        };
+        var preferences = new BatteryAutomationPreferences(
+            AllowExperimentalFeatures: true);
+
+        await store.SaveConfigurationAsync(
+            profiles,
+            preferences,
+            CancellationToken.None);
+        BatteryConfiguration loaded = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(BatteryPolicy.Create(99), loaded.Profiles.BatteryPolicy);
+        Assert.True(loaded.Preferences.AllowExperimentalFeatures);
+        using JsonDocument persisted = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Profiles));
+        Assert.Equal(
+            ProfileStore.CurrentSchemaVersion,
+            persisted.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(
+            99,
+            persisted.RootElement.GetProperty("profiles")
+                .GetProperty("batteryPolicy")
+                .GetProperty("chargeLimitPercent")
+                .GetInt32());
+    }
+
+    [Fact]
+    public async Task LoadAsync_CurrentSchemaMissingLegacyExperimentalPreferenceUsesAutomaticSupport()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(
+                ProfileStore.CurrentSchemaVersion,
+                ProfileDefaults.CreateSafeDefaults()),
+            options);
+        byte[] preferences = Encoding.UTF8.GetBytes(
+            $$"""
+              {
+                "schemaVersion": {{ProfileStore.CurrentSchemaVersion}},
+                "preferences": {
+                  "thermalControlPolicy": {{(int)ThermalControlPolicy.Strict}},
+                  "thermalPolicyUpgradeDisclosure": {{(int)ThermalPolicyUpgradeDisclosureState.Acknowledged}}
+                }
+              }
+              """);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                ProfileStore.CurrentSchemaVersion,
+                Hash(profiles),
+                Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.True(loaded.Preferences.AllowExperimentalFeatures);
     }
 
     [Fact]
@@ -1017,6 +1248,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         LegacyJson.Replace("\"chargeLimitPercent\": 80", "\"chargeLimitPercent\": 80, \"chargeLimitPercent\": 75", StringComparison.Ordinal),
         LegacyJson.Replace("\"temporaryFullCharge\": false", "\"temporaryFullCharge\": false, \"unknown\": 1", StringComparison.Ordinal),
         LegacyJson.Replace("\"chargeLimitPercent\": 80", "\"chargeLimitPercent\": 81", StringComparison.Ordinal),
+        LegacyJson.Replace("\"chargeLimitPercent\": 80", "\"chargeLimitPercent\": 52", StringComparison.Ordinal),
         LegacyJson.Replace("\"chargeLimitPercent\": 80", "\"chargeLimitPercent\": \"80\"", StringComparison.Ordinal),
         """
         { "schemaVersion": 2, "profiles": {} }

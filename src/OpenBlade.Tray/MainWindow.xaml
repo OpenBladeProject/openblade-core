@@ -1091,10 +1091,10 @@
                                         </Grid.ColumnDefinitions>
                                         <Slider x:Uid="MainWindow_DashboardChargeLimitSliderText" x:Name="DashboardChargeLimitSlider"
                                                 Style="{StaticResource InlineCardSliderStyle}"
-                                                Minimum="50"
-                                                Maximum="80"
-                                                StepFrequency="5"
-                                                SmallChange="5"
+                                                Minimum="{x:Bind ChargeLimitMinimumPercent, Mode=OneWay}"
+                                                Maximum="{x:Bind ChargeLimitMaximumPercent, Mode=OneWay}"
+                                                StepFrequency="{x:Bind ChargeLimitStepPercent, Mode=OneWay}"
+                                                SmallChange="{x:Bind ChargeLimitStepPercent, Mode=OneWay}"
                                                 LargeChange="5"
                                                 SnapsTo="StepValues"
                                                 IsThumbToolTipEnabled="True"
@@ -1548,7 +1548,7 @@
                                                                         CompactMinWidth="150"
                                                                         ExpandedMinWindowWidth="800"
                                                                         AccessibleName="Breathing color mode"
-                                                                        ItemsSource="{x:Bind LightingBreathingColorModes}"
+                                                                        ItemsSource="{x:Bind LightingBreathingColorModes, Mode=OneWay}"
                                                                         SelectedItem="{x:Bind LightingBreathingColorModeEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -2417,6 +2417,30 @@
                             </InfoBar.ActionButton>
                         </InfoBar>
 
+                        <InfoBar x:Uid="MainWindow_ExperimentalSupportInfoBar" x:Name="ExperimentalSupportInfoBar"
+                                 IsOpen="{x:Bind ViewModel.IsExperimentalDevice, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.IsExperimentalDevice, Mode=OneWay}"
+                                 Message="{x:Bind ViewModel.ExperimentalSupportNotice, Mode=OneWay}"
+                                 Severity="Informational"
+                                 IsClosable="False"
+                                 Margin="0,0,0,12"
+                                 AutomationProperties.Name="Experimental laptop support">
+                            <InfoBar.ActionButton>
+                                <Button x:Uid="MainWindow_ResumeExperimentalWritesButton"
+                                        Command="{x:Bind ViewModel.ResumeExperimentalWritesCommand}"
+                                        Visibility="{x:Bind ViewModel.ExperimentalWritesPaused, Mode=OneWay}"
+                                        AutomationProperties.Name="Resume experimental controls">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ProgressRing Width="16"
+                                                      Height="16"
+                                                      IsActive="{x:Bind ViewModel.IsResumeExperimentalWritesOperationInProgress, Mode=OneWay}"
+                                                      Visibility="{x:Bind ViewModel.IsResumeExperimentalWritesOperationInProgress, Mode=OneWay}" />
+                                        <TextBlock x:Uid="MainWindow_ResumeExperimentalWritesLabel"
+                                                   Text="Resume experimental controls" />
+                                    </StackPanel>
+                                </Button>
+                            </InfoBar.ActionButton>
+                        </InfoBar>
                         <InfoBar x:Uid="MainWindow_UnsupportedLaptopInfoBarText"
                                  IsOpen="{x:Bind ViewModel.IsUnsupportedLaptop, Mode=OneWay}"
                                  Visibility="{x:Bind ViewModel.IsUnsupportedLaptop, Mode=OneWay}"

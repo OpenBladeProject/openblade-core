@@ -359,7 +359,7 @@ public sealed class BatteryConfigurationStore
                 ConfigurationQuarantineReason.MixedSchema);
         }
 
-        preferences = preferences with { ProtectionEnabled = null };
+        preferences = preferences with { ProtectionEnabled = null, AllowExperimentalFeatures = true };
         return new CommittedSnapshot(
             new BatteryConfiguration(profiles, preferences, Recovered: false),
             profileJson,
@@ -395,6 +395,7 @@ public sealed class BatteryConfigurationStore
             profiles,
             out _,
             batteryProtectionDefault: true);
+        ProfileStore.ValidateLegacyBatteryPolicy(profiles);
         validator.Validate(profiles);
         return profiles;
     }
@@ -431,7 +432,7 @@ public sealed class BatteryConfigurationStore
         {
             throw new InvalidDataException("The battery preferences are missing.");
         }
-        if (expectedSchemaVersion >= ProfileStore.CurrentSchemaVersion
+        if (expectedSchemaVersion >= ProfileStore.ExperimentalFeaturesConsentPredecessorSchemaVersion
             && (!preferencesElement.TryGetProperty("thermalControlPolicy", out _)
                 || !preferencesElement.TryGetProperty(
                     "thermalPolicyUpgradeDisclosure",
@@ -439,6 +440,13 @@ public sealed class BatteryConfigurationStore
         {
             throw new InvalidDataException(
                 "The current battery preferences are missing thermal policy state.");
+        }
+        if (expectedSchemaVersion >= ProfileStore.ExperimentalFeaturesConsentSchemaVersion
+            && expectedSchemaVersion < ProfileStore.AutomaticExperimentalSupportSchemaVersion
+            && !preferencesElement.TryGetProperty("allowExperimentalFeatures", out _))
+        {
+            throw new InvalidDataException(
+                "The current battery preferences are missing the legacy experimental preference.");
         }
 
         BatteryPreferencesDocument? document =
@@ -467,18 +475,23 @@ public sealed class BatteryConfigurationStore
                 "The current battery preference document contains a legacy setting.");
         }
 
-        BatteryAutomationPreferences preferences = expectedSchemaVersion
-            < ProfileStore.CurrentSchemaVersion
-                ? document.Preferences with
-                {
-                    ThermalControlPolicy = ThermalControlPolicy.MaintainDesiredState,
-                    ThermalPolicyUpgradeDisclosure =
-                        ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
-                }
-                : document.Preferences;
+        BatteryAutomationPreferences preferences = document.Preferences;
+        if (expectedSchemaVersion
+            < ProfileStore.ExperimentalFeaturesConsentPredecessorSchemaVersion)
+        {
+            preferences = preferences with
+            {
+                ThermalControlPolicy = ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosure =
+                    ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
+            };
+        }
+        bool normalizedAutomaticSupport = !preferences.AllowExperimentalFeatures;
+        preferences = preferences with { AllowExperimentalFeatures = true };
         validator.ValidatePreferences(preferences);
         migrated = expectedSchemaVersion < ProfileStore.CurrentSchemaVersion
-            || preferences.ProtectionEnabled.HasValue;
+            || preferences.ProtectionEnabled.HasValue
+            || normalizedAutomaticSupport;
         return preferences;
     }
 
@@ -489,7 +502,7 @@ public sealed class BatteryConfigurationStore
         byte[]? committedPreferenceJson = null,
         AggregateSnapshot? priorSnapshot = null)
     {
-        preferences = preferences with { ProtectionEnabled = null };
+        preferences = preferences with { ProtectionEnabled = null, AllowExperimentalFeatures = true };
         byte[] profileJson = SerializeProfiles(profiles);
         byte[] preferenceJson = committedPreferenceJson ??
             JsonSerializer.SerializeToUtf8Bytes(

@@ -115,14 +115,17 @@ public static class ServiceRequestAccessPolicy
         }
 
         if (request is SetThermalControlPolicyRequest
-            or AcknowledgeThermalPolicyUpgradeDisclosureRequest)
+            or AcknowledgeThermalPolicyUpgradeDisclosureRequest
+            or ResumeExperimentalWritesRequest)
         {
             SessionControlAccess thermalPolicyAccess = GetAccess(client, authority);
             return new ServiceRequestAccessDecision(
                 thermalPolicyAccess,
                 IsActiveLocalInteractiveClient(client, authority)
                     ? null
-                    : "Thermal policy changes require the active local interactive Windows session.");
+                    : request is ResumeExperimentalWritesRequest
+                        ? "Experimental recovery requires the active local interactive Windows session."
+                        : "Thermal policy changes require the active local interactive Windows session.");
         }
 
         SessionControlAccess access = GetAccess(client, authority);

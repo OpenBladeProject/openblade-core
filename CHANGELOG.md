@@ -5,9 +5,19 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add automatic experimental Balanced/Silent controls for the Blade 16 (2023), Blade 14 (2023 and 2025), Blade 15 Base (2020), and Blade 18 (2023), with 80% battery protection on the supported experimental models. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Add experimental Blade 18 (2023) charge limits from 50–100% in 1% steps, with 100% turning protection off, decoded baselines, and independent exact-limit readback. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Add experimental Blade 18 (2023) Performance and bounded Custom CPU/GPU controls, keyboard brightness, Off/Spectrum/random Breathing/Wave effects, and Off/Static/Breathing logo lighting. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Let users resume paused experimental controls after a fresh read-only check, then send a new request. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Include bounded experimental command results, source provenance, write-pause state, and cached telemetry in local diagnostic exports for pre-release tester reports. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+
 ### Fixed
 
 - Prevent animated keyboard lighting from overlapping fan and battery command exchanges on RZ09-0581. Exported diagnostics now retain the query or command and native I/O error details when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
+- Preserve the selected performance mode on experimental laptops when a saved profile contains unavailable manual-fan settings, without switching to Balanced or writing fans. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Keep independent experimental controls available after unrecognized readings, allow unrelated profile edits with unavailable saved settings, and accept fresh lighting intent after resuming paused controls. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 
 ## [0.26.2-nightly.87] - 2026-10-14
 
