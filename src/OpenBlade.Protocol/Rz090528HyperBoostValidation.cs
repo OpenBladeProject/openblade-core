@@ -90,6 +90,9 @@ internal static class Rz090528HyperBoostValidation
 
         public RazerCommandSessionDisposition Disposition => inner.Disposition;
 
+        public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
+            inner.RetainQueryFailure(classId, commandId, outcome);
+
         public async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
             RazerCommandSpec command, Func<TransactionIdAssignment> assignTransactionId,
             TimeSpan exchangeTimeout, CancellationToken cancellationToken)

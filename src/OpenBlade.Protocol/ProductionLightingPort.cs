@@ -998,6 +998,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             cancellationToken).ConfigureAwait(false);
         if (!LogoLightingProtocol.TryDecodeMode(state.Span, effect.Span, out LogoLightingMode mode))
         {
+            session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
+            session.RetainQueryFailure(0x03, 0x82, FirmwareQueryOutcome.ContentRejected);
             throw new DeviceStateContentRejectedException(
                 "Logo lighting response was malformed or unsupported.",
                 DeviceStateQuery.LogoLightingCombination,

@@ -59,6 +59,10 @@ internal interface IRazerCommandSession : IAsyncDisposable
 {
     RazerCommandSessionDisposition Disposition { get; }
 
+    void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome)
+    {
+    }
+
     Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
         RazerCommandSpec command,
         Func<TransactionIdAssignment> assignTransactionId,
@@ -123,6 +127,9 @@ internal sealed class WindowsRazerHidSession :
     private readonly TimeSpan featureReportSettleDelay;
     private readonly byte featureReportId;
     private readonly Task worker;
+    private readonly FirmwareQueryDiagnostics? queryDiagnostics;
+    private readonly object queryDiagnosticSync = new();
+    private readonly Dictionary<string, FirmwareQueryObservation> queryObservations = [];
     private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
     internal WindowsRazerHidSession(
@@ -133,7 +140,8 @@ internal sealed class WindowsRazerHidSession :
         ValidationRunContext.ActorLease actorLease,
         ControllerExclusivityPolicy exclusivityPolicy,
         TimeSpan featureReportSettleDelay = default,
-        byte featureReportId = 0)
+        byte featureReportId = 0,
+        FirmwareQueryDiagnostics? queryDiagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(io);
@@ -153,6 +161,7 @@ internal sealed class WindowsRazerHidSession :
         this.actorLease = actorLease;
         this.featureReportSettleDelay = featureReportSettleDelay;
         this.featureReportId = featureReportId;
+        this.queryDiagnostics = queryDiagnostics;
         worker = RunAsync();
     }
 
@@ -171,13 +180,64 @@ internal sealed class WindowsRazerHidSession :
         RazerCommandSpec command,
         Func<TransactionIdAssignment> assignTransactionId,
         TimeSpan exchangeTimeout,
-        CancellationToken cancellationToken) =>
-        Enqueue(
+        CancellationToken cancellationToken)
+    {
+        if (queryDiagnostics is not null)
+        {
+            command = command with { Arguments = command.Arguments.ToArray() };
+        }
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> pending = Enqueue(
             command,
             assignTransactionId,
             exchangeTimeout,
             cancellationToken,
             expectResponse: true);
+        return queryDiagnostics is null ? pending : RecordQueryResultAsync(command, pending);
+    }
+
+    private async Task<HidSessionResult<ReadOnlyMemory<byte>>> RecordQueryResultAsync(
+        RazerCommandSpec command,
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> pending)
+    {
+        HidSessionResult<ReadOnlyMemory<byte>> result = await pending.ConfigureAwait(false);
+        try
+        {
+            lock (queryDiagnosticSync)
+            {
+                if (queryDiagnostics?.Record(command, result, timeProvider.GetUtcNow()) is { } observation)
+                {
+                    queryObservations[observation.Command + ":" + observation.RequestPayloadHex] = observation;
+                }
+            }
+        }
+        catch
+        {
+            // Diagnostic retention must never change the command's outcome.
+        }
+        return result;
+    }
+
+    public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome)
+    {
+        try
+        {
+            lock (queryDiagnosticSync)
+            {
+                string command = $"{classId:X2}/{commandId:X2}";
+                foreach (FirmwareQueryObservation observation in queryObservations.Values)
+                {
+                    if (observation.Command == command)
+                    {
+                        queryDiagnostics?.RecordRejection(observation, outcome);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // A semantic rejection remains fail-closed even if recording fails.
+        }
+    }
 
     public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(
         RazerCommandSpec command,
@@ -641,6 +701,7 @@ internal sealed class WindowsRazerHidSession :
         }
 
         string? rejectedPayloadHex = null;
+        string? queryResponsePayloadHex = null;
         try
         {
             if (getBuffer[0] != featureReportId)
@@ -653,6 +714,10 @@ internal sealed class WindowsRazerHidSession :
             ReadOnlyMemory<byte> payload = request.ValidateResponse(
                 getBuffer.AsSpan(1, RazerReport.ReportLength),
                 item.Command.AllowVariableResponseLength ? null : item.Command.ExpectedPayloadLength);
+            if (queryDiagnostics is not null && FirmwareQueryDiagnostics.CanRecord(item.Command))
+            {
+                queryResponsePayloadHex = Convert.ToHexString(payload.Span);
+            }
             if (item.Command.PayloadValidator is not null)
             {
                 bool valid;
@@ -681,7 +746,7 @@ internal sealed class WindowsRazerHidSession :
                 }
             }
 
-            return new(payload.ToArray(), null);
+            return new(payload.ToArray(), null) { QueryResponsePayloadHex = queryResponsePayloadHex };
         }
         catch (RazerProtocolException error)
         {
@@ -690,7 +755,10 @@ internal sealed class WindowsRazerHidSession :
                 HidSessionFailureKind.ProtocolFailure,
                 HidSessionFailurePhase.ProtocolValidation,
                 getResult.Completion,
-                error.ValidationFailure, nativeRetirement: getResult.NativeRetirement);
+                error.ValidationFailure, nativeRetirement: getResult.NativeRetirement) with
+            {
+                QueryResponsePayloadHex = queryResponsePayloadHex,
+            };
             return rejectedPayloadHex is null
                 ? failure
                 : failure with

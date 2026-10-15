@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -7,6 +8,111 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class WindowsRazerHidSessionTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryEvidence_RetainsUnknownAdapterAfterRecoveryAndSessionDisposal(bool model0528)
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        var io = new ScriptedIo(
+            SetSuccess(), GetSuccess(1, 0x07, 0x8C, [0xFF, 0xFF]),
+            SetSuccess(), GetSuccess(2, 0x07, 0x8C, [0x11, 0x11]));
+        await using (WindowsRazerHidSession actor = CreateActor(io, queryDiagnostics: diagnostics))
+        {
+            using var gate = new SemaphoreSlim(1, 1);
+            IRazerCommandSession gated = model0528
+                ? new Rz090528CommandSessionGate(actor, gate)
+                : new Rz090581CommandSessionGate(actor, gate);
+            var client = new AdapterPowerCommandClient(gated, Timeout);
+            Assert.Equal(AdapterPowerState.Unknown, (await client.QueryAsync(1, default)).Value);
+            Assert.Equal(AdapterPowerState.FullPower280W, (await client.QueryAsync(2, default)).Value);
+        }
+
+        FirmwareQueryDiagnostic query = Assert.Single(diagnostics.Snapshot());
+        Assert.Equal("1111", query.Latest.ResponsePayloadHex);
+        Assert.Equal(FirmwareQueryOutcome.Succeeded, query.Latest.Outcome);
+        Assert.Equal("FFFF", query.LastFailure!.ResponsePayloadHex);
+        Assert.Equal(FirmwareQueryOutcome.UnrecognizedValue, query.LastFailure.Outcome);
+        Assert.Equal(4, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task QueryEvidence_RetainsRejectedPayloadBeforePoisoning()
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(1, 0x07, 0x92, [0xFF]));
+        await using WindowsRazerHidSession actor = CreateActor(io, queryDiagnostics: diagnostics);
+        var client = new BatteryCommandClient(actor, Timeout);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await client.QueryAsync(1, default)).Failure);
+
+        FirmwareQueryDiagnostic query = Assert.Single(diagnostics.Snapshot());
+        Assert.Equal("FF", query.LastFailure!.ResponsePayloadHex);
+        Assert.Equal(HidProtocolValidationFailure.PayloadValidator,
+            query.LastFailure.ProtocolValidationFailure);
+        Assert.NotEqual(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+    }
+
+    [Fact]
+    public async Task QueryEvidence_ExcludesMismatchedResponsePayload()
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(2, 0x07, 0x92, [0xD0]));
+        await using WindowsRazerHidSession actor = CreateActor(io, queryDiagnostics: diagnostics);
+        var client = new BatteryCommandClient(actor, Timeout);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await client.QueryAsync(1, default)).Failure);
+
+        FirmwareQueryDiagnostic query = Assert.Single(diagnostics.Snapshot());
+        Assert.Null(query.LastFailure!.ResponsePayloadHex);
+        Assert.Equal(HidProtocolValidationFailure.TransactionMismatch,
+            query.LastFailure.ProtocolValidationFailure);
+        Assert.Equal(2, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task QueryEvidence_RetainsModelRejectedAdapterWithoutAdmittingIt()
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(1, 0x07, 0x8C, [0x12, 0x11]));
+        await using WindowsRazerHidSession actor = CreateActor(io, queryDiagnostics: diagnostics);
+        await using var port = new ProductionBatteryPort(actor, DeviceCommandCatalog.Empty,
+            new ProductionBatteryReadEvidence(new HashSet<ProductionBatteryQueryCapability>
+            {
+                ProductionBatteryQueryCapability.AdapterPower,
+            }), new ValidationRunContext(), Timeout,
+            admittedAdapterPowerStates: new HashSet<AdapterPowerState> { AdapterPowerState.FullPower280W });
+
+        Assert.Equal(AdapterPowerState.Unknown, await port.QueryAdapterPowerStateAsync(default));
+
+        FirmwareQueryDiagnostic query = Assert.Single(diagnostics.Snapshot());
+        Assert.Equal("1211", query.LastFailure!.ResponsePayloadHex);
+        Assert.Equal(FirmwareQueryOutcome.ModelAdmissionRejected, query.LastFailure.Outcome);
+        Assert.Equal(2, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task QueryEvidence_RetainsBothDisagreeingThermalChannels()
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        var io = new ScriptedIo(
+            SetSuccess(), GetSuccess(1, 0x0D, 0x82, [1, 1, 0, 0]),
+            SetSuccess(), GetSuccess(2, 0x0D, 0x82, [1, 2, 5, 0]));
+        await using WindowsRazerHidSession actor = CreateActor(io, queryDiagnostics: diagnostics);
+        await using var port = new ProductionBatteryPort(actor, DeviceCommandCatalog.Empty,
+            new ProductionBatteryReadEvidence(new HashSet<ProductionBatteryQueryCapability>()),
+            new ValidationRunContext(), Timeout);
+
+        await Assert.ThrowsAsync<RazerProtocolException>(() => port.QueryPerformanceFanStateAsync(default));
+
+        Assert.Collection(diagnostics.Snapshot(),
+            first => Assert.Equal("01010000", first.LastFailure!.ResponsePayloadHex),
+            second => Assert.Equal("01020500", second.LastFailure!.ResponsePayloadHex));
+        Assert.All(diagnostics.Snapshot(), query =>
+            Assert.Equal(FirmwareQueryOutcome.ContentRejected, query.LastFailure!.Outcome));
+        Assert.Equal(4, io.Calls.Count);
+    }
 
     [Fact]
     public async Task VariableEffectResponse_RequiresValidatorAndRetainsExactEnvelopeChecks()
@@ -1794,7 +1900,8 @@ public sealed class WindowsRazerHidSessionTests
         List<string>? events = null,
         Action? disposeBound = null,
         TimeSpan featureReportSettleDelay = default,
-        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict)
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
+        FirmwareQueryDiagnostics? queryDiagnostics = null)
     {
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events, disposeBound);
         return new WindowsRazerHidSession(
@@ -1804,7 +1911,8 @@ public sealed class WindowsRazerHidSessionTests
             time ?? TimeProvider.System,
             lease,
             policy,
-            featureReportSettleDelay);
+            featureReportSettleDelay,
+            queryDiagnostics: queryDiagnostics);
     }
 
     private static async Task<IBatteryValidationPort> OpenValidationPortAsync(params ScriptedIo[] io)

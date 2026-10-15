@@ -255,7 +255,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 try
                 {
                     session = new WindowsRazerHidSession(native.BindSelected(candidate.Handle), io, guard,
-                        TimeProvider.System, lease, ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30));
+                        TimeProvider.System, lease, ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30),
+                        queryDiagnostics: FirmwareQueryDiagnostics.Process);
                 }
                 catch
                 {
