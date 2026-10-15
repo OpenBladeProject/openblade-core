@@ -677,7 +677,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || IsRetainedPowerSourceRecheck(latestStatus);
 
     public string UnsupportedLaptopMessage => TrayText.Get(
-        "To help add this laptop, save a short identity report, then follow the Synapse Observer guide to collect and submit evidence.");
+        "Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop.");
 
     public bool IsUnsupportedLaptop =>
         IsConnected

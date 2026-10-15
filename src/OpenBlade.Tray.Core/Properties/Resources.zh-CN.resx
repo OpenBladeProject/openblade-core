@@ -1458,7 +1458,7 @@
   <data name="Identity report failed: {0}" xml:space="preserve">
     <value>设备信息报告失败：{0}</value>
   </data>
-  <data name="To help add this laptop, save a short identity report, then follow the Synapse Observer guide to collect and submit evidence." xml:space="preserve">
+  <data name="Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop." xml:space="preserve">
     <value>若要帮助添加对此笔记本电脑的支持，请保存一份简短的设备信息报告，然后按照 Synapse Observer 指南收集并提交资料。</value>
   </data>
 </root>
