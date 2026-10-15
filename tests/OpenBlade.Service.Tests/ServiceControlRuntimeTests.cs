@@ -16961,7 +16961,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Observation_MapsExperimentalExternalOnlyForExperimentalDevice()
+    public async Task Observation_DoesNotTreatLegacyExternalObservationAsAdequatePower()
     {
         TestContext stable = CreateContext(
             providerAvailable: true,
@@ -16993,8 +16993,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await experimental.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Equal(PowerSource.PluggedIn, experimental.Runtime.GetStatus().ActivePowerSource);
-        Assert.False(experimental.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(PowerSource.ExternalUnknown, experimental.Runtime.GetStatus().ActivePowerSource);
+        Assert.True(experimental.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(2, experimental.Device.AdapterPowerReadCalls);
     }
 
@@ -17162,15 +17162,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
+    [InlineData(AdapterPowerState.SufficientExternal, PowerSource.PluggedIn, true)]
+    [InlineData(AdapterPowerState.LimitedExternal, PowerSource.UsbC, true)]
+    [InlineData(AdapterPowerState.Battery, PowerSource.ExternalUnknown, true)]
     [InlineData(AdapterPowerState.SufficientExternal, PowerSource.PluggedIn)]
     [InlineData(AdapterPowerState.LimitedExternal, PowerSource.UsbC)]
     [InlineData(AdapterPowerState.Battery, PowerSource.ExternalUnknown)]
     public async Task SynapseAdapterClassification_RespectsSufficiencyAndWindowsExternalState(
-        AdapterPowerState adapterState, PowerSource expected)
+        AdapterPowerState adapterState, PowerSource expected, bool experimental = false)
     {
         TestContext context = CreateContext(
-            providerAvailable: true,
+            providerAvailable: !experimental,
             initialPowerSource: PowerSource.ExternalUnknown);
+        context.Provider.AvailableWhenExperimentalAllowed = experimental;
         context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
         context.Device.AdapterPowerState = adapterState;

@@ -16,6 +16,7 @@ internal sealed partial class ExperimentalBladePort(
     : IProductionBatteryPort, IProductionLightingPort
 {
     private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
+    private readonly AdapterPowerCommandClient adapterPowerCommands = new(session, TimeSpan.FromSeconds(3));
     private readonly ExperimentalLightingOwnershipState lightingOwnership =
         sharedLightingOwnership ?? new();
     private readonly Func<TimeSpan, CancellationToken, Task> delayConfirmation = confirmationDelay ?? Task.Delay;
@@ -307,6 +308,26 @@ internal sealed partial class ExperimentalBladePort(
             {
                 return;
             }
+            if (CreateCustomCapabilities(model).SupportsMaximumFans)
+            {
+                // Synapse clears Maximum Fans before leaving Custom; 0D/02
+                // does not establish that the shared 07/8F bit was cleared.
+                // Reuse the whole-byte guard so cleanup cannot clear another option.
+                byte flags = await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false);
+                if ((flags & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0)
+                {
+                    RequireMaximumFansWriteBaseline(flags);
+                    RequirePerformanceWriteAdmission(value);
+                    await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0],
+                        true, cancellationToken,
+                        requireAdequateAdapter: value != PerformancePreset.Balanced).ConfigureAwait(false);
+                    submitted = true;
+                    if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        throw new IOException("Maximum Fans cleanup was not independently confirmed.");
+                    }
+                }
+            }
             byte mode = value switch
             {
                 PerformancePreset.Balanced => 0,
@@ -400,10 +421,23 @@ internal sealed partial class ExperimentalBladePort(
     private async Task<ReadOnlyMemory<byte>> ExchangeAsync(string operation, byte commandClass,
         byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken,
         bool variableResponse = false, Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null,
-        bool requireEcho = true, bool recordAcknowledgedSubmission = true)
+        bool requireEcho = true, bool recordAcknowledgedSubmission = true,
+        bool requireAdequateAdapter = false)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
+        if (write && IsThermalSet(commandClass, commandId)
+            && !IsBatteryModeSet(commandClass, commandId, arguments))
+        {
+            AdapterPowerState adapter = await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
+            bool limitedCleanupAllowed = !requireAdequateAdapter && IsLimitedAdapter(adapter)
+                && AllowsLimitedPowerSet(operation, commandClass, commandId, arguments);
+            if (!HyperBoostValidationPower.IsAdmittedFullPower(adapter) && !limitedCleanupAllowed)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "The adapter does not admit this thermal write on the current power source.");
+            }
+        }
         var command = new RazerCommandSpec(commandClass, commandId, arguments, arguments.Length, payloadValidator)
         {
             // Evaluated at the native submission boundary, including after queueing.
@@ -466,18 +500,65 @@ internal sealed partial class ExperimentalBladePort(
     }
 
     public Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(null);
-    public Task<AdapterPowerState> QueryAdapterPowerStateAsync(CancellationToken cancellationToken)
+    public async Task<AdapterPowerState> QueryAdapterPowerStateAsync(CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        PowerSource power = capturePowerSource();
-        return Task.FromResult(power switch
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            PowerSource.Battery => AdapterPowerState.Battery,
-            PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC =>
-                AdapterPowerState.ExperimentalExternal,
-            _ => AdapterPowerState.Unknown,
-        });
+            ObjectDisposedException.ThrowIf(disposed, this);
+            return await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
     }
+
+    private async Task<AdapterPowerState> ReadAdapterPowerCoreAsync(CancellationToken cancellationToken)
+    {
+        // Every admitted profile pins its own enabled Synapse command path.
+        // A future profile without that evidence cannot inherit the query.
+        if (model.AdapterPowerEvidenceSource is null)
+        {
+            RecordQuery("AdapterPower", "Unavailable", failure: "MissingVendorCommandEvidence");
+            return AdapterPowerState.Unknown;
+        }
+        if (!context.TryAllocateTransaction(out byte transaction))
+        {
+            throw new IOException("The experimental adapter query exhausted its transaction budget.");
+        }
+        HidSessionResult<AdapterPowerState> result = await adapterPowerCommands.QueryAsync(
+            transaction, cancellationToken).ConfigureAwait(false);
+        if (result.Failure is { } failure)
+        {
+            RecordQuery("AdapterPower", "Failed", failure: failure.ToString());
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException($"Experimental adapter query failed: {failure}.");
+        }
+        RecordQuery("AdapterPower", result.Value == AdapterPowerState.Unknown ? "UnsupportedState" : "Confirmed",
+            confirmed: result.Value.ToString());
+        return result.Value;
+    }
+
+    private static bool IsThermalSet(byte commandClass, byte commandId) =>
+        commandClass == 0x0D && commandId is 0x01 or 0x02 or 0x07
+        || commandClass == 0x07 && commandId == 0x0F;
+
+    private static bool IsBatteryModeSet(byte commandClass, byte commandId, byte[] arguments) =>
+        commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[2] is 3 or 6;
+
+    private static bool IsLimitedAdapter(AdapterPowerState state) => state is
+        AdapterPowerState.LimitedExternal or AdapterPowerState.UsbCPower45W or AdapterPowerState.UsbCPower60W
+        or AdapterPowerState.UsbCPower65W or AdapterPowerState.UsbCPower80W or AdapterPowerState.UsbCPower90W
+        or AdapterPowerState.UsbCPower100W;
+
+    private static bool AllowsLimitedPowerSet(string operation, byte commandClass, byte commandId, byte[] arguments) =>
+        commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[3] == 0
+            // Automatic handback preserves a freshly confirmed mode before the
+            // service selects Balanced. Do not force an intermediate preset.
+            && (operation == "Fans" || operation == "Performance" && arguments[2] == 0)
+        || commandClass == 0x07 && commandId == 0x0F && operation == "MaximumFans"
+            && arguments.Length == 1 && arguments[0] == 0;
     public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) => Unavailable();
     public Task ApplyOneShotLaptopControlAsync(ApplyOneShotLaptopControl value, CancellationToken cancellationToken) => Unavailable();
     private static Task Unavailable() => Task.FromException(new CapabilityUnavailableException(

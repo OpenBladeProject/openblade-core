@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Use Synapse's shared adapter wattage classification on all seven admitted Blade models, including the five experimental profiles. Compare actual and recommended power before thermal changes; limited supplies allow Balanced and Automatic fan handback. ([#779](https://github.com/OpenBladeProject/openblade-core/pull/779))
+
 ## [0.28.1-nightly.90] - 2026-10-15
 
 ### Added

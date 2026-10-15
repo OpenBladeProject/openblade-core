@@ -15655,8 +15655,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 AdapterPowerState.UsbCPower80W => PowerSource.UsbC,
                 AdapterPowerState.UsbCPower90W => PowerSource.UsbC,
                 AdapterPowerState.UsbCPower100W => PowerSource.UsbC,
-                AdapterPowerState.ExperimentalExternal
-                    when deviceProvider.IsExperimentalDevice => PowerSource.PluggedIn,
                 _ => PowerSource.ExternalUnknown,
             };
         }

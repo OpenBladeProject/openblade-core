@@ -128,6 +128,7 @@ public sealed class ExperimentalBladeCustomTests
             session.Commands.Where(command => command.CommandId < 0x80).Select(command => Convert.ToHexString(command.Arguments.Span)));
         Assert.Contains(policy.Snapshot().Observations, item => item.Stage == "Baseline" && item.ConfirmedValue == "Balanced/Automatic;CPU=Low;GPU=Low");
         Assert.Contains(policy.Snapshot().Observations, item => item.Stage == "Readback" && item.ConfirmedValue == "CPU=Medium;GPU=High");
+        Assert.Equal(4, session.Commands.Count(command => command.ClassId == 0x07 && command.CommandId == 0x8C));
         Assert.True(policy.WritesAllowed);
     }
 
@@ -320,6 +321,10 @@ public sealed class ExperimentalBladeCustomTests
             }
             Commands.Add(command);
             _ = assignTransactionId();
+            if (command.ClassId == 7 && command.CommandId == 0x8C)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0x11, 0x11 }, null));
+            }
             if (command.ClassId == 7 && command.CommandId == 0x8F)
             {
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0 }, null));
