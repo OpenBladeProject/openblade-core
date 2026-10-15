@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Rewrite Chinese and Russian guides with clearer instructions and more natural wording. ([#781](https://github.com/OpenBladeProject/openblade-core/pull/781))
+
 ### Added
 
 - Add Simplified Chinese and Russian versions of the README and user guides, with language navigation and stable section links. ([#769](https://github.com/OpenBladeProject/openblade-core/pull/769))
