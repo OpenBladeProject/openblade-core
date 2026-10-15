@@ -1,5 +1,7 @@
 # OpenBlade keyboard lighting files
 
+English | [简体中文](zh-CN/keyboard-lighting-file-format.md) | [Русский](ru-RU/keyboard-lighting-file-format.md)
+
 OpenBlade keyboard lighting files are UTF-8 JSON documents with the `.oblight`
 extension. Version 1 stores one portable keyboard effect preset. Importing a
 preset never grants a hardware capability: the effect must already be admitted

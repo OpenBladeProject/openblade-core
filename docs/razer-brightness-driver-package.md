@@ -1,5 +1,7 @@
 # Razer brightness driver package
 
+English | [简体中文](zh-CN/razer-brightness-driver-package.md) | [Русский](ru-RU/razer-brightness-driver-package.md)
+
 OpenBlade can use the signed Razer Consumer Control stack already installed on
 either of the two Blade 16 models listed below. Windows then owns the brightness change and native
 flyout. About > Device information reports whether the exact model's admitted

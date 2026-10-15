@@ -1,5 +1,7 @@
 # Experimental Blade support
 
+English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
+
 OpenBlade offers experimental controls for the five Blade models below, based on
 community projects and owner reports. OpenBlade hardware testing is still in
 progress. Try a pre-release and share your results to help improve support.

@@ -1,5 +1,7 @@
 # Build, installation, and Nightly releases
 
+English | [简体中文](zh-CN/build-install-and-nightly.md) | [Русский](ru-RU/build-install-and-nightly.md)
+
 This document covers production publishing, installation, recovery, and the
 Nightly release workflow. For ordinary source builds, use the commands in the
 [developer guide](developer-guide.md#build-and-test).
