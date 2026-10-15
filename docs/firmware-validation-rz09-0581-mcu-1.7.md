@@ -60,8 +60,7 @@ archives remain private.
 
 On the RZ09-0581, `07/8F` reads and `07/0F` writes **Power Mode Control**, a
 single byte shared by several settings. The bit layout comes from a read-only
-inspection of the installed Synapse 4 product code for this model (product 736,
-PID `02E0`):
+inspection of the installed Synapse 4 code for this model:
 
 | Bit | Setting |
 |---|---|
@@ -88,11 +87,12 @@ and each OpenBlade export was taken with Synapse closed.
 | B | Checked | `04`; OpenBlade cancelled to its saved state and read back `00` |
 | C | Unchecked | `00`; 80 percent limit, protection on, full charge off |
 
-Step A is full charge off with local dimming on. In step B Synapse had evidently
-cleared local dimming, so OpenBlade read `04` rather than `0C`. `08` is not a
-"full charge completed" marker; that earlier hypothesis is withdrawn.
+By the bit table, step A is full charge off with local dimming on. In step B
+OpenBlade read `04` rather than `0C`; we infer, without direct evidence, that
+local dimming had been turned off before that read. `08` is not a "full charge
+completed" marker; that earlier hypothesis is withdrawn.
 
-### Full charge does not end in firmware
+### Local full-charge test
 
 A local test on 2026-10-14 used a second RZ09-0581 (MCU 1.7.0.0), plugged in
 throughout, with Synapse not running. OpenBlade enabled temporary full charge at
@@ -102,8 +102,11 @@ percent after about 50 minutes. For the next 100 minutes `07/8F` still read
 cancelled the mode, the readback confirmed `00`, and the saved 80 percent limit
 and protection state were unchanged.
 
-This matches the Synapse code: firmware keeps `0x04` at full charge, and
-Synapse clears it in software when it sees a battery-full event at 100 percent.
+This shows only that `0x04` persisted for about 100 minutes at 99 to 100
+percent with Synapse closed. Windows never reported the battery as fully
+charged, so the test does not show what firmware does after a battery-full
+event. Separately, the read-only inspection shows that the Synapse code clears
+the override when it sees a battery-full event.
 
 ### OpenBlade behavior
 
@@ -113,8 +116,8 @@ Synapse clears it in software when it sees a battery-full event at 100 percent.
   rejected bytes are kept in diagnostics. The RZ09-0528 and other evidence still
   accept only `00` and `04`.
 - Writing: OpenBlade's only captured payloads are enable `04` and cancel `00`.
-  Each replaces the whole byte, so it would also turn off any other setting
-  that is on. Before every `07/0F` write, explicit or automatic, the port reads
+  Each is a whole byte, so by the bit table it would also turn off any other
+  setting that is on; that combination has not been captured. Before every `07/0F` write, explicit or automatic, the port reads
   `07/8F` again in the same write session and sends the write only if that read
   is `00` or `04`. If CPU boost, maximum fan speed, or local dimming is on, the
   write is refused before anything is sent, and the result says that OpenBlade
