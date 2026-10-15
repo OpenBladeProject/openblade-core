@@ -75,6 +75,19 @@ Manual fan curves persist OpenBlade intent and render it through the validated
 fixed-speed primitive. That software intent is distinct from physical fan RPM
 readback.
 
+## Direct fan and HyperBoost transitions
+
+On full-power AC, OpenBlade applies manual fan entry and speed changes without
+first resetting performance to Balanced or fans to Automatic. Returning to
+Automatic applies the selected performance mode directly, including saved
+Custom CPU/GPU levels. HyperBoost also enters directly from manual fans on
+either admitted cooling-pad path, with fresh eligibility checks for each write.
+
+The 2025 model keeps its own captured commands and 2000–5000 RPM range. Generic
+manual readback does not confirm an effective performance preset or exact RPM
+target. See [direct transition commands and validation scope](rz09-0581-direct-control-transitions.md)
+for the implementation evidence and sequences still awaiting physical checks.
+
 ## Remaining frontier
 
 Use the coverage ledger for the complete leaf-level list. The main unresolved

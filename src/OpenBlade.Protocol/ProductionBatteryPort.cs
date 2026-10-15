@@ -760,12 +760,11 @@ internal sealed class ProductionBatteryPort :
         // state for the whole transition. Where both a pad-present and a pad-less path are
         // admitted, no command may proceed under the other path.
         CoolingPadConnectionState? entryPadState = enabled ? journaledPadState : null;
-        // Generic manual readback intentionally has no performance value. The pad-less
-        // path uses the requested, admitted base mode without inventing a firmware value.
-        bool directPadlessManualEntry = enabled
-            && Capabilities.SupportsDirectManualFanTransitions
-            && (journaledPadState == CoolingPadConnectionState.Absent
-                || lifecycleValidation);
+        // Both admitted pad paths use the model's same mode-7 command pair.
+        // Manual readback hides performance; retain the requested base as intent,
+        // while fresh eligibility below locks and checks the selected pad path.
+        bool directManualEntry = enabled
+            && Capabilities.SupportsDirectManualFanTransitions;
         return ExecuteThermalSettersAsync(
             actions,
             state => state.HyperBoostActive == enabled
@@ -775,11 +774,11 @@ internal sealed class ProductionBatteryPort :
                 ? state => !state.HyperBoostActive
                     && (state.Performance == baseMode
                             && state.Fans == FanMode.Automatic
-                        || directPadlessManualEntry
+                        || directManualEntry
                             && state.Fans == FanMode.Maximum)
                 : state => state.HyperBoostActive && state.Fans == FanMode.Automatic,
             enabled
-                ? $"HyperBoost requires confirmed {baseMode} performance with Automatic fans, or admitted pad-absent direct entry from manual fan control."
+                ? $"HyperBoost requires confirmed {baseMode} performance with Automatic fans, or admitted direct entry from manual fan control."
                 : $"Only a confirmed HyperBoost state can be restored directly to {baseMode}.",
             applyMaximumTiming: false,
             verifyFinalState: true,

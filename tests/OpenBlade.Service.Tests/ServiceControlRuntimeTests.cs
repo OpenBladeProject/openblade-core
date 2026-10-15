@@ -29717,11 +29717,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(writes, context.Device.HyperBoostSetCalls);
     }
 
-    [Fact]
-    public async Task DirectPadlessHyperBoost_ManualEntryAndExitPreserveIntentWithoutDefaultWrites()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectHyperBoost_ManualEntryAndExitPreserveIntentWithoutDefaultWrites(
+        bool requiresCoolingPad)
     {
         (TestContext context, RecordingHyperBoostOwnershipJournalStore journal,
-            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync();
+            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync(requiresCoolingPad);
         int performanceWrites = context.Device.PerformanceWrites.Count;
         int fanWrites = context.Device.FanControlWrites.Count;
 
@@ -29733,7 +29736,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             Assert.Single(context.Device.HyperBoostEntryStates));
         Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
         Assert.Equal(fanWrites, context.Device.FanControlWrites.Count);
-        Assert.Equal(PerformancePreset.Performance, journal.Journal!.BaseMode);
+        Assert.Equal(requiresCoolingPad, journal.Journal!.RequiresCoolingPad);
+        Assert.Equal(PerformancePreset.Performance, journal.Journal.BaseMode);
         Assert.Equal(PerformancePreset.Performance, journal.Journal.RestoreIntent.Performance);
         Assert.Equal(manual, journal.Journal.RestoreIntent.FanControl);
 
@@ -29754,13 +29758,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(WriteSubmissionState.KnownNotApplied)]
-    [InlineData(WriteSubmissionState.Indeterminate)]
-    public async Task DirectPadlessHyperBoost_FailedEntryDoesNotResetOrReplay(
-        WriteSubmissionState submissionState)
+    [InlineData(WriteSubmissionState.KnownNotApplied, false)]
+    [InlineData(WriteSubmissionState.Indeterminate, false)]
+    [InlineData(WriteSubmissionState.KnownNotApplied, true)]
+    [InlineData(WriteSubmissionState.Indeterminate, true)]
+    public async Task DirectHyperBoost_FailedEntryDoesNotResetOrReplay(
+        WriteSubmissionState submissionState, bool requiresCoolingPad)
     {
         (TestContext context, RecordingHyperBoostOwnershipJournalStore journal,
-            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync();
+            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync(requiresCoolingPad);
         int performanceWrites = context.Device.PerformanceWrites.Count;
         int fanWrites = context.Device.FanControlWrites.Count;
         context.Device.HyperBoostFailures.Enqueue(
@@ -30081,12 +30087,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     private async Task<(TestContext Context, RecordingHyperBoostOwnershipJournalStore Journal,
-        FanControlSettings Manual)> CreateDirectManualHyperBoostContextAsync()
+        FanControlSettings Manual)> CreateDirectManualHyperBoostContextAsync(
+            bool requiresCoolingPad = false)
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(true,
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
-                CoolingPadConnectionState.Absent),
+                requiresCoolingPad ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
         context.Device.UseScopedPerformanceFanRead = true;
