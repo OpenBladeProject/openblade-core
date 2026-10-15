@@ -247,7 +247,11 @@ public sealed class ProfileAutomationState
 
     public void CancelTemporaryFullCharge() => temporaryFullCharge = false;
 
-    public DesiredDeviceState Resolve(ConfirmedDeviceState confirmed)
+    public DesiredDeviceState Resolve(ConfirmedDeviceState confirmed) =>
+        Resolve(confirmed, supportsManualFansOnLimitedPower: true);
+
+    public DesiredDeviceState Resolve(ConfirmedDeviceState confirmed,
+        bool supportsManualFansOnLimitedPower)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
         PowerProfile profile = PowerSource switch
@@ -275,17 +279,17 @@ public sealed class ProfileAutomationState
                 : null;
         ManualOverride<FanMode>? activeRecoveredFans =
             recoveredHyperBoostFans is { } recoveredFan
-            && IsFanCompatibleWithSource(recoveredFan.Value, PowerSource)
+            && IsFanCompatibleWithSource(recoveredFan.Value, PowerSource, supportsManualFansOnLimitedPower)
                 ? recoveredFan
                 : null;
         ManualOverride<FanMode>? activeTemporaryFans =
             temporaryFans is { } temporaryFan
-            && IsFanCompatibleWithSource(temporaryFan.Value, PowerSource)
+            && IsFanCompatibleWithSource(temporaryFan.Value, PowerSource, supportsManualFansOnLimitedPower)
                 ? temporaryFan
                 : null;
         ManualOverride<FanMode>? activePersistentFans =
             persistentFans is { } persistentFan
-            && IsFanCompatibleWithSource(persistentFan.Value, PowerSource)
+            && IsFanCompatibleWithSource(persistentFan.Value, PowerSource, supportsManualFansOnLimitedPower)
                 ? persistentFan
                 : null;
         ResolvedSetting<PerformancePreset> resolvedPerformance =
@@ -332,6 +336,14 @@ public sealed class ProfileAutomationState
                 confirmed.Fans.GetValueOrDefault(),
                 activeTemporaryFans,
                 activePersistentFans);
+        if (PowerSource == PowerSource.UsbC
+            && !FanControlPowerPolicy.IsAvailable(PowerSource, resolvedFans.Value,
+                supportsManualFansOnLimitedPower))
+        {
+            // Retain saved manual intent for a compatible source. This exact
+            // backend can only hand fans to firmware on limited external power.
+            resolvedFans = new(FanMode.Automatic, SettingValueSource.PowerProfile);
+        }
         ResolvedSetting<LightingSettings> resolvedLighting =
             ResolveLighting(profile, confirmed);
         FanControlSettings profileFanControl = profile.FanControl
@@ -427,8 +439,9 @@ public sealed class ProfileAutomationState
         _ => null,
     };
 
-    private static bool IsFanCompatibleWithSource(FanMode fans, PowerSource source) =>
-        FanControlPowerPolicy.IsAvailable(source, fans);
+    private static bool IsFanCompatibleWithSource(FanMode fans, PowerSource source,
+        bool supportsManualFansOnLimitedPower) =>
+        FanControlPowerPolicy.IsAvailable(source, fans, supportsManualFansOnLimitedPower);
 
     private static void SetOverride<T>(
         ManualOverride<T>? value,
