@@ -338,6 +338,25 @@ public sealed class ExperimentalThermalExpansionTests
         Assert.Empty(session.Writes);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(5)]
+    public async Task FixedTargets_RejectObservedMaximumFlagOutsideCustomBeforeWrites(byte mode)
+    {
+        var session = new Session { Mode = mode, MaximumFans = true };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
+        await using var port = Create(0x029F, session, policy);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanTargetsAsync(3000, 3000, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Empty(session.Writes);
+        Assert.True(session.MaximumFans);
+        Assert.True(policy.WritesAllowed);
+        Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "MaximumFans"
+            && item.ConfirmedValue!.Contains("MaximumFans=True", StringComparison.Ordinal));
+    }
+
     private static ExperimentalBladeModel Model(int pid) => ExperimentalBladeModels.All.Single(item => item.ProductId == pid);
 
     private static ExperimentalBladePort Create(int pid, Session session, ExperimentalFeaturesPolicy? policy = null,

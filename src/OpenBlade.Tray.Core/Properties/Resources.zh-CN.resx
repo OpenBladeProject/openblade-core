@@ -1467,4 +1467,7 @@
   <data name="Maximum fans" xml:space="preserve">
     <value>风扇最高转速</value>
   </data>
+  <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
+    <value>“风扇最高转速”正在控制风扇。关闭此选项后即可选择风扇模式。</value>
+  </data>
 </root>

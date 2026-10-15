@@ -2456,6 +2456,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanEditCustomMaximumFans));
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
+            NotifyFanControlAvailability();
             NotifyCommands();
         }
     }
@@ -2735,11 +2736,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ? TrayText.Get("OpenBlade is waiting for a fresh, complete read of the laptop state.")
             : HyperBoostActive
                 ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
-                : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
-                    ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
-                    : !CanChangeFanMode
-                        ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
-                        : string.Empty;
+                : SelectedPerformance == PerformancePreset.Custom && SelectedCustomMaximumFans
+                    ? TrayText.Get("Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode.")
+                    : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
+                        ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
+                        : !CanChangeFanMode
+                            ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
+                            : string.Empty;
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl

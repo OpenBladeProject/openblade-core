@@ -327,6 +327,8 @@ public sealed class ExperimentalBladeLightingTests
         await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
             LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
             CancellationToken.None));
+        Assert.Equal(LightingEffect.Spectrum, ownership.Baseline!.Settings.Effect);
+        session.Effect = 5;
         policy.CompleteRecovery();
         session.FailFrameRow = false;
         int before = session.Commands.Count;
@@ -335,6 +337,7 @@ public sealed class ExperimentalBladeLightingTests
             LightingSettingsFactory.SpectrumCycling(50),
             CancellationToken.None);
 
+        Assert.Equal(0x83, session.Commands[before].CommandId);
         Assert.Contains(session.Commands.Skip(before), command =>
             command.ClassId == 0x0F && command.CommandId == 0x02
             && command.Arguments.Span.SequenceEqual(new byte[] { 1, 5, 3 }));
@@ -405,6 +408,197 @@ public sealed class ExperimentalBladeLightingTests
                     new byte[] { ambient.Color.Red, ambient.Color.Green, ambient.Color.Blue },
                     rgb)));
         Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+    }
+
+    [Fact]
+    public async Task LateUniformFrameAfterOwnershipChange_IsBlockedWithoutFailureObservation()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = Create(session, policy, model);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 50),
+            CancellationToken.None);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+        ExperimentalControlObservation[] before = policy.Snapshot().Observations.ToArray();
+
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.PushUniformLightingFrameAsync(
+                new UniformLightingFrame(new RgbColor(9, 8, 7)),
+                CancellationToken.None));
+
+        Assert.True(policy.WritesAllowed);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Equal(before, policy.Snapshot().Observations);
+    }
+
+    [Fact]
+    public async Task FaultedFrame_NewHostOwnershipUsesFreshReadableBaseline()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        var ownership = new ExperimentalLightingOwnershipState();
+        await using var port = new ExperimentalBladePort(
+            session, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn,
+            sharedLightingOwnership: ownership);
+        LightingSettings ambient = LightingSettingsFactory.AmbientAwareness(
+            AmbientAwarenessRegion.Full,
+            50);
+        await port.SetLightingAsync(ambient, CancellationToken.None);
+        session.FailFrameRow = true;
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.PushUniformLightingFrameAsync(
+                new UniformLightingFrame(new RgbColor(1, 2, 3)),
+                CancellationToken.None));
+        Assert.Equal(LightingEffect.Spectrum, ownership.Baseline!.Settings.Effect);
+        policy.CompleteRecovery();
+        session.FailFrameRow = false;
+        session.Effect = 4;
+        session.Direction = 1;
+
+        await port.SetLightingAsync(ambient, CancellationToken.None);
+
+        Assert.Equal(LightingEffect.Wave, ownership.Baseline!.Settings.Effect);
+        await port.RelinquishRendererAsync(CancellationToken.None);
+        Assert.Equal(4, session.Effect);
+        Assert.Contains(session.Commands, command =>
+            command.ClassId == 0x0F && command.CommandId == 0x02
+            && command.Arguments.Span.SequenceEqual(new byte[] { 1, 5, 4, 1 }));
+    }
+
+    [Fact]
+    public async Task FaultedFrame_UnreadableUnderlyingBlocksNewHostOwnershipUntilBuiltinChoice()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session { FailFrameRow = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = Create(session, policy, model);
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None));
+        policy.CompleteRecovery();
+        session.FailFrameRow = false;
+        session.Effect = 5;
+        int before = session.Commands.Count;
+
+        CapabilityUnavailableException failure =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+                port.SetLightingAsync(
+                    LightingSettingsFactory.AmbientAwareness(
+                        AmbientAwarenessRegion.Full,
+                        50),
+                    CancellationToken.None));
+
+        Assert.Contains("built-in lighting effect", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        Assert.All(session.Commands.Skip(before),
+            command => Assert.True(command.CommandId >= 0x80));
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HostOwnership_PartialLogoChangeFaultsNewOwner(bool startFaulted)
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        var ownership = new ExperimentalLightingOwnershipState();
+        await using var port = new ExperimentalBladePort(
+            session, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn,
+            sharedLightingOwnership: ownership);
+        if (startFaulted)
+        {
+            session.FailFrameRow = true;
+            await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                CancellationToken.None));
+            policy.CompleteRecovery();
+            session.FailFrameRow = false;
+        }
+        session.FailLogoPower = true;
+        int before = session.Commands.Count;
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.AmbientAwareness(
+                    AmbientAwarenessRegion.Full,
+                    50) with
+                {
+                    LogoMode = LogoLightingMode.Breathing,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        Assert.Equal(2, session.Commands.Skip(before).Count(command =>
+            command.ClassId == 0x03 && command.CommandId < 0x80));
+        int afterFailure = session.Commands.Count;
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.PushUniformLightingFrameAsync(
+                new UniformLightingFrame(new RgbColor(4, 5, 6)),
+                CancellationToken.None));
+        Assert.Equal(afterFailure, session.Commands.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HostOwnership_PreSubmissionLogoBlockRestoresPriorOwnership(bool startFaulted)
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        var ownership = new ExperimentalLightingOwnershipState();
+        await using var port = new ExperimentalBladePort(
+            session, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn,
+            sharedLightingOwnership: ownership);
+        if (startFaulted)
+        {
+            session.FailFrameRow = true;
+            await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                CancellationToken.None));
+            policy.CompleteRecovery();
+            session.FailFrameRow = false;
+        }
+        LightingRendererOwnershipState priorOwnership = port.OwnershipState;
+        ExperimentalLightingBaseline? priorBaseline = ownership.Baseline;
+        LightingSettings? priorIntent = ownership.Intent;
+        int before = session.Commands.Count;
+        session.BeforeSubmission = command =>
+        {
+            if (command.ClassId == 0x03 && command.CommandId == 0x02)
+            {
+                policy.RequireRecovery();
+            }
+        };
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.AmbientAwareness(
+                    AmbientAwarenessRegion.Full,
+                    50) with
+                {
+                    LogoMode = LogoLightingMode.Breathing,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(priorOwnership, port.OwnershipState);
+        Assert.True(ReferenceEquals(priorBaseline, ownership.Baseline));
+        Assert.Equal(priorIntent, ownership.Intent);
+        Assert.All(session.Commands.Skip(before),
+            command => Assert.True(command.CommandId >= 0x80));
     }
 
     [Fact]

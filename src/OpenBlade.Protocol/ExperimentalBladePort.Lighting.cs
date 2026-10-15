@@ -380,9 +380,16 @@ internal sealed partial class ExperimentalBladePort
         bool submitted = false;
         bool frameWriteAttempted = false;
         bool frameActivationAttempted = false;
+        bool capturedBaselineForFrameAttempt = false;
         LightingRendererOwnershipState priorOwnership = OwnershipState;
+        ExperimentalLightingBaseline? priorBaseline = lightingOwnership.Baseline;
+        LightingSettings? priorIntent = lightingOwnership.Intent;
+        bool hostOwnershipAcquired = false;
         bool replacingOwnedFrame = IsOwnedFrameOwnership(priorOwnership);
         bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
+        bool startingHostFrameFromFault = replacingFaultedFrame
+            && settings.Effect is LightingEffect.AmbientAwareness
+                or LightingEffect.AudioMeter;
         byte raw = checked((byte)((settings.Brightness * 255 + 50) / 100));
         string requested = $"{settings.Effect};Raw={raw};Logo={settings.LogoMode?.ToString() ?? "Unchanged"}";
         try
@@ -394,6 +401,13 @@ internal sealed partial class ExperimentalBladePort
             {
                 baseline = lightingOwnership.Intent
                     ?? throw new IOException("Owned static lighting intent is unavailable.");
+                baselineRaw = await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (replacingFaultedFrame && !startingHostFrameFromFault)
+            {
+                baseline = lightingOwnership.Baseline?.Settings
+                    ?? throw new IOException(
+                        "The confirmed pre-frame lighting baseline is unavailable.");
                 baselineRaw = await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false);
             }
             else
@@ -440,18 +454,39 @@ internal sealed partial class ExperimentalBladePort
                     throw new CapabilityUnavailableException(
                         "Uniform host-rendered lighting is not admitted for this model.");
                 }
-                lightingOwnership.Baseline ??=
-                    new ExperimentalLightingBaseline(baseline, originalBaselineRaw);
+                var hostBaseline = new ExperimentalLightingBaseline(
+                    baseline,
+                    originalBaselineRaw);
+                if (replacingFaultedFrame)
+                {
+                    // A readable effect after a fault is the only safe baseline
+                    // for this new ownership. Never retain the former owner's
+                    // stale restore destination.
+                    lightingOwnership.Baseline = hostBaseline;
+                }
+                else
+                {
+                    lightingOwnership.Baseline ??= hostBaseline;
+                }
                 lightingOwnership.Intent = settings with { LogoMode = null };
                 SetLightingOwnership(settings.Effect == LightingEffect.AmbientAwareness
                     ? LightingRendererOwnershipState.AmbientAwareness
                     : LightingRendererOwnershipState.AudioMeter);
+                hostOwnershipAcquired = true;
                 setOnlyFrame = true;
             }
             else if (settings.Effect == LightingEffect.Static && SupportsUniformFrame(model))
             {
                 ExperimentalLightingBaseline frameBaseline = lightingOwnership.Baseline
                     ?? new ExperimentalLightingBaseline(baseline, originalBaselineRaw);
+                if (lightingOwnership.Baseline is null)
+                {
+                    // Persist the confirmed built-in baseline before the first
+                    // row can become indeterminate. This is restoration intent,
+                    // not custom-frame color readback.
+                    lightingOwnership.Baseline = frameBaseline;
+                    capturedBaselineForFrameAttempt = true;
+                }
                 // The upstream model reports that standby and idle fade can
                 // discard volatile custom rows. Ownership and color equality
                 // therefore cannot prove that the frame is still present.
@@ -540,8 +575,8 @@ internal sealed partial class ExperimentalBladePort
 
             if (settings.LogoMode is { } logo && logo != baselineLogo)
             {
-                await SetLogoAsync(logo, cancellationToken).ConfigureAwait(false);
-                submitted = true;
+                await SetLogoAsync(logo, cancellationToken, () => submitted = true)
+                    .ConfigureAwait(false);
             }
 
             if (setOnlyFrame)
@@ -561,14 +596,33 @@ internal sealed partial class ExperimentalBladePort
             policy.Record("KeyboardLighting", "Readback", "Confirmed", submitted,
                 requested, requested);
         }
+        catch (DeviceStateContentRejectedException)
+            when (startingHostFrameFromFault && !submitted)
+        {
+            throw new CapabilityUnavailableException(
+                "Choose and confirm a built-in lighting effect before restarting host-rendered lighting.");
+        }
         catch (Exception exception)
         {
+            bool indeterminate = exception is BladeWriteException
+            { SubmissionState: WriteSubmissionState.Indeterminate };
             if ((replacingOwnedFrame && submitted)
+                || (hostOwnershipAcquired && (submitted || indeterminate))
                 || frameActivationAttempted
-                || frameWriteAttempted && exception is BladeWriteException
-                { SubmissionState: WriteSubmissionState.Indeterminate })
+                || frameWriteAttempted
+                    && (submitted || indeterminate))
             {
                 SetLightingFaulted();
+            }
+            else if (hostOwnershipAcquired)
+            {
+                lightingOwnership.Baseline = priorBaseline;
+                lightingOwnership.Intent = priorIntent;
+                SetLightingOwnership(priorOwnership);
+            }
+            else if (capturedBaselineForFrameAttempt)
+            {
+                lightingOwnership.Baseline = null;
             }
             throw MapWriteFailure("KeyboardLighting", submitted, exception);
         }
@@ -625,7 +679,10 @@ internal sealed partial class ExperimentalBladePort
             requireEcho: false).ConfigureAwait(false);
     }
 
-    private async Task SetLogoAsync(LogoLightingMode logo, CancellationToken cancellationToken)
+    private async Task SetLogoAsync(
+        LogoLightingMode logo,
+        CancellationToken cancellationToken,
+        Action markSubmitted)
     {
         if (logo != LogoLightingMode.Off)
         {
@@ -633,11 +690,13 @@ internal sealed partial class ExperimentalBladePort
             await ExchangeAsync("LogoLighting", 0x03, 0x02,
                 LogoLightingProtocol.SetEffectArguments(logo), true, cancellationToken)
                 .ConfigureAwait(false);
+            markSubmitted();
         }
         RequireWriteAdmission();
         await ExchangeAsync("LogoLighting", 0x03, 0x00,
             LogoLightingProtocol.SetStateArguments(logo), true, cancellationToken)
             .ConfigureAwait(false);
+        markSubmitted();
         if (await ReadLogoAsync(cancellationToken).ConfigureAwait(false) != logo)
         {
             throw new IOException(
@@ -790,6 +849,12 @@ internal sealed partial class ExperimentalBladePort
                 recordAcknowledgedSubmission: false).ConfigureAwait(false);
             submitted = true;
             policy.RecordUniformFrameApplied(frame.Color);
+        }
+        catch (CapabilityUnavailableException) when (!submitted)
+        {
+            // A late renderer frame lost ownership before any submission.
+            // Preserve the typed Blocked result and do not add failure noise.
+            throw;
         }
         catch (Exception exception)
         {

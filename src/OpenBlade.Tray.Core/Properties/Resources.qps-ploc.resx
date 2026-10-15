@@ -1557,4 +1557,7 @@
   <data name="Maximum fans" xml:space="preserve">
     <value>[!! Máxímúm fáns ~~~~ !!]</value>
   </data>
+  <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
+    <value>[!! Máxímúm fáns ís cóntróllíng thé fáns. Túrn óff Máxímúm fáns tó chóósé á fán módé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

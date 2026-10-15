@@ -74,13 +74,16 @@ internal sealed partial class ExperimentalBladePort
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Manual fan changes require an ordinary confirmed external-power preset.");
             }
-            // The actual reported override is HyperBoost, excluded above.
             // Preserve ordinary mode and Custom levels instead of resetting to
             // Balanced just because the original Synapse capture started there.
-            if (targets.HasValue && baseline.CustomPerformance?.MaximumFans == true)
+            // The shared maximum-fan bit can be observed outside Custom; a preset
+            // name alone cannot establish that fixed targets have no override.
+            if (targets.HasValue && (baseline.CustomPerformance?.MaximumFans == true
+                || CreateCustomCapabilities(model).SupportsMaximumFans
+                    && await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false)))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    "Turn off Custom maximum fans before selecting fixed fan targets.");
+                    "Turn off maximum fans in Custom before selecting fixed fan targets.");
             }
             (int First, int Second) saved = await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("Fans", "Baseline", "Confirmed", requested: targets?.ToString() ?? "Automatic",

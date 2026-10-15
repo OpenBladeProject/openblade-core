@@ -4294,10 +4294,35 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.SetFanControlCommand.CanExecute(new FanControlSettings(FanMode.Fixed, 3000, ManualFanCurve.Default)));
         Assert.Contains(CustomPerformanceLevel.Boost, viewModel.AvailableCustomCpuLevels);
         Assert.DoesNotContain(CustomPerformanceLevel.Boost, viewModel.AvailableCustomGpuLevels);
-        await viewModel.SetCustomMaximumFansAsync(false, CancellationToken.None);
+        Assert.Equal("Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode.",
+            viewModel.FanControlUnavailableMessage);
+        var notifications = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is { } name) { notifications.Add(name); }
+        };
+        Task disableMaximumFans = viewModel.SetCustomMaximumFansAsync(false, CancellationToken.None);
+        Assert.Contains(nameof(viewModel.FanControlUnavailableMessage), notifications);
+        Assert.Contains(nameof(viewModel.HasFanControlUnavailableMessage), notifications);
+        await disableMaximumFans;
         Assert.Equal(levels with { MaximumFans = false }, client.PerformanceOverride!.CustomPerformance);
         Assert.True(viewModel.HasThermalProfileDraft);
         Assert.False(viewModel.SelectedCustomMaximumFans);
+        Assert.Empty(viewModel.FanControlUnavailableMessage);
+        Assert.False(viewModel.HasFanControlUnavailableMessage);
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Contains(nameof(viewModel.FanControlUnavailableMessage), notifications);
+        Assert.Contains(nameof(viewModel.HasFanControlUnavailableMessage), notifications);
+        notifications.Clear();
+        Task enableMaximumFans = viewModel.SetCustomMaximumFansAsync(true, CancellationToken.None);
+        Assert.Contains(nameof(viewModel.FanControlUnavailableMessage), notifications);
+        Assert.Contains(nameof(viewModel.HasFanControlUnavailableMessage), notifications);
+        await enableMaximumFans;
+        Assert.True(viewModel.HasFanControlUnavailableMessage);
+        Assert.Contains("Turn off Maximum fans", viewModel.FanControlUnavailableMessage);
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Contains(nameof(viewModel.FanControlUnavailableMessage), notifications);
+        Assert.Contains(nameof(viewModel.HasFanControlUnavailableMessage), notifications);
     }
 
     [Fact]
