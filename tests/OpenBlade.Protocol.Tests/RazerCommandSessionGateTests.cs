@@ -127,6 +127,9 @@ public sealed class RazerCommandSessionGateTests
             cancellation.Token);
 
         Assert.Equal(HidSessionFailureKind.QueuedCanceled, result.Failure);
+        Assert.Equal(
+            HidSessionFailurePhase.SharedGateAdmission,
+            result.Diagnostic?.Phase);
         Assert.Equal(0, inner.Calls);
         Assert.Equal(0, gate.CurrentCount);
     }
@@ -146,6 +149,9 @@ public sealed class RazerCommandSessionGateTests
             25);
 
         Assert.Equal(HidSessionFailureKind.Exhausted, result.Failure);
+        Assert.Equal(
+            HidSessionFailurePhase.SharedGateAdmission,
+            result.Diagnostic?.Phase);
         Assert.Equal(0, inner.Calls);
         Assert.Equal(0, gate.CurrentCount);
     }

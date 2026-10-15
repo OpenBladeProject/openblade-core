@@ -1869,6 +1869,51 @@ public sealed class ProductionLightingPortTests
             error.Message);
     }
 
+    [Theory]
+    [InlineData(false, HidSessionFailureKind.QueuedCanceled)]
+    [InlineData(false, HidSessionFailureKind.Exhausted)]
+    [InlineData(true, HidSessionFailureKind.QueuedCanceled)]
+    [InlineData(true, HidSessionFailureKind.Exhausted)]
+    public async Task SharedGateAdmissionFailureIsKnownNotAppliedBeforeCancellationFallback(
+        bool rz090528,
+        HidSessionFailureKind failureKind)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            BrightnessSetFailure = new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                failureKind)
+            {
+                Diagnostic = new(
+                    HidSessionFailurePhase.SharedGateAdmission,
+                    failureKind,
+                    null,
+                    null),
+            },
+            BrightnessSetFailureObserved = failureKind == HidSessionFailureKind.QueuedCanceled
+                ? cancellation.Cancel
+                : null,
+        };
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session,
+            TimeProvider.System,
+            rz090528,
+            new MatrixWriter());
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.StepBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(
+            HidSessionFailurePhase.SharedGateAdmission,
+            failure.Diagnostic?.Phase);
+        Assert.Equal((byte)0x03, failure.CommandClass);
+        Assert.Equal((byte)0x03, failure.CommandId);
+    }
+
     [Fact]
     public async Task Transition84UnexpectedSuccessfulPayloadIsReportedWithoutContinuing()
     {
@@ -2187,8 +2232,11 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(new MatrixRgb(0, 0xFF, 0), writer.Reports[0].Frame[3]);
     }
 
-    [Fact]
-    public async Task PlaybackMuteIndicator_FailedWriteRollsBackRenderStateForRetry()
+    [Theory]
+    [InlineData(HidSessionFailureKind.ConflictBlocked)]
+    [InlineData(HidSessionFailureKind.Exhausted)]
+    public async Task PlaybackMuteIndicator_KnownUnsubmittedFailureRollsBackRenderStateForRetry(
+        HidSessionFailureKind failureKind)
     {
         var session = new LightingSession(initialBrightness: 0xFF);
         var writer = new MatrixWriter();
@@ -2196,7 +2244,7 @@ public sealed class ProductionLightingPortTests
         var baseColor = new RgbColor(0x12, 0x34, 0x56);
         LightingSettings lighting = LightingSettingsFactory.Static(baseColor, 100);
         await port.SetLightingAsync(lighting, default);
-        writer.Failures.Enqueue(HidSessionFailureKind.ConflictBlocked);
+        writer.Failures.Enqueue(failureKind);
 
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
             () => port.SetPlaybackMuteIndicatorAsync(muted: true, default));
@@ -3272,6 +3320,10 @@ public sealed class ProductionLightingPortTests
 
         internal int? FailBrightnessSetOnCall { get; set; }
 
+        internal HidSessionResult<ReadOnlyMemory<byte>>? BrightnessSetFailure { get; set; }
+
+        internal Action? BrightnessSetFailureObserved { get; init; }
+
         internal HidSessionResult<ReadOnlyMemory<byte>>? TransitionFailure { get; set; }
 
         internal byte[]? Transition84Response { get; set; }
@@ -3322,6 +3374,12 @@ public sealed class ProductionLightingPortTests
             if ((command.ClassId, command.CommandId) == (0x03, 0x03))
             {
                 BrightnessSetCalls++;
+                if (BrightnessSetFailure is { } brightnessSetFailure)
+                {
+                    BrightnessSetFailure = null;
+                    BrightnessSetFailureObserved?.Invoke();
+                    return Task.FromResult(brightnessSetFailure);
+                }
                 if (FailBrightnessSetOnCall == BrightnessSetCalls)
                 {
                     return Task.FromResult(

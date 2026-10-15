@@ -1869,6 +1869,24 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             return result.Value;
         }
 
+        if (write
+            && (result.Failure is
+                    HidSessionFailureKind.QueuedCanceled or
+                    HidSessionFailureKind.Exhausted
+                || result.Diagnostic?.Phase == HidSessionFailurePhase.SharedGateAdmission))
+        {
+            string phase = result.Diagnostic?.Phase.ToString() ?? "None";
+            throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                $"PID 02C6 lighting command {command.ClassId:X2}/{command.CommandId:X2} was not submitted " +
+                $"({result.Failure}, {phase}).")
+            {
+                Diagnostic = result.Diagnostic,
+                CommandClass = command.ClassId,
+                CommandId = command.CommandId,
+            };
+        }
+
         if (cancellationToken.IsCancellationRequested)
         {
             if (write)
@@ -1894,6 +1912,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
         WriteSubmissionState state = result.Failure is
             HidSessionFailureKind.QueuedCanceled or
+            HidSessionFailureKind.Exhausted or
             HidSessionFailureKind.ConflictBlocked or
             HidSessionFailureKind.ConflictDetectionFailed
                 ? WriteSubmissionState.KnownNotApplied
@@ -1936,6 +1955,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
         WriteSubmissionState state = result.Failure is
             HidSessionFailureKind.QueuedCanceled or
+            HidSessionFailureKind.Exhausted or
             HidSessionFailureKind.ConflictBlocked or
             HidSessionFailureKind.ConflictDetectionFailed
                 ? WriteSubmissionState.KnownNotApplied

@@ -272,33 +272,41 @@ internal sealed class NativeOperationState
             return;
         }
 
+        Exception? finalizationException = null;
         try
         {
             finalizeResourcesAction();
-            lock (sync)
-            {
-                // Managed cancellation may have returned before the native
-                // callback. Only finalized resources admit another device owner.
-                nativeRetirement?.TrySetResult();
-            }
-            completion.TrySetResult(finalization.Value.Result);
         }
         catch (Exception exception)
         {
-            Task retirement;
-            lock (sync)
+            finalizationException = exception;
+        }
+
+        Task? retirement = null;
+        lock (sync)
+        {
+            // Finalization starts only after native completion (or confirmed
+            // non-submission) and all native-use leases have ended. A cleanup
+            // failure remains reportable, but no longer makes the device I/O
+            // lifetime ambiguous to another owner.
+            if (nativeRetirement is not null || finalizationException is not null)
             {
                 nativeRetirement ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
-                nativeRetirement.TrySetException(exception);
+                nativeRetirement.TrySetResult();
                 retirement = nativeRetirement.Task;
-                // Retirement consumers require successful completion. Observe
-                // failure even when no shared-device gate is attached.
-                _ = retirement.Exception;
             }
+        }
+
+        if (finalizationException is null)
+        {
+            completion.TrySetResult(finalization.Value.Result);
+        }
+        else
+        {
             completion.TrySetException(
                 new NativeOperationFinalizationException(
                     finalization.Value.Result with { NativeRetirement = retirement },
-                    exception));
+                    finalizationException));
         }
     }
 

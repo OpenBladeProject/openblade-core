@@ -218,7 +218,7 @@ public sealed class NativeOperationStateTests
     }
 
     [Fact]
-    public async Task FinalizerFailurePreservesTheCompletedNativeResult()
+    public async Task FinalizerFailurePreservesTheCompletedNativeResultAndRetiresNativeLifetime()
     {
         var cleanupFailure = new ArgumentException("cleanup");
         var state = new NativeOperationState(() => throw cleanupFailure);
@@ -238,16 +238,15 @@ public sealed class NativeOperationStateTests
                 HidFeatureTermination.Completed),
             error.Result with { NativeRetirement = null });
         Assert.NotNull(error.Result.NativeRetirement);
-        Assert.True(error.Result.NativeRetirement.IsFaulted);
-        Assert.Same(cleanupFailure,
-            await Assert.ThrowsAsync<ArgumentException>(async () => await error.Result.NativeRetirement));
+        Assert.True(error.Result.NativeRetirement.IsCompletedSuccessfully);
+        await error.Result.NativeRetirement;
         Assert.Same(cleanupFailure, error.InnerException);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task EarlyCancellationRetiresOnlyAfterSuccessfulResourceFinalization(bool failFinalization)
+    public async Task EarlyCancellationRetiresAfterResourceFinalizationAttempt(bool failFinalization)
     {
         Task? retirement = null;
         bool finalized = false;
@@ -278,15 +277,73 @@ public sealed class NativeOperationStateTests
 
         Assert.True(finalized);
         Assert.Equal(result, await state.Completion);
-        if (failFinalization)
+        Assert.True(retirement.IsCompletedSuccessfully);
+        await retirement;
+    }
+
+    [Fact]
+    public async Task EarlyCancellationWithCleanupFailure_ReleasesSharedGateAfterLateCompletion()
+    {
+        var state = new NativeOperationState(() => throw new IOException("cleanup"));
+        Assert.True(state.TryBeginSubmission(out NativeUseLease submission));
+        state.RecordSubmitted();
+        submission.Dispose();
+        state.RecordCancellationIntent(HidFeatureTermination.DeadlineExpired);
+        state.PublishSubmittedCancellationWithoutNativeCompletion();
+        HidFeatureIoResult original = await state.Completion;
+        Assert.NotNull(original.NativeRetirement);
+
+        using var sharedGate = new SemaphoreSlim(1, 1);
+        var first = new StubSession(new(default, HidSessionFailureKind.Timeout)
         {
-            await Assert.ThrowsAsync<IOException>(async () => await retirement);
-            Assert.False(retirement.IsCompletedSuccessfully);
-        }
-        else
-        {
-            Assert.True(retirement.IsCompletedSuccessfully);
-        }
+            NativeRetirement = original.NativeRetirement,
+        });
+        var next = new StubSession(new(ReadOnlyMemory<byte>.Empty, null));
+        var command = new RazerCommandSpec(0x0D, 0x02, [], 0);
+        Func<TransactionIdAssignment> assign = static () => TransactionIdAssignment.Valid(1);
+        TimeSpan timeout = TimeSpan.FromSeconds(10);
+        Assert.Equal(
+            HidSessionFailureKind.Timeout,
+            (await new RazerCommandSessionGate(first, sharedGate).ExecuteAsync(
+                command,
+                assign,
+                timeout,
+                CancellationToken.None)).Failure);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> nextAdmission =
+            new RazerCommandSessionGate(next, sharedGate).ExecuteAsync(
+                command,
+                assign,
+                timeout,
+                CancellationToken.None);
+        Assert.False(nextAdmission.IsCompleted);
+        Assert.Equal(0, next.Calls);
+
+        state.RecordCompletion(new NativeIoCompletion(false, 0, 995));
+
+        Assert.Null((await nextAdmission).Failure);
+        Assert.Equal(1, next.Calls);
+        Assert.Equal(original, await state.Completion);
+        Assert.True(original.NativeRetirement.IsCompletedSuccessfully);
+    }
+
+    [Fact]
+    public async Task AbandonBeforeSubmission_FinalizerFailureStillRetiresNativeLifetime()
+    {
+        var cleanupFailure = new IOException("cleanup");
+        var state = new NativeOperationState(() => throw cleanupFailure);
+        Assert.True(state.TryBeginSubmission(out NativeUseLease submission));
+        state.AbandonBeforeSubmission(HidFeatureTermination.CallerCanceled);
+
+        submission.Dispose();
+
+        NativeOperationFinalizationException error =
+            await Assert.ThrowsAsync<NativeOperationFinalizationException>(
+                async () => await state.Completion);
+        Assert.False(error.Result.WasSubmitted);
+        Assert.Equal(HidFeatureTermination.CallerCanceled, error.Result.Termination);
+        Assert.NotNull(error.Result.NativeRetirement);
+        Assert.True(error.Result.NativeRetirement.IsCompletedSuccessfully);
+        Assert.Same(cleanupFailure, error.InnerException);
     }
 
     [Theory]
@@ -471,6 +528,27 @@ public sealed class NativeOperationStateTests
         public int CallCount => Volatile.Read(ref callCount);
 
         public void FinalizeResources() => Interlocked.Increment(ref callCount);
+    }
+
+    private sealed class StubSession(HidSessionResult<ReadOnlyMemory<byte>> result) :
+        IRazerCommandSession
+    {
+        public int Calls { get; private set; }
+
+        public RazerCommandSessionDisposition Disposition =>
+            RazerCommandSessionDisposition.Healthy;
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(result);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class ScriptedGate

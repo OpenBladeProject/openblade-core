@@ -25,6 +25,7 @@ public enum HidSessionFailurePhase
     GetSubmit,
     GetCompletion,
     ProtocolValidation,
+    SharedGateAdmission,
 }
 
 public enum HidProtocolValidationFailure

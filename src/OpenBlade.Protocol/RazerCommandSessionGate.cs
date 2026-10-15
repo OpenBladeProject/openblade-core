@@ -55,7 +55,7 @@ internal sealed class RazerCommandSessionGate(
         }
         catch (OperationCanceledException) when (waiting.IsCancellationRequested)
         {
-            return new(default, cancellationToken.IsCancellationRequested
+            return AdmissionFailure<ReadOnlyMemory<byte>>(cancellationToken.IsCancellationRequested
                 ? HidSessionFailureKind.QueuedCanceled
                 : HidSessionFailureKind.Exhausted);
         }
@@ -77,6 +77,12 @@ internal sealed class RazerCommandSessionGate(
             ReleaseAfterRetirement(gate, retirement);
         }
     }
+
+    internal static HidSessionResult<T> AdmissionFailure<T>(HidSessionFailureKind failure) =>
+        new(default, failure)
+        {
+            Diagnostic = new(HidSessionFailurePhase.SharedGateAdmission, failure, null, null),
+        };
 
     internal static void ReleaseAfterRetirement(SemaphoreSlim gate, Task? retirement)
     {

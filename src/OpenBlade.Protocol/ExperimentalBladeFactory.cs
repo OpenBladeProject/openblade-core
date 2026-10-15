@@ -286,6 +286,16 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                         ambiguous = true;
                     }
                 }
+                catch (NativeDeviceReadException exception)
+                    when (exception.Diagnostic?.Phase == HidSessionFailurePhase.SharedGateAdmission)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // A shared factory lock cannot be resolved by probing another
+                    // interface, and contention is not evidence of wrong hardware.
+                    policy.Record("InterfaceAdmission", "Query", "Failed",
+                        failure: $"{exception.Failure}/{exception.Diagnostic.Value.Phase}");
+                    return new(null, exception.Failure) { Diagnostic = exception.Diagnostic };
+                }
                 catch (IOException)
                 {
                     // Keep a bounded typed reason only if no interface can be admitted.
