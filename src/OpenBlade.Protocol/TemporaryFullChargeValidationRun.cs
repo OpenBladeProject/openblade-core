@@ -173,6 +173,14 @@ internal sealed class TemporaryFullChargeValidationRun : IAsyncDisposable
 
             // The fixed cancellation obligation exists before enable I/O begins.
             stage = Stage.CandidateProtection;
+            HidSessionResult<HidUnit> guard = await RequireNoOtherPowerModeSettingsAsync(
+                ids.EnableGuardQuery,
+                cancellationToken).ConfigureAwait(false);
+            if (guard.Failure is not null)
+            {
+                return guard;
+            }
+
             return await InvokeAsync(() => actor!.TemporaryFullChargeCommands.SetAsync(
                 ids.EnableSet,
                 enabled: true,
@@ -213,6 +221,16 @@ internal sealed class TemporaryFullChargeValidationRun : IAsyncDisposable
             }
 
             stage = Stage.RestorationProtection;
+            HidSessionResult<HidUnit> guard = await RequireNoOtherPowerModeSettingsAsync(
+                ids.CancelGuardQuery,
+                cancellationToken).ConfigureAwait(false);
+            if (guard.Failure is not null)
+            {
+                stage = Stage.Terminal;
+                await CloseAsync().ConfigureAwait(false);
+                return guard;
+            }
+
             HidSessionResult<HidUnit> result = await InvokeAsync(() =>
                 actor!.TemporaryFullChargeCommands.SetAsync(
                     ids.CancelSet,
@@ -250,6 +268,35 @@ internal sealed class TemporaryFullChargeValidationRun : IAsyncDisposable
         {
             gate.Release();
         }
+    }
+
+    // 07/0F replaces the whole Power Mode Control byte on every model that uses
+    // it. Each fixed write is sent only after a fresh 07/8F read on the same
+    // actor shows CPU boost, maximum fan speed, and local dimming clear;
+    // otherwise nothing is sent and the write fails as not applied.
+    private async Task<HidSessionResult<HidUnit>> RequireNoOtherPowerModeSettingsAsync(
+        byte transactionId,
+        CancellationToken cancellationToken)
+    {
+        HidSessionResult<TemporaryFullChargeReading> reading = await InvokeAsync(() =>
+            actor!.TemporaryFullChargeCommands.QueryReadingAsync(
+                transactionId,
+                cancellationToken)).ConfigureAwait(false);
+        if (reading.Failure is not null)
+        {
+            return new(default, reading.Failure) { Diagnostic = reading.Diagnostic };
+        }
+
+        return reading.Value.OtherSettings == 0
+            ? new(new HidUnit(), null)
+            : new(default, HidSessionFailureKind.ProtocolFailure)
+            {
+                Diagnostic = new HidSessionFailureDiagnostic(
+                    HidSessionFailurePhase.Guard,
+                    HidSessionFailureKind.ProtocolFailure,
+                    NativeWin32Error: null,
+                    TransferredByteCount: null),
+            };
     }
 
     private async Task<HidSessionResult<HidUnit>> EnsureRestoreActorAsync()

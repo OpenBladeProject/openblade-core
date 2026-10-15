@@ -2015,7 +2015,7 @@ public sealed class ProductionBatteryPortTests
 
     [Theory]
     [InlineData(false, new byte[] { 0xB3 }, "B3")]
-    [InlineData(true, new byte[] { 0x05 }, "05")]
+    [InlineData(true, new byte[] { 0x15 }, "15")]
     public async Task BatteryGetterContentRejection_SurfacesBoundedRejectedPayload(
         bool temporaryFullCharge,
         byte[] payload,
@@ -2039,7 +2039,7 @@ public sealed class ProductionBatteryPortTests
         Assert.True(DeviceStateContentRejection.IsContentRejection(error));
         Assert.Equal(
             temporaryFullCharge
-                ? "Temporary full charge query (07/8F) returned unrecognized payload 05 (PayloadValidator)."
+                ? "Temporary full charge query (07/8F) returned unrecognized payload 15 (PayloadValidator)."
                 : "Battery protection query (07/92) returned unrecognized payload B3 (PayloadValidator).",
             DeviceStateContentRejection.Describe(error, "Device state query"));
     }
@@ -2114,6 +2114,23 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal((byte)0x07, error.CommandClass);
         Assert.Equal((byte)0x12, error.CommandId);
         Assert.Single(session.Commands);
+    }
+
+    [Fact]
+    public async Task QueryTemporaryFullCharge_DecodesPowerModeControlBitmaskOnEveryModel()
+    {
+        foreach (ProductionBatteryReadEvidence evidence in TemporaryFullChargeEvidence())
+        {
+            var session = new ScriptedSession(Success([0x08]), Success([0x0C]), Success([0x10]));
+            await using var port = CreatePort(session, Catalog(), evidence);
+
+            Assert.False(await port.QueryTemporaryFullChargeAsync(default));
+            Assert.True(await port.QueryTemporaryFullChargeAsync(default));
+            await Assert.ThrowsAnyAsync<Exception>(
+                () => port.QueryTemporaryFullChargeAsync(default));
+            Assert.All(session.Commands, query =>
+                Assert.Equal((0x07, 0x8F), (query.ClassId, query.CommandId)));
+        }
     }
 
     [Fact]
@@ -2195,7 +2212,7 @@ public sealed class ProductionBatteryPortTests
         DeviceCommandCatalog catalog = Catalog(
             Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
             Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
-        var session = new ScriptedSession(Success([payload]));
+        var session = new ScriptedSession(Success([0x00]), Success([payload]));
         await using var port = CreatePort(
             session,
             catalog,
@@ -2204,10 +2221,134 @@ public sealed class ProductionBatteryPortTests
         Assert.True(port.Capabilities.SupportsTemporaryFullCharge);
         await port.SetTemporaryFullChargeAsync(enabled, default);
 
-        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal(2, session.Commands.Count);
+        RazerCommandSpec command = session.Commands[1];
         Assert.Equal((0x07, 0x0F), (command.ClassId, command.CommandId));
         Assert.Equal([payload], command.Arguments.ToArray());
     }
+
+    [Theory]
+    [InlineData(false, 0x00, 0x00)]
+    [InlineData(true, 0x00, 0x04)]
+    [InlineData(false, 0x04, 0x00)]
+    [InlineData(true, 0x04, 0x04)]
+    public async Task TemporarySetterWritesAfterFreshReadShowsNoOtherSettingsOnEveryModel(
+        bool enabled,
+        byte current,
+        byte payload)
+    {
+        foreach (ProductionBatteryReadEvidence evidence in TemporaryFullChargeEvidence())
+        {
+            var session = new ScriptedSession(Success([current]), Success([payload]));
+            await using var port = CreatePort(session, TemporarySetterCatalog(), evidence);
+
+            await port.SetTemporaryFullChargeAsync(enabled, default);
+
+            Assert.Collection(
+                session.Commands,
+                read => Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId)),
+                write =>
+                {
+                    Assert.Equal((0x07, 0x0F), (write.ClassId, write.CommandId));
+                    Assert.Equal([payload], write.Arguments.ToArray());
+                });
+        }
+    }
+
+    [Theory]
+    [InlineData(true, 0x08, "local dimming")]
+    [InlineData(false, 0x08, "local dimming")]
+    [InlineData(false, 0x0C, "local dimming")]
+    [InlineData(true, 0x01, "CPU boost")]
+    [InlineData(false, 0x05, "CPU boost")]
+    [InlineData(true, 0x02, "maximum fan speed")]
+    [InlineData(false, 0x06, "maximum fan speed")]
+    public async Task TemporarySetterBlocksWhenOtherPowerModeSettingsAreOnOnEveryModel(
+        bool enabled,
+        byte current,
+        string settingName)
+    {
+        foreach (ProductionBatteryReadEvidence evidence in TemporaryFullChargeEvidence())
+        {
+            var session = new ScriptedSession(Success([current]), Success([0x00]), Success([0x04]));
+            await using var port = CreatePort(session, TemporarySetterCatalog(), evidence);
+
+            BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+                () => port.SetTemporaryFullChargeAsync(enabled, default));
+
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+            Assert.StartsWith(
+                "OpenBlade won't change temporary full charge because it would also change "
+                + "other laptop settings that are on (",
+                error.Message,
+                StringComparison.Ordinal);
+            Assert.Contains(settingName, error.Message, StringComparison.Ordinal);
+            RazerCommandSpec read = Assert.Single(session.Commands);
+            Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId));
+
+            // The block is not a session failure: a later admitted read still works.
+            Assert.False(await port.QueryTemporaryFullChargeAsync(default));
+        }
+    }
+
+    [Theory]
+    [InlineData("rejected", false)]
+    [InlineData("rejected", true)]
+    [InlineData("failed", false)]
+    [InlineData("failed", true)]
+    [InlineData("throws", false)]
+    [InlineData("throws", true)]
+    public async Task TemporarySetterSendsNothingWhenPreWriteReadFailsOnEveryModel(
+        string failure,
+        bool enabled)
+    {
+        foreach (ProductionBatteryReadEvidence evidence in TemporaryFullChargeEvidence())
+        {
+            HidSessionResult<ReadOnlyMemory<byte>> preWriteRead = failure switch
+            {
+                "rejected" => Success([0x10]),
+                "failed" => new(default, HidSessionFailureKind.NativeIoFailure),
+                _ => Success([0x00]),
+            };
+            var session = new ScriptedSession(preWriteRead, Success([0x00]), Success([0x04]))
+            {
+                BeforeResult = (call, _) =>
+                {
+                    if (failure == "throws" && call == 1)
+                    {
+                        throw new IOException("pre-write read transport failure");
+                    }
+                },
+            };
+            await using var port = CreatePort(session, TemporarySetterCatalog(), evidence);
+
+            BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+                () => port.SetTemporaryFullChargeAsync(enabled, default));
+
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+            Assert.Contains(
+                "pre-write read failed before submission",
+                error.Message,
+                StringComparison.Ordinal);
+            RazerCommandSpec read = Assert.Single(session.Commands);
+            Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId));
+        }
+    }
+
+    // Every evidence set that admits 07/8F: the generic production set, the exact
+    // RZ09-0528 set, and the exact RZ09-0581 set. Power Mode Control decoding and
+    // the pre-write guard are shared, not model-specific.
+    private static IEnumerable<ProductionBatteryReadEvidence> TemporaryFullChargeEvidence() =>
+    [
+        AcceptedTemporaryReadEvidence(),
+        ProductionBatteryReadEvidence.Production,
+        BatteryValidationFactory.CreateRz090528ProductionBatteryReadEvidence(),
+        ProductionBatteryReadEvidence.Rz090581ModelScoped,
+    ];
+
+    private static DeviceCommandCatalog TemporarySetterCatalog() => Catalog(
+        Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
+        Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
 
     [Theory]
     [InlineData(false, true, true)]

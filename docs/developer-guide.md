@@ -211,6 +211,60 @@ dotnet run --project src\OpenBlade.Capture -- query-fan-rpm
 dotnet run --project src\OpenBlade.Capture -- validate path\to\fixtures.json
 ```
 
+### Power Mode Control and local dimming
+
+`07/8F` (get) and `07/0F` (set) are Synapse's Power Mode Control, a shared
+bitmask:
+
+| Bit | Meaning |
+|---|---|
+| `0x01` | CPU boost |
+| `0x02` | Max fan speed |
+| `0x04` | One-time full charge ("Allow system to fully charge once") |
+| `0x08` | Local dimming |
+
+A read-only inspection of the installed Synapse 4 code found this reply decoder
+in Synapse's shared Blade device code (`rzDevice25`), not only in RZ09-0581
+code. Synapse changes one bit at a time with read-modify-write. In the inspected
+code, its local dimming action writes `0x08` on Blade series 10 to 12 and
+toggles Windows HDR on other series. Captured evidence covers less: the
+RZ09-0581 shows `00`, `04` and `08` in the field and in local tests, while the
+RZ09-0528 captures show only `00` and `04`. The other bit meanings come from
+Synapse's code, not captures.
+
+On the RZ09-0581, Synapse follows Windows HDR while it runs: turning HDR on sets
+`0x08`, turning it off clears it, and the bit stays set after Synapse exits.
+This happens even though the OLED panel has no local dimming hardware. Evidence
+is in
+[firmware-validation-rz09-0581-mcu-1.7.md](firmware-validation-rz09-0581-mcu-1.7.md).
+
+Because the decoder is shared, OpenBlade applies the same rules to every model
+that reads `07/8F` or writes `07/0F`, in production and in developer validation
+runs:
+
+- Any one-byte value made of the four bits decodes, and temporary full charge is
+  bit `0x04`. Undefined bits (`0x10` to `0x80`) and other lengths are rejected,
+  and the rejected bytes stay in diagnostics.
+- Before every `07/0F` write, a fresh `07/8F` read in the same write session must
+  be `00` or `04`. Otherwise nothing is sent. In the product, the result names
+  the settings that are on. The developer validation run reports the refusal
+  as `EnableFailed` or `CancelFailed`, although nothing was sent. OpenBlade has
+  captured only the bare `00` and `04` writes.
+- This does not add `07/8F` or `07/0F` to any model. The experimental backend
+  does not use them.
+
+When you admit a model, check its panel:
+
+- **OLED, or no local dimming hardware** (the RZ09-0581 today): don't offer a
+  local dimming control. Read `0x08` and leave it untouched.
+- **Mini-LED with local dimming**: offer an explicit **Clear** action, shown
+  only while `0x08` is set. Use the captured payloads: write `00`, or `04` when
+  full charge is on, so only `0x08` changes. Confirm by readback, and refuse if
+  `0x01` or `0x02` is set. Gate it on that model's exact identity and panel
+  evidence, for example its mini-LED resolution reading. Don't clear the bit
+  automatically, since it may be a real display setting. Any other combined
+  payload needs capture and reversible validation first.
+
 ### RZ09-0581 lighting cadence validator
 
 The RZ09-0581 cadence validator measures whether the admitted `1532:02E0`

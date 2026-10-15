@@ -56,6 +56,40 @@ public sealed class BatteryOperationTests
     }
 
     [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task TemporaryFullChargeBlockedByOtherLaptopSettings_ReportsPlainReasonWithoutChange(
+        bool enabled,
+        bool current)
+    {
+        string reason = TemporaryFullChargeProtocol.OtherSettingsBlockMessage(0x08);
+        BatteryTestDevice device = new BatteryTestDevice();
+        device.State = device.State with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, current),
+        };
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsTemporaryFullCharge = true,
+        };
+        device.BatteryWriteFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            reason);
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyTemporaryFullChargeOutcomeAsync(
+            enabled,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.Contains(reason, outcome.Result.Message, StringComparison.Ordinal);
+        Assert.Contains("local dimming", outcome.Result.Message, StringComparison.Ordinal);
+        Assert.False(outcome.WriteAttempted);
+        Assert.False(outcome.DeviceAccessFailed);
+        Assert.Equal(current, device.State.Battery?.TemporaryFullCharge);
+    }
+
+    [Theory]
     [MemberData(nameof(InvalidProtectionDisableStates))]
     public async Task DisableProtection_RejectsInvalidConfirmedStateBeforeSetter(
         ConfirmedBatteryState? confirmed)
