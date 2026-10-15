@@ -1,5 +1,7 @@
 # Experimental Blade support
 
+English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
+
 OpenBlade recognizes these laptops automatically. Use a current pre-release to
 try the controls and help test support. Hardware testing in OpenBlade is still
 in progress.
