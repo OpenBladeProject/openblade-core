@@ -271,6 +271,7 @@ public sealed class ExperimentalThermalExpansionTests
         RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(() =>
             port.QueryPerformanceFanStateAsync(CancellationToken.None));
         Assert.Equal(DeviceStateQuery.PerformanceAndFans, error.StateQuery);
+        Assert.Equal([(0x07, 0x8F, FirmwareQueryOutcome.ContentRejected)], session.RetainedQueryFailures);
         Assert.Empty(session.Writes);
     }
 
@@ -357,6 +358,18 @@ public sealed class ExperimentalThermalExpansionTests
             && item.ConfirmedValue!.Contains("MaximumFans=True", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task InvalidStoredFanTarget_RetainsFailureReplyWithoutWriting()
+    {
+        var session = new Session { FirstTarget = 0 };
+        await using var port = Create(0x029F, session);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanTargetsAsync(3000, 3000, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Empty(session.Writes);
+        Assert.Equal([(0x0D, 0x81, FirmwareQueryOutcome.ContentRejected)], session.RetainedQueryFailures);
+    }
+
     private static ExperimentalBladeModel Model(int pid) => ExperimentalBladeModels.All.Single(item => item.ProductId == pid);
 
     private static ExperimentalBladePort Create(int pid, Session session, ExperimentalFeaturesPolicy? policy = null,
@@ -384,7 +397,10 @@ public sealed class ExperimentalThermalExpansionTests
         internal Action<RazerCommandSpec>? BeforeSubmission { get; set; }
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal IEnumerable<RazerCommandSpec> Writes => Commands.Where(item => item.CommandId < 0x80);
+        internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
         public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
+        public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
+            RetainedQueryFailures.Add((classId, commandId, outcome));
 
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId, TimeSpan exchangeTimeout, CancellationToken cancellationToken)

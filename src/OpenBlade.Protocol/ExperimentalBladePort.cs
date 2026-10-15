@@ -76,6 +76,16 @@ internal sealed partial class ExperimentalBladePort(
                 case "Performance":
                     session.RetainQueryFailure(0x0D, 0x82, FirmwareQueryOutcome.ContentRejected);
                     break;
+                case "MaximumFans":
+                    session.RetainQueryFailure(0x07, 0x8F, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "FanTargets":
+                    session.RetainQueryFailure(0x0D, 0x81, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "KeyboardStaticColor":
+                case "KeyboardBreathingColor":
+                    session.RetainQueryFailure(0x03, 0x8A, FirmwareQueryOutcome.ContentRejected);
+                    break;
                 case "CustomPerformance":
                     session.RetainQueryFailure(0x0D, 0x87, FirmwareQueryOutcome.ContentRejected);
                     break;

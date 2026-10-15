@@ -28,6 +28,7 @@ internal sealed partial class ExperimentalBladePort
         if (first.Span[1] != 1 || second.Span[1] != 2
             || !range.Supports(firstRpm) || !range.Supports(secondRpm))
         {
+            RecordQuery("FanTargets", "UnsupportedState", failure: "OutsideRepresentableTargets");
             throw ContentRejected("Experimental fan targets cannot form a restorable baseline.",
                 DeviceStateQuery.PerformanceAndFans, first.Span, second.Span);
         }

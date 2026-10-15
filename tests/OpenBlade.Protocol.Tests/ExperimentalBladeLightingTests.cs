@@ -170,6 +170,7 @@ public sealed class ExperimentalBladeLightingTests
                 port.ReadStateAsync(CancellationToken.None));
 
         Assert.Equal(DeviceStateQuery.KeyboardLightingEffect, failure.Query);
+        Assert.Equal([(0x03, 0x8A, FirmwareQueryOutcome.ContentRejected)], session.RetainedQueryFailures);
         Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
     }
 
