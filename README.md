@@ -82,8 +82,9 @@ trigger a Windows warning.
 
 ## Using it with Synapse
 
-OpenBlade works on its own. To keep Synapse for your other Razer devices, use
-[Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker).
+OpenBlade works on its own. On the validated Blade 16 models, keep Synapse for
+other Razer devices with [Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker).
+Close Synapse when testing experimental laptop controls.
 OpenBlade checks the patch before allowing shared use; see the
 [setup and coexistence notes](docs/synapse-blade-blocker.md).
 

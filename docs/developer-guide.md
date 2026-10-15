@@ -55,9 +55,10 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   handle, and it serializes every hardware operation.
 - The protocol layer encodes validated 90-byte Razer reports. Service IPC
   exposes typed operations only; there is no raw-command endpoint.
-- Physically validated writes have trusted capture fixtures. Experimental writes
-  use separately reviewed, pinned upstream definitions. Both retain exact-device,
-  baseline, and independent-readback checks.
+- Physically validated writes retain their captured command and confirmation
+  contracts. Experimental setters use separately reviewed, pinned upstream
+  definitions with decoded baselines and independent readback. Both retain fresh
+  exact-device and controller checks.
 - Temporary pipe, enumeration, or read failures preserve the last confirmed UI
   state, but every write performs fresh identity and safety checks.
 - Competing Razer controllers block affected operations. Verified
