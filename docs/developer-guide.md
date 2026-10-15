@@ -194,6 +194,40 @@ dotnet run --project src\OpenBlade.Capture -- query-fan-rpm
 dotnet run --project src\OpenBlade.Capture -- validate path\to\fixtures.json
 ```
 
+### Power Mode Control and local dimming
+
+On Blade series 10 to 12, which includes the RZ09-0581, `07/8F` (get) and
+`07/0F` (set) are Synapse's Power Mode Control, a shared bitmask:
+
+| Bit | Meaning |
+|---|---|
+| `0x01` | CPU boost |
+| `0x02` | Max fan speed |
+| `0x04` | One-time full charge ("Allow system to fully charge once") |
+| `0x08` | Local dimming |
+
+Synapse changes one bit at a time with read-modify-write. While it runs, it
+follows Windows HDR: turning HDR on sets `0x08`, turning it off clears it, and
+the bit stays set after Synapse exits. This happens even on the OLED RZ09-0581,
+which has no local dimming hardware. OpenBlade has only captured the bare `00`
+and `04` writes, so it refuses a full-charge write when any other bit is set.
+Evidence is in
+[firmware-validation-rz09-0581-mcu-1.7.md](firmware-validation-rz09-0581-mcu-1.7.md).
+
+When you admit a model, check its panel:
+
+- **OLED, or no local dimming hardware** (the RZ09-0581 today): don't offer a
+  local dimming control. Read `0x08` and leave it untouched.
+- **Mini-LED with local dimming**: offer an explicit **Clear** action, shown
+  only while `0x08` is set. Use the captured payloads: write `00`, or `04` when
+  full charge is on, so only `0x08` changes. Confirm by readback, and refuse if
+  `0x01` or `0x02` is set. Gate it on that model's exact identity and panel
+  evidence, for example its mini-LED resolution reading. Don't clear the bit
+  automatically, since it may be a real display setting. Any other combined
+  payload needs capture and reversible validation first.
+- Check the model's own Synapse code, because the bit layout can differ by
+  series. Don't assume this table for the RZ09-0528 or another series.
+
 ### RZ09-0581 lighting cadence validator
 
 The RZ09-0581 cadence validator measures whether the admitted `1532:02E0`

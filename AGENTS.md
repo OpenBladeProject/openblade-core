@@ -224,6 +224,10 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
 ## Hardware and capture safety
 
 - Treat all uncaptured write commands as unsafe and unsupported.
+- `07/8F` and `07/0F` on Blade series 10 to 12 are a shared Power Mode Control
+  bitmask, not a full-charge-only value. Before admitting a model, especially a
+  mini-LED one, follow
+  [Power Mode Control and local dimming](docs/developer-guide.md#power-mode-control-and-local-dimming).
 - Keep validation proportionate. For transitions using commands already admitted
   for the exact device, prefer a direct test through OpenBlade's typed,
   reversible path. Vendor UI availability or a new capture matrix is not a
