@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Expand experimental Blade controls with model-specific Custom levels, fixed and Maximum Fans, keyboard and logo lighting, and 50–100% charge limits. Blade 16 (2023) gains whole-keyboard Static, Ambient Awareness, and Audio Meter; Blade 15 Base (2020) gains single-zone RGB. Diagnostics distinguish tested upstream features from extrapolations. ([#770](https://github.com/OpenBladeProject/openblade-core/pull/770))
+
 ## [0.27.5-nightly.89] - 2026-10-15
 
 ### Changed
@@ -16,7 +20,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Expand experimental Blade controls with model-specific Custom levels, fixed and Maximum Fans, keyboard and logo lighting, and 50–100% charge limits. Blade 16 (2023) gains whole-keyboard Static, Ambient Awareness, and Audio Meter; Blade 15 Base (2020) gains single-zone RGB. Diagnostics distinguish tested upstream features from extrapolations. ([#770](https://github.com/OpenBladeProject/openblade-core/pull/770))
 - Add automatic experimental Balanced/Silent controls for the Blade 16 (2023), Blade 14 (2023 and 2025), Blade 15 Base (2020), and Blade 18 (2023), with 80% battery protection on the supported experimental models. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Add experimental Blade 18 (2023) charge limits from 50–100% in 1% steps, with 100% turning protection off, decoded baselines, and independent exact-limit readback. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Add experimental Blade 18 (2023) Performance and bounded Custom CPU/GPU controls, keyboard brightness, Off/Spectrum/random Breathing/Wave effects, and Off/Static/Breathing logo lighting. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
