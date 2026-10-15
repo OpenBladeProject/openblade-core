@@ -306,11 +306,103 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x02));
     }
 
+    [Fact]
+    public async Task RunAsync_RequiredPerformanceBaselineRejectsBalancedBeforeWrites()
+    {
+        var session = new StatefulSession("01010000", "01020000");
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            requiredBaselineState: ThermalModeState.PerformanceAutomatic).RunAsync(
+                PerformanceFanValidationTarget.Fixed5400,
+                default);
+
+        Assert.Equal(
+            PerformanceFanValidationFailure.BaselineNotRequiredBaseMode,
+            result.Failure);
+        Assert.False(result.ApplyAttempted);
+        Assert.DoesNotContain(
+            session.Commands,
+            command => command.CommandId is 0x01 or 0x02);
+    }
+
+    [Fact]
+    public async Task RunAsync_FixedFanTransitionsDirectlyFromPerformanceAndRestoresIt()
+    {
+        var session = new StatefulSession("01010200", "01020200");
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            requiredBaselineState: ThermalModeState.PerformanceAutomatic).RunAsync(
+                PerformanceFanValidationTarget.Fixed5400,
+                default);
+
+        Assert.True(result.Success);
+        string[] writes = session.Commands
+            .Where(command => command.CommandId is 0x01 or 0x02)
+            .Select(command => Convert.ToHexString(command.Arguments.Span))
+            .ToArray();
+        Assert.Equal(
+            ["01010001", "01020001", "010136", "010236", "01010200", "01020200"],
+            writes);
+    }
+
+    [Fact]
+    public async Task RunAsync_RechecksSafetyBeforeEveryFixedApplyAndRestoreWrite()
+    {
+        var session = new StatefulSession("01010200", "01020200");
+        var safetyGate = new ScriptedSafetyGate();
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            requiredBaselineState: ThermalModeState.PerformanceAutomatic,
+            safetyGate: safetyGate,
+            recheckSafetyBeforeEachWrite: true).RunAsync(
+                PerformanceFanValidationTarget.Fixed5400,
+                default);
+
+        Assert.True(result.Success);
+        Assert.True(safetyGate.Calls >= 7);
+    }
+
+    [Fact]
+    public async Task RunAsync_SafetyLossBeforeRestoreStopsWithoutARecoveryWrite()
+    {
+        var session = new StatefulSession("01010200", "01020200");
+        var safetyGate = new ScriptedSafetyGate(failOnCall: 6);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            requiredBaselineState: ThermalModeState.PerformanceAutomatic,
+            safetyGate: safetyGate,
+            recheckSafetyBeforeEachWrite: true).RunAsync(
+                PerformanceFanValidationTarget.Fixed5400,
+                default);
+
+        Assert.Equal(PerformanceFanValidationFailure.SafetyAdmissionLost, result.Failure);
+        Assert.True(result.ApplyAcknowledged);
+        Assert.True(result.CandidateConfirmed);
+        Assert.True(result.RestoreAttempted);
+        Assert.False(result.RestoreAcknowledged);
+        Assert.False(result.Restored);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(6, safetyGate.Calls);
+        Assert.Equal(
+            ["01010001", "01020001", "010136", "010236"],
+            session.Commands
+                .Where(command => command.CommandId is 0x01 or 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span))
+                .ToArray());
+    }
+
     private static PerformanceFanSetterValidationRunner Runner(
         IRazerCommandSession session,
         int maximumSamples = 3,
         int stateCheckEverySamples = 3,
-        TimeSpan? sampleInterval = null) => new(
+        TimeSpan? sampleInterval = null,
+        ThermalModeState? requiredBaselineState = null,
+        IPerformanceFanValidationSafetyGate? safetyGate = null,
+        bool recheckSafetyBeforeEachWrite = false) => new(
         static () => new ValidationRunContext(),
         new ActorFactory(new ValidationActor(
             session,
@@ -322,7 +414,39 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         new PendingDisposalRegistry(),
         fixedFanSampleInterval: sampleInterval ?? TimeSpan.Zero,
         fixedFanMaximumSamples: maximumSamples,
-        fixedFanStateCheckEverySamples: stateCheckEverySamples);
+        fixedFanStateCheckEverySamples: stateCheckEverySamples,
+        safetyGate: safetyGate,
+        requiredBaselineState: requiredBaselineState,
+        recheckSafetyBeforeEachWrite: recheckSafetyBeforeEachWrite);
+
+    private sealed class ScriptedSafetyGate(int? failOnCall = null)
+        : IPerformanceFanValidationSafetyGate
+    {
+        internal int Calls { get; private set; }
+
+        public Task<PerformanceFanValidationSafetyGateResult> ValidateAsync(
+            ValidationRunContext context,
+            IRazerCommandSession session,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            bool succeeds = Calls != failOnCall;
+            return Task.FromResult(new PerformanceFanValidationSafetyGateResult(
+                FullPowerAdapterConfirmed: succeeds,
+                CoolingPadAbsentConfirmed: false,
+                CoolingPadPresentConfirmed: false,
+                CoolingPadOpaqueZeroConfirmed: false,
+                succeeds
+                    ? PerformanceFanValidationSafetyFailure.None
+                    : PerformanceFanValidationSafetyFailure.FullPowerAdapterRequired)
+            {
+                AdapterPowerState = succeeds
+                    ? OpenBlade.Contracts.AdapterPowerState.FullPower330W
+                    : OpenBlade.Contracts.AdapterPowerState.Battery,
+                CoolingPadNotRequired = true,
+            });
+        }
+    }
 
     private sealed class ActorFactory(ValidationActor actor) : IValidationActorFactory
     {

@@ -89,6 +89,48 @@ public sealed class PerformanceFanSetterValidationCommandTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task RunAsync_UsesSuppliedBiosVersionForConfirmationAndOutput()
+    {
+        bool invoked = false;
+        var output = new StringWriter();
+        var command = new PerformanceFanSetterValidationCommand(
+            (target, _) =>
+            {
+                invoked = true;
+                return Task.FromResult(Success(target));
+            },
+            output,
+            _ => NoopDisposable.Instance,
+            biosVersion: "4.01");
+
+        int oldBiosExitCode = await command.RunAsync(
+            ["fixed5400", "--confirm-target", "RZ09-0581:1532:02E0:3.01"],
+            default);
+
+        Assert.Equal(PerformanceFanSetterValidationCommand.UsageExitCode, oldBiosExitCode);
+        Assert.False(invoked);
+        Assert.Contains(
+            "--confirm-target RZ09-0581:1532:02E0:4.01",
+            output.ToString(),
+            StringComparison.Ordinal);
+
+        output.GetStringBuilder().Clear();
+        int exitCode = await command.RunAsync(
+            ["fixed5400", "--confirm-target", "RZ09-0581:1532:02E0:4.01"],
+            default);
+
+        Assert.Equal(0, exitCode);
+        Assert.True(invoked);
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        Assert.Equal(
+            "4.01",
+            document.RootElement
+                .GetProperty("device")
+                .GetProperty("biosVersion")
+                .GetString());
+    }
+
     private static PerformanceFanSetterValidationResult Success(
         PerformanceFanValidationTarget target) => new(
         target,

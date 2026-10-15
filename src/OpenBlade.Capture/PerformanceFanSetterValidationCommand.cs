@@ -11,11 +11,11 @@ public sealed class PerformanceFanSetterValidationCommand
     public const int ValidationFailureExitCode = 2;
     public const int CanceledExitCode = 4;
 
-    private const string Usage =
+    private string Usage =>
         "Usage: OpenBlade.Capture validate-performance-fan " +
         "<balanced|silent|performance|fixed5400|battery-saver|battery-balanced> " +
         "--confirm-target " +
-        ExactTargetConfirmation;
+        exactTargetConfirmation;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -26,6 +26,8 @@ public sealed class PerformanceFanSetterValidationCommand
 
     private readonly Func<PerformanceFanValidationTarget, CancellationToken,
         Task<PerformanceFanSetterValidationResult>> run;
+    private readonly string biosVersion;
+    private readonly string exactTargetConfirmation;
     private readonly TextWriter output;
     private readonly Func<Action, IDisposable> registerCancellation;
 
@@ -33,8 +35,12 @@ public sealed class PerformanceFanSetterValidationCommand
         Func<PerformanceFanValidationTarget, CancellationToken,
             Task<PerformanceFanSetterValidationResult>> run,
         TextWriter output,
-        Func<Action, IDisposable>? registerCancellation = null)
+        Func<Action, IDisposable>? registerCancellation = null,
+        string biosVersion = TargetBladeDevice.BiosVersion)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(biosVersion);
+        this.biosVersion = biosVersion;
+        exactTargetConfirmation = $"RZ09-0581:1532:02E0:{biosVersion}";
         this.run = run ?? throw new ArgumentNullException(nameof(run));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
         this.registerCancellation = registerCancellation ?? ConsoleCancellation.Register;
@@ -66,7 +72,7 @@ public sealed class PerformanceFanSetterValidationCommand
                         TargetBladeDevice.Model,
                         TargetBladeDevice.VendorId.ToString("X4"),
                         TargetBladeDevice.ProductId.ToString("X4"),
-                        TargetBladeDevice.BiosVersion),
+                        biosVersion),
                     ReadOnly: false,
                     ProductionAdmitted: false,
                     result),
@@ -84,14 +90,14 @@ public sealed class PerformanceFanSetterValidationCommand
         }
     }
 
-    private static bool TryParse(
+    private bool TryParse(
         IReadOnlyList<string> arguments,
         out PerformanceFanValidationTarget target)
     {
         target = default;
         if (arguments.Count != 3
             || !arguments[1].Equals("--confirm-target", StringComparison.Ordinal)
-            || !arguments[2].Equals(ExactTargetConfirmation, StringComparison.Ordinal))
+            || !arguments[2].Equals(exactTargetConfirmation, StringComparison.Ordinal))
         {
             return false;
         }
