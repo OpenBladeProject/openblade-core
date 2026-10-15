@@ -4,19 +4,19 @@
 
 [English](../razer-brightness-driver-package.md) | 简体中文 | [Русский](../ru-RU/razer-brightness-driver-package.md)
 
-OpenBlade 可以使用下列两款 Blade 16 已安装的签名 Razer Consumer Control 驱动栈。
-这样，亮度调整和原生浮窗由 Windows 负责。
-关于 > 设备信息会报告精确型号的已准入运行时路径是否可用。
-如果不可用，亮度键会继续使用 WMI 和 OpenBlade 浮窗。
+下列两款 Blade 16 如果已安装带签名的 Razer Consumer Control 驱动栈，
+OpenBlade 就可以通过它调整亮度，并显示 Windows 自带的亮度提示。
+打开“关于 > 设备信息”，即可查看当前型号是否能使用这套驱动。
+如果不能，亮度键仍通过 WMI 调整亮度，并显示 OpenBlade 的亮度提示。
 
 常规 OpenBlade 安装程序不会安装或移除 Razer 驱动。
 
 <a id="runtime-hardware-scope"></a>
 
-## 运行时硬件范围
+## 适用型号与驱动检查
 
-两个原生亮度后端使用各自独立、针对型号的驱动栈。
-OpenBlade 在使用前检查完整设备祖先链、服务名和固定的驱动哈希：
+两款型号的原生亮度功能分别使用各自的专用驱动栈。
+OpenBlade 会先检查设备的完整父级关系、服务名，以及驱动哈希是否与指定值一致：
 
 | 笔记本 | USB PID | 设备服务 |
 |---|---|---|
@@ -38,7 +38,7 @@ RZ09-0581 栈包含四个针对型号的签名 INF，以及共享控制包：
 已准入的 `rzcommonu.inf` 的 SHA-256 为
 `DD3C8D65C7C3CCF2093FE70FB21FB8DC724E837880566BAE629B3104A5B1B37B`，
 其中原样包含 `%RzCommon.DeviceDesc% = RzCommon_Device,RAZER\DeviceContol`。
-通用 RzCommon 组件并不意味着整个栈通用。
+虽然 RzCommon 组件可以共用，整套驱动仍然只适用于特定型号。
 其他四个包、`RzDev_02e0` 服务和二进制名称，以及其目录文件，均专属于 PID `02E0`。
 修改 INF 以匹配其他 PID 会使签名目录失效，也不能证明二进制文件支持该硬件。
 
@@ -49,7 +49,7 @@ RZ09-0528 在已安装时使用自己的签名 Razer 栈：
 OpenBlade 固定 `RzDev_02c6.sys` 的 SHA-256 为
 `307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82`，
 且仅针对 PID `02C6` 检查每项身份。
-本指南的导出工具和目录条目仍仅适用于 `02E0`；OpenBlade 不捆绑任一栈。
+本指南的导出工具和驱动目录中的记录仍仅适用于 `02E0`；OpenBlade 不附带这两套驱动。
 其他每个型号都需要自己的签名包清单和硬件验证。
 
 Razer 支持页面：
@@ -60,16 +60,16 @@ Razer 支持页面：
 导出的 RZ09-0581 归档、已脱敏清单，以及绑定二者的发布记录，
 存放在独立的 [`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog)
 仓库，那里也提供其他 Razer 设备的只读导出说明。
-目录以预发布形式提供归档；全新安装验证仍待完成。
-运行一次 Synapse 会安装相同驱动栈。目录中的条目是证据，不代表 OpenBlade 支持。
-核心接纳每个型号前，仍需独立的运行时和硬件验证。
+驱动目录仓库以预发布版本提供该归档；在干净系统上的安装验证尚未完成。
+运行一次 Synapse 也会安装同一套驱动。收录到驱动目录只代表已有相关证据，并不表示 OpenBlade 支持该设备。
+每个型号仍需分别完成运行时和硬件验证，才能由核心程序正式接纳。
 
 <a id="export-the-admitted-rz09-0581-package"></a>
 
-## 导出已准入的 RZ09-0581 包
+## 导出 OpenBlade 已认可的 RZ09-0581 驱动包
 
 `build/Export-RazerBrightnessDriverPackage.ps1` 使用 Windows PowerShell 5.1，
-从已安装验证栈的机器创建私有、精确的导出。
+从已安装这套经过验证的驱动的电脑中，原样导出驱动包，供私下验证使用。
 它按已发布 INF 的哈希定位每个已安装包，不依赖机器本地的 `oem###` 名称，
 调用 Windows `pnputil /export-driver`，然后验证完整的三文件包、
 SHA-256 哈希和 Microsoft 硬件签名。输出必须在仓库之外。
@@ -95,30 +95,30 @@ Windows 内置 HID 依赖由原始 INF 引用，不会复制。
 
 <a id="native-windows-installation-path"></a>
 
-## 原生 Windows 安装路径
+## 使用 Windows 自带工具安装
 
 Windows 自带 PnPUtil，可将签名包暂存到 Driver Store，并安装到匹配设备。
 Microsoft 的 [PnPUtil 命令参考](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-command-syntax)
 记录了 `/add-driver`、`/install`、`/subdirs` 和 `/reboot`。
 
-以下流程用于可恢复的 RZ09-0581 上的全新机器验证，尚不是面向最终用户的安装方法。
-该驱动栈会筛选集成键盘和鼠标路径、重启 USB 设备树的部分节点，并可能要求重启系统。
-测试前请接通交流电、连接外置 USB 键盘和鼠标，并确认恢复访问可用。
+以下步骤用于在具备恢复手段的 RZ09-0581 干净系统上验证安装，目前不供普通用户自行安装。
+该驱动栈会介入内置键盘和鼠标的输入处理，重启 USB 设备树的部分节点，还可能要求重启系统。
+测试前请接通交流电、连接外置 USB 键盘和鼠标，并确认发生问题时仍能进行恢复操作。
 
-第一次修改前，在提升权限的 PowerShell 窗口中验证目标和包：
+开始修改前，请以管理员身份打开 PowerShell，核对设备和驱动包：
 
 1. `HKLM:\HARDWARE\DESCRIPTION\System\BIOS` 必须报告制造商为 Razer，
    `SystemProductName` 为 `Blade 16 - RZ09-0581`。
 2. Windows 必须报告一个已连接的 `USB\VID_1532&PID_02E0&MI_01` 设备，
    和一个已连接的 `USB\VID_1532&PID_02E0&MI_02` 设备。
-   身份缺失、重复或不符时停止。
+   如果找不到设备、发现重复设备，或设备标识不符，请停止操作。
 3. ZIP 名称和 SHA-256 必须匹配经检查的发布证明。
    同一证明必须按仓库路径和 SHA-256 标明目录清单。
    解压后，每个文件必须匹配 `SHA256SUMS.txt`，
    且每个 INF、CAT 和 SYS 的签名都必须有效，
    并由 Microsoft Windows Hardware Compatibility Publisher 签发。
    在有 SignTool 的验证主机上，使用 `signtool verify /kp /c <catalog> <INF-or-SYS>`
-   证明目录成员关系。Microsoft 在
+   确认 INF 或 SYS 文件确实属于该签名目录。Microsoft 在
    [SignTool 参考](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/signtool)
    中记录了 `/c`。
 
@@ -165,7 +165,7 @@ Invoke-PnpLogged @('/add-driver', "$packageRoot\rzdevu_02e0_mou\rzdevu_02e0_mou.
 ```
 
 每条命令后，将新报告的发布名称和包身份复制到日志，
-标明它在安装前清单中是否已存在。这是回滚使用的所有权证据。
+注明该包在安装前是否已存在。回滚时据此判断哪些包由本次测试安装。
 
 五个包全部成功暂存后，按依赖顺序绑定：
 
@@ -178,26 +178,26 @@ Invoke-PnpLogged @('/add-driver', "$packageRoot\rzcommonu\rzcommonu.inf", '/inst
 ```
 
 验证时不要在这些命令中加入 `/reboot`。
-如果 Windows 要求重启，请先安全保存日志，再停下来安排有意进行的重启。
+如果 Windows 要求重启，请停止后续操作，妥善保存日志后再安排重启。
 PnPUtil 不会将排名较低的驱动强制装到设备上，因此退出码为零不能替代安装后检查。
 
 安装后，验证精确的 `RZVIRTUAL` 和 `RZCONTROL` 子设备、
-其服务和驱动栈，以及设备管理器中没有问题。
-重启 OpenBlade，检查关于 > 设备信息。
+以及它们的服务和驱动栈，并确认设备管理器没有报告问题。
+重启 OpenBlade，打开“关于 > 设备信息”查看结果。
 Razer 亮度驱动行应显示 `Available · Windows OSD`（中文界面为“可用 · Windows 系统提示”）。
-实际按下、按住和释放亮度键，必须改变亮度并使用 Windows 浮窗。
+实际测试亮度键的按下、长按和松开，确认亮度能够调整，且显示的是 Windows 自带的亮度提示。
 
 不要使用大范围设备移除、`/force` 或按设备类整体重启命令。
-回滚只能移除持久的安装前日志证明由本次测试引入的已发布包。
+回滚时，只能移除已保存的安装前日志能够证明由本次测试新增的已发布驱动包。
 按以下顺序移除：RzCommon、VCon、鼠标、键盘、DKM。
 使用 `pnputil /delete-driver <journal-owned-oem.inf> /uninstall`；
 如果 Windows 报告包正在使用或需要重启，请停止。
 
-发布一键安装程序前，必须完成两次全新 RZ09-0581 安装验证、
-每个包之后的失败恢复、恢复集成键盘和触摸板的逆向回滚、幂等修复、
-重启和睡眠周期，以及实际亮度键的按住和释放路径。
-这些检查通过前，原生命令只能作为受控验证流程使用。
+发布一键安装程序前，必须在 RZ09-0581 干净系统上完成两次安装验证。
+还需逐一验证每个包安装失败后的恢复、按相反顺序回滚后内置键盘和触摸板的恢复、
+重复修复的幂等性、重启与睡眠周期，以及实际长按和松开亮度键的表现。
+上述检查通过前，这些 Windows 命令只能用于受控验证。
 
 导出文件仍属 Razer 财产，不受 OpenBlade 的 GPL 许可证覆盖。
 将归档附到公开版本前，必须保留涵盖精确文件和分发方式的 Razer 书面授权，
-并原样提供归档中的 `THIRD-PARTY-NOTICE.txt`。
+并随归档原样提供 `THIRD-PARTY-NOTICE.txt`。
