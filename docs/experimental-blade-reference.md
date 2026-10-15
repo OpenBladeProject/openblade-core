@@ -20,11 +20,20 @@ Independent queries must identify one responding interface. SKU and firmware
 versions are diagnostic metadata. Unknown models and ambiguous interfaces stay
 blocked. Exact profiles enable their supported controls automatically.
 
-For experimental models, Plugged In covers externally powered operation. The
-backend does not distinguish barrel from USB-C or infer adapter wattage. The
-Blade 14 (2025) admits Battery Saver and Battery Balanced only after fresh
-battery-power checks at the initial gate and immediately before native
-submission. AC presets remain external-power-only.
+Every experimental profile pins its own official Synapse module that enables
+the `07/8C` adapter wattage query. OpenBlade reads the current and recommended
+wattage before external-power thermal setters instead of treating any Windows
+external-power reading as adequate. Unknown values, query failures, and
+disagreement with the fresh Windows power reading block the write. The result
+describes available power; it does not identify barrel or USB-C.
+
+A confirmed limited adapter admits only Balanced and the cleanup needed to
+return fans to Automatic. Automatic handback keeps the freshly confirmed
+performance mode instead of forcing an intermediate preset. The Blade 14
+(2025) admits Battery Saver and Battery Balanced only after fresh battery-power
+checks at the initial gate and immediately before native submission. See
+[Synapse adapter wattage evidence](synapse-adapter-wattage.md) for the exact
+per-model sources and decoding rules.
 
 ## Thermal controls
 
@@ -54,6 +63,11 @@ Because `07/0F` replaces the whole byte, a Maximum Fans change requires every
 other bit to be clear. The backend checks before planned Custom writes and
 again with a fresh `07/8F` immediately before the setter, then confirms the
 result independently. It does not combine bits or clear other settings.
+Synapse explicitly turns Maximum Fans off before leaving Custom. OpenBlade does
+the same with a guarded whole-byte `07/0F [0]` write when the fresh `07/8F`
+read shows that bit set, confirms it is off, and only then submits the preset
+`0D/02`. This is a direct cleanup dependency, not a broad reset; `0D/02` is not
+treated as proof that the Maximum Fans bit was cleared.
 Unrelated CPU/GPU level changes preserve the flags. The switch is unavailable
 in ordinary presets and is not a substitute for adjustable fixed targets.
 Select Automatic before enabling it; a Fixed baseline is rejected before any
@@ -66,10 +80,15 @@ cannot become a guessed baseline.
 
 Transitions go directly from the confirmed starting state to the requested
 state. The backend does not reset through Balanced or Automatic. Preset writes
-select firmware Automatic fans as part of the model command. A fixed-target
-change preserves the confirmed ordinary preset or Custom mode and changes only
-the fan flag and targets. Custom level edits on the two fixed-target models
-preserve their confirmed fan flag and stored targets. Their explicit
+preserve readable fixed fans on the two models with fixed-target support;
+the other models require Automatic fans. When Maximum Fans
+is active, the guarded cleanup above is required before leaving Custom. A
+fixed-target change preserves the confirmed ordinary preset or Custom mode and
+changes only the fan flag and targets. On a confirmed limited adapter, a direct
+Automatic handback preserves the confirmed mode; a separate Balanced request
+goes directly to Balanced. Other thermal setters remain blocked. Custom level
+edits on the two fixed-target models preserve their confirmed fan flag and
+stored targets. Their explicit
 `ReportsPerformanceWithManualFans` capability keeps this readable state separate
 from backends whose manual selector hides performance. If a model cannot read and restore its current fan
 state, the affected transition is blocked. Each submitted setting requires its
@@ -170,6 +189,9 @@ stay local until the user shares them. There is no background upload.
 
 `experimental-support.json` records the exact model, pinned sources, per-feature
 evidence classification, write-pause state, and the last 32 typed observations.
+Adapter power classification is recorded as Synapse-source-backed evidence for
+each exact profile; it remains physically unvalidated until an owner confirms
+the query and resulting transition behavior on that model.
 Observations cover queries, raw baselines, submissions, independent readbacks,
 and failures, with requested and confirmed values when available. Missing
 readings stay unavailable. History is bounded and kept in memory; it is not a

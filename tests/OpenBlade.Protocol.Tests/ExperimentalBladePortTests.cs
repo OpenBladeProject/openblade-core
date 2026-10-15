@@ -189,7 +189,7 @@ public sealed class ExperimentalBladePortTests
             [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]);
         await using var port = Create(session, Enabled());
         await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
-        Assert.Equal(new byte[] { 0x82, 0x82, 0x02, 0x02, 0x82, 0x82 },
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x8F, 0x8C, 0x02, 0x8C, 0x02, 0x82, 0x82 },
             session.Commands.Select(command => command.CommandId));
     }
 
@@ -249,11 +249,28 @@ public sealed class ExperimentalBladePortTests
     }
 
     [Fact]
-    public async Task ExternalPowerObservation_DoesNotClaimAdapterWattage()
+    public async Task AdapterPowerQuery_UsesSynapseCommandAndDecodesWattage()
     {
-        await using var port = Create(new Session(), Enabled());
-        Assert.Equal(AdapterPowerState.ExperimentalExternal,
+        var session = new Session();
+        await using var port = Create(session, Enabled());
+        Assert.Equal(AdapterPowerState.FullPower280W,
             await port.QueryAdapterPowerStateAsync(CancellationToken.None));
+        RazerCommandSpec query = Assert.Single(session.Commands);
+        Assert.Equal(0x07, query.ClassId);
+        Assert.Equal(0x8C, query.CommandId);
+        Assert.Equal("0000", Convert.ToHexString(query.Arguments.Span));
+    }
+
+    [Fact]
+    public async Task AdapterPowerQuery_WithoutEvidenceReturnsUnknownWithoutTraffic()
+    {
+        var model = new ExperimentalBladeModel("Unknown", "Unknown", 0xFFFF, false, "TestEvidence");
+        var session = new Session();
+        await using var port = new ExperimentalBladePort(session, new(), model,
+            new ExperimentalFeaturesPolicy(model), () => true, () => PowerSource.ExternalUnknown);
+        Assert.Equal(AdapterPowerState.Unknown,
+            await port.QueryAdapterPowerStateAsync(CancellationToken.None));
+        Assert.Empty(session.Commands);
     }
 
     [Fact]
@@ -334,7 +351,7 @@ public sealed class ExperimentalBladePortTests
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
         byte[][] baseline = initialMode == 4
-            ? [[0, 1, 4, 0], [0, 2, 4, 0], [0, 1, 0], [0, 2, 0], [0]]
+            ? [[0, 1, 4, 0], [0, 2, 4, 0], [0, 1, 0], [0, 2, 0]]
             : [[0, 1, (byte)initialMode, 0], [0, 2, (byte)initialMode, 0]];
         var session = new Session([.. baseline, [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]]);
         var policy = new ExperimentalFeaturesPolicy(model);
@@ -345,8 +362,10 @@ public sealed class ExperimentalBladePortTests
         Assert.Contains(LightingEffect.Wave, port.Capabilities.ObservedLightingEffects);
         Assert.Contains(PerformancePreset.Performance, port.Capabilities.PerformancePresets);
         await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
-        Assert.Equal(initialMode == 4 ? new byte[] { 0x82, 0x82, 0x87, 0x87, 0x8F, 0x02, 0x02, 0x82, 0x82 }
-            : new byte[] { 0x82, 0x82, 0x02, 0x02, 0x82, 0x82 }, session.Commands.Select(item => item.CommandId));
+        Assert.Equal(initialMode == 4
+            ? new byte[] { 0x82, 0x82, 0x87, 0x87, 0x8F, 0x8F, 0x8C, 0x02, 0x8C, 0x02, 0x82, 0x82 }
+            : new byte[] { 0x82, 0x82, 0x8F, 0x8C, 0x02, 0x8C, 0x02, 0x82, 0x82 },
+            session.Commands.Select(item => item.CommandId));
         Assert.True(policy.WritesAllowed);
     }
 
@@ -438,6 +457,14 @@ public sealed class ExperimentalBladePortTests
             }
             Commands.Add(command);
             _ = assignTransactionId();
+            if (command.ClassId == 0x07 && command.CommandId == 0x8C)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0x11, 0x11 }, null));
+            }
+            if (command.ClassId == 0x07 && command.CommandId == 0x8F)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0 }, null));
+            }
             if (FailWrites && command.CommandId == 0x12)
             {
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout)

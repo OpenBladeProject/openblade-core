@@ -16,8 +16,12 @@ in progress.
 
 Close Synapse before using these controls, or use
 [Synapse Blade Blocker](synapse-blade-blocker.md) after checking its model coverage
-and applying the patch. Plugged In settings cover both barrel and USB-C power.
-The Blade 14 (2025) also offers Battery Saver and Battery Balanced on battery power.
+and applying the patch. OpenBlade checks the adapter's reported wattage before
+external-power performance or fan changes. A confirmed limited adapter allows
+Balanced and returning fans to Automatic; other external-power thermal changes
+wait for confirmed full power. An unknown reading blocks the change. The
+reading does not identify the connector. The Blade 14 (2025) also offers
+Battery Saver and Battery Balanced on battery power.
 
 - Fixed fan targets cover 2,000–5,000 RPM on the Blade 16 (2023), and
   2,200–5,000 RPM on the Blade 14 (2023). Automatic hands control back to firmware.
@@ -26,6 +30,8 @@ The Blade 14 (2025) also offers Battery Saver and Battery Balanced on battery po
   Blade 18 (2023). Select Automatic fans before turning it on. The Blade 18 does
   not offer adjustable fixed fan targets. Maximum Fans cannot change while another
   Power Mode Control option is on, such as local dimming or temporary full charge.
+  Before leaving Custom, OpenBlade confirms Maximum Fans is off, turns it off
+  when needed, and checks again before changing the preset.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
   offers CPU Boost and High/High. Other models exclude High/High.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not

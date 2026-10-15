@@ -15,7 +15,16 @@ public sealed class ExperimentalEvidenceCatalogTests
             Assert.All(snapshot.FeatureEvidence, feature =>
             {
                 Assert.NotEmpty(feature.Sources);
-                Assert.All(feature.Sources, source => Assert.StartsWith("https://github.com/", source));
+                if (feature.Feature == "AdapterPowerClassification")
+                {
+                    Assert.Equal("SynapseSourceBacked", feature.Basis);
+                    Assert.Equal(model.AdapterPowerEvidenceSource, Assert.Single(feature.Sources));
+                    Assert.StartsWith("https://apps.razer.com/synapse/products/", model.AdapterPowerEvidenceSource);
+                }
+                else
+                {
+                    Assert.All(feature.Sources, source => Assert.StartsWith("https://github.com/", source));
+                }
             });
             Assert.Equal(snapshot.FeatureEvidence.Count, snapshot.FeatureEvidence.Select(item => item.Feature).Distinct().Count());
         }

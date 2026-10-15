@@ -71,7 +71,7 @@ public sealed class ExperimentalThermalExpansionTests
         Assert.Equal(4, session.Mode);
         Assert.Equal(1, session.Cpu);
         Assert.Equal(2, session.Gpu);
-        Assert.DoesNotContain(session.Commands, item => item.ClassId == 7);
+        Assert.DoesNotContain(session.Commands, item => item.ClassId == 7 && item.CommandId != 0x8C);
     }
 
     [Fact]
@@ -419,6 +419,7 @@ public sealed class ExperimentalThermalExpansionTests
             byte[] payload = command.Arguments.ToArray();
             switch ((command.ClassId, command.CommandId))
             {
+                case (0x07, 0x8C): payload = [0x11, 0x11]; break;
                 case (0x0D, 0x82): payload = [0, payload[1], Mode, Fan]; break;
                 case (0x0D, 0x87): payload = [0, payload[1], payload[1] == 1 ? Cpu : Gpu]; break;
                 case (0x0D, 0x81): payload = [0, payload[1], payload[1] == 1 ? FirstTarget : SecondTarget]; break;
