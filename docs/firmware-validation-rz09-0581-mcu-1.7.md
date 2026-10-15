@@ -108,6 +108,26 @@ charged, so the test does not show what firmware does after a battery-full
 event. Separately, the read-only inspection shows that the Synapse code clears
 the override when it sees a battery-full event.
 
+### Local dimming and HDR test
+
+On 2026-10-15 the same laptop was tested with its Samsung OLED panel
+(`ATNA60HU06`) and Synapse 4.0.827. Synapse and OpenBlade never ran at the same
+time, and every reading was taken by OpenBlade with Synapse fully closed.
+
+- Synapse's Display tab offers no local dimming option on this laptop, with HDR
+  off or on.
+- With Synapse closed, turning Windows HDR on and off left `07/8F` at `00`.
+- After Synapse ran, `07/8F` read `00`. It also read `00` after Synapse ran with
+  HDR on.
+- Synapse's own log shows that at startup it runs its local dimming action with
+  local dimming off. It then detects HDR as on, but it does not turn local
+  dimming on.
+
+On this laptop, neither HDR nor a normal Synapse run sets `0x08`, and Synapse
+clears it at startup. The reporter's `08` therefore came from Synapse's stored
+local dimming setting being on at some point, or from a different panel or
+Synapse configuration. This test does not show which.
+
 ### OpenBlade behavior
 
 - Reading: on the exact RZ09-0581 (`1532:02E0`) only, any `07/8F` value made of
