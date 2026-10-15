@@ -1900,6 +1900,37 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task InitialUsbCObservation_ResolvesStoredFansUsingFreshCapabilities(bool admitted)
+    {
+        TestContext context = CreateContext(providerAvailable: true, initialize: false,
+            initialPowerSource: PowerSource.UsbC);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsDirectManualFanTransitions = true,
+            SupportsManualFansOnLimitedPower = admitted,
+        };
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic,
+            ConfirmedBattery(80), LightingSettingsFactory.Off());
+        BatteryConfiguration configuration = await context.Store.LoadAsync(CancellationToken.None);
+        context.Runtime.Initialize(configuration, PowerSource.UsbC, PersistentOverrideState.Empty with
+        {
+            Fans = FanMode.Fixed,
+            FanControl = new(FanMode.Fixed, 3700, ManualFanCurve.Default),
+        });
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot current = context.Runtime.GetStatus();
+        Assert.Equal(admitted, current.Capabilities!.SupportsManualFansOnLimitedPower);
+        Assert.Equal(admitted ? FanMode.Fixed : FanMode.Automatic, current.DesiredState.Fans.Value);
+        Assert.Equal(FanMode.Fixed, current.FanOverride!.Value);
+        Assert.Equal(0, context.Device.FanSetCalls);
+    }
+
     [Fact]
     public async Task ExperimentalFixedOverride_OnUsbCUsesAutomaticAndRetainsSavedIntent()
     {

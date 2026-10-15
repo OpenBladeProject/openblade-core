@@ -17537,7 +17537,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRefreshRate = EffectiveLightingRefreshRate(capabilities),
             ConfirmedState = confirmed,
             Profiles = Automation.Profiles,
-            DesiredState = ResolveAutomationDesired(confirmed ?? UnknownConfirmedState),
+            DesiredState = ResolveAutomationDesired(confirmed ?? UnknownConfirmedState, capabilities ?? UnavailableCapabilities),
             ActivePowerSource = powerSource,
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
