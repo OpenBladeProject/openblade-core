@@ -106,7 +106,8 @@ cannot update the shared contracts. Older experimental preferences migrate to au
 ## Send a useful test report
 
 1. Use a pre-release containing [the experimental support change](https://github.com/OpenBladeProject/openblade-core/pull/744).
-   In **About**, note the OpenBlade version and detected model. Close Synapse before testing.
+   In **About**, note the OpenBlade version and detected model. Close Synapse before testing,
+   or use [Synapse Blade Blocker](synapse-blade-blocker.md) after checking its model coverage and applying the patch.
 2. Use **About → Export diagnostics** to save a baseline
    report. Note the current Synapse settings separately if needed.
 3. Try one available setting and note the time,
