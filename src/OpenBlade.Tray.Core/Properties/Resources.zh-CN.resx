@@ -1404,8 +1404,8 @@
   <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
     <value>此笔记本当前无法使用手动风扇控制，但仍可显示风扇转速。如果您认为应支持手动控制，请导出诊断信息。</value>
   </data>
-  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown." xml:space="preserve">
-    <value>使用电池或 USB-C 供电时，风扇仅支持自动控制。连接笔记本的交流电源适配器并选择均衡性能模式后，可使用固定转速或手动风扇曲线。风扇转速仍可显示。</value>
+  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
+    <value>使用电池或 USB-C 供电时，风扇仅支持自动控制。连接笔记本的交流电源适配器后，可手动控制风扇。风扇转速仍可显示。</value>
   </data>
   <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
     <value>OpenBlade 无法连接到其服务。打开“关于”并选择“启动服务”。如果仍无法连接，请修复安装。</value>
