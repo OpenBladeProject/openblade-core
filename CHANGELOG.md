@@ -13,6 +13,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Add Simplified Chinese and Russian versions of the README and user guides, with language navigation and stable section links. ([#769](https://github.com/OpenBladeProject/openblade-core/pull/769))
 
+### Fixed
+
+- Apply Blade 16 (2025) manual fan changes directly, and let both the 2025 and 2026 models enter HyperBoost from manual fans on either admitted cooling-pad path without resetting to Automatic first. ([#785](https://github.com/OpenBladeProject/openblade-core/pull/785))
+
 ## [0.29.0-nightly.91] - 2026-10-15
 
 ### Added
