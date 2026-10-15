@@ -143,7 +143,8 @@ drains the old session, rechecks identity and authority, then reads and reconcil
 current state without sending a setter or replaying the uncertain request. A new
 lighting choice releases the old lighting hold; unrelated profile edits do not.
 See the [tester workflow](experimental-blade-support.md#send-a-useful-test-report)
-for baseline and follow-up reports.
+for baseline and follow-up reports. The [experimental implementation reference](experimental-blade-reference.md)
+records model identities, command limits, and source provenance.
 
 ## Build and test
 
