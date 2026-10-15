@@ -117,8 +117,12 @@ public sealed class ProductionBatteryPortTests
                 Fixture(ProductionBatteryPort.HyperBoostEnableSecondAction, 0x0D, 2, [1, 2, 7, 0])),
             hyperBoostEligibility: pad);
 
-    [Fact]
-    public async Task PadlessHyperBoost_DirectManualEntryPreservesEligibilityAndPairOrdering()
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, false)]
+    [InlineData(CoolingPadConnectionState.PresentExact, true)]
+    public async Task HyperBoost_DirectManualEntryPreservesEligibilityAndPairOrdering(
+        CoolingPadConnectionState padState,
+        bool requiresCoolingPad)
     {
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x00, 0x01]),
@@ -131,12 +135,12 @@ public sealed class ProductionBatteryPortTests
             Success([0x01, 0x02, 0x07, 0x00]));
         await using ProductionBatteryPort port = CreateDirectManualHyperBoostPort(
             session,
-            CoolingPadConnectionState.Absent);
+            padState);
 
         await port.SetHyperBoostAsync(
             enabled: true,
             baseMode: PerformancePreset.Performance,
-            requiresCoolingPad: false,
+            requiresCoolingPad: requiresCoolingPad,
             cancellationToken: default);
 
         Assert.Equal(
@@ -150,31 +154,42 @@ public sealed class ProductionBatteryPortTests
                 .ToArray());
     }
 
-    [Fact]
-    public async Task PadPresentHyperBoost_DoesNotRelaxManualEntryPrecondition()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectManualHyperBoost_PadOrPowerLossAfterFirstWriteStopsWithoutReplay(bool padLost)
     {
+        var pad = new FixedHyperBoostEligibilitySource(CoolingPadConnectionState.PresentExact);
         var session = new ScriptedSession(
-            Success([0x01, 0x01, 0x00, 0x01]),
-            Success([0x01, 0x02, 0x00, 0x01]));
+            Success([1, 1, 0, 1]), Success([1, 2, 0, 1]),
+            Success([0x12, 0x11]), Success([1, 1, 7, 0]), Success([0, 0]))
+        {
+            BeforeResult = (count, _) =>
+            {
+                if (padLost && count == 4)
+                {
+                    pad.State = CoolingPadConnectionState.Absent;
+                }
+            },
+        };
         await using ProductionBatteryPort port = CreateDirectManualHyperBoostPort(
-            session,
-            CoolingPadConnectionState.PresentExact);
+            session, CoolingPadConnectionState.PresentExact, pad);
 
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetHyperBoostAsync(
-                enabled: true,
-                baseMode: PerformancePreset.Performance,
-                requiresCoolingPad: true,
-                cancellationToken: default));
+            port.SetHyperBoostAsync(true, PerformancePreset.Performance, true, default));
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
-        Assert.Equal(2, session.Commands.Count);
-        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Single(session.Commands, command => command.CommandId == 0x02);
+        int commandCount = session.Commands.Count;
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Performance, true, default));
+        Assert.Equal(commandCount, session.Commands.Count);
     }
 
     private static ProductionBatteryPort CreateDirectManualHyperBoostPort(
         ScriptedSession session,
-        CoolingPadConnectionState padState)
+        CoolingPadConnectionState padState,
+        FixedHyperBoostEligibilitySource? pad = null)
     {
         CapturedCommandFixture[] performanceAndFanFixtures =
         [
@@ -215,7 +230,7 @@ public sealed class ProductionBatteryPortTests
                     0x0D,
                     0x02,
                     [0x01, 0x02, 0x07, 0x00])),
-            hyperBoostEligibility: new FixedHyperBoostEligibilitySource(padState),
+            hyperBoostEligibility: pad ?? new FixedHyperBoostEligibilitySource(padState),
             supportsDirectManualFanTransitions: true);
     }
 

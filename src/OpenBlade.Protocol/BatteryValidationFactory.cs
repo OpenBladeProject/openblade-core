@@ -57,10 +57,12 @@ public static class BatteryValidationFactory
         CreateWindowsRz090528ProductionBattery() =>
         CreateWindowsRz090528ProductionBattery(compatibilityPolicy: null);
 
-    private static IProductionBatteryPortFactory
+    internal static IProductionBatteryPortFactory
         CreateWindowsRz090528ProductionBattery(
             FirmwareCompatibilityPolicy? compatibilityPolicy,
-            bool allowPadlessLifecycleValidation = false)
+            bool allowPadlessLifecycleValidation = false,
+            Func<TimeSpan, IValidationActorFactory>? createActorFactory = null,
+            IHyperBoostEligibilitySource? hyperBoostEligibility = null)
     {
         if (allowPadlessLifecycleValidation)
         {
@@ -559,14 +561,14 @@ public static class BatteryValidationFactory
             catalog,
             readEvidence,
             static () => new ValidationRunContext(),
-            settleDelay => new ValidationActorFactory(
+            createActorFactory ?? (settleDelay => new ValidationActorFactory(
                 opener,
                 new OverlappedFeatureOperation(native),
                 guard,
                 TimeProvider.System,
                 DefaultExchangeTimeout,
                 exclusivity,
-                settleDelay),
+                settleDelay)),
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
@@ -644,11 +646,12 @@ public static class BatteryValidationFactory
                 Custom = DeviceFeatureAccess.ReadWrite,
             },
             hyperBoostCatalog: hyperBoostCatalog,
-            hyperBoostEligibility: new WindowsHyperBoostEligibilitySource(native),
+            hyperBoostEligibility: hyperBoostEligibility ?? new WindowsHyperBoostEligibilitySource(native),
             allowPadlessHyperBoostLifecycleValidation: allowPadlessLifecycleValidation,
             padlessHyperBoostLifecycleBaseMode: PerformancePreset.Performance,
-            // The shared Synapse path preserves the selected mode byte while
-            // switching the separate fan flag and then writing both targets.
+            // The code-defined 02C6 catalog above owns this model's admitted manual
+            // state and 2000-5000 RPM targets. Reuse the shared direct path without
+            // transferring 02E0 command or physical-validation evidence.
             supportsDirectManualFanTransitions: true);
     }
 

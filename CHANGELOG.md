@@ -14,6 +14,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Allow fixed fan speed on battery and fixed speed or manual curves on low-power adapters for Blade 16 RZ09-0528 and RZ09-0581. Experimental RZ09-0483 and RZ09-0482 also gain battery fixed speed; their low-power fan controls remain Automatic-only. ([#784](https://github.com/OSSBlade/openblade-core/pull/784))
 - Add Simplified Chinese and Russian versions of the README and user guides, with language navigation and stable section links. ([#769](https://github.com/OpenBladeProject/openblade-core/pull/769))
 
+### Fixed
+
+- Apply Blade 16 (2025) manual fan changes directly, and let both the 2025 and 2026 models enter HyperBoost from manual fans on either admitted cooling-pad path without resetting to Automatic first. ([#785](https://github.com/OpenBladeProject/openblade-core/pull/785))
+
 ## [0.29.0-nightly.91] - 2026-10-15
 
 ### Added

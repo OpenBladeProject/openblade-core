@@ -1111,14 +1111,15 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(["Capabilities", "State"], device.Calls);
     }
 
-    [Fact]
-    public async Task DirectManualFanEntry_FromPerformanceUsesOnlyRequestedFanWrite()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectManualFanEntry_FromPerformanceUsesOnlyRequestedFanWrite(bool rz090528)
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
-        device.Capabilities = device.Capabilities with
-        {
-            SupportsDirectManualFanTransitions = true,
-        };
+        device.Capabilities = rz090528
+            ? BatteryValidationFactory.CreateWindowsRz090528ProductionBattery().Capabilities
+            : device.Capabilities with { SupportsDirectManualFanTransitions = true };
         device.State = device.State with
         {
             Performance = PerformancePreset.Performance,

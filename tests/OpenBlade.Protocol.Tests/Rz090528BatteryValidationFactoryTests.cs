@@ -168,6 +168,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);
         Assert.True(factory.Capabilities.SupportsDirectManualFanTransitions);
         Assert.True(factory.Capabilities.SupportsManualFansOnLimitedPower);
+        Assert.False(factory.Capabilities.ReportsPerformanceWithManualFans);
         Assert.True(factory.Capabilities.OneShotLaptopControls.SetEquals(
             [
                 OneShotLaptopControl.StartupAnimation,
@@ -246,6 +247,118 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.Equal([0x00], command.Arguments.ToArray());
         Assert.Equal(1, command.ExpectedPayloadLength);
         Assert.Equal([0xC6], Assert.Single(session.Payloads));
+    }
+
+    [Theory]
+    [InlineData(FanMode.Fixed, 4000, 0x28)]
+    [InlineData(FanMode.Maximum, 5000, 0x32)]
+    public async Task DirectFanEntry_UsesTheExactProductionCatalogAndModelRange(
+        FanMode mode, int rpm, byte encodedRpm)
+    {
+        var session = new ScriptedSession(
+            [1, 1, 2, 0], [1, 2, 2, 0],
+            [1, 1, 0, 1], [1, 2, 0, 1],
+            [1, 1, encodedRpm], [1, 2, encodedRpm]);
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
+
+        await port.SetFanControlAsync(new FanControlSettings(mode, rpm, ManualFanCurve.Default), default);
+
+        Assert.True(port.Capabilities.SupportsDirectManualFanTransitions);
+        Assert.False(port.Capabilities.ReportsPerformanceWithManualFans);
+        Assert.Equal(new FanSpeedRange(2000, 5000, 100), port.Capabilities.FanSpeedRange);
+        Assert.Equal(
+            ["01010001", "01020001", $"0101{encodedRpm:X2}", $"0102{encodedRpm:X2}"],
+            Writes(session));
+    }
+
+    [Fact]
+    public async Task DirectManualTargets_UseOnlyTheRequestedTargetPair()
+    {
+        var session = new ScriptedSession(
+            [1, 1, 0, 1], [1, 2, 0, 1], [1, 1, 31], [1, 2, 32]);
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
+
+        await port.SetFanTargetsAsync(3100, 3200, default);
+
+        Assert.Equal(["01011F", "010220"], Writes(session));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectManualExit_UsesRequestedPerformanceOrCustomPair(bool custom)
+    {
+        byte mode = custom ? (byte)4 : (byte)2;
+        var responses = new List<byte[]>
+        {
+            new byte[] { 1, 1, 0, 1 }, new byte[] { 1, 2, 0, 1 },
+            new byte[] { 1, 1, mode, 0 }, new byte[] { 1, 2, mode, 0 },
+        };
+        if (custom)
+        {
+            responses.AddRange([
+                new byte[] { 1, 1, 1 }, new byte[] { 1, 2, 0 },
+                new byte[] { 1, 1, 4, 0 }, new byte[] { 1, 2, 4, 0 },
+                new byte[] { 1, 1, 1 }, new byte[] { 1, 2, 0 },
+            ]);
+        }
+        var session = new ScriptedSession(responses.ToArray());
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
+
+        if (custom)
+        {
+            await port.SetCustomPerformanceAsync(new CustomPerformanceSettings(
+                CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low), default);
+        }
+        else
+        {
+            await port.SetPerformanceAsync(PerformancePreset.Performance, default);
+        }
+
+        Assert.Equal(custom
+            ? new[] { "01010400", "01020400", "010101", "010200" }
+            : new[] { "01010200", "01020200" }, Writes(session));
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, false)]
+    [InlineData(CoolingPadConnectionState.PresentExact, true)]
+    public async Task DirectManualHyperBoost_UsesExactMode7PairForTheSelectedPadPath(
+        CoolingPadConnectionState padState, bool requiresCoolingPad)
+    {
+        var session = new ScriptedSession(
+            [1, 1, 0, 1], [1, 2, 0, 1],
+            [0x12, 0x11], [1, 1, 7, 0],
+            [0x12, 0x11], [1, 2, 7, 0],
+            [1, 1, 7, 0], [1, 2, 7, 0]);
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session, padState);
+
+        await port.SetHyperBoostAsync(true, PerformancePreset.Performance, requiresCoolingPad, default);
+
+        Assert.Equal(["01010700", "01020700"], Writes(session));
+        Assert.Equal([0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x82, 0x82],
+            session.Commands.Select(command => command.CommandId).ToArray());
+    }
+
+    private static string[] Writes(ScriptedSession session) => session.Commands
+        .Where(command => command.ClassId == 0x0D && command.CommandId is 0x01 or 0x02 or 0x07)
+        .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray();
+
+    private static async Task<IProductionBatteryPort> OpenProductionPortAsync(
+        ScriptedSession session, CoolingPadConnectionState padState = CoolingPadConnectionState.Absent)
+    {
+        var actor = new ValidationActor(session, new BatteryCommands(), new TemporaryCommands());
+        IProductionBatteryPortFactory factory = BatteryValidationFactory.CreateWindowsRz090528ProductionBattery(
+            compatibilityPolicy: null, createActorFactory: _ => new ActorFactory(actor),
+            hyperBoostEligibility: new FixedPadSource(padState));
+        HidSessionResult<IProductionBatteryPort> result = await factory.OpenAsync(default);
+        Assert.Null(result.Failure);
+        return Assert.IsAssignableFrom<IProductionBatteryPort>(result.Value);
+    }
+
+    private sealed class FixedPadSource(CoolingPadConnectionState state) : IHyperBoostEligibilitySource
+    {
+        public CoolingPadConnectionState ObserveCoolingPad() => state;
     }
 
     private sealed class ActorFactory(ValidationActor actor) : IValidationActorFactory
