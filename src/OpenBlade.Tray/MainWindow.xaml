@@ -821,7 +821,8 @@
                                                Text="Maximum fans"
                                                Style="{StaticResource CardTitleStyle}"
                                                TextWrapping="Wrap"
-                                               VerticalAlignment="Center" />
+                                               VerticalAlignment="Center"
+                                               SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
                                     <ToggleSwitch x:Uid="MainWindow_CustomMaximumFansToggleText"
                                                   Grid.Column="1"
                                                   Style="{StaticResource CompactCardToggleSwitchStyle}"

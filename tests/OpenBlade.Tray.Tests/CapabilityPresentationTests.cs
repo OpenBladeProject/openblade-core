@@ -606,6 +606,7 @@ public sealed class CapabilityPresentationTests
                 "GPU memory clock offset",
                 "CPU",
                 "GPU",
+                "Maximum fans",
                 "Fans",
                 "Fan speed",
                 "Battery protection",
@@ -625,7 +626,7 @@ public sealed class CapabilityPresentationTests
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
-        Assert.Equal(9, animatedCompactRows.Length);
+        Assert.Equal(10, animatedCompactRows.Length);
         Assert.All(animatedCompactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
