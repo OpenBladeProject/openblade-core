@@ -174,11 +174,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
                 OneShotLaptopControl.GamingMode,
             ]));
         Assert.True(productionFactory.AdmittedAdapterPowerStates!.SetEquals(
-            [
-                AdapterPowerState.Battery,
-                AdapterPowerState.UsbCPower100W,
-                AdapterPowerState.FullPower280W,
-            ]));
+            AdapterPowerProtocol.SynapseAdapterStates));
     }
 
     [Fact]
@@ -319,6 +315,10 @@ public sealed class Rz090528BatteryValidationFactoryTests
             byte transactionId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+            byte transactionId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<HidSessionResult<HidUnit>> SetAsync(
             byte transactionId,

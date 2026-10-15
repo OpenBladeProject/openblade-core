@@ -630,41 +630,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             : null;
 
     internal static IReadOnlySet<AdapterPowerState>
-        GetRz090581AdmittedAdapterPowerStates(
-            HostIdentityReadResult exactIdentity,
-            Func<bool>? isSlimQAdmissionApproved = null)
-    {
-        var states = new HashSet<AdapterPowerState>
-        {
-            AdapterPowerState.UsbCPower100W,
-            AdapterPowerState.FullPower280W,
-        };
-
-        if (!IsExactModelScopedRz090581Identity(exactIdentity))
-        {
-            return states;
-        }
-
-        states.Add(AdapterPowerState.UsbCPower45W);
-        states.Add(AdapterPowerState.UsbCPower60W);
-        states.Add(AdapterPowerState.UsbCPower65W);
-        states.Add(AdapterPowerState.UsbCPower80W);
-        states.Add(AdapterPowerState.UsbCPower90W);
-        try
-        {
-            if ((isSlimQAdmissionApproved ?? SlimQ330WAdapterAdmissionSource.IsAdmitted)())
-            {
-                states.Add(AdapterPowerState.FullPower330W);
-            }
-        }
-        catch (UnvalidatedCommandException)
-        {
-            // Adapter evidence is optional for the read-only factory fallback.
-            // A missing or untrusted manifest removes only the 330 W mapping.
-        }
-
-        return states;
-    }
+        GetRz090581AdmittedAdapterPowerStates(HostIdentityReadResult exactIdentity) =>
+        IsExactModelScopedRz090581Identity(exactIdentity)
+            ? AdapterPowerProtocol.SynapseAdapterStates
+            : new HashSet<AdapterPowerState>();
 
     private static bool IsExactModelScopedRz090581Identity(
         HostIdentityReadResult exactIdentity) => exactIdentity is

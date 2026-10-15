@@ -10,9 +10,15 @@ internal sealed partial class ExperimentalBladePort(
     Func<bool> exactHostStillPresent,
     Func<PowerSource> capturePowerSource,
     Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null,
-    bool recordQueries = true) : IProductionBatteryPort, IProductionLightingPort
+    bool recordQueries = true,
+    SemaphoreSlim? sharedOperationGate = null,
+    ExperimentalLightingOwnershipState? sharedLightingOwnership = null)
+    : IProductionBatteryPort, IProductionLightingPort
 {
-    private readonly SemaphoreSlim operationGate = new(1, 1);
+    private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
+    private readonly AdapterPowerCommandClient adapterPowerCommands = new(session, TimeSpan.FromSeconds(3));
+    private readonly ExperimentalLightingOwnershipState lightingOwnership =
+        sharedLightingOwnership ?? new();
     private readonly Func<TimeSpan, CancellationToken, Task> delayConfirmation = confirmationDelay ?? Task.Delay;
     private bool disposed;
     private bool queryRecordingEnabled = recordQueries;
@@ -44,13 +50,8 @@ internal sealed partial class ExperimentalBladePort(
             {
                 battery = new ConfirmedBatteryState(battery.ProtectionEnabled, battery.ChargeLimitPercent, false);
             }
-            LightingSettings? lighting = null;
-            LogoLightingMode? logo = null;
-            if (model.ProductId == 0x02A0)
-            {
-                lighting = (await ReadKeyboardLightingAsync(cancellationToken).ConfigureAwait(false)).Settings;
-                logo = await ReadLogoAsync(cancellationToken).ConfigureAwait(false);
-            }
+            (LightingSettings? lighting, LogoLightingMode? logo) =
+                await ReadRecoveryLightingStateAsync(cancellationToken).ConfigureAwait(false);
             return new(performance.Performance, performance.Fans, battery, lighting)
             {
                 HyperBoostActive = performance.HyperBoostActive,
@@ -66,6 +67,31 @@ internal sealed partial class ExperimentalBladePort(
 
     private void RecordQuery(string operation, string outcome, string? confirmed = null, string? failure = null)
     {
+        if (outcome is "UnsupportedState" or "InconsistentState")
+        {
+            switch (operation)
+            {
+                case "BatteryProtection":
+                    session.RetainQueryFailure(0x07, 0x92, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "Performance":
+                    session.RetainQueryFailure(0x0D, 0x82, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "MaximumFans":
+                    session.RetainQueryFailure(0x07, 0x8F, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "FanTargets":
+                    session.RetainQueryFailure(0x0D, 0x81, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "KeyboardStaticColor":
+                case "KeyboardBreathingColor":
+                    session.RetainQueryFailure(0x03, 0x8A, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "CustomPerformance":
+                    session.RetainQueryFailure(0x0D, 0x87, FirmwareQueryOutcome.ContentRejected);
+                    break;
+            }
+        }
         if (queryRecordingEnabled)
         {
             policy.Record(operation, "Query", outcome, confirmed: confirmed, failure: failure);
@@ -84,73 +110,57 @@ internal sealed partial class ExperimentalBladePort(
     public DeviceCapabilities Capabilities => CreateCapabilities(model, policy.WritesAllowed);
 
     internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
-        new(enabled ? model.ProductId == 0x02A0
-                ? new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance, PerformancePreset.Custom }
-                : new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent } : [],
-            new HashSet<FanMode>(), enabled && model.ProductId == 0x02A0
-                ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum, LightingEffect.Wave, LightingEffect.Breathing }
-                : new HashSet<LightingEffect>(),
-            enabled && model.SupportsBatteryProtection ? model.ProductId == 0x02A0
-                ? Enumerable.Range(50, 51).ToHashSet() : new HashSet<int> { 80 } : [],
-            enabled && model.SupportsBatteryProtection, false)
+        new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),
+            enabled && GetExperimentalFanRange(model) is not null
+                ? new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed } : [],
+            CreateExperimentalLightingEffects(model, enabled),
+            enabled ? GetExperimentalChargeLimits(model) : new HashSet<int>(),
+            enabled && GetExperimentalChargeLimits(model).Count > 0, false)
         {
-            CustomPerformance = enabled && model.ProductId == 0x02A0 ? CreateCustomCapabilities() : null,
-            SupportsKeyboardBrightness = enabled && model.ProductId == 0x02A0,
-            LogoLightingModes = enabled && model.ProductId == 0x02A0
-                ? new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>()) : new HashSet<LogoLightingMode>(),
-            SupportsBreathingColorSelection = model.ProductId != 0x02A0,
-            SupportsWaveDirectionSelection = model.ProductId != 0x02A0,
-            HyperBoostAccess = model.ProductId == 0x02A0 ? DeviceFeatureAccess.ObservedOnly : null,
-            ObservedLightingEffects = model.ProductId == 0x02A0
-                ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum, LightingEffect.Wave, LightingEffect.Breathing }
-                : new HashSet<LightingEffect>(),
+            CustomPerformance = enabled && SupportsExperimentalCustom(model) ? CreateCustomCapabilities(model) : null,
+            FanSpeedRange = enabled ? GetExperimentalFanRange(model) : null,
+            SupportsDirectManualFanTransitions = enabled && GetExperimentalFanRange(model) is not null,
+            // 029F/029D use separate mode/fan bytes in 0D82 and independent
+            // Custom getters, unlike validated backends' shared manual selector.
+            // See sqmagellan 9c66e705/librazer/src/command.rs and descriptor.rs.
+            ReportsPerformanceWithManualFans = enabled && GetExperimentalFanRange(model) is not null,
+            SupportsKeyboardBrightness = SupportsExperimentalKeyboardBrightness(model, enabled),
+            LogoLightingModes = CreateExperimentalLogoModes(model, enabled),
+            SupportsBreathingColorSelection = false,
+            SupportedBreathingColorModes =
+                CreateExperimentalBreathingColorModes(model, enabled),
+            SupportsWaveDirectionSelection =
+                SupportsExperimentalWaveDirectionSelection(model),
+            SupportsUniformLightingFrames =
+                SupportsExperimentalUniformFrames(model, enabled),
+            HyperBoostAccess = model.ProductId is 0x02A0 or 0x029F ? DeviceFeatureAccess.ObservedOnly : null,
+            ObservedLightingEffects = CreateExperimentalLightingEffects(model, true),
         };
 
-    public bool SupportsProtectionQuery => model.SupportsBatteryProtection;
+    private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>
+        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0;
 
-    public bool SupportsTemporaryFullChargeQuery => false;
-
-    public async Task<ConfirmedBatteryState> QueryProtectionAsync(CancellationToken cancellationToken)
+    private static IReadOnlySet<PerformancePreset> CreatePerformancePresets(ExperimentalBladeModel model)
     {
-        if (!model.SupportsBatteryProtection)
+        if (!SupportsExperimentalCustom(model))
         {
-            throw new CapabilityUnavailableException("This model does not implement battery protection.");
+            return new HashSet<PerformancePreset>();
         }
-        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        var presets = new HashSet<PerformancePreset>
         {
-            return await ReadBatteryAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
+            PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Custom,
+        };
+        // 0255 Gaming uses code 1. Code 2 has direct 029F/02A0 source evidence;
+        // do not infer that distinct preset for the two AMD Blade 14 profiles.
+        if (model.ProductId is 0x0255 or 0x029F or 0x02A0)
         {
-            operationGate.Release();
+            presets.Add(PerformancePreset.Performance);
         }
-    }
-
-    private async Task<ConfirmedBatteryState> ReadBatteryAsync(CancellationToken cancellationToken)
-    {
-        ReadOnlyMemory<byte> payload = await ExchangeAsync("BatteryProtection", 0x07, 0x92,
-            [0], false, cancellationToken).ConfigureAwait(false);
-        byte raw = payload.Span[0];
-        int percent = raw & 0x7F;
-        bool flag = (raw & 0x80) != 0;
-        bool admitted = model.ProductId == 0x02A0
-            ? !flag || percent is >= 50 and <= 100
-            : raw is 0x50 or 0xD0;
-        if (!admitted)
+        if (model.ProductId == 0x02C5)
         {
-            RecordQuery("BatteryProtection", "UnsupportedState",
-                confirmed: $"ReportedProtectionEnabled={flag};ReportedLimitPercent={percent};Raw={raw:X2}",
-                failure: "OutsideAdmittedBatteryStates");
-            throw ContentRejected("Experimental battery readback is outside this model's admitted states.",
-                DeviceStateQuery.BatteryProtection, payload.Span);
+            presets.UnionWith([PerformancePreset.BatterySaver, PerformancePreset.BatteryBalanced]);
         }
-        // Upstream 100% is no limit: write disabled 0x50. An enabled-at-100
-        // baseline is also no limit; retain its actual flag/threshold in diagnostics.
-        bool enabled = flag && percent < 100;
-        RecordQuery("BatteryProtection", "Confirmed",
-            confirmed: $"Effective={(enabled ? percent.ToString() : "Off")};ReportedProtectionEnabled={flag};ReportedLimitPercent={percent};Raw={raw:X2}");
-        return new(enabled, enabled ? percent : null, null);
+        return presets;
     }
 
     public async Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(CancellationToken cancellationToken)
@@ -211,7 +221,7 @@ internal sealed partial class ExperimentalBladePort(
                 DeviceStateQuery.ThermalChannelAgreement, first.Span, second.Span);
         }
         byte mode = first.Span[2];
-        bool hyperBoost = mode == 7 && model.ProductId == 0x02A0;
+        bool hyperBoost = mode == 7 && model.ProductId is 0x02A0 or 0x029F;
         PerformancePreset? performance = mode switch
         {
             0 => PerformancePreset.Balanced,
@@ -220,13 +230,17 @@ internal sealed partial class ExperimentalBladePort(
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
             6 when model.ProductId == 0x02C5 => PerformancePreset.BatteryBalanced,
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
-            2 when model.ProductId == 0x02A0 => PerformancePreset.Performance,
-            7 when model.ProductId == 0x02A0 => null,
+            2 when model.ProductId is 0x02A0 or 0x029F => PerformancePreset.Performance,
+            7 when model.ProductId is 0x02A0 or 0x029F => null,
             _ => UnsupportedPerformanceMode(first.Span),
         };
         FanMode fans = first.Span[3] == 0 ? FanMode.Automatic : FanMode.Fixed;
-        CustomPerformanceSettings? custom = mode == 4 && model.ProductId == 0x02A0
+        CustomPerformanceSettings? custom = mode == 4 && SupportsExperimentalCustom(model)
             ? await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false) : null;
+        if (fans == FanMode.Fixed && GetExperimentalFanRange(model) is not null)
+        {
+            await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false);
+        }
         // Custom without model-specific levels cannot establish a restorable
         // thermal baseline. Reject it like any other unrepresentable state.
         if (performance == PerformancePreset.Custom && custom is null)
@@ -263,8 +277,7 @@ internal sealed partial class ExperimentalBladePort(
 
     public async Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)
     {
-        if (value is not (PerformancePreset.Balanced or PerformancePreset.Silent)
-            && !(value == PerformancePreset.Performance && model.ProductId == 0x02A0))
+        if (value == PerformancePreset.Custom || !CreatePerformancePresets(model).Contains(value))
         {
             throw new CapabilityUnavailableException("This preset is outside the exact experimental model definition.");
         }
@@ -272,42 +285,72 @@ internal sealed partial class ExperimentalBladePort(
         bool submitted = false;
         try
         {
-            RequireWriteAdmission(thermal: true);
+            RequirePerformanceWriteAdmission(value);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("Performance", "Baseline", "Confirmed", requested: value.ToString(),
                 confirmed: $"{(baseline.HyperBoostActive ? "HyperBoost" : baseline.Performance?.ToString())}/{baseline.Fans}");
-            // Mode entry also writes fan flag 0 (Automatic). This backend cannot
-            // restore a manual-fan baseline, so reject it before submitting a mode SET.
-            if (baseline.Fans != FanMode.Automatic)
+            // Models without a target getter/setter cannot retain a restorable
+            // manual baseline. Supported models decoded both targets above.
+            if (baseline.Fans != FanMode.Automatic && GetExperimentalFanRange(model) is null)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Experimental performance changes require confirmed Automatic fans.");
             }
-            if (baseline.Performance is PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)
+            if (baseline.Fans == FanMode.Fixed
+                && (baseline.HyperBoostActive || baseline.CustomPerformance?.MaximumFans == true))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    "Battery performance codes are not admitted by this experimental backend.");
+                    "The fixed-fan baseline conflicts with a firmware fan override.");
             }
+            (int First, int Second)? baselineTargets = baseline.Fans == FanMode.Fixed
+                ? await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) : null;
             if (baseline.Performance == value)
             {
                 return;
+            }
+            if (CreateCustomCapabilities(model).SupportsMaximumFans)
+            {
+                // Synapse clears Maximum Fans before leaving Custom; 0D/02
+                // does not establish that the shared 07/8F bit was cleared.
+                // Reuse the whole-byte guard so cleanup cannot clear another option.
+                byte flags = await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false);
+                if ((flags & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0)
+                {
+                    RequireMaximumFansWriteBaseline(flags);
+                    RequirePerformanceWriteAdmission(value);
+                    await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0],
+                        true, cancellationToken,
+                        requireAdequateAdapter: value != PerformancePreset.Balanced).ConfigureAwait(false);
+                    submitted = true;
+                    if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        throw new IOException("Maximum Fans cleanup was not independently confirmed.");
+                    }
+                }
             }
             byte mode = value switch
             {
                 PerformancePreset.Balanced => 0,
                 PerformancePreset.Silent => 5,
-                PerformancePreset.Performance => 2,
+                PerformancePreset.Performance => model.ProductId == 0x0255 ? (byte)1 : (byte)2,
+                PerformancePreset.BatterySaver => 3,
+                PerformancePreset.BatteryBalanced => 6,
                 _ => throw new CapabilityUnavailableException("This preset has no experimental wire value."),
             };
             foreach (byte selector in new byte[] { 1, 2 })
             {
-                RequireWriteAdmission(thermal: true);
-                await ExchangeAsync("Performance", 0x0D, 0x02, [1, selector, mode, 0],
+                RequirePerformanceWriteAdmission(value);
+                // The admitted 029F/029D shape has independent mode and fan bytes;
+                // changing a preset does not request relinquishing fixed targets.
+                await ExchangeAsync("Performance", 0x0D, 0x02,
+                    [1, selector, mode, baseline.Fans == FanMode.Fixed ? (byte)1 : (byte)0],
                     true, cancellationToken).ConfigureAwait(false);
                 submitted = true;
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
-            if (confirmed.Performance != value || confirmed.Fans != FanMode.Automatic)
+            if (confirmed.Performance != value || confirmed.Fans != baseline.Fans
+                || baselineTargets.HasValue
+                    && await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) != baselineTargets.Value)
             {
                 throw new IOException("Independent performance readback did not confirm the requested value.");
             }
@@ -316,69 +359,6 @@ internal sealed partial class ExperimentalBladePort(
         catch (Exception exception)
         {
             throw MapWriteFailure("Performance", submitted, exception);
-        }
-        finally
-        {
-            operationGate.Release();
-        }
-    }
-
-    public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) =>
-        model.ProductId == 0x02A0 ? percent is >= 50 and <= 100
-            ? SetBatteryAsync(percent == 100 ? null : percent, cancellationToken)
-            : Task.FromException(new CapabilityUnavailableException("Blade 18 limits must be from 50 to 100 percent."))
-        : percent == 80 ? SetBatteryAsync(80, cancellationToken)
-        : Task.FromException(new CapabilityUnavailableException("Only the upstream-derived 80% limit is enabled for this model."));
-
-    public Task SetProtectionOffAsync(CancellationToken cancellationToken) => SetBatteryAsync(null, cancellationToken);
-
-    private async Task SetBatteryAsync(int? limit, CancellationToken cancellationToken)
-    {
-        if (!model.SupportsBatteryProtection)
-        {
-            throw new CapabilityUnavailableException("Class 07 battery commands are not supported on this model.");
-        }
-        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        bool submitted = false;
-        bool enabled = limit.HasValue;
-        string requested = enabled ? limit!.Value.ToString() : "Off";
-        try
-        {
-            RequireWriteAdmission();
-            ConfirmedBatteryState baseline = await ReadBatteryAsync(cancellationToken).ConfigureAwait(false);
-            policy.Record("BatteryProtection", "Baseline", "Confirmed", requested: requested,
-                confirmed: baseline.ProtectionEnabled ? baseline.ChargeLimitPercent!.Value.ToString() : "Off");
-            if (baseline.ProtectionEnabled == enabled && baseline.ChargeLimitPercent == limit)
-            {
-                return;
-            }
-            RequireWriteAdmission();
-            await ExchangeAsync("BatteryProtection", 0x07, 0x12, [enabled ? checked((byte)(0x80 | limit!.Value)) : (byte)0x50],
-                true, cancellationToken).ConfigureAwait(false);
-            submitted = true;
-            // 029F firmware may return the previous valid state for 1-2 seconds after a SET.
-            // https://github.com/sqmagellan/razer-ctl/blob/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a/README.md
-            // Retry only valid stale GET results. Never replay the setter or retry failed/invalid reads.
-            int maximumConfirmationReads = model.ProductId == 0x029F ? 9 : 1;
-            for (int attempt = 0; attempt < maximumConfirmationReads; attempt++)
-            {
-                if (attempt > 0)
-                {
-                    await delayConfirmation(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
-                }
-                cancellationToken.ThrowIfCancellationRequested();
-                ConfirmedBatteryState confirmed = await ReadBatteryAsync(cancellationToken).ConfigureAwait(false);
-                if (confirmed.ProtectionEnabled == enabled && confirmed.ChargeLimitPercent == limit)
-                {
-                    policy.Record("BatteryProtection", "Readback", "Confirmed", true, requested, requested);
-                    return;
-                }
-            }
-            throw new IOException("Independent battery readback did not converge to the requested value.");
-        }
-        catch (Exception exception)
-        {
-            throw MapWriteFailure("BatteryProtection", submitted, exception);
         }
         finally
         {
@@ -399,6 +379,32 @@ internal sealed partial class ExperimentalBladePort(
     private bool ExternalPowerPresent() => capturePowerSource() is
         PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC;
 
+    private void RequirePerformanceWriteAdmission(PerformancePreset value)
+    {
+        RequireWriteAdmission();
+        bool batteryMode = value is PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced;
+        if (batteryMode ? model.ProductId != 0x02C5 || capturePowerSource() != PowerSource.Battery
+            : !ExternalPowerPresent())
+        {
+            throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                "The exact experimental preset is not admitted on the current power source.");
+        }
+    }
+
+    private bool ThermalSubmissionAllowed(byte commandClass, byte commandId, byte[] arguments)
+    {
+        // 02C5 battery-mode evidence: blade-control issue #2 and pinned
+        // bc48c916 PerformanceService.cs. Recheck at native submission, not just
+        // before a queued operation; never replay an uncertain mode command.
+        if (commandClass == 0x0D && commandId == 0x02
+            && arguments.Length == 4 && arguments[2] is 3 or 6)
+        {
+            return model.ProductId == 0x02C5 && capturePowerSource() == PowerSource.Battery;
+        }
+        return commandClass != 0x0D && !(commandClass == 0x07 && commandId == 0x0F)
+            || ExternalPowerPresent();
+    }
+
     private BladeWriteException MapWriteFailure(string operation, bool submitted, Exception exception)
     {
         submitted |= exception is BladeWriteException { SubmissionState: WriteSubmissionState.Indeterminate };
@@ -415,17 +421,30 @@ internal sealed partial class ExperimentalBladePort(
     private async Task<ReadOnlyMemory<byte>> ExchangeAsync(string operation, byte commandClass,
         byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken,
         bool variableResponse = false, Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null,
-        bool requireEcho = true)
+        bool requireEcho = true, bool recordAcknowledgedSubmission = true,
+        bool requireAdequateAdapter = false)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
+        if (write && IsThermalSet(commandClass, commandId)
+            && !IsBatteryModeSet(commandClass, commandId, arguments))
+        {
+            AdapterPowerState adapter = await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
+            bool limitedCleanupAllowed = !requireAdequateAdapter && IsLimitedAdapter(adapter)
+                && AllowsLimitedPowerSet(operation, commandClass, commandId, arguments);
+            if (!HyperBoostValidationPower.IsAdmittedFullPower(adapter) && !limitedCleanupAllowed)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "The adapter does not admit this thermal write on the current power source.");
+            }
+        }
         var command = new RazerCommandSpec(commandClass, commandId, arguments, arguments.Length, payloadValidator)
         {
             // Evaluated at the native submission boundary, including after queueing.
             AllowVariableResponseLength = variableResponse,
             SubmissionAllowed = write ? () => policy.WritesAllowed && exactHostStillPresent()
                 && additionalWriteAdmission?.Invoke() != false
-                && (commandClass != 0x0D || ExternalPowerPresent()) : null,
+                && ThermalSubmissionAllowed(commandClass, commandId, arguments) : null,
         };
         HidSessionResult<ReadOnlyMemory<byte>> result;
         try
@@ -473,7 +492,7 @@ internal sealed partial class ExperimentalBladePort(
             }
             throw new IOException("Experimental response did not match the command contract.");
         }
-        if (write)
+        if (write && recordAcknowledgedSubmission)
         {
             policy.Record(operation, "Submission", "Acknowledged", true);
         }
@@ -481,21 +500,65 @@ internal sealed partial class ExperimentalBladePort(
     }
 
     public Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(null);
-    public Task<AdapterPowerState> QueryAdapterPowerStateAsync(CancellationToken cancellationToken)
+    public async Task<AdapterPowerState> QueryAdapterPowerStateAsync(CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        PowerSource power = capturePowerSource();
-        return Task.FromResult(power switch
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            PowerSource.Battery => AdapterPowerState.Battery,
-            PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC =>
-                AdapterPowerState.ExperimentalExternal,
-            _ => AdapterPowerState.Unknown,
-        });
+            ObjectDisposedException.ThrowIf(disposed, this);
+            return await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
     }
-    public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken) => Unavailable();
-    public Task SetFanControlAsync(FanControlSettings value, CancellationToken cancellationToken) => Unavailable();
-    public Task SetFanTargetsAsync(int fan1Rpm, int fan2Rpm, CancellationToken cancellationToken) => Unavailable();
+
+    private async Task<AdapterPowerState> ReadAdapterPowerCoreAsync(CancellationToken cancellationToken)
+    {
+        // Every admitted profile pins its own enabled Synapse command path.
+        // A future profile without that evidence cannot inherit the query.
+        if (model.AdapterPowerEvidenceSource is null)
+        {
+            RecordQuery("AdapterPower", "Unavailable", failure: "MissingVendorCommandEvidence");
+            return AdapterPowerState.Unknown;
+        }
+        if (!context.TryAllocateTransaction(out byte transaction))
+        {
+            throw new IOException("The experimental adapter query exhausted its transaction budget.");
+        }
+        HidSessionResult<AdapterPowerState> result = await adapterPowerCommands.QueryAsync(
+            transaction, cancellationToken).ConfigureAwait(false);
+        if (result.Failure is { } failure)
+        {
+            RecordQuery("AdapterPower", "Failed", failure: failure.ToString());
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException($"Experimental adapter query failed: {failure}.");
+        }
+        RecordQuery("AdapterPower", result.Value == AdapterPowerState.Unknown ? "UnsupportedState" : "Confirmed",
+            confirmed: result.Value.ToString());
+        return result.Value;
+    }
+
+    private static bool IsThermalSet(byte commandClass, byte commandId) =>
+        commandClass == 0x0D && commandId is 0x01 or 0x02 or 0x07
+        || commandClass == 0x07 && commandId == 0x0F;
+
+    private static bool IsBatteryModeSet(byte commandClass, byte commandId, byte[] arguments) =>
+        commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[2] is 3 or 6;
+
+    private static bool IsLimitedAdapter(AdapterPowerState state) => state is
+        AdapterPowerState.LimitedExternal or AdapterPowerState.UsbCPower45W or AdapterPowerState.UsbCPower60W
+        or AdapterPowerState.UsbCPower65W or AdapterPowerState.UsbCPower80W or AdapterPowerState.UsbCPower90W
+        or AdapterPowerState.UsbCPower100W;
+
+    private static bool AllowsLimitedPowerSet(string operation, byte commandClass, byte commandId, byte[] arguments) =>
+        commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[3] == 0
+            // Automatic handback preserves a freshly confirmed mode before the
+            // service selects Balanced. Do not force an intermediate preset.
+            && (operation == "Fans" || operation == "Performance" && arguments[2] == 0)
+        || commandClass == 0x07 && commandId == 0x0F && operation == "MaximumFans"
+            && arguments.Length == 1 && arguments[0] == 0;
     public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) => Unavailable();
     public Task ApplyOneShotLaptopControlAsync(ApplyOneShotLaptopControl value, CancellationToken cancellationToken) => Unavailable();
     private static Task Unavailable() => Task.FromException(new CapabilityUnavailableException(

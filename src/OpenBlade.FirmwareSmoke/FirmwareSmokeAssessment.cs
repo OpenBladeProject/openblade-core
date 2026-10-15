@@ -849,7 +849,8 @@ public static class FirmwareSmokeAssessment
         {
             (null, null) => true,
             ({ } leftValue, { } rightValue) =>
-                leftValue.AllowedCombinations.SetEquals(rightValue.AllowedCombinations),
+                leftValue.SupportsMaximumFans == rightValue.SupportsMaximumFans
+                && leftValue.AllowedCombinations.SetEquals(rightValue.AllowedCombinations),
             _ => false,
         };
 

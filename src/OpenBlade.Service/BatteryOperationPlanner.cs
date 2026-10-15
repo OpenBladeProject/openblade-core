@@ -30,6 +30,8 @@ internal static class BatteryOperationPlanner
             return BlockedBatteryPlan("Battery");
         }
 
+        desired = WithoutStaleFullCharge(desired, confirmed);
+
         if (desired.TemporaryFullCharge != confirmed.TemporaryFullCharge.Value)
         {
             return CreateTemporaryFullChargePlan(
@@ -177,6 +179,20 @@ internal static class BatteryOperationPlanner
             new BatteryOperation.ChargeLimit(storedPolicy),
             MatchesOn);
     }
+
+    // Temporary full charge is a firmware one-shot that is enabled only by an
+    // explicit request. Automatic paths (transitions, reapply, policy and
+    // protection changes) may keep or cancel it, but an intent that reads back
+    // inactive has ended, so it is never planned as an enable.
+    internal static DesiredBatteryState WithoutStaleFullCharge(
+        DesiredBatteryState desired,
+        ConfirmedBatteryState? confirmed) =>
+        desired.TemporaryFullCharge && confirmed?.TemporaryFullCharge == false
+            ? new DesiredBatteryState(
+                desired.ConfiguredPolicy,
+                desired.ProtectionEnabled,
+                false)
+            : desired;
 
     internal static BatteryOperationPlan CreateTemporaryFullChargePlan(
         bool enabled,

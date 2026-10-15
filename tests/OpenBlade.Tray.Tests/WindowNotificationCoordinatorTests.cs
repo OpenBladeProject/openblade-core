@@ -172,7 +172,7 @@ public sealed class WindowNotificationCoordinatorTests
             {
                 Assert.Equal("profile-power-source", profile.ReplacementTag);
                 Assert.Equal(TrayNotificationDestination.Laptop, profile.Destination);
-                Assert.Contains("USB-C profile", profile.Body, StringComparison.Ordinal);
+                Assert.Contains("Low-power profile", profile.Body, StringComparison.Ordinal);
             },
             controller =>
             {

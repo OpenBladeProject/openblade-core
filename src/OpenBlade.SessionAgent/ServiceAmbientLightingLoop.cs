@@ -64,7 +64,9 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                                     AmbientAwarenessLightingParameters parameters =>
                                 new AmbientRenderingConfiguration(
                                     parameters.Region,
-                                    connected.Status.LightingRefreshRate),
+                                    connected.Status.LightingRefreshRate,
+                                    connected.Status.Capabilities?.SupportsUniformLightingFrames
+                                        == true),
                             _ => null,
                         };
                         await SetConfigurationAsync(configuration, cancellationToken)
@@ -164,11 +166,19 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         {
             while (true)
             {
-                AmbientLightingFrame frame;
+                AmbientLightingFrame? spatialFrame = null;
+                UniformLightingFrame? uniformFrame = null;
                 try
                 {
                     sampler ??= samplerFactory.Create();
-                    frame = sampler.Capture(configuration.Region);
+                    if (configuration.UniformFrames)
+                    {
+                        uniformFrame = sampler.CaptureUniform(configuration.Region);
+                    }
+                    else
+                    {
+                        spatialFrame = sampler.Capture(configuration.Region);
+                    }
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)
@@ -186,18 +196,31 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
 
                 try
                 {
-                    SessionLightingFrameDecision decision = cadence.Evaluate(frame);
+                    SessionLightingFrameDecision decision = uniformFrame is not null
+                        ? cadence.Evaluate(uniformFrame)
+                        : cadence.Evaluate(spatialFrame!);
                     if (decision.ShouldSend)
                     {
-                        ControlOperationResult result = await serviceClient
-                            .PushAmbientLightingFrameAsync(frame, cancellationToken)
-                            .ConfigureAwait(false);
+                        ControlOperationResult result = uniformFrame is not null
+                            ? await serviceClient.PushUniformLightingFrameAsync(
+                                uniformFrame,
+                                cancellationToken).ConfigureAwait(false)
+                            : await serviceClient.PushAmbientLightingFrameAsync(
+                                spatialFrame!,
+                                cancellationToken).ConfigureAwait(false);
                         if (result.Status != ControlOperationStatus.Applied)
                         {
                             throw new InvalidOperationException(result.Message);
                         }
 
-                        cadence.RecordSent(frame);
+                        if (uniformFrame is not null)
+                        {
+                            cadence.RecordSent(uniformFrame);
+                        }
+                        else
+                        {
+                            cadence.RecordSent(spatialFrame!);
+                        }
                     }
 
                     await pacer.WaitAsync(decision.NextInterval, cancellationToken)
@@ -255,7 +278,8 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
 
 internal readonly record struct AmbientRenderingConfiguration(
     AmbientAwarenessRegion Region,
-    LightingRefreshRate RefreshRate);
+    LightingRefreshRate RefreshRate,
+    bool UniformFrames = false);
 
 internal readonly record struct SessionLightingFrameDecision(
     bool ShouldSend,
@@ -338,6 +362,7 @@ internal sealed class SessionLightingFrameCadence
     private readonly TimeSpan activeInterval;
     private readonly int staticFrameThreshold;
     private IReadOnlyList<RgbColor>? lastSentFrame;
+    private RgbColor? lastSentUniformColor;
     private DateTimeOffset? lastSentAt;
     private int unchangedFrames;
 
@@ -364,6 +389,17 @@ internal sealed class SessionLightingFrameCadence
         ArgumentNullException.ThrowIfNull(frame);
         bool changed = lastSentFrame is null
             || !FramesEqual(frame.Slots, lastSentFrame);
+        return EvaluateChanged(changed);
+    }
+
+    internal SessionLightingFrameDecision Evaluate(UniformLightingFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        return EvaluateChanged(lastSentUniformColor != frame.Color);
+    }
+
+    private SessionLightingFrameDecision EvaluateChanged(bool changed)
+    {
         TimeSpan nextInterval;
         if (changed)
         {
@@ -389,6 +425,15 @@ internal sealed class SessionLightingFrameCadence
     {
         ArgumentNullException.ThrowIfNull(frame);
         lastSentFrame = frame.Slots;
+        lastSentUniformColor = null;
+        lastSentAt = timeProvider.GetUtcNow();
+    }
+
+    internal void RecordSent(UniformLightingFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        lastSentFrame = null;
+        lastSentUniformColor = frame.Color;
         lastSentAt = timeProvider.GetUtcNow();
     }
 

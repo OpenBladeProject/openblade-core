@@ -273,6 +273,34 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task Rz090528UnsupportedLogoCombination_RetainsBothQueryFailures()
+    {
+        var session = new LightingSession(initialBrightness: 49)
+        {
+            LogoEnabled = true,
+            LogoEffect = 0x07,
+        };
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        DeviceStateContentRejectedException rejection =
+            await Assert.ThrowsAsync<DeviceStateContentRejectedException>(
+                () => port.ReadLogoStateAsync(default));
+
+        Assert.Equal(DeviceStateQuery.LogoLightingCombination, rejection.Query);
+        Assert.Equal(
+            [
+                (0x03, 0x80, FirmwareQueryOutcome.ContentRejected),
+                (0x03, 0x82, FirmwareQueryOutcome.ContentRejected),
+            ],
+            session.RetainedQueryFailures);
+    }
+
+    [Fact]
     public async Task Rz090528Static_UsesSixCapturedRowsThenLatchAndOwnsRenderer()
     {
         var session = new LightingSession(initialBrightness: 0);
@@ -3250,6 +3278,8 @@ public sealed class ProductionLightingPortTests
     {
         internal List<RazerCommandSpec> Commands { get; } = [];
 
+        internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
+
         internal ConcurrentQueue<RazerCommandSpec> SubmittedCommands { get; } = [];
 
         internal int SubmittedBatchCount { get; private set; }
@@ -3296,6 +3326,12 @@ public sealed class ProductionLightingPortTests
 
         public RazerCommandSessionDisposition Disposition { get; private set; } =
             RazerCommandSessionDisposition.Healthy;
+
+        public void RetainQueryFailure(
+            byte classId,
+            byte commandId,
+            FirmwareQueryOutcome outcome) =>
+            RetainedQueryFailures.Add((classId, commandId, outcome));
 
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
             RazerCommandSpec command,
@@ -3722,6 +3758,10 @@ public sealed class ProductionLightingPortTests
     private sealed class TemporaryCommands : ITemporaryFullChargeCommandClient
     {
         public Task<HidSessionResult<bool>> QueryAsync(
+            byte transactionId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
             byte transactionId,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 

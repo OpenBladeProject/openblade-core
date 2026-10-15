@@ -634,7 +634,7 @@ Répórtéd fáílúrés:
     <value>[!! Pówér prófílé chángéd ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
-    <value>[!! ÚSB-C prófílé ~~~~ !!]</value>
+    <value>[!! Lów-pówér prófílé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Óffícíál Razer fírmwáré úpdáté ássístánt ~~~~~~~~~~~ !!]</value>
@@ -655,7 +655,7 @@ Répórtéd fáílúrés:
     <value>[!! Éxpórt OpenBlade prófílés ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
-    <value>[!! Thís réplácés thé sávéd ÁC, ÚSB-C, báttérý, ánd báttérý-prótéctíón prófílés. Cúrrént hárdwáré séttíngs áré nót chángéd úntíl ýóú ápplý ór swítch prófílés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Thís réplácés thé sávéd ÁC, lów-pówér, báttérý, ánd báttérý-prótéctíón prófílés. Cúrrént hárdwáré séttíngs áré nót chángéd úntíl ýóú ápplý ór swítch prófílés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
     <value>[!! Ímpórt prófílés? ~~~~~ !!]</value>
@@ -893,7 +893,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Áctívé ~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockActiveACUSBCOrBatteryProfile.Text" xml:space="preserve">
-    <value>[!! Áctívé ÁC, ÚSB-C, ór Báttérý prófílé. ~~~~~~~~~~ !!]</value>
+    <value>[!! Áctívé ÁC, lów-pówér, ór báttérý prófílé. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockAddAdjustment.Text" xml:space="preserve">
     <value>[!! Ádd ádjústmént ~~~~~ !!]</value>
@@ -1616,7 +1616,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Úpdátés ~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUSBC.Text" xml:space="preserve">
-    <value>[!! ÚSB-C ~~ !!]</value>
+    <value>[!! Lów-pówér prófílé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUSBDevice.Text" xml:space="preserve">
     <value>[!! ÚSB dévícé ~~~~ !!]</value>
@@ -2049,5 +2049,11 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Únsúppórtéd láptóp ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockCustomMaximumFans.Text" xml:space="preserve">
+    <value>[!! Máxímúm fáns ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Máxímúm fáns ~~~~ !!]</value>
   </data>
 </root>

@@ -139,7 +139,7 @@ release steps.
 ## Nightly workflow
 
 - The `Nightly` GitHub Actions workflow builds the latest committed `main`
-  every day at 09:17 UTC and can also be started manually.
+  only when a maintainer starts it manually; it has no schedule.
 - It runs the formatting, build, test, authoring, and production-publish gates
   used by CI, then retains the Actions artifact for 14 days.
 - Each successful build prepares a draft GitHub prerelease with its installer, checksum,

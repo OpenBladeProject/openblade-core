@@ -211,16 +211,18 @@ public sealed class ControlCoordinator
         NormalizeLegacyGpuClockTuning(ref customPerformance, ref gpuClockTuning);
         GpuClockTuningSettings? effectiveGpuClockTuning = gpuClockTuning;
         bool supportsDirectManualFanTransitions = false;
+        bool reportsPerformanceWithManualFans = false;
         bool PerformanceSupported(DeviceCapabilities capabilities)
         {
             supportsDirectManualFanTransitions =
                 capabilities.SupportsDirectManualFanTransitions;
+            reportsPerformanceWithManualFans = capabilities.ReportsPerformanceWithManualFans;
             effectiveGpuClockTuning = FilterUnsupportedGpuClockTuning(
                 gpuClockTuning,
                 capabilities);
             return capabilities.PerformancePresets.Contains(value)
                 && (value != PerformancePreset.Custom
-                    || capabilities.CustomPerformance?.Supports(customPerformance) != false);
+                    || capabilities.CustomPerformance?.Supports(customPerformance) == true);
         }
 
         ScopedApplyOutcome outcome = await ApplyScopedAsync(
@@ -234,6 +236,7 @@ public sealed class ControlCoordinator
                     || GpuClockTuningSettings.IsWellFormed(gpuClockTuning)),
             PerformanceSupported,
             state => (!supportsDirectManualFanTransitions
+                    || reportsPerformanceWithManualFans
                     || state.Fans == FanMode.Automatic)
                 && PerformanceMatches(
                     state,
@@ -604,6 +607,7 @@ public sealed class ControlCoordinator
         bool supportsDirectManualFanTransitions =
             transitionCapabilities.SupportsDirectManualFanTransitions;
         if (supportsDirectManualFanTransitions
+            && !transitionCapabilities.ReportsPerformanceWithManualFans
             && requested.Mode == FanMode.Automatic
             && previousManual)
         {
@@ -1181,7 +1185,7 @@ public sealed class ControlCoordinator
                 final,
                 finalReadUnavailable,
                 transition,
-                capabilities.SupportsDirectManualFanTransitions,
+                capabilities.SupportsDirectManualFanTransitions && !capabilities.ReportsPerformanceWithManualFans,
                 finalPartialRead);
             HashSet<DeviceSubsystem> attemptedWithoutConfirmation =
                 transition.Attempted
@@ -1235,8 +1239,11 @@ public sealed class ControlCoordinator
         DeviceCapabilities capabilities,
         ConfirmedDeviceState initial)
     {
-        BatteryOperationPlan batteryPlan = BatteryOperationPlanner.CreateBatteryPlan(
+        DesiredBatteryState desiredBattery = BatteryOperationPlanner.WithoutStaleFullCharge(
             desired.Battery,
+            initial.Battery);
+        BatteryOperationPlan batteryPlan = BatteryOperationPlanner.CreateBatteryPlan(
+            desiredBattery,
             capabilities,
             initial.Battery);
         bool manualFansDesired = DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value);
@@ -1249,11 +1256,16 @@ public sealed class ControlCoordinator
                 desired.Performance.Value,
                 desired.Fans.Value,
                 capabilities.SupportsDirectManualFanTransitions);
+        // A direct fan transition alone does not imply hidden performance.
+        // Experimental backends with independent getters must apply and confirm
+        // Custom changes while retaining manual fans; legacy selector handling stays.
         bool FirmwarePerformanceSelectorHidden(ConfirmedDeviceState state) =>
-            manualFansDesired
+            !capabilities.ReportsPerformanceWithManualFans
+            && manualFansDesired
             && DeviceSubsystemOrder.IsManualFanMode(state.Fans);
         bool latentManualPerformanceIntent =
             capabilities.SupportsDirectManualFanTransitions
+            && !capabilities.ReportsPerformanceWithManualFans
             && manualFansDesired;
         bool PerformanceStateMatches(ConfirmedDeviceState state) =>
             !(capabilities.SupportsDirectManualFanTransitions
@@ -1321,11 +1333,11 @@ public sealed class ControlCoordinator
                 batteryPlan.Supported,
                 batteryPlan.InitiallyMatching,
                 token => batteryOperations.ApplyTransitionAsync(
-                    desired.Battery,
+                    desiredBattery,
                     capabilities,
                     initial.Battery,
                     token),
-                state => BatteryOperationPlanner.BatteryMatches(desired.Battery, state.Battery)),
+                state => BatteryOperationPlanner.BatteryMatches(desiredBattery, state.Battery)),
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)
@@ -1356,6 +1368,7 @@ public sealed class ControlCoordinator
         string? thermalStopReason = null;
         bool directAutomaticPair =
             capabilities.SupportsDirectManualFanTransitions
+            && !capabilities.ReportsPerformanceWithManualFans
             && DeviceSubsystemOrder.IsManualFanMode(initial.Fans)
             && desired.Fans.Value == FanMode.Automatic
             && initial.HyperBoostActive == false
@@ -1422,7 +1435,7 @@ public sealed class ControlCoordinator
                 if (!IsLatentManualPerformanceIntent(
                         subsystem,
                         desired,
-                        capabilities.SupportsDirectManualFanTransitions))
+                        capabilities.SupportsDirectManualFanTransitions && !capabilities.ReportsPerformanceWithManualFans))
                 {
                     transition.Matched.Add(subsystem);
                 }

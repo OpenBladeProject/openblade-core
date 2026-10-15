@@ -66,7 +66,7 @@ Use the following as the starting point for Notes for certification:
 > OpenBlade is a free, open-source, Razer-only hardware utility. This release
 > has physically validated support for the Razer Blade 16 (2026), RZ09-0581,
 > USB 1532:02E0, and Blade 16 (2025), RZ09-0528, USB 1532:02C6. Builds containing
-> the 0.27 experimental backend also recognize five exact experimental profiles:
+> the experimental backend also recognize five exact experimental profiles:
 > RZ09-0483, RZ09-0482, RZ09-0530, RZ09-0328, and RZ09-0484. Their bounded
 > controls enable automatically, with physical validation still open. Available
 > controls vary by model; the compatibility page and experimental guide list them. The app installs its own LocalSystem

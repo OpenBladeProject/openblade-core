@@ -136,8 +136,8 @@ OpenBlade 修复操作不会改动已安装的共享运行时。
 
 ## Nightly 工作流
 
-- `Nightly` GitHub Actions 工作流每天在 09:17 UTC 构建最新提交的 `main`，
-  也可手动启动。
+- `Nightly` GitHub Actions 工作流仅在维护者手动启动时构建最新提交的 `main`，
+  没有定时调度。
 - 它运行 CI 使用的格式、构建、测试、安装创作和生产发布检查，
   然后将 Actions 产物保留 14 天。
 - 每次构建成功后，准备一个 GitHub 预发布草稿，包含安装程序、校验和、

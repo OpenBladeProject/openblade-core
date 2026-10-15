@@ -113,6 +113,7 @@ public sealed class ServiceCompositionTests
             new StubProductionBatteryFactory(DeviceCapabilities.Unavailable()),
             factory);
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        defaults = defaults with { PluggedIn = defaults.PluggedIn with { CustomPerformance = null } };
         LightingSettings staticLighting = LightingSettingsFactory.Static(
             new RgbColor(12, 34, 56),
             brightness: 70);
@@ -133,6 +134,7 @@ public sealed class ServiceCompositionTests
             new StubProductionBatteryFactory(DeviceCapabilities.Unavailable()),
             new StubProductionLightingFactory(DeviceCapabilities.Unavailable()));
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        defaults = defaults with { PluggedIn = defaults.PluggedIn with { CustomPerformance = null } };
         validator.Validate(defaults);
 
         Assert.Throws<InvalidDataException>(() => validator.Validate(defaults with

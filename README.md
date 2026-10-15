@@ -15,7 +15,7 @@ English | [简体中文](README.zh-CN.md) | [Русский](README.ru-RU.md)
 
 OpenBlade is a free Windows tray app for Razer Blade laptops. Adjust performance,
 fans, charging, lighting, display settings, and special keys without a Synapse
-account. Profiles switch automatically between plugged-in, USB-C, and battery
+account. Profiles switch automatically between plugged-in, low-power adapter, and battery
 power, and keep working when you close the window.
 
 | Dashboard | Lighting |

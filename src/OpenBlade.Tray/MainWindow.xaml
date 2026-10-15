@@ -808,6 +808,30 @@
                                                                     SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomMaximumFansVisible}">
+                                <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Uid="MainWindow_TextBlockCustomMaximumFans"
+                                               Text="Maximum fans"
+                                               Style="{StaticResource CardTitleStyle}"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center"
+                                               SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                    <ToggleSwitch x:Uid="MainWindow_CustomMaximumFansToggleText"
+                                                  Grid.Column="1"
+                                                  Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                  IsOn="{x:Bind SelectedCustomMaximumFans, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanEditCustomMaximumFans, Mode=OneWay}"
+                                                  AutomationProperties.Name="Maximum fans"
+                                                  Toggled="OnCustomMaximumFansToggled" />
+                                </Grid>
+                            </Border>
                             <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuAppCleanupVisible}">
@@ -2570,7 +2594,7 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock x:Uid="MainWindow_TextBlockUSBC" Text="USB-C" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock x:Uid="MainWindow_TextBlockUSBC" Text="Low-power profile" Style="{StaticResource CardTitleStyle}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
                                             <TextBlock x:Uid="MainWindow_TextBlockActive2" Text="Active"
@@ -3538,7 +3562,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock x:Uid="MainWindow_TextBlockPowerProfileChanges" Text="Power profile changes" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock x:Uid="MainWindow_TextBlockActiveACUSBCOrBatteryProfile" Text="Active AC, USB-C, or Battery profile."
+                                            <TextBlock x:Uid="MainWindow_TextBlockActiveACUSBCOrBatteryProfile" Text="Active AC, low-power, or battery profile."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges" Grid.Column="1"

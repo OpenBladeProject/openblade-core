@@ -634,7 +634,7 @@ Reported failures:
     <value>Power profile changed</value>
   </data>
   <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
-    <value>USB-C profile</value>
+    <value>Low-power profile</value>
   </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Official Razer firmware update assistant</value>
@@ -655,7 +655,7 @@ Reported failures:
     <value>Export OpenBlade profiles</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
-    <value>This replaces the saved AC, USB-C, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles.</value>
+    <value>This replaces the saved AC, low-power, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles.</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
     <value>Import profiles?</value>
@@ -893,7 +893,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Active</value>
   </data>
   <data name="MainWindow_TextBlockActiveACUSBCOrBatteryProfile.Text" xml:space="preserve">
-    <value>Active AC, USB-C, or Battery profile.</value>
+    <value>Active AC, low-power, or battery profile.</value>
   </data>
   <data name="MainWindow_TextBlockAddAdjustment.Text" xml:space="preserve">
     <value>Add adjustment</value>
@@ -1616,7 +1616,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Updates</value>
   </data>
   <data name="MainWindow_TextBlockUSBC.Text" xml:space="preserve">
-    <value>USB-C</value>
+    <value>Low-power profile</value>
   </data>
   <data name="MainWindow_TextBlockUSBDevice.Text" xml:space="preserve">
     <value>USB device</value>
@@ -2049,5 +2049,11 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Unsupported laptop</value>
+  </data>
+  <data name="MainWindow_TextBlockCustomMaximumFans.Text" xml:space="preserve">
+    <value>Maximum fans</value>
+  </data>
+  <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Maximum fans</value>
   </data>
 </root>

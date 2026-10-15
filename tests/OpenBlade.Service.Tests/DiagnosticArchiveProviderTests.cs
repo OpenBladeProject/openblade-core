@@ -9,6 +9,36 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class DiagnosticArchiveProviderTests
 {
+    [Fact]
+    public async Task CreateAsync_ExportsRetainedFirmwareRepliesWithoutHardwareAccessOrHexRedaction()
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        var command = new RazerCommandSpec(0x07, 0x8C, new byte[] { 0, 0 }, 2);
+        FirmwareQueryObservation rejected = diagnostics.Record(command,
+            new(default, null) { QueryResponsePayloadHex = "AB11" }, DateTimeOffset.UnixEpoch)!;
+        diagnostics.RecordRejection(rejected, FirmwareQueryOutcome.UnrecognizedValue);
+        diagnostics.Record(command, new(default, null) { QueryResponsePayloadHex = "1111" },
+            DateTimeOffset.UnixEpoch.AddSeconds(1));
+        var runtime = new SnapshotOnlyRuntime(CreateStatus());
+        var history = new DiagnosticHistory(maximumEntries: 1);
+        history.RecordSummary(ControlOperationStatus.Blocked, "previous failure");
+        history.RecordSummary(ControlOperationStatus.Applied, "recovered");
+        var provider = new DiagnosticArchiveProvider(runtime, history,
+            new FixedMetadataSource("AB"), diagnostics);
+
+        DiagnosticArchive result = await provider.CreateAsync(false, default);
+
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument json = JsonDocument.Parse(await ReadEntryAsync(archive, "firmware-queries.json"));
+        JsonElement query = Assert.Single(json.RootElement.EnumerateArray());
+        Assert.Equal("1111", query.GetProperty("latest").GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("AB11", query.GetProperty("lastFailure").GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("UnrecognizedValue", query.GetProperty("lastFailure").GetProperty("outcome").GetString());
+        Assert.Equal(2, query.GetProperty("observationCount").GetInt32());
+        Assert.InRange(result.ZipBytes.Length, 1, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -109,7 +139,7 @@ public sealed class DiagnosticArchiveProviderTests
 
         using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
         Assert.Equal(
-            ["versions.json", "device.json", "device-verification.json", "capabilities.json", "configuration.json", "command-results.json", "hyperboost-ownership.json", "logs.jsonl"],
+            ["versions.json", "device.json", "device-verification.json", "capabilities.json", "configuration.json", "command-results.json", "firmware-queries.json", "hyperboost-ownership.json", "logs.jsonl"],
             archive.Entries.Select(entry => entry.FullName));
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
