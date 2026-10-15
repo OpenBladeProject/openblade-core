@@ -351,7 +351,9 @@ public sealed class NamedPipeControlServer
                     return;
                 }
 
-                if (request is not (PulseReactiveKeyRequest or PushAmbientLightingFrameRequest))
+                if (request is not (PulseReactiveKeyRequest
+                    or PushAmbientLightingFrameRequest
+                    or PushUniformLightingFrameRequest))
                 {
                     return;
                 }
@@ -387,10 +389,13 @@ public sealed class NamedPipeControlServer
     private static bool IsPersistentRequest(ServiceRequest request) =>
         request is SubscribeStatusRequest
             or PulseReactiveKeyRequest
-            or PushAmbientLightingFrameRequest;
+            or PushAmbientLightingFrameRequest
+            or PushUniformLightingFrameRequest;
 
     private static bool IsLightingStreamRequest(ServiceRequest request) =>
-        request is PulseReactiveKeyRequest or PushAmbientLightingFrameRequest;
+        request is PulseReactiveKeyRequest
+            or PushAmbientLightingFrameRequest
+            or PushUniformLightingFrameRequest;
 
     private static bool TryReserveSlot(ref int count, int maximum)
     {

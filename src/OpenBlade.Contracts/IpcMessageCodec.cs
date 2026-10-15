@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 64;
+    public const int ProtocolVersion = 65;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -279,6 +279,7 @@ public static class IpcMessageCodec
                 pulse.Pulse.MatrixSlot <= ReactiveKeyPulse.MaximumMatrixSlot,
             PushAmbientLightingFrameRequest ambient => ambient.RgbBytes is not null
                 && AmbientLightingFrame.IsWellFormedRgbBytes(ambient.RgbBytes),
+            PushUniformLightingFrameRequest uniform => uniform.Frame is not null,
             SetPlaybackMuteIndicatorRequest => true,
             SetBatteryPolicyRequest set => set.Value is not null,
             SetBatteryProtectionRequest => true,
@@ -856,6 +857,8 @@ public static class IpcMessageCodec
                 ChargeLimits = status.Capabilities.ChargeLimits
                     .Where(IsProtocol51BatteryLimit)
                     .ToHashSet(),
+                CustomPerformance = ProjectProtocol51CustomCapabilities(
+                    status.Capabilities.CustomPerformance),
             };
         ConfirmedDeviceState? projectedConfirmedState = status.ConfirmedState is null
             ? null
@@ -866,6 +869,12 @@ public static class IpcMessageCodec
                     && !IsProtocol51BatteryLimit(confirmedLimit)
                         ? null
                         : status.ConfirmedState.Battery,
+                Performance = IsProtocol51CustomState(status.ConfirmedState.CustomPerformance)
+                    ? status.ConfirmedState.Performance : null,
+                CustomPerformance = IsProtocol51CustomState(status.ConfirmedState.CustomPerformance)
+                    ? status.ConfirmedState.CustomPerformance : null,
+                Fans = status.ConfirmedState.CustomPerformance?.MaximumFans == true
+                    ? null : status.ConfirmedState.Fans,
             };
 
         return status with
@@ -874,7 +883,15 @@ public static class IpcMessageCodec
             Message = "OpenBlade was updated. Update or repair the app to restore hardware control.",
             Capabilities = projectedCapabilities,
             ConfirmedState = projectedConfirmedState,
-            Profiles = status.Profiles with { BatteryPolicy = projectedPolicy },
+            // Legacy desired/profile values are display placeholders only. Never
+            // project an unrepresentable hardware observation as confirmed.
+            Profiles = status.Profiles with
+            {
+                BatteryPolicy = projectedPolicy,
+                PluggedIn = ProjectProtocol51Profile(status.Profiles.PluggedIn),
+                Battery = ProjectProtocol51Profile(status.Profiles.Battery),
+                UsbC = ProjectProtocol51Profile(status.Profiles.UsbC),
+            },
             DesiredState = status.DesiredState with
             {
                 Battery = new DesiredBatteryState(
@@ -883,7 +900,15 @@ public static class IpcMessageCodec
                         : projectedPolicy,
                     status.DesiredState.Battery.ProtectionEnabled,
                     status.DesiredState.Battery.TemporaryFullCharge),
+                CustomPerformance = ProjectProtocol51CustomSettings(
+                    status.DesiredState.CustomPerformance),
             },
+            PerformanceOverride = status.PerformanceOverride is { } performanceOverride
+                ? performanceOverride with
+                {
+                    CustomPerformance = ProjectProtocol51CustomSettings(
+                        performanceOverride.CustomPerformance),
+                } : null,
             BatteryPolicyOverride = status.BatteryPolicyOverride is { } batteryOverride
                 && IsProtocol51BatteryLimit(batteryOverride.ChargeLimitPercent)
                     ? batteryOverride
@@ -896,6 +921,35 @@ public static class IpcMessageCodec
 
         static bool IsProtocol51BatteryLimit(int value) =>
             value is >= 50 and <= 80 && value % 5 == 0;
+    }
+
+    private static bool IsProtocol51CustomState(CustomPerformanceSettings? settings) =>
+        settings is null || !settings.MaximumFans
+            && settings.Cpu != CustomPerformanceLevel.Boost
+            && !(settings.Cpu == CustomPerformanceLevel.High
+                && settings.Gpu == CustomPerformanceLevel.High);
+
+    private static CustomPerformanceSettings? ProjectProtocol51CustomSettings(
+        CustomPerformanceSettings? settings) => settings is null ? null
+        : IsProtocol51CustomState(settings) ? settings
+        : CustomPerformanceSettings.Default;
+
+    private static PowerProfile ProjectProtocol51Profile(PowerProfile profile) =>
+        profile with { CustomPerformance = ProjectProtocol51CustomSettings(profile.CustomPerformance) };
+
+    private static CustomPerformanceCapabilities? ProjectProtocol51CustomCapabilities(
+        CustomPerformanceCapabilities? capabilities)
+    {
+        if (capabilities is null)
+        {
+            return null;
+        }
+        HashSet<CustomPerformanceCombination> allowed = capabilities.AllowedCombinations
+            .Where(combination => combination.Cpu != CustomPerformanceLevel.Boost
+                && !(combination.Cpu == CustomPerformanceLevel.High
+                    && combination.Gpu == CustomPerformanceLevel.High))
+            .ToHashSet();
+        return allowed.Count == 0 ? null : new(allowed);
     }
 
     private static JsonSerializerOptions CreateSerializerOptions(
@@ -912,6 +966,17 @@ public static class IpcMessageCodec
                         "windowsPowerModes",
                         StringComparison.OrdinalIgnoreCase));
                 windowsPowerModes.IsRequired = true;
+            }
+
+            if (protocol51Projection
+                && (typeInfo.Type == typeof(CustomPerformanceSettings)
+                    || typeInfo.Type == typeof(CustomPerformanceCapabilities)))
+            {
+                string propertyName = typeInfo.Type == typeof(CustomPerformanceSettings)
+                    ? "maximumFans" : "supportsMaximumFans";
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
             }
 
             if (protocol51Projection
@@ -989,6 +1054,23 @@ public static class IpcMessageCodec
                             "supportsDirectManualFanTransitions",
                             StringComparison.OrdinalIgnoreCase));
                 directManualFanTransitions.ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "reportsPerformanceWithManualFans", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo breathingColorModes =
+                    typeInfo.Properties.Single(property =>
+                        string.Equals(
+                            property.Name,
+                            "supportedBreathingColorModes",
+                            StringComparison.OrdinalIgnoreCase));
+                breathingColorModes.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo uniformLightingFrames =
+                    typeInfo.Properties.Single(property =>
+                        string.Equals(
+                            property.Name,
+                            "supportsUniformLightingFrames",
+                            StringComparison.OrdinalIgnoreCase));
+                uniformLightingFrames.ShouldSerialize = static (_, _) => false;
             }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)

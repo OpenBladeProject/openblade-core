@@ -4258,6 +4258,90 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task ExperimentalCustomMaximumFans_UsesCapabilityAndPreservesLevels()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var levels = new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)
+        {
+            MaximumFans = true,
+        };
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                CustomPerformance = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>
+                {
+                    new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High),
+                    new(CustomPerformanceLevel.High, CustomPerformanceLevel.High),
+                })
+                {
+                    SupportsMaximumFans = true,
+                },
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = levels,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedCustomMaximumFans);
+        Assert.True(viewModel.IsCustomMaximumFansVisible);
+        Assert.Equal(levels, viewModel.CurrentCustomPerformanceSettings);
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.False(viewModel.SetFanControlCommand.CanExecute(new FanControlSettings(FanMode.Fixed, 3000, ManualFanCurve.Default)));
+        Assert.Contains(CustomPerformanceLevel.Boost, viewModel.AvailableCustomCpuLevels);
+        Assert.DoesNotContain(CustomPerformanceLevel.Boost, viewModel.AvailableCustomGpuLevels);
+        await viewModel.SetCustomMaximumFansAsync(false, CancellationToken.None);
+        Assert.Equal(levels with { MaximumFans = false }, client.PerformanceOverride!.CustomPerformance);
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.False(viewModel.SelectedCustomMaximumFans);
+    }
+
+    [Fact]
+    public async Task ExperimentalMaximumFans_RequiresAutomaticBeforeEnabling()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        CustomPerformanceSettings levels = CustomPerformanceSettings.Default;
+        ServiceStatusSnapshot fixedStatus = baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                CustomPerformance = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>
+                {
+                    new(levels.Cpu, levels.Gpu),
+                })
+                {
+                    SupportsMaximumFans = true,
+                },
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = levels,
+                Fans = FanMode.Fixed,
+            },
+        };
+        client.Publish(fixedStatus);
+        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Fixed && viewModel.IsCustomMaximumFansVisible);
+        Assert.False(viewModel.CanEditCustomMaximumFans);
+        await viewModel.SetCustomMaximumFansAsync(true, CancellationToken.None);
+        Assert.Null(client.PerformanceOverride);
+        client.Publish(fixedStatus with
+        {
+            Revision = fixedStatus.Revision + 1,
+            ConfirmedState = fixedStatus.ConfirmedState! with { Fans = FanMode.Automatic },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Automatic);
+        Assert.True(viewModel.CanEditCustomMaximumFans);
+    }
+
+    [Fact]
     public async Task ExactModelCapabilities_ExposeDiscoveriesAndEnforceHighCpuGpuLowOnly()
     {
         var client = new FakeServiceClient();
@@ -6282,6 +6366,58 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() => viewModel.Capabilities.SupportsWaveDirectionSelection);
         Assert.Equal(2, viewModel.LightingDirectionOptions.Count);
         Assert.Equal(3, viewModel.LightingBreathingColorModes.Count);
+    }
+
+    [Fact]
+    public async Task BreathingModeCapabilityOnlyStatus_RefreshesAvailableModes()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        var lightingEffects = new HashSet<LightingEffect>
+        {
+            LightingEffect.Off,
+            LightingEffect.Breathing,
+        };
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = lightingEffects,
+                SupportsBreathingColorSelection = false,
+                SupportedBreathingColorModes = new HashSet<BreathingColorMode>
+                {
+                    BreathingColorMode.Random,
+                },
+            },
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.LightingBreathingColorModes.Count == 1);
+
+        Assert.Equal(
+            new[] { BreathingColorMode.Random },
+            viewModel.LightingBreathingColorModes);
+
+        client.Publish(baseline with
+        {
+            Revision = 11,
+            Capabilities = baseline.Capabilities! with
+            {
+                SupportedBreathingColorModes = new HashSet<BreathingColorMode>
+                {
+                    BreathingColorMode.Random,
+                    BreathingColorMode.Single,
+                },
+            },
+        });
+        await WaitUntilAsync(() => viewModel.LightingBreathingColorModes.Count == 2);
+
+        Assert.Equal(
+            new[] { BreathingColorMode.Single, BreathingColorMode.Random },
+            viewModel.LightingBreathingColorModes);
+        Assert.False(viewModel.Capabilities.SupportsBreathingColorSelection);
+        Assert.Equal(lightingEffects, viewModel.Capabilities.LightingEffects);
     }
 
     [Fact]

@@ -286,6 +286,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Ambient Awareness input is unavailable."));
 
+    Task<ControlOperationResult> PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Uniform host-rendered lighting is unavailable."));
+
     Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
         bool muted,
         CancellationToken token) => Task.FromResult(
@@ -2095,7 +2102,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(
                     requested.Mode);
                 bool priorManual = DeviceSubsystemOrder.IsManualFanMode(prior.Mode);
-                bool performanceMayChange = requested.Mode == FanMode.Automatic
+                bool performanceMayChange = capabilities?.ReportsPerformanceWithManualFans != true
+                        && requested.Mode == FanMode.Automatic
                         && priorManual
                     || !supportsDirectManualFanTransitions
                         && requestedManual
@@ -3019,6 +3027,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ];
             bool manualFanPerformanceBlocked =
                 targetSet.Contains(DeviceSubsystem.Performance)
+                && GetStatus().Capabilities?.ReportsPerformanceWithManualFans != true
                 && DeviceSubsystemOrder.RequiresManualFanPerformanceBridge(
                     confirmed,
                     desired);
@@ -4382,6 +4391,89 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return new ControlOperationResult(
                 ControlOperationStatus.Failed,
                 "Ambient Awareness could not update the keyboard.");
+        }
+    }
+
+    public async Task<ControlOperationResult> PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (lowPowerGate.IsActive)
+        {
+            return new(ControlOperationStatus.Blocked, "Uniform lighting is paused during standby.");
+        }
+        if (IsKeyboardLightingDelegated)
+        {
+            return WindowsDynamicLightingOwnsKeyboard();
+        }
+        ArgumentNullException.ThrowIfNull(frame);
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (!current.DeviceVerified
+            || current.WritesBlocked
+            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Uniform lighting is blocked while laptop controls are unavailable.");
+        }
+        if (current.Capabilities?.SupportsUniformLightingFrames != true)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Uniform host-rendered lighting is unavailable for this laptop.");
+        }
+        if (current.LightingRendererOwnership is not (
+            LightingRendererOwnershipState.AmbientAwareness or
+            LightingRendererOwnershipState.AudioMeter))
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "A host-rendered lighting effect is not currently active.");
+        }
+
+        IBladeDevice? device = null;
+        try
+        {
+            if (!deviceProvider.TryGetOwnedAmbientLightingDevice(out device))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Uniform host-rendered lighting is unavailable for this laptop.");
+            }
+            await device.PushUniformLightingFrameAsync(frame, token).ConfigureAwait(false);
+            return new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Uniform lighting frame was applied.");
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (CapabilityUnavailableException exception)
+        {
+            return new ControlOperationResult(ControlOperationStatus.Blocked, exception.Message);
+        }
+        catch
+        {
+            if (device is not null)
+            {
+                await operationGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    await PublishObservedLightingOwnershipAsync(
+                        device,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                finally
+                {
+                    operationGate.Release();
+                }
+            }
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Uniform lighting could not update the keyboard.");
         }
     }
 
@@ -7004,7 +7096,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (intent.Performance == PerformancePreset.Custom
             && capabilities.CustomPerformance?.Supports(intent.CustomPerformance)
-                == false)
+                != true)
         {
             return false;
         }
@@ -16889,6 +16981,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PowerSource powerSource,
         ServiceStatusSnapshot status) =>
         powerSource == PowerSource.PluggedIn
+        && status.Capabilities?.ReportsPerformanceWithManualFans != true
         && DeviceSubsystemOrder.IsManualFanMode(status.ConfirmedState?.Fans)
         && DeviceSubsystemOrder.IsManualFanMode(status.DesiredState.Fans.Value)
             ? "Performance intent was stored and will be applied when fans return to Automatic."
@@ -17438,15 +17531,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
             Automation.Resolve(confirmed), confirmed);
+        // Custom maximum fans is a separate firmware override, not a fixed RPM
+        // target. During a performance override, keep saved manual-fan intent but
+        // reach the necessary Automatic fan state directly. Profiles reject the
+        // conflicting permanent combination before persistence.
+        if (desired.Performance.Value == PerformancePreset.Custom
+            && desired.CustomPerformance?.MaximumFans == true)
+        {
+            desired = desired with
+            {
+                Fans = new ResolvedSetting<FanMode>(FanMode.Automatic, desired.Performance.Source),
+                FanControl = FanControlSettings.Default,
+            };
+        }
         DeviceCapabilities? capabilities = GetStatus().Capabilities;
-        // Experimental profiles cannot write fans. A retained unsupported manual-fan
-        // setting must not turn the user's supported performance choice into Balanced.
-        if (!deviceProvider.IsExperimentalDevice
-            && Automation.PowerSource == PowerSource.PluggedIn
+        // Normalize only admitted manual controls. Unsupported retained intent
+        // must not turn the user's supported performance choice into Balanced.
+        if (Automation.PowerSource == PowerSource.PluggedIn
             && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
             && capabilities is not null
             && capabilities.PerformancePresets.Count > 0
             && capabilities.FanModes.Count > 0
+            && capabilities.FanModes.Contains(desired.Fans.Value)
             && !capabilities.SupportsDirectManualFanTransitions)
         {
             desired = desired with

@@ -156,6 +156,11 @@ internal abstract class UnavailableServiceClient : IServiceClient
         CancellationToken token) =>
         Unavailable("Ambient Awareness input is unavailable.");
 
+    public virtual Task<ControlOperationResult> PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken token) =>
+        Unavailable("Uniform host-rendered lighting is unavailable.");
+
     public virtual Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
         bool muted,
         CancellationToken token) =>

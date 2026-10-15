@@ -5,7 +5,7 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class ExperimentalBladeLightingTests
 {
-    private static ExperimentalBladeModel Model => ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+    private static ExperimentalBladeModel Model => ModelFor(0x02A0);
 
     [Fact]
     public async Task RecoveryPaused_BlocksLightingBeforeAnyTraffic()
@@ -21,15 +21,321 @@ public sealed class ExperimentalBladeLightingTests
     }
 
     [Fact]
-    public async Task OlderExperimentalModels_DoNotReceiveLightingCommands()
+    public void Capabilities_AreExactPerExperimentalModel()
     {
-        var model = ExperimentalBladeModels.All[0];
+        DeviceCapabilities blade16 = ExperimentalBladePort.CreateCapabilities(ModelFor(0x029F), true);
+        Assert.True(blade16.SupportsUniformLightingFrames);
+        Assert.Contains(LightingEffect.AmbientAwareness, blade16.LightingEffects);
+        Assert.Contains(LightingEffect.AudioMeter, blade16.LightingEffects);
+
+        DeviceCapabilities blade15 = ExperimentalBladePort.CreateCapabilities(ModelFor(0x0255), true);
+        Assert.Contains(BreathingColorMode.Single, blade15.SupportedBreathingColorModes!);
+        Assert.DoesNotContain(BreathingColorMode.Dual, blade15.SupportedBreathingColorModes!);
+        Assert.DoesNotContain(LightingEffect.Wave, blade15.LightingEffects);
+        Assert.Empty(blade15.LogoLightingModes);
+
+        DeviceCapabilities blade18 = ExperimentalBladePort.CreateCapabilities(ModelFor(0x02A0), true);
+        Assert.Contains(LightingEffect.Static, blade18.LightingEffects);
+        Assert.False(blade18.SupportsUniformLightingFrames);
+        Assert.DoesNotContain(LightingEffect.AmbientAwareness, blade18.LightingEffects);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x02A0)]
+    public async Task UniformStatic_UsesExactSixBySixteenFrameAndRestoresReadableBaseline(int productId)
+    {
+        ExperimentalBladeModel model = ModelFor((ushort)productId);
+        var session = new Session();
+        await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+        var color = new RgbColor(0x12, 0x34, 0x56);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(color, 50),
+            CancellationToken.None);
+
+        RazerCommandSpec[] rows = session.Commands
+            .Where(command => command.ClassId == 0x03 && command.CommandId == 0x0B)
+            .ToArray();
+        Assert.Equal(6, rows.Length);
+        for (int row = 0; row < rows.Length; row++)
+        {
+            byte[] payload = rows[row].Arguments.ToArray();
+            Assert.Equal(52, payload.Length);
+            Assert.Equal(new byte[] { 0xFF, (byte)row, 0, 15 }, payload[..4]);
+            for (int offset = 4; offset < payload.Length; offset += 3)
+            {
+                Assert.Equal(new byte[] { color.Red, color.Green, color.Blue }, payload[offset..(offset + 3)]);
+            }
+        }
+        Assert.Contains(session.Commands, command =>
+            command.ClassId == 0x03 && command.CommandId == 0x0A
+            && command.Arguments.Span.SequenceEqual(new byte[] { 5, 0 }));
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Null(await port.ReadStateAsync(CancellationToken.None));
+
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            await port.RelinquishRendererAsync(CancellationToken.None));
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Equal(3, session.Effect);
+    }
+
+    [Fact]
+    public async Task Blade16UniformHostFrame_IsTypedSetOnlyAndKeepsSpatialLayoutOutOfProtocol()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
         var session = new Session();
         var policy = new ExperimentalFeaturesPolicy(model);
-        await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true, () => PowerSource.PluggedIn);
+        await using var port = Create(session, policy, model);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 50),
+            CancellationToken.None);
+
+        Assert.Equal(LightingRendererOwnershipState.AmbientAwareness, port.OwnershipState);
+        await port.PushUniformLightingFrameAsync(
+            new UniformLightingFrame(new RgbColor(9, 8, 7)),
+            CancellationToken.None);
+        Assert.Equal(6, session.Commands.Count(command => command.CommandId == 0x0B));
+        Assert.All(
+            session.Commands.Where(command => command.CommandId == 0x0B),
+            command => Assert.DoesNotContain(command.Arguments.ToArray(),
+                value => value == 17));
+        Assert.Null(await port.ReadStateAsync(CancellationToken.None));
+        Assert.Contains(policy.Snapshot().Observations, observation =>
+            observation.Operation == "KeyboardUniformFrame"
+            && observation.Outcome == "Unavailable"
+            && observation.FailureCategory == "FrameColorReadbackUnavailable");
+    }
+
+    [Fact]
+    public async Task Blade15SingleColorBreathing_UsesReadableStandardEffect()
+    {
+        ExperimentalBladeModel model = ModelFor(0x0255);
+        var session = new Session();
+        await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+        var color = new RgbColor(0x22, 0x44, 0x66);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.BreathingSingle(color, 50),
+            CancellationToken.None);
+
+        Assert.Contains(session.Commands, command =>
+            command.ClassId == 0x03 && command.CommandId == 0x0A
+            && command.Arguments.Span.SequenceEqual(
+                new byte[] { 3, 1, color.Red, color.Green, color.Blue }));
+        LightingSettings state = Assert.IsType<LightingSettings>(
+            await port.ReadStateAsync(CancellationToken.None));
+        Assert.Equal(LightingSettingsFactory.BreathingSingle(color, 50), state);
+    }
+
+    [Fact]
+    public async Task Blade15SingleColorBreathingToRandom_ForcesBuiltinSetterAndConfirmsStandardEffect()
+    {
+        ExperimentalBladeModel model = ModelFor(0x0255);
+        var session = new Session
+        {
+            Effect = 2,
+            StandardEffect = [3, 1, 0x22, 0x44, 0x66],
+        };
+        await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.BreathingRandom(50),
+            CancellationToken.None);
+
+        Assert.Contains(session.Commands, command =>
+            command.ClassId == 0x0F && command.CommandId == 0x02
+            && command.Arguments.Span.SequenceEqual(new byte[] { 1, 5, 2 }));
+        Assert.Contains(session.Commands, command =>
+            command.ClassId == 0x03 && command.CommandId == 0x8A);
+        Assert.Equal(
+            LightingSettingsFactory.BreathingRandom(50),
+            await port.ReadStateAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Blade15UnknownStandardBreathingType_IsRejectedWithoutGuessingRandom()
+    {
+        ExperimentalBladeModel model = ModelFor(0x0255);
+        var session = new Session
+        {
+            Effect = 2,
+            StandardEffect = [7, 0, 0, 0, 0],
+        };
+        await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+
+        DeviceStateContentRejectedException failure =
+            await Assert.ThrowsAsync<DeviceStateContentRejectedException>(() =>
+                port.ReadStateAsync(CancellationToken.None));
+
+        Assert.Equal(DeviceStateQuery.KeyboardLightingEffect, failure.Query);
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+    }
+
+    [Theory]
+    [InlineData(0x029D)]
+    [InlineData(0x02C5)]
+    public async Task Blade14Profiles_UseIndependentLogoReadbackForRicherModes(int productId)
+    {
+        ExperimentalBladeModel model = ModelFor((ushort)productId);
+        var session = new Session();
+        await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50) with
+            {
+                LogoMode = LogoLightingMode.Breathing,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            LogoLightingMode.Breathing,
+            await port.ReadLogoStateAsync(CancellationToken.None));
+        Assert.Contains(session.Commands, command =>
+            command.ClassId == 0x03 && command.CommandId == 0x02
+            && command.Arguments.Span.SequenceEqual(new byte[] { 1, 4, 2 }));
+    }
+
+    [Fact]
+    public async Task Blade15RejectsWaveLogoAndSpatialFramesBeforeSubmission()
+    {
+        ExperimentalBladeModel model = ModelFor(0x0255);
+        var session = new Session();
+        await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
-            port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None));
+            port.SetLightingAsync(
+                LightingSettingsFactory.Wave(LightingDirection.Rightward, 50),
+                CancellationToken.None));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.SpectrumCycling(50) with
+                {
+                    LogoMode = LogoLightingMode.Static,
+                },
+                CancellationToken.None));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.PushUniformLightingFrameAsync(
+                new UniformLightingFrame(new RgbColor(1, 2, 3)),
+                CancellationToken.None));
         Assert.Empty(session.Commands);
+    }
+
+    [Fact]
+    public async Task SharedFactoryGate_KeepsBatteryExchangeOutsideSixRowFrameTransaction()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var gate = new SemaphoreSlim(1, 1);
+        var ownership = new ExperimentalLightingOwnershipState();
+        var lightingSession = new Session { BlockFirstFrame = true };
+        var batterySession = new ProbeSession();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var lighting = new ExperimentalBladePort(
+            lightingSession, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn, sharedOperationGate: gate,
+            sharedLightingOwnership: ownership);
+        await using var battery = new ExperimentalBladePort(
+            batterySession, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn, sharedOperationGate: gate,
+            sharedLightingOwnership: ownership);
+
+        Task frame = lighting.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+        await lightingSession.FrameEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Task<ConfirmedBatteryState> query = battery.QueryProtectionAsync(CancellationToken.None);
+        await Task.Delay(25);
+        Assert.False(batterySession.Entered.Task.IsCompleted);
+
+        lightingSession.ReleaseFrame.TrySetResult();
+        await frame;
+        Assert.True((await query).ProtectionEnabled);
+        Assert.Equal(7, lightingSession.Commands.Count(command =>
+            command.ClassId == 0x03 && command.CommandId is 0x0B or 0x0A));
+    }
+
+    [Fact]
+    public async Task SharedOwnership_SurvivesPortReplacementAndRestoresFromFreshSession()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var gate = new SemaphoreSlim(1, 1);
+        var ownership = new ExperimentalLightingOwnershipState();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        var firstSession = new Session();
+        var first = new ExperimentalBladePort(
+            firstSession, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn, sharedOperationGate: gate,
+            sharedLightingOwnership: ownership);
+        await first.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+        await first.DisposeAsync();
+
+        var replacementSession = new Session();
+        await using var replacement = new ExperimentalBladePort(
+            replacementSession, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn, sharedOperationGate: gate,
+            sharedLightingOwnership: ownership);
+        Assert.Equal(LightingRendererOwnershipState.Static, replacement.OwnershipState);
+        Assert.Null(await replacement.ReadStateAsync(CancellationToken.None));
+
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            await replacement.RelinquishRendererAsync(CancellationToken.None));
+        Assert.Equal(LightingRendererOwnershipState.None, replacement.OwnershipState);
+        Assert.Contains(replacementSession.Commands, command =>
+            command.ClassId == 0x0F && command.CommandId == 0x02);
+    }
+
+    [Fact]
+    public async Task IndeterminateFrameRow_PausesWithoutReplayAndFaultsOwnership()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session { FailFrameRow = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = Create(session, policy, model);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        Assert.Single(session.Commands, command => command.CommandId == 0x0B);
+        int count = session.Commands.Count;
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(4, 5, 6), 50),
+                CancellationToken.None));
+        Assert.Equal(count, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task LowPowerInvalidation_RetiresUniformFrameWithoutRestorationWrite()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session();
+        var ownership = new ExperimentalLightingOwnershipState();
+        var port = new ExperimentalBladePort(
+            session, new(), model, new ExperimentalFeaturesPolicy(model),
+            () => true, () => PowerSource.PluggedIn,
+            sharedLightingOwnership: ownership);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None);
+        int before = session.Commands.Count;
+
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            await port.InvalidateForLowPowerAsync());
+
+        Assert.Equal(before, session.Commands.Count);
+        Assert.Equal(LightingRendererOwnershipState.Static,
+            (LightingRendererOwnershipState)Volatile.Read(ref ownership.Ownership));
+        Assert.Equal(1, session.DisposeCount);
     }
 
     [Fact]
@@ -274,9 +580,14 @@ public sealed class ExperimentalBladeLightingTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => port.ReadStateAsync(CancellationToken.None));
     }
 
+    private static ExperimentalBladeModel ModelFor(ushort productId) =>
+        ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
     private static ExperimentalFeaturesPolicy Enabled() => new(Model);
-    private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy policy) =>
-        new(session, new(), Model, policy, () => true, () => PowerSource.PluggedIn);
+    private static ExperimentalBladePort Create(
+        Session session,
+        ExperimentalFeaturesPolicy policy,
+        ExperimentalBladeModel? model = null) =>
+        new(session, new(), model ?? Model, policy, () => true, () => PowerSource.PluggedIn);
 
     private sealed class Session : IRazerCommandSession
     {
@@ -292,7 +603,14 @@ public sealed class ExperimentalBladeLightingTests
         internal bool IgnoreBrightness { get; set; }
         internal bool FailLogoPower { get; set; }
         internal byte[] AckPayload { get; set; } = [];
+        internal byte[] StandardEffect { get; set; } = [0, 0, 0, 0, 0];
         internal Action<RazerCommandSpec>? BeforeSubmission { get; set; }
+        internal bool BlockFirstFrame { get; set; }
+        internal bool FailFrameRow { get; set; }
+        internal TaskCompletionSource FrameEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseFrame { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<RazerCommandSpec> Commands { get; } = [];
         public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
@@ -308,6 +626,14 @@ public sealed class ExperimentalBladeLightingTests
             Commands.Add(command);
             _ = assignTransactionId();
             byte[] args = command.Arguments.ToArray();
+            if (BlockFirstFrame
+                && command.ClassId == 0x03
+                && command.CommandId == 0x0B)
+            {
+                BlockFirstFrame = false;
+                FrameEntered.TrySetResult();
+                return WaitForFrameReleaseAsync();
+            }
             byte[] response;
             if (command.ClassId == 0x0F && command.CommandId == 0x82)
             {
@@ -336,6 +662,10 @@ public sealed class ExperimentalBladeLightingTests
                     {
                         Direction = args[3];
                     }
+                    if (Effect == 2)
+                    {
+                        StandardEffect = [0, 0, 0, 0, 0];
+                    }
                 }
                 response = AckPayload;
             }
@@ -351,6 +681,42 @@ public sealed class ExperimentalBladeLightingTests
                 }
 
                 response = args;
+            }
+            else if (command.ClassId == 0x03 && command.CommandId == 0x0B)
+            {
+                if (FailFrameRow)
+                {
+                    return Task.FromResult(
+                        new HidSessionResult<ReadOnlyMemory<byte>>(
+                            default,
+                            HidSessionFailureKind.Timeout)
+                        {
+                            Diagnostic = new(
+                                HidSessionFailurePhase.GetCompletion,
+                                HidSessionFailureKind.Timeout,
+                                null,
+                                null),
+                        });
+                }
+                response = AckPayload;
+            }
+            else if (command.ClassId == 0x03 && command.CommandId == 0x0A)
+            {
+                if (args[0] == 6)
+                {
+                    Effect = 1;
+                    StandardEffect = [6, args[1], args[2], args[3], 0];
+                }
+                else if (args[0] == 3)
+                {
+                    Effect = 2;
+                    StandardEffect = args;
+                }
+                response = AckPayload;
+            }
+            else if (command.ClassId == 0x03 && command.CommandId == 0x8A)
+            {
+                response = StandardEffect;
             }
             else if (command.ClassId == 0x03 && command.CommandId == 0x80)
             {
@@ -377,6 +743,12 @@ public sealed class ExperimentalBladeLightingTests
             }
 
             return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(response, null));
+
+            async Task<HidSessionResult<ReadOnlyMemory<byte>>> WaitForFrameReleaseAsync()
+            {
+                await ReleaseFrame.Task.WaitAsync(token);
+                return new HidSessionResult<ReadOnlyMemory<byte>>(AckPayload, null);
+            }
         }
         internal int DisposeCount { get; private set; }
         public ValueTask DisposeAsync()
@@ -384,5 +756,30 @@ public sealed class ExperimentalBladeLightingTests
             DisposeCount++;
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class ProbeSession : IRazerCommandSession
+    {
+        internal TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public RazerCommandSessionDisposition Disposition =>
+            RazerCommandSessionDisposition.Healthy;
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Assert.Equal((byte)0x07, command.ClassId);
+            Assert.Equal((byte)0x92, command.CommandId);
+            _ = assignTransactionId();
+            Entered.TrySetResult();
+            return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(
+                new byte[] { 0xD0 }, null));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

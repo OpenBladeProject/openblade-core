@@ -64,7 +64,9 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                                     AmbientAwarenessLightingParameters parameters =>
                                 new AmbientRenderingConfiguration(
                                     parameters.Region,
-                                    connected.Status.LightingRefreshRate),
+                                    connected.Status.LightingRefreshRate,
+                                    connected.Status.Capabilities?.SupportsUniformLightingFrames
+                                        == true),
                             _ => null,
                         };
                         await SetConfigurationAsync(configuration, cancellationToken)
@@ -189,9 +191,13 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                     SessionLightingFrameDecision decision = cadence.Evaluate(frame);
                     if (decision.ShouldSend)
                     {
-                        ControlOperationResult result = await serviceClient
-                            .PushAmbientLightingFrameAsync(frame, cancellationToken)
-                            .ConfigureAwait(false);
+                        ControlOperationResult result = configuration.UniformFrames
+                            ? await serviceClient.PushUniformLightingFrameAsync(
+                                UniformLightingFrame.FromSpatialFrame(frame),
+                                cancellationToken).ConfigureAwait(false)
+                            : await serviceClient.PushAmbientLightingFrameAsync(
+                                frame,
+                                cancellationToken).ConfigureAwait(false);
                         if (result.Status != ControlOperationStatus.Applied)
                         {
                             throw new InvalidOperationException(result.Message);
@@ -255,7 +261,8 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
 
 internal readonly record struct AmbientRenderingConfiguration(
     AmbientAwarenessRegion Region,
-    LightingRefreshRate RefreshRate);
+    LightingRefreshRate RefreshRate,
+    bool UniformFrames = false);
 
 internal readonly record struct SessionLightingFrameDecision(
     bool ShouldSend,

@@ -823,7 +823,7 @@ internal sealed class ProductionBatteryPort :
         CancellationToken cancellationToken)
     {
         if (!CustomPerformanceSettings.IsWellFormed(value)
-            || Capabilities.CustomPerformance?.Supports(value) == false)
+            || Capabilities.CustomPerformance?.Supports(value) != true)
         {
             return Task.FromException(KnownNotApplied(
                 "The custom performance CPU/GPU combination is invalid."));
@@ -1509,7 +1509,11 @@ internal sealed class ProductionBatteryPort :
             OneShotLaptopControls = oneShotControls,
             FanSpeedRange = admittedFanSpeedRange,
             CustomPerformance = performance.Contains(PerformancePreset.Custom)
-                ? customPerformanceCapabilities
+                ? customPerformanceCapabilities ?? new CustomPerformanceCapabilities(
+                    (from cpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+                     from gpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+                     where (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)
+                     select new CustomPerformanceCombination(cpu, gpu)).ToHashSet())
                 : null,
             CpuPowerLimit = cpuPowerLimitCapabilities,
             CpuVoltageOptimizer = cpuVoltageOptimizerCapabilities,
@@ -2120,7 +2124,7 @@ internal sealed class ProductionBatteryPort :
                 CustomPerformanceDomain.Gpu,
                 cancellationToken).ConfigureAwait(false);
         var custom = new CustomPerformanceSettings(cpu, gpu);
-        if (Capabilities.CustomPerformance?.Supports(custom) == false)
+        if (Capabilities.CustomPerformance?.Supports(custom) != true)
         {
             poisoned = true;
             throw new RazerProtocolException(

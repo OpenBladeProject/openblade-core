@@ -9725,6 +9725,43 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ReportedManualPerformance_CustomOverrideAndReapplyPreserveFixedFans()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+            ReportsPerformanceWithManualFans = true,
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { HyperBoostActive = false };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.Persistent),
+            new FanControlSettings(FanMode.Fixed, 3000, ManualFanCurve.Default), CancellationToken.None)).Status);
+        int fanWrites = context.Device.FanSetCalls;
+        ControlOperationResult applied = await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+            new PerformanceOverride(PerformancePreset.Custom, OverrideLifetime.Persistent, CustomPerformanceSettings.Default),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        Assert.DoesNotContain("when fans return", applied.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(CustomPerformanceSettings.Default, context.Device.ConfirmedState.CustomPerformance);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            CustomPerformance = new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult reapplied = await context.Runtime.ReapplyChangedSettingsAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, reapplied.Status);
+        Assert.Equal(CustomPerformanceSettings.Default, context.Device.ConfirmedState.CustomPerformance);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.DoesNotContain(DeviceSubsystem.Performance, context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
     public async Task ReapplyChangedSettings_ExternalUnknownPreservesAvailability()
     {
         TestContext context = CreateWritableContext();

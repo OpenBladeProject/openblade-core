@@ -1461,4 +1461,10 @@
   <data name="Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop." xml:space="preserve">
     <value>若要帮助添加对此笔记本电脑的支持，请保存一份简短的设备信息报告，然后按照 Synapse Observer 指南收集并提交资料。</value>
   </data>
+  <data name="Boost" xml:space="preserve">
+    <value>增强</value>
+  </data>
+  <data name="Maximum fans" xml:space="preserve">
+    <value>风扇最高转速</value>
+  </data>
 </root>

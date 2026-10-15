@@ -169,6 +169,24 @@ public sealed class ServiceAmbientLightingLoopTests
         Assert.True(replacement.Disposed);
     }
 
+    [Fact]
+    public async Task UniformCapability_SendsAveragedTypedColorInsteadOfSpatialFrame()
+    {
+        var client = new WatchClient();
+        await using var loop = new ServiceAmbientLightingLoop(
+            client,
+            new SequenceSamplerFactory(() => new ConstantSampler(Frame(7))),
+            statusWatcher: client);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.PublishConnected(uniformFrames: true);
+        UniformLightingFrame frame = await client.ReadUniformRequestAsync(cancellation.Token);
+
+        Assert.Equal(new RgbColor(7, 0, 0), frame.Color);
+        await CancelAndAwaitAsync(cancellation, running);
+    }
+
     private static async Task CancelAndAwaitAsync(
         CancellationTokenSource cancellation,
         Task running)
@@ -197,6 +215,8 @@ public sealed class ServiceAmbientLightingLoopTests
             Channel.CreateUnbounded<ServiceWatchUpdate>();
         private readonly Channel<AmbientLightingFrame> requests =
             Channel.CreateUnbounded<AmbientLightingFrame>();
+        private readonly Channel<UniformLightingFrame> uniformRequests =
+            Channel.CreateUnbounded<UniformLightingFrame>();
         private readonly ConcurrentQueue<ControlOperationResult> results = new();
         private TaskCompletionSource? blockedRequestRelease;
         private int blockNextRequest;
@@ -208,8 +228,10 @@ public sealed class ServiceAmbientLightingLoopTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal void PublishConnected(
-            LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz) =>
-            updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(Status(refreshRate)));
+            LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz,
+            bool uniformFrames = false) =>
+            updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(
+                Status(refreshRate, uniformFrames)));
 
         internal void PublishReconnecting() =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting());
@@ -230,6 +252,10 @@ public sealed class ServiceAmbientLightingLoopTests
         internal ValueTask<AmbientLightingFrame> ReadRequestAsync(
             CancellationToken cancellationToken) =>
             requests.Reader.ReadAsync(cancellationToken);
+
+        internal ValueTask<UniformLightingFrame> ReadUniformRequestAsync(
+            CancellationToken cancellationToken) =>
+            uniformRequests.Reader.ReadAsync(cancellationToken);
 
         public override async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation]
@@ -258,6 +284,17 @@ public sealed class ServiceAmbientLightingLoopTests
             return results.TryDequeue(out ControlOperationResult? result)
                 ? result
                 : new ControlOperationResult(ControlOperationStatus.Applied, "Applied");
+        }
+
+        public override Task<ControlOperationResult> PushUniformLightingFrameAsync(
+            UniformLightingFrame frame,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            uniformRequests.Writer.TryWrite(frame);
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Applied"));
         }
     }
 
@@ -340,7 +377,8 @@ public sealed class ServiceAmbientLightingLoopTests
     }
 
     private static ServiceStatusSnapshot Status(
-        LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz)
+        LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz,
+        bool uniformFrames = false)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         LightingSettings lighting = LightingSettingsFactory.AmbientAwareness(
@@ -354,7 +392,10 @@ public sealed class ServiceAmbientLightingLoopTests
             null,
             [],
             "Ready",
-            DeviceCapabilities.Unavailable(),
+            DeviceCapabilities.Unavailable() with
+            {
+                SupportsUniformLightingFrames = uniformFrames,
+            },
             null,
             profiles,
             new DesiredDeviceState(

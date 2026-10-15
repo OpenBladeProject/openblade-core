@@ -4,16 +4,26 @@ namespace OpenBlade.Protocol;
 
 internal sealed partial class ExperimentalBladePort
 {
-    internal static CustomPerformanceCapabilities CreateCustomCapabilities() => new(
+    internal static CustomPerformanceCapabilities CreateCustomCapabilities() =>
+        CreateCustomCapabilities(ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0));
+
+    internal static CustomPerformanceCapabilities CreateCustomCapabilities(ExperimentalBladeModel model) => new(
         (from cpu in Enum.GetValues<CustomPerformanceLevel>()
          from gpu in Enum.GetValues<CustomPerformanceLevel>()
          let combination = new CustomPerformanceCombination(cpu, gpu)
-         where combination.IsWellFormed
-         select combination).ToHashSet());
+         where SupportsExperimentalCustom(model) && combination.IsWellFormed
+             && (model.ProductId == 0x029F || cpu != CustomPerformanceLevel.Boost
+                 && (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High))
+         select combination).ToHashSet())
+    {
+        SupportsMaximumFans = model.ProductId is 0x029F or 0x02A0,
+    };
 
-    // Protocol extrapolation for opted-in 02A0 testing. The owner report does not
-    // independently validate CPU/GPU levels; never reinterpret Boost or Undervolt.
-    private async Task<CustomPerformanceSettings?> ReadCustomPerformanceAsync(CancellationToken cancellationToken)
+    // 029F High/High and CPU Boost are explicit Synapse captures in tdakhran
+    // 8e12e778/data/README.md. Other exact profiles retain bounded Low..High
+    // extrapolation; raw level 4 never acquires a meaning or write capability.
+    private async Task<CustomPerformanceSettings?> ReadCustomPerformanceAsync(
+        CancellationToken cancellationToken, bool includeMaximumFans = true)
     {
         ReadOnlyMemory<byte> cpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
             [0, 1, 0], false, cancellationToken).ConfigureAwait(false);
@@ -27,21 +37,25 @@ internal sealed partial class ExperimentalBladePort
         }
         var combination = new CustomPerformanceCombination(
             (CustomPerformanceLevel)cpu.Span[2], (CustomPerformanceLevel)gpu.Span[2]);
-        if (!combination.IsWellFormed)
+        if (!CreateCustomCapabilities(model).AllowedCombinations.Contains(combination))
         {
             RecordQuery("CustomPerformance", "UnsupportedState", reported, "OutsideRepresentableCustomLevels");
             throw ContentRejected("Experimental custom performance levels are not representable.",
                 DeviceStateQuery.CustomPerformanceCombination, cpu.Span, gpu.Span);
         }
-        var result = new CustomPerformanceSettings(combination.Cpu, combination.Gpu);
+        var result = new CustomPerformanceSettings(combination.Cpu, combination.Gpu)
+        {
+            MaximumFans = includeMaximumFans && CreateCustomCapabilities(model).SupportsMaximumFans
+                && await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false),
+        };
         RecordQuery("CustomPerformance", "Confirmed", FormatCustomPerformance(result));
         return result;
     }
 
     public async Task SetCustomPerformanceAsync(CustomPerformanceSettings value, CancellationToken cancellationToken)
     {
-        if (model.ProductId != 0x02A0 || !CustomPerformanceSettings.IsWellFormed(value)
-            || !CreateCustomCapabilities().Supports(value) || value.GpuClockOffsets is not null)
+        if (!SupportsExperimentalCustom(model) || !CustomPerformanceSettings.IsWellFormed(value)
+            || !CreateCustomCapabilities(model).Supports(value) || value.GpuClockOffsets is not null)
         {
             throw new CapabilityUnavailableException("This custom performance request is outside the experimental model contract.");
         }
@@ -52,20 +66,30 @@ internal sealed partial class ExperimentalBladePort
         {
             RequireWriteAdmission(thermal: true);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
-            // Mode entry also writes fan flag 0 (Automatic). This backend cannot
-            // restore a manual-fan baseline, so reject it before submitting a mode SET.
-            if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic
+            // Only 029F/029D admit the independent fan flag and target registers
+            // (sqmagellan 9c66e705/librazer/src/command.rs). Preserve that flag
+            // through Custom entry; other models cannot establish a manual baseline.
+            if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic && GetExperimentalFanRange(model) is null
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
                     or PerformancePreset.Performance or PerformancePreset.Custom))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    "Experimental custom performance requires a confirmed ordinary AC preset with Automatic fans.");
+                    "Experimental custom performance requires an ordinary AC preset and a model-supported fan baseline.");
             }
+            if (baseline.Fans == FanMode.Fixed && value.MaximumFans)
+            {
+                // Maximum fans overrides fixed targets. Require an explicit
+                // Automatic request rather than silently discarding fan intent.
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "Select Automatic fans before enabling Custom maximum fans.");
+            }
+            (int First, int Second)? baselineTargets = baseline.Fans == FanMode.Fixed
+                ? await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) : null;
             // Read the stored levels before entering Custom. An ACK or a guessed
             // default cannot provide an exact baseline for this extrapolated command.
             CustomPerformanceSettings? baselineLevels = baseline.Performance == PerformancePreset.Custom
                 ? baseline.CustomPerformance
-                : await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false);
+                : await ReadCustomPerformanceAsync(cancellationToken, includeMaximumFans: false).ConfigureAwait(false);
             if (baselineLevels is null)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
@@ -83,13 +107,16 @@ internal sealed partial class ExperimentalBladePort
                 foreach (byte selector in new byte[] { 1, 2 })
                 {
                     RequireWriteAdmission(thermal: true);
-                    await ExchangeAsync("CustomPerformance", 0x0D, 0x02, [1, selector, 4, 0],
+                    await ExchangeAsync("CustomPerformance", 0x0D, 0x02,
+                        [1, selector, 4, baseline.Fans == FanMode.Fixed ? (byte)1 : (byte)0],
                         true, cancellationToken).ConfigureAwait(false);
                     submitted = true;
                 }
                 ProductionPerformanceFanState entered = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
-                if (entered.Performance != PerformancePreset.Custom || entered.Fans != FanMode.Automatic
-                    || entered.HyperBoostActive || entered.CustomPerformance is null)
+                if (entered.Performance != PerformancePreset.Custom || entered.Fans != baseline.Fans
+                    || entered.HyperBoostActive || entered.CustomPerformance is null
+                    || baselineTargets.HasValue
+                        && await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) != baselineTargets.Value)
                 {
                     throw new IOException("Independent readback did not confirm entry into Custom with representable levels.");
                 }
@@ -110,6 +137,11 @@ internal sealed partial class ExperimentalBladePort
                 var expected = cluster == 1
                     ? new CustomPerformanceSettings(level, currentLevels.Gpu)
                     : new CustomPerformanceSettings(currentLevels.Cpu, level);
+                expected = expected with { MaximumFans = currentLevels.MaximumFans };
+                if (!CreateCustomCapabilities(model).Supports(expected))
+                {
+                    throw new IOException("The intermediate custom combination is not admitted for this model.");
+                }
                 RequireWriteAdmission(thermal: true);
                 await ExchangeAsync("CustomPerformance", 0x0D, 0x07, [1, cluster, (byte)level],
                     true, cancellationToken).ConfigureAwait(false);
@@ -121,9 +153,22 @@ internal sealed partial class ExperimentalBladePort
                 }
                 currentLevels = observed;
             }
+            if (currentLevels.MaximumFans != value.MaximumFans)
+            {
+                RequireWriteAdmission(thermal: true);
+                await ExchangeAsync("MaximumFans", 0x07, 0x0F, [value.MaximumFans ? (byte)2 : (byte)0],
+                    true, cancellationToken).ConfigureAwait(false);
+                submitted = true;
+                if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false) != value.MaximumFans)
+                {
+                    throw new IOException("Independent maximum-fan readback did not confirm the requested flag.");
+                }
+            }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
-            if (confirmed.Performance != PerformancePreset.Custom || confirmed.Fans != FanMode.Automatic
-                || confirmed.HyperBoostActive || confirmed.CustomPerformance != value)
+            if (confirmed.Performance != PerformancePreset.Custom || confirmed.Fans != baseline.Fans
+                || confirmed.HyperBoostActive || confirmed.CustomPerformance != value
+                || baselineTargets.HasValue
+                    && await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) != baselineTargets.Value)
             {
                 throw new IOException("Independent custom performance readback did not confirm the requested levels.");
             }
@@ -139,5 +184,19 @@ internal sealed partial class ExperimentalBladePort
         }
     }
 
-    private static string FormatCustomPerformance(CustomPerformanceSettings value) => $"CPU={value.Cpu};GPU={value.Gpu}";
+    private async Task<bool> ReadMaximumFansAsync(CancellationToken cancellationToken)
+    {
+        ReadOnlyMemory<byte> payload = await ExchangeAsync("MaximumFans", 0x07, 0x8F,
+            [0], false, cancellationToken).ConfigureAwait(false);
+        return payload.Span[0] switch
+        {
+            0 => false,
+            2 => true,
+            _ => throw ContentRejected("Experimental maximum-fan flag is outside the exact contract.",
+                DeviceStateQuery.PerformanceAndFans, payload.Span),
+        };
+    }
+
+    private static string FormatCustomPerformance(CustomPerformanceSettings value) =>
+        $"CPU={value.Cpu};GPU={value.Gpu}" + (value.MaximumFans ? ";MaximumFans=True" : string.Empty);
 }

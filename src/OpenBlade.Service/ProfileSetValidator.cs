@@ -15,7 +15,8 @@ public sealed class ProfileValidationPolicy
         FanSpeedRange? fanSpeedRange = null,
         string? keyboardLightingLayoutId = null,
         bool supportsBreathingColorSelection = true,
-        bool supportsWaveDirectionSelection = true)
+        bool supportsWaveDirectionSelection = true,
+        IReadOnlySet<BreathingColorMode>? supportedBreathingColorModes = null)
     {
         ArgumentNullException.ThrowIfNull(supportedPerformanceFanCombinations);
         ArgumentNullException.ThrowIfNull(supportedLightingEffects);
@@ -26,10 +27,18 @@ public sealed class ProfileValidationPolicy
             ? null
             : new CustomPerformanceCapabilities(
                 new HashSet<CustomPerformanceCombination>(
-                    customPerformance.AllowedCombinations));
+                    customPerformance.AllowedCombinations))
+            {
+                SupportsMaximumFans = customPerformance.SupportsMaximumFans,
+            };
         FanSpeedRange = fanSpeedRange;
         KeyboardLightingLayoutId = keyboardLightingLayoutId;
         SupportsBreathingColorSelection = supportsBreathingColorSelection;
+        SupportedBreathingColorModes = supportedBreathingColorModes is null
+            ? supportsBreathingColorSelection
+                ? Enum.GetValues<BreathingColorMode>().ToHashSet()
+                : new HashSet<BreathingColorMode> { BreathingColorMode.Random }
+            : new HashSet<BreathingColorMode>(supportedBreathingColorModes);
         SupportsWaveDirectionSelection = supportsWaveDirectionSelection;
     }
 
@@ -44,6 +53,8 @@ public sealed class ProfileValidationPolicy
     public string? KeyboardLightingLayoutId { get; }
 
     public bool SupportsBreathingColorSelection { get; }
+
+    public IReadOnlySet<BreathingColorMode> SupportedBreathingColorModes { get; }
 
     public bool SupportsWaveDirectionSelection { get; }
 
@@ -69,7 +80,14 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.BatterySaver, FanMode.Automatic),
             new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
         },
-        new HashSet<LightingEffect> { LightingEffect.Off });
+        new HashSet<LightingEffect> { LightingEffect.Off },
+        // Offline legacy storage validation preserves its original eight
+        // combinations. This policy never supplies hardware write authority.
+        new CustomPerformanceCapabilities(
+            (from cpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+             from gpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+             where (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)
+             select new CustomPerformanceCombination(cpu, gpu)).ToHashSet()));
 
     public static ProfileValidationPolicy CreateForDeviceCapabilities(
         DeviceCapabilities batteryCapabilities,
@@ -91,7 +109,8 @@ public sealed class ProfileValidationPolicy
             batteryCapabilities.FanSpeedRange,
             lightingCapabilities.KeyboardLightingLayoutId,
             lightingCapabilities.SupportsBreathingColorSelection,
-            lightingCapabilities.SupportsWaveDirectionSelection);
+            lightingCapabilities.SupportsWaveDirectionSelection,
+            lightingCapabilities.SupportedBreathingColorModes);
     }
 }
 
@@ -273,6 +292,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     private void ValidateCustomPerformance(PowerProfile profile, string name)
     {
         if (profile.Performance == PerformancePreset.Custom
+            && profile.CustomPerformance?.MaximumFans == true && profile.Fans != FanMode.Automatic)
+        {
+            throw Invalid($"The {name} Custom maximum-fan flag requires Automatic fan mode, not fixed targets or a curve.");
+        }
+        if (profile.Performance == PerformancePreset.Custom
             && !CustomPerformanceSettings.IsWellFormed(profile.CustomPerformance))
         {
             throw Invalid(
@@ -286,7 +310,14 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
 
         if (profile.CustomPerformance is not null
-            && validationPolicy.CustomPerformance?.Supports(profile.CustomPerformance) == false)
+            && (validationPolicy.CustomPerformance is { } admitted
+                ? !admitted.Supports(profile.CustomPerformance)
+                // Storage-only legacy policies must still load unchanged saved
+                // settings. They never admit any new combination or fan flag;
+                // hardware setters separately require explicit device support.
+                : profile.CustomPerformance.Cpu == CustomPerformanceLevel.Boost
+                    || profile.CustomPerformance is { Cpu: CustomPerformanceLevel.High, Gpu: CustomPerformanceLevel.High }
+                    || profile.CustomPerformance.MaximumFans))
         {
             throw Invalid(
                 $"The {name} custom performance combination is not supported by this device.");
@@ -393,10 +424,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} lighting effect parameters are invalid.");
         }
 
-        if (!validationPolicy.SupportsBreathingColorSelection
-            && lighting.Parameters is BreathingLightingParameters { ColorMode: not BreathingColorMode.Random })
+        if (lighting.Parameters is BreathingLightingParameters breathing
+            && !validationPolicy.SupportedBreathingColorModes.Contains(breathing.ColorMode))
         {
-            throw Invalid($"The {name} lighting policy supports random Breathing only.");
+            throw Invalid($"The {name} lighting policy does not support this Breathing color mode.");
         }
         if (!validationPolicy.SupportsWaveDirectionSelection
             && lighting.Parameters is WaveLightingParameters { Direction: not LightingDirection.Rightward })

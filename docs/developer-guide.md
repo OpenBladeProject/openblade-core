@@ -87,9 +87,10 @@ and use `ExperimentalBladePort` with their own bounded capabilities and source
 provenance. They have no Settings consent switch or release-channel gate.
 Pre-releases are the testing route, not a new hardware-admission rule. The
 [experimental support guide](experimental-blade-support.md) lists the five exact
-models and remaining physical validation. Recognizing a profile does not promote
-its controls to capture-backed support or admit manual fan commands, host-rendered
-lighting, or another model's brightness driver.
+models and remaining physical validation. Each profile admits its own thermal,
+battery, and lighting commands. The Blade 16 (2023) also admits typed uniform
+host-rendered frames; it does not use another model's key map or brightness
+driver. Experimental evidence stays separate from capture-backed support.
 
 When an admitted laptop's exact Razer driver stack is already present,
 OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
@@ -144,7 +145,8 @@ drains the old session, rechecks identity and authority, then reads and reconcil
 current state without sending a setter or replaying the uncertain request. A new
 lighting choice releases the old lighting hold; unrelated profile edits do not.
 See the [tester workflow](experimental-blade-support.md#send-a-useful-test-report)
-for baseline and follow-up reports.
+for baseline and follow-up reports. The [experimental implementation reference](experimental-blade-reference.md)
+records model identities, command limits, and pinned source provenance.
 
 ## Build and test
 

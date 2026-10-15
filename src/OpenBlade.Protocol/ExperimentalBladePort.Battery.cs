@@ -4,13 +4,22 @@ namespace OpenBlade.Protocol;
 
 internal sealed partial class ExperimentalBladePort
 {
-    public bool SupportsProtectionQuery => model.SupportsBatteryProtection;
+    private static readonly IReadOnlySet<int> FullExperimentalChargeLimits =
+        Enumerable.Range(50, 51).ToHashSet();
+    private static readonly IReadOnlySet<int> NoExperimentalChargeLimits = new HashSet<int>();
+
+    internal static IReadOnlySet<int> GetExperimentalChargeLimits(ExperimentalBladeModel model) =>
+        model.SupportsBatteryProtection && model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02A0
+            ? FullExperimentalChargeLimits
+            : NoExperimentalChargeLimits;
+
+    public bool SupportsProtectionQuery => GetExperimentalChargeLimits(model).Count > 0;
 
     public bool SupportsTemporaryFullChargeQuery => false;
 
     public async Task<ConfirmedBatteryState> QueryProtectionAsync(CancellationToken cancellationToken)
     {
-        if (!model.SupportsBatteryProtection)
+        if (GetExperimentalChargeLimits(model).Count == 0)
         {
             throw new CapabilityUnavailableException("This model does not implement battery protection.");
         }
@@ -32,9 +41,10 @@ internal sealed partial class ExperimentalBladePort
         byte raw = payload.Span[0];
         int percent = raw & 0x7F;
         bool flag = (raw & 0x80) != 0;
-        bool admitted = model.ProductId == 0x02A0
-            ? !flag || percent is >= 50 and <= 100
-            : raw is 0x50 or 0xD0;
+        // The pinned 029F implementation exercises every whole-percent threshold.
+        // The other admitted battery models share this encoding; their expanded
+        // range remains upstream-derived until physical validation is complete.
+        bool admitted = !flag || GetExperimentalChargeLimits(model).Contains(percent);
         if (!admitted)
         {
             RecordQuery("BatteryProtection", "UnsupportedState",
@@ -52,17 +62,16 @@ internal sealed partial class ExperimentalBladePort
     }
 
     public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) =>
-        model.ProductId == 0x02A0 ? percent is >= 50 and <= 100
+        GetExperimentalChargeLimits(model).Contains(percent)
             ? SetBatteryAsync(percent == 100 ? null : percent, cancellationToken)
-            : Task.FromException(new CapabilityUnavailableException("Blade 18 limits must be from 50 to 100 percent."))
-        : percent == 80 ? SetBatteryAsync(80, cancellationToken)
-        : Task.FromException(new CapabilityUnavailableException("Only the upstream-derived 80% limit is enabled for this model."));
+            : Task.FromException(new CapabilityUnavailableException(
+                "Experimental charge limits must be from 50 to 100 percent on a model with admitted battery protection."));
 
     public Task SetProtectionOffAsync(CancellationToken cancellationToken) => SetBatteryAsync(null, cancellationToken);
 
     private async Task SetBatteryAsync(int? limit, CancellationToken cancellationToken)
     {
-        if (!model.SupportsBatteryProtection)
+        if (GetExperimentalChargeLimits(model).Count == 0)
         {
             throw new CapabilityUnavailableException("Class 07 battery commands are not supported on this model.");
         }

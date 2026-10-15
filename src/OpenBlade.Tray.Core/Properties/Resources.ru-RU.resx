@@ -1461,4 +1461,10 @@
   <data name="Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop." xml:space="preserve">
     <value>Чтобы помочь добавить поддержку этого ноутбука, сохраните краткий отчёт об устройстве, затем следуйте руководству Synapse Observer, чтобы собрать и отправить данные.</value>
   </data>
+  <data name="Boost" xml:space="preserve">
+    <value>Турбо</value>
+  </data>
+  <data name="Maximum fans" xml:space="preserve">
+    <value>Максимальные обороты</value>
+  </data>
 </root>

@@ -22,19 +22,19 @@ public sealed class ExperimentalBladePortTests
     [Fact]
     public async Task UnsupportedBatteryRead_RecordsDecodedEvidenceWithoutEnablingWrites()
     {
-        var session = new Session([0xBC]);
+        var session = new Session([0xB1]);
         var policy = Enabled();
         await using var port = Create(session, policy);
 
         RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
             port.QueryProtectionAsync(CancellationToken.None));
         Assert.Equal(DeviceStateQuery.BatteryProtection, failure.StateQuery);
-        Assert.Equal("BC", failure.RejectedPayloadHex);
+        Assert.Equal("B1", failure.RejectedPayloadHex);
         Assert.True(DeviceStateContentRejection.IsContentRejection(failure));
 
         ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations);
         Assert.Equal("UnsupportedState", observation.Outcome);
-        Assert.Contains("ReportedLimitPercent=60", observation.ConfirmedValue);
+        Assert.Contains("ReportedLimitPercent=49", observation.ConfirmedValue);
         Assert.False(observation.Submitted);
         Assert.All(session.Commands, command => Assert.Equal(0x92, command.CommandId));
     }
@@ -236,17 +236,16 @@ public sealed class ExperimentalBladePortTests
     }
 
     [Fact]
-    public async Task Blade2025BatteryModeBaseline_DoesNotReceiveAcPreset()
+    public async Task Blade2025BatteryModeBaseline_CanDirectlyEnterAcPresetWhenPowerReturns()
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C5);
-        var session = new Session([0, 1, 6, 0], [0, 2, 6, 0]);
+        var session = new Session([0, 1, 6, 0], [0, 2, 6, 0],
+            [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]);
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
             () => PowerSource.ExternalUnknown);
-        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None));
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+        await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 2));
     }
 
     [Fact]
@@ -335,7 +334,7 @@ public sealed class ExperimentalBladePortTests
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
         byte[][] baseline = initialMode == 4
-            ? [[0, 1, 4, 0], [0, 2, 4, 0], [0, 1, 0], [0, 2, 0]]
+            ? [[0, 1, 4, 0], [0, 2, 4, 0], [0, 1, 0], [0, 2, 0], [0]]
             : [[0, 1, (byte)initialMode, 0], [0, 2, (byte)initialMode, 0]];
         var session = new Session([.. baseline, [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]]);
         var policy = new ExperimentalFeaturesPolicy(model);
@@ -346,7 +345,7 @@ public sealed class ExperimentalBladePortTests
         Assert.Contains(LightingEffect.Wave, port.Capabilities.ObservedLightingEffects);
         Assert.Contains(PerformancePreset.Performance, port.Capabilities.PerformancePresets);
         await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
-        Assert.Equal(initialMode == 4 ? new byte[] { 0x82, 0x82, 0x87, 0x87, 0x02, 0x02, 0x82, 0x82 }
+        Assert.Equal(initialMode == 4 ? new byte[] { 0x82, 0x82, 0x87, 0x87, 0x8F, 0x02, 0x02, 0x82, 0x82 }
             : new byte[] { 0x82, 0x82, 0x02, 0x02, 0x82, 0x82 }, session.Commands.Select(item => item.CommandId));
         Assert.True(policy.WritesAllowed);
     }
@@ -385,7 +384,7 @@ public sealed class ExperimentalBladePortTests
     [Fact]
     public async Task UnrepresentableBatteryBaseline_BlocksBeforeSetterWithoutPausing()
     {
-        var session = new Session([0xBC]);
+        var session = new Session([0xB1]);
         var policy = Enabled();
         await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
