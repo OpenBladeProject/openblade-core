@@ -6,16 +6,17 @@ production factory uses its own exact-device admission and complete captured
 manual state/target command set. RZ09-0581 uses its trusted embedded fixture;
 RZ09-0528 uses its code-defined captured catalog and 2000–5000 RPM range.
 Other backends retain their existing thermal transition path. An omitted
-capability defaults to false. The field was introduced in service IPC version 64;
-this change keeps the current IPC versions and message shape. The protocol-51
-read-only projection omits the field.
+capability defaults to false. Direct-transition capability was introduced in
+service IPC version 64; the limited-power manual fan capability requires IPC
+version 66 and a coordinated component update. The protocol-51 read-only
+projection omits these fields; Session Agent IPC remains unchanged.
 
 ## Command paths
 
 - Automatic to Fixed, Maximum, or Manual Curve uses the existing paired manual
   entry and target commands. An already-manual state needs only target updates.
-  A known battery selector retained after reconnecting AC needs fresh admitted
-  full-power adapter readback before each command; it needs no preset reset.
+  A known battery selector uses fresh source evidence to select the battery
+  or external-power path; it needs no preset reset.
 - Changing manual fan subtype preserves manual state and submits the requested
   targets. It does not cycle through Automatic and Balanced.
 - Manual to Automatic applies the selected AC performance pair directly. Custom
@@ -45,7 +46,8 @@ ownership, cancellation, and readback admission. An ambiguous submitted write
 stops the transition and keeps its pending confirmation or recovery journal;
 no default-state fallback or uncertain command replay is attempted.
 
-Battery/USB-C fan availability and other backends' thermal sequencing are unchanged.
+The [fan power-source policy](fan-power-source-policy.md) extends the existing
+typed fan paths to fixed speed on battery and fixed speed or curves on USB-C.
 Owned manual fans still hand back to firmware Automatic at shutdown. This change
 does not remove keyboard Normal-mode handoff or lifecycle ownership cleanup.
 

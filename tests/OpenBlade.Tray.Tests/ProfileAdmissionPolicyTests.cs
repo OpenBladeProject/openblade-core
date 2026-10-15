@@ -45,7 +45,7 @@ public sealed class ProfileAdmissionPolicyTests
         ProfileSet battery = profiles with { Battery = retained };
         Assert.True(ProfileAdmissionPolicy.Supports(
             battery, battery, SupportedCapabilities()));
-        ProfileSet usbC = profiles with { UsbC = retained };
+        ProfileSet usbC = profiles with { UsbC = retained with { Performance = PerformancePreset.Performance } };
         Assert.False(ProfileAdmissionPolicy.Supports(
             usbC, usbC, SupportedCapabilities()));
     }
@@ -110,29 +110,22 @@ public sealed class ProfileAdmissionPolicyTests
     }
 
     [Theory]
-    [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.UsbC)]
-    public void DirectManualFanTransitionsRemainAcOnly(PowerSource powerSource)
+    [InlineData(PowerSource.Battery, FanMode.Fixed, true)]
+    [InlineData(PowerSource.Battery, FanMode.ManualCurve, false)]
+    [InlineData(PowerSource.UsbC, FanMode.Fixed, true)]
+    [InlineData(PowerSource.UsbC, FanMode.ManualCurve, true)]
+    public void ManualFanProfilesFollowPowerSourcePolicy(PowerSource source, FanMode fans, bool allowed)
     {
         ProfileSet current = ProfileDefaults.CreateSafeDefaults();
-        PowerProfile manual = powerSource switch
+        PowerProfile manual = (source == PowerSource.Battery ? current.Battery : current.UsbC) with
         {
-            PowerSource.Battery => current.Battery with { Fans = FanMode.ManualCurve },
-            PowerSource.UsbC => current.UsbC with { Fans = FanMode.ManualCurve },
-            _ => throw new ArgumentOutOfRangeException(nameof(powerSource)),
+            Fans = fans,
         };
-        ProfileSet draft = powerSource switch
-        {
-            PowerSource.Battery => current with { Battery = manual },
-            PowerSource.UsbC => current with { UsbC = manual },
-            _ => throw new ArgumentOutOfRangeException(nameof(powerSource)),
-        };
-        DeviceCapabilities capabilities = SupportedCapabilities() with
-        {
-            SupportsDirectManualFanTransitions = true,
-        };
+        ProfileSet draft = source == PowerSource.Battery
+            ? current with { Battery = manual }
+            : current with { UsbC = manual };
 
-        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.Equal(allowed, ProfileAdmissionPolicy.Supports(draft, current, SupportedCapabilities()));
     }
 
     [Fact]

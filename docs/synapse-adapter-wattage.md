@@ -93,10 +93,15 @@ only per-model source admission; they do not copy or fork the decoder. They
 perform a fresh `07/8C` query immediately before each non-battery thermal SET,
 then recheck Windows power and identity at native submission. The former Windows-only `ExperimentalExternal`
 fallback is not an admission path. Confirmed full power admits the profile's
-normal thermal controls. Confirmed limited power admits only Balanced,
-returning fans directly to Automatic while preserving the freshly confirmed
-mode, and turning Maximum Fans off when required for that cleanup. Battery-mode
-SETs retain their separate fresh battery checks.
+normal thermal controls. Confirmed limited power admits Balanced, returning
+fans directly to Automatic, and manual targets or curves on RZ09-0528 and
+RZ09-0581. Battery admits Automatic and fixed targets on those models and the
+experimental RZ09-0483 and RZ09-0482. Battery curves remain unavailable.
+Experimental fixed targets on limited power retain the Automatic-only gate
+because their pinned source does not establish manual entry there; experimental
+curves also lack admitted temperature telemetry. Turning Custom Maximum Fans off remains allowed when required for
+cleanup. All setters retain fresh source checks; see the
+[fan power-source policy](fan-power-source-policy.md).
 
 Synapse explicitly clears Maximum Fans before leaving Custom on the applicable
 models. OpenBlade reads the complete Power Mode Control byte, requires the other

@@ -210,6 +210,10 @@ public sealed record DeviceCapabilities(
     /// while manual fans are active, rather than a shared manual selector.</summary>
     public bool ReportsPerformanceWithManualFans { get; init; }
 
+    /// <summary>Exact backend admits manual fans on confirmed limited external power.
+    /// Omitted capabilities retain Automatic-only admission on that source.</summary>
+    public bool SupportsManualFansOnLimitedPower { get; init; }
+
     public bool SupportsKeyboardBrightness { get; init; }
 
     // Older/full implementations support the complete parameter pickers by default.
@@ -348,6 +352,7 @@ public sealed record DeviceCapabilities(
         SupportsTemporaryFullCharge: false)
     {
         SupportsKeyboardBrightness = true,
+        SupportsManualFansOnLimitedPower = true,
         FanSpeedRange = FanSpeedRange.Standard,
         CustomPerformance = new CustomPerformanceCapabilities(
             (from cpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }

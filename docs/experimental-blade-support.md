@@ -21,7 +21,9 @@ Close Synapse before using these controls, or use
 and applying the patch. OpenBlade checks the adapter's reported wattage before
 external-power performance or fan changes. A confirmed limited adapter allows
 Balanced and returning fans to Automatic; other external-power thermal changes
-wait for confirmed full power. An unknown reading blocks the change. The
+wait for confirmed full power. Models with fixed-speed control also offer
+Automatic and fixed fans on battery. Fixed speed on a limited adapter is not
+yet admitted for these experimental models. An unknown reading blocks the change. The
 reading does not identify the connector. The Blade 14 (2025) also offers
 Battery Saver and Battery Balanced on battery power.
 

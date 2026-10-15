@@ -1017,11 +1017,77 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
+    [InlineData(0x03)]
+    [InlineData(0x06)]
+    public async Task DirectManualFanSetter_BatteryAutomaticPreservesSelectorAndRechecksBatteryPower(
+        byte thermalMode)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, thermalMode, 0x00]),
+            Success([0x01, 0x02, thermalMode, 0x00]),
+            Success([0x00, 0x11]),
+            Success([0x01, 0x01, thermalMode, 0x01]),
+            Success([0x00, 0x11]),
+            Success([0x01, 0x02, thermalMode, 0x01]),
+            Success([0x00, 0x11]),
+            Success([0x01, 0x01, 0x28]),
+            Success([0x00, 0x11]),
+            Success([0x01, 0x02, 0x28]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanControlAsync(
+            new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+            default);
+
+        Assert.Equal(
+            [0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x8C, 0x01, 0x8C, 0x01],
+            session.Commands.Select(command => command.CommandId).ToArray());
+        Assert.Equal(
+            [$"0101{thermalMode:X2}01", $"0102{thermalMode:X2}01"],
+            session.Commands.Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Theory]
+    [InlineData(0x03)]
+    [InlineData(0x06)]
+    public async Task DirectAutomaticFanSetter_BatteryManualPreservesSelector(
+        byte thermalMode)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, thermalMode, 0x01]),
+            Success([0x01, 0x02, thermalMode, 0x01]),
+            Success([0x00, 0x11]),
+            Success([0x01, 0x01, thermalMode, 0x00]),
+            Success([0x00, 0x11]),
+            Success([0x01, 0x02, thermalMode, 0x00]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanModeAsync(FanMode.Automatic, default);
+
+        Assert.Equal(
+            [$"0101{thermalMode:X2}00", $"0102{thermalMode:X2}00"],
+            session.Commands.Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Theory]
     [InlineData(0x03, 0x12, 0x11)]
-    [InlineData(0x06, 0x12, 0x11)]
-    [InlineData(0x03, 0x0C, 0x0C)]
-    public async Task DirectManualFanSetter_BatteryAutomaticRechecksFullPowerBeforeEveryWrite(
-        byte thermalMode, byte actual, byte recommended)
+    [InlineData(0x06, 0x0C, 0x0C)]
+    public async Task DirectManualFanSetter_StaleBatterySelectorOnExternalPowerUsesBalancedManualEntry(
+        byte thermalMode,
+        byte actual,
+        byte recommended)
     {
         var session = new ScriptedSession(
             Success([0x01, 0x01, thermalMode, 0x00]),
@@ -1045,55 +1111,28 @@ public sealed class ProductionBatteryPortTests
             new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
             default);
 
+        Assert.Equal([0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x8C, 0x01, 0x8C, 0x01],
+            session.Commands.Select(command => command.CommandId).ToArray());
         Assert.Equal(
-            [0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x8C, 0x01, 0x8C, 0x01],
-            session.Commands.Select(command => command.CommandId).ToArray());
-    }
-
-    [Theory]
-    [InlineData(0x03)]
-    [InlineData(0x06)]
-    public async Task DirectManualFanSetter_BatteryAutomaticRejectsFreshBatteryPower(
-        byte thermalMode)
-    {
-        var session = new ScriptedSession(
-            Success([0x01, 0x01, thermalMode, 0x00]),
-            Success([0x01, 0x02, thermalMode, 0x00]),
-            Success([0x00, 0x11]));
-        await using var port = CreatePort(
-            session,
-            Catalog(MaximumCapabilityFixtures()),
-            AcceptedAdapterPowerReadEvidence(),
-            admittedAdapterPowerStates:
-                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
-            supportsDirectManualFanTransitions: true);
-
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetFanControlAsync(
-                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
-                default));
-
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
-        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
-        Assert.Equal([0x82, 0x82, 0x8C],
-            session.Commands.Select(command => command.CommandId).ToArray());
+            ["01010001", "01020001"],
+            session.Commands.Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
     }
 
     [Fact]
-    public async Task DirectManualFanSetter_BatteryAutomaticPowerLossAfterEntryIsIndeterminate()
+    public async Task DirectManualFanSetter_BatteryAutomaticExternalPowerAfterEntryIsIndeterminate()
     {
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x03, 0x00]),
             Success([0x01, 0x02, 0x03, 0x00]),
-            Success([0x12, 0x11]),
-            Success([0x01, 0x01, 0x00, 0x01]),
-            Success([0x00, 0x11]));
+            Success([0x00, 0x11]),
+            Success([0x01, 0x01, 0x03, 0x01]),
+            Success([0x12, 0x11]));
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()),
             AcceptedAdapterPowerReadEvidence(),
-            admittedAdapterPowerStates:
-                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
             supportsDirectManualFanTransitions: true);
 
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
@@ -1663,7 +1702,7 @@ public sealed class ProductionBatteryPortTests
         ProductionBatteryPort.PerformanceBatteryBalancedFirstAction,
         ProductionBatteryPort.PerformanceBatteryBalancedSecondAction,
         0x06)]
-    public async Task DirectPerformanceSetter_RejectsManualOriginForBatteryDestinations(
+    public async Task DirectPerformanceSetter_ExitsManualToBatteryDestination(
         PerformancePreset preset,
         string firstAction,
         string secondAction,
@@ -1671,7 +1710,11 @@ public sealed class ProductionBatteryPortTests
     {
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x00, 0x01]),
-            Success([0x01, 0x02, 0x00, 0x01]));
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x01, 0x01, mode, 0x00]),
+            Success([0x01, 0x02, mode, 0x00]),
+            Success([0x01, 0x01, mode, 0x00]),
+            Success([0x01, 0x02, mode, 0x00]));
         await using var port = CreatePort(
             session,
             Catalog(
@@ -1682,12 +1725,10 @@ public sealed class ProductionBatteryPortTests
                 ]),
             supportsDirectManualFanTransitions: true);
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
-            () => port.SetPerformanceAsync(preset, default));
+        await port.SetPerformanceAsync(preset, default);
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
-        Assert.Equal(2, session.Commands.Count);
-        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+        Assert.Equal([0x82, 0x82, 0x02, 0x02, 0x82, 0x82],
+            session.Commands.Select(command => command.CommandId).ToArray());
     }
 
     [Theory]

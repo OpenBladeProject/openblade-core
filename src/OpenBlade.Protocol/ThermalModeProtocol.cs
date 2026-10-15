@@ -22,6 +22,11 @@ internal enum ThermalModeState
     BatteryBalancedAutomatic,
     CustomAutomatic,
     HyperBoostObserved,
+
+    // Synapse preserves the selected battery profile when manual fans are
+    // enabled. Keep these distinct so readback retains the active selector.
+    BatterySaverManual,
+    BatteryBalancedManual,
 }
 
 internal readonly record struct ThermalModeReading(
@@ -102,6 +107,8 @@ internal static class ThermalModeProtocol
             (0x04, 0x00) => Assign(ThermalModeState.CustomAutomatic, out state),
             (0x03, 0x00) => Assign(ThermalModeState.BatterySaverAutomatic, out state),
             (0x06, 0x00) => Assign(ThermalModeState.BatteryBalancedAutomatic, out state),
+            (0x03, 0x01) => Assign(ThermalModeState.BatterySaverManual, out state),
+            (0x06, 0x01) => Assign(ThermalModeState.BatteryBalancedManual, out state),
             (0x07, 0x00) => Assign(ThermalModeState.HyperBoostObserved, out state),
             // The direct, validated setter remains 00/01. Synapse's own path
             // can normalize the same fixed state to 04/01 on subsequent reads.

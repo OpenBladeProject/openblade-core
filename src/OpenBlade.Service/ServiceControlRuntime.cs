@@ -1253,7 +1253,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         ? "The active Windows user's profile is loaded without hardware application during unexpected-exit recovery."
                         : "The active Windows user's profile is loaded.",
                     Profiles = profiles,
-                    DesiredState = Automation.Resolve(confirmed),
+                    DesiredState = ResolveAutomationDesired(confirmed),
                     PerformanceOverride = Automation.PerformanceOverride,
                     FanOverride = Automation.FanOverride,
                     FanControlOverride = Automation.FanControlOverride,
@@ -1503,7 +1503,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState profileResolutionState =
                 GetStatus().ConfirmedState ?? UnknownConfirmedState;
             LightingSettings priorLightingIntent =
-                Automation.Resolve(profileResolutionState).Lighting.Value;
+                ResolveAutomationDesired(profileResolutionState).Lighting.Value;
             try
             {
                 profiles = ProfileStore.NormalizeLegacyBatteryProfile(
@@ -1530,7 +1530,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
                 await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
-                if (Automation.Resolve(profileResolutionState).Lighting.Value
+                if (ResolveAutomationDesired(profileResolutionState).Lighting.Value
                     != priorLightingIntent)
                 {
                     experimentalLightingResumeAwaitingRequest = false;
@@ -1557,7 +1557,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 Message = message,
                 Profiles = Automation.Profiles,
-                DesiredState = Automation.Resolve(confirmed),
+                DesiredState = ResolveAutomationDesired(confirmed),
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,
                 FanControlOverride = Automation.FanControlOverride,
@@ -2079,7 +2079,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     value,
                     settings,
                     cancellationToken).ConfigureAwait(false);
-                DesiredDeviceState intended = Automation.Resolve(
+                DesiredDeviceState intended = ResolveAutomationDesired(
                     GetStatus().ConfirmedState ?? UnknownConfirmedState);
                 FanControlSettings intendedFanControl = intended.FanControl
                     ?? FanControlSettings.FromLegacy(intended.Fans.Value);
@@ -3324,7 +3324,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
 
                 HyperBoostRestoreIntent currentDestinationIntent =
-                    CreateHyperBoostRestoreIntent(Automation.Resolve(fresh));
+                    CreateHyperBoostRestoreIntent(ResolveAutomationDesired(fresh));
                 if (!IsSupportedFullPowerHyperBoostIntent(
                         current.Capabilities,
                         currentDestinationIntent))
@@ -3593,7 +3593,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ObservationReason = status == ControlOperationStatus.Applied && confirmed is not null
                 ? DeviceObservationReason.None
                 : current.ObservationReason,
-            DesiredState = Automation.Resolve(effectiveConfirmed),
+            DesiredState = ResolveAutomationDesired(effectiveConfirmed),
             ExternalChanges = driftTracker.ExternalChanges,
             WritesBlocked = hyperBoostJournalSafetyBlock
                 || restorePending
@@ -4087,7 +4087,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ConfirmedState = confirmed,
                 Capabilities = deviceProvider.ExperimentalCapabilities,
                 ActivePowerSource = source,
-                DesiredState = Automation.Resolve(confirmed),
+                DesiredState = ResolveAutomationDesired(confirmed),
                 ExternalChanges = driftTracker.ExternalChanges.ToArray(),
                 ExperimentalWritesPaused = false,
                 ObservationReason = DeviceObservationReason.None,
@@ -7679,7 +7679,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ActivePowerSource = deferPowerSourceChange
                 ? baseline.ActivePowerSource
                 : powerSource,
-            DesiredState = Automation.Resolve(reconciliation.Confirmed),
+            DesiredState = ResolveAutomationDesired(reconciliation.Confirmed),
             BatteryPolicyOverride = Automation.BatteryPolicyOverride,
             BatteryProtectionOverride = Automation.BatteryProtectionOverride,
             Message = reconciliation.Message,
@@ -7801,7 +7801,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 PowerSource.PluggedIn => savedIntent,
                 PowerSource.Battery or PowerSource.UsbC =>
-                    CreateHyperBoostRestoreIntent(Automation.Resolve(confirmed)),
+                    CreateHyperBoostRestoreIntent(ResolveAutomationDesired(confirmed)),
                 _ => HyperBoostRestoreIntent.BalancedAutomatic,
             };
 
@@ -9072,7 +9072,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && Automation.PowerSource == PowerSource.PluggedIn)
             {
                 HyperBoostRestoreIntent destinationIntent =
-                    CreateHyperBoostRestoreIntent(Automation.Resolve(confirmed));
+                    CreateHyperBoostRestoreIntent(ResolveAutomationDesired(confirmed));
                 ServiceStatusSnapshot current = GetStatus();
                 if (current.Capabilities is not null
                     && IsSupportedFullPowerHyperBoostIntent(
@@ -9153,7 +9153,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceCapabilities admittedCapabilities = current.Capabilities;
 
         DesiredDeviceState authoritativeDestination =
-            Automation.Resolve(confirmed);
+            ResolveAutomationDesired(confirmed);
 
         HyperBoostRestoreIntent destinationIntent;
         switch (journal.RestoreRetryTarget)
@@ -10024,7 +10024,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ServiceStatusSnapshot recoveredStatus = GetStatus();
                 PublishIfChanged(recoveredStatus with
                 {
-                    DesiredState = Automation.Resolve(restored),
+                    DesiredState = ResolveAutomationDesired(restored),
                     PerformanceOverride = Automation.PerformanceOverride,
                     FanOverride = Automation.FanOverride,
                     FanControlOverride = Automation.FanControlOverride,
@@ -10666,11 +10666,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 DeferredManualFanSafetyState.AutomaticOwned;
         }
 
-        FanControlSettings desired = Automation.Resolve(
+        FanControlSettings desired = ResolveAutomationDesired(
                 current.ConfirmedState ?? UnknownConfirmedState)
             .FanControl
             ?? FanControlSettings.FromLegacy(
-                Automation.Resolve(current.ConfirmedState ?? UnknownConfirmedState)
+                ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState)
                     .Fans
                     .Value);
         if (deferredManualFanSafetyOwnership.State ==
@@ -10904,8 +10904,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings fullPowerProfileFanControl =
             Automation.Profiles.PluggedIn.FanControl
             ?? FanControlSettings.FromLegacy(Automation.Profiles.PluggedIn.Fans);
-        // A manual curve is intentionally inactive on USB-C. Keep the bounded
-        // recovery attempt available until a compatible source is confirmed.
+        // Prior-process curve recovery retains its existing ownership gate on
+        // USB-C. Normal explicit curve selection is admitted separately; a
+        // generic inherited manual readback cannot establish exact ownership.
         if (powerSource == PowerSource.UsbC
             && (retainedFanControl is { Mode: FanMode.ManualCurve }
                 || fullPowerProfileFanControl.Mode == FanMode.ManualCurve))
@@ -11029,7 +11030,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             ExternalChanges = driftTracker.ExternalChanges,
-            DesiredState = Automation.Resolve(confirmed),
+            DesiredState = ResolveAutomationDesired(confirmed),
         });
         try
         {
@@ -11118,7 +11119,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? DeviceObservationReason.None
                 : current.ObservationReason,
             WritesBlocked = false,
-            DesiredState = Automation.Resolve(confirmed),
+            DesiredState = ResolveAutomationDesired(confirmed),
             Message =
                 "The power source changed while crash recovery waits for an authorized active-user request; no hardware profile was applied.",
         });
@@ -11301,7 +11302,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls)
                         && current.WritesBlocked,
                     Message = "Power adapter classification recovered.",
-                    DesiredState = Automation.Resolve(
+                    DesiredState = ResolveAutomationDesired(
                         current.ConfirmedState ?? UnknownConfirmedState),
                 });
             }
@@ -11614,7 +11615,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     PublishIfChanged(current with
                     {
                         ActivePowerSource = exitPowerSource,
-                        DesiredState = Automation.Resolve(
+                        DesiredState = ResolveAutomationDesired(
                             current.ConfirmedState ?? UnknownConfirmedState),
                         Message =
                             "The power source was refreshed before HyperBoost lifecycle restoration so the destination profile is authoritative.",
@@ -11905,7 +11906,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 message = $"Keyboard standby Off was not confirmed: {result.Message}";
                 if (result.Outcome == LightingLowPowerOffOutcome.Indeterminate)
                 {
-                    DesiredDeviceState target = Automation.Resolve(before);
+                    DesiredDeviceState target = ResolveAutomationDesired(before);
                     target = target with
                     {
                         Lighting = target.Lighting with { Value = LightingSettingsFactory.Off() },
@@ -11918,7 +11919,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PublishIfChanged(GetStatus() with
             {
                 ConfirmedState = confirmed,
-                DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
+                DesiredState = ResolveAutomationDesired(confirmed ?? UnknownConfirmedState),
                 LightingRendererOwnership = LightingRendererOwnershipState.None,
                 ExternalChanges = driftTracker.ExternalChanges,
                 Message = message,
@@ -12858,7 +12859,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PublishIfChanged(changed with
             {
                 ConfirmedState = confirmed,
-                DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
+                DesiredState = ResolveAutomationDesired(confirmed ?? UnknownConfirmedState),
                 ExternalChanges = driftTracker.ExternalChanges,
                 Message = outcome.Result.Message,
             });
@@ -12948,6 +12949,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
+        if (value is not null && !FanControlPowerPolicy.IsAvailable(Automation.PowerSource, value.Value,
+                GetStatus().Capabilities?.SupportsManualFansOnLimitedPower == true))
+        {
+            throw new InvalidDataException("The selected fan mode is unavailable on this model and power source.");
+        }
         ValidateThermalOverrideCombination(Automation.PerformanceOverride, value);
         PersistentOverrideState staged = persistentOverrides with
         {
@@ -16199,7 +16205,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PadlessHyperBoostEligibility = ResolvePadlessHyperBoostEligibility(
                 observation.Capabilities),
             Profiles = Automation.Profiles,
-            DesiredState = Automation.Resolve(observation.Confirmed),
+            DesiredState = ResolveAutomationDesired(observation.Confirmed, observation.Capabilities),
             ActivePowerSource = powerSource,
             LiveReadings = includeLiveReadings
                 ? new LiveReadings(
@@ -16428,7 +16434,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             WritesBlocked = false,
             Message =
                 "The initial power adapter classification was recorded without hardware application during unexpected-exit recovery.",
-            DesiredState = Automation.Resolve(
+            DesiredState = ResolveAutomationDesired(
                 current.ConfirmedState ?? UnknownConfirmedState),
         });
         return false;
@@ -17297,7 +17303,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
             Profiles = Automation.Profiles,
-            DesiredState = Automation.Resolve(confirmed),
+            DesiredState = ResolveAutomationDesired(confirmed),
             ActivePowerSource = powerSource,
             LiveReadings = liveReadings,
             PerformanceOverride = Automation.PerformanceOverride,
@@ -17380,7 +17386,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Capabilities: UnavailableCapabilities,
             ConfirmedState: null,
             Profiles: Automation.Profiles,
-            DesiredState: Automation.Resolve(UnknownConfirmedState),
+            DesiredState: ResolveAutomationDesired(UnknownConfirmedState, UnavailableCapabilities),
             ActivePowerSource: powerSource,
             LiveReadings: null,
             PerformanceOverride: Automation.PerformanceOverride,
@@ -17531,7 +17537,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRefreshRate = EffectiveLightingRefreshRate(capabilities),
             ConfirmedState = confirmed,
             Profiles = Automation.Profiles,
-            DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
+            DesiredState = ResolveAutomationDesired(confirmed ?? UnknownConfirmedState, capabilities ?? UnavailableCapabilities),
             ActivePowerSource = powerSource,
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
@@ -17565,7 +17571,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private ControlOperationResult DeferLightingIntentForLowPower()
     {
         ServiceStatusSnapshot current = GetStatus();
-        DesiredDeviceState desired = Automation.Resolve(current.ConfirmedState ?? UnknownConfirmedState);
+        DesiredDeviceState desired = ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState);
         pendingLightingRestore = desired.Lighting.Value;
         pendingLightingRestoreFromLifecycle = true;
         const string message = "Lighting intent was stored and will be applied after standby.";
@@ -17574,10 +17580,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return new(ControlOperationStatus.Stored, message);
     }
 
+    private DesiredDeviceState ResolveAutomationDesired(ConfirmedDeviceState confirmed,
+        DeviceCapabilities? capabilities = null) =>
+        Automation.Resolve(confirmed,
+            (capabilities ?? Volatile.Read(ref status)?.Capabilities)?.SupportsManualFansOnLimitedPower == true);
+
     private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
     {
         DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
-            Automation.Resolve(confirmed), confirmed);
+            ResolveAutomationDesired(confirmed), confirmed);
         // Custom maximum fans is a separate firmware override, not a fixed RPM
         // target. During a performance override, keep saved manual-fan intent but
         // reach the necessary Automatic fan state directly. Profiles reject the
@@ -17652,7 +17663,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         ResolvedSetting<LightingSettings> lighting =
-            Automation.Resolve(confirmed ?? UnknownConfirmedState).Lighting;
+            ResolveAutomationDesired(confirmed ?? UnknownConfirmedState).Lighting;
         return lighting.Source == SettingValueSource.ConfirmedFirmwareState
             ? Task.CompletedTask
             : TryPersistLastKnownLightingAsync(lighting.Value, cancellationToken);
@@ -18875,7 +18886,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PublishIfChanged(GetStatus() with
             {
                 ConfirmedState = readback,
-                DesiredState = Automation.Resolve(readback),
+                DesiredState = ResolveAutomationDesired(readback),
                 ExternalChanges = driftTracker.ExternalChanges,
             });
         }
@@ -19045,7 +19056,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private FanControlSettings ResolveCurrentFanIntent()
     {
-        DesiredDeviceState desired = Automation.Resolve(
+        DesiredDeviceState desired = ResolveAutomationDesired(
             GetStatus().ConfirmedState ?? UnknownConfirmedState);
         return desired.FanControl
             ?? FanControlSettings.FromLegacy(desired.Fans.Value);
@@ -19058,6 +19069,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings currentSettings = current.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
         return settings.Mode == FanMode.ManualCurve
+            && FanControlPowerPolicy.IsAvailable(current.ActivePowerSource, settings.Mode,
+                current.Capabilities?.SupportsManualFansOnLimitedPower == true)
             && currentSettings == settings
             && current.ConfirmedState?.HyperBoostActive == false
             && current.ConfirmedState?.Fans is { } confirmedFans

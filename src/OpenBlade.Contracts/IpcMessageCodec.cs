@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 65;
+    public const int ProtocolVersion = 66;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -1054,6 +1054,9 @@ public static class IpcMessageCodec
                             "supportsDirectManualFanTransitions",
                             StringComparison.OrdinalIgnoreCase));
                 directManualFanTransitions.ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "supportsManualFansOnLimitedPower", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "reportsPerformanceWithManualFans", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
