@@ -252,6 +252,7 @@ type enum OpenBlade.Protocol.HidSessionFailurePhase
   field const OpenBlade.Protocol.HidSessionFailurePhase ProtocolValidation = 5
   field const OpenBlade.Protocol.HidSessionFailurePhase SetCompletion = 2
   field const OpenBlade.Protocol.HidSessionFailurePhase SetSubmit = 1
+  field const OpenBlade.Protocol.HidSessionFailurePhase SharedGateAdmission = 6
 type struct OpenBlade.Protocol.HidSessionResult<T>
   interface System.IEquatable<OpenBlade.Protocol.HidSessionResult<T>>
   ctor (T Value, System.Nullable<OpenBlade.Protocol.HidSessionFailureKind> Failure)

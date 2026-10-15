@@ -172,7 +172,7 @@ internal sealed class FanRpmQueryPort : IFanRpmQueryPort
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
         session = sharedCommandGate is null
             ? actor.Session
-            : new Rz090581CommandSessionGate(actor.Session, sharedCommandGate);
+            : new RazerCommandSessionGate(actor.Session, sharedCommandGate);
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         this.pendingDisposals = pendingDisposals
             ?? throw new ArgumentNullException(nameof(pendingDisposals));

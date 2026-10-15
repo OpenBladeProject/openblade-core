@@ -6,7 +6,7 @@ internal sealed class NativeDeviceReadException : IOException
         HidSessionFailureKind failure,
         HidSessionFailureDiagnostic? diagnostic,
         DeviceStateQuery? stateQuery)
-        : base("Battery state query failed closed.")
+        : base("Device-state query failed closed.")
     {
         Failure = failure;
         Diagnostic = diagnostic;

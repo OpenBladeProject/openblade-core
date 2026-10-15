@@ -12,12 +12,13 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly IHardwareAccessGuard guard;
     private readonly IHidFeatureIo io;
     private readonly Func<PowerSource> capturePowerSource;
+    private readonly SemaphoreSlim sharedCommandGate;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ExperimentalLightingOwnershipState lightingOwnership = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
-        Func<PowerSource> capturePowerSource)
+        Func<PowerSource> capturePowerSource, SemaphoreSlim? sharedCommandGate = null)
     {
         this.model = model;
         this.identity = identity;
@@ -25,6 +26,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         this.guard = guard;
         this.io = io;
         this.capturePowerSource = capturePowerSource;
+        // Battery, lighting, admission, and recovery share this singleton factory.
+        // A native operation may outlive the provider's managed operation lock.
+        this.sharedCommandGate = sharedCommandGate ?? new(1, 1);
         policy = new(model);
     }
 
@@ -256,9 +260,10 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 IRazerCommandSession session;
                 try
                 {
-                    session = new WindowsRazerHidSession(native.BindSelected(candidate.Handle), io, guard,
+                    var rawSession = new WindowsRazerHidSession(native.BindSelected(candidate.Handle), io, guard,
                         TimeProvider.System, lease, ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30),
                         queryDiagnostics: FirmwareQueryDiagnostics.Process);
+                    session = new RazerCommandSessionGate(rawSession, sharedCommandGate, ownsInner: true);
                 }
                 catch
                 {
@@ -285,6 +290,16 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     {
                         ambiguous = true;
                     }
+                }
+                catch (NativeDeviceReadException exception)
+                    when (exception.Diagnostic?.Phase == HidSessionFailurePhase.SharedGateAdmission)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // A shared factory lock cannot be resolved by probing another
+                    // interface, and contention is not evidence of wrong hardware.
+                    policy.Record("InterfaceAdmission", "Query", "Failed",
+                        failure: $"{exception.Failure}/{exception.Diagnostic.Value.Phase}");
+                    return new(null, exception.Failure) { Diagnostic = exception.Diagnostic };
                 }
                 catch (IOException)
                 {

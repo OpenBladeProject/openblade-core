@@ -96,6 +96,64 @@ public sealed class ExperimentalBladeFactoryTests
     }
 
     [Fact]
+    public async Task CancellationWhileSharedGateIsHeld_BlocksAdmissionAndDisposesHandle()
+    {
+        using var sharedCommandGate = new SemaphoreSlim(0, 1);
+        using var cancellation = new CancellationTokenSource();
+        var native = new Native(1);
+        var io = new Io();
+        var factory = new ExperimentalBladeFactory(
+            ExperimentalBladeModels.All[0],
+            new Identity(),
+            native,
+            new Guard(),
+            io,
+            () => PowerSource.ExternalUnknown,
+            sharedCommandGate);
+
+        Task<HidSessionResult<IProductionBatteryPort>> opening =
+            factory.OpenAsync(cancellation.Token);
+
+        Assert.False(opening.IsCompleted);
+        Assert.Equal(1, native.BoundCount);
+        Assert.Empty(io.Commands);
+
+        cancellation.Cancel();
+        HidSessionResult<IProductionBatteryPort> result =
+            await opening.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Null(result.Value);
+        Assert.Equal(HidSessionFailureKind.Canceled, result.Failure);
+        Assert.Empty(io.Commands);
+        Assert.Equal(1, native.DisposeCounts[0]);
+    }
+
+    [Fact]
+    public async Task SharedGateAdmissionTimeout_PreservesResourceFailureInsteadOfRejectingIdentity()
+    {
+        using var sharedCommandGate = new SemaphoreSlim(0, 1);
+        var native = new Native(1);
+        var io = new Io();
+        var factory = new ExperimentalBladeFactory(
+            ExperimentalBladeModels.All[0], new Identity(), native, new Guard(), io,
+            () => PowerSource.ExternalUnknown, sharedCommandGate);
+
+        HidSessionResult<IProductionBatteryPort> result =
+            await factory.OpenAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Null(result.Value);
+        Assert.Equal(HidSessionFailureKind.Exhausted, result.Failure);
+        Assert.Equal(HidSessionFailurePhase.SharedGateAdmission, result.Diagnostic?.Phase);
+        Assert.Empty(io.Commands);
+        Assert.Equal(1, native.DisposeCounts[0]);
+        Assert.Contains(factory.GetDiagnostics().Observations,
+            item => item.Operation == "InterfaceAdmission"
+                && item.FailureCategory == "Exhausted/SharedGateAdmission");
+        Assert.DoesNotContain(factory.GetDiagnostics().Observations,
+            item => item.FailureCategory == "NoRespondingInterface");
+    }
+
+    [Fact]
     public async Task NonRespondingCandidate_DoesNotPolluteAcceptedInterfaceHistory()
     {
         var native = new Native(2);

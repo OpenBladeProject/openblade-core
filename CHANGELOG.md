@@ -44,6 +44,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevent RPM and lighting commands from overlapping on RZ09-0528. Share cancellation handling across model backends, distinguish requests that were never sent, and let controls recover after cleanup errors once pending I/O has finished. ([#762](https://github.com/OpenBladeProject/openblade-core/pull/762))
 - Keep firmware query replies in exported diagnostics after an unrecognized reading or failed model check, including adapter classification failures. Retain failure evidence after recovery for the current service run, without requiring developer tools. ([#773](https://github.com/OSSBlade/openblade-core/pull/773))
 - On RZ09-0581 with AC power, apply manual fan, performance and padless HyperBoost changes without first resetting to Balanced or Automatic, and allow those AC profile combinations. Remove the obsolete Balanced instruction. Battery Protection can be turned off without resetting the current supported charge limit first. ([#756](https://github.com/OpenBladeProject/openblade-core/pull/756))
 - Prevent animated keyboard lighting from overlapping fan and battery command exchanges on RZ09-0581. Exported diagnostics now retain the query or command and native I/O error details when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
