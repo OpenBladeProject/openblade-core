@@ -457,6 +457,10 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             byte transactionId,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+            byte transactionId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<HidSessionResult<HidUnit>> SetAsync(
             byte transactionId,
             bool enabled,

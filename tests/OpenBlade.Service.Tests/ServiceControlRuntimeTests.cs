@@ -14195,6 +14195,193 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletedFullCharge_RetiresIntentWithoutExternalChangeOrReplay()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().FullChargeOverride);
+        int[] before = SetterCounts(context.Device);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot completed = context.Runtime.GetStatus();
+        Assert.False(completed.FullChargeOverride);
+        Assert.False(completed.DesiredState.Battery.TemporaryFullCharge);
+        Assert.Empty(completed.ExternalChanges);
+
+        ControlOperationResult reapply = await context.Runtime.ReapplyChangedSettingsAsync(
+            CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Failed, reapply.Status);
+        Assert.Equal(before[2], context.Device.BatterySetCalls);
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullCharge_UnknownBatteryReadKeepsIntentUntilConfirmedEnd(bool partialRead)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        ConfirmedDeviceState active = context.Device.ConfirmedState;
+
+        context.Device.ConfirmedState = active with
+        {
+            Battery = partialRead ? new ConfirmedBatteryState(true, 80, null) : null,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.True(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.True(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+
+        context.Device.ConfirmedState = active with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task CompletedFullCharge_FirstSeenByTransition_RetiresWithoutEnableOrPause()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+        };
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+        Assert.False(status.FullChargeOverride);
+        Assert.Empty(status.ExternalChanges);
+        Assert.DoesNotContain("outside OpenBlade", status.Message);
+    }
+
+    [Fact]
+    public async Task Reapply_WithBatteryLatchedForAnotherReason_NeverReplaysCompletedFullCharge()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 70, true),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Contains(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 70, false),
+        };
+
+        await context.Runtime.ReapplyChangedSettingsAsync(CancellationToken.None);
+
+        Assert.Equal(["SetTemporaryFullCharge", "SetChargeLimit"], context.Device.BatterySetterCalls.Take(2));
+        Assert.Single(context.Device.BatterySetterCalls, call => call == "SetTemporaryFullCharge");
+        Assert.NotEqual(true, context.Device.ConfirmedState.Battery!.TemporaryFullCharge);
+    }
+
+    [Fact]
+    public async Task Reapply_StrippedChargeLimitWriteWithLostResponse_DoesNotLatchFullChargeMismatch()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 70, true),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 70, false),
+        };
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Battery)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "Battery command response lost after submission.");
+            }
+        };
+
+        await context.Runtime.ReapplyChangedSettingsAsync(CancellationToken.None);
+        context.Device.AfterSetter = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Single(context.Device.BatterySetterCalls, call => call == "SetTemporaryFullCharge");
+        Assert.DoesNotContain(DeviceSubsystem.Battery, status.ExternalChanges);
+        Assert.Empty(status.UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task AutomaticFullChargeCancel_BlockedByOtherLaptopSettings_FailsOnceWithoutWriteOrLatch()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        // Full charge on with local dimming on (07/8F = 0C); the production
+        // port refuses the cancel before sending anything.
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        string reason = TemporaryFullChargeProtocol.OtherSettingsBlockMessage(0x08);
+        context.Device.TemporaryFullChargeFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            reason);
+        int before = context.Device.BatterySetterCalls.Count(
+            call => call == "SetTemporaryFullCharge");
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot first = context.Runtime.GetStatus();
+        Assert.Equal(
+            before + 1,
+            context.Device.BatterySetterCalls.Count(call => call == "SetTemporaryFullCharge"));
+        Assert.Contains(reason, first.Message, StringComparison.Ordinal);
+        Assert.True(context.Device.ConfirmedState.Battery!.TemporaryFullCharge);
+        Assert.Empty(first.UnconfirmedWrites);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, first.ExternalChanges);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot second = context.Runtime.GetStatus();
+        Assert.Equal(
+            before + 2,
+            context.Device.BatterySetterCalls.Count(call => call == "SetTemporaryFullCharge"));
+        Assert.Empty(second.UnconfirmedWrites);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, second.ExternalChanges);
+        Assert.True(context.Device.ConfirmedState.Battery!.TemporaryFullCharge);
+    }
+
+    [Fact]
     public async Task RestartObservation_ReportsFirmwareFullChargeAndUnplugRestoresLimit()
     {
         TestContext context = CreateWritableContext();
@@ -31095,6 +31282,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? LightingFailure { get; set; }
 
+        public Exception? TemporaryFullChargeFailure { get; set; }
+
         public Exception? LightingRefreshRateFailure { get; set; }
 
         public Action? BeforeLightingRefreshRateSet { get; set; }
@@ -31764,6 +31953,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             TotalCalls++;
             BatterySetCalls++;
             BatterySetterCalls.Add("SetTemporaryFullCharge");
+            if (TemporaryFullChargeFailure is not null)
+            {
+                throw TemporaryFullChargeFailure;
+            }
+
             if (SuppressConfirmationFor != DeviceSubsystem.Battery
                 && ConfirmedState.Battery is { } battery)
             {

@@ -834,6 +834,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
         this.timeProvider = timeProvider ?? TimeProvider.System;
         resumeStateValidation = new ResumeStateValidationTracker(this.timeProvider);
+        driftTracker = CreateDriftTracker();
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
@@ -11090,7 +11091,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         unexpectedExitRecoveryDeferredForUserConfiguration = true;
         initialAutomaticComparisons.Clear();
-        driftTracker = new ConfirmedStateDriftTracker();
+        driftTracker = CreateDriftTracker();
         // An unexpected-exit classification reset is not hardware evidence.
         // Retain pending writes until a later full observation resolves them.
         ServiceStatusSnapshot current = GetStatus();
@@ -16686,12 +16687,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private ConfirmedStateDriftTracker CreateDriftTracker() => new(RetireCompletedTemporaryFullCharge);
+
+    private bool RetireCompletedTemporaryFullCharge()
+    {
+        if (automation is not { DesiredBattery.TemporaryFullCharge: true } current)
+        {
+            return false;
+        }
+
+        current.CancelTemporaryFullCharge();
+        return true;
+    }
+
     private void ObserveAutomaticState(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState? expected = null,
         DesiredDeviceState? alternateExpected = null)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
+        bool lightingExternalBeforeObservation =
+            driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
+        driftTracker.Observe(confirmed);
         DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
             expected ?? ResolveHardwareDesired(confirmed), confirmed);
         if (alternateExpected is not null)
@@ -16699,9 +16716,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             alternateExpected = ResolveExperimentalFanHardwareDesired(
                 alternateExpected, confirmed);
         }
-        bool lightingExternalBeforeObservation =
-            driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
-        driftTracker.Observe(confirmed);
 
         // Neither branch below re-examines Lighting once the initial comparison
         // has run (CompareInitialAutomaticValue/CompareTransitionAutomaticValue
@@ -16847,6 +16861,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceSubsystem subsystem,
         PendingWriteConfirmation pending)
     {
+        if (subsystem == DeviceSubsystem.Battery
+            && pending.BatteryIntentCommit is not { FullChargeOnly: true })
+        {
+            // Automatic planning never enables a one-shot that already ended,
+            // so the confirmation target must not require it either.
+            pending = pending with
+            {
+                Target = pending.Target with
+                {
+                    Battery = BatteryOperationPlanner.WithoutStaleFullCharge(
+                        pending.Target.Battery,
+                        pending.PreWriteState.Battery),
+                },
+            };
+        }
+
         pendingWriteConfirmations.Set(subsystem, pending);
         // The caller holds operationGate. Retain attribution even if a later
         // observation resolves this write before resume validation begins.

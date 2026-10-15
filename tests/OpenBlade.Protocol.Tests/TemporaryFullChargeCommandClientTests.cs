@@ -9,7 +9,7 @@ public sealed class TemporaryFullChargeCommandClientTests
     [Fact]
     public void TypedClientContract_ExposesOnlyClosedQueryAndSetter()
     {
-        Assert.Equal(["QueryAsync", "SetAsync"], typeof(ITemporaryFullChargeCommandClient)
+        Assert.Equal(["QueryAsync", "QueryReadingAsync", "SetAsync"], typeof(ITemporaryFullChargeCommandClient)
             .GetMethods().Select(method => method.Name).Order().ToArray());
         Assert.DoesNotContain(typeof(ITemporaryFullChargeCommandClient).GetMembers(), member =>
             member.Name.Contains("Apply", StringComparison.OrdinalIgnoreCase)
@@ -41,10 +41,13 @@ public sealed class TemporaryFullChargeCommandClientTests
 
     [Theory]
     [InlineData(new byte[] { }, "(empty)")]
-    [InlineData(new byte[] { 0x01 }, "01")]
-    [InlineData(new byte[] { 0x05 }, "05")]
+    [InlineData(new byte[] { 0x10 }, "10")]
+    [InlineData(new byte[] { 0x14 }, "14")]
+    [InlineData(new byte[] { 0x80 }, "80")]
+    [InlineData(new byte[] { 0xFF }, "FF")]
+    [InlineData(new byte[] { 0x08, 0x00 }, "08 00")]
     [InlineData(new byte[] { 0x00, 0x04 }, "00 04")]
-    public async Task QueryAsync_RejectsNonClosedPayload(byte[] payload, string expectedHex)
+    public async Task QueryAsync_RejectsUndefinedBitsAndLength(byte[] payload, string expectedHex)
     {
         var client = new TemporaryFullChargeCommandClient(
             new ScriptedSession(
@@ -57,6 +60,34 @@ public sealed class TemporaryFullChargeCommandClientTests
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator,
             result.Diagnostic?.ProtocolValidationFailure);
         Assert.Equal(expectedHex, result.Diagnostic?.RejectedPayloadHex);
+    }
+
+    [Theory]
+    [InlineData(0x08, false, 0x08)]
+    [InlineData(0x0C, true, 0x08)]
+    [InlineData(0x01, false, 0x01)]
+    [InlineData(0x02, false, 0x02)]
+    public async Task QueryAsync_DecodesPowerModeControlBitmask(
+        byte response,
+        bool expectedActive,
+        byte expectedOtherSettings)
+    {
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { response }, null),
+            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { response }, null));
+        var client = new TemporaryFullChargeCommandClient(session, ExchangeTimeout);
+
+        HidSessionResult<bool> accepted = await client.QueryAsync(1, default);
+        HidSessionResult<TemporaryFullChargeReading> reading =
+            await client.QueryReadingAsync(2, default);
+
+        Assert.Null(accepted.Failure);
+        Assert.Equal(expectedActive, accepted.Value);
+        Assert.Null(reading.Failure);
+        Assert.Equal(
+            new TemporaryFullChargeReading(expectedActive, expectedOtherSettings),
+            reading.Value);
+        Assert.True(session.Calls[0].Command.PayloadValidator!(new byte[] { response }));
     }
 
     [Theory]

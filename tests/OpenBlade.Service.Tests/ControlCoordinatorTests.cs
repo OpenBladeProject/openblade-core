@@ -1887,9 +1887,10 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
-    public async Task TemporaryFullCharge_IsBlockedWithoutBatterySetter()
+    public async Task AutomaticBatteryApply_NeverPlansTemporaryFullChargeEnable()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with { SupportsTemporaryFullCharge = true };
         var coordinator = new ControlCoordinator(device);
         var temporary = new DesiredBatteryState(
             BatteryPolicy.Create(80),
@@ -1900,8 +1901,7 @@ public sealed class ControlCoordinatorTests
             temporary,
             CancellationToken.None);
 
-        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
-        Assert.Equal(["Capabilities", "State"], device.Calls);
+        Assert.Equal(ControlResultStatus.Unchanged, outcome.Result.Status);
         Assert.Equal(0, device.BatterySetCalls);
     }
 
