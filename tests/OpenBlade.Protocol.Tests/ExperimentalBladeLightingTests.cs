@@ -312,8 +312,7 @@ public sealed class ExperimentalBladeLightingTests
         internal byte[] AckPayload { get; set; } = [];
         internal Action<RazerCommandSpec>? BeforeSubmission { get; set; }
         internal List<RazerCommandSpec> Commands { get; } = [];
-        internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)>
-            RetainedQueryFailures { get; } = [];
+        internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
         public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
         public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
             RetainedQueryFailures.Add((classId, commandId, outcome));

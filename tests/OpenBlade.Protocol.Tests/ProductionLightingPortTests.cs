@@ -3278,8 +3278,7 @@ public sealed class ProductionLightingPortTests
     {
         internal List<RazerCommandSpec> Commands { get; } = [];
 
-        internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)>
-            RetainedQueryFailures { get; } = [];
+        internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
 
         internal ConcurrentQueue<RazerCommandSpec> SubmittedCommands { get; } = [];
 
