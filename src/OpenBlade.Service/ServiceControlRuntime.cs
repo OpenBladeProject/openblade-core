@@ -5894,11 +5894,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(ControlOperationStatus.Blocked, entryRefusal);
             }
 
-            // The admitted RZ09-0581 pair enters mode 7 directly; the saved
+            // Each direct-capable backend uses its own admitted mode-7 pair.
+            // The selected pad path retains fresh per-command eligibility; saved
             // intent is journal provenance, not a firmware entry prerequisite.
             bool directHyperBoostEntry = enabled
                 && lifecycleValidation is null
-                && !journalRequiresCoolingPad
                 && current.Capabilities!.SupportsDirectManualFanTransitions;
             PerformancePreset? directEntryIntent = directHyperBoostEntry
                 && DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans)
