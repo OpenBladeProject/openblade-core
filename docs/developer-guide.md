@@ -225,9 +225,12 @@ bitmask:
 
 A read-only inspection of the installed Synapse 4 code found this reply decoder
 in Synapse's shared Blade device code (`rzDevice25`), not only in RZ09-0581
-code. Synapse changes one bit at a time with read-modify-write. Only its local
-dimming action writes `0x08`, and only on Blade series 10 to 12; on other series
-the same action toggles Windows HDR instead.
+code. Synapse changes one bit at a time with read-modify-write. In the inspected
+code, its local dimming action writes `0x08` on Blade series 10 to 12 and
+toggles Windows HDR on other series. Captured evidence covers less: the
+RZ09-0581 shows `00`, `04` and `08` in the field and in local tests, while the
+RZ09-0528 captures show only `00` and `04`. The other bit meanings come from
+Synapse's code, not captures.
 
 On the RZ09-0581, Synapse follows Windows HDR while it runs: turning HDR on sets
 `0x08`, turning it off clears it, and the bit stays set after Synapse exits.
@@ -243,8 +246,10 @@ runs:
   bit `0x04`. Undefined bits (`0x10` to `0x80`) and other lengths are rejected,
   and the rejected bytes stay in diagnostics.
 - Before every `07/0F` write, a fresh `07/8F` read in the same write session must
-  be `00` or `04`. Otherwise nothing is sent, and the result names the settings
-  that are on. OpenBlade has captured only the bare `00` and `04` writes.
+  be `00` or `04`. Otherwise nothing is sent. In the product, the result names
+  the settings that are on. The developer validation run reports the refusal
+  as `EnableFailed` or `CancelFailed`, although nothing was sent. OpenBlade has
+  captured only the bare `00` and `04` writes.
 - This does not add `07/8F` or `07/0F` to any model. The experimental backend
   does not use them.
 
