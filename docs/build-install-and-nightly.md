@@ -152,7 +152,11 @@ release steps.
   when the **Nightly** update channel is selected.
 
 Nightlies are test builds. Verify `OpenBlade-Setup.exe` against the included
-SHA-256 file before installation.
+SHA-256 file before installation. To test an experimental laptop, use a build
+containing [experimental Blade support](experimental-blade-support.md). Controls
+enable automatically for recognized profiles; the guide lists model-specific
+features, paused-write recovery, and before/after diagnostic reports. The Nightly
+update-channel preference controls update offers, not experimental admission.
 
 ### Attestations and signing status
 
