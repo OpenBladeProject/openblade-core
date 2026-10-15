@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.28.1-nightly.90] - 2026-10-15
+
 ### Added
 
 - Expand experimental Blade controls with model-specific Custom levels, fixed and Maximum Fans, keyboard and logo lighting, and 50–100% charge limits. Blade 16 (2023) gains whole-keyboard Static, Ambient Awareness, and Audio Meter; Blade 15 Base (2020) gains single-zone RGB. Diagnostics distinguish tested upstream features from extrapolations. ([#770](https://github.com/OpenBladeProject/openblade-core/pull/770))
@@ -2058,7 +2060,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.27.5-nightly.89...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.28.1-nightly.90...HEAD
+[0.28.1-nightly.90]: https://github.com/OSSBlade/openblade-core/compare/v0.27.5-nightly.89...v0.28.1-nightly.90
 [0.27.5-nightly.89]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...v0.27.5-nightly.89
 [0.26.2-nightly.87]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...v0.26.2-nightly.87
 [0.25.2-nightly.84]: https://github.com/OSSBlade/openblade-core/compare/v0.25.1-nightly.83...v0.25.2-nightly.84-attempt.2
