@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.27.5-nightly.89] - 2026-10-15
+
 ### Changed
 
 - Point Synapse Blade Blocker compatibility guidance to its repository instead of limiting it to Blade 16 (2025 and 2026), and clarify its use with experimental models. ([#768](https://github.com/OpenBladeProject/openblade-core/pull/768))
@@ -2049,7 +2051,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.27.5-nightly.89...HEAD
+[0.27.5-nightly.89]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...v0.27.5-nightly.89
 [0.26.2-nightly.87]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...v0.26.2-nightly.87
 [0.25.2-nightly.84]: https://github.com/OSSBlade/openblade-core/compare/v0.25.1-nightly.83...v0.25.2-nightly.84-attempt.2
 [0.25.1-nightly.83]: https://github.com/OSSBlade/openblade-core/compare/v0.25.0...v0.25.1-nightly.83
