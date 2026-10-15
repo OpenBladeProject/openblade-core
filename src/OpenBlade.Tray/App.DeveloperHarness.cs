@@ -1320,6 +1320,7 @@ public partial class App
             PerformancePresets = new HashSet<PerformancePreset>
                 { PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance, PerformancePreset.Custom },
             CustomPerformance = new(combinations) { SupportsMaximumFans = true },
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
         };
         var status = new ServiceStatusSnapshot(
             1, true, false, [], null, [], "Experimental Custom preview", capabilities,
@@ -1331,7 +1332,7 @@ public partial class App
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, false, false))
             { CustomPerformance = custom },
-            PowerSource.ExternalUnknown, null, null, null, null, false)
+            PowerSource.PluggedIn, null, null, null, null, false)
         {
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
@@ -1341,6 +1342,26 @@ public partial class App
             "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Status presentation hook was not found.");
         applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (!window.ViewModel.IsCustomMaximumFansVisible)
+        {
+            throw new InvalidOperationException("The experimental Maximum Fans preview is unavailable.");
+        }
+        System.Reflection.FieldInfo changingCards = typeof(MainWindow).GetField(
+            "changingDashboardCards", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Dashboard preference guard was not found.");
+        changingCards.SetValue(window, true);
+        try
+        {
+            window.DashboardCards.Add(new DashboardCardOption(
+                DashboardCardKind.PowerMode, "Power mode", string.Empty, true));
+        }
+        finally
+        {
+            changingCards.SetValue(window, false);
+        }
+        typeof(MainWindow).GetMethod(
+            "RefreshDashboardCards", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(window, null);
     }
 
     private static void ApplyExperimentalBatterySnapshotState(MainWindow window, bool off, bool paused = false)

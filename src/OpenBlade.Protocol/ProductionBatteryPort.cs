@@ -2124,7 +2124,11 @@ internal sealed class ProductionBatteryPort :
                 CustomPerformanceDomain.Gpu,
                 cancellationToken).ConfigureAwait(false);
         var custom = new CustomPerformanceSettings(cpu, gpu);
-        if (Capabilities.CustomPerformance?.Supports(custom) != true)
+        // Captured getters are independently admitted even when this port has
+        // no Custom setters, or its writable combination list is narrower.
+        // Keep the validated read vocabulary (Low..High, excluding High/High)
+        // separate from experimental Boost and per-model write admission.
+        if (cpu == CustomPerformanceLevel.High && gpu == CustomPerformanceLevel.High)
         {
             poisoned = true;
             throw new RazerProtocolException(

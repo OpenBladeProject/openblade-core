@@ -8,6 +8,22 @@ namespace OpenBlade.SessionAgent.Tests;
 
 public sealed class ServiceAudioMeterLightingLoopTests
 {
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(0.5, 1, 128)]
+    [InlineData(0.5, 2, 255)]
+    public void UniformAudioSample_UsesScalarPeakWithoutKeyboardGeometry(
+        float peak,
+        double colorBoost,
+        byte expectedIntensity)
+    {
+        UniformLightingFrame frame = WindowsAudioMeterLightingSampler.RenderUniformFrame(
+            peak,
+            colorBoost);
+
+        Assert.Equal(new RgbColor(0, expectedIntensity, 0), frame.Color);
+    }
+
     [Fact]
     public void SamplerConstruction_EndpointFailureReleasesEnumerator()
     {
@@ -429,12 +445,14 @@ public sealed class ServiceAudioMeterLightingLoopTests
     }
 
     [Fact]
-    public async Task UniformCapability_SendsAveragedTypedAudioColor()
+    public async Task UniformCapability_SendsTypedAudioColorWithoutSpatialFrame()
     {
         var client = new WatchClient();
         await using var loop = new ServiceAudioMeterLightingLoop(
             client,
-            new SequenceSamplerFactory(() => new ConstantSampler(Frame(7))),
+            new SequenceSamplerFactory(() => new ConstantSampler(
+                Frame(99),
+                new UniformLightingFrame(new RgbColor(7, 0, 0)))),
             statusWatcher: client);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         Task running = loop.RunAsync(cancellation.Token);
@@ -653,7 +671,9 @@ public sealed class ServiceAudioMeterLightingLoopTests
         public void Release(object value) => Released.Add(value);
     }
 
-    private sealed class ConstantSampler(AmbientLightingFrame frame)
+    private sealed class ConstantSampler(
+        AmbientLightingFrame frame,
+        UniformLightingFrame? uniformFrame = null)
         : IAudioMeterLightingSampler
     {
         private int captureCount;
@@ -670,6 +690,14 @@ public sealed class ServiceAudioMeterLightingLoopTests
             return frame;
         }
 
+        public UniformLightingFrame CaptureUniform(double colorBoost)
+        {
+            ObjectDisposedException.ThrowIf(Disposed, this);
+            Interlocked.Increment(ref captureCount);
+            return uniformFrame
+                ?? throw new InvalidOperationException("No uniform sample was configured.");
+        }
+
         public void Dispose() => Volatile.Write(ref disposed, 1);
     }
 
@@ -680,6 +708,8 @@ public sealed class ServiceAudioMeterLightingLoopTests
         internal bool Disposed => Volatile.Read(ref disposed) != 0;
 
         public AmbientLightingFrame Capture(double colorBoost) => throw failure;
+
+        public UniformLightingFrame CaptureUniform(double colorBoost) => throw failure;
 
         public void Dispose() => Volatile.Write(ref disposed, 1);
     }

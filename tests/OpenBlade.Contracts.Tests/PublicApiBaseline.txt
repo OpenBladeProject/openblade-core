@@ -2719,7 +2719,6 @@ type sealed class OpenBlade.Contracts.UniformLightingFrame
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
-  method static OpenBlade.Contracts.UniformLightingFrame FromSpatialFrame(OpenBlade.Contracts.AmbientLightingFrame frame)
   method static System.Boolean op_Equality(OpenBlade.Contracts.UniformLightingFrame left, OpenBlade.Contracts.UniformLightingFrame right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.UniformLightingFrame left, OpenBlade.Contracts.UniformLightingFrame right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.UniformLightingFrame other)

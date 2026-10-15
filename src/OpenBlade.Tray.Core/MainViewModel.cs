@@ -2447,6 +2447,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         get => selectedCustomMaximumFans;
         private set
         {
+            if (selectedCustomMaximumFans == value)
+            {
+                return;
+            }
             SetField(ref selectedCustomMaximumFans, value);
             Notify(nameof(CurrentCustomPerformanceSettings));
             Notify(nameof(CanEditCustomMaximumFans));
@@ -4143,10 +4147,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         set => lightingEditor.SecondaryColor = value;
     }
 
-    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes =>
-        KnownBreathingColorModes
-            .Where(Capabilities.SupportsBreathingMode)
-            .ToArray();
+    private IReadOnlyList<BreathingColorMode> availableBreathingColorModes = KnownBreathingColorModes;
+
+    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes => availableBreathingColorModes;
 
     private void ApplyLightingParameterDefaults()
     {
@@ -5511,6 +5514,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void ApplyCapabilityOptions(DeviceCapabilities capabilities)
     {
+        BreathingColorMode[] breathingModes = KnownBreathingColorModes
+            .Where(capabilities.SupportsBreathingMode).ToArray();
+        if (!availableBreathingColorModes.SequenceEqual(breathingModes))
+        {
+            availableBreathingColorModes = breathingModes;
+            Notify(nameof(LightingBreathingColorModes));
+        }
         PerformancePreset[] performancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()

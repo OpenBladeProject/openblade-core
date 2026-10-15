@@ -20465,7 +20465,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task PadlessHyperBoost_CustomIntentAllowsUnboundedCapturedCombinations()
+    public async Task PadlessHyperBoost_CustomIntentAllowsExplicitLegacyCapturedCombinations()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(
@@ -20476,7 +20476,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ConfigurePadlessHyperBoost(context);
         context.Device.Capabilities = context.Device.Capabilities with
         {
-            CustomPerformance = null,
+            CustomPerformance = DeviceCapabilities.SafeTargetDefaults().CustomPerformance,
         };
         await context.Runtime.ObserveAsync(CancellationToken.None);
         var customOverride = new PerformanceOverride(
@@ -20524,7 +20524,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ConfigurePadlessHyperBoost(context);
         context.Device.Capabilities = context.Device.Capabilities with
         {
-            CustomPerformance = null,
+            CustomPerformance = DeviceCapabilities.SafeTargetDefaults().CustomPerformance,
         };
         await context.Runtime.ObserveAsync(CancellationToken.None);
         var customOverride = new PerformanceOverride(

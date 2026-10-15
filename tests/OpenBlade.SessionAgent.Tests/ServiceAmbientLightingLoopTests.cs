@@ -170,12 +170,14 @@ public sealed class ServiceAmbientLightingLoopTests
     }
 
     [Fact]
-    public async Task UniformCapability_SendsAveragedTypedColorInsteadOfSpatialFrame()
+    public async Task UniformCapability_SendsTypedColorWithoutSpatialFrame()
     {
         var client = new WatchClient();
         await using var loop = new ServiceAmbientLightingLoop(
             client,
-            new SequenceSamplerFactory(() => new ConstantSampler(Frame(7))),
+            new SequenceSamplerFactory(() => new ConstantSampler(
+                Frame(99),
+                new UniformLightingFrame(new RgbColor(7, 0, 0)))),
             statusWatcher: client);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         Task running = loop.RunAsync(cancellation.Token);
@@ -317,7 +319,9 @@ public sealed class ServiceAmbientLightingLoopTests
         }
     }
 
-    private sealed class ConstantSampler(AmbientLightingFrame frame)
+    private sealed class ConstantSampler(
+        AmbientLightingFrame frame,
+        UniformLightingFrame? uniformFrame = null)
         : IAmbientScreenSampler
     {
         private int captureCount;
@@ -334,6 +338,14 @@ public sealed class ServiceAmbientLightingLoopTests
             return frame;
         }
 
+        public UniformLightingFrame CaptureUniform(AmbientAwarenessRegion region)
+        {
+            ObjectDisposedException.ThrowIf(Disposed, this);
+            Interlocked.Increment(ref captureCount);
+            return uniformFrame
+                ?? throw new InvalidOperationException("No uniform sample was configured.");
+        }
+
         public void Dispose() => Volatile.Write(ref disposed, 1);
     }
 
@@ -344,6 +356,9 @@ public sealed class ServiceAmbientLightingLoopTests
         internal bool Disposed => Volatile.Read(ref disposed) != 0;
 
         public AmbientLightingFrame Capture(AmbientAwarenessRegion region) => throw failure;
+
+        public UniformLightingFrame CaptureUniform(AmbientAwarenessRegion region) =>
+            throw failure;
 
         public void Dispose() => Volatile.Write(ref disposed, 1);
     }

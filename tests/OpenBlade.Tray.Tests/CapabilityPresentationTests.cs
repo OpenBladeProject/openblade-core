@@ -444,7 +444,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(27, animated.Length);
+        Assert.Equal(28, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -562,7 +562,7 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "Padding") == compactPaddingReference)
             .ToArray();
 
-        Assert.Equal(15, compactRows.Length);
+        Assert.Equal(16, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));

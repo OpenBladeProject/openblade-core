@@ -138,8 +138,8 @@ The uniform frame is one color across the keyboard. It does not admit a key
 layout, per-key or spatial effects, or the `02E0` shared ambient-frame API.
 Blade 18 stays Static-only for this frame path. Blade 16 uses a separate
 typed uniform-frame path for Ambient Awareness and Audio Meter. The Session
-Agent reduces a sampled frame to one RGB color and sends it through the service;
-this still has no RGB readback.
+Agent samples a 1×1 screen color or audio-peak intensity and sends one color
+through the service. Neither path uses a physical key mask or RGB readback.
 
 ## Recovery
 
