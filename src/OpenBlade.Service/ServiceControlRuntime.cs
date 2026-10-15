@@ -10904,8 +10904,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings fullPowerProfileFanControl =
             Automation.Profiles.PluggedIn.FanControl
             ?? FanControlSettings.FromLegacy(Automation.Profiles.PluggedIn.Fans);
-        // A manual curve is intentionally inactive on USB-C. Keep the bounded
-        // recovery attempt available until a compatible source is confirmed.
+        // Prior-process curve recovery retains its existing ownership gate on
+        // USB-C. Normal explicit curve selection is admitted separately; a
+        // generic inherited manual readback cannot establish exact ownership.
         if (powerSource == PowerSource.UsbC
             && (retainedFanControl is { Mode: FanMode.ManualCurve }
                 || fullPowerProfileFanControl.Mode == FanMode.ManualCurve))
@@ -12948,6 +12949,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
+        if (value is not null && !FanControlPowerPolicy.IsAvailable(Automation.PowerSource, value.Value,
+                GetStatus().Capabilities?.SupportsManualFansOnLimitedPower == true))
+        {
+            throw new InvalidDataException("The selected fan mode is unavailable on this model and power source.");
+        }
         ValidateThermalOverrideCombination(Automation.PerformanceOverride, value);
         PersistentOverrideState staged = persistentOverrides with
         {
@@ -19058,6 +19064,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings currentSettings = current.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
         return settings.Mode == FanMode.ManualCurve
+            && FanControlPowerPolicy.IsAvailable(current.ActivePowerSource, settings.Mode,
+                current.Capabilities?.SupportsManualFansOnLimitedPower == true)
             && currentSettings == settings
             && current.ConfirmedState?.HyperBoostActive == false
             && current.ConfirmedState?.Fans is { } confirmedFans

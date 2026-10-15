@@ -5,6 +5,70 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed partial class MainViewModelTests
 {
+    [Fact]
+    public async Task FanControlEditor_LimitedPowerCapabilityChangeRefreshesChoices()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
+        {
+            ActivePowerSource = PowerSource.UsbC,
+        };
+        await PushAsync(client, dispatcher, status);
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+
+        await PushAsync(client, dispatcher, status with
+        {
+            Revision = status.Revision + 1,
+            Capabilities = status.Capabilities! with { SupportsManualFansOnLimitedPower = false },
+        });
+
+        Assert.Equal(FanMode.Automatic, Assert.Single(viewModel.AvailableActiveFanModeOptions).Value);
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+    }
+
+    [Theory]
+    [InlineData(PowerSource.Battery, FanMode.Fixed)]
+    [InlineData(PowerSource.UsbC, FanMode.Fixed)]
+    [InlineData(PowerSource.UsbC, FanMode.ManualCurve)]
+    public async Task FanControlEditor_PortablePowerAppliesAndSavesExactIntent(PowerSource source, FanMode mode)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        PerformancePreset performance = source == PowerSource.Battery
+            ? PerformancePreset.BatterySaver : PerformancePreset.Balanced;
+        await PushAsync(client, dispatcher, status with
+        {
+            ActivePowerSource = source,
+            ConfirmedState = status.ConfirmedState! with { Performance = performance },
+            DesiredState = status.DesiredState with
+            {
+                Performance = new(performance, SettingValueSource.PowerProfile),
+            },
+        });
+        var requested = new FanControlSettings(mode, 3800, ManualFanCurve.Default);
+
+        Assert.True(viewModel.SetFanControlCommand.CanExecute(requested));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanControlCommand).ExecuteAsync(requested);
+        Assert.Equal(requested, client.LastFanControlSettings);
+        Assert.Equal(mode, viewModel.SelectedFanMode);
+        Assert.True(viewModel.SaveProfilesCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand).ExecuteAsync(null);
+
+        PowerProfile saved = source == PowerSource.Battery
+            ? client.LastProfiles!.Battery : client.LastProfiles!.UsbC;
+        Assert.Equal(performance, saved.Performance);
+        Assert.Equal(mode, saved.Fans);
+        Assert.Equal(requested, saved.FanControl);
+    }
+
     [Theory]
     [InlineData(FanMode.Automatic, true)]
     [InlineData(FanMode.ManualCurve, true)]

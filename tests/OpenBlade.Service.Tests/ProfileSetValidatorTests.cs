@@ -78,8 +78,12 @@ public sealed class ProfileSetValidatorTests
     [InlineData(PerformancePreset.Performance, FanMode.ManualCurve)]
     [InlineData(PerformancePreset.Custom, FanMode.Maximum)]
     [InlineData(PerformancePreset.BatterySaver, FanMode.Automatic)]
+    [InlineData(PerformancePreset.BatterySaver, FanMode.Maximum)]
+    [InlineData(PerformancePreset.BatterySaver, FanMode.Fixed)]
     [InlineData(PerformancePreset.BatteryBalanced, FanMode.Automatic)]
-    public void DefaultPolicy_AllowsIndependentAcIntentAndBatteryAutomatic(
+    [InlineData(PerformancePreset.BatteryBalanced, FanMode.Maximum)]
+    [InlineData(PerformancePreset.BatteryBalanced, FanMode.Fixed)]
+    public void DefaultPolicy_AllowsSupportedFanIntent(
         PerformancePreset performance,
         FanMode fans)
     {
@@ -87,16 +91,14 @@ public sealed class ProfileSetValidatorTests
             .ValidatePerformanceFanCombination(performance, fans);
     }
 
-    [Theory]
-    [InlineData(PerformancePreset.BatterySaver, FanMode.Maximum)]
-    [InlineData(PerformancePreset.BatteryBalanced, FanMode.Fixed)]
-    public void DefaultPolicy_RejectsManualBatteryFanPairs(
-        PerformancePreset performance,
-        FanMode fans)
+    [Fact]
+    public void DefaultPolicy_RejectsBatteryManualCurve()
     {
         Assert.Throws<InvalidDataException>(() =>
             ProfileSetValidator.CreateUnverifiedSafeDefaults()
-                .ValidatePerformanceFanCombination(performance, fans));
+                .ValidatePerformanceFanCombination(
+                    PerformancePreset.BatteryBalanced,
+                    FanMode.ManualCurve));
     }
 
     [Theory]
@@ -133,7 +135,7 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Fact]
-    public void SourceAwareCombinationValidation_UsbCAllowsBalancedAutomaticOnly()
+    public void SourceAwareCombinationValidation_UsbCAllowsSupportedFanModes()
     {
         ProfileSetValidator validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
 
@@ -141,11 +143,18 @@ public sealed class ProfileSetValidatorTests
             PerformancePreset.Balanced,
             FanMode.Automatic,
             PowerSource.UsbC);
-        Assert.Throws<InvalidDataException>(() =>
-            validator.ValidatePerformanceFanCombination(
-                PerformancePreset.Balanced,
-                FanMode.Maximum,
-                PowerSource.UsbC));
+        validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Balanced,
+            FanMode.Fixed,
+            PowerSource.UsbC);
+        validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Balanced,
+            FanMode.ManualCurve,
+            PowerSource.UsbC);
+        validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Balanced,
+            FanMode.Maximum,
+            PowerSource.UsbC);
         Assert.Throws<InvalidDataException>(() =>
             validator.ValidatePerformanceFanCombination(
                 PerformancePreset.Silent,

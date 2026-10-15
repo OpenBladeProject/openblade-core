@@ -53,7 +53,7 @@ internal static class ProfileAdmissionPolicy
         && Enum.IsDefined(draft.Fans)
         && (capabilities.FanModes.Contains(draft.Fans)
             || draft.Fans == current.Fans)
-        && (FanModeAvailable(powerSource, draft.Fans)
+        && (FanModeAvailable(powerSource, draft.Fans, capabilities)
             || (powerSource != PowerSource.UsbC
                 && draft.Fans == current.Fans))
         && (draft.Performance != PerformancePreset.Custom
@@ -75,20 +75,14 @@ internal static class ProfileAdmissionPolicy
         DeviceCapabilities capabilities) =>
         fans == FanMode.Automatic
         || ((capabilities.SupportsDirectManualFanTransitions
-                || performance == PerformancePreset.Balanced)
+                || performance is PerformancePreset.Balanced
+                    or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)
             && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum);
 
-    internal static bool FanModeAvailable(PowerSource powerSource, FanMode fans) =>
-        powerSource switch
-        {
-            PowerSource.PluggedIn => fans is FanMode.Automatic
-                or FanMode.Fixed
-                or FanMode.ManualCurve
-                or FanMode.Maximum,
-            PowerSource.Battery or PowerSource.UsbC => fans == FanMode.Automatic,
-            PowerSource.ExternalUnknown => false,
-            _ => false,
-        };
+    internal static bool FanModeAvailable(PowerSource powerSource, FanMode fans,
+        DeviceCapabilities capabilities) =>
+        FanControlPowerPolicy.IsAvailable(powerSource, fans,
+            capabilities.SupportsManualFansOnLimitedPower);
 
     internal static bool LightingSupported(
         LightingSettings lighting,

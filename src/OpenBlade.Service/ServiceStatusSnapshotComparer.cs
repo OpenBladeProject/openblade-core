@@ -109,6 +109,7 @@ internal static class ServiceStatusSnapshotComparer
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
             && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
+            && left.SupportsManualFansOnLimitedPower == right.SupportsManualFansOnLimitedPower
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
             && left.SupportedLightingRefreshRates.SetEquals(

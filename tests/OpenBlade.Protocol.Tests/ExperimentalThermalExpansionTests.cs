@@ -21,6 +21,7 @@ public sealed class ExperimentalThermalExpansionTests
         Assert.Equal(maximum, caps.CustomPerformance.SupportsMaximumFans);
         Assert.Equal(fixedFans, caps.FanModes.Contains(FanMode.Fixed));
         Assert.Equal(fixedFans, caps.ReportsPerformanceWithManualFans);
+        Assert.False(caps.SupportsManualFansOnLimitedPower);
         Assert.DoesNotContain(FanMode.ManualCurve, caps.FanModes);
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).PerformancePresets.Any());
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).ReportsPerformanceWithManualFans);
@@ -165,6 +166,88 @@ public sealed class ExperimentalThermalExpansionTests
         await port.SetFanModeAsync(FanMode.Automatic, CancellationToken.None);
         Assert.Equal(4, session.Mode);
         Assert.Equal(0, session.Fan);
+    }
+
+    [Theory]
+    [InlineData(0x029F, PowerSource.Battery, 0x00, 0x11)]
+    [InlineData(0x029D, PowerSource.Battery, 0x00, 0x11)]
+    public async Task FixedFans_AdmitSourceMatchedBatteryWithoutChangingPreset(
+        int pid,
+        PowerSource source,
+        byte adapterActual,
+        byte adapterRecommended)
+    {
+        int minimum = pid == 0x029F ? 2000 : 2200;
+        var session = new Session
+        {
+            Mode = 0,
+            AdapterPowerPayload = [adapterActual, adapterRecommended],
+        };
+        await using var port = Create(pid, session, power: () => source);
+
+        await port.SetFanTargetsAsync(minimum, 5000, CancellationToken.None);
+
+        Assert.Equal(0, session.Mode);
+        Assert.Equal(1, session.Fan);
+        Assert.Equal(minimum / 100, session.FirstTarget);
+        Assert.Equal(50, session.SecondTarget);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    public async Task FixedFans_RejectUsbCBeforeWriteWithoutExactManualFlagEvidence(int pid)
+    {
+        var session = new Session { AdapterPowerPayload = [0x07, 0x11] };
+        await using var port = Create(pid, session, power: () => PowerSource.UsbC);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanTargetsAsync(pid == 0x029F ? 2000 : 2200, 5000, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Empty(session.Writes);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    public async Task AutomaticFans_AdmitUsbCHandback(int pid)
+    {
+        var session = new Session
+        {
+            Fan = 1,
+            AdapterPowerPayload = [0x07, 0x11],
+        };
+        await using var port = Create(pid, session, power: () => PowerSource.UsbC);
+
+        await port.SetFanModeAsync(FanMode.Automatic, CancellationToken.None);
+
+        Assert.Equal(0, session.Fan);
+        Assert.All(session.Writes.Where(command => command.CommandId == 0x02),
+            command => Assert.Equal(0, command.Arguments.Span[3]));
+    }
+
+    [Fact]
+    public async Task FixedFans_KnownSourceChangeAtNativeSubmissionStopsWithoutWrite()
+    {
+        PowerSource source = PowerSource.Battery;
+        var session = new Session { AdapterPowerPayload = [0x00, 0x11] };
+        session.BeforeSubmission = command =>
+        {
+            if (command.CommandId == 0x02)
+            {
+                source = PowerSource.UsbC;
+            }
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
+        await using var port = Create(0x029F, session, policy, () => source);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanTargetsAsync(2000, 5000, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Empty(session.Writes);
+        Assert.True(policy.WritesAllowed);
     }
 
     [Fact]
@@ -386,6 +469,7 @@ public sealed class ExperimentalThermalExpansionTests
         internal byte SecondTarget { get; set; } = 25;
         internal byte PowerModeControlFlags { get; set; }
         internal byte[]? PowerModePayloadOverride { get; init; }
+        internal byte[] AdapterPowerPayload { get; init; } = [0x11, 0x11];
         internal bool MaximumFans
         {
             get => (PowerModeControlFlags & 2) != 0;
@@ -419,7 +503,7 @@ public sealed class ExperimentalThermalExpansionTests
             byte[] payload = command.Arguments.ToArray();
             switch ((command.ClassId, command.CommandId))
             {
-                case (0x07, 0x8C): payload = [0x11, 0x11]; break;
+                case (0x07, 0x8C): payload = AdapterPowerPayload; break;
                 case (0x0D, 0x82): payload = [0, payload[1], Mode, Fan]; break;
                 case (0x0D, 0x87): payload = [0, payload[1], payload[1] == 1 ? Cpu : Gpu]; break;
                 case (0x0D, 0x81): payload = [0, payload[1], payload[1] == 1 ? FirstTarget : SecondTarget]; break;

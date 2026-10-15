@@ -452,6 +452,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         result["lighting.playbackMuteIndicator"] = capabilities.SupportsPlaybackMuteIndicator;
         result["performance.customCombinations"] =
             capabilities.CustomPerformance?.IsWellFormed == true;
+        result["fans.manualOnLimitedPower"] = capabilities.SupportsManualFansOnLimitedPower;
         result["performance.customMaximumFans"] =
             capabilities.CustomPerformance?.SupportsMaximumFans == true;
         result["performance.cpuPowerLimit.observed"] =

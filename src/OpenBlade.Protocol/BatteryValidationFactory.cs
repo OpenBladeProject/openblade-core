@@ -646,7 +646,10 @@ public static class BatteryValidationFactory
             hyperBoostCatalog: hyperBoostCatalog,
             hyperBoostEligibility: new WindowsHyperBoostEligibilitySource(native),
             allowPadlessHyperBoostLifecycleValidation: allowPadlessLifecycleValidation,
-            padlessHyperBoostLifecycleBaseMode: PerformancePreset.Performance);
+            padlessHyperBoostLifecycleBaseMode: PerformancePreset.Performance,
+            // The shared Synapse path preserves the selected mode byte while
+            // switching the separate fan flag and then writing both targets.
+            supportsDirectManualFanTransitions: true);
     }
 
     internal static ProductionBatteryReadEvidence

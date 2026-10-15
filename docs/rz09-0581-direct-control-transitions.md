@@ -4,17 +4,20 @@ The service applies admitted destinations without a separate Balanced or
 Automatic preparation step on RZ09-0581. The production factory advertises
 `SupportsDirectManualFanTransitions` only for the trusted embedded fixture,
 exact live identity, and complete captured manual state/target command set.
-Other backends retain their existing thermal transition path. An omitted
-capability defaults to false. The strict service codec requires IPC version 64
-for the new field and a coordinated component update. The protocol-51 read-only
+RZ09-0528 now also advertises direct manual fan transitions from its separately
+reviewed Synapse mode/flag behavior; see the
+[fan power-source evidence](fan-power-source-policy.md). Other backends retain
+their existing thermal transition path. An omitted
+capability defaults to false. The strict service codec now requires IPC version
+66 for the limited-power manual fan capability and a coordinated component update. The protocol-51 read-only
 projection omits the field; Session Agent IPC versions remain unchanged.
 
 ## Command paths
 
 - Automatic to Fixed, Maximum, or Manual Curve uses the existing paired manual
   entry and target commands. An already-manual state needs only target updates.
-  A known battery selector retained after reconnecting AC needs fresh admitted
-  full-power adapter readback before each command; it needs no preset reset.
+  A known battery selector uses fresh source evidence to select the battery
+  or external-power path; it needs no preset reset.
 - Changing manual fan subtype preserves manual state and submits the requested
   targets. It does not cycle through Automatic and Balanced.
 - Manual to Automatic applies the selected AC performance pair directly. Custom
@@ -42,7 +45,8 @@ ownership, cancellation, and readback admission. An ambiguous submitted write
 stops the transition and keeps its pending confirmation or recovery journal;
 no default-state fallback or uncertain command replay is attempted.
 
-Battery/USB-C fan availability and the other model's thermal sequencing are unchanged.
+The [fan power-source policy](fan-power-source-policy.md) extends the existing
+typed fan paths to fixed speed on battery and fixed speed or curves on USB-C.
 Owned manual fans still hand back to firmware Automatic at shutdown. This change
 does not remove keyboard Normal-mode handoff or lifecycle ownership cleanup.
 

@@ -2306,6 +2306,49 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(FanMode.Fixed, device.State.Fans);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public async Task ApplyDesiredState_BatteryFixedPreservesBatteryPerformanceIntent(
+        PerformancePreset batteryPreset)
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        device.State = device.State with
+        {
+            Performance = batteryPreset,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                device.State = device.State with { Performance = null };
+            }
+        };
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            batteryPreset,
+            FanMode.Fixed);
+
+        FullTransitionApplyOutcome outcome = await coordinator
+            .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Unchanged, outcome.Results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal([FanMode.Fixed], device.FanControlWrites);
+        Assert.DoesNotContain(DeviceSubsystem.Performance, outcome.ReadbackMatched);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.ReadbackMatched);
+        Assert.Null(device.State.Performance);
+        Assert.Equal(FanMode.Fixed, device.State.Fans);
+    }
+
     [Fact]
     public async Task ApplyDesiredState_FailedDirectManualEntryDoesNotMatchLatentPerformance()
     {
@@ -2496,7 +2539,7 @@ public sealed class ControlCoordinatorTests
     [Theory]
     [InlineData(PerformancePreset.BatterySaver)]
     [InlineData(PerformancePreset.BatteryBalanced)]
-    public async Task ApplyDesiredState_DirectCapabilityBatteryBoundaryKeepsFansFirstRecipe(
+    public async Task ApplyDesiredState_DirectCapabilityBatteryBoundaryUsesRequestedAutomaticPair(
         PerformancePreset batteryPreset)
     {
         RecordingBladeDevice device = CreateMatchingDevice();
@@ -2510,6 +2553,13 @@ public sealed class ControlCoordinatorTests
             Fans = FanMode.Maximum,
             HyperBoostActive = false,
         };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                device.State = device.State with { Fans = FanMode.Automatic };
+            }
+        };
         var coordinator = new ControlCoordinator(device);
         DesiredDeviceState desired = CreateThermalDesired(
             device.State,
@@ -2519,12 +2569,10 @@ public sealed class ControlCoordinatorTests
         FullTransitionApplyOutcome outcome = await coordinator
             .ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
 
-        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.True(outcome.Results.Performance.Status == ControlResultStatus.Applied, outcome.Results.Performance.Message);
         Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
-        Assert.Equal([FanMode.Automatic], device.FanControlWrites);
+        Assert.Empty(device.FanControlWrites);
         Assert.Equal([batteryPreset], device.PerformanceWrites);
-        Assert.True(
-            device.Calls.IndexOf("SetFans") < device.Calls.IndexOf("SetPerformance"));
         Assert.Equal(batteryPreset, device.State.Performance);
         Assert.Equal(FanMode.Automatic, device.State.Fans);
     }

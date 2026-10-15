@@ -1900,6 +1900,50 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
     }
 
+    [Theory]
+    [InlineData(PowerSource.Battery, FanMode.Fixed)]
+    [InlineData(PowerSource.UsbC, FanMode.Fixed)]
+    [InlineData(PowerSource.UsbC, FanMode.ManualCurve)]
+    public async Task PortableFanOverride_AppliesWithoutDefaultBridgeAndMaintainsUsbCCurve(
+        PowerSource source, FanMode mode)
+    {
+        var temperatures = new FixedFanTemperatureSource(new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(providerAvailable: true, initialPowerSource: source,
+            fanTemperatureSource: temperatures);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsDirectManualFanTransitions = true,
+        };
+        context.Device.AdapterPowerState = source == PowerSource.UsbC
+            ? AdapterPowerState.UsbCPower100W : AdapterPowerState.Battery;
+        context.Device.FanTargetsAvailable = true;
+        PerformancePreset performance = source == PowerSource.Battery
+            ? PerformancePreset.BatterySaver : PerformancePreset.Balanced;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int performanceWrites = context.Device.PerformanceSetCalls;
+        var settings = new FanControlSettings(mode, 3700, ManualFanCurve.Default);
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(mode, OverrideLifetime.Persistent), settings, CancellationToken.None);
+
+        Assert.True(result.Status == ControlOperationStatus.Applied, result.Message);
+        Assert.Equal(performanceWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(settings, context.Runtime.GetStatus().DesiredState.FanControl);
+        Assert.Equal(mode, context.Runtime.GetStatus().FanOverride!.Value);
+        if (mode == FanMode.ManualCurve)
+        {
+            await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+            Assert.NotEmpty(context.Device.FanTargets);
+            Assert.True(temperatures.ReadCount > 0);
+        }
+    }
+
     [Fact]
     public async Task MaintainFanCurve_FirstObservedGenericManualStateDoesNotOwnTargets()
     {
@@ -7661,9 +7705,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             Assert.Equal(
                 PowerSource.UsbC,
                 context.Runtime.GetStatus().ActivePowerSource);
-            Assert.NotEqual(
+            // Saved intent remains visible while the existing recovery gate
+            // keeps inherited curve control deferred on this source.
+            Assert.Equal(
                 FanMode.ManualCurve,
                 context.Runtime.GetStatus().DesiredState.Fans.Value);
+            Assert.Equal(FanMode.Automatic, context.Runtime.GetStatus().ConfirmedState!.Fans);
             context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
             await context.Runtime.RefreshPowerSourceClassificationAsync(
                 CancellationToken.None);
@@ -17430,7 +17477,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task UsbC_RejectsMaximumFanOverrideWithoutWriting()
+    public async Task UsbC_AppliesLegacyMaximumAsFixedFanOverride()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -17450,9 +17497,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 OverrideLifetime.Persistent),
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
-        Assert.Null(context.Runtime.GetStatus().FanOverride);
-        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().FanOverride!.Value);
+        Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().ConfirmedState!.Fans);
+        Assert.Equal(1, context.Device.FanSetCalls);
     }
 
     [Fact]

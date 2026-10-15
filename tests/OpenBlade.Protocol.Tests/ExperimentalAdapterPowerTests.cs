@@ -117,7 +117,10 @@ public sealed class ExperimentalAdapterPowerTests
     public async Task LimitedPower_AutomaticHandbackPreservesModeBeforeBalanced(int pid, byte mode)
     {
         var session = new Session { Adapter = [0x0C, 0x11], Mode = mode, Fan = 1 };
-        await using var port = Create(session, Model(pid));
+        await using var port = Create(
+            session,
+            Model(pid),
+            power: () => PowerSource.UsbC);
         await port.SetFanModeAsync(FanMode.Automatic, default);
         await port.SetPerformanceAsync(PerformancePreset.Balanced, default);
         Assert.Equal(0, session.Mode);
@@ -221,9 +224,10 @@ public sealed class ExperimentalAdapterPowerTests
         ExperimentalBladeModels.All.Single(item => item.ProductId == pid);
 
     private static ExperimentalBladePort Create(Session session, ExperimentalBladeModel? model = null,
-        ExperimentalFeaturesPolicy? policy = null) =>
+        ExperimentalFeaturesPolicy? policy = null,
+        Func<PowerSource>? power = null) =>
         new(session, new(), model ?? Model(0x029D), policy ?? new(model ?? Model(0x029D)),
-            () => true, () => PowerSource.ExternalUnknown);
+            () => true, power ?? (() => PowerSource.ExternalUnknown));
 
     private sealed class Session : IRazerCommandSession
     {

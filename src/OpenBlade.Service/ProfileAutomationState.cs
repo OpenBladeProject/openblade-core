@@ -428,16 +428,7 @@ public sealed class ProfileAutomationState
     };
 
     private static bool IsFanCompatibleWithSource(FanMode fans, PowerSource source) =>
-        source switch
-        {
-            PowerSource.PluggedIn => fans is FanMode.Automatic
-                or FanMode.Fixed
-                or FanMode.ManualCurve
-                or FanMode.Maximum,
-            PowerSource.Battery => Enum.IsDefined(fans),
-            PowerSource.UsbC => fans is FanMode.Automatic,
-            _ => false,
-        };
+        FanControlPowerPolicy.IsAvailable(source, fans);
 
     private static void SetOverride<T>(
         ManualOverride<T>? value,

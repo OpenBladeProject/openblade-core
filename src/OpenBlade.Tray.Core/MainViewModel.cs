@@ -266,6 +266,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private IReadOnlyList<FanMode> availableUsbCFanModes = [];
     private IReadOnlyList<FanModeOption> availableFanModeOptions = [];
     private IReadOnlyList<FanModeOption> availableUsbCFanModeOptions = [];
+    private IReadOnlyList<FanModeOption> availableBatteryFanModeOptions = [];
     private IReadOnlyList<LightingEffect> availableLightingEffects = [];
     private IReadOnlyList<LightingEffectOption> availableLightingEffectOptions =
         KnownLightingEffectOptions;
@@ -2266,7 +2267,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public IReadOnlyList<FanMode> AvailableActiveFanModes =>
         ActivePowerSource switch
         {
-            PowerSource.PluggedIn or PowerSource.Battery => AvailableFanModes,
+            PowerSource.PluggedIn => AvailableFanModes,
+            PowerSource.Battery => AvailableFanModes
+                .Where(mode => FanControlPowerPolicy.IsAvailable(PowerSource.Battery, mode)).ToArray(),
             PowerSource.UsbC => AvailableUsbCFanModes,
             PowerSource.ExternalUnknown => [],
             _ => [],
@@ -2276,7 +2279,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ActivePowerSource switch
         {
             PowerSource.PluggedIn => availableFanModeOptions,
-            PowerSource.Battery or PowerSource.UsbC => availableUsbCFanModeOptions,
+            PowerSource.Battery => availableBatteryFanModeOptions,
+            PowerSource.UsbC => availableUsbCFanModeOptions,
             PowerSource.ExternalUnknown => [],
             _ => [],
         };
@@ -2738,11 +2742,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
                 : SelectedPerformance == PerformancePreset.Custom && SelectedCustomMaximumFans
                     ? TrayText.Get("Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode.")
-                    : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
-                        ? TrayText.Get("Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
-                        : !CanChangeFanMode
-                            ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
-                            : string.Empty;
+                    : !CanChangeFanMode
+                        ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
+                        : string.Empty;
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl
@@ -4837,10 +4839,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return false;
         }
 
-        return ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value)
-            && (value == FanMode.Automatic || SelectedPerformance != PerformancePreset.Custom || !SelectedCustomMaximumFans)
-            && (value == FanMode.Automatic
-                || ActivePowerSource == PowerSource.PluggedIn);
+        return ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value, CommandCapabilities)
+            && (value == FanMode.Automatic || SelectedPerformance != PerformancePreset.Custom || !SelectedCustomMaximumFans);
     }
 
     private bool CanSetFanControl(object? parameter) =>
@@ -5592,21 +5592,28 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .Where(Enum.IsDefined)
             .Order()
             .ToArray();
-        if (!AvailableFanModes.SequenceEqual(fanModes))
+        if (!AvailableFanModes.SequenceEqual(fanModes)
+            || !AvailableUsbCFanModes.SequenceEqual(fanModes.Where(mode =>
+                FanControlPowerPolicy.IsAvailable(PowerSource.UsbC, mode,
+                    capabilities.SupportsManualFansOnLimitedPower))))
         {
             AvailableFanModes = fanModes;
-            AvailableUsbCFanModes = fanModes.Contains(FanMode.Automatic)
-                ? [FanMode.Automatic]
-                : [];
+            AvailableUsbCFanModes = fanModes
+                .Where(mode => FanControlPowerPolicy.IsAvailable(PowerSource.UsbC, mode,
+                    capabilities.SupportsManualFansOnLimitedPower)).ToArray();
             var admittedFanModes = fanModes.ToHashSet();
             availableFanModeOptions = StableOptionCollection.ReuseEquivalent(
                 availableFanModeOptions,
                 FanModePresentation.CreateOptions(admittedFanModes));
             availableUsbCFanModeOptions = StableOptionCollection.ReuseEquivalent(
                 availableUsbCFanModeOptions,
-                FanModePresentation.CreateOptions(
-                    admittedFanModes,
-                    automaticOnly: true));
+                FanModePresentation.CreateOptions(admittedFanModes
+                    .Where(mode => FanControlPowerPolicy.IsAvailable(PowerSource.UsbC, mode,
+                        capabilities.SupportsManualFansOnLimitedPower)).ToHashSet()));
+            availableBatteryFanModeOptions = StableOptionCollection.ReuseEquivalent(
+                availableBatteryFanModeOptions,
+                FanModePresentation.CreateOptions(admittedFanModes
+                    .Where(mode => FanControlPowerPolicy.IsAvailable(PowerSource.Battery, mode)).ToHashSet()));
             Notify(nameof(PluggedInFanModeEditor));
             Notify(nameof(BatteryFanModeEditor));
             Notify(nameof(UsbCFanModeEditor));

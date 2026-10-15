@@ -3443,27 +3443,23 @@ public sealed partial class MainViewModelTests
     [Theory]
     [InlineData(PowerSource.Battery)]
     [InlineData(PowerSource.UsbC)]
-    public async Task FanModeSelector_IsDisabledWhenPortablePowerPresentsOnlyAutomatic(
-        PowerSource powerSource)
+    public async Task FanModeSelector_ShowsPortablePowerChoices(PowerSource powerSource)
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
-        client.Publish(baseline with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, baseline with
         {
             ActivePowerSource = powerSource,
         });
-        await WaitUntilAsync(() =>
-            viewModel.CanEditFanControl
-            && viewModel.ActivePowerSource == powerSource
-            && viewModel.AvailableActiveFanModeOptions.Count == 1);
 
-        Assert.True(viewModel.AvailableFanModes.Count > 1);
-        Assert.Equal(
-            FanMode.Automatic,
-            Assert.Single(viewModel.AvailableActiveFanModeOptions).Value);
-        Assert.False(viewModel.CanChangeFanMode);
+        Assert.True(viewModel.CanChangeFanMode);
+        Assert.Equal(powerSource == PowerSource.Battery
+                ? new[] { FanMode.Automatic, FanMode.Fixed }
+                : new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve },
+            viewModel.AvailableActiveFanModeOptions.Select(option => option.Value));
     }
 
     [Fact]
@@ -3503,9 +3499,9 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
         Assert.Equal(
-            [FanMode.Automatic],
+            [FanMode.Automatic, FanMode.Fixed],
             viewModel.AvailableActiveFanModeOptions.Select(option => option.Value));
-        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Save to battery profile", viewModel.SaveToActiveProfileLabel);
 
         client.Publish(pluggedIn with
@@ -3518,11 +3514,11 @@ public sealed partial class MainViewModelTests
         Assert.Equal(
             [PerformancePreset.Balanced],
             viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
-        Assert.Equal([FanMode.Automatic], viewModel.AvailableActiveFanModes);
+        Assert.Equal(viewModel.AvailableUsbCFanModes, viewModel.AvailableActiveFanModes);
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
-        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Low-power profile", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to low-power profile", viewModel.SaveToActiveProfileLabel);
 
@@ -10835,13 +10831,15 @@ public sealed partial class MainViewModelTests
                 ActivePowerSource = source,
                 Message = source.ToString(),
             });
-            Assert.False(viewModel.CanChangeFanMode);
-            Assert.True(viewModel.HasFanControlUnavailableMessage);
-            Assert.Contains("Only Automatic", viewModel.FanControlUnavailableMessage);
-            Assert.Contains("AC charger", viewModel.FanControlUnavailableMessage);
-            Assert.Contains("manual fan control", viewModel.FanControlUnavailableMessage);
-            Assert.DoesNotContain("Balanced", viewModel.FanControlUnavailableMessage);
-            Assert.Contains("RPM", viewModel.FanControlUnavailableMessage);
+            Assert.True(viewModel.CanChangeFanMode);
+            Assert.False(viewModel.HasFanControlUnavailableMessage);
+            Assert.Contains(viewModel.AvailableActiveFanModeOptions,
+                option => option.Value == FanMode.Fixed);
+            Assert.Equal(source == PowerSource.UsbC,
+                viewModel.AvailableActiveFanModeOptions.Any(option => option.Value == FanMode.ManualCurve));
+            Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+            Assert.Equal(source == PowerSource.UsbC,
+                viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
             Assert.False(viewModel.HasHardwareControlUnavailableMessage);
         }
 

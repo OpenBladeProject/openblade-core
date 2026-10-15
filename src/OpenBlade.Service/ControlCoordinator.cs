@@ -1372,7 +1372,7 @@ public sealed class ControlCoordinator
             && DeviceSubsystemOrder.IsManualFanMode(initial.Fans)
             && desired.Fans.Value == FanMode.Automatic
             && initial.HyperBoostActive == false
-            && IsAutomaticAcPerformancePreset(desired.Performance.Value)
+            && IsAutomaticPerformancePreset(desired.Performance.Value)
             && automaticWriteExclusions?.Contains(DeviceSubsystem.Performance) != true
             && automaticWriteExclusions?.Contains(DeviceSubsystem.Fans) != true
             && (continuationScope is null
@@ -2655,8 +2655,10 @@ public sealed class ControlCoordinator
         FanMode fans,
         bool supportsDirectManualFanTransitions) =>
         (supportsDirectManualFanTransitions
-            && IsAutomaticAcPerformancePreset(performance)
-            && DeviceSubsystemOrder.IsManualFanMode(fans))
+            && IsAutomaticPerformancePreset(performance)
+            && DeviceSubsystemOrder.IsManualFanMode(fans)
+            && (performance is not (PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)
+                || fans is FanMode.Fixed or FanMode.Maximum))
         || (performance, fans) is
         (PerformancePreset.Silent, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Automatic)
@@ -2687,17 +2689,19 @@ public sealed class ControlCoordinator
 
         return DeviceSubsystemOrder.IsManualFanMode(state.Fans)
             && state.HyperBoostActive == false
-            && IsAutomaticAcPerformancePreset(requested)
+            && IsAutomaticPerformancePreset(requested)
                 ? null
                 : "Performance changes require confirmed Automatic fans, or an admitted direct transition from confirmed manual fans.";
     }
 
-    private static bool IsAutomaticAcPerformancePreset(
+    private static bool IsAutomaticPerformancePreset(
         PerformancePreset performance) => performance is
         PerformancePreset.Silent
         or PerformancePreset.Balanced
         or PerformancePreset.Performance
-        or PerformancePreset.Custom;
+        or PerformancePreset.Custom
+        or PerformancePreset.BatterySaver
+        or PerformancePreset.BatteryBalanced;
 
     private static bool IsConfirmedManualFanWriteBaseline(
         ConfirmedDeviceState state) => state.Fans switch
@@ -2713,10 +2717,7 @@ public sealed class ControlCoordinator
         && (DeviceSubsystemOrder.IsManualFanMode(state.Fans)
             || state.Fans == FanMode.Automatic
                 && state.Performance is { } performance
-                && (IsAutomaticAcPerformancePreset(performance)
-                    || performance is
-                        PerformancePreset.BatterySaver or
-                        PerformancePreset.BatteryBalanced));
+                && IsAutomaticPerformancePreset(performance));
 
     private static bool FanModeMatches(FanMode? confirmed, FanMode desired) =>
         desired == FanMode.Automatic
