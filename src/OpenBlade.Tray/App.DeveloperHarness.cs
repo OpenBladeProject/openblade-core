@@ -1582,7 +1582,7 @@ public partial class App
 
             var save = new XamlButton
             {
-                Content = "Save these current settings to an extraordinarily long USB-C power profile with additional localized wording",
+                Content = "Save these current settings to an extraordinarily long low-power profile with additional localized wording",
                 Style = saveStyle,
                 Visibility = Visibility.Visible,
                 Width = 300,

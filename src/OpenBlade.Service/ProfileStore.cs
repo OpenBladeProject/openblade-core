@@ -414,7 +414,7 @@ public sealed class ProfileStore
         {
             ("plugged-in", profiles.PluggedIn),
             ("battery", profiles.Battery),
-            ("USB-C", profiles.UsbC),
+            ("low-power", profiles.UsbC),
         })
         {
             if (profile.WindowsPowerMode is { } mode && !Enum.IsDefined(mode))

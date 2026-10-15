@@ -18,6 +18,8 @@ type enum OpenBlade.Contracts.AdapterPowerState
   field const OpenBlade.Contracts.AdapterPowerState ExperimentalExternal = 10
   field const OpenBlade.Contracts.AdapterPowerState FullPower280W = 2
   field const OpenBlade.Contracts.AdapterPowerState FullPower330W = 3
+  field const OpenBlade.Contracts.AdapterPowerState LimitedExternal = 12
+  field const OpenBlade.Contracts.AdapterPowerState SufficientExternal = 11
   field const OpenBlade.Contracts.AdapterPowerState Unknown = 0
   field const OpenBlade.Contracts.AdapterPowerState UsbCPower100W = 1
   field const OpenBlade.Contracts.AdapterPowerState UsbCPower45W = 4

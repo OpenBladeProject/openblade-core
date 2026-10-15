@@ -2570,7 +2570,7 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock x:Uid="MainWindow_TextBlockUSBC" Text="USB-C" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock x:Uid="MainWindow_TextBlockUSBC" Text="Low-power profile" Style="{StaticResource CardTitleStyle}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
                                             <TextBlock x:Uid="MainWindow_TextBlockActive2" Text="Active"
@@ -3538,7 +3538,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock x:Uid="MainWindow_TextBlockPowerProfileChanges" Text="Power profile changes" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock x:Uid="MainWindow_TextBlockActiveACUSBCOrBatteryProfile" Text="Active AC, USB-C, or Battery profile."
+                                            <TextBlock x:Uid="MainWindow_TextBlockActiveACUSBCOrBatteryProfile" Text="Active AC, low-power, or battery profile."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges" Grid.Column="1"

@@ -15434,7 +15434,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && Automation.PowerSource is PowerSource.PluggedIn or PowerSource.UsbC)
         {
             // Windows reports only "external power" here. Reuse the last
-            // verified barrel-versus-USB-C classification for high-frequency
+            // verified sufficient-versus-limited classification for high-frequency
             // telemetry; lifecycle notifications and the 15-second classifier
             // continue to refresh it independently.
             return Automation.PowerSource;
@@ -15538,6 +15538,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 AdapterPowerState.FullPower280W => PowerSource.PluggedIn,
                 AdapterPowerState.FullPower330W => PowerSource.PluggedIn,
+                AdapterPowerState.SufficientExternal => PowerSource.PluggedIn,
+                AdapterPowerState.LimitedExternal => PowerSource.UsbC,
                 AdapterPowerState.UsbCPower45W => PowerSource.UsbC,
                 AdapterPowerState.UsbCPower60W => PowerSource.UsbC,
                 AdapterPowerState.UsbCPower65W => PowerSource.UsbC,

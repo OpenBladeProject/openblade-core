@@ -2729,7 +2729,7 @@ public sealed class WinUiShellContractTests
         }
 
         Assert.Equal(
-            "OpenBlade已切换到USB-C配置方案。",
+            "OpenBlade已切换到低功率配置方案。",
             string.Format(body, values["MainWindow_Notification_ProfileUsbC"]));
     }
 

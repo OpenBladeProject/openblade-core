@@ -384,8 +384,8 @@
   <data name="Color profile changed outside OpenBlade." xml:space="preserve">
     <value>Color profile changed outside OpenBlade.</value>
   </data>
-  <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
-    <value>Compare the settings stored in AC, USB-C, and Battery profiles.</value>
+  <data name="Compare the settings stored in AC, low-power, and battery profiles." xml:space="preserve">
+    <value>Compare the settings stored in AC, low-power, and battery profiles.</value>
   </data>
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>Configure live readings, sign-in, and lighting ownership.</value>
@@ -1041,8 +1041,8 @@
   <data name="Save to profile" xml:space="preserve">
     <value>Save to profile</value>
   </data>
-  <data name="Save to USB-C profile" xml:space="preserve">
-    <value>Save to USB-C profile</value>
+  <data name="Save to low-power profile" xml:space="preserve">
+    <value>Save to low-power profile</value>
   </data>
   <data name="Saved profile comparison" xml:space="preserve">
     <value>Saved profile comparison</value>
@@ -1224,11 +1224,14 @@
   <data name="Updates have not been checked." xml:space="preserve">
     <value>Updates have not been checked.</value>
   </data>
-  <data name="USB-C · {0}" xml:space="preserve">
-    <value>USB-C · {0}</value>
+  <data name="Low-power adapter · {0}" xml:space="preserve">
+    <value>Low-power adapter · {0}</value>
   </data>
-  <data name="USB-C profile" xml:space="preserve">
-    <value>USB-C profile</value>
+  <data name="Low-power adapter" xml:space="preserve">
+    <value>Low-power adapter</value>
+  </data>
+  <data name="Low-power profile" xml:space="preserve">
+    <value>Low-power profile</value>
   </data>
   <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
     <value>Use a shortcut such as Ctrl+Shift+M.</value>
@@ -1404,8 +1407,8 @@
   <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
     <value>Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.</value>
   </data>
-  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
-    <value>Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.</value>
+  <data name="Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
+    <value>Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.</value>
   </data>
   <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
     <value>OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation.</value>

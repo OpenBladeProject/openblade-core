@@ -56,13 +56,16 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(count, session.Commands.Count);
     }
 
-    [Fact]
-    public async Task PadRequiredPerformance_AdmitsOnlyPerformanceRestoreAndRechecksEveryEnableChannel()
+    [Theory]
+    [InlineData(0x11, 0x11)]
+    [InlineData(0x0C, 0x0C)]
+    public async Task PadRequiredPerformance_AdmitsOnlyPerformanceRestoreAndRechecksEveryEnableChannel(
+        byte actual, byte recommended)
     {
         var session = new ScriptedSession(
             Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
-            Success([0x11, 0x11]), Success([1, 1, 7, 0]),
-            Success([0x11, 0x11]), Success([1, 2, 7, 0]),
+            Success([actual, recommended]), Success([1, 1, 7, 0]),
+            Success([actual, recommended]), Success([1, 2, 7, 0]),
             Success([1, 1, 7, 0]), Success([1, 2, 7, 0]),
             Success([1, 1, 7, 0]), Success([1, 2, 7, 0]),
             Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
@@ -78,6 +81,24 @@ public sealed class ProductionBatteryPortTests
         int count = session.Commands.Count;
         await Assert.ThrowsAnyAsync<Exception>(() => port.SetHyperBoostAsync(true, PerformancePreset.Balanced, default));
         Assert.Equal(count, session.Commands.Count);
+    }
+
+    [Theory]
+    [InlineData(0x0C, 0x11)]
+    [InlineData(0x11, 0x12)]
+    [InlineData(0x0C, 0x10)]
+    public async Task PadRequiredPerformance_RejectsInsufficientOrUnknownWattageBeforeWrites(
+        byte actual, byte recommended)
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
+            Success([actual, recommended]));
+        await using ProductionBatteryPort port = CreatePadRequiredPerformancePort(session,
+            new FixedHyperBoostEligibilitySource(CoolingPadConnectionState.PresentExact));
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Performance, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x02);
     }
 
     private static ProductionBatteryPort CreatePadRequiredPerformancePort(
@@ -220,6 +241,8 @@ public sealed class ProductionBatteryPortTests
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
     [InlineData("1211", AdapterPowerState.FullPower330W)]
+    [InlineData("0C0C", AdapterPowerState.SufficientExternal)]
+    [InlineData("0C11", AdapterPowerState.LimitedExternal)]
     [InlineData("FFFF", AdapterPowerState.Unknown)]
     public async Task AdapterPowerQuery_IsSerializedAndReadOnly(
         string responseHex,
@@ -979,28 +1002,28 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
-    [InlineData(0x03)]
-    [InlineData(0x06)]
+    [InlineData(0x03, 0x12, 0x11)]
+    [InlineData(0x06, 0x12, 0x11)]
+    [InlineData(0x03, 0x0C, 0x0C)]
     public async Task DirectManualFanSetter_BatteryAutomaticRechecksFullPowerBeforeEveryWrite(
-        byte thermalMode)
+        byte thermalMode, byte actual, byte recommended)
     {
         var session = new ScriptedSession(
             Success([0x01, 0x01, thermalMode, 0x00]),
             Success([0x01, 0x02, thermalMode, 0x00]),
-            Success([0x12, 0x11]),
+            Success([actual, recommended]),
             Success([0x01, 0x01, 0x00, 0x01]),
-            Success([0x12, 0x11]),
+            Success([actual, recommended]),
             Success([0x01, 0x02, 0x00, 0x01]),
-            Success([0x12, 0x11]),
+            Success([actual, recommended]),
             Success([0x01, 0x01, 0x28]),
-            Success([0x12, 0x11]),
+            Success([actual, recommended]),
             Success([0x01, 0x02, 0x28]));
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()),
             AcceptedAdapterPowerReadEvidence(),
-            admittedAdapterPowerStates:
-                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
             supportsDirectManualFanTransitions: true);
 
         await port.SetFanControlAsync(

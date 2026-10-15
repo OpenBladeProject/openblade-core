@@ -145,7 +145,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Comparison:
         [
             new(PowerSource.PluggedIn, "AC"),
-            new(PowerSource.UsbC, "USB-C"),
+            new(PowerSource.UsbC, TrayText.Get("Low-power profile")),
             new(PowerSource.Battery, TrayText.Get("On battery")),
         ],
         ThermalControlPolicies:
@@ -1071,7 +1071,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PowerSource.PluggedIn => TrayText.Get("Save to AC profile"),
         PowerSource.Battery => TrayText.Get("Save to battery profile"),
-        PowerSource.UsbC => TrayText.Get("Save to USB-C profile"),
+        PowerSource.UsbC => TrayText.Get("Save to low-power profile"),
         _ => TrayText.Get("Save to profile"),
     };
 
@@ -2689,7 +2689,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : HyperBoostActive
                 ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
                 : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
-                    ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
+                    ? TrayText.Get("Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
                     : !CanChangeFanMode
                         ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
                         : string.Empty;
@@ -3961,7 +3961,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PowerSource.PluggedIn => "AC",
         PowerSource.Battery => TrayText.Get("On battery"),
-        PowerSource.UsbC => "USB-C",
+        PowerSource.UsbC => TrayText.Get("Low-power profile"),
         _ => TrayText.Get("Current profile"),
     };
 

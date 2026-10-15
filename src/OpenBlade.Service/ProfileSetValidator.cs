@@ -124,7 +124,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ArgumentNullException.ThrowIfNull(profiles);
         ValidateProfile(profiles.PluggedIn, "plugged-in", PowerSource.PluggedIn);
         ValidateProfile(profiles.Battery, "battery", PowerSource.Battery);
-        ValidateProfile(profiles.UsbC, "USB-C", PowerSource.UsbC);
+        ValidateProfile(profiles.UsbC, "low-power", PowerSource.UsbC);
         ValidateBatteryPolicy(profiles.BatteryPolicy);
         ValidateLightingPowerPolicy(profiles.PluggedIn.LightingPowerPolicy);
         ValidateLightingPowerPolicy(profiles.Battery.LightingPowerPolicy);
@@ -192,7 +192,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidatePerformanceSource(performance, source);
         if (source == PowerSource.UsbC && fans != FanMode.Automatic)
         {
-            throw Invalid("USB-C power supports automatic fans only.");
+            throw Invalid("Low-power adapters support automatic fans only.");
         }
 
         ValidatePerformanceFanCombination(performance, fans);

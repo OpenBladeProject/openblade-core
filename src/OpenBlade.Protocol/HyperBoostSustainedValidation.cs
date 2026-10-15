@@ -143,5 +143,6 @@ internal static class HyperBoostValidationPower
 {
     internal static bool IsAdmittedFullPower(AdapterPowerState state) =>
         state is AdapterPowerState.FullPower280W
-            or AdapterPowerState.FullPower330W;
+            or AdapterPowerState.FullPower330W
+            or AdapterPowerState.SufficientExternal;
 }

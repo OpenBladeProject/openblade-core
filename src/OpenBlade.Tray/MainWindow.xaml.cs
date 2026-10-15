@@ -4928,7 +4928,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 Title = LocalizedResources.Get("MainWindow_ProfileImport_ConfirmTitle", "Import profiles?"),
                 Content = LocalizedResources.Get(
                     "MainWindow_ProfileImport_ConfirmBody",
-                    "This replaces the saved AC, USB-C, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles."),
+                    "This replaces the saved AC, low-power, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles."),
                 PrimaryButtonText = LocalizedResources.Get("Common_Import", "Import"),
                 CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
                 DefaultButton = ContentDialogButton.Primary,
