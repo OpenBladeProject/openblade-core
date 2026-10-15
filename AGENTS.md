@@ -87,6 +87,26 @@ operation may have submitted a write, or confirmation is ambiguous, stop and
 reconcile read-only; do not try an alternative sequence or replay the uncertain
 write. Existing authorization and attended sleep/resume requirements still apply.
 
+## Shared fixes and model scope
+
+For every fix, check whether its cause and benefits apply to shared code or
+other models before choosing its scope. Trace the relevant production paths
+across supported and experimental backends. Apply common correctness,
+synchronization, cancellation, resource-lifetime, diagnostics, and recovery
+improvements at the shared layer when the same contract applies. A report or
+reproduction on one model is not a reason to restrict a generally useful fix
+to that model.
+
+Use a model-specific gate only for a concrete device, firmware, command, or
+backend difference; state that reason near the gate and in its focused test.
+Check whether an existing gate leaves another path with the same defect, and
+remove unnecessary model restrictions together with the fix. Preserve exact
+device admission and model-specific command evidence: shared software hardening
+does not authorize new firmware commands or capabilities. Verify materially
+different paths proportionately, reuse unchanged shared-path evidence, and
+report which models benefit, which already have equivalent handling, and any
+remaining uncertainty.
+
 ## Product boundary
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
