@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Open Synapse Observer from **Help add support** and explain how to collect and submit evidence for an unsupported laptop. The support form accepts Observer ZIPs and OpenBlade identity reports. ([#765](https://github.com/OpenBladeProject/openblade-core/pull/765))
 - Simplify experimental-support wording in the README and guides, keeping model features and testing instructions in the linked guide. ([#764](https://github.com/OpenBladeProject/openblade-core/pull/764))
 - Document all five experimental Blade models, automatic controls, model-specific limits, recovery, and tester reports across the README and guides, with laptop lists ordered newest first. ([#759](https://github.com/OpenBladeProject/openblade-core/pull/759))
 

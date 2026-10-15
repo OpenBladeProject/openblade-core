@@ -1449,16 +1449,16 @@
   <data name="Identity report not saved." xml:space="preserve">
     <value>Identity report not saved.</value>
   </data>
-  <data name="Identity report saved to {0}. Attach it to the support form in your browser." xml:space="preserve">
-    <value>Identity report saved to {0}. Attach it to the support form in your browser.</value>
+  <data name="Identity report saved to {0}. Follow the Synapse Observer guide in your browser to collect and submit evidence." xml:space="preserve">
+    <value>Identity report saved to {0}. Follow the Synapse Observer guide in your browser to collect and submit evidence.</value>
   </data>
-  <data name="Identity report saved to {0}. Open {1} and attach it to request support." xml:space="preserve">
-    <value>Identity report saved to {0}. Open {1} and attach it to request support.</value>
+  <data name="Identity report saved to {0}. Open {1} for steps to collect and submit evidence." xml:space="preserve">
+    <value>Identity report saved to {0}. Open {1} for steps to collect and submit evidence.</value>
   </data>
   <data name="Identity report failed: {0}" xml:space="preserve">
     <value>Identity report failed: {0}</value>
   </data>
-  <data name="OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens." xml:space="preserve">
-    <value>OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens.</value>
+  <data name="Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop." xml:space="preserve">
+    <value>Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop.</value>
   </data>
 </root>
