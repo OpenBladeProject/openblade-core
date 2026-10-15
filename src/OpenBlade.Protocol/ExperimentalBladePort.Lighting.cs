@@ -57,7 +57,20 @@ internal sealed partial class ExperimentalBladePort
     }
 
     internal static IReadOnlySet<LightingEffect> CreateObservedExperimentalLightingEffects(
-        ExperimentalBladeModel model) => CreateExperimentalLightingEffects(model, enabled: true);
+        ExperimentalBladeModel model)
+    {
+        var effects = new HashSet<LightingEffect>(CreateExperimentalLightingEffects(model, enabled: true));
+        if (model.ProductId == 0x02A0)
+        {
+            // Product 672's pinned quick-effect catalog is discovery evidence,
+            // not admission for spatial frames or unimplemented firmware commands.
+            effects.UnionWith([
+                LightingEffect.AmbientAwareness, LightingEffect.AudioMeter,
+                LightingEffect.Fire, LightingEffect.Reactive, LightingEffect.Ripple,
+                LightingEffect.Starlight, LightingEffect.Wheel, LightingEffect.Tidal]);
+        }
+        return effects;
+    }
 
     internal static IReadOnlySet<LogoLightingMode> CreateExperimentalLogoModes(
         ExperimentalBladeModel model,

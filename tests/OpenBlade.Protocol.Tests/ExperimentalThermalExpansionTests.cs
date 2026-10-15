@@ -16,7 +16,7 @@ public sealed class ExperimentalThermalExpansionTests
         DeviceCapabilities caps = ExperimentalBladePort.CreateCapabilities(Model(pid), true);
         Assert.True(caps.CustomPerformance!.IsWellFormed);
         Assert.Contains(PerformancePreset.Custom, caps.PerformancePresets);
-        Assert.Equal(boost, caps.CustomPerformance!.Supports(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)));
+        Assert.Equal(boost || pid == 0x02A0, caps.CustomPerformance!.Supports(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)));
         Assert.Equal(boost, caps.CustomPerformance.Supports(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High)));
         Assert.Equal(maximum, caps.CustomPerformance.SupportsMaximumFans);
         Assert.Equal(fixedFans, caps.FanModes.Contains(FanMode.Fixed));
@@ -47,7 +47,6 @@ public sealed class ExperimentalThermalExpansionTests
     [InlineData(0x029D)]
     [InlineData(0x02C5)]
     [InlineData(0x0255)]
-    [InlineData(0x02A0)]
     public async Task OtherModels_RejectBoostAndHighHighBeforeTraffic(int pid)
     {
         var session = new Session();

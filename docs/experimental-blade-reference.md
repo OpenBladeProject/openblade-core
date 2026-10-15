@@ -74,7 +74,9 @@ Select Automatic before enabling it; a Fixed baseline is rejected before any
 setter is submitted.
 
 All five profiles admit Custom CPU/GPU levels Low, Medium, and High. The Blade
-16 (2023) also admits CPU Boost and the High/High combination. Other profiles
+16 (2023) also admits CPU Boost and the High/High combination. Blade 18 (2023)
+additionally admits the observed CPU Boost/GPU High pair; other Boost pairs and
+High/High remain unavailable on that model. See the [Observer evidence review](blade18-observer-evidence.md). Other profiles
 exclude High/High. Unrecognized raw levels remain diagnostic observations and
 cannot become a guessed baseline.
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -13,7 +14,9 @@ public sealed class ExperimentalBladeCustomTests
     {
         CustomPerformanceCapabilities capabilities = ExperimentalBladePort.CreateCustomCapabilities();
         Assert.True(capabilities.IsWellFormed);
-        Assert.Equal(8, capabilities.AllowedCombinations.Count);
+        Assert.Equal(9, capabilities.AllowedCombinations.Count);
+        Assert.Contains(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High), capabilities.AllowedCombinations);
+        Assert.DoesNotContain(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.Medium), capabilities.AllowedCombinations);
         Assert.DoesNotContain(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), capabilities.AllowedCombinations);
     }
 
@@ -64,7 +67,7 @@ public sealed class ExperimentalBladeCustomTests
     }
 
     [Theory]
-    [InlineData(3, 2)]
+    [InlineData(3, 1)]
     [InlineData(4, 2)]
     [InlineData(255, 1)]
     [InlineData(2, 2)]
@@ -82,7 +85,7 @@ public sealed class ExperimentalBladeCustomTests
     }
 
     [Theory]
-    [InlineData(3, 2)]
+    [InlineData(3, 1)]
     [InlineData(4, 2)]
     [InlineData(2, 2)]
     public async Task UnrepresentableCustomReadback_RejectsThermalStateAndRetainsRawDiagnostic(byte cpu, byte gpu)
@@ -281,6 +284,59 @@ public sealed class ExperimentalBladeCustomTests
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetCustomPerformanceAsync(Requested, cancellation.Token));
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.Single(session.Commands, command => command.CommandId == 0x07);
+        Assert.False(policy.WritesAllowed);
+    }
+
+    [Fact]
+    public void ObserverRequests_MatchTheProductionReportEncoderWithoutInventingReplies()
+    {
+        using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blade18ObserverRequests.json")));
+        Assert.False(fixture.RootElement.GetProperty("claimsPhysicalValidation").GetBoolean());
+        Assert.Equal("02A0", fixture.RootElement.GetProperty("productId").GetString());
+        JsonElement requests = fixture.RootElement.GetProperty("retainedRequests");
+        Assert.Equal(12, requests.GetArrayLength());
+        foreach (JsonElement request in requests.EnumerateArray())
+        {
+            byte[] report = Convert.FromHexString(request.GetProperty("reportHex").GetString()!);
+            Assert.Equal(91, report.Length);
+            Assert.Equal(0, report[0]);
+            byte[] encoded = RazerReport.Create(report[2], report[7], report[8],
+                report.AsSpan(9, report[6])).Encode();
+            Assert.Equal(report[1..], encoded);
+        }
+    }
+
+    [Fact]
+    public async Task ObserverBoostHigh_ReadsChangesAndRestoresWithoutResettingThePreset()
+    {
+        var session = new Session { Mode = 4, Cpu = 3, Gpu = 2 };
+        var policy = Enabled();
+        await using var port = Create(session, policy);
+        var baseline = new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High);
+        Assert.Equal(baseline, (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).CustomPerformance);
+        await port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low), CancellationToken.None);
+        int beforeRestore = session.Commands.Count;
+        await port.SetCustomPerformanceAsync(baseline, CancellationToken.None);
+        Assert.Equal(baseline, (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).CustomPerformance);
+        Assert.Equal(new[] { "010202", "010103" }, session.Commands.Skip(beforeRestore)
+            .Where(command => command.CommandId == 0x07)
+            .Select(command => Convert.ToHexString(command.Arguments.Span)));
+        Assert.DoesNotContain(session.Commands, command => command.ClassId == 0x0D && command.CommandId == 0x02);
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Fact]
+    public async Task BoostReadbackMismatch_PausesBeforeTheNextWriteWithoutReplay()
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 0, IgnoreLevelWrites = true };
+        var policy = Enabled();
+        await using var port = Create(session, policy);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetCustomPerformanceAsync(
+            new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High), CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        RazerCommandSpec setter = Assert.Single(session.Commands, command => command.CommandId == 0x07);
+        Assert.Equal("010202", Convert.ToHexString(setter.Arguments.Span));
         Assert.False(policy.WritesAllowed);
     }
 

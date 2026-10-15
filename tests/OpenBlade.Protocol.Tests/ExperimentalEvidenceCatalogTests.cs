@@ -21,6 +21,11 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal(model.AdapterPowerEvidenceSource, Assert.Single(feature.Sources));
                     Assert.StartsWith("https://apps.razer.com/synapse/products/", model.AdapterPowerEvidenceSource);
                 }
+                else if (feature.Basis.StartsWith("SynapseSource", StringComparison.Ordinal))
+                {
+                    Assert.Equal("RZ09-0484", model.ModelNumber);
+                    Assert.Contains(ExperimentalBladeModels.Blade18SynapseSource, feature.Sources);
+                }
                 else
                 {
                     Assert.All(feature.Sources, source => Assert.StartsWith("https://github.com/", source));

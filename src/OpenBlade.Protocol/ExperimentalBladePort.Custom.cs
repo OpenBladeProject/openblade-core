@@ -12,7 +12,9 @@ internal sealed partial class ExperimentalBladePort
          from gpu in Enum.GetValues<CustomPerformanceLevel>()
          let combination = new CustomPerformanceCombination(cpu, gpu)
          where SupportsExperimentalCustom(model) && combination.IsWellFormed
-             && (model.ProductId == 0x029F || cpu != CustomPerformanceLevel.Boost
+             && (model.ProductId == 0x029F
+                 || model.ProductId == 0x02A0 && (cpu, gpu) is (CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)
+                 || cpu != CustomPerformanceLevel.Boost
                  && (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High))
          select combination).ToHashSet())
     {
@@ -20,8 +22,9 @@ internal sealed partial class ExperimentalBladePort
     };
 
     // 029F High/High and CPU Boost are explicit Synapse captures in tdakhran
-    // 8e12e778/data/README.md. Other exact profiles retain bounded Low..High
-    // extrapolation; raw level 4 never acquires a meaning or write capability.
+    // 8e12e778/data/README.md. 02A0 Boost/High is corroborated by the exact
+    // Synapse Observer requests in docs/blade18-observer-evidence.md. Other
+    // combinations retain their previous bounds; raw level 4 stays unknown.
     private async Task<CustomPerformanceSettings?> ReadCustomPerformanceAsync(
         CancellationToken cancellationToken, bool includeMaximumFans = true)
     {
@@ -132,10 +135,10 @@ internal sealed partial class ExperimentalBladePort
                 }
                 currentLevels = entered.CustomPerformance;
             }
-            // Lower the currently High domain before raising the other one. Every
-            // intermediate state must satisfy the same contract as the final state.
-            byte[] clusters = currentLevels.Gpu == CustomPerformanceLevel.High && value.Cpu == CustomPerformanceLevel.High
-                ? [2, 1] : [1, 2];
+            // Choose the direct ordering whose intermediate combination is admitted.
+            // For 02A0 Boost/High, GPU High must precede CPU Boost when needed.
+            byte[] clusters = CreateCustomCapabilities(model).AllowedCombinations.Contains(
+                new(value.Cpu, currentLevels.Gpu)) ? [1, 2] : [2, 1];
             foreach (byte cluster in clusters)
             {
                 CustomPerformanceLevel level = cluster == 1 ? value.Cpu : value.Gpu;
@@ -206,7 +209,8 @@ internal sealed partial class ExperimentalBladePort
     private async Task<byte> ReadPowerModeControlAsync(CancellationToken cancellationToken)
     {
         ReadOnlyMemory<byte> payload = await ExchangeAsync("MaximumFans", 0x07, 0x8F,
-            [0], false, cancellationToken, variableResponse: true).ConfigureAwait(false);
+            [0], false, cancellationToken, variableResponse: true,
+            payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength).ConfigureAwait(false);
         if (!TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out _))
         {
             RecordQuery("MaximumFans", "UnsupportedState",

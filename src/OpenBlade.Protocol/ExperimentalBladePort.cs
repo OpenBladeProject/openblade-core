@@ -134,7 +134,7 @@ internal sealed partial class ExperimentalBladePort(
             SupportsUniformLightingFrames =
                 SupportsExperimentalUniformFrames(model, enabled),
             HyperBoostAccess = model.ProductId is 0x02A0 or 0x029F ? DeviceFeatureAccess.ObservedOnly : null,
-            ObservedLightingEffects = CreateExperimentalLightingEffects(model, true),
+            ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),
         };
 
     private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>

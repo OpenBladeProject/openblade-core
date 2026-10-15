@@ -38,6 +38,12 @@ public sealed class ExperimentalBladeLightingTests
         Assert.Contains(LightingEffect.Static, blade18.LightingEffects);
         Assert.False(blade18.SupportsUniformLightingFrames);
         Assert.DoesNotContain(LightingEffect.AmbientAwareness, blade18.LightingEffects);
+        Assert.Contains(LightingEffect.AmbientAwareness, blade18.ObservedLightingEffects);
+        Assert.Contains(LightingEffect.Fire, blade18.ObservedLightingEffects);
+        Assert.DoesNotContain(LightingEffect.Sequence, blade18.ObservedLightingEffects);
+        Assert.Equal(13, blade18.ObservedLightingEffects.Count);
+        Assert.True(blade18.ObservedLightingEffects.SetEquals(
+            ExperimentalBladePort.CreateCapabilities(ModelFor(0x02A0), false).ObservedLightingEffects));
     }
 
     [Theory]

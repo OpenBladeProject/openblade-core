@@ -60,6 +60,25 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             item => item.StartsWith("query:501:", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(0x02A0)]
+    [InlineData(0x029F)]
+    public async Task CustomBoostHigh_PreservesAllIndependentStateThroughProductionProvider(int productId)
+    {
+        var io = new Io { Mode = 4, Cpu = 3, Gpu = 2, Raw = 0xD0 };
+        var native = new Native { ProductId = (ushort)productId };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io, native: native, productId: productId);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        ConfirmedDeviceState state = await device.ReadStateAsync(CancellationToken.None);
+        Assert.Equal(new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High), state.CustomPerformance);
+        Assert.Equal(PerformancePreset.Custom, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(80, state.Battery!.ChargeLimitPercent);
+        Assert.Equal(LightingEffect.Spectrum, state.Lighting!.Effect);
+        Assert.Equal(LogoLightingMode.Off, state.LogoLighting);
+        Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
+    }
+
     [Fact]
     public async Task Provider_AdmitsRangeChangesFromOffAndConfirmsExactLimit()
     {
@@ -361,6 +380,8 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         internal byte Effect { get; set; } = 3;
         internal bool DisagreeModes { get; set; }
         internal bool InvalidCustom { get; set; }
+        internal byte Cpu { get; set; }
+        internal byte Gpu { get; set; }
         internal List<string>? Events { get; set; }
         internal bool FailNextSetterResponse { get; set; }
         internal bool FailNextLightingSetterResponse { get; set; }
@@ -406,7 +427,7 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                 }
                 else if (buffer[7] == 0x0D && buffer[8] == 0x87)
                 {
-                    buffer[11] = InvalidCustom ? (byte)99 : (byte)0;
+                    buffer[11] = InvalidCustom ? (byte)99 : buffer[10] == 1 ? Cpu : Gpu;
                 }
                 else if (buffer[7] == 0x03 && buffer[8] == 0x83)
                 {
