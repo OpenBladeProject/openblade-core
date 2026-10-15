@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 63;
+    public const int ProtocolVersion = 64;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -977,6 +977,18 @@ public static class IpcMessageCodec
                         "unsupportedLaptop",
                         StringComparison.OrdinalIgnoreCase));
                 unsupportedLaptop.ShouldSerialize = static (_, _) => false;
+            }
+
+            if (protocol51Projection
+                && typeInfo.Type == typeof(DeviceCapabilities))
+            {
+                JsonPropertyInfo directManualFanTransitions =
+                    typeInfo.Properties.Single(property =>
+                        string.Equals(
+                            property.Name,
+                            "supportsDirectManualFanTransitions",
+                            StringComparison.OrdinalIgnoreCase));
+                directManualFanTransitions.ShouldSerialize = static (_, _) => false;
             }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)

@@ -102,6 +102,8 @@ public sealed partial class MainViewModel
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
+            && left.SupportsDirectManualFanTransitions
+                == right.SupportsDirectManualFanTransitions
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
             && left.SupportedLightingRefreshRates.SetEquals(
