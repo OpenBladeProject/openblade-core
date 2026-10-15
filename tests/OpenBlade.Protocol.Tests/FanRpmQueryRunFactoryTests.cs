@@ -63,7 +63,7 @@ public sealed class FanRpmQueryRunFactoryTests
     }
 
     [Fact]
-    public void Rz090581ServiceFactory_UsesItsModelSpecificSharedFeatureCommandGate()
+    public void ServiceFactories_UseDistinctModelSpecificSharedFeatureCommandGates()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -79,10 +79,58 @@ public sealed class FanRpmQueryRunFactoryTests
         Assert.Same(
             Rz090581FeatureCommandGate.Shared,
             rz090581Factory.SharedCommandGate);
-        Assert.Null(rz090528Factory.SharedCommandGate);
+        Assert.Same(
+            Rz090528FeatureCommandGate.Shared,
+            rz090528Factory.SharedCommandGate);
         Assert.NotSame(
-            Rz090528CommandSessionGate.Shared,
+            Rz090528FeatureCommandGate.Shared,
             rz090581Factory.SharedCommandGate);
+    }
+
+    [Fact]
+    public async Task QueryAsync_CoordinatesWithLightingSessionThroughSharedGate()
+    {
+        using var sharedCommandGate = new SemaphoreSlim(1, 1);
+        var fanInner = new BlockingFanSession();
+        var lightingInner = new BlockingCommandSession();
+        var factory = new FanRpmQueryRunFactory(
+            static () => new ValidationRunContext(),
+            new ActorFactory(Actor(fanInner)),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5),
+            new PendingDisposalRegistry(),
+            sharedCommandGate);
+        IFanRpmQueryPort port = Assert.IsAssignableFrom<IFanRpmQueryPort>(
+            (await factory.OpenAsync(default)).Value);
+        var lightingSession = new RazerCommandSessionGate(
+            lightingInner,
+            sharedCommandGate);
+
+        Task<HidSessionResult<FanRpmReadings>> query = port.QueryAsync(default);
+        await fanInner.FirstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> lighting =
+            lightingSession.ExecuteAsync(
+                new(0x03, 0x83, [0x01, 0x05, 0x00], 3),
+                static () => TransactionIdAssignment.Valid(3),
+                TimeSpan.FromSeconds(1),
+                default);
+
+        Assert.False(lightingInner.Entered.Task.IsCompleted);
+
+        fanInner.ReleaseFirst.TrySetResult();
+        fanInner.ReleaseSecond.TrySetResult();
+        lightingInner.Release.TrySetResult();
+        HidSessionResult<FanRpmReadings> fanResult =
+            await query.WaitAsync(TimeSpan.FromSeconds(1));
+        HidSessionResult<ReadOnlyMemory<byte>> lightingResult =
+            await lighting.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Null(fanResult.Failure);
+        Assert.Null(lightingResult.Failure);
+        Assert.True(lightingInner.Entered.Task.IsCompletedSuccessfully);
+
+        await port.DisposeAsync();
     }
 
     [Fact]
@@ -232,6 +280,34 @@ public sealed class FanRpmQueryRunFactoryTests
             Disposition = RazerCommandSessionDisposition.FullyDisposed;
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class BlockingCommandSession : IRazerCommandSession
+    {
+        internal TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Release { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RazerCommandSessionDisposition Disposition =>
+            RazerCommandSessionDisposition.Healthy;
+
+        public async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = command;
+            _ = assignTransactionId();
+            _ = exchangeTimeout;
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return new(ReadOnlyMemory<byte>.Empty, null);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class BatteryCommands : IBatteryCommandClient

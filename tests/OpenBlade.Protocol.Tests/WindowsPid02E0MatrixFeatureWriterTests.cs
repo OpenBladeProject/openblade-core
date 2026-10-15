@@ -498,7 +498,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
     {
         using var gate = new SemaphoreSlim(1, 1);
         var fanInner = new BlockingSetGetCommandSession();
-        var fanSession = new Rz090581CommandSessionGate(fanInner, gate);
+        var fanSession = new RazerCommandSessionGate(fanInner, gate);
         Task<HidSessionResult<ReadOnlyMemory<byte>>> fanExchange = fanSession.ExecuteAsync(
             new RazerCommandSpec(0x0D, 0x02, [0x01], 1),
             static () => TransactionIdAssignment.Valid(1),
@@ -551,11 +551,41 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         await guard.Checked.Task.WaitAsync(TimeSpan.FromSeconds(1));
         cancellation.Cancel();
 
+        HidSessionResult<HidUnit> result =
+            await matrixWrite.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(HidSessionFailureKind.QueuedCanceled, result.Failure);
         Assert.Equal(
-            HidSessionFailureKind.Canceled,
-            (await matrixWrite.WaitAsync(TimeSpan.FromSeconds(1))).Failure);
+            HidSessionFailurePhase.SharedGateAdmission,
+            result.Diagnostic?.Phase);
         Assert.Empty(io.Calls);
         gate.Release();
+    }
+
+    [Fact]
+    public async Task Writer_ExhaustsWhileWaitingForSharedFeatureCommandGate()
+    {
+        using var gate = new SemaphoreSlim(0, 1);
+        var io = new ScriptedIo();
+        var guard = new ScriptedGuard();
+        var owned = CreateOwnedHandle();
+        await using var writer = CreateWriter(
+            owned.Handle,
+            io,
+            guard,
+            exchangeTimeout: TimeSpan.FromMilliseconds(25),
+            sharedCommandGate: gate);
+
+        HidSessionResult<HidUnit> result = await writer.WriteAsync(
+            Report(1, MatrixRgb.Black),
+            CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(HidSessionFailureKind.Exhausted, result.Failure);
+        Assert.Equal(
+            HidSessionFailurePhase.SharedGateAdmission,
+            result.Diagnostic?.Phase);
+        Assert.Empty(io.Calls);
+        Assert.Equal(0, gate.CurrentCount);
     }
 
     [Fact]
@@ -623,7 +653,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
 
         Assert.Equal(HidSessionFailureKind.NativeIoFailure, failed.Failure);
         var fanInner = new BlockingSetGetCommandSession();
-        var fanSession = new Rz090581CommandSessionGate(fanInner, gate);
+        var fanSession = new RazerCommandSessionGate(fanInner, gate);
         Task<HidSessionResult<ReadOnlyMemory<byte>>> fanExchange = fanSession.ExecuteAsync(
             new RazerCommandSpec(0x0D, 0x02, [0x01], 1),
             static () => TransactionIdAssignment.Valid(2),
@@ -675,13 +705,14 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
         TimeProvider? timeProvider = null,
         IMatrixWriteTimingSink? timingSink = null,
+        TimeSpan? exchangeTimeout = null,
         SemaphoreSlim? sharedCommandGate = null) =>
         new(
             handle,
             io,
             guard ?? new ScriptedGuard(),
             timeProvider ?? TimeProvider.System,
-            TimeSpan.FromSeconds(3),
+            exchangeTimeout ?? TimeSpan.FromSeconds(3),
             policy,
             timingSink,
             sharedCommandGate);

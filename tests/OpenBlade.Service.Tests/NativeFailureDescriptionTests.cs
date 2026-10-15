@@ -19,6 +19,22 @@ public sealed class NativeFailureDescriptionTests
     }
 
     [Fact]
+    public void SharedAdmissionWithoutQueryDoesNotImplyBatteryFailure()
+    {
+        var failure = new NativeDeviceReadException(
+            HidSessionFailureKind.Exhausted,
+            new(HidSessionFailurePhase.SharedGateAdmission,
+                HidSessionFailureKind.Exhausted, null, null),
+            stateQuery: null);
+
+        string message = NativeFailureDescription.Describe(failure);
+
+        Assert.Contains("phase=SharedGateAdmission", message);
+        Assert.Contains("failure=Exhausted", message);
+        Assert.DoesNotContain("battery", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void WriteWrapperPreservesNumericDiagnosticWithoutInnerExceptionText()
     {
         var failure = new BladeWriteException(WriteSubmissionState.Indeterminate,

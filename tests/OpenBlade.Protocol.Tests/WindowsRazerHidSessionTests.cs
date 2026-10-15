@@ -9,10 +9,8 @@ public sealed class WindowsRazerHidSessionTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task QueryEvidence_RetainsUnknownAdapterAfterRecoveryAndSessionDisposal(bool model0528)
+    [Fact]
+    public async Task QueryEvidence_RetainsUnknownAdapterAfterRecoveryAndSessionDisposal()
     {
         var diagnostics = new FirmwareQueryDiagnostics();
         var io = new ScriptedIo(
@@ -21,9 +19,7 @@ public sealed class WindowsRazerHidSessionTests
         await using (WindowsRazerHidSession actor = CreateActor(io, queryDiagnostics: diagnostics))
         {
             using var gate = new SemaphoreSlim(1, 1);
-            IRazerCommandSession gated = model0528
-                ? new Rz090528CommandSessionGate(actor, gate)
-                : new Rz090581CommandSessionGate(actor, gate);
+            IRazerCommandSession gated = new RazerCommandSessionGate(actor, gate);
             var client = new AdapterPowerCommandClient(gated, Timeout);
             Assert.Equal(AdapterPowerState.Unknown, (await client.QueryAsync(1, default)).Value);
             Assert.Equal(AdapterPowerState.FullPower280W, (await client.QueryAsync(2, default)).Value);

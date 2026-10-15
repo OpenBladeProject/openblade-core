@@ -474,9 +474,10 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         }
         catch (OperationCanceledException) when (gateCancellation.IsCancellationRequested)
         {
-            return Failure(
-                ClassifyCancellation(item.CancellationToken, deadline.Token)
-                    ?? HidSessionFailureKind.Canceled);
+            return RazerCommandSessionGate.AdmissionFailure<HidUnit>(
+                item.CancellationToken.IsCancellationRequested
+                    ? HidSessionFailureKind.QueuedCanceled
+                    : HidSessionFailureKind.Exhausted);
         }
 
         pendingNativeRetirement = null;
@@ -507,7 +508,7 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         }
         finally
         {
-            Rz090581FeatureCommandGate.ReleaseAfterRetirement(sharedCommandGate, pendingNativeRetirement);
+            RazerCommandSessionGate.ReleaseAfterRetirement(sharedCommandGate, pendingNativeRetirement);
         }
     }
 
