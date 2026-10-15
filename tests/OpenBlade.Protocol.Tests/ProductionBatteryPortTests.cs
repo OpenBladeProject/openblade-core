@@ -1674,17 +1674,18 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
-    public async Task QueryTemporaryFullCharge_CompletedMarkerIsInactiveOnlyWithModelScopedEvidence()
+    public async Task QueryTemporaryFullCharge_PowerModeControlBitmaskDecodesOnlyWithModelScopedEvidence()
     {
-        var scopedSession = new ScriptedSession(Success([0x08]));
+        var scopedSession = new ScriptedSession(Success([0x08]), Success([0x0C]));
         await using var scoped = CreatePort(
             scopedSession,
             Catalog(),
             ProductionBatteryReadEvidence.Rz090581ModelScoped);
 
         Assert.False(await scoped.QueryTemporaryFullChargeAsync(default));
-        RazerCommandSpec query = Assert.Single(scopedSession.Commands);
-        Assert.Equal((0x07, 0x8F), (query.ClassId, query.CommandId));
+        Assert.True(await scoped.QueryTemporaryFullChargeAsync(default));
+        Assert.All(scopedSession.Commands, query =>
+            Assert.Equal((0x07, 0x8F), (query.ClassId, query.CommandId)));
 
         var productionSession = new ScriptedSession(Success([0x08]));
         await using var production = CreatePort(
@@ -1787,6 +1788,109 @@ public sealed class ProductionBatteryPortTests
         RazerCommandSpec command = Assert.Single(session.Commands);
         Assert.Equal((0x07, 0x0F), (command.ClassId, command.CommandId));
         Assert.Equal([payload], command.Arguments.ToArray());
+    }
+
+    [Theory]
+    [InlineData(false, 0x00, 0x00)]
+    [InlineData(true, 0x00, 0x04)]
+    [InlineData(false, 0x04, 0x00)]
+    [InlineData(true, 0x04, 0x04)]
+    public async Task Rz090581TemporarySetterWritesAfterFreshReadShowsNoOtherSettings(
+        bool enabled,
+        byte current,
+        byte payload)
+    {
+        DeviceCommandCatalog catalog = Catalog(
+            Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
+            Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
+        var session = new ScriptedSession(Success([current]), Success([payload]));
+        await using var port = CreatePort(
+            session,
+            catalog,
+            ProductionBatteryReadEvidence.Rz090581ModelScoped);
+
+        await port.SetTemporaryFullChargeAsync(enabled, default);
+
+        Assert.Collection(
+            session.Commands,
+            read => Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId)),
+            write =>
+            {
+                Assert.Equal((0x07, 0x0F), (write.ClassId, write.CommandId));
+                Assert.Equal([payload], write.Arguments.ToArray());
+            });
+    }
+
+    [Theory]
+    [InlineData(true, 0x08, "local dimming")]
+    [InlineData(false, 0x08, "local dimming")]
+    [InlineData(false, 0x0C, "local dimming")]
+    [InlineData(true, 0x01, "CPU boost")]
+    [InlineData(false, 0x05, "CPU boost")]
+    [InlineData(true, 0x02, "maximum fan speed")]
+    [InlineData(false, 0x06, "maximum fan speed")]
+    public async Task Rz090581TemporarySetterBlocksWhenOtherPowerModeSettingsAreOn(
+        bool enabled,
+        byte current,
+        string settingName)
+    {
+        DeviceCommandCatalog catalog = Catalog(
+            Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
+            Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
+        var session = new ScriptedSession(Success([current]), Success([0x00]), Success([0x04]));
+        await using var port = CreatePort(
+            session,
+            catalog,
+            ProductionBatteryReadEvidence.Rz090581ModelScoped);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetTemporaryFullChargeAsync(enabled, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.StartsWith(
+            "OpenBlade won't change temporary full charge because it would also change "
+            + "other laptop settings that are on (",
+            error.Message,
+            StringComparison.Ordinal);
+        Assert.Contains(settingName, error.Message, StringComparison.Ordinal);
+        RazerCommandSpec read = Assert.Single(session.Commands);
+        Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId));
+
+        // The block is not a session failure: a later admitted read still works.
+        Assert.False(await port.QueryTemporaryFullChargeAsync(default));
+    }
+
+    [Fact]
+    public async Task Rz090581TemporarySetterBlocksWhenPreWriteReadIsRejected()
+    {
+        DeviceCommandCatalog catalog = Catalog(
+            Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
+            Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
+        var session = new ScriptedSession(Success([0x10]), Success([0x00]));
+        await using var port = CreatePort(
+            session,
+            catalog,
+            ProductionBatteryReadEvidence.Rz090581ModelScoped);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetTemporaryFullChargeAsync(false, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        RazerCommandSpec read = Assert.Single(session.Commands);
+        Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId));
+    }
+
+    [Fact]
+    public void OtherPowerModeSettingsBlockMessage_ListsEverySettingThatIsOn()
+    {
+        Assert.Equal(
+            "OpenBlade won't change temporary full charge because it would also change "
+            + "other laptop settings that are on (local dimming).",
+            ProductionBatteryPort.OtherPowerModeSettingsBlockMessage(0x08));
+        Assert.Equal(
+            "OpenBlade won't change temporary full charge because it would also change "
+            + "other laptop settings that are on (local dimming, CPU boost, maximum fan speed).",
+            ProductionBatteryPort.OtherPowerModeSettingsBlockMessage(0x0B));
     }
 
     [Theory]

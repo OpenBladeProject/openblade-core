@@ -115,9 +115,10 @@ public sealed class ConfirmedStateDriftTracker
             AddExternalChange(DeviceSubsystem.Battery);
         }
 
-        // A confirmed true-to-false readback is the firmware one-shot ending,
-        // whether by completion or an outside cancel. When the caller retires
-        // its matching intent, that end is not an external change.
+        // A confirmed true-to-false readback is the one-shot ending, whether
+        // Synapse cleared it at full charge or another app cancelled it. When
+        // the caller retires its matching intent, that end is not an external
+        // change.
         if (temporaryFullCharge is true
             && observed.TemporaryFullCharge is false
             && retireCompletedTemporaryFullCharge?.Invoke() == true)

@@ -12,24 +12,29 @@ internal interface ITemporaryFullChargeCommandClient
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// A decoded 07/8F reading. <see cref="OtherSettings"/> holds the
+/// non-temporary-full-charge bits, which are nonzero only on the exact RZ09-0581.
+/// </summary>
+internal readonly record struct TemporaryFullChargeReading(bool Active, byte OtherSettings);
+
 internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCommandClient
 {
-
     private readonly RazerCommandSpec queryCommand;
-    private readonly bool acceptCompletedMarker;
+    private readonly bool decodesPowerModeControlBitmask;
     private readonly IRazerCommandSession session;
     private readonly TimeSpan exchangeTimeout;
 
     internal TemporaryFullChargeCommandClient(
         IRazerCommandSession session,
         TimeSpan exchangeTimeout,
-        bool acceptCompletedMarker = false)
+        bool decodesPowerModeControlBitmask = false)
     {
         ArgumentNullException.ThrowIfNull(session);
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
         this.session = session;
         this.exchangeTimeout = exchangeTimeout;
-        this.acceptCompletedMarker = acceptCompletedMarker;
+        this.decodesPowerModeControlBitmask = decodesPowerModeControlBitmask;
         queryCommand = new RazerCommandSpec(
             0x07,
             0x8F,
@@ -38,10 +43,21 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
             payload => TemporaryFullChargeProtocol.TryDecodeQuery(
                 payload.Span,
                 out _,
-                acceptCompletedMarker));
+                decodesPowerModeControlBitmask));
     }
 
     public async Task<HidSessionResult<bool>> QueryAsync(
+        byte transactionId,
+        CancellationToken cancellationToken)
+    {
+        HidSessionResult<TemporaryFullChargeReading> reading =
+            await QueryReadingAsync(transactionId, cancellationToken).ConfigureAwait(false);
+        return reading.Failure is null
+            ? new(reading.Value.Active, null)
+            : new(default, reading.Failure) { Diagnostic = reading.Diagnostic };
+    }
+
+    internal async Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
         byte transactionId,
         CancellationToken cancellationToken)
     {
@@ -60,8 +76,9 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
         return TemporaryFullChargeProtocol.TryDecodeQuery(
             response.Value.Span,
             out bool active,
-            acceptCompletedMarker)
-            ? new(active, null)
+            out byte otherSettings,
+            decodesPowerModeControlBitmask)
+            ? new(new TemporaryFullChargeReading(active, otherSettings), null)
             : new(default, HidSessionFailureKind.ProtocolFailure)
             {
                 Diagnostic = new HidSessionFailureDiagnostic(

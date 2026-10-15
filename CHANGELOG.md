@@ -17,7 +17,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Preserve the selected performance mode on experimental laptops when a saved profile contains unavailable manual-fan settings, without switching to Balanced or writing fans. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Keep independent experimental controls available after unrecognized readings, allow unrelated profile edits with unavailable saved settings, and accept fresh lighting intent after resuming paused controls. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
-- Read temporary full charge correctly on the Razer Blade 16 RZ09-0581 when the laptop reports a value that Synapse shows as switched off. OpenBlade now shows it as off instead of reporting an unrecognized battery value and keeping battery controls unavailable. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
+- Read temporary full charge correctly on the Razer Blade 16 RZ09-0581 when other laptop settings that share it, such as local dimming, are on. OpenBlade no longer reports an unrecognized battery value and keeps battery controls available. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
+- On the Razer Blade 16 RZ09-0581, OpenBlade no longer turns off local dimming, CPU boost, or maximum fan speed when it changes temporary full charge. While any of them is on, it leaves temporary full charge unchanged and explains why. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
 - OpenBlade no longer restarts or re-requests a one-time full charge after the laptop or another app ends it, and no longer reports that as a change made outside OpenBlade. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
 
 ## [0.26.2-nightly.87] - 2026-10-14

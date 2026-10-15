@@ -308,7 +308,7 @@ internal sealed class ProductionBatteryPort :
         temporaryCommands = new TemporaryFullChargeCommandClient(
             session,
             exchangeTimeout,
-            readEvidence.AcceptsTemporaryFullChargeCompletedMarker);
+            readEvidence.DecodesPowerModeControlBitmask);
         adapterPowerCommands = new AdapterPowerCommandClient(session, exchangeTimeout);
         mcuVersionCommands = new McuVersionCommandClient(session, exchangeTimeout);
         rz090581CapabilityDiagnosticsCommands =
@@ -1151,8 +1151,63 @@ internal sealed class ProductionBatteryPort :
 
         return ExecuteSetterAsync(
             enabled ? TemporaryEnableAction : TemporaryCancelAction,
-            cancellationToken);
+            cancellationToken,
+            readEvidence.DecodesPowerModeControlBitmask
+                ? RequireNoOtherPowerModeSettingsAsync
+                : null);
     }
+
+    /// <summary>
+    /// On the exact RZ09-0581, 07/0F replaces a shared power-mode-control byte.
+    /// The admitted payloads are only 0x00 and 0x04, so a write is sent only when
+    /// a fresh read in the same write session shows the other bits clear.
+    /// Combined payloads are uncaptured and are never written.
+    /// </summary>
+    private async Task RequireNoOtherPowerModeSettingsAsync(
+        CancellationToken cancellationToken)
+    {
+        HidSessionResult<TemporaryFullChargeReading> reading;
+        try
+        {
+            reading = await temporaryCommands.QueryReadingAsync(
+                AllocateTransactionForRead(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw KnownNotApplied("The battery write was canceled before submission.");
+        }
+        catch (Exception exception)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "The temporary full charge pre-write read failed before submission.",
+                exception);
+        }
+
+        if (reading.Failure is not null)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw KnownNotApplied("The battery write was canceled before submission.");
+            }
+
+            throw KnownNotApplied(
+                "The temporary full charge pre-write read failed before submission.");
+        }
+
+        if (reading.Value.OtherSettings != 0)
+        {
+            throw KnownNotApplied(OtherPowerModeSettingsBlockMessage(
+                reading.Value.OtherSettings));
+        }
+    }
+
+    internal static string OtherPowerModeSettingsBlockMessage(byte otherSettings) =>
+        "OpenBlade won't change temporary full charge because it would also change "
+        + "other laptop settings that are on ("
+        + string.Join(", ", TemporaryFullChargeProtocol.DescribeOtherSettings(otherSettings))
+        + ").";
 
     public Task ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
@@ -1486,7 +1541,8 @@ internal sealed class ProductionBatteryPort :
 
     private async Task ExecuteSetterAsync(
         string action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? preWriteCheck = null)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1503,6 +1559,14 @@ internal sealed class ProductionBatteryPort :
         try
         {
             EnsureUsableForWrite();
+            if (preWriteCheck is not null)
+            {
+                // Runs under the same operation gate; it throws KnownNotApplied
+                // without submitting anything when the write is not admitted.
+                await preWriteCheck(cancellationToken).ConfigureAwait(false);
+                EnsureUsableForWrite();
+            }
+
             HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
                 new RazerCommandSpec(
                     command.CommandClass,

@@ -62,11 +62,11 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(
                 ExactRz090581Identity("3.01"));
         Assert.True(admitted.SupportsRz090581CapabilityDiagnosticsQuery);
-        Assert.True(admitted.AcceptsTemporaryFullChargeCompletedMarker);
+        Assert.True(admitted.DecodesPowerModeControlBitmask);
         Assert.False(ProductionBatteryReadEvidence.Production
-            .AcceptsTemporaryFullChargeCompletedMarker);
+            .DecodesPowerModeControlBitmask);
         Assert.False(BatteryValidationFactory.CreateRz090528ProductionBatteryReadEvidence()
-            .AcceptsTemporaryFullChargeCompletedMarker);
+            .DecodesPowerModeControlBitmask);
         Assert.True(ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(
             ExactRz090581Identity("99.99", HostFirmwareCompatibility.ModelScoped))
             .SupportsRz090581CapabilityDiagnosticsQuery);
@@ -101,7 +101,7 @@ public sealed class ProductionBatteryFactoryIntegrationTests
                 ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(
                     identity);
             Assert.False(evidence.SupportsRz090581CapabilityDiagnosticsQuery);
-            Assert.False(evidence.AcceptsTemporaryFullChargeCompletedMarker);
+            Assert.False(evidence.DecodesPowerModeControlBitmask);
             Assert.True(evidence.SupportsMcuVersionQuery);
         }
     }

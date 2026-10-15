@@ -59,39 +59,53 @@ public sealed class TemporaryFullChargeCommandClientTests
         Assert.Equal(expectedHex, result.Diagnostic?.RejectedPayloadHex);
     }
 
-    [Fact]
-    public async Task QueryAsync_CompletedMarkerIsInactiveOnlyWithModelScopedAllowance()
+    [Theory]
+    [InlineData(0x08, false, 0x08)]
+    [InlineData(0x0C, true, 0x08)]
+    [InlineData(0x01, false, 0x01)]
+    [InlineData(0x02, false, 0x02)]
+    public async Task QueryAsync_PowerModeControlBitmaskDecodesOnlyWithModelScopedEvidence(
+        byte response,
+        bool expectedActive,
+        byte expectedOtherSettings)
     {
         var scoped = new ScriptedSession(
-            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0x08 }, null));
+            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { response }, null),
+            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { response }, null));
         var scopedClient = new TemporaryFullChargeCommandClient(
             scoped,
             ExchangeTimeout,
-            acceptCompletedMarker: true);
+            decodesPowerModeControlBitmask: true);
 
         HidSessionResult<bool> accepted = await scopedClient.QueryAsync(1, default);
+        HidSessionResult<TemporaryFullChargeReading> reading =
+            await scopedClient.QueryReadingAsync(2, default);
 
         Assert.Null(accepted.Failure);
-        Assert.False(accepted.Value);
-        Assert.True(Assert.Single(scoped.Calls).Command.PayloadValidator!(
-            new byte[] { 0x08 }));
+        Assert.Equal(expectedActive, accepted.Value);
+        Assert.Null(reading.Failure);
+        Assert.Equal(
+            new TemporaryFullChargeReading(expectedActive, expectedOtherSettings),
+            reading.Value);
+        Assert.True(scoped.Calls[0].Command.PayloadValidator!(new byte[] { response }));
 
         var strictSession = new ScriptedSession(
-            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0x08 }, null));
+            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { response }, null));
         var strict = new TemporaryFullChargeCommandClient(strictSession, ExchangeTimeout);
         HidSessionResult<bool> rejected = await strict.QueryAsync(1, default);
 
         Assert.Equal(HidSessionFailureKind.ProtocolFailure, rejected.Failure);
-        Assert.Equal("08", rejected.Diagnostic?.RejectedPayloadHex);
+        Assert.Equal($"{response:X2}", rejected.Diagnostic?.RejectedPayloadHex);
         Assert.False(Assert.Single(strictSession.Calls).Command.PayloadValidator!(
-            new byte[] { 0x08 }));
+            new byte[] { response }));
     }
 
     [Theory]
-    [InlineData(new byte[] { 0x01 }, "01")]
-    [InlineData(new byte[] { 0x0C }, "0C")]
+    [InlineData(new byte[] { 0x10 }, "10")]
+    [InlineData(new byte[] { 0x80 }, "80")]
     [InlineData(new byte[] { 0xFF }, "FF")]
-    public async Task QueryAsync_ModelScopedAllowanceStillRejectsOtherValues(
+    [InlineData(new byte[] { 0x08, 0x00 }, "08 00")]
+    public async Task QueryAsync_PowerModeControlBitmaskStillRejectsUndefinedBits(
         byte[] payload,
         string expectedHex)
     {
@@ -99,7 +113,7 @@ public sealed class TemporaryFullChargeCommandClientTests
             new ScriptedSession(
                 new HidSessionResult<ReadOnlyMemory<byte>>(payload, null)),
             ExchangeTimeout,
-            acceptCompletedMarker: true);
+            decodesPowerModeControlBitmask: true);
 
         HidSessionResult<bool> result = await client.QueryAsync(1, default);
 
