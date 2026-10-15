@@ -155,6 +155,12 @@ public interface IServiceClient : IServiceStatusWatcher
         AmbientLightingFrame frame,
         CancellationToken token);
 
+    Task<ControlOperationResult> PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Uniform host-rendered lighting is unavailable."));
+
     Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
         bool muted,
         CancellationToken token);

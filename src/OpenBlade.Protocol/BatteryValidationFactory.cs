@@ -624,12 +624,7 @@ public static class BatteryValidationFactory
                     CustomModeAvailable: false,
                     InadequatePowerWarningVisible: true),
             ],
-            new HashSet<AdapterPowerState>
-            {
-                AdapterPowerState.Battery,
-                AdapterPowerState.UsbCPower100W,
-                AdapterPowerState.FullPower280W,
-            },
+            AdapterPowerProtocol.SynapseAdapterStates,
             Rz090528FeatureCommandGate.Shared,
             hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
             // Production admits pad-less writes only through the exact 2025 admission manifest;

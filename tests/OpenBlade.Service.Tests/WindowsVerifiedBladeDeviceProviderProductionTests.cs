@@ -1016,6 +1016,24 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task MissingCustomCombinationPolicy_BlocksBeforeOpeningDevice()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Custom },
+            new HashSet<FanMode> { FanMode.Automatic }) with
+        {
+            CustomPerformance = null,
+        };
+        var factory = new FakeProductionFactory(capabilities);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => device.SetPerformanceAsync(
+            PerformancePreset.Custom, CustomPerformanceSettings.Default, default));
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
     public async Task SetCustomPerformance_GpuWriteFailureReportsPartialOperationAsIndeterminate()
     {
         DeviceCapabilities capabilities = WritableGpuCapabilities(
@@ -3312,7 +3330,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             new HashSet<LightingEffect>(),
             new HashSet<int>(),
             SupportsBatteryProtectionOff: false,
-            SupportsTemporaryFullCharge: false);
+            SupportsTemporaryFullCharge: false)
+        {
+            CustomPerformance = presets.Contains(PerformancePreset.Custom)
+                ? DeviceCapabilities.SafeTargetDefaults().CustomPerformance : null,
+        };
 
     private static DeviceCapabilities WritableGpuCapabilities(
         IReadOnlySet<PerformancePreset> presets,

@@ -17,7 +17,7 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
     [InlineData("custom", 0x02A0)]
     public async Task ContentRejection_PreservesIndependentStateAfterDrainedReopen(string rejected, int productId)
     {
-        var io = new Io { Raw = rejected == "battery" ? (byte)(productId == 0x029F ? 0xBC : 0x81) : (byte)0xD0 };
+        var io = new Io { Raw = rejected == "battery" ? (byte)0x81 : (byte)0xD0 };
         io.Mode = rejected == "performance" ? (byte)99 : rejected == "custom" ? (byte)4 : (byte)0;
         io.DisagreeModes = rejected == "agreement";
         io.InvalidCustom = rejected == "custom";
@@ -92,11 +92,15 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
 
     }
 
-    [Fact]
-    public async Task Recovery_FreshReadbackIsAcceptedBeforePauseClearsWithoutSetterReplay()
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x02A0)]
+    public async Task Recovery_UnknownUniformLightingDoesNotBlockUnrelatedControls(int productId)
     {
         var io = new Io { Raw = 0x50 };
-        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        var native = new Native { ProductId = (ushort)productId };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io, native: native,
+            productId: productId);
         IBladeDevice device = await PauseAsync(provider, io);
         int setterCount = io.Setters.Count;
         int commandCount = io.Commands.Count;
@@ -109,7 +113,7 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             Assert.False(state.Battery.TemporaryFullCharge);
             Assert.Equal(PerformancePreset.Balanced, state.Performance);
             Assert.Equal(FanMode.Automatic, state.Fans);
-            Assert.Equal(LightingEffect.Spectrum, state.Lighting!.Effect);
+            Assert.Null(state.Lighting);
             Assert.Equal(LogoLightingMode.Off, state.LogoLighting);
             accepted = true;
             return true;
@@ -124,7 +128,8 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         Assert.Equal(80, observed.Battery!.ChargeLimitPercent);
         await device.SetChargeLimitAsync(BatteryPolicy.Create(90), CancellationToken.None);
         Assert.Equal(setterCount + 1, io.Setters.Count);
-        Assert.Equal(0xDA, io.Raw);
+        ConfirmedDeviceState confirmed = await device.ReadStateAsync(CancellationToken.None);
+        Assert.Equal(90, confirmed.Battery!.ChargeLimitPercent);
     }
 
     [Fact]
@@ -172,7 +177,6 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
 
     [Theory]
     [InlineData("battery")]
-    [InlineData("lighting")]
     [InlineData("performance")]
     public async Task Recovery_UnrepresentableReadbackLeavesPause(string malformed)
     {
@@ -183,10 +187,6 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         {
             io.Raw = 0x81;
         }
-        else if (malformed == "lighting")
-        {
-            io.Effect = 99;
-        }
         else
         {
             io.Mode = 99;
@@ -195,17 +195,31 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         Exception? failure = await Record.ExceptionAsync(() => provider.ResumeExperimentalWritesAsync(
             _ => { accepted = true; return true; }, () => true, CancellationToken.None));
         Assert.NotNull(failure);
-        if (malformed == "lighting")
-        {
-            Assert.IsType<DeviceStateContentRejectedException>(failure);
-        }
-        else
-        {
-            Assert.IsType<RazerProtocolException>(failure);
-        }
+        Assert.IsType<RazerProtocolException>(failure);
         Assert.False(accepted);
         Assert.True(provider.IsExperimentalWritesPaused);
         Assert.Single(io.Setters);
+    }
+
+    [Fact]
+    public async Task Recovery_MalformedSingleZoneLightingLeavesPause()
+    {
+        var io = new Io { Raw = 0x50 };
+        var native = new Native { ProductId = 0x0255 };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io, native: native,
+            productId: 0x0255);
+        await PauseLightingAsync(provider, io);
+        io.Effect = 99;
+        bool accepted = false;
+
+        Exception? failure = await Record.ExceptionAsync(() => provider.ResumeExperimentalWritesAsync(
+            _ => { accepted = true; return true; }, () => true, CancellationToken.None));
+
+        Assert.IsType<DeviceStateContentRejectedException>(failure);
+        Assert.False(accepted);
+        Assert.True(provider.IsExperimentalWritesPaused);
+        Assert.Empty(io.Setters);
+        Assert.Single(io.Commands, command => command is { Class: 0x03, Id: 0x0A });
     }
 
     [Theory]
@@ -283,6 +297,23 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         return device;
     }
 
+    private static async Task<IBladeDevice> PauseLightingAsync(
+        WindowsVerifiedBladeDeviceProvider provider,
+        Io io)
+    {
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        io.FailNextLightingSetterResponse = true;
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            device.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.True(provider.IsExperimentalWritesPaused);
+        Assert.True(provider.GetExperimentalSupportDiagnostics().WritesPaused);
+        Assert.Empty(io.Setters);
+        return device;
+    }
+
     private sealed class Identity(string productName = "Blade 18 - RZ09-0484") : IHostIdentitySource
     {
         internal bool Present { get; set; } = true;
@@ -332,6 +363,7 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         internal bool InvalidCustom { get; set; }
         internal List<string>? Events { get; set; }
         internal bool FailNextSetterResponse { get; set; }
+        internal bool FailNextLightingSetterResponse { get; set; }
         internal Action? AfterLogoRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
         internal List<byte> Setters { get; } = [];
@@ -361,6 +393,12 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                 {
                     buffer[9] ^= 1;
                     FailNextSetterResponse = false;
+                }
+                else if (buffer[7] == 0x03 && buffer[8] == 0x0A
+                    && FailNextLightingSetterResponse)
+                {
+                    buffer[8] ^= 1;
+                    FailNextLightingSetterResponse = false;
                 }
                 else if (buffer[7] == 0x0D && buffer[8] == 0x82)
                 {

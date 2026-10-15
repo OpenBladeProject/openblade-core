@@ -1186,6 +1186,11 @@ public partial class App
         {
             return;
         }
+        if (state == "experimental-custom")
+        {
+            ApplyExperimentalCustomSnapshotState(window);
+            return;
+        }
         if (state == "blade18-paused")
         {
             ApplyExperimentalBatterySnapshotState(window, off: false, paused: true);
@@ -1285,6 +1290,78 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Dashboard presentation hook was not found.");
         refreshCards.Invoke(window, null);
+    }
+
+    private static void ApplyExperimentalCustomSnapshotState(MainWindow window)
+    {
+        // Disconnected preview only: no service connection or hardware operations.
+        var custom = new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)
+        { MaximumFans = true };
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = custom,
+            },
+        };
+        var combinations = new HashSet<CustomPerformanceCombination>();
+        foreach (CustomPerformanceLevel cpu in Enum.GetValues<CustomPerformanceLevel>())
+        {
+            foreach (CustomPerformanceLevel gpu in new[]
+                { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High })
+            {
+                combinations.Add(new(cpu, gpu));
+            }
+        }
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            PerformancePresets = new HashSet<PerformancePreset>
+                { PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance, PerformancePreset.Custom },
+            CustomPerformance = new(combinations) { SupportsMaximumFans = true },
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
+        };
+        var status = new ServiceStatusSnapshot(
+            1, true, false, [], null, [], "Experimental Custom preview", capabilities,
+            new ConfirmedDeviceState(PerformancePreset.Custom, FanMode.Automatic, null, null)
+            { CustomPerformance = custom }, profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Custom, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, false, false))
+            { CustomPerformance = custom },
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = "UpstreamDerived",
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (!window.ViewModel.IsCustomMaximumFansVisible)
+        {
+            throw new InvalidOperationException("The experimental Maximum Fans preview is unavailable.");
+        }
+        System.Reflection.FieldInfo changingCards = typeof(MainWindow).GetField(
+            "changingDashboardCards", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Dashboard preference guard was not found.");
+        changingCards.SetValue(window, true);
+        try
+        {
+            window.DashboardCards.Add(new DashboardCardOption(
+                DashboardCardKind.PowerMode, "Power mode", string.Empty, true));
+        }
+        finally
+        {
+            changingCards.SetValue(window, false);
+        }
+        typeof(MainWindow).GetMethod(
+            "RefreshDashboardCards", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(window, null);
     }
 
     private static void ApplyExperimentalBatterySnapshotState(MainWindow window, bool off, bool paused = false)
@@ -1582,7 +1659,7 @@ public partial class App
 
             var save = new XamlButton
             {
-                Content = "Save these current settings to an extraordinarily long USB-C power profile with additional localized wording",
+                Content = "Save these current settings to an extraordinarily long low-power profile with additional localized wording",
                 Style = saveStyle,
                 Visibility = Visibility.Visible,
                 Width = 300,

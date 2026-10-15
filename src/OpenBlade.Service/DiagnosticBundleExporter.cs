@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
@@ -83,7 +84,10 @@ public sealed record DiagnosticBundle(
     IReadOnlyCollection<string> SensitiveTokens,
     DiagnosticHyperBoostOwnershipJournal? HyperBoostOwnership = null,
     DiagnosticDeviceVerification? DeviceVerification = null,
-    DiagnosticExperimentalSupportSnapshot? ExperimentalSupport = null);
+    DiagnosticExperimentalSupportSnapshot? ExperimentalSupport = null)
+{
+    internal IReadOnlyList<FirmwareQueryDiagnostic>? FirmwareQueries { get; init; }
+}
 
 public static class DiagnosticBundleExporter
 {
@@ -121,6 +125,19 @@ public static class DiagnosticBundleExporter
             bundle.CommandResults,
             bundle.SensitiveTokens,
             cancellationToken);
+        if (bundle.FirmwareQueries is { } queries)
+        {
+            // Closed command identities, bounded hex state payloads and typed
+            // failures contain no paths or serials. Substring redaction would
+            // corrupt firmware evidence (for example a short username "AB").
+            await WriteJsonEntryAsync(
+                archive,
+                "firmware-queries.json",
+                queries,
+                sensitiveTokens: [],
+                cancellationToken,
+                jsonOptions: VerificationJsonOptions);
+        }
         if (bundle.HyperBoostOwnership is { } ownership)
         {
             // This narrow typed record contains no user or device identifiers.

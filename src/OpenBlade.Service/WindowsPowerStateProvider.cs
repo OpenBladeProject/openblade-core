@@ -118,7 +118,7 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
     {
         0 => PowerSource.Battery,
         // Windows only reports that some external supply is present. It cannot
-        // distinguish the 280 W barrel adapter from 100 W USB-C PD, so hardware
+        // determine whether it meets the laptop's recommended wattage, so hardware
         // control remains blocked until the Blade adapter query classifies it.
         1 => PowerSource.ExternalUnknown,
         _ => throw new InvalidDataException("Windows reported an unknown AC line status."),

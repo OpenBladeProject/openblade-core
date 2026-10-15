@@ -10,6 +10,7 @@ public sealed class ProfileSetValidatorTests
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
+            CustomPerformance = DeviceCapabilities.SafeTargetDefaults().CustomPerformance,
             LightingEffects = new HashSet<LightingEffect> { LightingEffect.Breathing, LightingEffect.Wave },
             SupportsBreathingColorSelection = false,
             SupportsWaveDirectionSelection = false,

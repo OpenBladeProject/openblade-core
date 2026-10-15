@@ -13,7 +13,7 @@
 
 OpenBlade is a free Windows tray app for Razer Blade laptops. Adjust performance,
 fans, charging, lighting, display settings, and special keys without a Synapse
-account. Profiles switch automatically between plugged-in, USB-C, and battery
+account. Profiles switch automatically between plugged-in, low-power adapter, and battery
 power, and keep working when you close the window.
 
 | Dashboard | Lighting |
@@ -78,9 +78,9 @@ trigger a Windows warning.
 
 ## Using it with Synapse
 
-OpenBlade works on its own. On the Blade 16 (2025 and 2026), keep Synapse for
-other Razer devices with [Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker).
-Close Synapse when testing experimental laptop controls.
+OpenBlade works on its own. To keep Synapse for other Razer devices, see
+[Synapse Blade Blocker](https://github.com/OpenBladeProject/synapse-blade-blocker)
+for current model coverage and patch instructions.
 OpenBlade checks the patch before allowing shared use; see the
 [setup and coexistence notes](docs/synapse-blade-blocker.md).
 

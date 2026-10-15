@@ -462,6 +462,7 @@ internal sealed class ProductionBatteryPort :
                 && admittedAdapterPowerStates is not null
                 && !admittedAdapterPowerStates.Contains(result.Value))
             {
+                session.RetainQueryFailure(0x07, 0x8C, FirmwareQueryOutcome.ModelAdmissionRejected);
                 return AdapterPowerState.Unknown;
             }
 
@@ -821,7 +822,7 @@ internal sealed class ProductionBatteryPort :
         CancellationToken cancellationToken)
     {
         if (!CustomPerformanceSettings.IsWellFormed(value)
-            || Capabilities.CustomPerformance?.Supports(value) == false)
+            || Capabilities.CustomPerformance?.Supports(value) != true)
         {
             return Task.FromException(KnownNotApplied(
                 "The custom performance CPU/GPU combination is invalid."));
@@ -1292,7 +1293,54 @@ internal sealed class ProductionBatteryPort :
 
         return ExecuteSetterAsync(
             enabled ? TemporaryEnableAction : TemporaryCancelAction,
-            cancellationToken);
+            cancellationToken,
+            RequireNoOtherPowerModeSettingsAsync);
+    }
+
+    /// <summary>
+    /// On every model that uses it, 07/0F replaces the whole Power Mode Control
+    /// byte. The admitted payloads are only 0x00 and 0x04, so a write is sent only
+    /// when a fresh read in the same write session shows the other bits clear.
+    /// Combined payloads are uncaptured and are never written.
+    /// </summary>
+    private async Task RequireNoOtherPowerModeSettingsAsync(
+        CancellationToken cancellationToken)
+    {
+        HidSessionResult<TemporaryFullChargeReading> reading;
+        try
+        {
+            reading = await temporaryCommands.QueryReadingAsync(
+                AllocateTransactionForRead(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw KnownNotApplied("The battery write was canceled before submission.");
+        }
+        catch (Exception exception)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "The temporary full charge pre-write read failed before submission.",
+                exception);
+        }
+
+        if (reading.Failure is not null)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw KnownNotApplied("The battery write was canceled before submission.");
+            }
+
+            throw KnownNotApplied(
+                "The temporary full charge pre-write read failed before submission.");
+        }
+
+        if (reading.Value.OtherSettings != 0)
+        {
+            throw KnownNotApplied(TemporaryFullChargeProtocol.OtherSettingsBlockMessage(
+                reading.Value.OtherSettings));
+        }
     }
 
     public Task ApplyOneShotLaptopControlAsync(
@@ -1507,7 +1555,11 @@ internal sealed class ProductionBatteryPort :
             OneShotLaptopControls = oneShotControls,
             FanSpeedRange = admittedFanSpeedRange,
             CustomPerformance = performance.Contains(PerformancePreset.Custom)
-                ? customPerformanceCapabilities
+                ? customPerformanceCapabilities ?? new CustomPerformanceCapabilities(
+                    (from cpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+                     from gpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+                     where (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)
+                     select new CustomPerformanceCombination(cpu, gpu)).ToHashSet())
                 : null,
             CpuPowerLimit = cpuPowerLimitCapabilities,
             CpuVoltageOptimizer = cpuVoltageOptimizerCapabilities,
@@ -1638,7 +1690,8 @@ internal sealed class ProductionBatteryPort :
 
     private async Task ExecuteSetterAsync(
         string action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? preWriteCheck = null)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1655,6 +1708,14 @@ internal sealed class ProductionBatteryPort :
         try
         {
             EnsureUsableForWrite();
+            if (preWriteCheck is not null)
+            {
+                // Runs under the same operation gate; it throws KnownNotApplied
+                // without submitting anything when the write is not admitted.
+                await preWriteCheck(cancellationToken).ConfigureAwait(false);
+                EnsureUsableForWrite();
+            }
+
             HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
                 new RazerCommandSpec(
                     command.CommandClass,
@@ -2017,10 +2078,8 @@ internal sealed class ProductionBatteryPort :
             }
         }
 
-        bool adapterEligible = padAbsentEligibility
-            ? HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
-                && admittedAdapterPowerStates?.Contains(adapter.Value) == true
-            : adapter.Value == AdapterPowerState.FullPower280W;
+        bool adapterEligible = HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
+            && (admittedAdapterPowerStates?.Contains(adapter.Value) ?? padPresentEligibility);
         if (!adapterEligible)
         {
             throw KnownNotApplied(
@@ -2057,6 +2116,7 @@ internal sealed class ProductionBatteryPort :
                 second.Span,
                 out ThermalModeState state))
         {
+            session.RetainQueryFailure(0x0D, 0x82, FirmwareQueryOutcome.ContentRejected);
             poisoned = true;
             throw new RazerProtocolException(
                 "Thermal channels did not report one recognized matching state.",
@@ -2118,8 +2178,13 @@ internal sealed class ProductionBatteryPort :
                 CustomPerformanceDomain.Gpu,
                 cancellationToken).ConfigureAwait(false);
         var custom = new CustomPerformanceSettings(cpu, gpu);
-        if (Capabilities.CustomPerformance?.Supports(custom) == false)
+        // Captured getters are independently admitted even when this port has
+        // no Custom setters, or its writable combination list is narrower.
+        // Keep the validated read vocabulary (Low..High, excluding High/High)
+        // separate from experimental Boost and per-model write admission.
+        if (cpu == CustomPerformanceLevel.High && gpu == CustomPerformanceLevel.High)
         {
+            session.RetainQueryFailure(0x0D, 0x87, FirmwareQueryOutcome.ModelAdmissionRejected);
             poisoned = true;
             throw new RazerProtocolException(
                 "Custom performance returned a combination not admitted for this exact device.",

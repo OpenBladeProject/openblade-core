@@ -1734,6 +1734,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 LogoStorageSelector,
                 out LogoLightingMode mode))
         {
+            session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
+            session.RetainQueryFailure(0x03, 0x82, FirmwareQueryOutcome.ContentRejected);
             throw new DeviceStateContentRejectedException(
                 "PID 02C6 logo response was malformed or unsupported.",
                 DeviceStateQuery.LogoLightingCombination,

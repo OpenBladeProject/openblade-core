@@ -5,8 +5,27 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.29.0-nightly.91] - 2026-10-15
+
+### Added
+
+- Use Synapse's shared adapter wattage classification on all seven admitted Blade models, including the five experimental profiles. Compare actual and recommended power before thermal changes; limited supplies allow Balanced and Automatic fan handback. ([#779](https://github.com/OpenBladeProject/openblade-core/pull/779))
+
+## [0.28.1-nightly.90] - 2026-10-15
+
+### Added
+
+- Expand experimental Blade controls with model-specific Custom levels, fixed and Maximum Fans, keyboard and logo lighting, and 50–100% charge limits. Blade 16 (2023) gains whole-keyboard Static, Ambient Awareness, and Audio Meter; Blade 15 Base (2020) gains single-zone RGB. Diagnostics distinguish tested upstream features from extrapolations. ([#770](https://github.com/OpenBladeProject/openblade-core/pull/770))
+
+### Fixed
+
+- Recognize all Synapse-defined adapter wattages, including 200 W, on Blade 16 (2025 and 2026). Compare connected and recommended wattage, and label insufficient supplies as low-power adapters without assuming a connector. ([#776](https://github.com/OpenBladeProject/openblade-core/pull/776))
+
+## [0.27.5-nightly.89] - 2026-10-15
+
 ### Changed
 
+- Point Synapse Blade Blocker compatibility guidance to its repository instead of limiting it to Blade 16 (2025 and 2026), and clarify its use with experimental models. ([#768](https://github.com/OpenBladeProject/openblade-core/pull/768))
 - Open Synapse Observer from **Help add support** and explain how to collect and submit evidence for an unsupported laptop. The support form accepts Observer ZIPs and OpenBlade identity reports. ([#765](https://github.com/OpenBladeProject/openblade-core/pull/765))
 - Simplify experimental-support wording in the README and guides, keeping model features and testing instructions in the linked guide. ([#764](https://github.com/OpenBladeProject/openblade-core/pull/764))
 - Document all five experimental Blade models, automatic controls, model-specific limits, recovery, and tester reports across the README and guides, with laptop lists ordered newest first. ([#759](https://github.com/OpenBladeProject/openblade-core/pull/759))
@@ -22,10 +41,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Prevent RPM and lighting commands from overlapping on RZ09-0528. Share cancellation handling across model backends, distinguish requests that were never sent, and let controls recover after cleanup errors once pending I/O has finished. ([#762](https://github.com/OpenBladeProject/openblade-core/pull/762))
+- Keep firmware query replies in exported diagnostics after an unrecognized reading or failed model check, including adapter classification failures. Retain failure evidence after recovery for the current service run, without requiring developer tools. ([#773](https://github.com/OSSBlade/openblade-core/pull/773))
 - On RZ09-0581 with AC power, apply manual fan, performance and padless HyperBoost changes without first resetting to Balanced or Automatic, and allow those AC profile combinations. Remove the obsolete Balanced instruction. Battery Protection can be turned off without resetting the current supported charge limit first. ([#756](https://github.com/OpenBladeProject/openblade-core/pull/756))
 - Prevent animated keyboard lighting from overlapping fan and battery command exchanges on RZ09-0581. Exported diagnostics now retain the query or command and native I/O error details when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
 - Preserve the selected performance mode on experimental laptops when a saved profile contains unavailable manual-fan settings, without switching to Balanced or writing fans. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Keep independent experimental controls available after unrecognized readings, allow unrelated profile edits with unavailable saved settings, and accept fresh lighting intent after resuming paused controls. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Read temporary full charge correctly on supported Blade laptops when other settings that share it, such as local dimming, are on, instead of reporting an unrecognized battery value and keeping battery controls unavailable. On the Blade 16 (2026), Synapse turns local dimming on when Windows HDR turns on. While local dimming, CPU boost, or maximum fan speed is on, OpenBlade leaves temporary full charge unchanged and explains why, rather than risk switching those settings off. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
+- OpenBlade no longer restarts or re-requests a one-time full charge after the laptop or another app ends it, and no longer reports that as a change made outside OpenBlade. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
 
 ## [0.26.2-nightly.87] - 2026-10-14
 
@@ -2045,7 +2067,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.29.0-nightly.91...HEAD
+[0.29.0-nightly.91]: https://github.com/OSSBlade/openblade-core/compare/v0.28.1-nightly.90...v0.29.0-nightly.91
+[0.28.1-nightly.90]: https://github.com/OSSBlade/openblade-core/compare/v0.27.5-nightly.89...v0.28.1-nightly.90
+[0.27.5-nightly.89]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...v0.27.5-nightly.89
 [0.26.2-nightly.87]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...v0.26.2-nightly.87
 [0.25.2-nightly.84]: https://github.com/OSSBlade/openblade-core/compare/v0.25.1-nightly.83...v0.25.2-nightly.84-attempt.2
 [0.25.1-nightly.83]: https://github.com/OSSBlade/openblade-core/compare/v0.25.0...v0.25.1-nightly.83

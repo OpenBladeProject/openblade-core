@@ -384,8 +384,8 @@
   <data name="Color profile changed outside OpenBlade." xml:space="preserve">
     <value>颜色配置文件已在 OpenBlade 外部更改。</value>
   </data>
-  <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
-    <value>比较交流电、USB-C 和电池配置方案中保存的设置。</value>
+  <data name="Compare the settings stored in AC, low-power, and battery profiles." xml:space="preserve">
+    <value>比较交流电、低功率和电池配置方案中保存的设置。</value>
   </data>
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>设置实时数据、登录时启动和灯光控制权。</value>
@@ -1041,8 +1041,8 @@
   <data name="Save to profile" xml:space="preserve">
     <value>保存到配置方案</value>
   </data>
-  <data name="Save to USB-C profile" xml:space="preserve">
-    <value>保存到 USB-C 配置方案</value>
+  <data name="Save to low-power profile" xml:space="preserve">
+    <value>保存到低功率配置方案</value>
   </data>
   <data name="Saved profile comparison" xml:space="preserve">
     <value>比较已保存的配置方案</value>
@@ -1224,11 +1224,14 @@
   <data name="Updates have not been checked." xml:space="preserve">
     <value>尚未检查更新。</value>
   </data>
-  <data name="USB-C · {0}" xml:space="preserve">
-    <value>USB-C · {0}</value>
+  <data name="Low-power adapter · {0}" xml:space="preserve">
+    <value>低功率适配器 · {0}</value>
   </data>
-  <data name="USB-C profile" xml:space="preserve">
-    <value>USB-C 配置方案</value>
+  <data name="Low-power adapter" xml:space="preserve">
+    <value>低功率适配器</value>
+  </data>
+  <data name="Low-power profile" xml:space="preserve">
+    <value>低功率配置方案</value>
   </data>
   <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
     <value>使用 Ctrl+Shift+M 之类的快捷键。</value>
@@ -1404,8 +1407,8 @@
   <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
     <value>此笔记本当前无法使用手动风扇控制，但仍可显示风扇转速。如果您认为应支持手动控制，请导出诊断信息。</value>
   </data>
-  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
-    <value>使用电池或 USB-C 供电时，风扇仅支持自动控制。连接笔记本的交流电源适配器后，可手动控制风扇。风扇转速仍可显示。</value>
+  <data name="Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
+    <value>使用电池或低功率适配器供电时，风扇仅支持自动控制。连接笔记本的交流电源适配器后，可手动控制风扇。风扇转速仍可显示。</value>
   </data>
   <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
     <value>OpenBlade 无法连接到其服务。打开“关于”并选择“启动服务”。如果仍无法连接，请修复安装。</value>
@@ -1460,5 +1463,14 @@
   </data>
   <data name="Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop." xml:space="preserve">
     <value>若要帮助添加对此笔记本电脑的支持，请保存一份简短的设备信息报告，然后按照 Synapse Observer 指南收集并提交资料。</value>
+  </data>
+  <data name="Boost" xml:space="preserve">
+    <value>增强</value>
+  </data>
+  <data name="Maximum fans" xml:space="preserve">
+    <value>风扇最高转速</value>
+  </data>
+  <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
+    <value>“风扇最高转速”正在控制风扇。关闭此选项后即可选择风扇模式。</value>
   </data>
 </root>

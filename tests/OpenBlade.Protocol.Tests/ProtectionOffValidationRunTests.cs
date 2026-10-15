@@ -338,6 +338,10 @@ public sealed class ProtectionOffValidationRunTests
             return Task.FromResult(results.Dequeue());
         }
 
+        public Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+            byte transactionId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<HidSessionResult<HidUnit>> SetAsync(
             byte id,
             bool enabled,

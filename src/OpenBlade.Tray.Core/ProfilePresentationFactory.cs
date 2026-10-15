@@ -274,6 +274,7 @@ public static class ProfilePresentationFactory
             CustomPerformanceLevel.Low => TrayText.Get("Low"),
             CustomPerformanceLevel.Medium => TrayText.Get("Medium"),
             CustomPerformanceLevel.High => TrayText.Get("High"),
+            CustomPerformanceLevel.Boost => TrayText.Get("Boost"),
             _ => level.ToString(),
         };
 

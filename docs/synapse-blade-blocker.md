@@ -1,6 +1,6 @@
 # Synapse Blade Blocker coexistence
 
-[Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker) is an optional, separately installed patch that lets Synapse serve peripherals while excluding recognized Blade devices. OpenBlade does not install or depend on it.
+[Synapse Blade Blocker](https://github.com/OpenBladeProject/synapse-blade-blocker) is an optional, separately installed patch that lets Synapse serve peripherals while excluding recognized Blade devices. Its repository is the source of truth for current model coverage and patch instructions. OpenBlade does not install or depend on it.
 
 ## Setup
 

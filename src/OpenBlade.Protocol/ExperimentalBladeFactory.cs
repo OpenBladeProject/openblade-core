@@ -13,6 +13,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly IHidFeatureIo io;
     private readonly Func<PowerSource> capturePowerSource;
     private readonly SemaphoreSlim sharedCommandGate;
+    private readonly SemaphoreSlim operationGate = new(1, 1);
+    private readonly ExperimentalLightingOwnershipState lightingOwnership = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
@@ -47,7 +49,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
         public async Task<HidSessionResult<IProductionLightingPort>> OpenAsync(Func<bool> writeAllowed, CancellationToken token)
         {
-            if (owner.model.ProductId != 0x02A0)
+            if (!ExperimentalBladePort.SupportsExperimentalLighting(owner.model))
             {
                 return new(null, HidSessionFailureKind.IdentityBlocked);
             }
@@ -259,7 +261,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 try
                 {
                     var rawSession = new WindowsRazerHidSession(native.BindSelected(candidate.Handle), io, guard,
-                        TimeProvider.System, lease, ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30));
+                        TimeProvider.System, lease, ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30),
+                        queryDiagnostics: FirmwareQueryDiagnostics.Process);
                     session = new RazerCommandSessionGate(rawSession, sharedCommandGate, ownsInner: true);
                 }
                 catch
@@ -269,7 +272,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 }
                 var port = new ExperimentalBladePort(session, context, model, policy,
                     () => identity.ReadExactIdentity() is { Evidence: not null, Failure: null }, capturePowerSource,
-                    recordQueries: false);
+                    recordQueries: false,
+                    sharedOperationGate: operationGate,
+                    sharedLightingOwnership: lightingOwnership);
                 try
                 {
                     // Correctly correlated selectors identify the interface even when

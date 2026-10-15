@@ -5,7 +5,7 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class TemporaryFullChargeValidationRunTests
 {
     [Fact]
-    public async Task HappyPath_UsesExactEightTransactionsAndFixedWrites()
+    public async Task HappyPath_UsesExactTenTransactionsAndFixedWrites()
     {
         var battery = new BatteryCommands(
             Result(BatteryValidationSetting.Limit80),
@@ -13,7 +13,8 @@ public sealed class TemporaryFullChargeValidationRunTests
             Result(BatteryValidationSetting.Limit80));
         var temporary = new TemporaryCommands(
             queries: [Result(false), Result(true), Result(false)],
-            setters: [Unit(), Unit()]);
+            setters: [Unit(), Unit()],
+            guards: [Reading(false, 0x00), Reading(true, 0x00)]);
         var actors = new ActorFactory(Actor(battery, temporary));
         ITemporaryFullChargeValidationPort port =
             (await Factory(actors).OpenAsync(default)).Value!;
@@ -31,7 +32,9 @@ public sealed class TemporaryFullChargeValidationRunTests
         Assert.False((await port.QueryTemporaryFullChargeAsync(default)).Value);
 
         Assert.Equal(["Q1", "Q4", "Q7"], battery.Events);
-        Assert.Equal(["Q2", "S3:True", "Q5", "S6:False", "Q8"], temporary.Events);
+        Assert.Equal(
+            ["Q2", "G9", "S3:True", "Q5", "G10", "S6:False", "Q8"],
+            temporary.Events);
         Assert.Equal(1, actors.OpenCount);
     }
 
@@ -57,7 +60,7 @@ public sealed class TemporaryFullChargeValidationRunTests
         Assert.Equal(HidSessionFailureKind.Disposed,
             (await port.CancelTemporaryFullChargeAsync(default)).Failure);
 
-        Assert.Equal(["Q2", "S3:True", "S6:False", "Q8"], temporary.Events);
+        Assert.Equal(["Q2", "G9", "S3:True", "G10", "S6:False", "Q8"], temporary.Events);
         Assert.Equal(["Q1", "Q7"], battery.Events);
     }
 
@@ -123,6 +126,79 @@ public sealed class TemporaryFullChargeValidationRunTests
         Assert.Equal(["S6:False"], recoveryTemporary.Events.Where(IsSetter).ToArray());
     }
 
+    [Theory]
+    [InlineData(0x08)]
+    [InlineData(0x01)]
+    [InlineData(0x02)]
+    public async Task OtherPowerModeSettingsOn_SendsNeitherFixedWrite(byte otherSettings)
+    {
+        var battery = new BatteryCommands(Result(BatteryValidationSetting.Limit80));
+        var temporary = new TemporaryCommands(
+            queries: [Result(false)],
+            setters: [],
+            guards: [Reading(false, otherSettings), Reading(false, otherSettings)]);
+        ITemporaryFullChargeValidationPort port =
+            (await Factory(new ActorFactory(Actor(battery, temporary))).OpenAsync(default)).Value!;
+
+        await PrimeBaselineAsync(port);
+        HidSessionResult<HidUnit> enable = await port.ApplyTemporaryFullChargeAsync(default);
+        HidSessionResult<HidUnit> cancel = await port.CancelTemporaryFullChargeAsync(default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, enable.Failure);
+        Assert.Equal(HidSessionFailurePhase.Guard, enable.Diagnostic?.Phase);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, cancel.Failure);
+        Assert.Equal(HidSessionFailureKind.Disposed,
+            (await port.QueryProtectionAsync(default)).Failure);
+        Assert.Equal(["Q2", "G9", "G10"], temporary.Events);
+    }
+
+    [Fact]
+    public async Task CancelGuard_BlocksWhenLocalDimmingTurnsOnAfterEnable()
+    {
+        var battery = new BatteryCommands(
+            Result(BatteryValidationSetting.Limit80),
+            Result(BatteryValidationSetting.Limit80));
+        var temporary = new TemporaryCommands(
+            queries: [Result(false), Result(true)],
+            setters: [Unit()],
+            guards: [Reading(false, 0x00), Reading(true, 0x08)]);
+        ITemporaryFullChargeValidationPort port =
+            (await Factory(new ActorFactory(Actor(battery, temporary))).OpenAsync(default)).Value!;
+
+        await PrimeBaselineAsync(port);
+        Assert.Null((await port.ApplyTemporaryFullChargeAsync(default)).Failure);
+        Assert.Equal(BatteryValidationSetting.Limit80,
+            (await port.QueryProtectionAsync(default)).Value);
+        Assert.True((await port.QueryTemporaryFullChargeAsync(default)).Value);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure,
+            (await port.CancelTemporaryFullChargeAsync(default)).Failure);
+        Assert.Equal(["Q2", "G9", "S3:True", "Q5", "G10"], temporary.Events);
+    }
+
+    [Fact]
+    public async Task GuardReadFailure_SendsNoEnable()
+    {
+        var battery = new BatteryCommands(Result(BatteryValidationSetting.Limit80));
+        var temporary = new TemporaryCommands(
+            queries: [Result(false)],
+            setters: [],
+            guards:
+            [
+                Failure<TemporaryFullChargeReading>(HidSessionFailureKind.ProtocolFailure),
+                Failure<TemporaryFullChargeReading>(HidSessionFailureKind.ProtocolFailure),
+            ]);
+        ITemporaryFullChargeValidationPort port =
+            (await Factory(new ActorFactory(Actor(battery, temporary))).OpenAsync(default)).Value!;
+
+        await PrimeBaselineAsync(port);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure,
+            (await port.ApplyTemporaryFullChargeAsync(default)).Failure);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure,
+            (await port.CancelTemporaryFullChargeAsync(default)).Failure);
+        Assert.DoesNotContain(temporary.Events, IsSetter);
+    }
+
     private static bool IsSetter(string value) => value.StartsWith('S');
 
     private static TemporaryFullChargeValidationRunFactory Factory(ActorFactory actors) =>
@@ -155,6 +231,10 @@ public sealed class TemporaryFullChargeValidationRunTests
         new(default, failure);
 
     private static HidSessionResult<HidUnit> Unit() => new(new HidUnit(), null);
+
+    private static HidSessionResult<TemporaryFullChargeReading> Reading(
+        bool active,
+        byte otherSettings) => new(new TemporaryFullChargeReading(active, otherSettings), null);
 
     private sealed class ActorFactory(params ValidationActor[] actors) : IValidationActorFactory
     {
@@ -195,8 +275,12 @@ public sealed class TemporaryFullChargeValidationRunTests
 
     private sealed class TemporaryCommands(
         IEnumerable<HidSessionResult<bool>> queries,
-        IEnumerable<HidSessionResult<HidUnit>> setters) : ITemporaryFullChargeCommandClient
+        IEnumerable<HidSessionResult<HidUnit>> setters,
+        IEnumerable<HidSessionResult<TemporaryFullChargeReading>>? guards = null)
+        : ITemporaryFullChargeCommandClient
     {
+        private readonly Queue<HidSessionResult<TemporaryFullChargeReading>> guards =
+            new(guards ?? []);
         private readonly Queue<HidSessionResult<bool>> queries = new(queries);
         private readonly Queue<HidSessionResult<HidUnit>> setters = new(setters);
         private int setCount;
@@ -207,6 +291,17 @@ public sealed class TemporaryFullChargeValidationRunTests
         {
             Events.Add($"Q{id}");
             return Task.FromResult(queries.Dequeue());
+        }
+
+        public Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+            byte id,
+            CancellationToken token)
+        {
+            Events.Add($"G{id}");
+            return Task.FromResult(guards.Count > 0
+                ? guards.Dequeue()
+                : new HidSessionResult<TemporaryFullChargeReading>(
+                    new TemporaryFullChargeReading(false, 0), null));
         }
 
         public Task<HidSessionResult<HidUnit>> SetAsync(

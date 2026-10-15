@@ -55,7 +55,7 @@ public sealed class PersistentOverrideStoreTests : IDisposable
         Assert.False(loaded.Recovered);
         Assert.Equal(expected, loaded.Overrides);
         Assert.Contains(
-            "\"schemaVersion\": 6",
+            "\"schemaVersion\": 7",
             await File.ReadAllTextAsync(
                 Path.Combine(directory, "manual-overrides.json")),
             StringComparison.Ordinal);
@@ -140,7 +140,7 @@ public sealed class PersistentOverrideStoreTests : IDisposable
                 new GpuClockOffsetSettings(125, 500)),
             loaded.Overrides.GpuClockTuning);
         Assert.Contains(
-            "\"schemaVersion\": 6",
+            "\"schemaVersion\": 7",
             await File.ReadAllTextAsync(path),
             StringComparison.Ordinal);
     }
@@ -337,8 +337,8 @@ public sealed class PersistentOverrideStoreTests : IDisposable
         await store.SaveAsync(overrides, CancellationToken.None);
         string future = (await File.ReadAllTextAsync(path))
             .Replace(
-                "\"schemaVersion\": 6",
-                "\"schemaVersion\": 7, \"schemaVersion\": 6",
+                "\"schemaVersion\": 7",
+                "\"schemaVersion\": 8, \"schemaVersion\": 7",
                 StringComparison.Ordinal);
         await File.WriteAllTextAsync(path, future);
         byte[] preserved = await File.ReadAllBytesAsync(path);

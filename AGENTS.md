@@ -20,6 +20,14 @@ files or components and inspect the combined diff before verification.
 
 ## Proportionate execution and authorization reuse
 
+Prefer Synapse's exact-model or demonstrably shared vendor definitions as the
+first evidence source for hardware semantics. Pin and review that source before
+implementing it. Use user diagnostics when Synapse data is missing, does not work,
+or conflicts with observed behavior; do not require users to repeat evidence
+already established by vendor code. Distinguish source-backed behavior from
+physical observations. This preference does not admit new firmware commands,
+weaken exact-device checks, or waive fresh per-write safety admission.
+
 Use the smallest workflow that resolves a concrete uncertainty and completes
 required verification and reviews. Before adding a check, capture, study, or
 validation step, identify what remains uncertain and how its result will affect
@@ -260,6 +268,11 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
   implemented typed operations; its presence grants no additional developer or
   physical-validation write authority. Unknown commands still need reviewed
   evidence and separate authorization.
+- `07/8F` and `07/0F` are a shared Power Mode Control bitmask on every model
+  that uses them, not a full-charge-only value. Keep the shared decoder and
+  pre-write guard, and before admitting a model, especially a mini-LED one,
+  follow
+  [Power Mode Control and local dimming](docs/developer-guide.md#power-mode-control-and-local-dimming).
 - Keep validation proportionate. For transitions using commands already admitted
   for the exact device, prefer a direct test through OpenBlade's typed,
   reversible path. Vendor UI availability or a new capture matrix is not a

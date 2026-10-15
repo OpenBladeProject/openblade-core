@@ -67,7 +67,8 @@ internal sealed class ValidationActorFactory : IValidationActorFactory
                 lease,
                 exclusivityPolicy,
                 featureReportSettleDelay,
-                featureReportId),
+                featureReportId,
+                FirmwareQueryDiagnostics.Process),
             exchangeTimeout)
     {
         ArgumentNullException.ThrowIfNull(opener);
