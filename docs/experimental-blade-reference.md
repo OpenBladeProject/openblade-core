@@ -78,8 +78,8 @@ writes and never triggers an alternate sequence or setter replay.
 
 The Blade 16 (2023) and Blade 18 (2023) can report firmware HyperBoost, but
 OpenBlade exposes it as observed-only. It never submits a HyperBoost command.
-Choosing Balanced, Silent, or Performance may replace an existing HyperBoost
-state through that preset's ordinary direct transition.
+The product does not expose an exit action for this observed-only state. Turn
+HyperBoost off in Synapse before using performance controls.
 
 ## Battery protection
 

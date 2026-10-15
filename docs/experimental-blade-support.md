@@ -36,7 +36,7 @@ The Blade 14 (2025) also offers Battery Saver and Battery Balanced on battery po
   The Blade 16 also offers whole-keyboard Ambient Awareness and Audio Meter.
   The Blade 15 offers random or single-color Breathing.
 - HyperBoost can be reported on the Blade 16 (2023) and Blade 18 (2023), but
-  OpenBlade does not enable it.
+  OpenBlade does not control it. Turn it off in Synapse before changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not
   support charge limits. Temporary full charge is not yet supported.
 

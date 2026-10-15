@@ -464,6 +464,7 @@ internal sealed class ProductionBatteryPort :
                 && admittedAdapterPowerStates is not null
                 && !admittedAdapterPowerStates.Contains(result.Value))
             {
+                session.RetainQueryFailure(0x07, 0x8C, FirmwareQueryOutcome.ModelAdmissionRejected);
                 return AdapterPowerState.Unknown;
             }
 
@@ -2119,6 +2120,7 @@ internal sealed class ProductionBatteryPort :
                 second.Span,
                 out ThermalModeState state))
         {
+            session.RetainQueryFailure(0x0D, 0x82, FirmwareQueryOutcome.ContentRejected);
             poisoned = true;
             throw new RazerProtocolException(
                 "Thermal channels did not report one recognized matching state.",
@@ -2186,6 +2188,7 @@ internal sealed class ProductionBatteryPort :
         // separate from experimental Boost and per-model write admission.
         if (cpu == CustomPerformanceLevel.High && gpu == CustomPerformanceLevel.High)
         {
+            session.RetainQueryFailure(0x0D, 0x87, FirmwareQueryOutcome.ModelAdmissionRejected);
             poisoned = true;
             throw new RazerProtocolException(
                 "Custom performance returned a combination not admitted for this exact device.",

@@ -134,8 +134,22 @@ If device controls are disabled after identity verification succeeds, check
 `configuration.json`'s `status.message` and `command-results.json`. Protocol
 failures identify the rejected battery or thermal query and its validation
 category. Thermal diagnostics distinguish each channel from channel agreement
-and custom CPU/GPU settings. These records omit raw device responses and do not
-change write admission.
+and custom CPU/GPU settings.
+
+`firmware-queries.json` retains results from supported firmware state queries
+on validated and experimental models. Each query and selector has its own
+latest observation, first and last failure, and last failure with a reply.
+Successful recovery, port disposal and ordinary log rotation do not erase
+that failure evidence. The collection lasts for the current service run;
+export before restarting the service.
+
+Replies are exported as bounded hexadecimal payloads after envelope,
+correlation, status and length validation. Decoder and exact-model admission
+rejections retain those payloads, including unrecognized adapter replies.
+Transport and framing failures retain typed failure details instead of an
+untrusted response. Serial queries, device paths and full HID reports are
+excluded. Exporting makes no additional hardware requests and does not change
+write admission.
 
 Experimental devices also export `experimental-support.json` with source
 provenance, write-pause state, and the last 32 typed command-stage observations,

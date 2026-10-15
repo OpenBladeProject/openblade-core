@@ -173,6 +173,7 @@ internal sealed partial class ExperimentalBladePort
             [1, 5, 0], false, token).ConfigureAwait(false);
         if (!LightingBrightnessProtocol.TryDecodeQuery(payload.Span, out byte raw))
         {
+            session.RetainQueryFailure(0x03, 0x83, FirmwareQueryOutcome.ContentRejected);
             RecordQuery("KeyboardBrightness", "UnsupportedState", failure: "BrightnessSelector");
             throw new IOException("Experimental keyboard brightness returned an unexpected selector.");
         }
@@ -190,8 +191,10 @@ internal sealed partial class ExperimentalBladePort
         byte percent = checked((byte)LightingBrightnessProtocol.RawToPercent(raw));
         if (effect != LightingEffect.Off && percent == 0)
         {
-            RecordQuery("KeyboardLighting", "UnsupportedState",
-                $"Effect={effect};Raw={raw};Percent=0", "UnrepresentableZeroBrightnessEffect");
+            session.RetainQueryFailure(0x03, 0x83, FirmwareQueryOutcome.ContentRejected);
+            session.RetainQueryFailure(0x0F, 0x82, FirmwareQueryOutcome.ContentRejected);
+            RecordQuery("KeyboardLighting", "UnsupportedState", $"Effect={effect};Raw={raw};Percent=0",
+                "UnrepresentableZeroBrightnessEffect");
             throw new DeviceStateContentRejectedException(
                 "The reported effect at zero brightness cannot form a confirmed lighting setting.",
                 DeviceStateQuery.KeyboardLightingCombination,
@@ -223,6 +226,8 @@ internal sealed partial class ExperimentalBladePort
         ReadOnlySpan<byte> bytes = payload.Span;
         if (bytes[0] != 1 || bytes[1] != 5)
         {
+            session.RetainQueryFailure(0x0F, 0x82, FirmwareQueryOutcome.ContentRejected);
+            RecordQuery("KeyboardLighting", "InconsistentState", failure: "EffectSelector");
             throw new IOException("Experimental keyboard effect returned an unexpected selector.");
         }
 
@@ -239,6 +244,7 @@ internal sealed partial class ExperimentalBladePort
             RecordQuery("KeyboardLighting", "UnsupportedState",
                 $"PayloadLength={bytes.Length};Store={bytes[0]};Region={bytes[1]};Effect={mode};Parameter={(bytes.Length > 3 ? bytes[3].ToString() : "Unavailable")}",
                 "UnrepresentableEffectReadback");
+            session.RetainQueryFailure(0x0F, 0x82, FirmwareQueryOutcome.ContentRejected);
             throw new DeviceStateContentRejectedException(
                 "Experimental effect readback does not describe an admitted effect and parameters.",
                 DeviceStateQuery.KeyboardLightingEffect,
@@ -333,10 +339,13 @@ internal sealed partial class ExperimentalBladePort
             [1, 4, 0], false, token).ConfigureAwait(false);
         if (state.Span[0] != 1 || state.Span[1] != 4)
         {
+            session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
+            RecordQuery("LogoLighting", "InconsistentState", failure: "LogoPowerSelector");
             throw new IOException("Experimental logo power returned an unexpected selector.");
         }
         if (!LogoLightingProtocol.TryDecodeState(state.Span, out bool enabled))
         {
+            session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
             RecordQuery("LogoLighting", "UnsupportedState", failure: "LogoPowerSelectorOrValue");
             throw new DeviceStateContentRejectedException(
                 "Experimental logo power readback is unsupported.",
@@ -351,10 +360,16 @@ internal sealed partial class ExperimentalBladePort
 
         ReadOnlyMemory<byte> effect = await ExchangeAsync("LogoLighting", 0x03, 0x82,
             [1, 4, 0], false, token).ConfigureAwait(false);
-        if (effect.Span[0] != 1 || effect.Span[1] != 4
-            || !LogoLightingProtocol.TryDecodeMode(state.Span, effect.Span,
-                out LogoLightingMode mode))
+        if (effect.Span[0] != 1 || effect.Span[1] != 4)
         {
+            session.RetainQueryFailure(0x03, 0x82, FirmwareQueryOutcome.ContentRejected);
+            RecordQuery("LogoLighting", "InconsistentState", failure: "LogoEffectSelector");
+            throw new IOException("Experimental logo effect returned an unexpected selector.");
+        }
+        if (!LogoLightingProtocol.TryDecodeMode(state.Span, effect.Span, out LogoLightingMode mode))
+        {
+            session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
+            session.RetainQueryFailure(0x03, 0x82, FirmwareQueryOutcome.ContentRejected);
             RecordQuery("LogoLighting", "UnsupportedState", failure: "LogoEffectSelectorOrValue");
             throw new DeviceStateContentRejectedException(
                 "Experimental logo effect readback is unsupported.",

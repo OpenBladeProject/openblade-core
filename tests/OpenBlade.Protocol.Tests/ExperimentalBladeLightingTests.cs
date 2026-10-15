@@ -874,6 +874,23 @@ public sealed class ExperimentalBladeLightingTests
     }
 
     [Fact]
+    public async Task LogoStateRejection_DoesNotRetainPriorEffectQueryAsFailure()
+    {
+        var session = new Session { LogoOn = true, LogoEffect = 2 };
+        await using var port = Create(session, Enabled());
+        Assert.Equal(LogoLightingMode.Breathing,
+            await port.ReadLogoStateAsync(CancellationToken.None));
+        session.LogoStateSelector = 2;
+
+        await Assert.ThrowsAsync<IOException>(
+            () => port.ReadLogoStateAsync(CancellationToken.None));
+
+        Assert.Equal(
+            [(0x03, 0x80, FirmwareQueryOutcome.ContentRejected)],
+            session.RetainedQueryFailures);
+    }
+
+    [Fact]
     public async Task PartialLogoChange_PausesAllControlsWithoutSubmittingAnotherSetter()
     {
         var session = new Session { FailLogoPower = true };
@@ -978,6 +995,7 @@ public sealed class ExperimentalBladeLightingTests
         internal bool UnknownTail { get; set; }
         internal bool LogoOn { get; set; }
         internal byte LogoEffect { get; set; }
+        internal byte LogoStateSelector { get; set; } = 1;
         internal bool IgnoreEffect { get; set; }
         internal bool FailEffect { get; set; }
         internal bool IgnoreBrightness { get; set; }
@@ -992,7 +1010,10 @@ public sealed class ExperimentalBladeLightingTests
         internal TaskCompletionSource ReleaseFrame { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<RazerCommandSpec> Commands { get; } = [];
+        internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
         public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
+        public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
+            RetainedQueryFailures.Add((classId, commandId, outcome));
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId, TimeSpan exchangeTimeout, CancellationToken token)
         {
@@ -1100,7 +1121,7 @@ public sealed class ExperimentalBladeLightingTests
             }
             else if (command.ClassId == 0x03 && command.CommandId == 0x80)
             {
-                response = [1, 4, LogoOn ? (byte)1 : (byte)0];
+                response = [LogoStateSelector, 4, LogoOn ? (byte)1 : (byte)0];
             }
             else if (command.ClassId == 0x03 && command.CommandId == 0x82)
             {

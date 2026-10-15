@@ -209,6 +209,9 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             [[1, 1, 7, 0], [1, 2, 7, 0], [1, 1, baseMode, 0], [1, 2, baseMode, 0]];
         public RazerCommandSessionDisposition Disposition => inner.Disposition;
 
+        public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
+            inner.RetainQueryFailure(classId, commandId, outcome);
+
         public async Task<Rz090528BatteryBoundarySnapshot> ReadBatteryBoundaryAsync(CancellationToken token)
         {
             Rz090528BatteryBoundarySnapshot Refuse(string reason)
