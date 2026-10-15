@@ -17161,6 +17161,32 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(fanReads, context.Device.FanRpmReadCalls);
     }
 
+    [Theory]
+    [InlineData(AdapterPowerState.SufficientExternal, PowerSource.PluggedIn)]
+    [InlineData(AdapterPowerState.LimitedExternal, PowerSource.UsbC)]
+    [InlineData(AdapterPowerState.Battery, PowerSource.ExternalUnknown)]
+    public async Task SynapseAdapterClassification_RespectsSufficiencyAndWindowsExternalState(
+        AdapterPowerState adapterState, PowerSource expected)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.AdapterPowerState = adapterState;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80),
+            context.Runtime.GetStatus().Profiles.UsbC.Lighting);
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(expected, status.ActivePowerSource);
+        Assert.Equal(expected == PowerSource.ExternalUnknown, status.WritesBlocked);
+        Assert.Equal(2, context.Device.AdapterPowerReadCalls);
+        Assert.Empty(context.Device.PerformanceWrites);
+    }
+
     [Fact]
     public async Task SteadyUsbCPd_TransientUnknownSamplesDoNotReplaceConfirmedDashboardSource()
     {

@@ -151,6 +151,11 @@ untrusted response. Serial queries, device paths and full HID reports are
 excluded. Exporting makes no additional hardware requests and does not change
 write admission.
 
+For adapter classification, use the [pinned Synapse wattage definitions](synapse-adapter-wattage.md)
+first. The reply contains both connected and recommended wattage; insufficient
+power does not identify a connector. Use retained diagnostics when vendor data
+is missing or a device's reply does not match it.
+
 Experimental devices also export `experimental-support.json` with source
 provenance, write-pause state, and the last 32 typed command-stage observations,
 alongside cached telemetry. Exports remain local until a user shares them.

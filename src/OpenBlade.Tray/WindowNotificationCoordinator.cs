@@ -149,7 +149,7 @@ internal sealed class WindowNotificationCoordinator
                 string profile = current switch
                 {
                     PowerSource.PluggedIn => LocalizedResources.Get("MainWindow_Notification_ProfileAc", "AC profile"),
-                    PowerSource.UsbC => LocalizedResources.Get("MainWindow_Notification_ProfileUsbC", "USB-C profile"),
+                    PowerSource.UsbC => LocalizedResources.Get("MainWindow_Notification_ProfileUsbC", "Low-power profile"),
                     PowerSource.Battery => LocalizedResources.Get("MainWindow_Notification_ProfileBattery", "Battery profile"),
                     _ => LocalizedResources.Get("MainWindow_Notification_ProfileActive", "active power profile"),
                 };

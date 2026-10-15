@@ -20,6 +20,14 @@ files or components and inspect the combined diff before verification.
 
 ## Proportionate execution and authorization reuse
 
+Prefer Synapse's exact-model or demonstrably shared vendor definitions as the
+first evidence source for hardware semantics. Pin and review that source before
+implementing it. Use user diagnostics when Synapse data is missing, does not work,
+or conflicts with observed behavior; do not require users to repeat evidence
+already established by vendor code. Distinguish source-backed behavior from
+physical observations. This preference does not admit new firmware commands,
+weaken exact-device checks, or waive fresh per-write safety admission.
+
 Use the smallest workflow that resolves a concrete uncertainty and completes
 required verification and reviews. Before adding a check, capture, study, or
 validation step, identify what remains uncertain and how its result will affect

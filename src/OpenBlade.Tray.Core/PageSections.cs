@@ -101,7 +101,7 @@ public static class PageLayoutPreferenceDefaults
             CustomizablePageKind.Profiles,
             PageSectionKind.ProfilesComparison,
             TrayText.Get("Saved profile comparison"),
-            TrayText.Get("Compare the settings stored in AC, USB-C, and Battery profiles.")),
+            TrayText.Get("Compare the settings stored in AC, low-power, and battery profiles.")),
         new(
             CustomizablePageKind.Display,
             PageSectionKind.DisplayControls,

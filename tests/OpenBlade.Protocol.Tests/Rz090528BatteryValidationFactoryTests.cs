@@ -174,11 +174,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
                 OneShotLaptopControl.GamingMode,
             ]));
         Assert.True(productionFactory.AdmittedAdapterPowerStates!.SetEquals(
-            [
-                AdapterPowerState.Battery,
-                AdapterPowerState.UsbCPower100W,
-                AdapterPowerState.FullPower280W,
-            ]));
+            AdapterPowerProtocol.SynapseAdapterStates));
     }
 
     [Fact]

@@ -3523,8 +3523,8 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
-        Assert.Equal("USB-C profile", viewModel.ActivePowerSourceLabel);
-        Assert.Equal("Save to USB-C profile", viewModel.SaveToActiveProfileLabel);
+        Assert.Equal("Low-power profile", viewModel.ActivePowerSourceLabel);
+        Assert.Equal("Save to low-power profile", viewModel.SaveToActiveProfileLabel);
 
         client.Publish(pluggedIn with
         {
@@ -7617,7 +7617,7 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.False(viewModel.CanControlHardware);
-        Assert.Equal("USB-C", viewModel.TroubleshootingPowerSourceStatus);
+        Assert.Equal("Low-power adapter", viewModel.TroubleshootingPowerSourceStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
