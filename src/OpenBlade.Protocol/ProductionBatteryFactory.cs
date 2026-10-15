@@ -38,6 +38,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly IHyperBoostEligibilitySource? hyperBoostEligibility;
     private readonly bool allowPadlessHyperBoostLifecycleValidation;
     private readonly PerformancePreset padlessHyperBoostLifecycleBaseMode;
+    private readonly bool supportsDirectManualFanTransitions;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -63,7 +64,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         DeviceCommandCatalog? hyperBoostCatalog = null,
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
         bool allowPadlessHyperBoostLifecycleValidation = false,
-        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced)
+        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
+        bool supportsDirectManualFanTransitions = false)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.hyperBoostCatalog = hyperBoostCatalog ?? DeviceCommandCatalog.Empty;
@@ -107,6 +109,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         this.allowPadlessHyperBoostLifecycleValidation =
             allowPadlessHyperBoostLifecycleValidation;
         this.padlessHyperBoostLifecycleBaseMode = padlessHyperBoostLifecycleBaseMode;
+        this.supportsDirectManualFanTransitions = supportsDirectManualFanTransitions;
         ValidateHyperBoostBaseModes(
             this.hyperBoostAccess,
             this.hyperBoostBaseModes,
@@ -169,7 +172,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.observedPowerSourceBehaviors,
             this.hyperBoostAccess,
             this.hyperBoostWithoutCoolingPadAccess,
-            this.hyperBoostBaseModes);
+            this.hyperBoostBaseModes,
+            this.supportsDirectManualFanTransitions);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -202,6 +206,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     internal IReadOnlySet<AdapterPowerState>? AdmittedAdapterPowerStates =>
         admittedAdapterPowerStates;
+
+    internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
     public static IProductionBatteryPortFactory CreateWindows()
         => CreateWindowsCore(
@@ -257,7 +263,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             compatibilityPolicy,
             admitGpuOverclock: true,
             allowPadlessHyperBoostLifecycleValidation,
-            exclusivityPolicy);
+            directManualFanTransitionEvidenceAdmitted: true,
+            exclusivityPolicy: exclusivityPolicy);
     }
 
     public static IProductionBatteryPortFactory CreateWindowsReadOnly() =>
@@ -324,7 +331,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                     pendingDisposals).ConfigureAwait(false);
             }
 
-            return Failure(opened.Failure ?? HidSessionFailureKind.NativeIoFailure);
+            return Failure(
+                opened.Failure ?? HidSessionFailureKind.NativeIoFailure,
+                opened.Diagnostic);
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -359,7 +368,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 hyperBoostCatalog,
                 hyperBoostEligibility,
                 allowPadlessHyperBoostLifecycleValidation,
-                padlessHyperBoostLifecycleBaseMode),
+                padlessHyperBoostLifecycleBaseMode,
+                supportsDirectManualFanTransitions),
             null);
     }
 
@@ -370,6 +380,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         FirmwareCompatibilityPolicy? compatibilityPolicy,
         bool admitGpuOverclock,
         bool allowPadlessHyperBoostLifecycleValidation,
+        bool directManualFanTransitionEvidenceAdmitted = false,
         ControllerExclusivityPolicy exclusivityPolicy =
             ControllerExclusivityPolicy.Advisory)
     {
@@ -421,6 +432,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 : null;
         IReadOnlySet<AdapterPowerState> admittedAdapterPowerStates =
             GetRz090581AdmittedAdapterPowerStates(exactIdentity);
+        bool supportsDirectManualFanTransitions =
+            GetRz090581SupportsDirectManualFanTransitions(
+                exactIdentity,
+                catalog,
+                directManualFanTransitionEvidenceAdmitted);
         return new ProductionBatteryFactory(
             catalog,
             admittedReadEvidence,
@@ -439,13 +455,28 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             PendingDisposalRegistry.Shared,
             admittedAdapterPowerStates: admittedAdapterPowerStates,
             gpuOverclockCapabilities: gpuOverclockCapabilities,
+            sharedCommandGate: Rz090581FeatureCommandGate.Shared,
             hyperBoostAccess: hyperBoostAccess,
             hyperBoostWithoutCoolingPadAccess: hyperBoostWithoutCoolingPadAccess,
             hyperBoostBaseModes: hyperBoostBaseModes,
             hyperBoostCatalog: admittedHyperBoostCatalog,
             hyperBoostEligibility: hyperBoostEligibility,
             allowPadlessHyperBoostLifecycleValidation:
-                allowPadlessHyperBoostLifecycleValidation);
+                allowPadlessHyperBoostLifecycleValidation,
+            supportsDirectManualFanTransitions: supportsDirectManualFanTransitions);
+    }
+
+    internal static bool GetRz090581SupportsDirectManualFanTransitions(
+        HostIdentityReadResult exactIdentity,
+        DeviceCommandCatalog catalog,
+        bool trustedExactFixture)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        // The production caller sets this only after loading the embedded RZ09-0581
+        // fixture through its code-controlled hash registry and exact target identity.
+        return trustedExactFixture
+            && IsExactModelScopedRz090581Identity(exactIdentity)
+            && ProductionBatteryPort.HasDirectManualFanCommandSet(catalog);
     }
 
     internal static ProductionBatteryReadEvidence
@@ -650,5 +681,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         };
 
     private static HidSessionResult<IProductionBatteryPort> Failure(
-        HidSessionFailureKind failure) => new(null, failure);
+        HidSessionFailureKind failure,
+        HidSessionFailureDiagnostic? diagnostic = null) => new(null, failure)
+        {
+            Diagnostic = diagnostic,
+        };
 }

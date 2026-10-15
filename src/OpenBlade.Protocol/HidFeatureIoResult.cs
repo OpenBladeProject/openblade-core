@@ -11,7 +11,10 @@ internal readonly record struct HidFeatureIoResult(
     NativeIoCompletion? Completion,
     bool WasSubmitted,
     HidFeatureTermination Termination,
-    NativeIoTiming? Timing = null);
+    NativeIoTiming? Timing = null)
+{
+    internal Task? NativeRetirement { get; init; }
+}
 
 internal readonly record struct NativeIoTiming(
     TimeSpan SubmitToCompletion,

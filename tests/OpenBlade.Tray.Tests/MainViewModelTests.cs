@@ -10678,7 +10678,8 @@ public sealed partial class MainViewModelTests
             Assert.True(viewModel.HasFanControlUnavailableMessage);
             Assert.Contains("Only Automatic", viewModel.FanControlUnavailableMessage);
             Assert.Contains("AC charger", viewModel.FanControlUnavailableMessage);
-            Assert.Contains("Balanced", viewModel.FanControlUnavailableMessage);
+            Assert.Contains("manual fan control", viewModel.FanControlUnavailableMessage);
+            Assert.DoesNotContain("Balanced", viewModel.FanControlUnavailableMessage);
             Assert.Contains("RPM", viewModel.FanControlUnavailableMessage);
             Assert.False(viewModel.HasHardwareControlUnavailableMessage);
         }

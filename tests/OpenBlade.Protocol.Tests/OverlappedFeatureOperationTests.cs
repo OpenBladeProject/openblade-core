@@ -379,11 +379,14 @@ public sealed class OverlappedFeatureOperationTests
         Assert.Null(result.Completion);
         Assert.False(submission.Token.IsDisposed);
         Assert.True(submission.Token.IsPinAllocated);
+        Assert.NotNull(result.NativeRetirement);
+        Assert.False(result.NativeRetirement.IsCompleted);
 
         submission.Complete(new NativeIoCompletion(false, 0, 995));
 
         Assert.Equal(1, submission.Token.DisposeCount);
         Assert.False(submission.Token.IsPinAllocated);
+        Assert.True(result.NativeRetirement.IsCompletedSuccessfully);
     }
 
     [Fact]

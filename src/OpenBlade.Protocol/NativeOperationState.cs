@@ -42,6 +42,7 @@ internal sealed class NativeOperationState
     private bool completionObserved;
     private bool abandonedBeforeSubmission;
     private bool targetedCancellationClaimed;
+    private TaskCompletionSource? nativeRetirement;
 
     public NativeOperationState(Action finalizeResources)
     {
@@ -184,7 +185,11 @@ internal sealed class NativeOperationState
                 result = new HidFeatureIoResult(
                     Completion: null,
                     WasSubmitted: true,
-                    Termination: recordedTermination);
+                    Termination: recordedTermination)
+                {
+                    NativeRetirement = (nativeRetirement ??=
+                        new(TaskCreationOptions.RunContinuationsAsynchronously)).Task,
+                };
             }
         }
 
@@ -270,13 +275,29 @@ internal sealed class NativeOperationState
         try
         {
             finalizeResourcesAction();
+            lock (sync)
+            {
+                // Managed cancellation may have returned before the native
+                // callback. Only finalized resources admit another device owner.
+                nativeRetirement?.TrySetResult();
+            }
             completion.TrySetResult(finalization.Value.Result);
         }
         catch (Exception exception)
         {
+            Task retirement;
+            lock (sync)
+            {
+                nativeRetirement ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+                nativeRetirement.TrySetException(exception);
+                retirement = nativeRetirement.Task;
+                // Retirement consumers require successful completion. Observe
+                // failure even when no shared-device gate is attached.
+                _ = retirement.Exception;
+            }
             completion.TrySetException(
                 new NativeOperationFinalizationException(
-                    finalization.Value.Result,
+                    finalization.Value.Result with { NativeRetirement = retirement },
                     exception));
         }
     }

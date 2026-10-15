@@ -210,8 +210,11 @@ public sealed class ControlCoordinator
     {
         NormalizeLegacyGpuClockTuning(ref customPerformance, ref gpuClockTuning);
         GpuClockTuningSettings? effectiveGpuClockTuning = gpuClockTuning;
+        bool supportsDirectManualFanTransitions = false;
         bool PerformanceSupported(DeviceCapabilities capabilities)
         {
+            supportsDirectManualFanTransitions =
+                capabilities.SupportsDirectManualFanTransitions;
             effectiveGpuClockTuning = FilterUnsupportedGpuClockTuning(
                 gpuClockTuning,
                 capabilities);
@@ -230,20 +233,23 @@ public sealed class ControlCoordinator
                 && (gpuClockTuning is null
                     || GpuClockTuningSettings.IsWellFormed(gpuClockTuning)),
             PerformanceSupported,
-            state => PerformanceMatches(
-                state,
-                value,
-                customPerformance,
-                effectiveGpuClockTuning),
+            state => (!supportsDirectManualFanTransitions
+                    || state.Fans == FanMode.Automatic)
+                && PerformanceMatches(
+                    state,
+                    value,
+                    customPerformance,
+                    effectiveGpuClockTuning),
             token => ApplyPerformanceAndGpuClockTuningAsync(
                 value,
                 customPerformance,
                 effectiveGpuClockTuning,
                 token),
             cancellationToken,
-            state => DeviceSubsystemOrder.IsManualFanMode(state.Fans)
-                ? "Performance changes require Automatic fan mode."
-                : null,
+            state => PerformanceInitialStateBlockReason(
+                state,
+                value,
+                supportsDirectManualFanTransitions),
             stateAwareSetter: (state, token) =>
                 CanApplyGpuClockOffsetsOnly(
                     state,
@@ -325,11 +331,24 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
     {
         ArgumentNullException.ThrowIfNull(value);
+        bool supportsDirectManualFanTransitions = false;
+        bool FansSupported(DeviceCapabilities capabilities)
+        {
+            supportsDirectManualFanTransitions =
+                capabilities.SupportsDirectManualFanTransitions;
+            return capabilities.FanModes.Contains(value.Mode)
+                && (value.Mode != FanMode.Fixed
+                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true);
+        }
         Func<ConfirmedDeviceState, string?>? manualEntryBlockReason =
             DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                ? state => IsConfirmedManualFanWriteBaseline(state)
+                ? state => (supportsDirectManualFanTransitions
+                        ? IsConfirmedDirectManualFanWriteBaseline(state)
+                        : IsConfirmedManualFanWriteBaseline(state))
                     ? null
-                    : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
+                    : supportsDirectManualFanTransitions
+                        ? "Fixed and manual fan control require a refreshed, confirmed Automatic or manual fan state with HyperBoost off."
+                        : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
                 : null;
         Func<ConfirmedDeviceState, string?>? combinedBlockReason =
             initialStateBlockReason is null
@@ -340,9 +359,7 @@ public sealed class ControlCoordinator
             DeviceSubsystem.Fans,
             "Fans",
             IsDefined(value.Mode),
-            capabilities => capabilities.FanModes.Contains(value.Mode)
-                && (value.Mode != FanMode.Fixed
-                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true),
+            FansSupported,
             state => FanModeMatches(state.Fans, value.Mode),
             token => SetFanControlAsync(value, token),
             cancellationToken,
@@ -549,7 +566,57 @@ public sealed class ControlCoordinator
 
         bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(requested.Mode);
         bool previousManual = DeviceSubsystemOrder.IsManualFanMode(previous.Mode);
-        bool requiresAutomaticBridge = requestedManual
+        DeviceCapabilities transitionCapabilities;
+        try
+        {
+            IBladeDevice capabilityDevice = thermalStepRunner?.CurrentDevice ?? device;
+            transitionCapabilities = await capabilityDevice
+                .ReadCapabilitiesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return new ScopedApplyOutcome(
+                ReadFailure("Fans", exception),
+                null,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: true);
+        }
+
+        if (!transitionCapabilities.FanModes.Contains(requested.Mode))
+        {
+            return new ScopedApplyOutcome(
+                Unsupported("Fans"),
+                null,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                Capabilities: transitionCapabilities,
+                DeviceAccessFailed: false);
+        }
+
+        bool supportsDirectManualFanTransitions =
+            transitionCapabilities.SupportsDirectManualFanTransitions;
+        if (supportsDirectManualFanTransitions
+            && requested.Mode == FanMode.Automatic
+            && previousManual)
+        {
+            return await ApplyDirectAutomaticFanTransitionOutcomeAsync(
+                performanceIntent,
+                customPerformanceIntent,
+                writeAttempted,
+                confirmedCoupledWrites,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        bool requiresAutomaticBridge = !supportsDirectManualFanTransitions
+            && requestedManual
             && (!previousManual || previous.Mode != requested.Mode);
         ScopedApplyOutcome? automaticBridge = null;
         if (requiresAutomaticBridge)
@@ -714,6 +781,60 @@ public sealed class ControlCoordinator
             ReadbackMatched = fans.ReadbackMatched && performance.ReadbackMatched,
             Capabilities = performance.Capabilities ?? fans.Capabilities,
             DeviceAccessFailed = fans.DeviceAccessFailed || performance.DeviceAccessFailed,
+        };
+    }
+
+    private async Task<ScopedApplyOutcome>
+        ApplyDirectAutomaticFanTransitionOutcomeAsync(
+        PerformancePreset performanceIntent,
+        CustomPerformanceSettings? customPerformanceIntent,
+        HashSet<DeviceSubsystem> writeAttempted,
+        HashSet<DeviceSubsystem> confirmedCoupledWrites,
+        CancellationToken cancellationToken)
+    {
+        ScopedApplyOutcome performance;
+        try
+        {
+            performance = await RunThermalStepAsync(
+                DeviceSubsystem.Performance,
+                ThermalTransitionStepPurpose.Requested,
+                (coordinator, token) => coordinator
+                    .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                        performanceIntent,
+                        customPerformanceIntent,
+                        token),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (IntentionalWriteCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            if (exception.WriteAttempted.Contains(DeviceSubsystem.Performance))
+            {
+                writeAttempted.Add(DeviceSubsystem.Performance);
+                writeAttempted.Add(DeviceSubsystem.Fans);
+            }
+            throw;
+        }
+
+        RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, performance);
+        if (performance.WriteAttempted)
+        {
+            writeAttempted.Add(DeviceSubsystem.Fans);
+        }
+        RecordConfirmedCoupledWrite(
+            confirmedCoupledWrites,
+            DeviceSubsystem.Performance,
+            performance);
+
+        string message = performance.Result.Status is
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged
+            ? performance.WriteAttempted
+                ? $"Fans returned to Automatic with {performanceIntent} performance."
+                : $"Fans and {performanceIntent} performance already matched the requested state."
+            : $"Fans could not return to Automatic with the saved {performanceIntent} performance intent. {performance.Result.Message}";
+        return performance with
+        {
+            Result = performance.Result with { Message = message },
         };
     }
 
@@ -1060,6 +1181,7 @@ public sealed class ControlCoordinator
                 final,
                 finalReadUnavailable,
                 transition,
+                capabilities.SupportsDirectManualFanTransitions,
                 finalPartialRead);
             HashSet<DeviceSubsystem> attemptedWithoutConfirmation =
                 transition.Attempted
@@ -1117,19 +1239,36 @@ public sealed class ControlCoordinator
             desired.Battery,
             capabilities,
             initial.Battery);
-        bool thermalCombinationSupported = IsVerifiedThermalCombination(
-            desired.Performance.Value,
-            desired.Fans.Value);
         bool manualFansDesired = DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value);
+        bool directTransitionBaselineSupported =
+            !capabilities.SupportsDirectManualFanTransitions
+            || !manualFansDesired
+            || IsConfirmedDirectManualFanWriteBaseline(initial);
+        bool thermalCombinationSupported = directTransitionBaselineSupported
+            && IsVerifiedThermalCombination(
+                desired.Performance.Value,
+                desired.Fans.Value,
+                capabilities.SupportsDirectManualFanTransitions);
         bool FirmwarePerformanceSelectorHidden(ConfirmedDeviceState state) =>
-            manualFansDesired && DeviceSubsystemOrder.IsManualFanMode(state.Fans);
+            manualFansDesired
+            && DeviceSubsystemOrder.IsManualFanMode(state.Fans);
+        bool latentManualPerformanceIntent =
+            capabilities.SupportsDirectManualFanTransitions
+            && manualFansDesired;
         bool PerformanceStateMatches(ConfirmedDeviceState state) =>
-            (FirmwarePerformanceSelectorHidden(state)
+            !(capabilities.SupportsDirectManualFanTransitions
+                && desired.Fans.Value == FanMode.Automatic
+                && DeviceSubsystemOrder.IsManualFanMode(state.Fans))
+            && (FirmwarePerformanceSelectorHidden(state)
                 || PerformancePresetMatches(
                     state,
                     desired.Performance.Value,
                     desired.CustomPerformance))
             && GpuClockTuningMatches(state, desired.GpuClockTuning);
+        bool PerformanceInitiallyMatches(ConfirmedDeviceState state) =>
+            latentManualPerformanceIntent
+                ? GpuClockTuningMatches(state, desired.GpuClockTuning)
+                : PerformanceStateMatches(state);
         return new Dictionary<DeviceSubsystem, PendingSubsystem>
         {
             [DeviceSubsystem.Performance] = new(
@@ -1138,7 +1277,7 @@ public sealed class ControlCoordinator
                     && IsDefined(desired.Performance.Value)
                     && capabilities.PerformancePresets.Contains(desired.Performance.Value)
                     && GpuClockTuningSupported(capabilities, desired.GpuClockTuning),
-                PerformanceStateMatches(initial),
+                PerformanceInitiallyMatches(initial),
                 token => ApplyPerformanceAndGpuClockTuningAsync(
                     desired.Performance.Value,
                     desired.CustomPerformance,
@@ -1152,7 +1291,8 @@ public sealed class ControlCoordinator
                         desired.Performance.Value,
                         desired.CustomPerformance,
                         desired.GpuClockTuning,
-                        FirmwarePerformanceSelectorHidden(state))
+                        latentManualPerformanceIntent
+                            || FirmwarePerformanceSelectorHidden(state))
                         ? SetGpuClockOffsetsAsync(
                             desired.GpuClockTuning!.EffectiveOffsets,
                             desired.GpuClockTuning.Enabled,
@@ -1214,12 +1354,30 @@ public sealed class ControlCoordinator
         string? stopReason = null;
         bool stopThermalWrites = false;
         string? thermalStopReason = null;
+        bool directAutomaticPair =
+            capabilities.SupportsDirectManualFanTransitions
+            && DeviceSubsystemOrder.IsManualFanMode(initial.Fans)
+            && desired.Fans.Value == FanMode.Automatic
+            && initial.HyperBoostActive == false
+            && IsAutomaticAcPerformancePreset(desired.Performance.Value)
+            && automaticWriteExclusions?.Contains(DeviceSubsystem.Performance) != true
+            && automaticWriteExclusions?.Contains(DeviceSubsystem.Fans) != true
+            && (continuationScope is null
+                || continuationScope.Contains(DeviceSubsystem.Performance)
+                    && continuationScope.Contains(DeviceSubsystem.Fans));
+        bool coupledAutomaticFansHandled = false;
         IReadOnlyList<DeviceSubsystem> orderedSubsystems =
-            DeviceSubsystemOrder.ForTransition(initial, desired);
+            directAutomaticPair
+                ? DeviceSubsystemOrder.Default
+                : DeviceSubsystemOrder.ForTransition(initial, desired);
 
         foreach (DeviceSubsystem subsystem in orderedSubsystems)
         {
             PendingSubsystem pending = states[subsystem];
+            if (subsystem == DeviceSubsystem.Fans && coupledAutomaticFansHandled)
+            {
+                continue;
+            }
             if (continuationScope is not null && !continuationScope.Contains(subsystem))
             {
                 transition.ContinuationExcluded.Add(subsystem);
@@ -1261,7 +1419,13 @@ public sealed class ControlCoordinator
             if (pending.InitiallyMatching)
             {
                 transition.Provisional[subsystem] = Unchanged(pending.Name);
-                transition.Matched.Add(subsystem);
+                if (!IsLatentManualPerformanceIntent(
+                        subsystem,
+                        desired,
+                        capabilities.SupportsDirectManualFanTransitions))
+                {
+                    transition.Matched.Add(subsystem);
+                }
                 continue;
             }
 
@@ -1346,10 +1510,40 @@ public sealed class ControlCoordinator
                     ref stopReason,
                     ref stopThermalWrites,
                     ref thermalStopReason);
+                if (directAutomaticPair
+                    && subsystem == DeviceSubsystem.Performance
+                    && thermalOutcome.WriteAttempted)
+                {
+                    coupledAutomaticFansHandled = true;
+                    transition.Attempted.Add(DeviceSubsystem.Fans);
+                    if (thermalOutcome.ConfirmationUnavailable)
+                    {
+                        transition.ConfirmationUnavailable.Add(DeviceSubsystem.Fans);
+                    }
+                    if (thermalOutcome.Result.Status is
+                        ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+                    {
+                        transition.Completed.Add(DeviceSubsystem.Fans);
+                        transition.Provisional[DeviceSubsystem.Fans] =
+                            Indeterminate(states[DeviceSubsystem.Fans].Name, null);
+                    }
+                    else
+                    {
+                        transition.Provisional[DeviceSubsystem.Fans] =
+                            thermalOutcome.Result;
+                    }
+                }
                 continue;
             }
 
             transition.Attempted.Add(subsystem);
+            bool appliesDirectAutomaticPair = directAutomaticPair
+                && subsystem == DeviceSubsystem.Performance;
+            if (appliesDirectAutomaticPair)
+            {
+                transition.Attempted.Add(DeviceSubsystem.Fans);
+                coupledAutomaticFansHandled = true;
+            }
             try
             {
                 PendingSubsystem writePending = pending;
@@ -1367,10 +1561,21 @@ public sealed class ControlCoordinator
                     : writePending.StateAwareSetter(initial, cancellationToken));
                 transition.Completed.Add(subsystem);
                 transition.Provisional[subsystem] = Indeterminate(pending.Name, null);
+                if (appliesDirectAutomaticPair)
+                {
+                    transition.Completed.Add(DeviceSubsystem.Fans);
+                    transition.Provisional[DeviceSubsystem.Fans] =
+                        Indeterminate(states[DeviceSubsystem.Fans].Name, null);
+                }
             }
             catch (CapabilityUnavailableException exception)
             {
                 transition.Attempted.Remove(subsystem);
+                if (appliesDirectAutomaticPair)
+                {
+                    transition.Attempted.Remove(DeviceSubsystem.Fans);
+                    coupledAutomaticFansHandled = false;
+                }
                 transition.Provisional[subsystem] = CapabilityRefused(pending.Name, exception);
                 if (IsThermalSubsystem(subsystem))
                 {
@@ -1382,6 +1587,11 @@ public sealed class ControlCoordinator
                 when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
             {
                 transition.Attempted.Remove(subsystem);
+                if (appliesDirectAutomaticPair)
+                {
+                    transition.Attempted.Remove(DeviceSubsystem.Fans);
+                    coupledAutomaticFansHandled = false;
+                }
                 transition.Provisional[subsystem] = WriteRejected(pending.Name, exception);
                 if (IsThermalSubsystem(subsystem))
                 {
@@ -1394,6 +1604,12 @@ public sealed class ControlCoordinator
             {
                 transition.Provisional[subsystem] = Indeterminate(pending.Name, exception);
                 transition.ConfirmationUnavailable.Add(subsystem);
+                if (appliesDirectAutomaticPair)
+                {
+                    transition.Provisional[DeviceSubsystem.Fans] =
+                        Indeterminate(states[DeviceSubsystem.Fans].Name, exception);
+                    transition.ConfirmationUnavailable.Add(DeviceSubsystem.Fans);
+                }
                 stopFurtherWrites = true;
                 stopReason = transition.Provisional[subsystem].Message;
                 transition.DeviceAccessFailed = true;
@@ -1499,6 +1715,7 @@ public sealed class ControlCoordinator
                 ReadbackMatched: false,
                 Capabilities: null,
                 DeviceAccessFailed: true,
+                ConfirmationUnavailable: true,
                 WriteSubmissionState: exception.SubmissionState,
                 WriteFailurePhase: exception.FailurePhase);
         }
@@ -1514,7 +1731,9 @@ public sealed class ControlCoordinator
                 WriteAttempted: true,
                 ReadbackMatched: false,
                 Capabilities: null,
-                DeviceAccessFailed: IsTerminalDeviceFailure(exception));
+                DeviceAccessFailed: IsTerminalDeviceFailure(exception),
+                ConfirmationUnavailable: true,
+                WriteSubmissionState: WriteSubmissionState.Indeterminate);
         }
     }
 
@@ -1565,6 +1784,7 @@ public sealed class ControlCoordinator
         ConfirmedDeviceState final,
         IReadOnlySet<DeviceSubsystem> finalReadUnavailable,
         FullTransitionApplyState transition,
+        bool supportsDirectManualFanTransitions,
         PartialDeviceStateRead? finalPartialRead = null)
     {
         transition.Matched.Clear();
@@ -1631,7 +1851,14 @@ public sealed class ControlCoordinator
             }
             else if (transition.Provisional[subsystem].Status == ControlResultStatus.Unchanged)
             {
-                if (pending.Matches(final))
+                if (IsLatentManualPerformanceIntent(
+                        subsystem,
+                        desired,
+                        supportsDirectManualFanTransitions))
+                {
+                    transition.Matched.Remove(subsystem);
+                }
+                else if (pending.Matches(final))
                 {
                     transition.Matched.Add(subsystem);
                 }
@@ -1648,6 +1875,14 @@ public sealed class ControlCoordinator
             }
         }
     }
+
+    private static bool IsLatentManualPerformanceIntent(
+        DeviceSubsystem subsystem,
+        DesiredDeviceState desired,
+        bool supportsDirectManualFanTransitions) =>
+        supportsDirectManualFanTransitions
+        && subsystem == DeviceSubsystem.Performance
+        && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value);
 
     private static bool CanAcceptUnavailableFinalReadback(
         DeviceSubsystem subsystem,
@@ -2377,18 +2612,18 @@ public sealed class ControlCoordinator
         ControlResultStatus.Failed,
         exception is null
             ? $"{name} write is indeterminate because readback did not match."
-            : $"{name} write is indeterminate: {exception.Message}");
+            : $"{name} write is indeterminate: {NativeFailureDescription.Describe(exception)}");
 
     private static ControlResult WriteRejected(string name, Exception exception) => new(
         ControlResultStatus.Failed,
-        $"{name} write was not applied: {exception.Message}");
+        $"{name} write was not applied: {NativeFailureDescription.Describe(exception)}");
 
     private static ControlResult CapabilityRefused(string name, Exception exception) => new(
         ControlResultStatus.Blocked,
-        $"{name} is unavailable: {exception.Message}");
+        $"{name} is unavailable: {NativeFailureDescription.Describe(exception)}");
 
     private static ControlResult ReadFailure(string name, Exception exception) =>
-        ReadFailure(name, exception.Message);
+        ReadFailure(name, NativeFailureDescription.Describe(exception));
 
     private static ControlResult ReadFailure(string name, string reason) => new(
         ControlResultStatus.Failed,
@@ -2404,7 +2639,12 @@ public sealed class ControlCoordinator
 
     private static bool IsVerifiedThermalCombination(
         PerformancePreset performance,
-        FanMode fans) => (performance, fans) is
+        FanMode fans,
+        bool supportsDirectManualFanTransitions) =>
+        (supportsDirectManualFanTransitions
+            && IsAutomaticAcPerformancePreset(performance)
+            && DeviceSubsystemOrder.IsManualFanMode(fans))
+        || (performance, fans) is
         (PerformancePreset.Silent, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Automatic)
         or (PerformancePreset.Performance, FanMode.Automatic)
@@ -2415,6 +2655,37 @@ public sealed class ControlCoordinator
         or (PerformancePreset.BatterySaver, FanMode.Automatic)
         or (PerformancePreset.BatteryBalanced, FanMode.Automatic);
 
+    private static string? PerformanceInitialStateBlockReason(
+        ConfirmedDeviceState state,
+        PerformancePreset requested,
+        bool supportsDirectManualFanTransitions)
+    {
+        if (!supportsDirectManualFanTransitions)
+        {
+            return DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+                ? "Performance changes require Automatic fan mode."
+                : null;
+        }
+
+        if (state.Fans == FanMode.Automatic)
+        {
+            return null;
+        }
+
+        return DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+            && state.HyperBoostActive == false
+            && IsAutomaticAcPerformancePreset(requested)
+                ? null
+                : "Performance changes require confirmed Automatic fans, or an admitted direct transition from confirmed manual fans.";
+    }
+
+    private static bool IsAutomaticAcPerformancePreset(
+        PerformancePreset performance) => performance is
+        PerformancePreset.Silent
+        or PerformancePreset.Balanced
+        or PerformancePreset.Performance
+        or PerformancePreset.Custom;
+
     private static bool IsConfirmedManualFanWriteBaseline(
         ConfirmedDeviceState state) => state.Fans switch
         {
@@ -2423,6 +2694,16 @@ public sealed class ControlCoordinator
                 state.Performance is null or PerformancePreset.Balanced,
             _ => false,
         };
+
+    private static bool IsConfirmedDirectManualFanWriteBaseline(
+        ConfirmedDeviceState state) => state.HyperBoostActive == false
+        && (DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+            || state.Fans == FanMode.Automatic
+                && state.Performance is { } performance
+                && (IsAutomaticAcPerformancePreset(performance)
+                    || performance is
+                        PerformancePreset.BatterySaver or
+                        PerformancePreset.BatteryBalanced));
 
     private static bool FanModeMatches(FanMode? confirmed, FanMode desired) =>
         desired == FanMode.Automatic
