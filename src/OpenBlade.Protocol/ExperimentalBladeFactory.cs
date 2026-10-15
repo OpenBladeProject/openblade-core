@@ -12,10 +12,11 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly IHardwareAccessGuard guard;
     private readonly IHidFeatureIo io;
     private readonly Func<PowerSource> capturePowerSource;
+    private readonly SemaphoreSlim sharedCommandGate;
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
-        Func<PowerSource> capturePowerSource)
+        Func<PowerSource> capturePowerSource, SemaphoreSlim? sharedCommandGate = null)
     {
         this.model = model;
         this.identity = identity;
@@ -23,6 +24,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         this.guard = guard;
         this.io = io;
         this.capturePowerSource = capturePowerSource;
+        // Battery, lighting, admission, and recovery share this singleton factory.
+        // A native operation may outlive the provider's managed operation lock.
+        this.sharedCommandGate = sharedCommandGate ?? new(1, 1);
         policy = new(model);
     }
 
@@ -254,8 +258,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 IRazerCommandSession session;
                 try
                 {
-                    session = new WindowsRazerHidSession(native.BindSelected(candidate.Handle), io, guard,
+                    var rawSession = new WindowsRazerHidSession(native.BindSelected(candidate.Handle), io, guard,
                         TimeProvider.System, lease, ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30));
+                    session = new RazerCommandSessionGate(rawSession, sharedCommandGate, ownsInner: true);
                 }
                 catch
                 {

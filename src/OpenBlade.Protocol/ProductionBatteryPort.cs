@@ -176,9 +176,7 @@ internal sealed class ProductionBatteryPort :
         : this(
             sharedCommandGate is null
                 ? actor.Session
-                : ReferenceEquals(sharedCommandGate, Rz090581FeatureCommandGate.Shared)
-                ? new Rz090581CommandSessionGate(actor.Session, sharedCommandGate)
-                : new Rz090528CommandSessionGate(actor.Session, sharedCommandGate),
+                : new RazerCommandSessionGate(actor.Session, sharedCommandGate),
             actor,
             catalog,
             readEvidence,

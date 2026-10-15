@@ -152,7 +152,7 @@ public sealed class ProductionLightingPortTests
         Assert.Same(Rz090581FeatureCommandGate.Shared, battery.SharedCommandGate);
         Assert.Same(Rz090581FeatureCommandGate.Shared, lighting.SharedCommandGate);
         Assert.NotSame(
-            Rz090528CommandSessionGate.Shared,
+            Rz090528FeatureCommandGate.Shared,
             Rz090581FeatureCommandGate.Shared);
     }
 

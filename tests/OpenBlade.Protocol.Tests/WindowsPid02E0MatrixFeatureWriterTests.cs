@@ -498,7 +498,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
     {
         using var gate = new SemaphoreSlim(1, 1);
         var fanInner = new BlockingSetGetCommandSession();
-        var fanSession = new Rz090581CommandSessionGate(fanInner, gate);
+        var fanSession = new RazerCommandSessionGate(fanInner, gate);
         Task<HidSessionResult<ReadOnlyMemory<byte>>> fanExchange = fanSession.ExecuteAsync(
             new RazerCommandSpec(0x0D, 0x02, [0x01], 1),
             static () => TransactionIdAssignment.Valid(1),
@@ -623,7 +623,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
 
         Assert.Equal(HidSessionFailureKind.NativeIoFailure, failed.Failure);
         var fanInner = new BlockingSetGetCommandSession();
-        var fanSession = new Rz090581CommandSessionGate(fanInner, gate);
+        var fanSession = new RazerCommandSessionGate(fanInner, gate);
         Task<HidSessionResult<ReadOnlyMemory<byte>>> fanExchange = fanSession.ExecuteAsync(
             new RazerCommandSpec(0x0D, 0x02, [0x01], 1),
             static () => TransactionIdAssignment.Valid(2),

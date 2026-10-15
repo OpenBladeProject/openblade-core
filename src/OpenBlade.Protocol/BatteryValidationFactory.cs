@@ -630,7 +630,7 @@ public static class BatteryValidationFactory
                 AdapterPowerState.UsbCPower100W,
                 AdapterPowerState.FullPower280W,
             },
-            Rz090528CommandSessionGate.Shared,
+            Rz090528FeatureCommandGate.Shared,
             hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
             // Production admits pad-less writes only through the exact 2025 admission manifest;
             // the developer lifecycle composition keeps its separate validation-only path.
@@ -885,7 +885,9 @@ public static class BatteryValidationFactory
             actorFactory,
             TimeProvider.System,
             DefaultExchangeTimeout,
-            DefaultCleanupDrainTimeout);
+            DefaultCleanupDrainTimeout,
+            PendingDisposalRegistry.Shared,
+            Rz090528FeatureCommandGate.Shared);
     }
 
     internal static IFanRpmQueryRunFactory CreateWindowsFanRpmForService() =>

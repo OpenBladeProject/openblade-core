@@ -1,12 +1,13 @@
 namespace OpenBlade.Protocol;
 
 /// <summary>
-/// Serializes 0581 firmware traffic through native retirement, including a
+/// Serializes firmware traffic across sessions through native retirement, including a
 /// submitted operation whose managed cancellation returns before its callback.
 /// </summary>
-internal sealed class Rz090581CommandSessionGate(
+internal sealed class RazerCommandSessionGate(
     IRazerCommandSession inner,
-    SemaphoreSlim gate) : IRazerCommandSession, IRazerSetFeatureCommandSession
+    SemaphoreSlim gate,
+    bool ownsInner = false) : IRazerCommandSession, IRazerSetFeatureCommandSession
 {
     public RazerCommandSessionDisposition Disposition => inner.Disposition;
 
@@ -73,9 +74,36 @@ internal sealed class Rz090581CommandSessionGate(
         }
         finally
         {
-            Rz090581FeatureCommandGate.ReleaseAfterRetirement(gate, retirement);
+            ReleaseAfterRetirement(gate, retirement);
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    internal static void ReleaseAfterRetirement(SemaphoreSlim gate, Task? retirement)
+    {
+        if (retirement is null || retirement.IsCompletedSuccessfully)
+        {
+            gate.Release();
+            return;
+        }
+        _ = ReleaseWhenRetiredAsync(gate, retirement);
+    }
+
+    private static async Task ReleaseWhenRetiredAsync(SemaphoreSlim gate, Task retirement)
+    {
+        try
+        {
+            await retirement.ConfigureAwait(false);
+        }
+        catch
+        {
+            // An unconfirmed native lifetime must keep all other interfaces
+            // blocked. Admission remains bounded; no grace period proves safety.
+            return;
+        }
+        gate.Release();
+    }
+
+    // ValidationActor retains ownership for admitted ports; experimental ports
+    // own their raw session directly and opt in to forwarding disposal.
+    public ValueTask DisposeAsync() => ownsInner ? inner.DisposeAsync() : ValueTask.CompletedTask;
 }

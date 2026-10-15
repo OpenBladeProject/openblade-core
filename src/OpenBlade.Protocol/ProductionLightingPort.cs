@@ -79,7 +79,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
         session = sharedCommandGate is null
             ? actor.Session
-            : new Rz090581CommandSessionGate(actor.Session, sharedCommandGate);
+            : new RazerCommandSessionGate(actor.Session, sharedCommandGate);
         this.matrixWriter = matrixWriter;
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         RazerCommandSessionTimeout.Validate(exchangeTimeout);

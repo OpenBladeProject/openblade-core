@@ -507,7 +507,7 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         }
         finally
         {
-            Rz090581FeatureCommandGate.ReleaseAfterRetirement(sharedCommandGate, pendingNativeRetirement);
+            RazerCommandSessionGate.ReleaseAfterRetirement(sharedCommandGate, pendingNativeRetirement);
         }
     }
 

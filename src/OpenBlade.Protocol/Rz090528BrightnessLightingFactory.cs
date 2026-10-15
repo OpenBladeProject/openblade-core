@@ -170,9 +170,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         Func<bool>? driverModeWriteAllowed = null)
     {
         this.actor = actor;
-        session = new Rz090528CommandSessionGate(
+        session = new RazerCommandSessionGate(
             actor.Session,
-            Rz090528CommandSessionGate.Shared);
+            Rz090528FeatureCommandGate.Shared);
         this.exchangeTimeout = exchangeTimeout;
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.cleanupDrainTimeout =
