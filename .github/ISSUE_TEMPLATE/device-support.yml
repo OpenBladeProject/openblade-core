@@ -6,9 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping OpenBlade support more laptops. When OpenBlade shows **This laptop isn't supported yet**, select **Help add support**. OpenBlade saves `OpenBlade-identity-report.zip` and opens this form. Attach that file below.
+        Thanks for helping OpenBlade support more laptops. Follow the [Synapse Observer guide](https://github.com/OpenBladeProject/synapse-observer#send-evidence) to collect device information, optionally record Synapse settings, and save an evidence ZIP. Review the ZIP before attaching it below; issues and attachments are public. A device-information ZIP is useful even if recording is unavailable.
 
-        The report contains OpenBlade's identity check and version details. It doesn't include serial numbers, user names, or folder paths.
+        Search existing device-support requests for your model before opening a new one. If OpenBlade also saved `OpenBlade-identity-report.zip`, attach it alongside the observer ZIP. An identity report from an older OpenBlade version is also accepted.
   - type: input
     id: laptop-name
     attributes:
@@ -43,13 +43,13 @@ body:
   - type: upload
     id: identity-report
     attributes:
-      label: Identity report
-      description: Attach `OpenBlade-identity-report.zip`. If OpenBlade has no **Help add support** button, update OpenBlade first.
+      label: Evidence ZIP
+      description: Attach the ZIP saved by Synapse Observer, or an OpenBlade identity report. Include any collection errors or skipped settings in the notes below.
     validations:
       required: true
       accept: ".zip"
   - type: textarea
     id: synapse-features
     attributes:
-      label: Synapse features (optional)
-      description: Which controls does Razer Synapse offer on this laptop? For example, performance modes, fan control, keyboard lighting, battery health, or HyperBoost.
+      label: Synapse features and collection notes (optional)
+      description: List the controls Synapse offers, which settings you recorded, your Synapse and Observer versions, and any errors, skipped steps, or settings you could not restore.

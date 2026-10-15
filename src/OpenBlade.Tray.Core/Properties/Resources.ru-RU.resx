@@ -1449,16 +1449,16 @@
   <data name="Identity report not saved." xml:space="preserve">
     <value>Отчёт об устройстве не сохранён.</value>
   </data>
-  <data name="Identity report saved to {0}. Attach it to the support form in your browser." xml:space="preserve">
-    <value>Отчёт об устройстве сохранён в {0}. Прикрепите его к форме поддержки в браузере.</value>
+  <data name="Identity report saved to {0}. Follow the Synapse Observer guide in your browser to collect and submit evidence." xml:space="preserve">
+    <value>Отчёт об устройстве сохранён в {0}. Следуйте руководству Synapse Observer в браузере, чтобы собрать и отправить данные.</value>
   </data>
-  <data name="Identity report saved to {0}. Open {1} and attach it to request support." xml:space="preserve">
-    <value>Отчёт об устройстве сохранён в {0}. Откройте {1} и прикрепите его, чтобы запросить поддержку.</value>
+  <data name="Identity report saved to {0}. Open {1} for steps to collect and submit evidence." xml:space="preserve">
+    <value>Отчёт об устройстве сохранён в {0}. Откройте {1}, чтобы узнать, как собрать и отправить данные.</value>
   </data>
   <data name="Identity report failed: {0}" xml:space="preserve">
     <value>Не удалось подготовить отчёт об устройстве: {0}</value>
   </data>
-  <data name="OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens." xml:space="preserve">
-    <value>OpenBlade управляет только теми моделями ноутбуков, на которых он был протестирован. Чтобы помочь добавить эту модель, сохраните краткий отчёт об устройстве и прикрепите его к форме поддержки, которая откроется.</value>
+  <data name="To help add this laptop, save a short identity report, then follow the Synapse Observer guide to collect and submit evidence." xml:space="preserve">
+    <value>Чтобы помочь добавить поддержку этого ноутбука, сохраните краткий отчёт об устройстве, затем следуйте руководству Synapse Observer, чтобы собрать и отправить данные.</value>
   </data>
 </root>

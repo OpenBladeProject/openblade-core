@@ -677,7 +677,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || IsRetainedPowerSourceRecheck(latestStatus);
 
     public string UnsupportedLaptopMessage => TrayText.Get(
-        "OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens.");
+        "To help add this laptop, save a short identity report, then follow the Synapse Observer guide to collect and submit evidence.");
 
     public bool IsUnsupportedLaptop =>
         IsConnected
@@ -7570,11 +7570,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             savedPath = result.DestinationPath;
             bool opened = await externalUriLauncher.OpenAsync(
-                UnsupportedLaptopReport.IssueFormUri,
+                UnsupportedLaptopReport.SupportGuideUri,
                 token);
             string message = opened
                 ? TrayText.Format(
-                    "Identity report saved to {0}. Attach it to the support form in your browser.",
+                    "Identity report saved to {0}. Follow the Synapse Observer guide in your browser to collect and submit evidence.",
                     savedPath)
                 : SavedWithoutBrowserMessage(savedPath);
             await dispatcher.InvokeAsync(
@@ -7605,9 +7605,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         static string SavedWithoutBrowserMessage(string path) =>
             TrayText.Format(
-                "Identity report saved to {0}. Open {1} and attach it to request support.",
+                "Identity report saved to {0}. Open {1} for steps to collect and submit evidence.",
                 path,
-                UnsupportedLaptopReport.IssueFormUri);
+                UnsupportedLaptopReport.SupportGuideUri);
     }
 
     private void LoadLightingEditor(

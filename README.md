@@ -44,9 +44,10 @@ Blade 18 also offers Performance, bounded Custom levels, lighting, and 50–100%
 charge limits. The guide lists each model's controls, recovery steps, and how to
 share diagnostic reports.
 
-On an unlisted Razer laptop, select **Help add support** in OpenBlade and attach
-the saved report to the
-[support request](https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml).
+On an unlisted Razer laptop, select **Help add support** in OpenBlade. Save the
+identity report, then follow the
+[Synapse Observer guide](https://github.com/OpenBladeProject/synapse-observer#send-evidence)
+to collect and submit evidence for your model.
 
 ## Features
 
