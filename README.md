@@ -34,15 +34,10 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | Razer Blade 18 (2023), experimental | `RZ09-0484` |
 | Razer Blade 15 Base (Early 2020), experimental | `RZ09-0328` |
 
-Available controls vary by model. See the
-[user guide](https://github.com/OSSBlade/openblade-docs) for compatibility details.
-[Experimental support](docs/experimental-blade-support.md) enables available
-controls automatically. Use a [pre-release](https://github.com/OpenBladeProject/openblade-core/releases)
-for testing: these five models have
-not completed OpenBlade physical validation. All offer Balanced/Silent; the
-Blade 18 also offers Performance, bounded Custom levels, lighting, and 50–100%
-charge limits. The guide lists each model's controls, recovery steps, and how to
-share diagnostic reports.
+Available controls vary by model. OpenBlade automatically enables
+available controls on experimental models. See the [user guide](https://github.com/OSSBlade/openblade-docs)
+for compatibility and [Experimental support](docs/experimental-blade-support.md)
+for model features and testing instructions.
 
 On an unlisted Razer laptop, select **Help add support** in OpenBlade and attach
 the saved report to the
@@ -82,15 +77,15 @@ trigger a Windows warning.
 
 ## Using it with Synapse
 
-OpenBlade works on its own. On the validated Blade 16 models, keep Synapse for
+OpenBlade works on its own. On the Blade 16 (2025 and 2026), keep Synapse for
 other Razer devices with [Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker).
 Close Synapse when testing experimental laptop controls.
 OpenBlade checks the patch before allowing shared use; see the
 [setup and coexistence notes](docs/synapse-blade-blocker.md).
 
 Core controls work without an additional driver. The native Windows brightness
-flyout uses each validated Blade 16 model's own Razer driver when already
-installed. Without it, brightness keys use the OpenBlade flyout. See
+flyout on the Blade 16 (2025 and 2026) uses the model's own Razer driver when
+already installed. Without it, brightness keys use the OpenBlade flyout. See
 the [brightness driver guide](docs/razer-brightness-driver-package.md).
 
 ## Development
