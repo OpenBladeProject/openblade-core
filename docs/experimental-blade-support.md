@@ -1,19 +1,15 @@
 # Experimental Blade support
 
-Pre-releases include community-derived controls for additional Blade laptops.
-These models have not completed OpenBlade physical validation. Test reports help
-us determine which controls can become fully supported.
+OpenBlade offers experimental controls for the five Blade models below, based on
+community projects and owner reports. OpenBlade hardware testing is still in
+progress. Try a pre-release and share your results to help improve support.
 
 ## Automatic controls
 
-OpenBlade enables the available experimental controls when it recognizes an exact
-laptop profile below. There is no Settings switch or consent dialog. An older
-saved experimental preference does not disable these controls. Pre-releases are
-the testing route; the backend itself is not restricted to an update channel.
-
-The same model, interface, current-state, and competing-controller checks apply
-to each change. A command that OpenBlade cannot confirm pauses experimental
-writes and records the result in local diagnostics.
+Available controls turn on automatically when OpenBlade recognizes your laptop,
+in every update channel. Before each change, OpenBlade checks the laptop,
+interface, current settings, and competing software. If it cannot confirm a
+result, it pauses further changes and saves the details in local diagnostics.
 
 ## Resume paused controls
 
@@ -95,8 +91,7 @@ writes even when the firmware accepted a setter.
 Returning to the same displayed brightness does not prove exact raw-register
 restoration: the 0–255 register is presented as integer percentages. An Off logo
 also hides its stored effect. Physical validation must preserve those values
-through an admitted developer path before claiming exact restoration. This change
-has not completed that validation.
+through an admitted developer path to confirm exact restoration.
 
 Admission checks Razer and the exact product name in both Windows registry
 sources, then the exact USB identity and 91-byte HID feature-report geometry.
@@ -111,7 +106,8 @@ cannot update the shared contracts. Older experimental preferences migrate to au
 ## Send a useful test report
 
 1. Use a pre-release containing [the experimental support change](https://github.com/OpenBladeProject/openblade-core/pull/744).
-   In **About**, note the OpenBlade version and detected model. Close Synapse before testing.
+   In **About**, note the OpenBlade version and detected model. Close Synapse before testing,
+   or use [Synapse Blade Blocker](synapse-blade-blocker.md) after checking its model coverage and applying the patch.
 2. Use **About → Export diagnostics** to save a baseline
    report. Note the current Synapse settings separately if needed.
 3. Try one available setting and note the time,
@@ -123,11 +119,8 @@ cannot update the shared contracts. Older experimental preferences migrate to au
    [experimental support issue](https://github.com/OpenBladeProject/openblade-core/issues/741)
    with your observations, including any difference between the displayed and actual result.
 
-OpenBlade checks replies and queries the resulting state independently. An
-ambiguous write or readback pauses further experimental writes for that service
-run. Resume checks the current state before allowing another request; collect
-diagnostics first to preserve failure evidence. A successful reply alone is not physical validation. Sleep/resume tests
-must be attended by a user who can resume the laptop.
+For sleep/resume testing, stay with the laptop so you can resume it and check
+the result.
 
 ## Diagnostic evidence
 
@@ -157,12 +150,9 @@ the existing diagnostic redaction.
 
 - [Maintained razer-ctl fork at 9c66e705](https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a): Blade 18 profile and command definitions, based on [owner report #1](https://github.com/sqmagellan/razer-ctl/issues/1). The report confirms behavior on one RZ09-0484 unit; it does not supply raw captures or OpenBlade validation.
 
-These references share protocol ancestry. Agreement is not two independent
-physical validations. Experimental authority is separate from OpenBlade's
-physically validated command catalog. It does not assert that OpenBlade
-application, restoration, or lifecycle checks have already passed.
-
-Testers still need to confirm application, independent readback, return to the
-starting state, and relevant power/lifecycle behavior for each model and control.
-Variants with physical differences need corresponding capability evidence before
-new controls are exposed. Broader upstream PID tables are discovery leads.
+These projects share protocol ancestry and provide related upstream evidence.
+OpenBlade keeps this evidence separate from its physically validated command
+catalog. Testing still needs to confirm application, independent readback,
+restoration, and power/lifecycle behavior for each model and control. Hardware
+variants need their own capability evidence; broader upstream PID tables help
+identify models to investigate.

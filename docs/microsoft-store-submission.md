@@ -20,9 +20,8 @@ the fields that must stay synchronized with the release:
 
 The hardware field above lists the physically validated models. Builds containing
 experimental support also recognize the exact profiles described in the
-[experimental guide](experimental-blade-support.md). Disclose their experimental
-status in the notes for that submitted version; do not present pre-release test
-reports as physical validation or Store certification.
+[experimental guide](experimental-blade-support.md). Include their experimental
+status and current test evidence in the notes for the submitted version.
 
 The submitted package URL must be HTTPS, immutable, and versioned. Never replace
 the file behind an existing URL. A suitable shape is
@@ -90,8 +89,7 @@ Use the following as the starting point for Notes for certification:
 
 Match these notes to the exact submitted source version. The
 [experimental guide](experimental-blade-support.md) records current model scope
-and tester evidence. Pre-release testing does not establish Store certification
-or physical validation, and the backend has no Store-specific admission bypass.
+and tester evidence. Store builds use the same device checks as other builds.
 
 Certification must be given a supported test device or another testing
 arrangement accepted by Microsoft. Do not add a production bypass that fakes

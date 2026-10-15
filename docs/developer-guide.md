@@ -125,8 +125,9 @@ model leave it false. The tray then
 shows **This laptop isn't supported yet** with **Help add support**. That action
 uses the same export, keeps only `versions.json` and `device-verification.json`,
 saves them as `OpenBlade-identity-report.zip` without tray logs, and opens the
-**Support my laptop** issue form. `device.json` is left out because it has a
-serial-number field.
+[Synapse Observer guide](https://github.com/OpenBladeProject/synapse-observer).
+The guide explains collection and submission to an existing or new model-support
+request. `device.json` is left out because it has a serial-number field.
 
 If device controls are disabled after identity verification succeeds, check
 `configuration.json`'s `status.message` and `command-results.json`. Protocol
