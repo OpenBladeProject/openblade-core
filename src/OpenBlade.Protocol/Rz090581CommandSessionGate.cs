@@ -10,6 +10,9 @@ internal sealed class Rz090581CommandSessionGate(
 {
     public RazerCommandSessionDisposition Disposition => inner.Disposition;
 
+    public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
+        inner.RetainQueryFailure(classId, commandId, outcome);
+
     public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
         RazerCommandSpec command,
         Func<TransactionIdAssignment> assignTransactionId,

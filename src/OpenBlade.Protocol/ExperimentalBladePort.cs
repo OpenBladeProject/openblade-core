@@ -66,6 +66,21 @@ internal sealed partial class ExperimentalBladePort(
 
     private void RecordQuery(string operation, string outcome, string? confirmed = null, string? failure = null)
     {
+        if (outcome is "UnsupportedState" or "InconsistentState")
+        {
+            switch (operation)
+            {
+                case "BatteryProtection":
+                    session.RetainQueryFailure(0x07, 0x92, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "Performance":
+                    session.RetainQueryFailure(0x0D, 0x82, FirmwareQueryOutcome.ContentRejected);
+                    break;
+                case "CustomPerformance":
+                    session.RetainQueryFailure(0x0D, 0x87, FirmwareQueryOutcome.ContentRejected);
+                    break;
+            }
+        }
         if (queryRecordingEnabled)
         {
             policy.Record(operation, "Query", outcome, confirmed: confirmed, failure: failure);
