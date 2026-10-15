@@ -203,6 +203,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     internal IReadOnlySet<AdapterPowerState>? AdmittedAdapterPowerStates =>
         admittedAdapterPowerStates;
 
+    internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
+
     public static IProductionBatteryPortFactory CreateWindows()
         => CreateWindowsCore(
             compatibilityPolicy: null,
@@ -324,7 +326,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                     pendingDisposals).ConfigureAwait(false);
             }
 
-            return Failure(opened.Failure ?? HidSessionFailureKind.NativeIoFailure);
+            return Failure(
+                opened.Failure ?? HidSessionFailureKind.NativeIoFailure,
+                opened.Diagnostic);
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -439,6 +443,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             PendingDisposalRegistry.Shared,
             admittedAdapterPowerStates: admittedAdapterPowerStates,
             gpuOverclockCapabilities: gpuOverclockCapabilities,
+            sharedCommandGate: Rz090581FeatureCommandGate.Shared,
             hyperBoostAccess: hyperBoostAccess,
             hyperBoostWithoutCoolingPadAccess: hyperBoostWithoutCoolingPadAccess,
             hyperBoostBaseModes: hyperBoostBaseModes,
@@ -650,5 +655,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         };
 
     private static HidSessionResult<IProductionBatteryPort> Failure(
-        HidSessionFailureKind failure) => new(null, failure);
+        HidSessionFailureKind failure,
+        HidSessionFailureDiagnostic? diagnostic = null) => new(null, failure)
+        {
+            Diagnostic = diagnostic,
+        };
 }

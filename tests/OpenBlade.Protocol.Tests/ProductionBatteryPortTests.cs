@@ -227,7 +227,7 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(
             BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
             error.FailurePhase);
-        Assert.IsType<IOException>(error.InnerException);
+        Assert.IsType<NativeDeviceReadException>(error.InnerException);
         Assert.Equal(3, session.Commands.Count);
         Assert.DoesNotContain(
             session.Commands,
@@ -807,10 +807,13 @@ public sealed class ProductionBatteryPortTests
     [Fact]
     public async Task AdjustableFanPreWriteReadFailureReportsExactPreSubmissionPhase()
     {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.NativeIoFailure, 31, 0);
         var session = new ScriptedSession(
             new HidSessionResult<ReadOnlyMemory<byte>>(
                 default,
-                HidSessionFailureKind.NativeIoFailure));
+                HidSessionFailureKind.NativeIoFailure)
+            { Diagnostic = diagnostic });
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()));
@@ -825,7 +828,15 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
-        Assert.IsType<IOException>(error.InnerException);
+        NativeDeviceReadException read = Assert.IsType<NativeDeviceReadException>(error.InnerException);
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, read.Failure);
+        Assert.Equal(diagnostic, read.Diagnostic);
+        Assert.Equal(DeviceStateQuery.ThermalChannelOne, read.StateQuery);
+        Assert.Equal(diagnostic, error.Diagnostic);
+        Assert.Equal(read.StateQuery, error.StateQuery);
+        var wrapped = new BladeWriteException(WriteSubmissionState.Indeterminate, "outer", error);
+        Assert.Equal(diagnostic, wrapped.Diagnostic);
+        Assert.Equal(read.StateQuery, wrapped.StateQuery);
         Assert.Single(session.Commands);
         Assert.Equal(0x82, session.Commands[0].CommandId);
     }
@@ -833,6 +844,8 @@ public sealed class ProductionBatteryPortTests
     [Fact]
     public async Task AdjustableFanFailureAfterSubmissionRemainsIndeterminate()
     {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.NativeIoFailure, 31, 0);
         byte[] state1 = [0x01, 0x01, 0x00, 0x01];
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x00, 0x00]),
@@ -840,7 +853,8 @@ public sealed class ProductionBatteryPortTests
             Success(state1),
             new HidSessionResult<ReadOnlyMemory<byte>>(
                 default,
-                HidSessionFailureKind.NativeIoFailure));
+                HidSessionFailureKind.NativeIoFailure)
+            { Diagnostic = diagnostic });
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()));
@@ -856,6 +870,13 @@ public sealed class ProductionBatteryPortTests
             error.FailurePhase);
         Assert.Contains("manual entry channel 2 of 2", error.Message);
         Assert.Contains(nameof(HidSessionFailureKind.NativeIoFailure), error.Message);
+        Assert.Equal(diagnostic, error.Diagnostic);
+        Assert.Equal((byte)0x0D, error.CommandClass);
+        Assert.Equal((byte)0x02, error.CommandId);
+        var wrapped = new BladeWriteException(WriteSubmissionState.Indeterminate, "outer", error);
+        Assert.Equal(diagnostic, wrapped.Diagnostic);
+        Assert.Equal(error.CommandClass, wrapped.CommandClass);
+        Assert.Equal(error.CommandId, wrapped.CommandId);
         Assert.Equal(4, session.Commands.Count);
     }
 
@@ -923,6 +944,8 @@ public sealed class ProductionBatteryPortTests
     [Fact]
     public async Task AdjustableFanTargetUpdateFailureReportsTargetStageAndChannel()
     {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.Timeout, 995, 0);
         byte[] manualState1 = [0x01, 0x01, 0x00, 0x01];
         byte[] manualState2 = [0x01, 0x02, 0x00, 0x01];
         byte[] speed1 = [0x01, 0x01, 0x20];
@@ -932,7 +955,8 @@ public sealed class ProductionBatteryPortTests
             Success(speed1),
             new HidSessionResult<ReadOnlyMemory<byte>>(
                 default,
-                HidSessionFailureKind.Timeout));
+                HidSessionFailureKind.Timeout)
+            { Diagnostic = diagnostic });
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()));
@@ -946,6 +970,9 @@ public sealed class ProductionBatteryPortTests
         Assert.DoesNotContain("manual entry", error.Message);
         Assert.Contains(nameof(HidSessionFailureKind.Timeout), error.Message);
         Assert.DoesNotContain("0102", error.Message);
+        Assert.Equal(diagnostic, error.Diagnostic);
+        Assert.Equal((byte)0x0D, error.CommandClass);
+        Assert.Equal((byte)0x01, error.CommandId);
         Assert.Equal(4, session.Commands.Count);
     }
 
@@ -1129,7 +1156,7 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
-        Assert.IsType<IOException>(error.InnerException);
+        Assert.IsType<NativeDeviceReadException>(error.InnerException);
         Assert.Single(session.Commands);
         Assert.Equal(0x82, session.Commands[0].CommandId);
     }
@@ -1671,6 +1698,31 @@ public sealed class ProductionBatteryPortTests
         RazerCommandSpec command = Assert.Single(session.Commands);
         Assert.Equal((0x07, 0x12), (command.ClassId, command.CommandId));
         Assert.Equal([(byte)payload], command.Arguments.ToArray());
+    }
+
+    [Theory]
+    [InlineData(HidSessionFailureKind.NativeIoFailure, WriteSubmissionState.Indeterminate)]
+    [InlineData(HidSessionFailureKind.ConflictBlocked, WriteSubmissionState.KnownNotApplied)]
+    public async Task BatterySetterPreservesDiagnosticAndSubmissionClassification(
+        HidSessionFailureKind failure, WriteSubmissionState expectedState)
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            failure == HidSessionFailureKind.ConflictBlocked
+                ? HidSessionFailurePhase.Guard : HidSessionFailurePhase.SetCompletion,
+            failure, 31, 0);
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(default, failure) { Diagnostic = diagnostic });
+        await using var port = CreatePort(session,
+            Catalog(Fixture("battery-limit-80", 0x07, 0x12, [0xD0])));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetChargeLimitAsync(80, default));
+
+        Assert.Equal(expectedState, error.SubmissionState);
+        Assert.Equal(diagnostic, error.Diagnostic);
+        Assert.Equal((byte)0x07, error.CommandClass);
+        Assert.Equal((byte)0x12, error.CommandId);
+        Assert.Single(session.Commands);
     }
 
     [Fact]

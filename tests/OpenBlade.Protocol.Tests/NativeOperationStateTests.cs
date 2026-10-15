@@ -236,8 +236,57 @@ public sealed class NativeOperationStateTests
                 nativeFailure,
                 true,
                 HidFeatureTermination.Completed),
-            error.Result);
+            error.Result with { NativeRetirement = null });
+        Assert.NotNull(error.Result.NativeRetirement);
+        Assert.True(error.Result.NativeRetirement.IsFaulted);
+        Assert.Same(cleanupFailure,
+            await Assert.ThrowsAsync<ArgumentException>(async () => await error.Result.NativeRetirement));
         Assert.Same(cleanupFailure, error.InnerException);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EarlyCancellationRetiresOnlyAfterSuccessfulResourceFinalization(bool failFinalization)
+    {
+        Task? retirement = null;
+        bool finalized = false;
+        var state = new NativeOperationState(() =>
+        {
+            Assert.NotNull(retirement);
+            Assert.False(retirement.IsCompleted);
+            finalized = true;
+            if (failFinalization)
+            {
+                throw new IOException("cleanup");
+            }
+        });
+        Assert.True(state.TryBeginSubmission(out NativeUseLease submission));
+        state.RecordSubmitted();
+        submission.Dispose();
+        state.RecordCancellationIntent(HidFeatureTermination.DeadlineExpired);
+        state.PublishSubmittedCancellationWithoutNativeCompletion();
+
+        HidFeatureIoResult result = await state.Completion;
+        retirement = result.NativeRetirement;
+        Assert.NotNull(retirement);
+        Assert.False(retirement.IsCompleted);
+        Assert.False(finalized);
+        Assert.Null(result.Completion);
+
+        state.RecordCompletion(new NativeIoCompletion(false, 0, 995));
+
+        Assert.True(finalized);
+        Assert.Equal(result, await state.Completion);
+        if (failFinalization)
+        {
+            await Assert.ThrowsAsync<IOException>(async () => await retirement);
+            Assert.False(retirement.IsCompletedSuccessfully);
+        }
+        else
+        {
+            Assert.True(retirement.IsCompletedSuccessfully);
+        }
     }
 
     [Theory]
