@@ -56,35 +56,70 @@ or demonstrate that MCU 1.7.0.0 introduced them.
 Only this sanitized summary is committed. Machine-local snapshots and diagnostic
 archives remain private.
 
-## Temporary full charge reading 08 (Synapse shows it as off)
+## Temporary full charge and Power Mode Control (07/8F, 07/0F)
 
-On 2026-10-14 an RZ09-0581 (BIOS 4.01, MCU 1.7.0.0, OpenBlade 0.26.2-nightly.87)
-returned `08` for the temporary-full-charge query (07/8F), which OpenBlade rejected
-because it accepted only `00` (off) and `04` (on).
+On the RZ09-0581, `07/8F` reads and `07/0F` writes **Power Mode Control**, a
+single byte shared by several settings. The bit layout comes from a read-only
+inspection of the installed Synapse 4 product code for this model (product 736,
+PID `02E0`):
 
-- Synapse 4 "Allow system to fully charge once" unchecked, Battery Health Optimizer
-  on at 80 percent: 07/8F returned `08`.
-- Checking the box in Synapse: OpenBlade read `04`, reconciled to its saved desired
-  state, cancelled, and read back `00`.
-- Unchecking it again: 07/8F returned `00`, with the battery confirmed at 80 percent,
-  protection on, and full charge off.
+| Bit | Setting |
+|---|---|
+| `0x01` | CPU boost |
+| `0x02` | Maximum fan speed mode |
+| `0x04` | One-time override: "Allow system to fully charge once" (temporary full charge) |
+| `0x08` | Local dimming (mini-LED panel) |
 
-Synapse therefore presents `08` as off. OpenBlade never writes `08`; any 07/0F write
-clears it. Admission is scoped to the exact RZ09-0581 (`1532:02E0`) through its model
-read evidence: exactly `08` decodes as inactive, and every other value, and `08` on
-the RZ09-0528, stays rejected. Writes are unchanged (enable `04`, cancel `00`).
+No higher bits are defined. Synapse changes one setting by reading `07/8F`,
+changing one bit, and writing the combined byte to `07/0F`. With local dimming
+on, for example, it clears the override by writing `08` and enables it by
+writing `0C`.
 
-Unproven hypothesis: firmware sets `08` when a temporary full charge completes at 100
-percent and Battery Health Optimizer re-enables. To confirm, enable full charge once
-below 100 percent while plugged in, let it reach 100 percent, export state with Synapse
-closed, and expect `08`.
+### Field evidence
 
-A first local attempt on 2026-10-14 was inconclusive. The test used a second RZ09-0581
-(MCU 1.7.0.0), plugged in throughout, with Synapse not running. OpenBlade enabled temporary
-full charge at 79 percent, and the readback confirmed `04`. The battery reached 99 to 100
-percent after about 50 minutes. For the next 100 minutes, 07/8F still read `04` and
-Windows never reported the battery as fully charged. OpenBlade then cancelled the mode,
-the readback confirmed `00`, and the saved 80 percent limit and protection state were
-unchanged. `08` never appeared. It may need a complete charge, an unplug, or the Fn+B
-shortcut path. The admission above rests on Synapse showing `08` as off, not on this
-hypothesis.
+On 2026-10-14 a reporter's RZ09-0581 (BIOS 4.01, MCU 1.7.0.0, OpenBlade
+0.26.2-nightly.87, plugged in) returned `08`, which OpenBlade then rejected
+because it accepted only `00` and `04`. OpenBlade and Synapse ran one at a time,
+and each OpenBlade export was taken with Synapse closed.
+
+| Step | Synapse "Allow system to fully charge once" | OpenBlade `07/8F` |
+|---|---|---|
+| A | Unchecked; Battery Health Optimizer on at 80 percent | `08`, rejected; battery controls blocked |
+| B | Checked | `04`; OpenBlade cancelled to its saved state and read back `00` |
+| C | Unchecked | `00`; 80 percent limit, protection on, full charge off |
+
+Step A is full charge off with local dimming on. In step B Synapse had evidently
+cleared local dimming, so OpenBlade read `04` rather than `0C`. `08` is not a
+"full charge completed" marker; that earlier hypothesis is withdrawn.
+
+### Full charge does not end in firmware
+
+A local test on 2026-10-14 used a second RZ09-0581 (MCU 1.7.0.0), plugged in
+throughout, with Synapse not running. OpenBlade enabled temporary full charge at
+79 percent, and the readback confirmed `04`. The battery reached 99 to 100
+percent after about 50 minutes. For the next 100 minutes `07/8F` still read
+`04`, and Windows never reported the battery as fully charged. OpenBlade then
+cancelled the mode, the readback confirmed `00`, and the saved 80 percent limit
+and protection state were unchanged.
+
+This matches the Synapse code: firmware keeps `0x04` at full charge, and
+Synapse clears it in software when it sees a battery-full event at 100 percent.
+
+### OpenBlade behavior
+
+- Reading: on the exact RZ09-0581 (`1532:02E0`) only, any `07/8F` value made of
+  the four defined bits decodes, and temporary full charge is bit `0x04`. Wrong
+  lengths and undefined bits (`0x10` to `0x80`) are still rejected and the
+  rejected bytes are kept in diagnostics. The RZ09-0528 and other evidence still
+  accept only `00` and `04`.
+- Writing: OpenBlade's only captured payloads are enable `04` and cancel `00`.
+  Each replaces the whole byte, so it would also turn off any other setting
+  that is on. Before every `07/0F` write, explicit or automatic, the port reads
+  `07/8F` again in the same write session and sends the write only if that read
+  is `00` or `04`. If CPU boost, maximum fan speed, or local dimming is on, the
+  write is refused before anything is sent, and the result says that OpenBlade
+  won't change temporary full charge because it would also change those
+  settings. A failed or rejected pre-write read also sends nothing.
+- OpenBlade does not write combined payloads such as `08` or `0C`. Read-modify-write
+  needs capture and reversible validation of those payloads before it can be
+  admitted.
