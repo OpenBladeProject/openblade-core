@@ -64,6 +64,19 @@ if (($readme -join "`n") -notmatch '\[Experimental support\]\(docs/experimental-
     throw 'README must link the experimental model, recovery, and tester guide.'
 }
 
+$previousYear = [int]::MaxValue
+foreach ($row in @($readme | Where-Object { $_ -match '^\| .*`RZ09-\d{4}`.*\|$' })) {
+    $yearMatch = [regex]::Match($row.Split('|')[1], '20\d{2}')
+    if (-not $yearMatch.Success) {
+        throw 'README laptops must include their model year.'
+    }
+    $year = [int]$yearMatch.Value
+    if ($year -gt $previousYear) {
+        throw 'README laptops must be ordered by model year, newest first.'
+    }
+    $previousYear = $year
+}
+
 # The README is written for laptop owners, so USB identifiers stay out of it and
 # are pinned where the admitted targets are declared instead.
 $identifiers = @($readme | Where-Object { $_ -match '1532:[0-9A-Fa-f]{4}' })

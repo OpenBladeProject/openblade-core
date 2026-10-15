@@ -30,11 +30,11 @@ in place.
 
 | Laptop | Exact Windows product name | USB identity | Initial controls |
 | --- | --- | --- | --- |
+| Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, 80% battery protection or off |
 | Blade 16 (2023), RZ09-0483 | `Blade 16 - RZ09-0483` | `1532:029F` | Balanced, Silent, 80% battery protection or off |
 | Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, 80% battery protection or off |
-| Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, 80% battery protection or off |
-| Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced and Silent |
 | Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, bounded Custom levels, keyboard brightness and built-in effects, logo lighting, 50–100% charge limits in 1% steps (100% turns protection off) |
+| Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced and Silent |
 
 Performance changes require confirmed Automatic fans and fresh external-power
 evidence. The mode command also selects Automatic fans; this backend cannot restore
