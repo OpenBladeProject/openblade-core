@@ -5800,6 +5800,53 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(target, context.Device.ConfirmedState.Lighting);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UpdateProfiles_UnavailableAdvancedCustomIntentSurvivesUnrelatedEditButCannotChange(bool missingPolicy)
+    {
+        TestContext context = CreateWritableContext();
+        var savedCustom = new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)
+        {
+            MaximumFans = true,
+        };
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            CustomPerformance = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>
+            {
+                new(savedCustom.Cpu, savedCustom.Gpu),
+            })
+            {
+                SupportsMaximumFans = true,
+            },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Performance = PerformancePreset.Custom, CustomPerformance = savedCustom },
+        };
+        ControlOperationResult initial = await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, initial.Status);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            CustomPerformance = missingPolicy ? null : DeviceCapabilities.SafeTargetDefaults().CustomPerformance,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int setters = context.Device.TotalSetterCalls;
+        profiles = profiles with { BatteryPolicy = BatteryPolicy.Create(75) };
+        ControlOperationResult unrelated = await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, unrelated.Status);
+        Assert.Equal(savedCustom, (await context.Store.LoadAsync(CancellationToken.None)).Profiles.PluggedIn.CustomPerformance);
+        ControlOperationResult changed = await context.Runtime.UpdateProfilesAsync(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { CustomPerformance = savedCustom with { MaximumFans = false } },
+        }, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Failed, changed.Status);
+        Assert.Equal(savedCustom, context.Runtime.GetStatus().Profiles.PluggedIn.CustomPerformance);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+    }
+
     [Fact]
     public async Task UpdateProfiles_UnrelatedEditKeepsResumeLightingHold()
     {
@@ -9759,6 +9806,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
         Assert.Equal(fanWrites, context.Device.FanSetCalls);
         Assert.DoesNotContain(DeviceSubsystem.Performance, context.Runtime.GetStatus().ExternalChanges);
+
+        ControlOperationResult preset = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(PerformancePreset.Silent, OverrideLifetime.Persistent),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, preset.Status);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
     }
 
     [Fact]

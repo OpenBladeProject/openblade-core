@@ -380,7 +380,9 @@ internal sealed partial class ExperimentalBladePort
         bool submitted = false;
         bool frameWriteAttempted = false;
         bool frameActivationAttempted = false;
-        bool replacingOwnedFrame = IsOwnedFrameOwnership(OwnershipState);
+        LightingRendererOwnershipState priorOwnership = OwnershipState;
+        bool replacingOwnedFrame = IsOwnedFrameOwnership(priorOwnership);
+        bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
         byte raw = checked((byte)((settings.Brightness * 255 + 50) / 100));
         string requested = $"{settings.Effect};Raw={raw};Logo={settings.LogoMode?.ToString() ?? "Unchanged"}";
         try
@@ -450,31 +452,30 @@ internal sealed partial class ExperimentalBladePort
             {
                 ExperimentalLightingBaseline frameBaseline = lightingOwnership.Baseline
                     ?? new ExperimentalLightingBaseline(baseline, originalBaselineRaw);
-                bool repaint = !replacingOwnedFrame
-                    || lightingOwnership.Intent?.Color != settings.Color;
-                if (repaint)
+                // The upstream model reports that standby and idle fade can
+                // discard volatile custom rows. Ownership and color equality
+                // therefore cannot prove that the frame is still present.
+                // https://github.com/sqmagellan/razer-ctl/blob/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a/README.md
+                for (int row = 0; row < ExperimentalBladeLightingFrame.RowCount; row++)
                 {
-                    for (int row = 0; row < ExperimentalBladeLightingFrame.RowCount; row++)
-                    {
-                        RequireWriteAdmission();
-                        frameWriteAttempted = true;
-                        await ExchangeAsync("KeyboardStaticFrame", 0x03, 0x0B,
-                            ExperimentalBladeLightingFrame.CreateUniformRow(row, settings.Color),
-                            true, cancellationToken, variableResponse: true,
-                            payloadValidator: static value =>
-                                value.Length <= RazerReport.MaximumPayloadLength,
-                            requireEcho: false).ConfigureAwait(false);
-                        submitted = true;
-                    }
                     RequireWriteAdmission();
-                    frameActivationAttempted = true;
-                    await ExchangeAsync("KeyboardStaticFrame", 0x03, 0x0A,
-                        [5, 0], true, cancellationToken, variableResponse: true,
+                    frameWriteAttempted = true;
+                    await ExchangeAsync("KeyboardStaticFrame", 0x03, 0x0B,
+                        ExperimentalBladeLightingFrame.CreateUniformRow(row, settings.Color),
+                        true, cancellationToken, variableResponse: true,
                         payloadValidator: static value =>
                             value.Length <= RazerReport.MaximumPayloadLength,
                         requireEcho: false).ConfigureAwait(false);
                     submitted = true;
                 }
+                RequireWriteAdmission();
+                frameActivationAttempted = true;
+                await ExchangeAsync("KeyboardStaticFrame", 0x03, 0x0A,
+                    [5, 0], true, cancellationToken, variableResponse: true,
+                    payloadValidator: static value =>
+                        value.Length <= RazerReport.MaximumPayloadLength,
+                    requireEcho: false).ConfigureAwait(false);
+                submitted = true;
                 lightingOwnership.Baseline = frameBaseline;
                 lightingOwnership.Intent = settings with { LogoMode = null };
                 SetLightingOwnership(LightingRendererOwnershipState.Static);
@@ -508,6 +509,7 @@ internal sealed partial class ExperimentalBladePort
                 submitted = true;
             }
             else if (replacingOwnedFrame
+                || replacingFaultedFrame
                 || baseline.Effect != settings.Effect
                 || model.ProductId == 0x0255
                     && settings.Parameters is BreathingLightingParameters
@@ -566,7 +568,7 @@ internal sealed partial class ExperimentalBladePort
                 || frameWriteAttempted && exception is BladeWriteException
                 { SubmissionState: WriteSubmissionState.Indeterminate })
             {
-                SetLightingOwnership(LightingRendererOwnershipState.Faulted);
+                SetLightingFaulted();
             }
             throw MapWriteFailure("KeyboardLighting", submitted, exception);
         }
@@ -653,6 +655,9 @@ internal sealed partial class ExperimentalBladePort
 
     private void SetLightingOwnership(LightingRendererOwnershipState value) =>
         Volatile.Write(ref lightingOwnership.Ownership, (int)value);
+
+    private void SetLightingFaulted() =>
+        SetLightingOwnership(LightingRendererOwnershipState.Faulted);
 
     private static bool IsOwnedFrameOwnership(LightingRendererOwnershipState value) =>
         value is LightingRendererOwnershipState.Static
@@ -772,7 +777,8 @@ internal sealed partial class ExperimentalBladePort
                     true, cancellationToken, variableResponse: true,
                     payloadValidator: static value =>
                         value.Length <= RazerReport.MaximumPayloadLength,
-                    requireEcho: false).ConfigureAwait(false);
+                    requireEcho: false,
+                    recordAcknowledgedSubmission: false).ConfigureAwait(false);
                 submitted = true;
             }
             RequireWriteAdmission();
@@ -780,19 +786,17 @@ internal sealed partial class ExperimentalBladePort
                 [5, 0], true, cancellationToken, variableResponse: true,
                 payloadValidator: static value =>
                     value.Length <= RazerReport.MaximumPayloadLength,
-                requireEcho: false).ConfigureAwait(false);
+                requireEcho: false,
+                recordAcknowledgedSubmission: false).ConfigureAwait(false);
             submitted = true;
-            policy.Record("KeyboardUniformFrame", "Readback", "Unavailable", true,
-                requested: $"RGB={frame.Color.Red:X2}{frame.Color.Green:X2}{frame.Color.Blue:X2}",
-                confirmed: "AppliedWithoutColorReadback",
-                failure: "FrameColorReadbackUnavailable");
+            policy.RecordUniformFrameApplied(frame.Color);
         }
         catch (Exception exception)
         {
             if (submitted || exception is BladeWriteException
                 { SubmissionState: not WriteSubmissionState.KnownNotApplied })
             {
-                SetLightingOwnership(LightingRendererOwnershipState.Faulted);
+                SetLightingFaulted();
             }
             throw MapWriteFailure("KeyboardUniformFrame", submitted, exception);
         }
@@ -828,7 +832,7 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception exception)
         {
-            SetLightingOwnership(LightingRendererOwnershipState.Faulted);
+            SetLightingFaulted();
             throw MapWriteFailure("KeyboardStaticFrameRestore", submitted, exception);
         }
         finally
@@ -861,7 +865,7 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception exception)
         {
-            SetLightingOwnership(LightingRendererOwnershipState.Faulted);
+            SetLightingFaulted();
             failure = MapWriteFailure("KeyboardStaticFrameRestore", submitted, exception);
         }
         finally

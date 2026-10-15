@@ -92,8 +92,10 @@ internal static class ExperimentalBladeModels
 internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
 {
     private readonly object sync = new();
-    private readonly Queue<ExperimentalControlObservation> observations = new();
+    private readonly LinkedList<ExperimentalControlObservation> observations = new();
     private readonly Dictionary<string, (string Outcome, string? Confirmed, string? Failure)> lastQueries = new(StringComparer.Ordinal);
+    private LinkedListNode<ExperimentalControlObservation>? uniformFrameSuccess;
+    private long uniformFrameSuccessCount;
     private int recoveryRequired;
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
@@ -119,13 +121,49 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
                 }
                 lastQueries[operation] = current;
             }
-            while (observations.Count >= DiagnosticExperimentalSupport.MaxObservations)
-            {
-                observations.Dequeue();
-            }
-            observations.Enqueue(new(DateTimeOffset.UtcNow, operation, stage, outcome,
+            Append(new(DateTimeOffset.UtcNow, operation, stage, outcome,
                 submitted, requested, confirmed, failure));
         }
+    }
+
+    internal void RecordUniformFrameApplied(RgbColor color)
+    {
+        lock (sync)
+        {
+            uniformFrameSuccessCount++;
+            if (uniformFrameSuccess?.List is not null)
+            {
+                observations.Remove(uniformFrameSuccess);
+            }
+            uniformFrameSuccess = Append(new(
+                DateTimeOffset.UtcNow,
+                "KeyboardUniformFrame",
+                "Readback",
+                "Unavailable",
+                true,
+                $"LastRGB={color.Red:X2}{color.Green:X2}{color.Blue:X2}",
+                $"AppliedWithoutColorReadback;Frames={uniformFrameSuccessCount}",
+                "FrameColorReadbackUnavailable"));
+        }
+    }
+
+    private LinkedListNode<ExperimentalControlObservation> Append(
+        ExperimentalControlObservation observation)
+    {
+        while (observations.Count >= DiagnosticExperimentalSupport.MaxObservations)
+        {
+            LinkedListNode<ExperimentalControlObservation>? removed = observations.First;
+            if (removed is null)
+            {
+                break;
+            }
+            observations.RemoveFirst();
+            if (ReferenceEquals(removed, uniformFrameSuccess))
+            {
+                uniformFrameSuccess = null;
+            }
+        }
+        return observations.AddLast(observation);
     }
 
     internal DiagnosticExperimentalSupport Snapshot()

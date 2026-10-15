@@ -2189,6 +2189,22 @@ public sealed class ControlCoordinatorTests
     }
 
     [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Performance)]
+    public async Task ScopedPreset_ReportedManualPerformanceConfirmsWithoutAutomaticWrite(PerformancePreset preset)
+    {
+        RecordingBladeDevice device = CreateReportedManualPerformanceDevice();
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(preset, null, null, CancellationToken.None);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(preset, device.State.Performance);
+        Assert.Equal(FanMode.Fixed, device.State.Fans);
+        Assert.Empty(device.FanControlWrites);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task ApplyDesiredState_ReportedManualPerformanceAppliesAndConfirmsRealCustomLevels(bool exitManual)

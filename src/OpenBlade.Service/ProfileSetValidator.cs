@@ -81,13 +81,15 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
         },
         new HashSet<LightingEffect> { LightingEffect.Off },
-        // Offline legacy storage validation preserves its original eight
-        // combinations. This policy never supplies hardware write authority.
+        // Offline storage validates intent structurally, including capabilities
+        // from a temporarily unavailable model. It never supplies write authority.
         new CustomPerformanceCapabilities(
-            (from cpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+            (from cpu in Enum.GetValues<CustomPerformanceLevel>()
              from gpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
-             where (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)
-             select new CustomPerformanceCombination(cpu, gpu)).ToHashSet()));
+             select new CustomPerformanceCombination(cpu, gpu)).ToHashSet())
+        {
+            SupportsMaximumFans = true,
+        });
 
     public static ProfileValidationPolicy CreateForDeviceCapabilities(
         DeviceCapabilities batteryCapabilities,
@@ -105,7 +107,8 @@ public sealed class ProfileValidationPolicy
         return new ProfileValidationPolicy(
             safeDefaults.SupportedPerformanceFanCombinations,
             supportedLightingEffects,
-            batteryCapabilities.CustomPerformance,
+            batteryCapabilities.CustomPerformance
+                ?? new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>()),
             batteryCapabilities.FanSpeedRange,
             lightingCapabilities.KeyboardLightingLayoutId,
             lightingCapabilities.SupportsBreathingColorSelection,
@@ -139,11 +142,19 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             lightingCapabilities));
 
     public void Validate(ProfileSet profiles)
+        => ValidateCore(profiles, validateCustomCapabilities: true);
+
+    // The runtime separately admits changed Custom intent against current device
+    // capabilities, while unrelated edits preserve existing unavailable intent.
+    internal void ValidateStoredCustomIntent(ProfileSet profiles)
+        => ValidateCore(profiles, validateCustomCapabilities: false);
+
+    private void ValidateCore(ProfileSet profiles, bool validateCustomCapabilities)
     {
         ArgumentNullException.ThrowIfNull(profiles);
-        ValidateProfile(profiles.PluggedIn, "plugged-in", PowerSource.PluggedIn);
-        ValidateProfile(profiles.Battery, "battery", PowerSource.Battery);
-        ValidateProfile(profiles.UsbC, "USB-C", PowerSource.UsbC);
+        ValidateProfile(profiles.PluggedIn, "plugged-in", PowerSource.PluggedIn, validateCustomCapabilities);
+        ValidateProfile(profiles.Battery, "battery", PowerSource.Battery, validateCustomCapabilities);
+        ValidateProfile(profiles.UsbC, "USB-C", PowerSource.UsbC, validateCustomCapabilities);
         ValidateBatteryPolicy(profiles.BatteryPolicy);
         ValidateLightingPowerPolicy(profiles.PluggedIn.LightingPowerPolicy);
         ValidateLightingPowerPolicy(profiles.Battery.LightingPowerPolicy);
@@ -220,7 +231,8 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     private void ValidateProfile(
         PowerProfile? profile,
         string name,
-        PowerSource source)
+        PowerSource source,
+        bool validateCustomCapabilities)
     {
         if (profile is null)
         {
@@ -237,7 +249,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
 
         ValidateLighting(profile.Lighting, name);
-        ValidateCustomPerformance(profile, name);
+        ValidateCustomPerformance(profile, name, validateCustomCapabilities);
         ValidateGpuClockTuning(profile, name, source);
         ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
@@ -289,7 +301,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
     }
 
-    private void ValidateCustomPerformance(PowerProfile profile, string name)
+    private void ValidateCustomPerformance(PowerProfile profile, string name, bool validateCapabilities)
     {
         if (profile.Performance == PerformancePreset.Custom
             && profile.CustomPerformance?.MaximumFans == true && profile.Fans != FanMode.Automatic)
@@ -309,7 +321,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} saved custom performance levels are invalid.");
         }
 
-        if (profile.CustomPerformance is not null
+        if (validateCapabilities && profile.CustomPerformance is not null
             && (validationPolicy.CustomPerformance is { } admitted
                 ? !admitted.Supports(profile.CustomPerformance)
                 // Storage-only legacy policies must still load unchanged saved

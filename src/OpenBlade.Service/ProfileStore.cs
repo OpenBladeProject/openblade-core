@@ -78,7 +78,7 @@ public sealed class ProfileStore
             out _,
             batteryProtectionDefault: null);
         profiles = ClearLegacyWindowsPowerModes(profiles);
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -270,7 +270,7 @@ public sealed class ProfileStore
         {
             ValidateLegacyBatteryPolicy(profiles);
         }
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         return profiles;
     }
 

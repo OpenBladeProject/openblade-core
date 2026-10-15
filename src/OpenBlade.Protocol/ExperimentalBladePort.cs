@@ -270,7 +270,15 @@ internal sealed partial class ExperimentalBladePort(
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Experimental performance changes require confirmed Automatic fans.");
             }
-            if (baseline.Performance == value && baseline.Fans == FanMode.Automatic)
+            if (baseline.Fans == FanMode.Fixed
+                && (baseline.HyperBoostActive || baseline.CustomPerformance?.MaximumFans == true))
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "The fixed-fan baseline conflicts with a firmware fan override.");
+            }
+            (int First, int Second)? baselineTargets = baseline.Fans == FanMode.Fixed
+                ? await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) : null;
+            if (baseline.Performance == value)
             {
                 return;
             }
@@ -286,12 +294,17 @@ internal sealed partial class ExperimentalBladePort(
             foreach (byte selector in new byte[] { 1, 2 })
             {
                 RequirePerformanceWriteAdmission(value);
-                await ExchangeAsync("Performance", 0x0D, 0x02, [1, selector, mode, 0],
+                // The admitted 029F/029D shape has independent mode and fan bytes;
+                // changing a preset does not request relinquishing fixed targets.
+                await ExchangeAsync("Performance", 0x0D, 0x02,
+                    [1, selector, mode, baseline.Fans == FanMode.Fixed ? (byte)1 : (byte)0],
                     true, cancellationToken).ConfigureAwait(false);
                 submitted = true;
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
-            if (confirmed.Performance != value || confirmed.Fans != FanMode.Automatic)
+            if (confirmed.Performance != value || confirmed.Fans != baseline.Fans
+                || baselineTargets.HasValue
+                    && await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) != baselineTargets.Value)
             {
                 throw new IOException("Independent performance readback did not confirm the requested value.");
             }
@@ -362,7 +375,7 @@ internal sealed partial class ExperimentalBladePort(
     private async Task<ReadOnlyMemory<byte>> ExchangeAsync(string operation, byte commandClass,
         byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken,
         bool variableResponse = false, Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null,
-        bool requireEcho = true)
+        bool requireEcho = true, bool recordAcknowledgedSubmission = true)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
@@ -420,7 +433,7 @@ internal sealed partial class ExperimentalBladePort(
             }
             throw new IOException("Experimental response did not match the command contract.");
         }
-        if (write)
+        if (write && recordAcknowledgedSubmission)
         {
             policy.Record(operation, "Submission", "Acknowledged", true);
         }

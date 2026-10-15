@@ -47,6 +47,30 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         Assert.Contains("\"schemaVersion\": 20", await File.ReadAllTextAsync(path));
     }
 
+    [Theory]
+    [InlineData(CustomPerformanceLevel.Boost, true)]
+    [InlineData(CustomPerformanceLevel.High, false)]
+    [InlineData(CustomPerformanceLevel.Medium, true)]
+    public async Task StoredProfiles_PreserveAdvancedIntentWhenModelIsUnavailable(
+        CustomPerformanceLevel cpu, bool maximumFans)
+    {
+        var custom = new CustomPerformanceSettings(cpu, CustomPerformanceLevel.High) { MaximumFans = maximumFans };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Performance = PerformancePreset.Custom, CustomPerformance = custom },
+        };
+        string path = Path.Combine(directory, "stored.json");
+        await new ProfileStore(path).SaveAsync(profiles, CancellationToken.None);
+        ProfileLoadResult loaded = await new ProfileStore(path,
+            ProfileSetValidator.CreateForDeviceCapabilities(DeviceCapabilities.Unavailable())).LoadAsync(CancellationToken.None);
+        Assert.False(loaded.RecoveredFromInvalidFile);
+        Assert.Equal(custom, loaded.Profiles.PluggedIn.CustomPerformance);
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.Throws<InvalidDataException>(() => ProfileSetValidator.CreateForDeviceCapabilities(
+            DeviceCapabilities.SafeTargetDefaults()).Validate(profiles));
+    }
+
     [Fact]
     public void Profiles_RejectMaximumFansTogetherWithManualTargets()
     {
@@ -71,6 +95,22 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         InvalidDataException failure = Assert.Throws<InvalidDataException>(() =>
             ProfileSetValidator.CreateForDeviceCapabilities(caps).Validate(conflicting));
         Assert.Contains("maximum-fan flag requires Automatic", failure.Message);
+    }
+
+    [Fact]
+    public void DeviceValidation_MissingCustomPolicyDoesNotAdmitChangedIntent()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+            },
+        };
+        Assert.Throws<InvalidDataException>(() => ProfileSetValidator.CreateForDeviceCapabilities(
+            DeviceCapabilities.Unavailable()).Validate(profiles));
     }
 
     [Fact]

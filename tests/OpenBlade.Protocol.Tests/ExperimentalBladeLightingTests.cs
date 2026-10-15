@@ -314,17 +314,192 @@ public sealed class ExperimentalBladeLightingTests
     }
 
     [Fact]
-    public async Task LowPowerInvalidation_RetiresUniformFrameWithoutRestorationWrite()
+    public async Task FaultedFrame_ExplicitBuiltinChoiceReassertsAndConfirmsBeforeClearing()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session { FailFrameRow = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
+        var ownership = new ExperimentalLightingOwnershipState();
+        await using var port = new ExperimentalBladePort(
+            session, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn,
+            sharedLightingOwnership: ownership);
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None));
+        policy.CompleteRecovery();
+        session.FailFrameRow = false;
+        int before = session.Commands.Count;
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50),
+            CancellationToken.None);
+
+        Assert.Contains(session.Commands.Skip(before), command =>
+            command.ClassId == 0x0F && command.CommandId == 0x02
+            && command.Arguments.Span.SequenceEqual(new byte[] { 1, 5, 3 }));
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Equal(
+            LightingEffect.Spectrum,
+            (await port.ReadStateAsync(CancellationToken.None))!.Effect);
+    }
+
+    [Fact]
+    public async Task FaultedFrame_FailedBuiltinReassertRemainsFaultedAndPaused()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session { FailFrameRow = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
+        var ownership = new ExperimentalLightingOwnershipState();
+        await using var port = new ExperimentalBladePort(
+            session, new(), model, policy, () => true,
+            () => PowerSource.PluggedIn,
+            sharedLightingOwnership: ownership);
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            CancellationToken.None));
+        policy.CompleteRecovery();
+        session.FailFrameRow = false;
+        session.FailEffect = true;
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.SpectrumCycling(50),
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        Assert.False(policy.WritesAllowed);
+    }
+
+    [Fact]
+    public async Task HostFrameToSameIntentColorStatic_AlwaysRepaintsAllRows()
     {
         ExperimentalBladeModel model = ModelFor(0x029F);
         var session = new Session();
         var ownership = new ExperimentalLightingOwnershipState();
-        var port = new ExperimentalBladePort(
+        await using var port = new ExperimentalBladePort(
             session, new(), model, new ExperimentalFeaturesPolicy(model),
             () => true, () => PowerSource.PluggedIn,
             sharedLightingOwnership: ownership);
+        LightingSettings ambient = LightingSettingsFactory.AmbientAwareness(
+            AmbientAwarenessRegion.Full,
+            50);
+        await port.SetLightingAsync(ambient, CancellationToken.None);
+        await port.PushUniformLightingFrameAsync(
+            new UniformLightingFrame(new RgbColor(9, 8, 7)),
+            CancellationToken.None);
+        int before = session.Commands.Count;
+
         await port.SetLightingAsync(
-            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            LightingSettingsFactory.Static(ambient.Color, 50),
+            CancellationToken.None);
+
+        RazerCommandSpec[] rows = session.Commands.Skip(before)
+            .Where(command => command.ClassId == 0x03 && command.CommandId == 0x0B)
+            .ToArray();
+        Assert.Equal(ExperimentalBladeLightingFrame.RowCount, rows.Length);
+        Assert.All(rows, command =>
+            Assert.All(command.Arguments.Span[4..].ToArray().Chunk(3), rgb =>
+                Assert.Equal(
+                    new byte[] { ambient.Color.Red, ambient.Color.Green, ambient.Color.Blue },
+                    rgb)));
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+    }
+
+    [Fact]
+    public async Task UniformFrameTelemetry_AggregatesSuccessesAndRetainsPriorOperationsAndFailure()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = Create(session, policy, model);
+        policy.Record("BatteryProtection", "Readback", "Confirmed", confirmed: "80");
+        policy.Record("Performance", "Readback", "Confirmed", confirmed: "Balanced");
+        await port.SetLightingAsync(
+            LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 50),
+            CancellationToken.None);
+
+        for (int frame = 0; frame < 100; frame++)
+        {
+            await port.PushUniformLightingFrameAsync(
+                new UniformLightingFrame(new RgbColor((byte)frame, 2, 3)),
+                CancellationToken.None);
+        }
+
+        DiagnosticExperimentalSupport beforeFailure = policy.Snapshot();
+        Assert.True(beforeFailure.Observations.Count <= DiagnosticExperimentalSupport.MaxObservations);
+        Assert.Contains(beforeFailure.Observations, item => item.Operation == "BatteryProtection");
+        Assert.Contains(beforeFailure.Observations, item => item.Operation == "Performance");
+        ExperimentalControlObservation aggregate = Assert.Single(
+            beforeFailure.Observations,
+            item => item.Operation == "KeyboardUniformFrame");
+        Assert.Equal("AppliedWithoutColorReadback;Frames=100", aggregate.ConfirmedValue);
+        Assert.DoesNotContain(beforeFailure.Observations, item =>
+            item.Operation == "KeyboardUniformFrame"
+            && item.Stage == "Submission"
+            && item.Outcome == "Acknowledged");
+
+        session.FailFrameRow = true;
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.PushUniformLightingFrameAsync(
+                new UniformLightingFrame(new RgbColor(1, 2, 3)),
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        DiagnosticExperimentalSupport afterFailure = policy.Snapshot();
+        Assert.True(afterFailure.Observations.Count <= DiagnosticExperimentalSupport.MaxObservations);
+        Assert.Contains(afterFailure.Observations, item => item.Operation == "BatteryProtection");
+        Assert.Contains(afterFailure.Observations, item => item.Operation == "Performance");
+        Assert.Contains(afterFailure.Observations, item =>
+            item.Operation == "KeyboardUniformFrame"
+            && item.Outcome == "Indeterminate"
+            && item.Submitted);
+
+        policy.CompleteRecovery();
+        session.FailFrameRow = false;
+        await port.SetLightingAsync(
+            LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 50),
+            CancellationToken.None);
+        for (int frame = 0; frame < 40; frame++)
+        {
+            await port.PushUniformLightingFrameAsync(
+                new UniformLightingFrame(new RgbColor((byte)frame, 4, 5)),
+                CancellationToken.None);
+        }
+
+        DiagnosticExperimentalSupport afterLaterSuccesses = policy.Snapshot();
+        Assert.True(afterLaterSuccesses.Observations.Count
+            <= DiagnosticExperimentalSupport.MaxObservations);
+        Assert.Contains(afterLaterSuccesses.Observations,
+            item => item.Operation == "BatteryProtection");
+        Assert.Contains(afterLaterSuccesses.Observations,
+            item => item.Operation == "Performance");
+        Assert.Contains(afterLaterSuccesses.Observations, item =>
+            item.Operation == "KeyboardUniformFrame"
+            && item.Outcome == "Indeterminate"
+            && item.Submitted);
+        Assert.Contains(afterLaterSuccesses.Observations, item =>
+            item.Operation == "KeyboardUniformFrame"
+            && item.ConfirmedValue == "AppliedWithoutColorReadback;Frames=140");
+    }
+
+    [Fact]
+    public async Task LowPowerInvalidation_IsWriteFreeAndFreshApplyRepaints()
+    {
+        ExperimentalBladeModel model = ModelFor(0x029F);
+        var session = new Session();
+        var ownership = new ExperimentalLightingOwnershipState();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        var port = new ExperimentalBladePort(
+            session, new(), model, policy,
+            () => true, () => PowerSource.PluggedIn,
+            sharedLightingOwnership: ownership);
+        LightingSettings requested = LightingSettingsFactory.Static(
+            new RgbColor(1, 2, 3), 50);
+        await port.SetLightingAsync(requested,
             CancellationToken.None);
         int before = session.Commands.Count;
 
@@ -336,6 +511,17 @@ public sealed class ExperimentalBladeLightingTests
         Assert.Equal(LightingRendererOwnershipState.Static,
             (LightingRendererOwnershipState)Volatile.Read(ref ownership.Ownership));
         Assert.Equal(1, session.DisposeCount);
+
+        var replacementSession = new Session();
+        await using var replacement = new ExperimentalBladePort(
+            replacementSession, new(), model, policy,
+            () => true, () => PowerSource.PluggedIn,
+            sharedLightingOwnership: ownership);
+        await replacement.SetLightingAsync(requested, CancellationToken.None);
+
+        Assert.Equal(ExperimentalBladeLightingFrame.RowCount,
+            replacementSession.Commands.Count(command =>
+                command.ClassId == 0x03 && command.CommandId == 0x0B));
     }
 
     [Fact]

@@ -31,6 +31,7 @@ The Blade 14 (2025) also offers Battery Saver and Battery Balanced on battery po
   supported. The newer models offer brightness, built-in effects, and logo
   lighting. Static RGB on the Blade 16 (2023) and Blade 18 (2023) is one color
   across the keyboard; per-key and spatial effects are not available.
+  Firmware idle fade can restore the built-in effect; select Static again to repaint.
   The Blade 16 also offers whole-keyboard Ambient Awareness and Audio Meter.
   The Blade 15 offers random or single-color Breathing.
 - HyperBoost can be reported on the Blade 16 (2023) and Blade 18 (2023), but

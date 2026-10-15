@@ -874,7 +874,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             batteryProtectionDefault: null);
         persistentOverrides = PersistentOverrideStore.NormalizeLegacyLighting(
             persistentOverrides);
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         validator.ValidatePreferences(configuration.Preferences);
         PersistentOverrideStore.Validate(persistentOverrides);
         if (!Enum.IsDefined(powerSource))
@@ -1135,7 +1135,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PersistentOverrideState overrides =
                     PersistentOverrideStore.NormalizeLegacyFanControl(
                         PersistentOverrideStore.NormalizeLegacyLighting(context.Overrides));
-                validator.Validate(profiles);
+                validator.ValidateStoredCustomIntent(profiles);
                 validator.ValidatePreferences(context.Configuration.Preferences);
                 PersistentOverrideStore.Validate(overrides);
 
@@ -1509,7 +1509,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     profiles,
                     out _,
                     batteryProtectionDefault: null);
-                validator.Validate(profiles);
+                validator.ValidateStoredCustomIntent(profiles);
+                DeviceCapabilities? editCapabilities = GetStatus().Capabilities;
+                foreach ((PowerProfile requested, PowerProfile saved) in new[]
+                {
+                    (profiles.PluggedIn, Automation.Profiles.PluggedIn),
+                    (profiles.Battery, Automation.Profiles.Battery),
+                    (profiles.UsbC, Automation.Profiles.UsbC),
+                })
+                {
+                    if (requested.CustomPerformance is not null
+                        && (requested.CustomPerformance != saved.CustomPerformance
+                            || requested.Performance == PerformancePreset.Custom
+                                && saved.Performance != PerformancePreset.Custom)
+                        && editCapabilities?.CustomPerformance?.Supports(requested.CustomPerformance) != true)
+                    {
+                        throw new InvalidDataException("Changed Custom performance intent requires explicit support from the current device.");
+                    }
+                }
                 await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
                 if (Automation.Resolve(profileResolutionState).Lighting.Value

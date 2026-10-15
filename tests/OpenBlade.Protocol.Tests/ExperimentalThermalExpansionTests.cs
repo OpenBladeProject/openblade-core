@@ -85,6 +85,39 @@ public sealed class ExperimentalThermalExpansionTests
     }
 
     [Theory]
+    [InlineData(0x029F, PerformancePreset.Balanced)]
+    [InlineData(0x029F, PerformancePreset.Silent)]
+    [InlineData(0x029F, PerformancePreset.Performance)]
+    [InlineData(0x029D, PerformancePreset.Balanced)]
+    [InlineData(0x029D, PerformancePreset.Silent)]
+    public async Task PresetChanges_PreserveFixedFlagAndIndependentTargets(int pid, PerformancePreset preset)
+    {
+        var session = new Session { Mode = 4, Fan = 1, FirstTarget = 30, SecondTarget = 40 };
+        await using var port = Create(pid, session);
+        await port.SetPerformanceAsync(preset, CancellationToken.None);
+        ProductionPerformanceFanState readback = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.Equal(preset, readback.Performance);
+        Assert.Equal(FanMode.Fixed, readback.Fans);
+        Assert.Equal(30, session.FirstTarget);
+        Assert.Equal(40, session.SecondTarget);
+        Assert.Equal(2, session.Writes.Count());
+        Assert.All(session.Writes, command => Assert.Equal(1, command.Arguments.Span[3]));
+    }
+
+    [Fact]
+    public async Task PresetChange_UnexpectedFixedTargetChangePausesWrites()
+    {
+        var session = new Session { Mode = 4, Fan = 1, ResetTargetsOnModeWrite = true };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
+        await using var port = Create(0x029F, session, policy);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(2, session.Writes.Count());
+    }
+
+    [Theory]
     [InlineData(PerformancePreset.BatterySaver, 3)]
     [InlineData(PerformancePreset.BatteryBalanced, 6)]
     public async Task BatteryModes_UseExactBlade14Codes(PerformancePreset preset, byte wire)

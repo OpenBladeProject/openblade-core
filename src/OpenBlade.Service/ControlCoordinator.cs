@@ -236,7 +236,7 @@ public sealed class ControlCoordinator
                     || GpuClockTuningSettings.IsWellFormed(gpuClockTuning)),
             PerformanceSupported,
             state => (!supportsDirectManualFanTransitions
-                    || reportsPerformanceWithManualFans && value == PerformancePreset.Custom
+                    || reportsPerformanceWithManualFans
                     || state.Fans == FanMode.Automatic)
                 && PerformanceMatches(
                     state,

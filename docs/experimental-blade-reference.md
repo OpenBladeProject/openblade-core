@@ -133,6 +133,9 @@ readback. It saves a readable built-in effect and brightness baseline before
 the frame, and restores and confirms that baseline through the built-in getters
 when frame ownership ends. A failure after any row may have partially submitted
 the frame and therefore pauses writes.
+Standby and firmware idle fade can discard the volatile frame. An explicit Static
+application always repaints all rows; OpenBlade has no idle-input repaint trigger.
+Ambient and Audio Meter continue to repaint while their renderer is active.
 
 The uniform frame is one color across the keyboard. It does not admit a key
 layout, per-key or spatial effects, or the `02E0` shared ambient-frame API.
