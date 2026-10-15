@@ -1,7 +1,7 @@
 # Razer brightness driver package
 
 OpenBlade can use the signed Razer Consumer Control stack already installed on
-either admitted laptop. Windows then owns the brightness change and native
+either of the two Blade 16 models listed below. Windows then owns the brightness change and native
 flyout. About > Device information reports whether the exact model's admitted
 runtime path is available. If it is unavailable, the brightness keys continue
 to use WMI and the OpenBlade flyout.
@@ -10,7 +10,7 @@ The ordinary OpenBlade installer does not install or remove Razer drivers.
 
 ## Runtime hardware scope
 
-The two admitted laptops use separate, model-specific stacks. OpenBlade checks
+The two native-brightness backends use separate, model-specific stacks. OpenBlade checks
 the full device ancestry, service name, and pinned driver hashes before using
 either one:
 
