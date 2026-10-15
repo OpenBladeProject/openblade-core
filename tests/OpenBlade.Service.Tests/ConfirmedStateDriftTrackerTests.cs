@@ -305,7 +305,7 @@ public sealed class ConfirmedStateDriftTrackerTests
     }
 
     [Fact]
-    public void Rz090581LocalDimmingKeptWhileFullChargeEnds_RetiresIntentInsteadOfLatching()
+    public void LocalDimmingKeptWhileFullChargeEnds_RetiresIntentInsteadOfLatching()
     {
         // 0x0C is full charge on with local dimming on; 0x08 keeps local
         // dimming and ends full charge, which is a confirmed true-to-false.
@@ -316,19 +316,18 @@ public sealed class ConfirmedStateDriftTrackerTests
             return true;
         });
 
-        tracker.Observe(State(battery: Rz090581Battery(0x0C)));
-        tracker.Observe(State(battery: Rz090581Battery(0x08)));
+        tracker.Observe(State(battery: PowerModeControlBattery(0x0C)));
+        tracker.Observe(State(battery: PowerModeControlBattery(0x08)));
 
         Assert.Equal(1, retirements);
         Assert.Empty(tracker.ExternalChanges);
     }
 
-    private static ConfirmedBatteryState Rz090581Battery(byte powerModeControl)
+    private static ConfirmedBatteryState PowerModeControlBattery(byte powerModeControl)
     {
         Assert.True(TemporaryFullChargeProtocol.TryDecodeQuery(
             [powerModeControl],
-            out bool active,
-            decodesPowerModeControlBitmask: true));
+            out bool active));
         return new ConfirmedBatteryState(true, 80, active);
     }
 

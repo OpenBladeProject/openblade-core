@@ -260,9 +260,10 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
   implemented typed operations; its presence grants no additional developer or
   physical-validation write authority. Unknown commands still need reviewed
   evidence and separate authorization.
-- `07/8F` and `07/0F` on Blade series 10 to 12 are a shared Power Mode Control
-  bitmask, not a full-charge-only value. Before admitting a model, especially a
-  mini-LED one, follow
+- `07/8F` and `07/0F` are a shared Power Mode Control bitmask on every model
+  that uses them, not a full-charge-only value. Keep the shared decoder and
+  pre-write guard, and before admitting a model, especially a mini-LED one,
+  follow
   [Power Mode Control and local dimming](docs/developer-guide.md#power-mode-control-and-local-dimming).
 - Keep validation proportionate. For transitions using commands already admitted
   for the exact device, prefer a direct test through OpenBlade's typed,

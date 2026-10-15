@@ -60,7 +60,8 @@ archives remain private.
 
 On the RZ09-0581, `07/8F` reads and `07/0F` writes **Power Mode Control**, a
 single byte shared by several settings. The bit layout comes from a read-only
-inspection of the installed Synapse 4 code for this model:
+inspection of the installed Synapse 4 code, which decodes the `07/8F` reply in
+its shared Blade device code (`rzDevice25`), not only in RZ09-0581 code:
 
 | Bit | Setting |
 |---|---|
@@ -136,19 +137,24 @@ while Synapse is closed do not change it.
 
 ### OpenBlade behavior
 
-- Reading: on the exact RZ09-0581 (`1532:02E0`) only, any `07/8F` value made of
-  the four defined bits decodes, and temporary full charge is bit `0x04`. Wrong
-  lengths and undefined bits (`0x10` to `0x80`) are still rejected and the
-  rejected bytes are kept in diagnostics. The RZ09-0528 and other evidence still
-  accept only `00` and `04`.
+These rules apply to every model that reads `07/8F` or writes `07/0F`, because
+the Synapse reply decoder is shared Blade device code. They do not add the
+commands to any model.
+
+- Reading: any `07/8F` value made of the four defined bits decodes, and
+  temporary full charge is bit `0x04`. Wrong lengths and undefined bits (`0x10`
+  to `0x80`) are still rejected and the rejected bytes are kept in diagnostics.
 - Writing: OpenBlade's only captured payloads are enable `04` and cancel `00`.
   Each is a whole byte, so by the bit table it would also turn off any other
-  setting that is on; that combination has not been captured. Before every `07/0F` write, explicit or automatic, the port reads
-  `07/8F` again in the same write session and sends the write only if that read
-  is `00` or `04`. If CPU boost, maximum fan speed, or local dimming is on, the
-  write is refused before anything is sent, and the result says that OpenBlade
-  won't change temporary full charge because it would also change those
-  settings. A failed or rejected pre-write read also sends nothing.
+  setting that is on; that combination has not been captured. Before every
+  `07/0F` write, explicit or automatic, OpenBlade reads `07/8F` again in the
+  same write session and sends the write only if that read is `00` or `04`. If
+  CPU boost, maximum fan speed, or local dimming is on, the write is refused
+  before anything is sent, and the result says that OpenBlade won't change
+  temporary full charge because it would also change those settings. A failed
+  or rejected pre-write read also sends nothing. The developer-only temporary
+  full charge validation run applies the same check before its enable and its
+  cancel.
 - OpenBlade does not write combined payloads such as `08` or `0C`. Read-modify-write
   needs capture and reversible validation of those payloads before it can be
   admitted.

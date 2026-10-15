@@ -312,10 +312,7 @@ internal sealed class ProductionBatteryPort :
         }
 
         batteryCommands = new BatteryCommandClient(session, exchangeTimeout);
-        temporaryCommands = new TemporaryFullChargeCommandClient(
-            session,
-            exchangeTimeout,
-            readEvidence.DecodesPowerModeControlBitmask);
+        temporaryCommands = new TemporaryFullChargeCommandClient(session, exchangeTimeout);
         adapterPowerCommands = new AdapterPowerCommandClient(session, exchangeTimeout);
         mcuVersionCommands = new McuVersionCommandClient(session, exchangeTimeout);
         rz090581CapabilityDiagnosticsCommands =
@@ -1298,15 +1295,13 @@ internal sealed class ProductionBatteryPort :
         return ExecuteSetterAsync(
             enabled ? TemporaryEnableAction : TemporaryCancelAction,
             cancellationToken,
-            readEvidence.DecodesPowerModeControlBitmask
-                ? RequireNoOtherPowerModeSettingsAsync
-                : null);
+            RequireNoOtherPowerModeSettingsAsync);
     }
 
     /// <summary>
-    /// On the exact RZ09-0581, 07/0F replaces a shared power-mode-control byte.
-    /// The admitted payloads are only 0x00 and 0x04, so a write is sent only when
-    /// a fresh read in the same write session shows the other bits clear.
+    /// On every model that uses it, 07/0F replaces the whole Power Mode Control
+    /// byte. The admitted payloads are only 0x00 and 0x04, so a write is sent only
+    /// when a fresh read in the same write session shows the other bits clear.
     /// Combined payloads are uncaptured and are never written.
     /// </summary>
     private async Task RequireNoOtherPowerModeSettingsAsync(
@@ -1344,16 +1339,10 @@ internal sealed class ProductionBatteryPort :
 
         if (reading.Value.OtherSettings != 0)
         {
-            throw KnownNotApplied(OtherPowerModeSettingsBlockMessage(
+            throw KnownNotApplied(TemporaryFullChargeProtocol.OtherSettingsBlockMessage(
                 reading.Value.OtherSettings));
         }
     }
-
-    internal static string OtherPowerModeSettingsBlockMessage(byte otherSettings) =>
-        "OpenBlade won't change temporary full charge because it would also change "
-        + "other laptop settings that are on ("
-        + string.Join(", ", TemporaryFullChargeProtocol.DescribeOtherSettings(otherSettings))
-        + ").";
 
     public Task ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,

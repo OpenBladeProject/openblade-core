@@ -2,8 +2,11 @@ namespace OpenBlade.Protocol;
 
 internal static class TemporaryFullChargeProtocol
 {
-    // Exact RZ09-0581 only: 07/8F and 07/0F carry a shared power-mode-control
-    // bitmask (see docs/firmware-validation-rz09-0581-mcu-1.7.md).
+    // 07/8F and 07/0F carry Synapse's Power Mode Control bitmask on every model
+    // that uses them. Read-only inspection of Synapse 4 found this reply decoder
+    // in its shared Blade device code, not in model-specific code, and Synapse
+    // writes 07/0F read-modify-write. See docs/developer-guide.md
+    // ("Power Mode Control and local dimming").
     internal const byte CpuBoostBit = 0x01;
     internal const byte MaximumFanSpeedBit = 0x02;
     internal const byte TemporaryFullChargeBit = 0x04;
@@ -20,21 +23,12 @@ internal static class TemporaryFullChargeProtocol
     internal static byte Encode(bool enabled) => enabled ? TemporaryFullChargeBit : (byte)0x00;
 
     /// <summary>
-    /// Decodes 07/8F as temporary full charge. Without
-    /// <paramref name="decodesPowerModeControlBitmask"/> only 0x00 and 0x04 are
-    /// accepted. The flag is set only for the exact RZ09-0581 (1532:02E0), where
-    /// the byte is a power-mode-control bitmask: any subset of 0x0F is accepted
-    /// and only bit 0x04 is temporary full charge.
+    /// Decodes 07/8F as temporary full charge. The byte is a Power Mode Control
+    /// bitmask: any one-byte subset of 0x0F is accepted and only bit 0x04 is
+    /// temporary full charge. Undefined bits or another length are rejected.
     /// </summary>
-    public static bool TryDecodeQuery(
-        ReadOnlySpan<byte> payload,
-        out bool active,
-        bool decodesPowerModeControlBitmask = false) =>
-        TryDecodeQuery(
-            payload,
-            out active,
-            out _,
-            decodesPowerModeControlBitmask);
+    public static bool TryDecodeQuery(ReadOnlySpan<byte> payload, out bool active) =>
+        TryDecodeQuery(payload, out active, out _);
 
     /// <param name="otherSettings">
     /// The non-temporary-full-charge bits (0x01, 0x02, 0x08). A 07/0F write
@@ -43,8 +37,7 @@ internal static class TemporaryFullChargeProtocol
     public static bool TryDecodeQuery(
         ReadOnlySpan<byte> payload,
         out bool active,
-        out byte otherSettings,
-        bool decodesPowerModeControlBitmask)
+        out byte otherSettings)
     {
         active = false;
         otherSettings = 0;
@@ -54,10 +47,7 @@ internal static class TemporaryFullChargeProtocol
         }
 
         byte value = payload[0];
-        bool accepted = decodesPowerModeControlBitmask
-            ? (value & ~PowerModeControlDefinedBits) == 0
-            : value is 0x00 or TemporaryFullChargeBit;
-        if (!accepted)
+        if ((value & ~PowerModeControlDefinedBits) != 0)
         {
             return false;
         }
@@ -66,6 +56,16 @@ internal static class TemporaryFullChargeProtocol
         otherSettings = (byte)(value & ~TemporaryFullChargeBit);
         return true;
     }
+
+    /// <summary>
+    /// The refusal shown when a 07/0F write would also replace other Power Mode
+    /// Control settings that are on.
+    /// </summary>
+    internal static string OtherSettingsBlockMessage(byte otherSettings) =>
+        "OpenBlade won't change temporary full charge because it would also change "
+        + "other laptop settings that are on ("
+        + string.Join(", ", DescribeOtherSettings(otherSettings))
+        + ").";
 
     /// <summary>Plain-English names of the set non-temporary-full-charge bits.</summary>
     internal static IReadOnlyList<string> DescribeOtherSettings(byte otherSettings)

@@ -14250,13 +14250,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        // Full charge on with local dimming on (07/8F = 0C); the RZ09-0581
+        // Full charge on with local dimming on (07/8F = 0C); the production
         // port refuses the cancel before sending anything.
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
             Battery = new ConfirmedBatteryState(true, 80, true),
         };
-        string reason = ProductionBatteryPort.OtherPowerModeSettingsBlockMessage(0x08);
+        string reason = TemporaryFullChargeProtocol.OtherSettingsBlockMessage(0x08);
         context.Device.TemporaryFullChargeFailure = new BladeWriteException(
             WriteSubmissionState.KnownNotApplied,
             reason);

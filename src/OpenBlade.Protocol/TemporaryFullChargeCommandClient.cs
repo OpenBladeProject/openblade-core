@@ -6,6 +6,14 @@ internal interface ITemporaryFullChargeCommandClient
         byte transactionId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Reads 07/8F with the other Power Mode Control bits, for the pre-write
+    /// guard that every 07/0F write requires.
+    /// </summary>
+    Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+        byte transactionId,
+        CancellationToken cancellationToken);
+
     Task<HidSessionResult<HidUnit>> SetAsync(
         byte transactionId,
         bool enabled,
@@ -14,36 +22,30 @@ internal interface ITemporaryFullChargeCommandClient
 
 /// <summary>
 /// A decoded 07/8F reading. <see cref="OtherSettings"/> holds the
-/// non-temporary-full-charge bits, which are nonzero only on the exact RZ09-0581.
+/// other Power Mode Control bits (CPU boost, maximum fan speed, local dimming).
 /// </summary>
 internal readonly record struct TemporaryFullChargeReading(bool Active, byte OtherSettings);
 
 internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCommandClient
 {
-    private readonly RazerCommandSpec queryCommand;
-    private readonly bool decodesPowerModeControlBitmask;
+    private static readonly RazerCommandSpec QueryCommand = new(
+        0x07,
+        0x8F,
+        [0x00],
+        1,
+        static payload => TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out _));
+
     private readonly IRazerCommandSession session;
     private readonly TimeSpan exchangeTimeout;
 
     internal TemporaryFullChargeCommandClient(
         IRazerCommandSession session,
-        TimeSpan exchangeTimeout,
-        bool decodesPowerModeControlBitmask = false)
+        TimeSpan exchangeTimeout)
     {
         ArgumentNullException.ThrowIfNull(session);
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
         this.session = session;
         this.exchangeTimeout = exchangeTimeout;
-        this.decodesPowerModeControlBitmask = decodesPowerModeControlBitmask;
-        queryCommand = new RazerCommandSpec(
-            0x07,
-            0x8F,
-            [0x00],
-            1,
-            payload => TemporaryFullChargeProtocol.TryDecodeQuery(
-                payload.Span,
-                out _,
-                decodesPowerModeControlBitmask));
     }
 
     public async Task<HidSessionResult<bool>> QueryAsync(
@@ -57,13 +59,13 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
             : new(default, reading.Failure) { Diagnostic = reading.Diagnostic };
     }
 
-    internal async Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+    public async Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
         byte transactionId,
         CancellationToken cancellationToken)
     {
         TransactionIdAssignment assignment = TransactionIdAssignment.Valid(transactionId);
         HidSessionResult<ReadOnlyMemory<byte>> response = await session.ExecuteAsync(
-            queryCommand,
+            QueryCommand,
             () => assignment,
             exchangeTimeout,
             cancellationToken).ConfigureAwait(false);
@@ -76,8 +78,7 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
         return TemporaryFullChargeProtocol.TryDecodeQuery(
             response.Value.Span,
             out bool active,
-            out byte otherSettings,
-            decodesPowerModeControlBitmask)
+            out byte otherSettings)
             ? new(new TemporaryFullChargeReading(active, otherSettings), null)
             : new(default, HidSessionFailureKind.ProtocolFailure)
             {

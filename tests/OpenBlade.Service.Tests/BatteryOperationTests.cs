@@ -62,7 +62,7 @@ public sealed class BatteryOperationTests
         bool enabled,
         bool current)
     {
-        string reason = ProductionBatteryPort.OtherPowerModeSettingsBlockMessage(0x08);
+        string reason = TemporaryFullChargeProtocol.OtherSettingsBlockMessage(0x08);
         BatteryTestDevice device = new BatteryTestDevice();
         device.State = device.State with
         {

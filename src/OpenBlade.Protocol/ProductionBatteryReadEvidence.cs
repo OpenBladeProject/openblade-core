@@ -9,7 +9,6 @@ internal enum ProductionBatteryQueryCapability
     FunctionKeyPrimary,
     GamingMode,
     Rz090581CapabilityDiagnostics,
-    Rz090581PowerModeControlBitmask,
 }
 
 internal sealed class ProductionBatteryReadEvidence
@@ -32,8 +31,6 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.GamingMode);
         SupportsRz090581CapabilityDiagnosticsQuery = capabilities.Contains(
             ProductionBatteryQueryCapability.Rz090581CapabilityDiagnostics);
-        DecodesPowerModeControlBitmask = capabilities.Contains(
-            ProductionBatteryQueryCapability.Rz090581PowerModeControlBitmask);
     }
 
     public static ProductionBatteryReadEvidence Production { get; } = new(
@@ -57,7 +54,6 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.FunctionKeyPrimary,
             ProductionBatteryQueryCapability.GamingMode,
             ProductionBatteryQueryCapability.Rz090581CapabilityDiagnostics,
-            ProductionBatteryQueryCapability.Rz090581PowerModeControlBitmask,
         });
 
     public bool SupportsTemporaryFullChargeQuery { get; }
@@ -73,10 +69,4 @@ internal sealed class ProductionBatteryReadEvidence
     public bool SupportsGamingModeQuery { get; }
 
     public bool SupportsRz090581CapabilityDiagnosticsQuery { get; }
-
-    /// <summary>
-    /// Exact RZ09-0581 only: 07/8F is a power-mode-control bitmask. Any subset of
-    /// 0x0F decodes, and 07/0F writes require the non-0x04 bits to be clear.
-    /// </summary>
-    public bool DecodesPowerModeControlBitmask { get; }
 }

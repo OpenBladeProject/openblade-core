@@ -32,25 +32,6 @@ public sealed class TemporaryFullChargeProtocolTests
     }
 
     [Theory]
-    [InlineData(0x00, false)]
-    [InlineData(0x04, true)]
-    public void TryDecodeQuery_AcceptsOnlyClosedStatusBytes(byte payload, bool expected)
-    {
-        Assert.True(TemporaryFullChargeProtocol.TryDecodeQuery([payload], out bool active));
-        Assert.Equal(expected, active);
-    }
-
-    [Theory]
-    [InlineData(new byte[] { })]
-    [InlineData(new byte[] { 0x01 })]
-    [InlineData(new byte[] { 0xFF })]
-    [InlineData(new byte[] { 0x00, 0x04 })]
-    public void TryDecodeQuery_RejectsEverythingOutsideClosedStatusSet(byte[] payload)
-    {
-        Assert.False(TemporaryFullChargeProtocol.TryDecodeQuery(payload, out _));
-    }
-
-    [Theory]
     [InlineData(0x00, false, 0x00)]
     [InlineData(0x04, true, 0x00)]
     [InlineData(0x08, false, 0x08)]
@@ -66,19 +47,11 @@ public sealed class TemporaryFullChargeProtocolTests
         Assert.True(TemporaryFullChargeProtocol.TryDecodeQuery(
             [payload],
             out bool active,
-            out byte otherSettings,
-            decodesPowerModeControlBitmask: true));
+            out byte otherSettings));
+        Assert.True(TemporaryFullChargeProtocol.TryDecodeQuery([payload], out bool shortActive));
+        Assert.Equal(expectedActive, shortActive);
         Assert.Equal(expectedActive, active);
         Assert.Equal(expectedOtherSettings, otherSettings);
-    }
-
-    [Theory]
-    [InlineData(new byte[] { 0x08 })]
-    [InlineData(new byte[] { 0x0C })]
-    [InlineData(new byte[] { 0x02 })]
-    public void TryDecodeQuery_WithoutBitmaskEvidenceRejectsOtherSettings(byte[] payload)
-    {
-        Assert.False(TemporaryFullChargeProtocol.TryDecodeQuery(payload, out _));
     }
 
     [Theory]
@@ -87,13 +60,25 @@ public sealed class TemporaryFullChargeProtocolTests
     [InlineData(new byte[] { 0x80 })]
     [InlineData(new byte[] { 0xFF })]
     [InlineData(new byte[] { 0x08, 0x00 })]
+    [InlineData(new byte[] { 0x00, 0x04 })]
     public void TryDecodeQuery_PowerModeControlBitmaskRejectsUndefinedBitsAndLength(
         byte[] payload)
     {
-        Assert.False(TemporaryFullChargeProtocol.TryDecodeQuery(
-            payload,
-            out _,
-            decodesPowerModeControlBitmask: true));
+        Assert.False(TemporaryFullChargeProtocol.TryDecodeQuery(payload, out _));
+        Assert.False(TemporaryFullChargeProtocol.TryDecodeQuery(payload, out _, out _));
+    }
+
+    [Fact]
+    public void OtherSettingsBlockMessage_ListsEverySettingThatIsOn()
+    {
+        Assert.Equal(
+            "OpenBlade won't change temporary full charge because it would also change "
+            + "other laptop settings that are on (local dimming).",
+            TemporaryFullChargeProtocol.OtherSettingsBlockMessage(0x08));
+        Assert.Equal(
+            "OpenBlade won't change temporary full charge because it would also change "
+            + "other laptop settings that are on (local dimming, CPU boost, maximum fan speed).",
+            TemporaryFullChargeProtocol.OtherSettingsBlockMessage(0x0B));
     }
 
     [Fact]
