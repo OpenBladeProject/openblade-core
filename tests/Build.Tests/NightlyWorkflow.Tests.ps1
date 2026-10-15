@@ -156,8 +156,8 @@ foreach ($pathScopedDeveloperIdentityInput in @(
         "Developer identity input '$pathScopedDeveloperIdentityInput' must select both pull-request and main-push validation."
 }
 
-Assert-True ($nightly.Contains("cron: '17 9 * * *'")) `
-    'Nightly builds must run away from the top-of-hour Actions peak.'
+Assert-True (-not $nightly.Contains('schedule:')) `
+    'Nightly builds are dispatched manually only and must not run on a schedule.'
 Assert-True ($nightly.Contains('workflow_dispatch:')) `
     'Nightly builds must support explicit manual dispatch.'
 Assert-True ($nightly.Contains('group: openblade-nightly')) `
@@ -246,7 +246,7 @@ Assert-True ([Regex]::Matches(
 Assert-True ($nightly.Contains('--json createdAt')) `
     'Both generated changelog paths must read the immutable draft creation timestamp.'
 Assert-True (-not $nightly.Contains('--draft=false')) `
-    'The scheduled workflow must never turn a nightly draft public.'
+    'The nightly workflow must never turn a nightly draft public.'
 Assert-True ($finalizeNightly.Contains('workflow_dispatch:')) `
     'Finalization must require explicit dispatch after the changelog PR merges.'
 Assert-True ($finalizeNightly.Contains('ref: main')) `
