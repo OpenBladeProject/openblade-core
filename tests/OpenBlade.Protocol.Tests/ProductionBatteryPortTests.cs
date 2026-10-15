@@ -1860,22 +1860,46 @@ public sealed class ProductionBatteryPortTests
         Assert.False(await port.QueryTemporaryFullChargeAsync(default));
     }
 
-    [Fact]
-    public async Task Rz090581TemporarySetterBlocksWhenPreWriteReadIsRejected()
+    [Theory]
+    [InlineData("rejected", false)]
+    [InlineData("rejected", true)]
+    [InlineData("failed", false)]
+    [InlineData("failed", true)]
+    [InlineData("throws", false)]
+    [InlineData("throws", true)]
+    public async Task Rz090581TemporarySetterSendsNothingWhenPreWriteReadFails(
+        string failure,
+        bool enabled)
     {
         DeviceCommandCatalog catalog = Catalog(
             Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
             Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
-        var session = new ScriptedSession(Success([0x10]), Success([0x00]));
+        HidSessionResult<ReadOnlyMemory<byte>> preWriteRead = failure switch
+        {
+            "rejected" => Success([0x10]),
+            "failed" => new(default, HidSessionFailureKind.NativeIoFailure),
+            _ => Success([0x00]),
+        };
+        var session = new ScriptedSession(preWriteRead, Success([0x00]), Success([0x04]))
+        {
+            BeforeResult = (call, _) =>
+            {
+                if (failure == "throws" && call == 1)
+                {
+                    throw new IOException("pre-write read transport failure");
+                }
+            },
+        };
         await using var port = CreatePort(
             session,
             catalog,
             ProductionBatteryReadEvidence.Rz090581ModelScoped);
 
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
-            () => port.SetTemporaryFullChargeAsync(false, default));
+            () => port.SetTemporaryFullChargeAsync(enabled, default));
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("pre-write read failed before submission", error.Message, StringComparison.Ordinal);
         RazerCommandSpec read = Assert.Single(session.Commands);
         Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId));
     }
