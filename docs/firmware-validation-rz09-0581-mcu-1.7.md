@@ -122,11 +122,17 @@ time, and every reading was taken by OpenBlade with Synapse fully closed.
 - Synapse's own log shows that at startup it runs its local dimming action with
   local dimming off. It then detects HDR as on, but it does not turn local
   dimming on.
+- With Synapse running, turning Windows HDR **on** made Synapse run its local
+  dimming action with local dimming on within two seconds. After Synapse
+  closed, `07/8F` read `08`, the reporter's value, and battery controls were
+  paused on a build without this change.
+- With Synapse running, turning HDR **off** made Synapse run the action with
+  local dimming off. After Synapse closed, `07/8F` read `00` again.
 
-On this laptop, neither HDR nor a normal Synapse run sets `0x08`, and Synapse
-clears it at startup. The reporter's `08` therefore came from Synapse's stored
-local dimming setting being on at some point, or from a different panel or
-Synapse configuration. This test does not show which.
+So on this laptop `0x08` follows Windows HDR changes that Synapse sees while it
+is running, even though the OLED panel has no local dimming hardware. The bit
+stays set after Synapse exits, until Synapse writes it again. HDR changes made
+while Synapse is closed do not change it.
 
 ### OpenBlade behavior
 
