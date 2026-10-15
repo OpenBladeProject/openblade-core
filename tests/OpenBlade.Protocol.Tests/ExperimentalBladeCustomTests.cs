@@ -326,6 +326,64 @@ public sealed class ExperimentalBladeCustomTests
         Assert.True(policy.WritesAllowed);
     }
 
+    [Theory]
+    [InlineData(2, 0, 3, 2, "010101,010202,010103")]
+    [InlineData(2, 1, 3, 2, "010101,010202,010103")]
+    [InlineData(3, 2, 2, 0, "010101,010200,010102")]
+    [InlineData(3, 2, 2, 1, "010101,010201,010102")]
+    public async Task BoostAndHighCpu_UseTheShortestAdmittedBridge(
+        byte cpu, byte gpu, byte targetCpu, byte targetGpu, string expectedWrites)
+    {
+        var session = new Session { Mode = 4, Cpu = cpu, Gpu = gpu };
+        var policy = Enabled();
+        session.AfterCommand = _ => Assert.Contains(
+            new CustomPerformanceCombination((CustomPerformanceLevel)session.Cpu, (CustomPerformanceLevel)session.Gpu),
+            ExperimentalBladePort.CreateCustomCapabilities(Model).AllowedCombinations);
+        await using var port = Create(session, policy);
+        var target = new CustomPerformanceSettings((CustomPerformanceLevel)targetCpu, (CustomPerformanceLevel)targetGpu);
+        await port.SetCustomPerformanceAsync(target, CancellationToken.None);
+        Assert.Equal(target, (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).CustomPerformance);
+        Assert.Equal(expectedWrites.Split(','), session.Commands.Where(command => command.CommandId == 0x07)
+            .Select(command => Convert.ToHexString(command.Arguments.Span)));
+        Assert.DoesNotContain(session.Commands, command => command.ClassId == 0x0D && command.CommandId == 0x02);
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Theory]
+    [InlineData(CustomPerformanceLevel.Boost, CustomPerformanceLevel.Low)]
+    [InlineData(CustomPerformanceLevel.Boost, CustomPerformanceLevel.Medium)]
+    [InlineData(CustomPerformanceLevel.High, CustomPerformanceLevel.High)]
+    public async Task UnobservedBlade18Combinations_RejectBeforeAnyTraffic(
+        CustomPerformanceLevel cpu, CustomPerformanceLevel gpu)
+    {
+        var session = new Session();
+        await using var port = Create(session, Enabled());
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetCustomPerformanceAsync(
+            new(cpu, gpu), CancellationToken.None));
+        Assert.Empty(session.Commands);
+    }
+
+    [Fact]
+    public async Task BridgeReadbackFailure_StopsBeforeBoostAndPausesWithoutReplay()
+    {
+        var session = new Session { Mode = 4, Cpu = 2, Gpu = 0 };
+        var policy = Enabled();
+        session.AfterCommand = command =>
+        {
+            if (command.CommandId == 0x07 && command.Arguments.Span[1] == 2)
+            {
+                session.Gpu = 0;
+            }
+        };
+        await using var port = Create(session, policy);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetCustomPerformanceAsync(
+            new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High), CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Equal(new[] { "010101", "010202" }, session.Commands.Where(command => command.CommandId == 0x07)
+            .Select(command => Convert.ToHexString(command.Arguments.Span)));
+        Assert.False(policy.WritesAllowed);
+    }
+
     [Fact]
     public async Task BoostReadbackMismatch_PausesBeforeTheNextWriteWithoutReplay()
     {

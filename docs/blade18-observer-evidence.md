@@ -69,10 +69,14 @@ Zero-based byte offsets in these pinned files locate the relevant definitions:
 OpenBlade adds exactly the observed Boost/High combination to this model's
 existing eight Custom combinations. High/High and Boost with Low or Medium GPU
 remain unavailable. Both initial state reads and recovery can now represent
-Boost/High. The setter chooses an admitted intermediate combination, confirms
+Boost/High. The setter chooses the shortest path through admitted combinations, confirms
 each change, and pauses on uncertain submission or readback. For example,
 Medium/Low to Boost/High sets GPU High before CPU Boost; it does not reset the
-preset. Existing exact-device, controller, power, ownership, and safety checks
+preset. High/Low or High/Medium to Boost/High needs three single-cluster writes
+through CPU Medium, because either two-write ordering would cross an unadmitted
+combination. This bridge follows the reviewed software contract; it is not a
+claim that firmware requires CPU Medium. Existing exact-device, controller,
+power, ownership, and safety checks
 continue to apply to every write.
 
 A production-provider regression also exposed a shared Custom-state failure: the

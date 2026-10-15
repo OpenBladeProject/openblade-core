@@ -135,13 +135,15 @@ internal sealed partial class ExperimentalBladePort
                 }
                 currentLevels = entered.CustomPerformance;
             }
-            // Choose the direct ordering whose intermediate combination is admitted.
-            // For 02A0 Boost/High, GPU High must precede CPU Boost when needed.
-            byte[] clusters = CreateCustomCapabilities(model).AllowedCombinations.Contains(
-                new(value.Cpu, currentLevels.Gpu)) ? [1, 2] : [2, 1];
-            foreach (byte cluster in clusters)
+            // Each setter changes one cluster. Use the fewest admitted intermediate
+            // combinations; 02A0 High/Low <-> Boost/High needs a temporary CPU level
+            // because neither High/High nor Boost/Low is in its reviewed contract.
+            CustomPerformanceCombination[] path = PlanCustomLevelChanges(
+                CreateCustomCapabilities(model), currentLevels, value);
+            foreach (CustomPerformanceCombination next in path)
             {
-                CustomPerformanceLevel level = cluster == 1 ? value.Cpu : value.Gpu;
+                byte cluster = next.Cpu != currentLevels.Cpu ? (byte)1 : (byte)2;
+                CustomPerformanceLevel level = cluster == 1 ? next.Cpu : next.Gpu;
                 CustomPerformanceLevel current = cluster == 1 ? currentLevels.Cpu : currentLevels.Gpu;
                 if (current == level)
                 {
@@ -200,6 +202,47 @@ internal sealed partial class ExperimentalBladePort
         {
             operationGate.Release();
         }
+    }
+
+    private static CustomPerformanceCombination[] PlanCustomLevelChanges(
+        CustomPerformanceCapabilities capabilities,
+        CustomPerformanceSettings baseline,
+        CustomPerformanceSettings requested)
+    {
+        var start = new CustomPerformanceCombination(baseline.Cpu, baseline.Gpu);
+        var target = new CustomPerformanceCombination(requested.Cpu, requested.Gpu);
+        if (start == target)
+        {
+            return [];
+        }
+        // At most twelve combinations exist. Breadth-first search preserves direct
+        // transitions and adds a bridge only when both direct orderings are blocked.
+        var visited = new HashSet<CustomPerformanceCombination> { start };
+        var queue = new Queue<(CustomPerformanceCombination State, CustomPerformanceCombination[] Path)>();
+        queue.Enqueue((start, []));
+        CustomPerformanceCombination[] candidates = capabilities.AllowedCombinations
+            .OrderByDescending(item => item.Cpu == target.Cpu)
+            .ThenByDescending(item => item.Gpu == target.Gpu)
+            .ThenBy(item => Math.Abs((int)item.Cpu - (int)CustomPerformanceLevel.Medium))
+            .ToArray();
+        while (queue.TryDequeue(out var current))
+        {
+            foreach (CustomPerformanceCombination next in candidates)
+            {
+                if ((next.Cpu == current.State.Cpu) == (next.Gpu == current.State.Gpu)
+                    || !visited.Add(next))
+                {
+                    continue;
+                }
+                CustomPerformanceCombination[] path = [.. current.Path, next];
+                if (next == target)
+                {
+                    return path;
+                }
+                queue.Enqueue((next, path));
+            }
+        }
+        throw new IOException("No admitted transition connects these custom performance combinations.");
     }
 
     private async Task<bool> ReadMaximumFansAsync(CancellationToken cancellationToken) =>
