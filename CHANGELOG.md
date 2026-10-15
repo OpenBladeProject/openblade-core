@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Document all five experimental Blade models, automatic controls, model-specific limits, recovery, and tester reports across the README and guides, with laptop lists ordered newest first. ([#759](https://github.com/OpenBladeProject/openblade-core/pull/759))
+
 ### Added
 
 - Add automatic experimental Balanced/Silent controls for the Blade 16 (2023), Blade 14 (2023 and 2025), Blade 15 Base (2020), and Blade 18 (2023), with 80% battery protection on the supported experimental models. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))

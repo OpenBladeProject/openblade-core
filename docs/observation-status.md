@@ -23,9 +23,9 @@ A successful power-only check must not claim that device access has recovered.
 
 ## Compatibility
 
-The closed service IPC protocol advances from 54 to 55 because old readers reject
-unknown properties. Protocol 54 peers are rejected explicitly; all current service
-clients must be updated together. The existing protocol-51 read-only projection
+This field was introduced when the closed service IPC protocol advanced from 54
+to 55 because old readers reject unknown properties. The current protocol is
+set in `IpcMessageCodec`; all service clients must be updated together. The existing protocol-51 read-only projection
 omits both observation reason and thermal convergence state and continues to block
 hardware mutations. No new legacy control path is introduced.
 

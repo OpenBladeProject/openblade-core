@@ -8,7 +8,8 @@ us determine which controls can become fully supported.
 
 OpenBlade enables the available experimental controls when it recognizes an exact
 laptop profile below. There is no Settings switch or consent dialog. An older
-saved experimental preference does not disable these controls.
+saved experimental preference does not disable these controls. Pre-releases are
+the testing route; the backend itself is not restricted to an update channel.
 
 The same model, interface, current-state, and competing-controller checks apply
 to each change. A command that OpenBlade cannot confirm pauses experimental
@@ -20,20 +21,20 @@ Choose **Resume experimental controls** in the experimental-support notice.
 OpenBlade drains the previous session, checks the laptop again, and reads the
 current supported settings without writing them. When those checks succeed,
 you can choose a setting to send a new request. The uncertain command is not
-replayed automatically. A new lighting choice or an active profile edit that changes the effective
-lighting releases the hold. Unrelated, inactive, and overridden profile edits
-keep it in place. Failed reads
-or checks leave the pause in place.
+replayed automatically. A new lighting choice or an active profile edit that
+changes the effective lighting releases the hold. Unrelated, inactive, and
+overridden profile edits keep it in place. Failed reads or checks leave the pause
+in place.
 
 ## Initial coverage
 
 | Laptop | Exact Windows product name | USB identity | Initial controls |
 | --- | --- | --- | --- |
+| Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, 80% battery protection or off |
 | Blade 16 (2023), RZ09-0483 | `Blade 16 - RZ09-0483` | `1532:029F` | Balanced, Silent, 80% battery protection or off |
 | Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, 80% battery protection or off |
-| Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, 80% battery protection or off |
-| Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced and Silent |
 | Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, bounded Custom levels, keyboard brightness and built-in effects, logo lighting, 50–100% charge limits in 1% steps (100% turns protection off) |
+| Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced and Silent |
 
 Performance changes require confirmed Automatic fans and fresh external-power
 evidence. The mode command also selects Automatic fans; this backend cannot restore
@@ -103,14 +104,14 @@ Independent performance queries must identify a unique responding interface.
 SKU and firmware versions are report metadata. Unknown models and ambiguous
 interfaces remain blocked.
 
-This update uses service IPC 63, configuration schema 19, and profile export
-schema 11. Install the coordinated pre-release update; a tray-only replacement
+Experimental support was introduced with service IPC 63, configuration schema 19,
+and profile export schema 11. Install the coordinated pre-release update; a tray-only replacement
 cannot update the shared contracts. Older experimental preferences migrate to automatic support.
 
 ## Send a useful test report
 
-1. Use a pre-release built from this change. In **About**, note the OpenBlade
-   version and detected model. Close Synapse before testing.
+1. Use a pre-release containing [the experimental support change](https://github.com/OpenBladeProject/openblade-core/pull/744).
+   In **About**, note the OpenBlade version and detected model. Close Synapse before testing.
 2. Use **About → Export diagnostics** to save a baseline
    report. Note the current Synapse settings separately if needed.
 3. Try one available setting and note the time,

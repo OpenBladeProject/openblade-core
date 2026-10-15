@@ -28,15 +28,25 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | --- | --- |
 | Razer Blade 16 (2026) | `RZ09-0581` |
 | Razer Blade 16 (2025) | `RZ09-0528` |
+| Razer Blade 14 (2025), experimental | `RZ09-0530` |
+| Razer Blade 16 (2023), experimental | `RZ09-0483` |
+| Razer Blade 14 (2023), experimental | `RZ09-0482` |
+| Razer Blade 18 (2023), experimental | `RZ09-0484` |
+| Razer Blade 15 Base (Early 2020), experimental | `RZ09-0328` |
 
 Available controls vary by model. See the
 [user guide](https://github.com/OSSBlade/openblade-docs) for compatibility details.
-On another Razer laptop, select **Help add support** in OpenBlade and attach the
-saved report to the
-[support request](https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml).
+[Experimental support](docs/experimental-blade-support.md) enables available
+controls automatically. Use a [pre-release](https://github.com/OpenBladeProject/openblade-core/releases)
+for testing: these five models have
+not completed OpenBlade physical validation. All offer Balanced/Silent; the
+Blade 18 also offers Performance, bounded Custom levels, lighting, and 50–100%
+charge limits. The guide lists each model's controls, recovery steps, and how to
+share diagnostic reports.
 
-Additional models have [experimental support](docs/experimental-blade-support.md)
-for testing through pre-releases.
+On an unlisted Razer laptop, select **Help add support** in OpenBlade and attach
+the saved report to the
+[support request](https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml).
 
 ## Features
 
@@ -72,14 +82,15 @@ trigger a Windows warning.
 
 ## Using it with Synapse
 
-OpenBlade works on its own. To keep Synapse for your other Razer devices, use
-[Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker).
+OpenBlade works on its own. On the validated Blade 16 models, keep Synapse for
+other Razer devices with [Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker).
+Close Synapse when testing experimental laptop controls.
 OpenBlade checks the patch before allowing shared use; see the
 [setup and coexistence notes](docs/synapse-blade-blocker.md).
 
 Core controls work without an additional driver. The native Windows brightness
-flyout uses each supported laptop's own Razer brightness driver when that driver
-is already installed. Without it, brightness keys use the OpenBlade flyout. See
+flyout uses each validated Blade 16 model's own Razer driver when already
+installed. Without it, brightness keys use the OpenBlade flyout. See
 the [brightness driver guide](docs/razer-brightness-driver-package.md).
 
 ## Development

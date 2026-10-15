@@ -10,7 +10,8 @@ $agents = Get-Content -LiteralPath (Join-Path $repository 'AGENTS.md')
 function Assert-ModelNumber {
     param(
         [Parameter(Mandatory)][string]$Model,
-        [Parameter(Mandatory)][string]$Expected
+        [Parameter(Mandatory)][string]$Expected,
+        [ValidateSet("Validated", "Experimental")][string]$Tier = "Validated"
     )
 
     $row = @($readme | Where-Object { $_ -match "^\| .*``$Model``.*\|$" })
@@ -21,6 +22,11 @@ function Assert-ModelNumber {
     $cells = $row[0].Split('|')
     if ($cells.Length -ne 4) {
         throw "README hardware-support row for $Model must contain only laptop and model number."
+    }
+
+    $experimental = $cells[1] -match '\bexperimental\b'
+    if ($experimental -ne ($Tier -eq 'Experimental')) {
+        throw "README must label $Model as $Tier support."
     }
 
     $actual = $cells[2].Trim()
@@ -48,6 +54,28 @@ if ($header.Count -ne 1) {
 
 Assert-ModelNumber -Model 'RZ09-0581' -Expected '`RZ09-0581`'
 Assert-ModelNumber -Model 'RZ09-0528' -Expected '`RZ09-0528`'
+Assert-ModelNumber -Model 'RZ09-0483' -Expected '`RZ09-0483`' -Tier Experimental
+Assert-ModelNumber -Model 'RZ09-0482' -Expected '`RZ09-0482`' -Tier Experimental
+Assert-ModelNumber -Model 'RZ09-0530' -Expected '`RZ09-0530`' -Tier Experimental
+Assert-ModelNumber -Model 'RZ09-0328' -Expected '`RZ09-0328`' -Tier Experimental
+Assert-ModelNumber -Model 'RZ09-0484' -Expected '`RZ09-0484`' -Tier Experimental
+
+if (($readme -join "`n") -notmatch '\[Experimental support\]\(docs/experimental-blade-support\.md\)') {
+    throw 'README must link the experimental model, recovery, and tester guide.'
+}
+
+$previousYear = [int]::MaxValue
+foreach ($row in @($readme | Where-Object { $_ -match '^\| .*`RZ09-\d{4}`.*\|$' })) {
+    $yearMatch = [regex]::Match($row.Split('|')[1], '20\d{2}')
+    if (-not $yearMatch.Success) {
+        throw 'README laptops must include their model year.'
+    }
+    $year = [int]$yearMatch.Value
+    if ($year -gt $previousYear) {
+        throw 'README laptops must be ordered by model year, newest first.'
+    }
+    $previousYear = $year
+}
 
 # The README is written for laptop owners, so USB identifiers stay out of it and
 # are pinned where the admitted targets are declared instead.
@@ -58,5 +86,10 @@ if ($identifiers.Count -ne 0) {
 
 Assert-UsbIdentity -Model 'RZ09-0581' -Expected '1532:02E0'
 Assert-UsbIdentity -Model 'RZ09-0528' -Expected '1532:02C6'
+Assert-UsbIdentity -Model 'RZ09-0483' -Expected '1532:029F'
+Assert-UsbIdentity -Model 'RZ09-0482' -Expected '1532:029D'
+Assert-UsbIdentity -Model 'RZ09-0530' -Expected '1532:02C5'
+Assert-UsbIdentity -Model 'RZ09-0328' -Expected '1532:0255'
+Assert-UsbIdentity -Model 'RZ09-0484' -Expected '1532:02A0'
 
 Write-Host 'README hardware-support tests passed.'
