@@ -5,7 +5,7 @@
   <p>
     <a href="https://github.com/OSSBlade/openblade-core/releases">下载</a>
     ·
-    <a href="https://github.com/OSSBlade/openblade-docs">使用指南</a>
+    <a href="https://openblade.sh/zh-CN/">使用指南</a>
     ·
     <a href="CHANGELOG.md">更新内容</a>
   </p>
@@ -38,7 +38,7 @@ OpenBlade 需要 Windows 11 x64，版本 24H2 或更高。
 | Razer Blade 15 Base (Early 2020)，实验性支持 | `RZ09-0328` |
 
 可用功能因型号而异。OpenBlade 会自动启用实验性型号上的可用功能。
-兼容性请参阅[使用指南](https://github.com/OSSBlade/openblade-docs)，
+兼容性请参阅[使用指南](https://openblade.sh/zh-CN/)，
 各型号功能和测试方法请参阅[实验性支持](docs/zh-CN/experimental-blade-support.md)。
 
 如果你的 Razer 笔记本尚未列出，请在 OpenBlade 中选择**协助添加支持**。

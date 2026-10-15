@@ -5,7 +5,7 @@
   <p>
     <a href="https://github.com/OSSBlade/openblade-core/releases">Скачать</a>
     ·
-    <a href="https://github.com/OSSBlade/openblade-docs">Руководство пользователя</a>
+    <a href="https://openblade.sh/ru-RU/">Руководство пользователя</a>
     ·
     <a href="CHANGELOG.md">Что нового</a>
   </p>
@@ -40,7 +40,7 @@ Razer Blade. Оно позволяет настраивать производи
 
 Доступные настройки зависят от модели. OpenBlade автоматически включает доступные
 настройки на экспериментальных моделях. Сведения о совместимости приведены в
-[руководстве пользователя](https://github.com/OSSBlade/openblade-docs), а функции
+[руководстве пользователя](https://openblade.sh/ru-RU/), а функции
 моделей и инструкции по тестированию — в разделе
 [«Экспериментальная поддержка»](docs/ru-RU/experimental-blade-support.md).
 
