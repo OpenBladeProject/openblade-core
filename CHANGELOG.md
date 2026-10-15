@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Recognize all Synapse-defined adapter wattages, including 200 W, on Blade 16 (2025 and 2026). Compare connected and recommended wattage, and label insufficient supplies as low-power adapters without assuming a connector. ([#776](https://github.com/OpenBladeProject/openblade-core/pull/776))
+
 ## [0.27.5-nightly.89] - 2026-10-15
 
 ### Changed
