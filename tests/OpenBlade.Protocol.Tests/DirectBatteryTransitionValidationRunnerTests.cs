@@ -163,6 +163,12 @@ public sealed class DirectBatteryTransitionValidationRunnerTests
     private sealed class InactiveTemporaryFullChargeCommands
         : ITemporaryFullChargeCommandClient
     {
+        public Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+            byte transactionId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new HidSessionResult<TemporaryFullChargeReading>(
+                new TemporaryFullChargeReading(false, 0), null));
+
         public Task<HidSessionResult<bool>> QueryAsync(
             byte transactionId,
             CancellationToken cancellationToken) =>

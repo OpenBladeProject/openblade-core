@@ -406,6 +406,10 @@ public sealed class DirectThermalTransitionValidationRunnerTests
     private sealed class UnsupportedTemporaryCommands
         : ITemporaryFullChargeCommandClient
     {
+        public Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+            byte transactionId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<HidSessionResult<bool>> QueryAsync(
             byte transactionId,
             CancellationToken cancellationToken) => throw new NotSupportedException();

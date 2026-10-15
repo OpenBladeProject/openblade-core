@@ -235,4 +235,7 @@ and manual-fan or HyperBoost AC/battery boundaries were not physically exercised
 in this session. Existing admitted lifecycle evidence and shared-handler source
 checks may be reused where commands and conditions match; these results do not
 invent coverage for another backend or prove deep-standby residency.
-The production transition gates remain unchanged pending their implementation.
+At the time of these checks, production transition gates were unchanged. The
+production direct-transition changes were subsequently merged in
+[PR #756](https://github.com/OpenBladeProject/openblade-core/pull/756); the
+physical results above retain their recorded source identities.
