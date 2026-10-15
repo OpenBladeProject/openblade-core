@@ -486,6 +486,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Boolean get_SupportsBreathingColorSelection()
   method System.Boolean get_SupportsDirectManualFanTransitions()
   method System.Boolean get_SupportsKeyboardBrightness()
+  method System.Boolean get_SupportsManualFansOnLimitedPower()
   method System.Boolean get_SupportsPlaybackMuteIndicator()
   method System.Boolean get_SupportsTemporaryFullCharge()
   method System.Boolean get_SupportsUniformLightingFrames()
@@ -532,6 +533,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_SupportsBreathingColorSelection(System.Boolean value)
   method System.Void set_SupportsDirectManualFanTransitions(System.Boolean value)
   method System.Void set_SupportsKeyboardBrightness(System.Boolean value)
+  method System.Void set_SupportsManualFansOnLimitedPower(System.Boolean value)
   method System.Void set_SupportsPlaybackMuteIndicator(System.Boolean value)
   method System.Void set_SupportsTemporaryFullCharge(System.Boolean value)
   method System.Void set_SupportsUniformLightingFrames(System.Boolean value)
@@ -557,6 +559,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Boolean SupportsBreathingColorSelection { get; init; }
   property System.Boolean SupportsDirectManualFanTransitions { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
+  property System.Boolean SupportsManualFansOnLimitedPower { get; init; }
   property System.Boolean SupportsPlaybackMuteIndicator { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
   property System.Boolean SupportsUniformLightingFrames { get; init; }
@@ -772,6 +775,8 @@ type sealed class OpenBlade.Contracts.ExportDiagnosticsRequest
   method virtual OpenBlade.Contracts.ExportDiagnosticsRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.ExportDiagnosticsRequest other)
   property System.Boolean LiveReadingsEnabled { get; init; }
+type static class OpenBlade.Contracts.FanControlPowerPolicy
+  method static System.Boolean IsAvailable(OpenBlade.Contracts.PowerSource source, OpenBlade.Contracts.FanMode mode, System.Boolean supportsManualFansOnLimitedPower = true)
 type sealed class OpenBlade.Contracts.FanControlSettings
   interface System.IEquatable<OpenBlade.Contracts.FanControlSettings>
   ctor (OpenBlade.Contracts.FanMode mode, System.Int32 fixedSpeedRpm, OpenBlade.Contracts.ManualFanCurve manualCurve)
@@ -1423,7 +1428,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 65
+  field const System.Int32 ProtocolVersion = 66
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

@@ -366,10 +366,12 @@ internal sealed partial class ExperimentalBladePort(
         }
     }
 
-    private void RequireWriteAdmission(bool thermal = false)
+    private void RequireWriteAdmission(bool thermal = false, FanMode? fanMode = null)
     {
         if (!policy.WritesAllowed || !exactHostStillPresent() || additionalWriteAdmission?.Invoke() == false
-            || thermal && !ExternalPowerPresent())
+            || thermal && !ExternalPowerPresent()
+            || fanMode is { } requestedFan
+                && !FanModeSourceIsAdmitted(capturePowerSource(), requestedFan))
         {
             throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                 "Experimental exact identity or recovery admission blocked the write.");
@@ -391,8 +393,20 @@ internal sealed partial class ExperimentalBladePort(
         }
     }
 
-    private bool ThermalSubmissionAllowed(byte commandClass, byte commandId, byte[] arguments)
+    private bool ThermalSubmissionAllowed(
+        string operation,
+        byte commandClass,
+        byte commandId,
+        byte[] arguments,
+        PowerSource? admittedFanSource)
     {
+        if (IsFanOperation(operation))
+        {
+            return admittedFanSource is { } source
+                && capturePowerSource() == source
+                && FanCommandSourceIsAdmitted(source, operation, arguments);
+        }
+
         // 02C5 battery-mode evidence: blade-control issue #2 and pinned
         // bc48c916 PerformanceService.cs. Recheck at native submission, not just
         // before a queued operation; never replay an uncertain mode command.
@@ -426,13 +440,26 @@ internal sealed partial class ExperimentalBladePort(
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
+        PowerSource? admittedFanSource = null;
         if (write && IsThermalSet(commandClass, commandId)
             && !IsBatteryModeSet(commandClass, commandId, arguments))
         {
             AdapterPowerState adapter = await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
+            bool fanOperation = IsFanOperation(operation);
+            PowerSource currentSource = capturePowerSource();
+            bool fanPowerAllowed = fanOperation
+                && FanPowerMatchesSource(adapter, currentSource)
+                && FanCommandSourceIsAdmitted(currentSource, operation, arguments);
+            if (fanPowerAllowed)
+            {
+                admittedFanSource = currentSource;
+            }
             bool limitedCleanupAllowed = !requireAdequateAdapter && IsLimitedAdapter(adapter)
                 && AllowsLimitedPowerSet(operation, commandClass, commandId, arguments);
-            if (!HyperBoostValidationPower.IsAdmittedFullPower(adapter) && !limitedCleanupAllowed)
+            if (fanOperation && !fanPowerAllowed
+                || !fanOperation
+                    && !HyperBoostValidationPower.IsAdmittedFullPower(adapter)
+                    && !limitedCleanupAllowed)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "The adapter does not admit this thermal write on the current power source.");
@@ -444,7 +471,12 @@ internal sealed partial class ExperimentalBladePort(
             AllowVariableResponseLength = variableResponse,
             SubmissionAllowed = write ? () => policy.WritesAllowed && exactHostStillPresent()
                 && additionalWriteAdmission?.Invoke() != false
-                && ThermalSubmissionAllowed(commandClass, commandId, arguments) : null,
+                && ThermalSubmissionAllowed(
+                    operation,
+                    commandClass,
+                    commandId,
+                    arguments,
+                    admittedFanSource) : null,
         };
         HidSessionResult<ReadOnlyMemory<byte>> result;
         try
@@ -555,6 +587,39 @@ internal sealed partial class ExperimentalBladePort(
         AdapterPowerState.LimitedExternal or AdapterPowerState.UsbCPower45W or AdapterPowerState.UsbCPower60W
         or AdapterPowerState.UsbCPower65W or AdapterPowerState.UsbCPower80W or AdapterPowerState.UsbCPower90W
         or AdapterPowerState.UsbCPower100W;
+
+    private static bool IsFanOperation(string operation) =>
+        operation is "Fans" or "FanTargets";
+
+    private static bool FanModeSourceIsAdmitted(
+        PowerSource source,
+        FanMode mode) => source switch
+        {
+            PowerSource.PluggedIn or PowerSource.Battery =>
+                mode is FanMode.Automatic or FanMode.Fixed,
+            // The exact 029F/029D low-power vendor path admits Automatic
+            // handback, but does not set the separate manual fan flag.
+            PowerSource.UsbC => mode == FanMode.Automatic,
+            _ => false,
+        };
+
+    private static bool FanCommandSourceIsAdmitted(
+        PowerSource source,
+        string operation,
+        byte[] arguments) => source != PowerSource.UsbC
+            || operation == "Fans"
+                && arguments.Length == 4
+                && arguments[3] == 0;
+
+    private static bool FanPowerMatchesSource(
+        AdapterPowerState adapter,
+        PowerSource source) => source switch
+        {
+            PowerSource.PluggedIn => HyperBoostValidationPower.IsAdmittedFullPower(adapter),
+            PowerSource.UsbC => IsLimitedAdapter(adapter),
+            PowerSource.Battery => adapter == AdapterPowerState.Battery,
+            _ => false,
+        };
 
     private static bool AllowsLimitedPowerSet(string operation, byte commandClass, byte commandId, byte[] arguments) =>
         commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[3] == 0

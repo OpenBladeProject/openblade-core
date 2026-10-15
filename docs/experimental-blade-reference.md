@@ -27,8 +27,12 @@ external-power reading as adequate. Unknown values, query failures, and
 disagreement with the fresh Windows power reading block the write. The result
 describes available power; it does not identify barrel or USB-C.
 
-A confirmed limited adapter admits only Balanced and the cleanup needed to
-return fans to Automatic. Automatic handback keeps the freshly confirmed
+A confirmed limited adapter admits Balanced and Automatic handback. RZ09-0483
+and RZ09-0482 also admit fixed fans on battery. Their pinned Synapse low-power
+path explicitly selects Automatic before writing targets, so limited-power fixed
+entry remains blocked. Curves remain unavailable without admitted temperature telemetry.
+See [fan power-source policy](fan-power-source-policy.md) for Synapse evidence.
+Automatic handback keeps the freshly confirmed
 performance mode instead of forcing an intermediate preset. The Blade 14
 (2025) admits Battery Saver and Battery Balanced only after fresh battery-power
 checks at the initial gate and immediately before native submission. See
@@ -88,7 +92,8 @@ is active, the guarded cleanup above is required before leaving Custom. A
 fixed-target change preserves the confirmed ordinary preset or Custom mode and
 changes only the fan flag and targets. On a confirmed limited adapter, a direct
 Automatic handback preserves the confirmed mode; a separate Balanced request
-goes directly to Balanced. Other thermal setters remain blocked. Custom level
+goes directly to Balanced. Fixed-target writes are also admitted on battery
+after fresh source checks. Other thermal setters retain their source restrictions. Custom level
 edits on the two fixed-target models preserve their confirmed fan flag and
 stored targets. Their explicit
 `ReportsPerformanceWithManualFans` capability keeps this readable state separate

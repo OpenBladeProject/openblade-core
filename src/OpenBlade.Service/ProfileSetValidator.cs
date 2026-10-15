@@ -78,7 +78,11 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.Custom, FanMode.Fixed),
             new(PerformancePreset.Custom, FanMode.ManualCurve),
             new(PerformancePreset.BatterySaver, FanMode.Automatic),
+            new(PerformancePreset.BatterySaver, FanMode.Maximum),
+            new(PerformancePreset.BatterySaver, FanMode.Fixed),
             new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
+            new(PerformancePreset.BatteryBalanced, FanMode.Maximum),
+            new(PerformancePreset.BatteryBalanced, FanMode.Fixed),
         },
         new HashSet<LightingEffect> { LightingEffect.Off },
         // Offline storage validates intent structurally, including capabilities
@@ -220,9 +224,9 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         PowerSource source)
     {
         ValidatePerformanceSource(performance, source);
-        if (source == PowerSource.UsbC && fans != FanMode.Automatic)
+        if (!FanControlPowerPolicy.IsAvailable(source, fans))
         {
-            throw Invalid("Low-power adapters support automatic fans only.");
+            throw Invalid("The selected fan mode is unavailable on this power source.");
         }
 
         ValidatePerformanceFanCombination(performance, fans);

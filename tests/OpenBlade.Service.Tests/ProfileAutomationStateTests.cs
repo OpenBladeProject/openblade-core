@@ -257,8 +257,11 @@ public sealed class ProfileAutomationStateTests
         Assert.Equal(SettingValueSource.PersistentOverride, onBattery.Performance.Source);
     }
 
-    [Fact]
-    public void UsbC_UsesDedicatedProfileAndPausesIncompatiblePersistentOverrides()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UsbC_UsesDedicatedProfileAndRetainsCompatiblePersistentFanOverride(
+        bool supportsManualFansOnLimitedPower)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
         {
@@ -281,12 +284,13 @@ public sealed class ProfileAutomationStateTests
 
         state.ChangePowerSource(PowerSource.UsbC);
         DesiredDeviceState desired = state.Resolve(
-            new ConfirmedDeviceState(null, null, null, null));
+            new ConfirmedDeviceState(null, null, null, null), supportsManualFansOnLimitedPower);
 
         Assert.Equal(PerformancePreset.Balanced, desired.Performance.Value);
-        Assert.Equal(FanMode.Automatic, desired.Fans.Value);
+        Assert.Equal(supportsManualFansOnLimitedPower ? FanMode.Maximum : FanMode.Automatic, desired.Fans.Value);
         Assert.Equal(SettingValueSource.PowerProfile, desired.Performance.Source);
-        Assert.Equal(SettingValueSource.PowerProfile, desired.Fans.Source);
+        Assert.Equal(supportsManualFansOnLimitedPower
+            ? SettingValueSource.PersistentOverride : SettingValueSource.PowerProfile, desired.Fans.Source);
         Assert.Equal(PerformancePreset.Performance, state.PerformanceOverride!.Value);
         Assert.Equal(FanMode.Maximum, state.FanOverride!.Value);
     }

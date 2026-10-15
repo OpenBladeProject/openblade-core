@@ -67,7 +67,7 @@ internal sealed partial class ExperimentalBladePort
         bool submitted = false;
         try
         {
-            RequireWriteAdmission(thermal: true);
+            RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             if (baseline.HyperBoostActive || baseline.Performance is not (PerformancePreset.Balanced
                 or PerformancePreset.Performance or PerformancePreset.Silent or PerformancePreset.Custom))
@@ -106,7 +106,7 @@ internal sealed partial class ExperimentalBladePort
             {
                 foreach (byte zone in new byte[] { 1, 2 })
                 {
-                    RequireWriteAdmission(thermal: true);
+                    RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
                     await ExchangeAsync("Fans", 0x0D, 0x02, [1, zone, mode, targets.HasValue ? (byte)1 : (byte)0],
                         true, cancellationToken).ConfigureAwait(false);
                     submitted = true;
@@ -124,7 +124,7 @@ internal sealed partial class ExperimentalBladePort
                 foreach (byte zone in new byte[] { 1, 2 })
                 {
                     int rpm = zone == 1 ? target.First : target.Second;
-                    RequireWriteAdmission(thermal: true);
+                    RequireWriteAdmission(fanMode: FanMode.Fixed);
                     await ExchangeAsync("FanTargets", 0x0D, 0x01, [1, zone, checked((byte)(rpm / 100))],
                         true, cancellationToken).ConfigureAwait(false);
                     submitted = true;
