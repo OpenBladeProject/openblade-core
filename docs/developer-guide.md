@@ -203,7 +203,7 @@ installer troubleshooting.
 
 ### Nightly builds
 
-- Built from committed `main` every day at 09:17 UTC or on manual request
+- Built from committed `main` only when a maintainer starts the workflow manually
 - Prepared as draft GitHub prereleases with the installer, checksum, metadata,
   and exact-commit changelog snapshot
 - Published after the generated changelog PR is reviewed and merged, then
