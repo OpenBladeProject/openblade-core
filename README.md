@@ -39,9 +39,10 @@ available controls on experimental models. See the [user guide](https://github.c
 for compatibility and [Experimental support](docs/experimental-blade-support.md)
 for model features and testing instructions.
 
-On an unlisted Razer laptop, select **Help add support** in OpenBlade and attach
-the saved report to the
-[support request](https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml).
+On an unlisted Razer laptop, select **Help add support** in OpenBlade. Save the
+identity report, then follow the
+[Synapse Observer guide](https://github.com/OpenBladeProject/synapse-observer#send-evidence)
+to collect and submit evidence for your model.
 
 ## Features
 
