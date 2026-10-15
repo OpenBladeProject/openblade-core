@@ -55,7 +55,7 @@ public sealed class TrayHoverLabelTests
     }
 
     [Theory]
-    [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, "OpenBlade · USB-C · Balanced")]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, "OpenBlade · Low-power adapter · Balanced")]
     [InlineData(
         PowerSource.ExternalUnknown,
         PerformancePreset.Balanced,
@@ -116,7 +116,7 @@ public sealed class TrayHoverLabelTests
             fan1Rpm: 2_300,
             fan2Rpm: 2_500);
 
-        Assert.Equal("OpenBlade · GPU 52 °C · USB-C · Balanced · CPU 47 °C", result);
+        Assert.Equal("OpenBlade · GPU 52 °C · Low-power adapter · Balanced", result);
         Assert.InRange(result.Length, 1, TrayHoverLabelFormatter.MaximumLength);
     }
 

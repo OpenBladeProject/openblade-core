@@ -54,7 +54,7 @@ public static class TrayDashboardStatusPresentation
             : powerSource switch
             {
                 OpenBlade.Contracts.PowerSource.PluggedIn => "AC",
-                OpenBlade.Contracts.PowerSource.UsbC => "USB-C",
+                OpenBlade.Contracts.PowerSource.UsbC => TrayText.Get("Low-power adapter"),
                 OpenBlade.Contracts.PowerSource.Battery => TrayText.Get("Battery"),
                 _ => "—",
             };

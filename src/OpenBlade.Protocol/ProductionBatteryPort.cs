@@ -2080,10 +2080,8 @@ internal sealed class ProductionBatteryPort :
             }
         }
 
-        bool adapterEligible = padAbsentEligibility
-            ? HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
-                && admittedAdapterPowerStates?.Contains(adapter.Value) == true
-            : adapter.Value == AdapterPowerState.FullPower280W;
+        bool adapterEligible = HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
+            && (admittedAdapterPowerStates?.Contains(adapter.Value) ?? padPresentEligibility);
         if (!adapterEligible)
         {
             throw KnownNotApplied(

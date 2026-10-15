@@ -384,8 +384,8 @@
   <data name="Color profile changed outside OpenBlade." xml:space="preserve">
     <value>Цветовой профиль изменён вне OpenBlade.</value>
   </data>
-  <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
-    <value>Сравните параметры в профилях питания от сети, USB-C и аккумулятора.</value>
+  <data name="Compare the settings stored in AC, low-power, and battery profiles." xml:space="preserve">
+    <value>Сравните параметры в профилях питания от сети, малой мощности и от аккумулятора.</value>
   </data>
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>Настройте текущие показания, запуск при входе и управление подсветкой.</value>
@@ -1041,8 +1041,8 @@
   <data name="Save to profile" xml:space="preserve">
     <value>Сохранить в профиль</value>
   </data>
-  <data name="Save to USB-C profile" xml:space="preserve">
-    <value>Сохранить в профиль USB-C</value>
+  <data name="Save to low-power profile" xml:space="preserve">
+    <value>Сохранить в профиль малой мощности</value>
   </data>
   <data name="Saved profile comparison" xml:space="preserve">
     <value>Сравнение сохранённых профилей</value>
@@ -1224,11 +1224,14 @@
   <data name="Updates have not been checked." xml:space="preserve">
     <value>Обновления не проверялись.</value>
   </data>
-  <data name="USB-C · {0}" xml:space="preserve">
-    <value>USB-C · {0}</value>
+  <data name="Low-power adapter · {0}" xml:space="preserve">
+    <value>Адаптер малой мощности · {0}</value>
   </data>
-  <data name="USB-C profile" xml:space="preserve">
-    <value>Профиль USB-C</value>
+  <data name="Low-power adapter" xml:space="preserve">
+    <value>Адаптер малой мощности</value>
+  </data>
+  <data name="Low-power profile" xml:space="preserve">
+    <value>Профиль малой мощности</value>
   </data>
   <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
     <value>Используйте сочетание клавиш, например Ctrl+Shift+M.</value>
@@ -1404,8 +1407,8 @@
   <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
     <value>Ручное управление вентиляторами сейчас недоступно для этого ноутбука. Обороты вентиляторов могут отображаться. Если вы ожидали ручное управление, экспортируйте диагностику.</value>
   </data>
-  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
-    <value>При питании от батареи или USB-C доступен только автоматический режим вентиляторов. Для ручного управления вентиляторами подключите штатный сетевой адаптер. Обороты вентиляторов могут отображаться.</value>
+  <data name="Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
+    <value>При питании от батареи или адаптера малой мощности доступен только автоматический режим вентиляторов. Для ручного управления вентиляторами подключите штатный сетевой адаптер. Обороты вентиляторов могут отображаться.</value>
   </data>
   <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
     <value>OpenBlade не может подключиться к своей службе. Откройте раздел «О программе» и выберите «Запустить службу». Если подключение по-прежнему недоступно, восстановите установку.</value>

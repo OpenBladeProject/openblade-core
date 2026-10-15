@@ -4,7 +4,7 @@ namespace OpenBlade.Tray;
 
 /// <summary>
 /// Admits profile edits against current capabilities while preserving unchanged
-/// settings. USB-C thermal restrictions still apply to unchanged profiles.
+/// settings. Low-power thermal restrictions still apply to unchanged profiles.
 /// </summary>
 internal static class ProfileAdmissionPolicy
 {
