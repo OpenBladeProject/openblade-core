@@ -2173,6 +2173,96 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(FanMode.Maximum, device.State.Fans);
     }
 
+    [Fact]
+    public async Task ScopedCustom_ReportedManualPerformanceConfirmsWithoutAutomaticWrite()
+    {
+        RecordingBladeDevice device = CreateReportedManualPerformanceDevice();
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Custom, CustomPerformanceSettings.Default, null, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(CustomPerformanceSettings.Default, device.State.CustomPerformance);
+        Assert.Equal(FanMode.Fixed, device.State.Fans);
+        Assert.Empty(device.FanControlWrites);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Performance)]
+    public async Task ScopedPreset_ReportedManualPerformanceConfirmsWithoutAutomaticWrite(PerformancePreset preset)
+    {
+        RecordingBladeDevice device = CreateReportedManualPerformanceDevice();
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(preset, null, null, CancellationToken.None);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(preset, device.State.Performance);
+        Assert.Equal(FanMode.Fixed, device.State.Fans);
+        Assert.Empty(device.FanControlWrites);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ApplyDesiredState_ReportedManualPerformanceAppliesAndConfirmsRealCustomLevels(bool exitManual)
+    {
+        RecordingBladeDevice device = CreateReportedManualPerformanceDevice();
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(device.State,
+            PerformancePreset.Custom, exitManual ? FanMode.Automatic : FanMode.Fixed) with
+        {
+            CustomPerformance = CustomPerformanceSettings.Default,
+        };
+        FullTransitionApplyOutcome outcome = await coordinator.ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.ReadbackMatched);
+        Assert.Equal(CustomPerformanceSettings.Default, device.State.CustomPerformance);
+        Assert.Equal(desired.Fans.Value, device.State.Fans);
+        Assert.Equal(exitManual ? new[] { FanMode.Automatic } : Array.Empty<FanMode>(), device.FanControlWrites);
+        if (exitManual)
+        {
+            Assert.True(device.Calls.IndexOf("SetFans") < device.Calls.IndexOf("SetPerformance"));
+        }
+    }
+
+    [Fact]
+    public async Task FanExit_ReportedManualPerformanceUsesOnlyFanSetter()
+    {
+        RecordingBladeDevice device = CreateReportedManualPerformanceDevice();
+        CustomPerformanceSettings baseline = device.State.CustomPerformance!;
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            FanControlSettings.FromLegacy(FanMode.Fixed), FanControlSettings.Default,
+            PerformancePreset.Custom, baseline, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(new[] { FanMode.Automatic }, device.FanControlWrites);
+        Assert.Equal(baseline, device.State.CustomPerformance);
+    }
+
+    private static RecordingBladeDevice CreateReportedManualPerformanceDevice()
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+            ReportsPerformanceWithManualFans = true,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        return device;
+    }
+
     [Theory]
     [InlineData(PerformancePreset.BatterySaver)]
     [InlineData(PerformancePreset.BatteryBalanced)]

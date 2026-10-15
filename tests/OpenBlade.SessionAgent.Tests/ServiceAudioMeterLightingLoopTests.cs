@@ -8,6 +8,22 @@ namespace OpenBlade.SessionAgent.Tests;
 
 public sealed class ServiceAudioMeterLightingLoopTests
 {
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(0.5, 1, 128)]
+    [InlineData(0.5, 2, 255)]
+    public void UniformAudioSample_UsesScalarPeakWithoutKeyboardGeometry(
+        float peak,
+        double colorBoost,
+        byte expectedIntensity)
+    {
+        UniformLightingFrame frame = WindowsAudioMeterLightingSampler.RenderUniformFrame(
+            peak,
+            colorBoost);
+
+        Assert.Equal(new RgbColor(0, expectedIntensity, 0), frame.Color);
+    }
+
     [Fact]
     public void SamplerConstruction_EndpointFailureReleasesEnumerator()
     {
@@ -428,6 +444,26 @@ public sealed class ServiceAudioMeterLightingLoopTests
         Assert.True(replacement.Disposed);
     }
 
+    [Fact]
+    public async Task UniformCapability_SendsTypedAudioColorWithoutSpatialFrame()
+    {
+        var client = new WatchClient();
+        await using var loop = new ServiceAudioMeterLightingLoop(
+            client,
+            new SequenceSamplerFactory(() => new ConstantSampler(
+                Frame(99),
+                new UniformLightingFrame(new RgbColor(7, 0, 0)))),
+            statusWatcher: client);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.PublishConnected(uniformFrames: true);
+        UniformLightingFrame frame = await client.ReadUniformRequestAsync(cancellation.Token);
+
+        Assert.Equal(new RgbColor(7, 0, 0), frame.Color);
+        await CancelAndAwaitAsync(cancellation, running);
+    }
+
     private static async Task CancelAndAwaitAsync(
         CancellationTokenSource cancellation,
         Task running)
@@ -477,6 +513,8 @@ public sealed class ServiceAudioMeterLightingLoopTests
             Channel.CreateUnbounded<ServiceWatchUpdate>();
         private readonly Channel<AmbientLightingFrame> requests =
             Channel.CreateUnbounded<AmbientLightingFrame>();
+        private readonly Channel<UniformLightingFrame> uniformRequests =
+            Channel.CreateUnbounded<UniformLightingFrame>();
         private readonly ConcurrentQueue<ControlOperationResult> results = new();
         private TaskCompletionSource? blockedRequestRelease;
         private int blockNextRequest;
@@ -489,9 +527,10 @@ public sealed class ServiceAudioMeterLightingLoopTests
 
         internal void PublishConnected(
             int decayMilliseconds = 0,
-            LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz) =>
+            LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz,
+            bool uniformFrames = false) =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(
-                Status(decayMilliseconds, refreshRate)));
+                Status(decayMilliseconds, refreshRate, uniformFrames)));
 
         internal void PublishReconnecting() =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting());
@@ -512,6 +551,10 @@ public sealed class ServiceAudioMeterLightingLoopTests
         internal ValueTask<AmbientLightingFrame> ReadRequestAsync(
             CancellationToken cancellationToken) =>
             requests.Reader.ReadAsync(cancellationToken);
+
+        internal ValueTask<UniformLightingFrame> ReadUniformRequestAsync(
+            CancellationToken cancellationToken) =>
+            uniformRequests.Reader.ReadAsync(cancellationToken);
 
         internal bool TryReadRequest(out AmbientLightingFrame? frame) =>
             requests.Reader.TryRead(out frame);
@@ -543,6 +586,17 @@ public sealed class ServiceAudioMeterLightingLoopTests
             return results.TryDequeue(out ControlOperationResult? result)
                 ? result
                 : new ControlOperationResult(ControlOperationStatus.Applied, "Applied");
+        }
+
+        public override Task<ControlOperationResult> PushUniformLightingFrameAsync(
+            UniformLightingFrame frame,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            uniformRequests.Writer.TryWrite(frame);
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Applied"));
         }
     }
 
@@ -617,7 +671,9 @@ public sealed class ServiceAudioMeterLightingLoopTests
         public void Release(object value) => Released.Add(value);
     }
 
-    private sealed class ConstantSampler(AmbientLightingFrame frame)
+    private sealed class ConstantSampler(
+        AmbientLightingFrame frame,
+        UniformLightingFrame? uniformFrame = null)
         : IAudioMeterLightingSampler
     {
         private int captureCount;
@@ -634,6 +690,14 @@ public sealed class ServiceAudioMeterLightingLoopTests
             return frame;
         }
 
+        public UniformLightingFrame CaptureUniform(double colorBoost)
+        {
+            ObjectDisposedException.ThrowIf(Disposed, this);
+            Interlocked.Increment(ref captureCount);
+            return uniformFrame
+                ?? throw new InvalidOperationException("No uniform sample was configured.");
+        }
+
         public void Dispose() => Volatile.Write(ref disposed, 1);
     }
 
@@ -644,6 +708,8 @@ public sealed class ServiceAudioMeterLightingLoopTests
         internal bool Disposed => Volatile.Read(ref disposed) != 0;
 
         public AmbientLightingFrame Capture(double colorBoost) => throw failure;
+
+        public UniformLightingFrame CaptureUniform(double colorBoost) => throw failure;
 
         public void Dispose() => Volatile.Write(ref disposed, 1);
     }
@@ -687,7 +753,8 @@ public sealed class ServiceAudioMeterLightingLoopTests
 
     private static ServiceStatusSnapshot Status(
         int decayMilliseconds = 0,
-        LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz)
+        LightingRefreshRate refreshRate = LightingRefreshRate.ThirtyHz,
+        bool uniformFrames = false)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         LightingSettings lighting = LightingSettingsFactory.AudioMeter(
@@ -702,7 +769,10 @@ public sealed class ServiceAudioMeterLightingLoopTests
             null,
             [],
             "Ready",
-            DeviceCapabilities.Unavailable(),
+            DeviceCapabilities.Unavailable() with
+            {
+                SupportsUniformLightingFrames = uniformFrames,
+            },
             null,
             profiles,
             new DesiredDeviceState(

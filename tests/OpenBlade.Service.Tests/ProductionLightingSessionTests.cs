@@ -1299,6 +1299,32 @@ public sealed class ProductionLightingSessionTests
     }
 
     [Fact]
+    public async Task OwnedUniformRenderer_UsesTheRetainedTypedLightingPort()
+    {
+        var lightingPort = new FakeLightingPort(supportsUniformLightingFrames: true);
+        var lightingFactory = new FakeLightingFactory(lightingPort)
+        {
+            Capabilities = lightingPort.Capabilities,
+        };
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.AmbientAwareness(
+                AmbientAwarenessRegion.Full,
+                77),
+            default);
+        var frame = new UniformLightingFrame(new RgbColor(12, 34, 56));
+
+        await device.PushUniformLightingFrameAsync(frame, default);
+
+        Assert.Equal(frame, Assert.Single(lightingPort.UniformFrames));
+    }
+
+    [Fact]
     public async Task LightingBrightnessReadFailure_PreservesHealthyRenderer()
     {
         var lightingPort = new FakeLightingPort

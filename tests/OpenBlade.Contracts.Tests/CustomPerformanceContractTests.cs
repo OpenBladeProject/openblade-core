@@ -20,11 +20,29 @@ public sealed class CustomPerformanceContractTests
     }
 
     [Fact]
-    public void Settings_RejectsCapturedInvalidHighHighPair()
+    public void Representation_DoesNotGrantLegacyDevicesHighHighBoostOrMaximumFans()
     {
-        Assert.Throws<ArgumentException>(() => new CustomPerformanceSettings(
+        var highHigh = new CustomPerformanceSettings(
             CustomPerformanceLevel.High,
-            CustomPerformanceLevel.High));
+            CustomPerformanceLevel.High);
+        var boost = new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High);
+        Assert.True(CustomPerformanceSettings.IsWellFormed(highHigh));
+        CustomPerformanceCapabilities caps = DeviceCapabilities.SafeTargetDefaults().CustomPerformance!;
+        Assert.False(caps.Supports(highHigh));
+        Assert.False(caps.Supports(boost));
+        Assert.False(caps.Supports(CustomPerformanceSettings.Default with { MaximumFans = true }));
+        Assert.Throws<ArgumentException>(() => new CustomPerformanceSettings(
+            CustomPerformanceLevel.Low, CustomPerformanceLevel.Boost));
+    }
+
+    [Fact]
+    public void LegacyCustomJson_DefaultsMaximumFansToFalse()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        CustomPerformanceSettings settings = System.Text.Json.JsonSerializer.Deserialize<CustomPerformanceSettings>(
+            "{\"cpu\":1,\"gpu\":2}", options)!;
+        Assert.False(settings.MaximumFans);
+        Assert.Equal(CustomPerformanceSettings.Default, settings);
     }
 
     [Fact]

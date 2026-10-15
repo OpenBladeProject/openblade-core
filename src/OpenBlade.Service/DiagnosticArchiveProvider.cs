@@ -442,10 +442,18 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
         result["lighting.keyboardBrightness"] = capabilities.SupportsKeyboardBrightness;
         result["lighting.breathingColorSelection"] = capabilities.SupportsBreathingColorSelection;
+        foreach (BreathingColorMode mode in Enum.GetValues<BreathingColorMode>())
+        {
+            result[$"lighting.breathingColorMode.{mode}"] =
+                capabilities.SupportsBreathingMode(mode);
+        }
+        result["lighting.uniformFrames"] = capabilities.SupportsUniformLightingFrames;
         result["lighting.waveDirectionSelection"] = capabilities.SupportsWaveDirectionSelection;
         result["lighting.playbackMuteIndicator"] = capabilities.SupportsPlaybackMuteIndicator;
         result["performance.customCombinations"] =
             capabilities.CustomPerformance?.IsWellFormed == true;
+        result["performance.customMaximumFans"] =
+            capabilities.CustomPerformance?.SupportsMaximumFans == true;
         result["performance.cpuPowerLimit.observed"] =
             capabilities.CpuPowerLimit?.IsWellFormed == true;
         result["performance.cpuPowerLimit.write"] =
@@ -634,6 +642,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.HyperBoostBaseModes?.Custom?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
+            ["capability.reportsPerformanceWithManualFans"] =
+                capabilities.ReportsPerformanceWithManualFans.ToString(),
             ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MaximumRpm),
             ["capability.fanSpeedStepRpm"] = NumberOrUnavailable(

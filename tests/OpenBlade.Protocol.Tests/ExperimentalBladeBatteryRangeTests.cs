@@ -129,17 +129,40 @@ public sealed class ExperimentalBladeBatteryRangeTests
     }
 
     [Fact]
-    public async Task OtherExperimentalModels_RetainOnlyEightyPercent()
+    public async Task ExactBatteryProfiles_ExposeExpandedRange_UnsupportedModelsRejectBeforeIo()
     {
-        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(item => item.ProductId != 0x02A0))
+        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All)
         {
             var session = new Session();
             var policy = new ExperimentalFeaturesPolicy(model);
             await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true, () => PowerSource.ExternalUnknown);
-            Assert.DoesNotContain(99, port.Capabilities.ChargeLimits);
-            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));
-            Assert.Empty(session.Commands);
+            if (model.SupportsBatteryProtection)
+            {
+                Assert.Contains(50, port.Capabilities.ChargeLimits);
+                Assert.Contains(99, port.Capabilities.ChargeLimits);
+                Assert.Contains(100, port.Capabilities.ChargeLimits);
+                await port.SetChargeLimitAsync(99, CancellationToken.None);
+                Assert.Equal(99, (await port.QueryProtectionAsync(CancellationToken.None)).ChargeLimitPercent);
+                Assert.Single(session.Commands, command => command.CommandId == 0x12);
+            }
+            else
+            {
+                Assert.Empty(port.Capabilities.ChargeLimits);
+                await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));
+                Assert.Empty(session.Commands);
+            }
         }
+    }
+
+    [Fact]
+    public async Task UnknownFutureBatteryProfile_RejectsOffWithoutSubmittingAnything()
+    {
+        var model = new ExperimentalBladeModel("RZ09-9999", "Unknown Blade", 0x1234, true, "unreviewed");
+        var session = new Session();
+        await using var port = new ExperimentalBladePort(session, new(), model, new(model), () => true, () => PowerSource.ExternalUnknown);
+        Assert.False(port.SupportsProtectionQuery);
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetProtectionOffAsync(CancellationToken.None));
+        Assert.Empty(session.Commands);
     }
 
     private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy policy) =>

@@ -130,7 +130,7 @@ public sealed class BatteryConfigurationStore
             profiles,
             out _,
             batteryProtectionDefault: null);
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         await gate.WaitAsync(cancellationToken);
         try
         {
@@ -164,7 +164,7 @@ public sealed class BatteryConfigurationStore
             profiles,
             out _,
             batteryProtectionDefault: null);
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         validator.ValidatePreferences(preferences);
         await gate.WaitAsync(cancellationToken);
         try
@@ -396,7 +396,7 @@ public sealed class BatteryConfigurationStore
             out _,
             batteryProtectionDefault: true);
         ProfileStore.ValidateLegacyBatteryPolicy(profiles);
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         return profiles;
     }
 

@@ -7,6 +7,8 @@ namespace OpenBlade.SessionAgent;
 public interface IAmbientScreenSampler : IDisposable
 {
     AmbientLightingFrame Capture(AmbientAwarenessRegion region);
+
+    UniformLightingFrame CaptureUniform(AmbientAwarenessRegion region);
 }
 
 public interface IAmbientScreenSamplerFactory
@@ -35,6 +37,7 @@ public sealed class WindowsAmbientScreenSampler : IAmbientScreenSampler
     private const uint SrcCopy = 0x00CC0020;
 
     private readonly byte[] bgra = new byte[AmbientLightingFrame.SlotCount * 4];
+    private readonly byte[] uniformBgra = new byte[4];
     private readonly IntPtr memoryDc;
     private readonly IntPtr bitmap;
     private readonly IntPtr previousObject;
@@ -93,6 +96,21 @@ public sealed class WindowsAmbientScreenSampler : IAmbientScreenSampler
 
     public AmbientLightingFrame Capture(AmbientAwarenessRegion region)
     {
+        CaptureRegion(region, AmbientLightingFrame.Columns, AmbientLightingFrame.Rows);
+        return ReadCompletedFrame(bits, bgra, GdiFlush);
+    }
+
+    public UniformLightingFrame CaptureUniform(AmbientAwarenessRegion region)
+    {
+        CaptureRegion(region, 1, 1);
+        return ReadCompletedUniformFrame(bits, uniformBgra, GdiFlush);
+    }
+
+    private void CaptureRegion(
+        AmbientAwarenessRegion region,
+        int destinationWidth,
+        int destinationHeight)
+    {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         if (!Enum.IsDefined(region))
         {
@@ -119,8 +137,8 @@ public sealed class WindowsAmbientScreenSampler : IAmbientScreenSampler
                     memoryDc,
                     0,
                     0,
-                    AmbientLightingFrame.Columns,
-                    AmbientLightingFrame.Rows,
+                    destinationWidth,
+                    destinationHeight,
                     screenDc,
                     x,
                     y,
@@ -135,8 +153,6 @@ public sealed class WindowsAmbientScreenSampler : IAmbientScreenSampler
         {
             _ = ReleaseDC(IntPtr.Zero, screenDc);
         }
-
-        return ReadCompletedFrame(bits, bgra, GdiFlush);
     }
 
     internal static AmbientLightingFrame ReadCompletedFrame(
@@ -152,6 +168,24 @@ public sealed class WindowsAmbientScreenSampler : IAmbientScreenSampler
         }
         Marshal.Copy(source, buffer, 0, buffer.Length);
         return AmbientFrameMapper.FromBgra32(buffer);
+    }
+
+    internal static UniformLightingFrame ReadCompletedUniformFrame(
+        IntPtr source,
+        byte[] buffer,
+        Func<bool> flush)
+    {
+        if (buffer.Length != 4)
+        {
+            throw new ArgumentOutOfRangeException(nameof(buffer));
+        }
+        if (!flush())
+        {
+            throw new InvalidOperationException(
+                "Unable to complete the Ambient Awareness capture batch.");
+        }
+        Marshal.Copy(source, buffer, 0, buffer.Length);
+        return new UniformLightingFrame(new RgbColor(buffer[2], buffer[1], buffer[0]));
     }
     public void Dispose()
     {

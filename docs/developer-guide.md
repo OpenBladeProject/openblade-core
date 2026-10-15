@@ -87,9 +87,10 @@ and use `ExperimentalBladePort` with their own bounded capabilities and source
 provenance. They have no Settings consent switch or release-channel gate.
 Pre-releases are the testing route, not a new hardware-admission rule. The
 [experimental support guide](experimental-blade-support.md) lists the five exact
-models and remaining physical validation. Recognizing a profile does not promote
-its controls to capture-backed support or admit manual fan commands, host-rendered
-lighting, or another model's brightness driver.
+models and remaining physical validation. Each profile admits its own thermal,
+battery, and lighting commands. The Blade 16 (2023) also admits typed uniform
+host-rendered frames; it does not use another model's key map or brightness
+driver. Experimental evidence stays separate from capture-backed support.
 
 When an admitted laptop's exact Razer driver stack is already present,
 OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
@@ -158,7 +159,8 @@ drains the old session, rechecks identity and authority, then reads and reconcil
 current state without sending a setter or replaying the uncertain request. A new
 lighting choice releases the old lighting hold; unrelated profile edits do not.
 See the [tester workflow](experimental-blade-support.md#send-a-useful-test-report)
-for baseline and follow-up reports.
+for baseline and follow-up reports. The [experimental implementation reference](experimental-blade-reference.md)
+records model identities, command limits, and pinned source provenance.
 
 ## Build and test
 
@@ -259,13 +261,15 @@ runs:
 - Any one-byte value made of the four bits decodes, and temporary full charge is
   bit `0x04`. Undefined bits (`0x10` to `0x80`) and other lengths are rejected,
   and the rejected bytes stay in diagnostics.
-- Before every `07/0F` write, a fresh `07/8F` read in the same write session must
-  be `00` or `04`. Otherwise nothing is sent. In the product, the result names
-  the settings that are on. The developer validation run reports the refusal
-  as `EnableFailed` or `CancelFailed`, although nothing was sent. OpenBlade has
-  captured only the bare `00` and `04` writes.
-- This does not add `07/8F` or `07/0F` to any model. The experimental backend
-  does not use them.
+- Before every `07/0F` write, read `07/8F` freshly in the same write session.
+  Temporary full charge requires `00` or `04`; otherwise nothing is sent and
+  the product names the other settings that are on. Developer validation reports
+  the refusal as `EnableFailed` or `CancelFailed`. Captured full-charge writes
+  remain limited to bare `00` and `04`.
+- Experimental Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
+  `02` writes. Its fresh guard refuses CPU boost, temporary full charge, or
+  local dimming bits, so replacing the byte cannot clear another enabled option.
+  This does not admit combined writes or a local dimming control.
 
 When you admit a model, check its panel:
 

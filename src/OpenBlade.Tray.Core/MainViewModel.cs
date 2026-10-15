@@ -118,8 +118,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static readonly IReadOnlyList<BreathingColorMode> KnownBreathingColorModes =
         Enum.GetValues<BreathingColorMode>();
-    private static readonly IReadOnlyList<BreathingColorMode> RandomBreathingColorModes =
-        [BreathingColorMode.Random];
     private static readonly IReadOnlyList<LogoLightingMode> KnownLogoLightingModes =
         Enum.GetValues<LogoLightingMode>()
             .Where(Enum.IsDefined)
@@ -280,6 +278,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
+    private bool selectedCustomMaximumFans;
     private PendingPerformanceHold? pendingPerformance;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomCpuLevels =
         AllCustomPerformanceLevels;
@@ -1041,6 +1040,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedWindowsPowerModeDescription));
             Notify(nameof(CanEditWindowsPowerMode));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsCustomMaximumFansVisible));
             Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
@@ -2410,6 +2410,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsBalancedSelected));
             Notify(nameof(IsPerformanceSelected));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsCustomMaximumFansVisible));
             Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
@@ -2434,6 +2435,49 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ActivePowerSource == PowerSource.PluggedIn
         && SelectedPerformance == PerformancePreset.Custom
         && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
+
+    public bool IsCustomMaximumFansVisible => IsCustomPerformanceVisible
+        && Capabilities.CustomPerformance?.SupportsMaximumFans == true;
+
+    public bool CanEditCustomMaximumFans => CanEditPerformance
+        && (SelectedFanMode == FanMode.Automatic || SelectedCustomMaximumFans);
+
+    public bool SelectedCustomMaximumFans
+    {
+        get => selectedCustomMaximumFans;
+        private set
+        {
+            if (selectedCustomMaximumFans == value)
+            {
+                return;
+            }
+            SetField(ref selectedCustomMaximumFans, value);
+            Notify(nameof(CurrentCustomPerformanceSettings));
+            Notify(nameof(CanEditCustomMaximumFans));
+            Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
+            NotifyFanControlAvailability();
+            NotifyCommands();
+        }
+    }
+
+    public CustomPerformanceSettings CurrentCustomPerformanceSettings => new(
+        SelectedCustomCpuLevel, SelectedCustomGpuLevel)
+    {
+        MaximumFans = SelectedCustomMaximumFans,
+    };
+
+    public Task SetCustomMaximumFansAsync(bool requested, CancellationToken cancellationToken)
+    {
+        CustomPerformanceSettings settings = CurrentCustomPerformanceSettings with { MaximumFans = requested };
+        if (!IsCustomMaximumFansVisible || !CanEditCustomMaximumFans
+            || requested && SelectedFanMode != FanMode.Automatic
+            || !CanSetCustomPerformance(settings))
+        {
+            return Task.CompletedTask;
+        }
+        return SetCustomPerformanceAsync(settings, cancellationToken);
+    }
 
     public bool IsGpuClockTuningVisible =>
         ActivePowerSource == PowerSource.PluggedIn
@@ -2549,6 +2593,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomCpuLevel, value);
+            Notify(nameof(CurrentCustomPerformanceSettings));
             RefreshCustomPerformanceOptions();
         }
     }
@@ -2564,6 +2609,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomGpuLevel, value);
+            Notify(nameof(CurrentCustomPerformanceSettings));
             RefreshCustomPerformanceOptions();
         }
     }
@@ -2584,6 +2630,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref selectedFanMode, value);
+            Notify(nameof(CanEditCustomMaximumFans));
             // The mode is an input to CurrentFanControlSettings, and the editor
             // load announces that property only when a curve or speed changed.
             Notify(nameof(CurrentFanControlSettings));
@@ -2669,6 +2716,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress
         && !HyperBoostActive
+        && !(SelectedPerformance == PerformancePreset.Custom && SelectedCustomMaximumFans)
         && !IsThermalStateUnknown;
 
     public bool CanChangeFanMode =>
@@ -2688,11 +2736,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ? TrayText.Get("OpenBlade is waiting for a fresh, complete read of the laptop state.")
             : HyperBoostActive
                 ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
-                : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
-                    ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
-                    : !CanChangeFanMode
-                        ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
-                        : string.Empty;
+                : SelectedPerformance == PerformancePreset.Custom && SelectedCustomMaximumFans
+                    ? TrayText.Get("Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode.")
+                    : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
+                        ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
+                        : !CanChangeFanMode
+                            ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
+                            : string.Empty;
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl
@@ -4100,14 +4150,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         set => lightingEditor.SecondaryColor = value;
     }
 
-    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes =>
-        Capabilities.SupportsBreathingColorSelection ? KnownBreathingColorModes : RandomBreathingColorModes;
+    private IReadOnlyList<BreathingColorMode> availableBreathingColorModes = KnownBreathingColorModes;
+
+    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes => availableBreathingColorModes;
 
     private void ApplyLightingParameterDefaults()
     {
-        if (LightingEffectEditor == LightingEffect.Breathing && !Capabilities.SupportsBreathingColorSelection)
+        if (LightingEffectEditor == LightingEffect.Breathing
+            && !Capabilities.SupportsBreathingMode(lightingEditor.BreathingColorMode))
         {
-            lightingEditor.BreathingColorMode = BreathingColorMode.Random;
+            lightingEditor.BreathingColorMode = LightingBreathingColorModes
+                .FirstOrDefault(BreathingColorMode.Random);
         }
         if (LightingEffectEditor == LightingEffect.Wave && !Capabilities.SupportsWaveDirectionSelection)
         {
@@ -4259,7 +4312,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool LightingShowsBrightness => LightingEffectEditor != LightingEffect.Off;
 
     public bool LightingShowsBreathingColorMode =>
-        LightingEffectEditor == LightingEffect.Breathing && Capabilities.SupportsBreathingColorSelection;
+        LightingEffectEditor == LightingEffect.Breathing
+        && LightingBreathingColorModes.Count > 1;
 
     public bool LightingShowsStarlightColorMode =>
         LightingEffectEditor == LightingEffect.Starlight;
@@ -4699,7 +4753,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool CanSetCustomPerformance(object? parameter) =>
         parameter is CustomPerformanceSettings value
         && CustomPerformanceSettings.IsWellFormed(value)
-        && CommandCapabilities.CustomPerformance?.Supports(value) != false
+        && CommandCapabilities.CustomPerformance?.Supports(value) == true
+        && (!value.MaximumFans || SelectedFanMode == FanMode.Automatic)
         && IsCustomPerformanceVisible
         && !IsPerformanceOperationInProgress
         && !HyperBoostActive
@@ -4714,11 +4769,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         var combination = new CustomPerformanceCombination(cpu, gpu);
         return combination.IsWellFormed
             && (Capabilities.CustomPerformance?.AllowedCombinations.Contains(combination)
-                ?? true);
+                ?? false);
     }
 
     private void RefreshCustomPerformanceOptions()
     {
+        Notify(nameof(IsCustomMaximumFansVisible));
         CustomPerformanceLevel[] cpu = AllCustomPerformanceLevels
             .Where(level => SupportsCustomPerformance(level, SelectedCustomGpuLevel))
             .ToArray();
@@ -4782,6 +4838,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value)
+            && (value == FanMode.Automatic || SelectedPerformance != PerformancePreset.Custom || !SelectedCustomMaximumFans)
             && (value == FanMode.Automatic
                 || ActivePowerSource == PowerSource.PluggedIn);
     }
@@ -5269,6 +5326,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     ?? CustomPerformanceSettings.Default;
         SelectedCustomCpuLevel = customPerformance.Cpu;
         SelectedCustomGpuLevel = customPerformance.Gpu;
+        SelectedCustomMaximumFans = customPerformance.MaximumFans;
         GpuClockTuningSettings? gpuClockTuning = pendingPerformance?.Requested.GpuClockTuning
             ?? status.DesiredState.GpuClockTuning;
         PerformancePreset gpuTuningPerformance = pendingPerformance?.Requested.Value
@@ -5459,6 +5517,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void ApplyCapabilityOptions(DeviceCapabilities capabilities)
     {
+        BreathingColorMode[] breathingModes = KnownBreathingColorModes
+            .Where(capabilities.SupportsBreathingMode).ToArray();
+        if (!availableBreathingColorModes.SequenceEqual(breathingModes))
+        {
+            availableBreathingColorModes = breathingModes;
+            Notify(nameof(LightingBreathingColorModes));
+        }
         PerformancePreset[] performancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()
@@ -5469,6 +5534,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             // WinUI clears a ComboBox selection when ItemsSource is replaced.
             Notify(nameof(SelectedPerformance));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsCustomMaximumFansVisible));
             Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
@@ -6179,9 +6245,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 SelectedPerformance,
                 OverrideLifetime.UntilPowerSourceChange,
                 SelectedPerformance == PerformancePreset.Custom
-                    ? new CustomPerformanceSettings(
-                        SelectedCustomCpuLevel,
-                        SelectedCustomGpuLevel)
+                    ? CurrentCustomPerformanceSettings
                     : null,
                 gpuClockTuning),
             token,
@@ -6194,9 +6258,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PowerSource sourceAtStart = ActivePowerSource;
         PerformancePreset previousPerformance = SelectedPerformance;
-        CustomPerformanceSettings previousCustom = new(
-            SelectedCustomCpuLevel,
-            SelectedCustomGpuLevel);
+        CustomPerformanceSettings previousCustom = CurrentCustomPerformanceSettings;
         GpuClockTuningSettings? previousGpuClockTuning = gpuClockTuningConfigured
             ? new GpuClockTuningSettings(
                 IsGpuClockTuningEnabled,
@@ -6231,7 +6293,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             sourceAtStart,
                             performance: requested.Value,
                             customPerformance: requested.CustomPerformance,
-                            gpuClockTuning: requested.GpuClockTuning);
+                            gpuClockTuning: requested.GpuClockTuning,
+                            fans: requested.CustomPerformance?.MaximumFans == true ? FanMode.Automatic : null,
+                            fanControl: requested.CustomPerformance?.MaximumFans == true ? FanControlSettings.Default : null);
                     }
                 });
         }
@@ -6299,6 +6363,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             SelectedCustomCpuLevel = custom.Cpu;
             SelectedCustomGpuLevel = custom.Gpu;
+            SelectedCustomMaximumFans = custom.MaximumFans;
         }
 
         gpuClockTuningConfigured = value.GpuClockTuning is not null;
@@ -7857,11 +7922,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     saved.CustomPerformance ?? CustomPerformanceSettings.Default;
                 CustomPerformanceSettings currentCustom =
                     activeProfileDraft.CustomPerformance
-                    ?? new CustomPerformanceSettings(
-                        SelectedCustomCpuLevel,
-                        SelectedCustomGpuLevel);
+                    ?? CurrentCustomPerformanceSettings;
                 if (savedCustom.Cpu != currentCustom.Cpu
-                    || savedCustom.Gpu != currentCustom.Gpu)
+                    || savedCustom.Gpu != currentCustom.Gpu
+                    || savedCustom.MaximumFans != currentCustom.MaximumFans)
                 {
                     return true;
                 }
@@ -8744,6 +8808,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(CanChangeThermalControlPolicy), CanChangeThermalControlPolicy);
         NotifyComputed(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure), CanAcknowledgeThermalPolicyUpgradeDisclosure);
         NotifyComputed(nameof(CanEditPerformance), CanEditPerformance);
+        NotifyComputed(nameof(CanEditCustomMaximumFans), CanEditCustomMaximumFans);
         NotifyComputed(nameof(CanSelectLaptopPerformance), CanSelectLaptopPerformance);
         NotifyComputed(nameof(CanEditWindowsPowerMode), CanEditWindowsPowerMode);
         NotifyComputed(nameof(CanToggleGpuClockTuning), CanToggleGpuClockTuning);

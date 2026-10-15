@@ -1551,4 +1551,13 @@
   <data name="Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop." xml:space="preserve">
     <value>[!! Sávé á shórt ídéntítý répórt, thén fóllów thé Sýnápsé Óbsérvér gúídé tó hélp ádd súppórt fór thís láptóp. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Boost" xml:space="preserve">
+    <value>[!! Bóóst ~~ !!]</value>
+  </data>
+  <data name="Maximum fans" xml:space="preserve">
+    <value>[!! Máxímúm fáns ~~~~ !!]</value>
+  </data>
+  <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
+    <value>[!! Máxímúm fáns ís cóntróllíng thé fáns. Túrn óff Máxímúm fáns tó chóósé á fán módé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

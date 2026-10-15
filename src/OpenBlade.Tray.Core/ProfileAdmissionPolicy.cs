@@ -58,8 +58,11 @@ internal static class ProfileAdmissionPolicy
                 && draft.Fans == current.Fans))
         && (draft.Performance != PerformancePreset.Custom
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
+        && (draft.Performance != PerformancePreset.Custom
+            || draft.CustomPerformance?.MaximumFans != true || draft.Fans == FanMode.Automatic)
         && (draft.CustomPerformance is null
-            || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
+            || draft.CustomPerformance == current.CustomPerformance
+            || capabilities.CustomPerformance?.Supports(draft.CustomPerformance) == true)
         && (ThermalCombinationSupported(draft.Performance, draft.Fans, capabilities)
             || (draft.Fans == current.Fans
                 && !capabilities.FanModes.Contains(draft.Fans)))

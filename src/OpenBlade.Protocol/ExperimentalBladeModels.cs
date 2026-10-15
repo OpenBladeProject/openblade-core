@@ -17,6 +17,42 @@ internal static class ExperimentalBladeModels
 
     public const string Blade18Source = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
 
+    internal const string MaintainedRazerCtlSource = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
+    internal const string OpenRazerSource = "https://github.com/openrazer/openrazer/tree/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d";
+    internal const string ExpandedBladeControlSource = "https://github.com/jdsgnrinfo/blade-control/tree/92beedc82e6e378cb71dac276e5820c8ea84247d";
+
+    internal static IReadOnlyList<ExperimentalFeatureEvidence> FeatureEvidenceFor(ExperimentalBladeModel model) =>
+        model.ProductId switch
+        {
+            0x029F => [
+                new("PerformanceAndCustom", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
+                new("FixedFansAndMaximumFans", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
+                new("KeyboardAndLogoLighting", "UpstreamOwnerTested", [MaintainedRazerCtlSource]),
+                new("CustomFrames", "UpstreamOwnerTestedWithoutRgbReadback", [MaintainedRazerCtlSource, OpenRazerSource]),
+                new("UniformAmbientAndAudio", "SourceBackedExtrapolationWithoutRgbReadback", [MaintainedRazerCtlSource, OpenRazerSource]),
+                new("ChargeLimits50To100", "UpstreamOwnerTested", [MaintainedRazerCtlSource])],
+            0x029D => [
+                new("CustomAndFixedFans", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),
+                new("KeyboardLightingAndLogoOnOff", "UpstreamOwnerReported", [OpenRazerSource, "https://github.com/openrazer/openrazer/pull/2237"]),
+                new("LogoStaticAndBreathing", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),
+                new("ChargeLimits50To100", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource])],
+            0x02C5 => [
+                new("BatteryPerformanceModes", "UpstreamOwnerReported", [ExpandedBladeControlSource, "https://github.com/jdsgnrinfo/blade-control/issues/2"]),
+                new("CustomPerformance", "SourceBackedExtrapolation", [ExpandedBladeControlSource]),
+                new("KeyboardLightingAndLogoOnOff", "UpstreamOwnerReported", [OpenRazerSource, "https://github.com/openrazer/openrazer/pull/2539"]),
+                new("LogoStaticAndBreathing", "SourceBackedExtrapolation", [ExpandedBladeControlSource, MaintainedRazerCtlSource]),
+                new("ChargeLimits50To100", "SourceBackedExtrapolation", [ExpandedBladeControlSource, MaintainedRazerCtlSource])],
+            0x0255 => [
+                new("GamingAndCustom", "UpstreamOwnerReported", [ExpandedBladeControlSource]),
+                new("SingleZoneRgbLighting", "UpstreamOwnerTested", [ExpandedBladeControlSource])],
+            0x02A0 => [
+                new("MaximumFans", "UpstreamOwnerReported", [Blade18Source, "https://github.com/sqmagellan/razer-ctl/issues/1"]),
+                new("KeyboardAndLogoLighting", "UpstreamOwnerReported", [Blade18Source, "https://github.com/sqmagellan/razer-ctl/issues/1"]),
+                new("UniformStaticRgb", "SourceBackedExtrapolationWithoutRgbReadback", [OpenRazerSource, MaintainedRazerCtlSource]),
+                new("CustomAndChargeLimits50To100", "SourceBackedExtrapolation", [Blade18Source])],
+            _ => [],
+        };
+
     public static IReadOnlyList<ExperimentalBladeModel> All { get; } = Array.AsReadOnly<ExperimentalBladeModel>(
     [
         new("RZ09-0483", "Blade 16 - RZ09-0483", 0x029F, true, RazerCtlSource),
@@ -56,8 +92,10 @@ internal static class ExperimentalBladeModels
 internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
 {
     private readonly object sync = new();
-    private readonly Queue<ExperimentalControlObservation> observations = new();
+    private readonly LinkedList<ExperimentalControlObservation> observations = new();
     private readonly Dictionary<string, (string Outcome, string? Confirmed, string? Failure)> lastQueries = new(StringComparer.Ordinal);
+    private LinkedListNode<ExperimentalControlObservation>? uniformFrameSuccess;
+    private long uniformFrameSuccessCount;
     private int recoveryRequired;
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
@@ -83,20 +121,59 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
                 }
                 lastQueries[operation] = current;
             }
-            while (observations.Count >= DiagnosticExperimentalSupport.MaxObservations)
-            {
-                observations.Dequeue();
-            }
-            observations.Enqueue(new(DateTimeOffset.UtcNow, operation, stage, outcome,
+            Append(new(DateTimeOffset.UtcNow, operation, stage, outcome,
                 submitted, requested, confirmed, failure));
         }
+    }
+
+    internal void RecordUniformFrameApplied(RgbColor color)
+    {
+        lock (sync)
+        {
+            uniformFrameSuccessCount++;
+            if (uniformFrameSuccess?.List is not null)
+            {
+                observations.Remove(uniformFrameSuccess);
+            }
+            uniformFrameSuccess = Append(new(
+                DateTimeOffset.UtcNow,
+                "KeyboardUniformFrame",
+                "Readback",
+                "Unavailable",
+                true,
+                $"LastRGB={color.Red:X2}{color.Green:X2}{color.Blue:X2}",
+                $"AppliedWithoutColorReadback;Frames={uniformFrameSuccessCount}",
+                "FrameColorReadbackUnavailable"));
+        }
+    }
+
+    private LinkedListNode<ExperimentalControlObservation> Append(
+        ExperimentalControlObservation observation)
+    {
+        while (observations.Count >= DiagnosticExperimentalSupport.MaxObservations)
+        {
+            LinkedListNode<ExperimentalControlObservation>? removed = observations.First;
+            if (removed is null)
+            {
+                break;
+            }
+            observations.RemoveFirst();
+            if (ReferenceEquals(removed, uniformFrameSuccess))
+            {
+                uniformFrameSuccess = null;
+            }
+        }
+        return observations.AddLast(observation);
     }
 
     internal DiagnosticExperimentalSupport Snapshot()
     {
         lock (sync)
         {
-            return new(model.ModelNumber, model.EvidenceSource, true, IsPaused, observations.ToArray());
+            return new(model.ModelNumber, model.EvidenceSource, true, IsPaused, observations.ToArray())
+            {
+                FeatureEvidence = ExperimentalBladeModels.FeatureEvidenceFor(model),
+            };
         }
     }
 }

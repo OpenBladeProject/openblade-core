@@ -86,6 +86,10 @@ public sealed class ControlRequestHandlerTests
                 Guid.NewGuid(),
                 new AmbientLightingFrame(
                     new RgbColor[AmbientLightingFrame.SlotCount]).ToRgbBytes()),
+            new PushUniformLightingFrameRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                new UniformLightingFrame(new RgbColor(12, 34, 56))),
             new SetPlaybackMuteIndicatorRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -125,7 +129,7 @@ public sealed class ControlRequestHandlerTests
             "ReapplyChangedSettings",
             "RecoverHyperBoostRestore",
             "SetLightingSuppression",
-            "PulseReactiveKey", "PushAmbientLightingFrame",
+            "PulseReactiveKey", "PushAmbientLightingFrame", "PushUniformLightingFrame",
             "SetPlaybackMuteIndicator", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ApplyOneShotLaptopControl",
             "ExportDiagnostics", "Shutdown",
@@ -766,6 +770,14 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(frame.IsWellFormed());
             return Record("PushAmbientLightingFrame");
+        }
+
+        public Task<ControlOperationResult> PushUniformLightingFrameAsync(
+            UniformLightingFrame frame,
+            CancellationToken token)
+        {
+            Assert.Equal(new RgbColor(12, 34, 56), frame.Color);
+            return Record("PushUniformLightingFrame");
         }
 
         public Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(

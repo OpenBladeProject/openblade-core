@@ -2050,4 +2050,10 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Únsúppórtéd láptóp ~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_TextBlockCustomMaximumFans.Text" xml:space="preserve">
+    <value>[!! Máxímúm fáns ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Máxímúm fáns ~~~~ !!]</value>
+  </data>
 </root>
