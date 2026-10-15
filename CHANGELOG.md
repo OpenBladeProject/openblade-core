@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.29.0-nightly.91] - 2026-10-15
+
 ### Added
 
 - Use Synapse's shared adapter wattage classification on all seven admitted Blade models, including the five experimental profiles. Compare actual and recommended power before thermal changes; limited supplies allow Balanced and Automatic fan handback. ([#779](https://github.com/OpenBladeProject/openblade-core/pull/779))
@@ -2064,7 +2066,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.28.1-nightly.90...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.29.0-nightly.91...HEAD
+[0.29.0-nightly.91]: https://github.com/OSSBlade/openblade-core/compare/v0.28.1-nightly.90...v0.29.0-nightly.91
 [0.28.1-nightly.90]: https://github.com/OSSBlade/openblade-core/compare/v0.27.5-nightly.89...v0.28.1-nightly.90
 [0.27.5-nightly.89]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...v0.27.5-nightly.89
 [0.26.2-nightly.87]: https://github.com/OSSBlade/openblade-core/compare/v0.25.2-nightly.84-attempt.2...v0.26.2-nightly.87
