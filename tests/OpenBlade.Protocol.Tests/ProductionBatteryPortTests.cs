@@ -56,13 +56,16 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(count, session.Commands.Count);
     }
 
-    [Fact]
-    public async Task PadRequiredPerformance_AdmitsOnlyPerformanceRestoreAndRechecksEveryEnableChannel()
+    [Theory]
+    [InlineData(0x11, 0x11)]
+    [InlineData(0x0C, 0x0C)]
+    public async Task PadRequiredPerformance_AdmitsOnlyPerformanceRestoreAndRechecksEveryEnableChannel(
+        byte actual, byte recommended)
     {
         var session = new ScriptedSession(
             Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
-            Success([0x11, 0x11]), Success([1, 1, 7, 0]),
-            Success([0x11, 0x11]), Success([1, 2, 7, 0]),
+            Success([actual, recommended]), Success([1, 1, 7, 0]),
+            Success([actual, recommended]), Success([1, 2, 7, 0]),
             Success([1, 1, 7, 0]), Success([1, 2, 7, 0]),
             Success([1, 1, 7, 0]), Success([1, 2, 7, 0]),
             Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
@@ -80,6 +83,24 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(count, session.Commands.Count);
     }
 
+    [Theory]
+    [InlineData(0x0C, 0x11)]
+    [InlineData(0x11, 0x12)]
+    [InlineData(0x0C, 0x10)]
+    public async Task PadRequiredPerformance_RejectsInsufficientOrUnknownWattageBeforeWrites(
+        byte actual, byte recommended)
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
+            Success([actual, recommended]));
+        await using ProductionBatteryPort port = CreatePadRequiredPerformancePort(session,
+            new FixedHyperBoostEligibilitySource(CoolingPadConnectionState.PresentExact));
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Performance, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x02);
+    }
+
     private static ProductionBatteryPort CreatePadRequiredPerformancePort(
         ScriptedSession session, IHyperBoostEligibilitySource pad,
         DeviceFeatureAccess? padlessAccess = null) => new(
@@ -95,6 +116,108 @@ public sealed class ProductionBatteryPortTests
                 Fixture(ProductionBatteryPort.HyperBoostEnableFirstAction, 0x0D, 2, [1, 1, 7, 0]),
                 Fixture(ProductionBatteryPort.HyperBoostEnableSecondAction, 0x0D, 2, [1, 2, 7, 0])),
             hyperBoostEligibility: pad);
+
+    [Fact]
+    public async Task PadlessHyperBoost_DirectManualEntryPreservesEligibilityAndPairOrdering()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x02, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x02, 0x07, 0x00]));
+        await using ProductionBatteryPort port = CreateDirectManualHyperBoostPort(
+            session,
+            CoolingPadConnectionState.Absent);
+
+        await port.SetHyperBoostAsync(
+            enabled: true,
+            baseMode: PerformancePreset.Performance,
+            requiresCoolingPad: false,
+            cancellationToken: default);
+
+        Assert.Equal(
+            [0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x82, 0x82],
+            session.Commands.Select(command => command.CommandId).ToArray());
+        Assert.Equal(
+            ["01010700", "01020700"],
+            session.Commands
+                .Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span))
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task PadPresentHyperBoost_DoesNotRelaxManualEntryPrecondition()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]));
+        await using ProductionBatteryPort port = CreateDirectManualHyperBoostPort(
+            session,
+            CoolingPadConnectionState.PresentExact);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(
+                enabled: true,
+                baseMode: PerformancePreset.Performance,
+                requiresCoolingPad: true,
+                cancellationToken: default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    private static ProductionBatteryPort CreateDirectManualHyperBoostPort(
+        ScriptedSession session,
+        CoolingPadConnectionState padState)
+    {
+        CapturedCommandFixture[] performanceAndFanFixtures =
+        [
+            .. MaximumCapabilityFixtures(),
+            Fixture(
+                ProductionBatteryPort.PerformanceBoostFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x02, 0x00]),
+            Fixture(
+                ProductionBatteryPort.PerformanceBoostSecondAction,
+                0x0D,
+                0x02,
+                [0x01, 0x02, 0x02, 0x00]),
+        ];
+        return new ProductionBatteryPort(
+            session,
+            Catalog(performanceAndFanFixtures),
+            AcceptedAdapterPowerReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite),
+            hyperBoostCatalog: Catalog(
+                Fixture(
+                    ProductionBatteryPort.HyperBoostEnableFirstAction,
+                    0x0D,
+                    0x02,
+                    [0x01, 0x01, 0x07, 0x00]),
+                Fixture(
+                    ProductionBatteryPort.HyperBoostEnableSecondAction,
+                    0x0D,
+                    0x02,
+                    [0x01, 0x02, 0x07, 0x00])),
+            hyperBoostEligibility: new FixedHyperBoostEligibilitySource(padState),
+            supportsDirectManualFanTransitions: true);
+    }
 
     [Fact]
     public async Task AdapterPowerQuery_WithoutCodeControlledEvidenceReturnsUnknownWithoutIo()
@@ -118,6 +241,8 @@ public sealed class ProductionBatteryPortTests
     [InlineData("0711", AdapterPowerState.UsbCPower100W)]
     [InlineData("1111", AdapterPowerState.FullPower280W)]
     [InlineData("1211", AdapterPowerState.FullPower330W)]
+    [InlineData("0C0C", AdapterPowerState.SufficientExternal)]
+    [InlineData("0C11", AdapterPowerState.LimitedExternal)]
     [InlineData("FFFF", AdapterPowerState.Unknown)]
     public async Task AdapterPowerQuery_IsSerializedAndReadOnly(
         string responseHex,
@@ -227,7 +352,7 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(
             BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
             error.FailurePhase);
-        Assert.IsType<IOException>(error.InnerException);
+        Assert.IsType<NativeDeviceReadException>(error.InnerException);
         Assert.Equal(3, session.Commands.Count);
         Assert.DoesNotContain(
             session.Commands,
@@ -773,6 +898,52 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task DirectMaximumFanSetter_EntersFromPerformanceAutomaticThenWritesTargets()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x02, 0x00]),
+            Success([0x01, 0x02, 0x02, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x01, 0x01, 0x36]),
+            Success([0x01, 0x02, 0x36]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanModeAsync(FanMode.Maximum, default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "01010001", "01020001", "010136", "010236"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Fact]
+    public async Task DirectMaximumFanSetter_AlreadyManualWritesOnlyTargets()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x01, 0x01, 0x36]),
+            Success([0x01, 0x02, 0x36]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanModeAsync(FanMode.Maximum, default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "010136", "010236"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+        Assert.Equal([0x82, 0x82, 0x01, 0x01],
+            session.Commands.Select(command => command.CommandId).ToArray());
+    }
+
+    [Fact]
     public async Task FixedFanSetterBuildsCapturedTargetPayloadForBothChannels()
     {
         byte[] state1 = [0x01, 0x01, 0x00, 0x01];
@@ -805,12 +976,183 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
-    public async Task AdjustableFanPreWriteReadFailureReportsExactPreSubmissionPhase()
+    public async Task DirectManualFanSetter_EntersFromPerformanceAutomaticThenWritesTarget()
     {
         var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x02, 0x00]),
+            Success([0x01, 0x02, 0x02, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x01, 0x01, 0x28]),
+            Success([0x01, 0x02, 0x28]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanControlAsync(
+            new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+            default);
+
+        Assert.True(port.Capabilities.SupportsDirectManualFanTransitions);
+        Assert.Equal(
+            ["01010000", "01020000", "01010001", "01020001", "010128", "010228"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Theory]
+    [InlineData(0x03, 0x12, 0x11)]
+    [InlineData(0x06, 0x12, 0x11)]
+    [InlineData(0x03, 0x0C, 0x0C)]
+    public async Task DirectManualFanSetter_BatteryAutomaticRechecksFullPowerBeforeEveryWrite(
+        byte thermalMode, byte actual, byte recommended)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, thermalMode, 0x00]),
+            Success([0x01, 0x02, thermalMode, 0x00]),
+            Success([actual, recommended]),
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([actual, recommended]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([actual, recommended]),
+            Success([0x01, 0x01, 0x28]),
+            Success([actual, recommended]),
+            Success([0x01, 0x02, 0x28]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanControlAsync(
+            new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+            default);
+
+        Assert.Equal(
+            [0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x8C, 0x01, 0x8C, 0x01],
+            session.Commands.Select(command => command.CommandId).ToArray());
+    }
+
+    [Theory]
+    [InlineData(0x03)]
+    [InlineData(0x06)]
+    public async Task DirectManualFanSetter_BatteryAutomaticRejectsFreshBatteryPower(
+        byte thermalMode)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, thermalMode, 0x00]),
+            Success([0x01, 0x02, thermalMode, 0x00]),
+            Success([0x00, 0x11]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            supportsDirectManualFanTransitions: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal([0x82, 0x82, 0x8C],
+            session.Commands.Select(command => command.CommandId).ToArray());
+    }
+
+    [Fact]
+    public async Task DirectManualFanSetter_BatteryAutomaticPowerLossAfterEntryIsIndeterminate()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x03, 0x00]),
+            Success([0x01, 0x02, 0x03, 0x00]),
+            Success([0x12, 0x11]),
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x00, 0x11]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            supportsDirectManualFanTransitions: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Equal([0x82, 0x82, 0x8C, 0x02, 0x8C],
+            session.Commands.Select(command => command.CommandId).ToArray());
+        int commandCount = session.Commands.Count;
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+                default));
+        Assert.Equal(commandCount, session.Commands.Count);
+    }
+
+    [Fact]
+    public void DirectManualFanAutomaticEntry_RejectsMissingOrHyperBoostPerformanceIdentity()
+    {
+        Assert.False(ProductionBatteryPort.IsDirectManualFanAutomaticEntryState(
+            new ProductionPerformanceFanState(null, FanMode.Automatic)));
+        Assert.False(ProductionBatteryPort.IsDirectManualFanAutomaticEntryState(
+            new ProductionPerformanceFanState(
+                PerformancePreset.Performance,
+                FanMode.Automatic)
+            {
+                HyperBoostActive = true,
+            }));
+        Assert.True(ProductionBatteryPort.IsDirectManualFanAutomaticEntryState(
+            new ProductionPerformanceFanState(
+                PerformancePreset.BatterySaver,
+                FanMode.Automatic)));
+    }
+
+    [Fact]
+    public async Task DirectManualFanSetter_SecondEntryFailureRemainsIndeterminate()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x02, 0x00]),
+            Success([0x01, 0x02, 0x02, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x01]),
             new HidSessionResult<ReadOnlyMemory<byte>>(
                 default,
                 HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            error.FailurePhase);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task AdjustableFanPreWriteReadFailureReportsExactPreSubmissionPhase()
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.NativeIoFailure, 31, 0);
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure)
+            { Diagnostic = diagnostic });
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()));
@@ -825,7 +1167,15 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
-        Assert.IsType<IOException>(error.InnerException);
+        NativeDeviceReadException read = Assert.IsType<NativeDeviceReadException>(error.InnerException);
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, read.Failure);
+        Assert.Equal(diagnostic, read.Diagnostic);
+        Assert.Equal(DeviceStateQuery.ThermalChannelOne, read.StateQuery);
+        Assert.Equal(diagnostic, error.Diagnostic);
+        Assert.Equal(read.StateQuery, error.StateQuery);
+        var wrapped = new BladeWriteException(WriteSubmissionState.Indeterminate, "outer", error);
+        Assert.Equal(diagnostic, wrapped.Diagnostic);
+        Assert.Equal(read.StateQuery, wrapped.StateQuery);
         Assert.Single(session.Commands);
         Assert.Equal(0x82, session.Commands[0].CommandId);
     }
@@ -833,6 +1183,8 @@ public sealed class ProductionBatteryPortTests
     [Fact]
     public async Task AdjustableFanFailureAfterSubmissionRemainsIndeterminate()
     {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.NativeIoFailure, 31, 0);
         byte[] state1 = [0x01, 0x01, 0x00, 0x01];
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x00, 0x00]),
@@ -840,7 +1192,8 @@ public sealed class ProductionBatteryPortTests
             Success(state1),
             new HidSessionResult<ReadOnlyMemory<byte>>(
                 default,
-                HidSessionFailureKind.NativeIoFailure));
+                HidSessionFailureKind.NativeIoFailure)
+            { Diagnostic = diagnostic });
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()));
@@ -856,6 +1209,13 @@ public sealed class ProductionBatteryPortTests
             error.FailurePhase);
         Assert.Contains("manual entry channel 2 of 2", error.Message);
         Assert.Contains(nameof(HidSessionFailureKind.NativeIoFailure), error.Message);
+        Assert.Equal(diagnostic, error.Diagnostic);
+        Assert.Equal((byte)0x0D, error.CommandClass);
+        Assert.Equal((byte)0x02, error.CommandId);
+        var wrapped = new BladeWriteException(WriteSubmissionState.Indeterminate, "outer", error);
+        Assert.Equal(diagnostic, wrapped.Diagnostic);
+        Assert.Equal(error.CommandClass, wrapped.CommandClass);
+        Assert.Equal(error.CommandId, wrapped.CommandId);
         Assert.Equal(4, session.Commands.Count);
     }
 
@@ -923,6 +1283,8 @@ public sealed class ProductionBatteryPortTests
     [Fact]
     public async Task AdjustableFanTargetUpdateFailureReportsTargetStageAndChannel()
     {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.Timeout, 995, 0);
         byte[] manualState1 = [0x01, 0x01, 0x00, 0x01];
         byte[] manualState2 = [0x01, 0x02, 0x00, 0x01];
         byte[] speed1 = [0x01, 0x01, 0x20];
@@ -932,7 +1294,8 @@ public sealed class ProductionBatteryPortTests
             Success(speed1),
             new HidSessionResult<ReadOnlyMemory<byte>>(
                 default,
-                HidSessionFailureKind.Timeout));
+                HidSessionFailureKind.Timeout)
+            { Diagnostic = diagnostic });
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()));
@@ -946,6 +1309,9 @@ public sealed class ProductionBatteryPortTests
         Assert.DoesNotContain("manual entry", error.Message);
         Assert.Contains(nameof(HidSessionFailureKind.Timeout), error.Message);
         Assert.DoesNotContain("0102", error.Message);
+        Assert.Equal(diagnostic, error.Diagnostic);
+        Assert.Equal((byte)0x0D, error.CommandClass);
+        Assert.Equal((byte)0x01, error.CommandId);
         Assert.Equal(4, session.Commands.Count);
     }
 
@@ -1129,7 +1495,7 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
-        Assert.IsType<IOException>(error.InnerException);
+        Assert.IsType<NativeDeviceReadException>(error.InnerException);
         Assert.Single(session.Commands);
         Assert.Equal(0x82, session.Commands[0].CommandId);
     }
@@ -1228,6 +1594,81 @@ public sealed class ProductionBatteryPortTests
 
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
             () => port.SetFanModeAsync(FanMode.Maximum, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Fact]
+    public async Task DirectPerformanceSetter_ExitsManualWithOnlySelectedPerformancePair()
+    {
+        byte[] first = [0x01, 0x01, 0x02, 0x00];
+        byte[] second = [0x01, 0x02, 0x02, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success(first),
+            Success(second));
+        CapturedCommandFixture[] fixtures =
+        [
+            .. MaximumCapabilityFixtures(),
+            Fixture(
+                ProductionBatteryPort.PerformanceBoostFirstAction,
+                0x0D,
+                0x02,
+                first),
+            Fixture(
+                ProductionBatteryPort.PerformanceBoostSecondAction,
+                0x0D,
+                0x02,
+                second),
+        ];
+        await using var port = CreatePort(
+            session,
+            Catalog(fixtures),
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetPerformanceAsync(PerformancePreset.Performance, default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "01010200", "01020200"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Theory]
+    [InlineData(
+        PerformancePreset.BatterySaver,
+        ProductionBatteryPort.PerformanceBatterySaverFirstAction,
+        ProductionBatteryPort.PerformanceBatterySaverSecondAction,
+        0x03)]
+    [InlineData(
+        PerformancePreset.BatteryBalanced,
+        ProductionBatteryPort.PerformanceBatteryBalancedFirstAction,
+        ProductionBatteryPort.PerformanceBatteryBalancedSecondAction,
+        0x06)]
+    public async Task DirectPerformanceSetter_RejectsManualOriginForBatteryDestinations(
+        PerformancePreset preset,
+        string firstAction,
+        string secondAction,
+        byte mode)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                [
+                    .. MaximumCapabilityFixtures(),
+                    Fixture(firstAction, 0x0D, 0x02, [0x01, 0x01, mode, 0x00]),
+                    Fixture(secondAction, 0x0D, 0x02, [0x01, 0x02, mode, 0x00]),
+                ]),
+            supportsDirectManualFanTransitions: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(preset, default));
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Equal(2, session.Commands.Count);
@@ -1597,7 +2038,7 @@ public sealed class ProductionBatteryPortTests
 
     [Theory]
     [InlineData(false, new byte[] { 0xB3 }, "B3")]
-    [InlineData(true, new byte[] { 0x05 }, "05")]
+    [InlineData(true, new byte[] { 0x15 }, "15")]
     public async Task BatteryGetterContentRejection_SurfacesBoundedRejectedPayload(
         bool temporaryFullCharge,
         byte[] payload,
@@ -1621,7 +2062,7 @@ public sealed class ProductionBatteryPortTests
         Assert.True(DeviceStateContentRejection.IsContentRejection(error));
         Assert.Equal(
             temporaryFullCharge
-                ? "Temporary full charge query (07/8F) returned unrecognized payload 05 (PayloadValidator)."
+                ? "Temporary full charge query (07/8F) returned unrecognized payload 15 (PayloadValidator)."
                 : "Battery protection query (07/92) returned unrecognized payload B3 (PayloadValidator).",
             DeviceStateContentRejection.Describe(error, "Device state query"));
     }
@@ -1671,6 +2112,48 @@ public sealed class ProductionBatteryPortTests
         RazerCommandSpec command = Assert.Single(session.Commands);
         Assert.Equal((0x07, 0x12), (command.ClassId, command.CommandId));
         Assert.Equal([(byte)payload], command.Arguments.ToArray());
+    }
+
+    [Theory]
+    [InlineData(HidSessionFailureKind.NativeIoFailure, WriteSubmissionState.Indeterminate)]
+    [InlineData(HidSessionFailureKind.ConflictBlocked, WriteSubmissionState.KnownNotApplied)]
+    public async Task BatterySetterPreservesDiagnosticAndSubmissionClassification(
+        HidSessionFailureKind failure, WriteSubmissionState expectedState)
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            failure == HidSessionFailureKind.ConflictBlocked
+                ? HidSessionFailurePhase.Guard : HidSessionFailurePhase.SetCompletion,
+            failure, 31, 0);
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(default, failure) { Diagnostic = diagnostic });
+        await using var port = CreatePort(session,
+            Catalog(Fixture("battery-limit-80", 0x07, 0x12, [0xD0])));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetChargeLimitAsync(80, default));
+
+        Assert.Equal(expectedState, error.SubmissionState);
+        Assert.Equal(diagnostic, error.Diagnostic);
+        Assert.Equal((byte)0x07, error.CommandClass);
+        Assert.Equal((byte)0x12, error.CommandId);
+        Assert.Single(session.Commands);
+    }
+
+    [Fact]
+    public async Task QueryTemporaryFullCharge_DecodesPowerModeControlBitmaskOnEveryModel()
+    {
+        foreach (ProductionBatteryReadEvidence evidence in TemporaryFullChargeEvidence())
+        {
+            var session = new ScriptedSession(Success([0x08]), Success([0x0C]), Success([0x10]));
+            await using var port = CreatePort(session, Catalog(), evidence);
+
+            Assert.False(await port.QueryTemporaryFullChargeAsync(default));
+            Assert.True(await port.QueryTemporaryFullChargeAsync(default));
+            await Assert.ThrowsAnyAsync<Exception>(
+                () => port.QueryTemporaryFullChargeAsync(default));
+            Assert.All(session.Commands, query =>
+                Assert.Equal((0x07, 0x8F), (query.ClassId, query.CommandId)));
+        }
     }
 
     [Fact]
@@ -1752,7 +2235,7 @@ public sealed class ProductionBatteryPortTests
         DeviceCommandCatalog catalog = Catalog(
             Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
             Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
-        var session = new ScriptedSession(Success([payload]));
+        var session = new ScriptedSession(Success([0x00]), Success([payload]));
         await using var port = CreatePort(
             session,
             catalog,
@@ -1761,10 +2244,134 @@ public sealed class ProductionBatteryPortTests
         Assert.True(port.Capabilities.SupportsTemporaryFullCharge);
         await port.SetTemporaryFullChargeAsync(enabled, default);
 
-        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal(2, session.Commands.Count);
+        RazerCommandSpec command = session.Commands[1];
         Assert.Equal((0x07, 0x0F), (command.ClassId, command.CommandId));
         Assert.Equal([payload], command.Arguments.ToArray());
     }
+
+    [Theory]
+    [InlineData(false, 0x00, 0x00)]
+    [InlineData(true, 0x00, 0x04)]
+    [InlineData(false, 0x04, 0x00)]
+    [InlineData(true, 0x04, 0x04)]
+    public async Task TemporarySetterWritesAfterFreshReadShowsNoOtherSettingsOnEveryModel(
+        bool enabled,
+        byte current,
+        byte payload)
+    {
+        foreach (ProductionBatteryReadEvidence evidence in TemporaryFullChargeEvidence())
+        {
+            var session = new ScriptedSession(Success([current]), Success([payload]));
+            await using var port = CreatePort(session, TemporarySetterCatalog(), evidence);
+
+            await port.SetTemporaryFullChargeAsync(enabled, default);
+
+            Assert.Collection(
+                session.Commands,
+                read => Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId)),
+                write =>
+                {
+                    Assert.Equal((0x07, 0x0F), (write.ClassId, write.CommandId));
+                    Assert.Equal([payload], write.Arguments.ToArray());
+                });
+        }
+    }
+
+    [Theory]
+    [InlineData(true, 0x08, "local dimming")]
+    [InlineData(false, 0x08, "local dimming")]
+    [InlineData(false, 0x0C, "local dimming")]
+    [InlineData(true, 0x01, "CPU boost")]
+    [InlineData(false, 0x05, "CPU boost")]
+    [InlineData(true, 0x02, "maximum fan speed")]
+    [InlineData(false, 0x06, "maximum fan speed")]
+    public async Task TemporarySetterBlocksWhenOtherPowerModeSettingsAreOnOnEveryModel(
+        bool enabled,
+        byte current,
+        string settingName)
+    {
+        foreach (ProductionBatteryReadEvidence evidence in TemporaryFullChargeEvidence())
+        {
+            var session = new ScriptedSession(Success([current]), Success([0x00]), Success([0x04]));
+            await using var port = CreatePort(session, TemporarySetterCatalog(), evidence);
+
+            BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+                () => port.SetTemporaryFullChargeAsync(enabled, default));
+
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+            Assert.StartsWith(
+                "OpenBlade won't change temporary full charge because it would also change "
+                + "other laptop settings that are on (",
+                error.Message,
+                StringComparison.Ordinal);
+            Assert.Contains(settingName, error.Message, StringComparison.Ordinal);
+            RazerCommandSpec read = Assert.Single(session.Commands);
+            Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId));
+
+            // The block is not a session failure: a later admitted read still works.
+            Assert.False(await port.QueryTemporaryFullChargeAsync(default));
+        }
+    }
+
+    [Theory]
+    [InlineData("rejected", false)]
+    [InlineData("rejected", true)]
+    [InlineData("failed", false)]
+    [InlineData("failed", true)]
+    [InlineData("throws", false)]
+    [InlineData("throws", true)]
+    public async Task TemporarySetterSendsNothingWhenPreWriteReadFailsOnEveryModel(
+        string failure,
+        bool enabled)
+    {
+        foreach (ProductionBatteryReadEvidence evidence in TemporaryFullChargeEvidence())
+        {
+            HidSessionResult<ReadOnlyMemory<byte>> preWriteRead = failure switch
+            {
+                "rejected" => Success([0x10]),
+                "failed" => new(default, HidSessionFailureKind.NativeIoFailure),
+                _ => Success([0x00]),
+            };
+            var session = new ScriptedSession(preWriteRead, Success([0x00]), Success([0x04]))
+            {
+                BeforeResult = (call, _) =>
+                {
+                    if (failure == "throws" && call == 1)
+                    {
+                        throw new IOException("pre-write read transport failure");
+                    }
+                },
+            };
+            await using var port = CreatePort(session, TemporarySetterCatalog(), evidence);
+
+            BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+                () => port.SetTemporaryFullChargeAsync(enabled, default));
+
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+            Assert.Contains(
+                "pre-write read failed before submission",
+                error.Message,
+                StringComparison.Ordinal);
+            RazerCommandSpec read = Assert.Single(session.Commands);
+            Assert.Equal((0x07, 0x8F), (read.ClassId, read.CommandId));
+        }
+    }
+
+    // Every evidence set that admits 07/8F: the generic production set, the exact
+    // RZ09-0528 set, and the exact RZ09-0581 set. Power Mode Control decoding and
+    // the pre-write guard are shared, not model-specific.
+    private static IEnumerable<ProductionBatteryReadEvidence> TemporaryFullChargeEvidence() =>
+    [
+        AcceptedTemporaryReadEvidence(),
+        ProductionBatteryReadEvidence.Production,
+        BatteryValidationFactory.CreateRz090528ProductionBatteryReadEvidence(),
+        ProductionBatteryReadEvidence.Rz090581ModelScoped,
+    ];
+
+    private static DeviceCommandCatalog TemporarySetterCatalog() => Catalog(
+        Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
+        Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
 
     [Theory]
     [InlineData(false, true, true)]
@@ -1955,7 +2562,7 @@ public sealed class ProductionBatteryPortTests
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x04, 0x00]),
             Success([0x01, 0x02, 0x04, 0x00]),
-            Success([0x01, 0x01, 0x01]),
+            Success([0x01, 0x01, 0x02]),
             Success([0x01, 0x02, 0x02]));
         var capabilities = new CustomPerformanceCapabilities(
             new HashSet<CustomPerformanceCombination>
@@ -1973,7 +2580,30 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
         Assert.Equal(DeviceStateQuery.CustomPerformanceCombination, error.StateQuery);
-        Assert.Equal("01 01 01 / 01 02 02", error.RejectedPayloadHex);
+        Assert.Equal("01 01 02 / 01 02 02", error.RejectedPayloadHex);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task CustomPerformanceReadback_DoesNotAcquireWriteAdmissionFromCapturedQueries()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x01]),
+            Success([0x01, 0x02, 0x02]));
+        var writable = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>
+        {
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+        });
+        await using var port = CreatePort(session, Catalog(CustomPerformanceFixtures()),
+            customPerformanceCapabilities: writable);
+
+        Assert.Equal(CustomPerformanceSettings.Default,
+            (await port.QueryPerformanceFanStateAsync(default)).CustomPerformance);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(CustomPerformanceSettings.Default, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Equal(4, session.Commands.Count);
     }
 
@@ -2003,6 +2633,68 @@ public sealed class ProductionBatteryPortTests
             [0x82, 0x82, 0x02, 0x02, 0x07, 0x07, 0x82, 0x82, 0x87, 0x87],
             session.Commands.Select(command => command.CommandId).ToArray());
         Assert.Contains(PerformancePreset.Custom, port.Capabilities.PerformancePresets);
+    }
+
+    [Theory]
+    [InlineData(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High, false)]
+    [InlineData(CustomPerformanceLevel.High, CustomPerformanceLevel.High, false)]
+    [InlineData(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High, true)]
+    public async Task ValidatedCustomSetter_DoesNotInheritExperimentalSettings(
+        CustomPerformanceLevel cpu, CustomPerformanceLevel gpu, bool maximumFans)
+    {
+        var session = new ScriptedSession();
+        await using var port = CreatePort(session, Catalog(CustomPerformanceFixtures()));
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(new(cpu, gpu) { MaximumFans = maximumFans }, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(session.Commands);
+    }
+
+    [Fact]
+    public async Task DirectCustomPerformanceSetter_ExitsManualAndPreservesLevelWrites()
+    {
+        CustomPerformanceSettings target = new(
+            CustomPerformanceLevel.Medium,
+            CustomPerformanceLevel.High);
+        CapturedCommandFixture[] fixtures =
+        [
+            .. MaximumCapabilityFixtures(),
+            .. CustomPerformanceFixtures(),
+        ];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x01]),
+            Success([0x01, 0x02, 0x02]),
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x01]),
+            Success([0x01, 0x02, 0x02]));
+        await using var port = CreatePort(
+            session,
+            Catalog(fixtures),
+            customPerformanceCapabilities: new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination>
+                {
+                    new(target.Cpu, target.Gpu),
+                }),
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetCustomPerformanceAsync(target, default);
+
+        Assert.Equal(
+            [
+                "01010000", "01020000",
+                "01010400", "01020400", "010101", "010202",
+                "01010000", "01020000", "010100", "010200",
+            ],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+        Assert.Equal(
+            [0x82, 0x82, 0x02, 0x02, 0x07, 0x07, 0x82, 0x82, 0x87, 0x87],
+            session.Commands.Select(command => command.CommandId).ToArray());
     }
 
     [Fact]
@@ -2035,7 +2727,8 @@ public sealed class ProductionBatteryPortTests
         FanSpeedRange? fanSpeedRange = null,
         IReadOnlySet<FanMode>? admittedFanModes = null,
         IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
-        CustomPerformanceCapabilities? customPerformanceCapabilities = null) => new(
+        CustomPerformanceCapabilities? customPerformanceCapabilities = null,
+        bool supportsDirectManualFanTransitions = false) => new(
             session,
             catalog,
             evidence ?? NoTemporaryReadEvidence(),
@@ -2044,7 +2737,8 @@ public sealed class ProductionBatteryPortTests
             fanSpeedRange,
             admittedFanModes,
             admittedAdapterPowerStates,
-            customPerformanceCapabilities);
+            customPerformanceCapabilities,
+            supportsDirectManualFanTransitions: supportsDirectManualFanTransitions);
 
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);

@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -267,6 +268,77 @@ public sealed class ConfirmedStateDriftTrackerTests
         });
 
         Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void ConfirmedActiveToInactive_RetiresIntentInsteadOfLatching()
+    {
+        int retirements = 0;
+        var tracker = new ConfirmedStateDriftTracker(() =>
+        {
+            retirements++;
+            return true;
+        });
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, true)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, null)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, false)));
+
+        Assert.Equal(1, retirements);
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void InactiveWithoutConfirmedActiveBaseline_NeverRetiresIntent()
+    {
+        int retirements = 0;
+        var tracker = new ConfirmedStateDriftTracker(() =>
+        {
+            retirements++;
+            return true;
+        });
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, false)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, null)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, false)));
+
+        Assert.Equal(0, retirements);
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void LocalDimmingKeptWhileFullChargeEnds_RetiresIntentInsteadOfLatching()
+    {
+        // 0x0C is full charge on with local dimming on; 0x08 keeps local
+        // dimming and ends full charge, which is a confirmed true-to-false.
+        int retirements = 0;
+        var tracker = new ConfirmedStateDriftTracker(() =>
+        {
+            retirements++;
+            return true;
+        });
+
+        tracker.Observe(State(battery: PowerModeControlBattery(0x0C)));
+        tracker.Observe(State(battery: PowerModeControlBattery(0x08)));
+
+        Assert.Equal(1, retirements);
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    private static ConfirmedBatteryState PowerModeControlBattery(byte powerModeControl)
+    {
+        Assert.True(TemporaryFullChargeProtocol.TryDecodeQuery(
+            [powerModeControl],
+            out bool active));
+        return new ConfirmedBatteryState(true, 80, active);
+    }
+
+    [Fact]
+    public void ConfirmedActiveToInactive_WithoutIntentStillLatches()
+    {
+        var tracker = new ConfirmedStateDriftTracker(() => false);
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, true)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, false)));
+
+        Assert.Equal([DeviceSubsystem.Battery], tracker.ExternalChanges);
     }
 
     private static ConfirmedDeviceState State(

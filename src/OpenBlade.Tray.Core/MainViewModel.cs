@@ -116,6 +116,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .Order()
             .ToArray();
 
+    private static readonly IReadOnlyList<BreathingColorMode> KnownBreathingColorModes =
+        Enum.GetValues<BreathingColorMode>();
     private static readonly IReadOnlyList<LogoLightingMode> KnownLogoLightingModes =
         Enum.GetValues<LogoLightingMode>()
             .Where(Enum.IsDefined)
@@ -141,7 +143,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Comparison:
         [
             new(PowerSource.PluggedIn, "AC"),
-            new(PowerSource.UsbC, "USB-C"),
+            new(PowerSource.UsbC, TrayText.Get("Low-power profile")),
             new(PowerSource.Battery, TrayText.Get("On battery")),
         ],
         ThermalControlPolicies:
@@ -252,6 +254,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool alwaysOverrideExternalLightingChanges;
     private LightingRefreshRate lightingRefreshRate = LightingRefreshRate.ThirtyHz;
     private bool allowUntestedFirmware;
+    private bool isExperimentalDevice;
+    private bool experimentalWritesPaused;
     private KeyboardLightingControlMode keyboardLightingControlMode;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
@@ -274,6 +278,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
+    private bool selectedCustomMaximumFans;
     private PendingPerformanceHold? pendingPerformance;
     private IReadOnlyList<CustomPerformanceLevel> availableCustomCpuLevels =
         AllCustomPerformanceLevels;
@@ -300,6 +305,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isReapplyChangedSettingsOperationInProgress;
     private bool isHyperBoostRestoreRecoveryInProgress;
     private bool isCheckCurrentStateOperationInProgress;
+    private bool isResumeExperimentalWritesOperationInProgress;
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
     private bool isGamingModeOperationInProgress;
@@ -542,6 +548,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 await AcknowledgeThermalPolicyUpgradeDisclosureAsync(token);
             },
             _ => CanAcknowledgeThermalPolicyUpgradeDisclosure);
+        ResumeExperimentalWritesCommand = CreateCommand(
+            async (_, token) =>
+            {
+                await ResumeExperimentalWritesAsync(token);
+            },
+            _ => CanResumeExperimentalWrites);
         ApplyOneShotLaptopControlCommand = CreateCommand(
             ApplyOneShotLaptopControlAsync,
             CanApplyOneShotLaptopControl);
@@ -572,6 +584,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             (AsyncRelayCommand)SetStartAtSignInCommand,
             (AsyncRelayCommand)SetThermalControlPolicyCommand,
             (AsyncRelayCommand)AcknowledgeThermalPolicyUpgradeDisclosureCommand,
+            (AsyncRelayCommand)ResumeExperimentalWritesCommand,
             (AsyncRelayCommand)ApplyOneShotLaptopControlCommand,
         ];
     }
@@ -663,7 +676,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || IsRetainedPowerSourceRecheck(latestStatus);
 
     public string UnsupportedLaptopMessage => TrayText.Get(
-        "OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens.");
+        "Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop.");
 
     public bool IsUnsupportedLaptop =>
         IsConnected
@@ -1027,6 +1040,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedWindowsPowerModeDescription));
             Notify(nameof(CanEditWindowsPowerMode));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsCustomMaximumFansVisible));
             Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
@@ -1057,7 +1071,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PowerSource.PluggedIn => TrayText.Get("Save to AC profile"),
         PowerSource.Battery => TrayText.Get("Save to battery profile"),
-        PowerSource.UsbC => TrayText.Get("Save to USB-C profile"),
+        PowerSource.UsbC => TrayText.Get("Save to low-power profile"),
         _ => TrayText.Get("Save to profile"),
     };
 
@@ -1555,6 +1569,62 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref allowUntestedFirmware, value);
     }
 
+    public bool IsExperimentalDevice
+    {
+        get => isExperimentalDevice;
+        private set
+        {
+            if (isExperimentalDevice != value)
+            {
+                SetField(ref isExperimentalDevice, value);
+                Notify(nameof(ExperimentalSupportNotice));
+                Notify(nameof(CanResumeExperimentalWrites));
+            }
+        }
+    }
+
+    public bool ExperimentalWritesPaused
+    {
+        get => experimentalWritesPaused;
+        private set
+        {
+            if (experimentalWritesPaused == value)
+            {
+                return;
+            }
+
+            SetField(ref experimentalWritesPaused, value);
+            Notify(nameof(ExperimentalSupportNotice));
+            Notify(nameof(CanResumeExperimentalWrites));
+        }
+    }
+
+    public bool IsResumeExperimentalWritesOperationInProgress
+    {
+        get => isResumeExperimentalWritesOperationInProgress;
+        private set
+        {
+            if (isResumeExperimentalWritesOperationInProgress == value)
+            {
+                return;
+            }
+
+            SetField(ref isResumeExperimentalWritesOperationInProgress, value);
+            Notify(nameof(CanResumeExperimentalWrites));
+            NotifyCommands();
+        }
+    }
+
+    public bool CanResumeExperimentalWrites => IsConnected
+        && IsExperimentalDevice
+        && ExperimentalWritesPaused
+        && latestStatus?.ControlAccess == SessionControlAccess.Active
+        && !IsResumeExperimentalWritesOperationInProgress;
+
+    public string ExperimentalSupportNotice => ExperimentalWritesPaused
+        ? TrayText.Get("Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.")
+        : TrayText.Get("This laptop has experimental support enabled automatically. Export diagnostics in About to help test support.");
+
     public KeyboardLightingControlMode KeyboardLightingControlMode
     {
         get => keyboardLightingControlMode;
@@ -1703,6 +1773,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return accepted;
+    }
+
+    public async Task<bool> ResumeExperimentalWritesAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!CanResumeExperimentalWrites)
+        {
+            return false;
+        }
+
+        IsResumeExperimentalWritesOperationInProgress = true;
+        try
+        {
+            bool accepted = false;
+            await RunOperationAsync(
+                serviceClient.ResumeExperimentalWritesAsync,
+                cancellationToken,
+                onCompleted: result => accepted = result.Status is
+                    ControlOperationStatus.Applied or ControlOperationStatus.Stored);
+            return accepted;
+        }
+        finally
+        {
+            IsResumeExperimentalWritesOperationInProgress = false;
+        }
     }
 
     public async Task<bool> ReapplyChangedSettingsAsync(
@@ -2315,6 +2410,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsBalancedSelected));
             Notify(nameof(IsPerformanceSelected));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsCustomMaximumFansVisible));
             Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
@@ -2339,6 +2435,49 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ActivePowerSource == PowerSource.PluggedIn
         && SelectedPerformance == PerformancePreset.Custom
         && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
+
+    public bool IsCustomMaximumFansVisible => IsCustomPerformanceVisible
+        && Capabilities.CustomPerformance?.SupportsMaximumFans == true;
+
+    public bool CanEditCustomMaximumFans => CanEditPerformance
+        && (SelectedFanMode == FanMode.Automatic || SelectedCustomMaximumFans);
+
+    public bool SelectedCustomMaximumFans
+    {
+        get => selectedCustomMaximumFans;
+        private set
+        {
+            if (selectedCustomMaximumFans == value)
+            {
+                return;
+            }
+            SetField(ref selectedCustomMaximumFans, value);
+            Notify(nameof(CurrentCustomPerformanceSettings));
+            Notify(nameof(CanEditCustomMaximumFans));
+            Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
+            NotifyFanControlAvailability();
+            NotifyCommands();
+        }
+    }
+
+    public CustomPerformanceSettings CurrentCustomPerformanceSettings => new(
+        SelectedCustomCpuLevel, SelectedCustomGpuLevel)
+    {
+        MaximumFans = SelectedCustomMaximumFans,
+    };
+
+    public Task SetCustomMaximumFansAsync(bool requested, CancellationToken cancellationToken)
+    {
+        CustomPerformanceSettings settings = CurrentCustomPerformanceSettings with { MaximumFans = requested };
+        if (!IsCustomMaximumFansVisible || !CanEditCustomMaximumFans
+            || requested && SelectedFanMode != FanMode.Automatic
+            || !CanSetCustomPerformance(settings))
+        {
+            return Task.CompletedTask;
+        }
+        return SetCustomPerformanceAsync(settings, cancellationToken);
+    }
 
     public bool IsGpuClockTuningVisible =>
         ActivePowerSource == PowerSource.PluggedIn
@@ -2454,6 +2593,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomCpuLevel, value);
+            Notify(nameof(CurrentCustomPerformanceSettings));
             RefreshCustomPerformanceOptions();
         }
     }
@@ -2469,6 +2609,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomGpuLevel, value);
+            Notify(nameof(CurrentCustomPerformanceSettings));
             RefreshCustomPerformanceOptions();
         }
     }
@@ -2489,6 +2630,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref selectedFanMode, value);
+            Notify(nameof(CanEditCustomMaximumFans));
             // The mode is an input to CurrentFanControlSettings, and the editor
             // load announces that property only when a curve or speed changed.
             Notify(nameof(CurrentFanControlSettings));
@@ -2574,6 +2716,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress
         && !HyperBoostActive
+        && !(SelectedPerformance == PerformancePreset.Custom && SelectedCustomMaximumFans)
         && !IsThermalStateUnknown;
 
     public bool CanChangeFanMode =>
@@ -2593,11 +2736,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ? TrayText.Get("OpenBlade is waiting for a fresh, complete read of the laptop state.")
             : HyperBoostActive
                 ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
-                : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
-                    ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown.")
-                    : !CanChangeFanMode
-                        ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
-                        : string.Empty;
+                : SelectedPerformance == PerformancePreset.Custom && SelectedCustomMaximumFans
+                    ? TrayText.Get("Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode.")
+                    : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
+                        ? TrayText.Get("Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
+                        : !CanChangeFanMode
+                            ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
+                            : string.Empty;
 
     public bool CanEditPerformance =>
         CanRequestHardwareControl
@@ -2763,7 +2908,39 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public bool CanAdjustChargeLimit => CanSetChargeLimit(ChargeLimitPercent);
+    public bool CanAdjustChargeLimit
+    {
+        get
+        {
+            DeviceCapabilities capabilities = CommandCapabilities;
+            if (IsChargeLimitOperationInProgress
+                || !CanMutate
+                || !HasConfirmedPowerSource
+                || latestStatus?.ConfirmedState?.Battery is not
+                {
+                    TemporaryFullCharge: false,
+                } confirmed)
+            {
+                return false;
+            }
+
+            bool hasProtectedLimit = capabilities.ChargeLimits.Any(value => value < 100);
+            if (!ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
+                || !hasProtectedLimit)
+            {
+                return false;
+            }
+
+            return confirmed switch
+            {
+                { ProtectionEnabled: true, ChargeLimitPercent: int currentLimit } =>
+                    capabilities.ChargeLimits.Contains(currentLimit),
+                { ProtectionEnabled: false, ChargeLimitPercent: null } =>
+                    capabilities.ChargeLimits.Contains(100),
+                _ => false,
+            };
+        }
+    }
 
     public long ChargeLimitEditorRevision => chargeLimitEditorRevision;
 
@@ -2796,8 +2973,28 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public IReadOnlyList<int> ChargeLimitOptions
     {
         get => chargeLimitOptions;
-        private set => SetField(ref chargeLimitOptions, value);
+        private set
+        {
+            if (ReferenceEquals(chargeLimitOptions, value))
+            {
+                return;
+            }
+            SetField(ref chargeLimitOptions, value);
+
+            Notify(nameof(ChargeLimitMinimumPercent));
+            Notify(nameof(ChargeLimitMaximumPercent));
+            Notify(nameof(ChargeLimitStepPercent));
+        }
     }
+
+    public int ChargeLimitMinimumPercent =>
+        ChargeLimitOptions.Where(value => value < 100).DefaultIfEmpty(50).Min();
+
+    public int ChargeLimitMaximumPercent => ChargeLimitOptions.Contains(100)
+        ? 100
+        : ChargeLimitOptions.Where(value => value < 100).DefaultIfEmpty(80).Max();
+
+    public int ChargeLimitStepPercent => ChargeLimitOptions.Contains(100) ? 1 : 5;
 
     public bool BatteryProtectionEnabled
     {
@@ -3814,7 +4011,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PowerSource.PluggedIn => "AC",
         PowerSource.Battery => TrayText.Get("On battery"),
-        PowerSource.UsbC => "USB-C",
+        PowerSource.UsbC => TrayText.Get("Low-power profile"),
         _ => TrayText.Get("Current profile"),
     };
 
@@ -3870,7 +4067,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public LightingEffect LightingEffectEditor
     {
         get => lightingEditor.Effect;
-        set => lightingEditor.Effect = value;
+        set
+        {
+            lightingEditor.Effect = value;
+            ApplyLightingParameterDefaults();
+        }
     }
 
     public LightingEffectOption? SelectedLightingEffectOption
@@ -3884,6 +4085,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (value is not null)
             {
                 lightingEditor.SelectEffect(value.Effect);
+                ApplyLightingParameterDefaults();
             }
         }
     }
@@ -3948,8 +4150,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         set => lightingEditor.SecondaryColor = value;
     }
 
-    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes { get; } =
-        Enum.GetValues<BreathingColorMode>();
+    private IReadOnlyList<BreathingColorMode> availableBreathingColorModes = KnownBreathingColorModes;
+
+    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes => availableBreathingColorModes;
+
+    private void ApplyLightingParameterDefaults()
+    {
+        if (LightingEffectEditor == LightingEffect.Breathing
+            && !Capabilities.SupportsBreathingMode(lightingEditor.BreathingColorMode))
+        {
+            lightingEditor.BreathingColorMode = LightingBreathingColorModes
+                .FirstOrDefault(BreathingColorMode.Random);
+        }
+        if (LightingEffectEditor == LightingEffect.Wave && !Capabilities.SupportsWaveDirectionSelection)
+        {
+            lightingEditor.Direction = LightingDirection.Rightward;
+        }
+    }
 
     public BreathingColorMode LightingBreathingColorModeEditor
     {
@@ -3996,11 +4213,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public IReadOnlyList<LightingDirectionOption> LightingDirectionOptions =>
         LightingEffectEditor == LightingEffect.Tidal
             ? TidalLightingDirectionOptions
-            : StandardLightingDirectionOptions;
+            : LightingEffectEditor == LightingEffect.Wave && !Capabilities.SupportsWaveDirectionSelection
+                ? StandardLightingDirectionOptions.Where(option => option.Value == LightingDirection.Rightward).ToArray()
+                : StandardLightingDirectionOptions;
 
     public LightingDirectionOption SelectedLightingDirectionOption
     {
-        get => LightingDirectionOptions.First(option => option.Value == LightingDirectionEditor);
+        get => LightingDirectionOptions.FirstOrDefault(option => option.Value == LightingDirectionEditor)
+            ?? LightingDirectionOptions[0];
         set
         {
             if (value is not null)
@@ -4092,7 +4312,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool LightingShowsBrightness => LightingEffectEditor != LightingEffect.Off;
 
     public bool LightingShowsBreathingColorMode =>
-        LightingEffectEditor == LightingEffect.Breathing;
+        LightingEffectEditor == LightingEffect.Breathing
+        && LightingBreathingColorModes.Count > 1;
 
     public bool LightingShowsStarlightColorMode =>
         LightingEffectEditor == LightingEffect.Starlight;
@@ -4127,7 +4348,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingEffectEditor == LightingEffect.Tidal;
 
     public bool LightingShowsDirection =>
-        LightingEffectEditor is LightingEffect.Tidal or LightingEffect.Wave;
+        LightingEffectEditor == LightingEffect.Tidal
+            || LightingEffectEditor == LightingEffect.Wave && Capabilities.SupportsWaveDirectionSelection;
 
     public bool LightingShowsRotationDirection =>
         LightingEffectEditor == LightingEffect.Wheel;
@@ -4462,6 +4684,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public ICommand SetStartAtSignInCommand { get; }
     public ICommand SetThermalControlPolicyCommand { get; }
     public ICommand AcknowledgeThermalPolicyUpgradeDisclosureCommand { get; }
+    public ICommand ResumeExperimentalWritesCommand { get; }
     public ICommand ApplyOneShotLaptopControlCommand { get; }
 
     public ApplyOneShotLaptopControl StartupAnimationOnAction { get; } = new(
@@ -4530,7 +4753,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool CanSetCustomPerformance(object? parameter) =>
         parameter is CustomPerformanceSettings value
         && CustomPerformanceSettings.IsWellFormed(value)
-        && CommandCapabilities.CustomPerformance?.Supports(value) != false
+        && CommandCapabilities.CustomPerformance?.Supports(value) == true
+        && (!value.MaximumFans || SelectedFanMode == FanMode.Automatic)
         && IsCustomPerformanceVisible
         && !IsPerformanceOperationInProgress
         && !HyperBoostActive
@@ -4545,11 +4769,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         var combination = new CustomPerformanceCombination(cpu, gpu);
         return combination.IsWellFormed
             && (Capabilities.CustomPerformance?.AllowedCombinations.Contains(combination)
-                ?? true);
+                ?? false);
     }
 
     private void RefreshCustomPerformanceOptions()
     {
+        Notify(nameof(IsCustomMaximumFansVisible));
         CustomPerformanceLevel[] cpu = AllCustomPerformanceLevels
             .Where(level => SupportsCustomPerformance(level, SelectedCustomGpuLevel))
             .ToArray();
@@ -4613,6 +4838,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value)
+            && (value == FanMode.Automatic || SelectedPerformance != PerformancePreset.Custom || !SelectedCustomMaximumFans)
             && (value == FanMode.Automatic
                 || ActivePowerSource == PowerSource.PluggedIn);
     }
@@ -4707,15 +4933,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         int storedLimit = status.DesiredState.Battery.ConfiguredPolicy
             .ChargeLimitPercent;
-        if (!capabilities.ChargeLimits.Contains(storedLimit))
-        {
-            return false;
-        }
-
         return confirmed.ProtectionEnabled
             ? capabilities.SupportsBatteryProtectionOff
-                && confirmed.ChargeLimitPercent == storedLimit
-            : confirmed.ChargeLimitPercent is null;
+                && confirmed.ChargeLimitPercent is { } currentLimit
+                && capabilities.ChargeLimits.Contains(currentLimit)
+            : confirmed.ChargeLimitPercent is null
+                && capabilities.ChargeLimits.Contains(storedLimit);
     }
 
     public Task StartAsync()
@@ -5103,6 +5326,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     ?? CustomPerformanceSettings.Default;
         SelectedCustomCpuLevel = customPerformance.Cpu;
         SelectedCustomGpuLevel = customPerformance.Gpu;
+        SelectedCustomMaximumFans = customPerformance.MaximumFans;
         GpuClockTuningSettings? gpuClockTuning = pendingPerformance?.Requested.GpuClockTuning
             ?? status.DesiredState.GpuClockTuning;
         PerformancePreset gpuTuningPerformance = pendingPerformance?.Requested.Value
@@ -5220,6 +5444,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             status.AlwaysOverrideExternalLightingChanges;
         LightingRefreshRate = status.LightingRefreshRate;
         AllowUntestedFirmware = status.AllowUntestedFirmware;
+        IsExperimentalDevice = status.IsExperimentalDevice;
+        ExperimentalWritesPaused = status.ExperimentalWritesPaused;
         KeyboardLightingControlMode = status.KeyboardLightingControlMode;
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
@@ -5291,6 +5517,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void ApplyCapabilityOptions(DeviceCapabilities capabilities)
     {
+        BreathingColorMode[] breathingModes = KnownBreathingColorModes
+            .Where(capabilities.SupportsBreathingMode).ToArray();
+        if (!availableBreathingColorModes.SequenceEqual(breathingModes))
+        {
+            availableBreathingColorModes = breathingModes;
+            Notify(nameof(LightingBreathingColorModes));
+        }
         PerformancePreset[] performancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()
@@ -5301,6 +5534,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             // WinUI clears a ComboBox selection when ItemsSource is replaced.
             Notify(nameof(SelectedPerformance));
             Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsCustomMaximumFansVisible));
             Notify(nameof(IsGpuClockTuningVisible));
             Notify(nameof(TrayDashboardGpuTuningLabel));
             Notify(nameof(IsGpuClockTuningAvailable));
@@ -5777,17 +6011,42 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || !HasConfirmedPowerSource
             || status?.ConfirmedState?.Battery is not
             {
-                ProtectionEnabled: true,
-                ChargeLimitPercent: int currentLimit,
                 TemporaryFullCharge: false,
-            })
+            } confirmed)
         {
             return false;
         }
 
-        return ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
-            && capabilities.ChargeLimits.Contains(currentLimit)
-            && capabilities.ChargeLimits.Contains(value);
+        if (!ProfileAdmissionPolicy.HasBatteryCapability(capabilities))
+        {
+            return false;
+        }
+
+        if (value == 100)
+        {
+            return capabilities.ChargeLimits.Contains(100)
+                && capabilities.SupportsBatteryProtectionOff
+                && confirmed is
+                {
+                    ProtectionEnabled: true,
+                    ChargeLimitPercent: int currentLimit,
+                }
+                && capabilities.ChargeLimits.Contains(currentLimit);
+        }
+
+        if (!capabilities.ChargeLimits.Contains(value))
+        {
+            return false;
+        }
+
+        return confirmed switch
+        {
+            { ProtectionEnabled: true, ChargeLimitPercent: int currentLimit } =>
+                capabilities.ChargeLimits.Contains(currentLimit),
+            { ProtectionEnabled: false, ChargeLimitPercent: null } =>
+                capabilities.ChargeLimits.Contains(100),
+            _ => false,
+        };
     }
 
     private void SetTemporaryFullChargeState(bool? value)
@@ -5986,9 +6245,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 SelectedPerformance,
                 OverrideLifetime.UntilPowerSourceChange,
                 SelectedPerformance == PerformancePreset.Custom
-                    ? new CustomPerformanceSettings(
-                        SelectedCustomCpuLevel,
-                        SelectedCustomGpuLevel)
+                    ? CurrentCustomPerformanceSettings
                     : null,
                 gpuClockTuning),
             token,
@@ -6001,9 +6258,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         PowerSource sourceAtStart = ActivePowerSource;
         PerformancePreset previousPerformance = SelectedPerformance;
-        CustomPerformanceSettings previousCustom = new(
-            SelectedCustomCpuLevel,
-            SelectedCustomGpuLevel);
+        CustomPerformanceSettings previousCustom = CurrentCustomPerformanceSettings;
         GpuClockTuningSettings? previousGpuClockTuning = gpuClockTuningConfigured
             ? new GpuClockTuningSettings(
                 IsGpuClockTuningEnabled,
@@ -6038,7 +6293,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             sourceAtStart,
                             performance: requested.Value,
                             customPerformance: requested.CustomPerformance,
-                            gpuClockTuning: requested.GpuClockTuning);
+                            gpuClockTuning: requested.GpuClockTuning,
+                            fans: requested.CustomPerformance?.MaximumFans == true ? FanMode.Automatic : null,
+                            fanControl: requested.CustomPerformance?.MaximumFans == true ? FanControlSettings.Default : null);
                     }
                 });
         }
@@ -6106,6 +6363,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             SelectedCustomCpuLevel = custom.Cpu;
             SelectedCustomGpuLevel = custom.Gpu;
+            SelectedCustomMaximumFans = custom.MaximumFans;
         }
 
         gpuClockTuningConfigured = value.GpuClockTuning is not null;
@@ -6336,6 +6594,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         };
         int requestedLimit = request.Value;
         long editorRevisionAtStart = request.EditorRevision;
+        if (requestedLimit == 100)
+        {
+            await SetProtectionOffFromChargeLimitAsync(
+                requestedLimit,
+                editorRevisionAtStart,
+                token);
+            return;
+        }
+
+        PowerSource sourceAtStart = ActivePowerSource;
+        bool enablesProtection = CommandCapabilities.ChargeLimits.Contains(100);
         BatteryPolicy requestedPolicy = BatteryPolicy.Create(requestedLimit);
         long revisionAtStart = latestAcceptedRevision;
         ControlOperationStatus? resultStatus = null;
@@ -6380,7 +6649,65 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     LoadChargeLimitEditor(latestStatus);
                 }
+                if (enablesProtection)
+                {
+                    MarkActiveProfileDraft(sourceAtStart, batteryProtectionEnabled: true);
+                }
                 NotifyBatteryProfileDraft();
+            },
+            token);
+    }
+
+    private async Task SetProtectionOffFromChargeLimitAsync(
+        int requestedLimit,
+        long editorRevisionAtStart,
+        CancellationToken token)
+    {
+        PowerSource sourceAtStart = ActivePowerSource;
+        long revisionAtStart = latestAcceptedRevision;
+        ControlOperationStatus? resultStatus = null;
+        IsChargeLimitOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetBatteryProtectionAsync(
+                    false,
+                    cancellationToken),
+                token,
+                result => resultStatus = result.Status);
+        }
+        finally
+        {
+            IsChargeLimitOperationInProgress = false;
+        }
+
+        await dispatcher.InvokeAsync(
+            () =>
+            {
+                if (resultStatus != ControlOperationStatus.Applied)
+                {
+                    RevertUnappliedChargeLimitEdit(
+                        requestedLimit,
+                        editorRevisionAtStart);
+                    return;
+                }
+
+                bool editorStillShowsRequest = chargeLimitPercent == requestedLimit
+                    && chargeLimitEditorRevision == editorRevisionAtStart;
+                if (editorStillShowsRequest)
+                {
+                    chargeLimitEditorDirty = false;
+                }
+                MarkActiveProfileDraft(
+                    sourceAtStart,
+                    batteryProtectionEnabled: false);
+                if (editorStillShowsRequest
+                    && latestStatus is not null
+                    && latestAcceptedRevision > revisionAtStart)
+                {
+                    LoadChargeLimitEditor(latestStatus);
+                }
+                NotifyCommands();
             },
             token);
     }
@@ -7160,8 +7487,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ProfileSet? candidate = parameter as ProfileSet;
         if (candidate is null)
         {
-            if (ProfileChargeLimitEditor is < 50 or > 80
-                || ProfileChargeLimitEditor % 5 != 0)
+            if (ProfileChargeLimitEditor is < 50 or > 99)
             {
                 draft = null!;
                 return false;
@@ -7309,11 +7635,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             savedPath = result.DestinationPath;
             bool opened = await externalUriLauncher.OpenAsync(
-                UnsupportedLaptopReport.IssueFormUri,
+                UnsupportedLaptopReport.SupportGuideUri,
                 token);
             string message = opened
                 ? TrayText.Format(
-                    "Identity report saved to {0}. Attach it to the support form in your browser.",
+                    "Identity report saved to {0}. Follow the Synapse Observer guide in your browser to collect and submit evidence.",
                     savedPath)
                 : SavedWithoutBrowserMessage(savedPath);
             await dispatcher.InvokeAsync(
@@ -7344,9 +7670,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         static string SavedWithoutBrowserMessage(string path) =>
             TrayText.Format(
-                "Identity report saved to {0}. Open {1} and attach it to request support.",
+                "Identity report saved to {0}. Open {1} for steps to collect and submit evidence.",
                 path,
-                UnsupportedLaptopReport.IssueFormUri);
+                UnsupportedLaptopReport.SupportGuideUri);
     }
 
     private void LoadLightingEditor(
@@ -7386,8 +7712,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void LoadChargeLimitEditor(ServiceStatusSnapshot status)
     {
-        int value = status.ConfirmedState?.Battery?.ChargeLimitPercent
-            ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
+        ConfirmedBatteryState? confirmed = status.ConfirmedState?.Battery;
+        int value = confirmed is { ProtectionEnabled: false }
+            && CommandCapabilities.ChargeLimits.Contains(100)
+                ? 100
+                : confirmed?.ChargeLimitPercent
+                    ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
         SetField(ref chargeLimitPercent, value, nameof(ChargeLimitPercent));
         NotifyCommands();
     }
@@ -7592,11 +7922,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     saved.CustomPerformance ?? CustomPerformanceSettings.Default;
                 CustomPerformanceSettings currentCustom =
                     activeProfileDraft.CustomPerformance
-                    ?? new CustomPerformanceSettings(
-                        SelectedCustomCpuLevel,
-                        SelectedCustomGpuLevel);
+                    ?? CurrentCustomPerformanceSettings;
                 if (savedCustom.Cpu != currentCustom.Cpu
-                    || savedCustom.Gpu != currentCustom.Gpu)
+                    || savedCustom.Gpu != currentCustom.Gpu
+                    || savedCustom.MaximumFans != currentCustom.MaximumFans)
                 {
                     return true;
                 }
@@ -8472,12 +8801,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(IsUnsupportedLaptop), IsUnsupportedLaptop);
         NotifyComputed(nameof(CanReapplyChangedSettings), CanReapplyChangedSettings);
         NotifyComputed(nameof(CanRecoverHyperBoostRestore), CanRecoverHyperBoostRestore);
+        NotifyComputed(nameof(CanResumeExperimentalWrites), CanResumeExperimentalWrites);
         NotifyComputed(nameof(CanCheckCurrentState), CanCheckCurrentState);
         NotifyComputed(nameof(ShowHardwareControlStateCheck), ShowHardwareControlStateCheck);
         NotifyComputed(nameof(ShowReapplyChangedSettings), ShowReapplyChangedSettings);
         NotifyComputed(nameof(CanChangeThermalControlPolicy), CanChangeThermalControlPolicy);
         NotifyComputed(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure), CanAcknowledgeThermalPolicyUpgradeDisclosure);
         NotifyComputed(nameof(CanEditPerformance), CanEditPerformance);
+        NotifyComputed(nameof(CanEditCustomMaximumFans), CanEditCustomMaximumFans);
         NotifyComputed(nameof(CanSelectLaptopPerformance), CanSelectLaptopPerformance);
         NotifyComputed(nameof(CanEditWindowsPowerMode), CanEditWindowsPowerMode);
         NotifyComputed(nameof(CanToggleGpuClockTuning), CanToggleGpuClockTuning);
@@ -8926,6 +9257,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         NotifyComputed(nameof(LightingShowsBrightness), LightingShowsBrightness);
         NotifyComputed(nameof(LightingShowsBreathingColorMode), LightingShowsBreathingColorMode);
+        NotifyComputed(nameof(LightingBreathingColorModes), LightingBreathingColorModes);
         NotifyComputed(nameof(LightingShowsStarlightColorMode), LightingShowsStarlightColorMode);
         NotifyComputed(nameof(LightingShowsPrimaryColor), LightingShowsPrimaryColor);
         NotifyComputed(nameof(LightingShowsSecondaryColor), LightingShowsSecondaryColor);

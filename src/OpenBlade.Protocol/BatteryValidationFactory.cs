@@ -624,13 +624,8 @@ public static class BatteryValidationFactory
                     CustomModeAvailable: false,
                     InadequatePowerWarningVisible: true),
             ],
-            new HashSet<AdapterPowerState>
-            {
-                AdapterPowerState.Battery,
-                AdapterPowerState.UsbCPower100W,
-                AdapterPowerState.FullPower280W,
-            },
-            Rz090528CommandSessionGate.Shared,
+            AdapterPowerProtocol.SynapseAdapterStates,
+            Rz090528FeatureCommandGate.Shared,
             hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
             // Production admits pad-less writes only through the exact 2025 admission manifest;
             // the developer lifecycle composition keeps its separate validation-only path.
@@ -885,13 +880,15 @@ public static class BatteryValidationFactory
             actorFactory,
             TimeProvider.System,
             DefaultExchangeTimeout,
-            DefaultCleanupDrainTimeout);
+            DefaultCleanupDrainTimeout,
+            PendingDisposalRegistry.Shared,
+            Rz090528FeatureCommandGate.Shared);
     }
 
     internal static IFanRpmQueryRunFactory CreateWindowsFanRpmForService() =>
         WindowsHostIdentitySource.IsExactRz090528WindowsHost()
             ? CreateWindowsRz090528FanRpmQuery()
-            : CreateWindowsFanRpmQuery();
+            : CreateWindowsRz090581FanRpmForService(compatibilityPolicy: null);
 
     internal static IFanRpmQueryRunFactory CreateWindowsFanRpmForService(
         FirmwareCompatibilityPolicy compatibilityPolicy)
@@ -903,6 +900,12 @@ public static class BatteryValidationFactory
             return CreateWindowsRz090528FanRpmQuery(compatibilityPolicy);
         }
 
+        return CreateWindowsRz090581FanRpmForService(compatibilityPolicy);
+    }
+
+    internal static IFanRpmQueryRunFactory CreateWindowsRz090581FanRpmForService(
+        FirmwareCompatibilityPolicy? compatibilityPolicy)
+    {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
         return CreateWindowsFanRpmQuery(
@@ -915,7 +918,8 @@ public static class BatteryValidationFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
-            compatibilityPolicy);
+            compatibilityPolicy,
+            Rz090581FeatureCommandGate.Shared);
     }
 
     public static ILightingBrightnessQueryRunner CreateWindowsLightingBrightnessQuery()
@@ -1597,7 +1601,8 @@ public static class BatteryValidationFactory
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        FirmwareCompatibilityPolicy? compatibilityPolicy = null)
+        FirmwareCompatibilityPolicy? compatibilityPolicy = null,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         ValidationActorFactory actorFactory = CreateActorFactory(
             registry,
@@ -1615,7 +1620,9 @@ public static class BatteryValidationFactory
             actorFactory,
             timeProvider,
             exchangeTimeout,
-            cleanupDrainTimeout);
+            cleanupDrainTimeout,
+            PendingDisposalRegistry.Shared,
+            sharedCommandGate);
     }
 
     internal static ILightingBrightnessQueryRunner CreateWindowsLightingBrightnessQuery(

@@ -296,6 +296,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     private readonly IServiceControlRuntime runtime;
     private readonly DiagnosticHistory history;
     private readonly IDiagnosticMetadataSource metadataSource;
+    private readonly FirmwareQueryDiagnostics queryDiagnostics;
 
     public DiagnosticArchiveProvider(
         IServiceControlRuntime runtime,
@@ -308,11 +309,21 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         IServiceControlRuntime runtime,
         DiagnosticHistory history,
         IDiagnosticMetadataSource metadataSource)
+        : this(runtime, history, metadataSource, FirmwareQueryDiagnostics.Process)
+    {
+    }
+
+    internal DiagnosticArchiveProvider(
+        IServiceControlRuntime runtime,
+        DiagnosticHistory history,
+        IDiagnosticMetadataSource metadataSource,
+        FirmwareQueryDiagnostics queryDiagnostics)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         this.history = history ?? throw new ArgumentNullException(nameof(history));
         this.metadataSource = metadataSource
             ?? throw new ArgumentNullException(nameof(metadataSource));
+        this.queryDiagnostics = queryDiagnostics ?? throw new ArgumentNullException(nameof(queryDiagnostics));
     }
 
     public async Task<DiagnosticArchive> CreateAsync(
@@ -329,6 +340,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             await runtime.GetHyperBoostOwnershipJournalDiagnosticsAsync(
                     cancellationToken)
                 .ConfigureAwait(false);
+        DiagnosticExperimentalSupport experimentalSupport = runtime.GetCachedExperimentalSupportDiagnostics();
         DiagnosticHistorySnapshot historySnapshot = history.Snapshot();
         DiagnosticHostMetadata metadata = metadataSource.Capture();
         DiagnosticVersions versions = metadata.Versions;
@@ -353,7 +365,18 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             historySnapshot.LogLines,
             metadata.SensitiveTokens,
             hyperBoostJournalDiagnostics,
-            verification);
+            verification,
+            experimentalSupport.Detected
+                ? new DiagnosticExperimentalSupportSnapshot(
+                    metadata.CapturedAt,
+                    experimentalSupport,
+                    status.ActivePowerSource,
+                    status.ConfirmedState,
+                    liveReadingsEnabled ? status.LiveReadings : null)
+                : null)
+        {
+            FirmwareQueries = queryDiagnostics.Snapshot(),
+        };
 
         await using var destination = new MemoryStream();
         await DiagnosticBundleExporter.ExportAsync(destination, bundle, cancellationToken)
@@ -418,9 +441,19 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
         result["lighting.keyboardBrightness"] = capabilities.SupportsKeyboardBrightness;
+        result["lighting.breathingColorSelection"] = capabilities.SupportsBreathingColorSelection;
+        foreach (BreathingColorMode mode in Enum.GetValues<BreathingColorMode>())
+        {
+            result[$"lighting.breathingColorMode.{mode}"] =
+                capabilities.SupportsBreathingMode(mode);
+        }
+        result["lighting.uniformFrames"] = capabilities.SupportsUniformLightingFrames;
+        result["lighting.waveDirectionSelection"] = capabilities.SupportsWaveDirectionSelection;
         result["lighting.playbackMuteIndicator"] = capabilities.SupportsPlaybackMuteIndicator;
         result["performance.customCombinations"] =
             capabilities.CustomPerformance?.IsWellFormed == true;
+        result["performance.customMaximumFans"] =
+            capabilities.CustomPerformance?.SupportsMaximumFans == true;
         result["performance.cpuPowerLimit.observed"] =
             capabilities.CpuPowerLimit?.IsWellFormed == true;
         result["performance.cpuPowerLimit.write"] =
@@ -552,6 +585,13 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
             ["lighting.refreshRate"] = status.LightingRefreshRate.ToString(),
+            ["experimental.supportPolicy"] = "AutomaticForRecognizedModels",
+            ["experimental.writesPaused"] = status.ExperimentalWritesPaused.ToString(),
+            ["experimental.deviceDetected"] = status.IsExperimentalDevice.ToString(),
+            ["experimental.evidenceSource"] = status.ExperimentalSupportSource ?? "Unavailable",
+            ["experimental.validationBoundary"] = status.IsExperimentalDevice
+                ? "Upstream-derived; physical validation pending tester reports"
+                : "Not an experimental device",
             ["firmware.allowUntested"] = status.AllowUntestedFirmware.ToString(),
             ["firmware.compatibility"] = status.FirmwareCompatibility.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),
@@ -602,6 +642,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.HyperBoostBaseModes?.Custom?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
+            ["capability.reportsPerformanceWithManualFans"] =
+                capabilities.ReportsPerformanceWithManualFans.ToString(),
             ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MaximumRpm),
             ["capability.fanSpeedStepRpm"] = NumberOrUnavailable(

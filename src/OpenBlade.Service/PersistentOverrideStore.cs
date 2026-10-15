@@ -49,9 +49,10 @@ public sealed class PersistentOverrideStore
 {
     private static readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> PathGates =
         new(StringComparer.OrdinalIgnoreCase);
-    // Sequence is an additive LightingSettings subtype, not an override-envelope change.
-    // Keeping schema 6 lets older builds retain documents that use known lighting kinds.
-    private const int CurrentSchemaVersion = 6;
+    // CPU Boost and the Custom maximum-fan flag require a new schema so older
+    // builds preserve this document rather than accepting an incomplete intent.
+    private const int CurrentSchemaVersion = 7;
+    private const int SchemaSixVersion = 6;
     private const int SchemaFiveVersion = 5;
     private const int SchemaFourVersion = 4;
     private const int SchemaThreeVersion = 3;
@@ -306,6 +307,7 @@ public sealed class PersistentOverrideStore
 
         PersistentOverrideState overrides;
         if (schemaVersion is CurrentSchemaVersion
+            or SchemaSixVersion
             or SchemaFiveVersion
             or SchemaFourVersion
             or SchemaThreeVersion)

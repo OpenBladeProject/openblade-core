@@ -25,6 +25,7 @@ public enum HidSessionFailurePhase
     GetSubmit,
     GetCompletion,
     ProtocolValidation,
+    SharedGateAdmission,
 }
 
 public enum HidProtocolValidationFailure
@@ -59,4 +60,10 @@ public readonly record struct HidSessionResult<T>(
     HidSessionFailureKind? Failure)
 {
     public HidSessionFailureDiagnostic? Diagnostic { get; init; }
+
+    internal Task? NativeRetirement { get; init; }
+
+    // Diagnostic evidence only, populated after the complete response envelope
+    // has passed correlation, status and length checks for a safe state getter.
+    internal string? QueryResponsePayloadHex { get; init; }
 }

@@ -384,8 +384,8 @@
   <data name="Color profile changed outside OpenBlade." xml:space="preserve">
     <value>Цветовой профиль изменён вне OpenBlade.</value>
   </data>
-  <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
-    <value>Сравните параметры в профилях питания от сети, USB-C и аккумулятора.</value>
+  <data name="Compare the settings stored in AC, low-power, and battery profiles." xml:space="preserve">
+    <value>Сравните параметры в профилях питания от сети, малой мощности и от аккумулятора.</value>
   </data>
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>Настройте текущие показания, запуск при входе и управление подсветкой.</value>
@@ -1041,8 +1041,8 @@
   <data name="Save to profile" xml:space="preserve">
     <value>Сохранить в профиль</value>
   </data>
-  <data name="Save to USB-C profile" xml:space="preserve">
-    <value>Сохранить в профиль USB-C</value>
+  <data name="Save to low-power profile" xml:space="preserve">
+    <value>Сохранить в профиль малой мощности</value>
   </data>
   <data name="Saved profile comparison" xml:space="preserve">
     <value>Сравнение сохранённых профилей</value>
@@ -1224,11 +1224,14 @@
   <data name="Updates have not been checked." xml:space="preserve">
     <value>Обновления не проверялись.</value>
   </data>
-  <data name="USB-C · {0}" xml:space="preserve">
-    <value>USB-C · {0}</value>
+  <data name="Low-power adapter · {0}" xml:space="preserve">
+    <value>Адаптер малой мощности · {0}</value>
   </data>
-  <data name="USB-C profile" xml:space="preserve">
-    <value>Профиль USB-C</value>
+  <data name="Low-power adapter" xml:space="preserve">
+    <value>Адаптер малой мощности</value>
+  </data>
+  <data name="Low-power profile" xml:space="preserve">
+    <value>Профиль малой мощности</value>
   </data>
   <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
     <value>Используйте сочетание клавиш, например Ctrl+Shift+M.</value>
@@ -1404,8 +1407,8 @@
   <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
     <value>Ручное управление вентиляторами сейчас недоступно для этого ноутбука. Обороты вентиляторов могут отображаться. Если вы ожидали ручное управление, экспортируйте диагностику.</value>
   </data>
-  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown." xml:space="preserve">
-    <value>При питании от батареи или USB-C доступен только автоматический режим вентиляторов. Для фиксированной скорости или ручной кривой подключите штатный сетевой адаптер и выберите сбалансированный режим производительности. Обороты вентиляторов могут отображаться.</value>
+  <data name="Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
+    <value>При питании от батареи или адаптера малой мощности доступен только автоматический режим вентиляторов. Для ручного управления вентиляторами подключите штатный сетевой адаптер. Обороты вентиляторов могут отображаться.</value>
   </data>
   <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
     <value>OpenBlade не может подключиться к своей службе. Откройте раздел «О программе» и выберите «Запустить службу». Если подключение по-прежнему недоступно, восстановите установку.</value>
@@ -1431,6 +1434,12 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Войдите в интерактивный сеанс Windows, чтобы изменить настройки ноутбука.</value>
   </data>
+  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>На этом ноутбуке экспериментальная поддержка включается автоматически. Экспортируйте диагностику в разделе «О программе», чтобы помочь с тестированием.</value>
+  </data>
+  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>Экспериментальная запись приостановлена, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите экспериментальное управление. OpenBlade не станет повторять предыдущее изменение.</value>
+  </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>Ноутбук не поддерживается</value>
   </data>
@@ -1443,16 +1452,25 @@
   <data name="Identity report not saved." xml:space="preserve">
     <value>Отчёт об устройстве не сохранён.</value>
   </data>
-  <data name="Identity report saved to {0}. Attach it to the support form in your browser." xml:space="preserve">
-    <value>Отчёт об устройстве сохранён в {0}. Прикрепите его к форме поддержки в браузере.</value>
+  <data name="Identity report saved to {0}. Follow the Synapse Observer guide in your browser to collect and submit evidence." xml:space="preserve">
+    <value>Отчёт об устройстве сохранён в {0}. Следуйте руководству Synapse Observer в браузере, чтобы собрать и отправить данные.</value>
   </data>
-  <data name="Identity report saved to {0}. Open {1} and attach it to request support." xml:space="preserve">
-    <value>Отчёт об устройстве сохранён в {0}. Откройте {1} и прикрепите его, чтобы запросить поддержку.</value>
+  <data name="Identity report saved to {0}. Open {1} for steps to collect and submit evidence." xml:space="preserve">
+    <value>Отчёт об устройстве сохранён в {0}. Откройте {1}, чтобы узнать, как собрать и отправить данные.</value>
   </data>
   <data name="Identity report failed: {0}" xml:space="preserve">
     <value>Не удалось подготовить отчёт об устройстве: {0}</value>
   </data>
-  <data name="OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens." xml:space="preserve">
-    <value>OpenBlade управляет только теми моделями ноутбуков, на которых он был протестирован. Чтобы помочь добавить эту модель, сохраните краткий отчёт об устройстве и прикрепите его к форме поддержки, которая откроется.</value>
+  <data name="Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop." xml:space="preserve">
+    <value>Чтобы помочь добавить поддержку этого ноутбука, сохраните краткий отчёт об устройстве, затем следуйте руководству Synapse Observer, чтобы собрать и отправить данные.</value>
+  </data>
+  <data name="Boost" xml:space="preserve">
+    <value>Турбо</value>
+  </data>
+  <data name="Maximum fans" xml:space="preserve">
+    <value>Максимальные обороты</value>
+  </data>
+  <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
+    <value>Вентиляторами управляет режим «Максимальные обороты». Выключите его, чтобы выбрать режим вентиляторов.</value>
   </data>
 </root>

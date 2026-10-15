@@ -142,6 +142,21 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public void Rz090581ProductionFactoriesUseOneModelScopedFeatureCommandGate()
+    {
+        var battery = Assert.IsType<ProductionBatteryFactory>(
+            ProductionBatteryFactory.CreateWindowsReadOnly());
+        var lighting = Assert.IsType<ProductionLightingFactory>(
+            ProductionLightingFactory.CreateWindowsReadOnly());
+
+        Assert.Same(Rz090581FeatureCommandGate.Shared, battery.SharedCommandGate);
+        Assert.Same(Rz090581FeatureCommandGate.Shared, lighting.SharedCommandGate);
+        Assert.NotSame(
+            Rz090528FeatureCommandGate.Shared,
+            Rz090581FeatureCommandGate.Shared);
+    }
+
+    [Fact]
     public void Rz090528ValidationCapabilities_AdmitCapturedRowEffectsBrightnessAndLogo()
     {
         DeviceCapabilities capabilities =
@@ -255,6 +270,34 @@ public sealed class ProductionLightingPortTests
                 command.ClassId == 0x03
                 && command.CommandId is 0x80 or 0x82),
             command => Assert.Equal(0x00, command.Arguments.Span[0]));
+    }
+
+    [Fact]
+    public async Task Rz090528UnsupportedLogoCombination_RetainsBothQueryFailures()
+    {
+        var session = new LightingSession(initialBrightness: 49)
+        {
+            LogoEnabled = true,
+            LogoEffect = 0x07,
+        };
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        DeviceStateContentRejectedException rejection =
+            await Assert.ThrowsAsync<DeviceStateContentRejectedException>(
+                () => port.ReadLogoStateAsync(default));
+
+        Assert.Equal(DeviceStateQuery.LogoLightingCombination, rejection.Query);
+        Assert.Equal(
+            [
+                (0x03, 0x80, FirmwareQueryOutcome.ContentRejected),
+                (0x03, 0x82, FirmwareQueryOutcome.ContentRejected),
+            ],
+            session.RetainedQueryFailures);
     }
 
     [Fact]
@@ -1428,6 +1471,38 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ProductionBatteryFactory_PreservesActorOpenDiagnostic()
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 31,
+            TransferredByteCount: 0);
+        var actorResult = new HidSessionResult<ValidationActor>(
+            null,
+            HidSessionFailureKind.NativeIoFailure)
+        {
+            Diagnostic = diagnostic,
+        };
+        var factory = new ProductionBatteryFactory(
+            DeviceCommandCatalog.Empty,
+            ProductionBatteryReadEvidence.Production,
+            static () => new ValidationRunContext(),
+            _ => new FixedLightingActorFactory(actorResult),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            new PendingDisposalRegistry());
+
+        HidSessionResult<IProductionBatteryPort> opened =
+            await factory.OpenAsync(CancellationToken.None);
+
+        Assert.Null(opened.Value);
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, opened.Failure);
+        Assert.Equal(diagnostic, opened.Diagnostic);
+    }
+
+    [Fact]
     public async Task ProductionFactory_PreservesMatrixOpenDiagnostic()
     {
         var session = new LightingSession(initialBrightness: 0xC5);
@@ -1822,6 +1897,51 @@ public sealed class ProductionLightingPortTests
             error.Message);
     }
 
+    [Theory]
+    [InlineData(false, HidSessionFailureKind.QueuedCanceled)]
+    [InlineData(false, HidSessionFailureKind.Exhausted)]
+    [InlineData(true, HidSessionFailureKind.QueuedCanceled)]
+    [InlineData(true, HidSessionFailureKind.Exhausted)]
+    public async Task SharedGateAdmissionFailureIsKnownNotAppliedBeforeCancellationFallback(
+        bool rz090528,
+        HidSessionFailureKind failureKind)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            BrightnessSetFailure = new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                failureKind)
+            {
+                Diagnostic = new(
+                    HidSessionFailurePhase.SharedGateAdmission,
+                    failureKind,
+                    null,
+                    null),
+            },
+            BrightnessSetFailureObserved = failureKind == HidSessionFailureKind.QueuedCanceled
+                ? cancellation.Cancel
+                : null,
+        };
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session,
+            TimeProvider.System,
+            rz090528,
+            new MatrixWriter());
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.StepBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(
+            HidSessionFailurePhase.SharedGateAdmission,
+            failure.Diagnostic?.Phase);
+        Assert.Equal((byte)0x03, failure.CommandClass);
+        Assert.Equal((byte)0x03, failure.CommandId);
+    }
+
     [Fact]
     public async Task Transition84UnexpectedSuccessfulPayloadIsReportedWithoutContinuing()
     {
@@ -2140,8 +2260,11 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(new MatrixRgb(0, 0xFF, 0), writer.Reports[0].Frame[3]);
     }
 
-    [Fact]
-    public async Task PlaybackMuteIndicator_FailedWriteRollsBackRenderStateForRetry()
+    [Theory]
+    [InlineData(HidSessionFailureKind.ConflictBlocked)]
+    [InlineData(HidSessionFailureKind.Exhausted)]
+    public async Task PlaybackMuteIndicator_KnownUnsubmittedFailureRollsBackRenderStateForRetry(
+        HidSessionFailureKind failureKind)
     {
         var session = new LightingSession(initialBrightness: 0xFF);
         var writer = new MatrixWriter();
@@ -2149,7 +2272,7 @@ public sealed class ProductionLightingPortTests
         var baseColor = new RgbColor(0x12, 0x34, 0x56);
         LightingSettings lighting = LightingSettingsFactory.Static(baseColor, 100);
         await port.SetLightingAsync(lighting, default);
-        writer.Failures.Enqueue(HidSessionFailureKind.ConflictBlocked);
+        writer.Failures.Enqueue(failureKind);
 
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
             () => port.SetPlaybackMuteIndicatorAsync(muted: true, default));
@@ -3203,6 +3326,8 @@ public sealed class ProductionLightingPortTests
     {
         internal List<RazerCommandSpec> Commands { get; } = [];
 
+        internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
+
         internal ConcurrentQueue<RazerCommandSpec> SubmittedCommands { get; } = [];
 
         internal int SubmittedBatchCount { get; private set; }
@@ -3224,6 +3349,10 @@ public sealed class ProductionLightingPortTests
         internal int BrightnessSetCalls { get; private set; }
 
         internal int? FailBrightnessSetOnCall { get; set; }
+
+        internal HidSessionResult<ReadOnlyMemory<byte>>? BrightnessSetFailure { get; set; }
+
+        internal Action? BrightnessSetFailureObserved { get; init; }
 
         internal HidSessionResult<ReadOnlyMemory<byte>>? TransitionFailure { get; set; }
 
@@ -3250,6 +3379,12 @@ public sealed class ProductionLightingPortTests
         public RazerCommandSessionDisposition Disposition { get; private set; } =
             RazerCommandSessionDisposition.Healthy;
 
+        public void RetainQueryFailure(
+            byte classId,
+            byte commandId,
+            FirmwareQueryOutcome outcome) =>
+            RetainedQueryFailures.Add((classId, commandId, outcome));
+
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
             RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId,
@@ -3275,6 +3410,12 @@ public sealed class ProductionLightingPortTests
             if ((command.ClassId, command.CommandId) == (0x03, 0x03))
             {
                 BrightnessSetCalls++;
+                if (BrightnessSetFailure is { } brightnessSetFailure)
+                {
+                    BrightnessSetFailure = null;
+                    BrightnessSetFailureObserved?.Invoke();
+                    return Task.FromResult(brightnessSetFailure);
+                }
                 if (FailBrightnessSetOnCall == BrightnessSetCalls)
                 {
                     return Task.FromResult(
@@ -3675,6 +3816,10 @@ public sealed class ProductionLightingPortTests
     private sealed class TemporaryCommands : ITemporaryFullChargeCommandClient
     {
         public Task<HidSessionResult<bool>> QueryAsync(
+            byte transactionId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
             byte transactionId,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 

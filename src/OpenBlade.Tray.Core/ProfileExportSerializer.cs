@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 10;
+    public const int CurrentSchemaVersion = 12;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -67,7 +67,7 @@ public static class ProfileExportSerializer
         }
 
         int schemaVersion = ReadSchemaVersion(json);
-        return schemaVersion switch
+        ProfileSet profiles = schemaVersion switch
         {
             1 => DeserializeVersion1(json),
             2 => DeserializeVersion2(json),
@@ -79,11 +79,18 @@ public static class ProfileExportSerializer
             8 => DeserializeVersion8(json),
             9 => DeserializeVersion9(json),
             10 => DeserializeVersion10(json),
+            11 => DeserializeVersion11(json),
+            12 => DeserializeVersion11(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} is not supported by this version of OpenBlade."),
         };
+        if (schemaVersion <= 10)
+        {
+            ValidateLegacyBatteryPolicy(profiles);
+        }
+        return profiles;
     }
 
     private static int ReadSchemaVersion(string json)
@@ -175,6 +182,16 @@ public static class ProfileExportSerializer
 
     private static ProfileSet DeserializeVersion10(string json)
     {
+        return DeserializeCurrentShape(json);
+    }
+
+    private static ProfileSet DeserializeVersion11(string json)
+    {
+        return DeserializeCurrentShape(json);
+    }
+
+    private static ProfileSet DeserializeCurrentShape(string json)
+    {
         RequireCurrentWindowsPowerModes(json);
         ProfileSet profiles = ClearLegacyWindowsPowerModes(
             NormalizeLegacyGpuClockTuning(
@@ -182,6 +199,16 @@ public static class ProfileExportSerializer
         ValidateBatteryProtection(profiles);
         ValidateWindowsPowerModes(profiles.WindowsPowerModes);
         return profiles;
+    }
+
+    private static void ValidateLegacyBatteryPolicy(ProfileSet profiles)
+    {
+        int chargeLimit = profiles.BatteryPolicy.ChargeLimitPercent;
+        if (chargeLimit is < 50 or > 80 || chargeLimit % 5 != 0)
+        {
+            throw new InvalidDataException(
+                "Profile schemas 1 through 10 require a battery charge limit from 50 to 80 percent in 5 percent steps.");
+        }
     }
 
     private static void RequireCurrentWindowsPowerModes(string json)

@@ -170,7 +170,7 @@ public static class TrayHoverLabelFormatter
                     performanceLabel),
             PowerSource.UsbC =>
                 TrayText.Format(
-                    "USB-C · {0}",
+                    "Low-power adapter · {0}",
                     performanceLabel),
             PowerSource.ExternalUnknown => PowerSourcePresentation.Label(powerSource),
             _ => TrayText.Get("Power source unavailable"),

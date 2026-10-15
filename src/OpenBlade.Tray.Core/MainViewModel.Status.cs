@@ -53,6 +53,9 @@ public sealed partial class MainViewModel
             == right.AlwaysOverrideExternalLightingChanges
         && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
+        && left.IsExperimentalDevice == right.IsExperimentalDevice
+        && left.ExperimentalWritesPaused == right.ExperimentalWritesPaused
+        && string.Equals(left.ExperimentalSupportSource, right.ExperimentalSupportSource, StringComparison.Ordinal)
         && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.DisplayBrightnessHidAvailability
             == right.DisplayBrightnessHidAvailability
@@ -99,6 +102,9 @@ public sealed partial class MainViewModel
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
+            && left.SupportsDirectManualFanTransitions
+                == right.SupportsDirectManualFanTransitions
+            && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
             && left.SupportedLightingRefreshRates.SetEquals(
@@ -107,6 +113,13 @@ public sealed partial class MainViewModel
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
+            && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection
+            && (left.SupportedBreathingColorModes is null
+                ? right.SupportedBreathingColorModes is null
+                : right.SupportedBreathingColorModes is not null
+                    && left.SupportedBreathingColorModes.SetEquals(right.SupportedBreathingColorModes))
+            && left.SupportsUniformLightingFrames == right.SupportsUniformLightingFrames
+            && left.SupportsWaveDirectionSelection == right.SupportsWaveDirectionSelection
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
             && string.Equals(
@@ -122,5 +135,6 @@ public sealed partial class MainViewModel
         ReferenceEquals(left, right)
         || (left is not null
             && right is not null
+            && left.SupportsMaximumFans == right.SupportsMaximumFans
             && left.AllowedCombinations.SetEquals(right.AllowedCombinations));
 }

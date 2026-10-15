@@ -42,6 +42,7 @@ internal sealed class NativeOperationState
     private bool completionObserved;
     private bool abandonedBeforeSubmission;
     private bool targetedCancellationClaimed;
+    private TaskCompletionSource? nativeRetirement;
 
     public NativeOperationState(Action finalizeResources)
     {
@@ -184,7 +185,11 @@ internal sealed class NativeOperationState
                 result = new HidFeatureIoResult(
                     Completion: null,
                     WasSubmitted: true,
-                    Termination: recordedTermination);
+                    Termination: recordedTermination)
+                {
+                    NativeRetirement = (nativeRetirement ??=
+                        new(TaskCreationOptions.RunContinuationsAsynchronously)).Task,
+                };
             }
         }
 
@@ -267,17 +272,41 @@ internal sealed class NativeOperationState
             return;
         }
 
+        Exception? finalizationException = null;
         try
         {
             finalizeResourcesAction();
-            completion.TrySetResult(finalization.Value.Result);
         }
         catch (Exception exception)
         {
+            finalizationException = exception;
+        }
+
+        Task? retirement = null;
+        lock (sync)
+        {
+            // Finalization starts only after native completion (or confirmed
+            // non-submission) and all native-use leases have ended. A cleanup
+            // failure remains reportable, but no longer makes the device I/O
+            // lifetime ambiguous to another owner.
+            if (nativeRetirement is not null || finalizationException is not null)
+            {
+                nativeRetirement ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+                nativeRetirement.TrySetResult();
+                retirement = nativeRetirement.Task;
+            }
+        }
+
+        if (finalizationException is null)
+        {
+            completion.TrySetResult(finalization.Value.Result);
+        }
+        else
+        {
             completion.TrySetException(
                 new NativeOperationFinalizationException(
-                    finalization.Value.Result,
-                    exception));
+                    finalization.Value.Result with { NativeRetirement = retirement },
+                    finalizationException));
         }
     }
 

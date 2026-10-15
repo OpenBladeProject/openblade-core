@@ -10,6 +10,69 @@ namespace OpenBlade.Service.Tests;
 public sealed class DiagnosticArchiveProviderTests
 {
     [Fact]
+    public async Task CreateAsync_ExportsRetainedFirmwareRepliesWithoutHardwareAccessOrHexRedaction()
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        var command = new RazerCommandSpec(0x07, 0x8C, new byte[] { 0, 0 }, 2);
+        FirmwareQueryObservation rejected = diagnostics.Record(command,
+            new(default, null) { QueryResponsePayloadHex = "AB11" }, DateTimeOffset.UnixEpoch)!;
+        diagnostics.RecordRejection(rejected, FirmwareQueryOutcome.UnrecognizedValue);
+        diagnostics.Record(command, new(default, null) { QueryResponsePayloadHex = "1111" },
+            DateTimeOffset.UnixEpoch.AddSeconds(1));
+        var runtime = new SnapshotOnlyRuntime(CreateStatus());
+        var history = new DiagnosticHistory(maximumEntries: 1);
+        history.RecordSummary(ControlOperationStatus.Blocked, "previous failure");
+        history.RecordSummary(ControlOperationStatus.Applied, "recovered");
+        var provider = new DiagnosticArchiveProvider(runtime, history,
+            new FixedMetadataSource("AB"), diagnostics);
+
+        DiagnosticArchive result = await provider.CreateAsync(false, default);
+
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument json = JsonDocument.Parse(await ReadEntryAsync(archive, "firmware-queries.json"));
+        JsonElement query = Assert.Single(json.RootElement.EnumerateArray());
+        Assert.Equal("1111", query.GetProperty("latest").GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("AB11", query.GetProperty("lastFailure").GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("UnrecognizedValue", query.GetProperty("lastFailure").GetProperty("outcome").GetString());
+        Assert.Equal(2, query.GetProperty("observationCount").GetInt32());
+        Assert.InRange(result.ZipBytes.Length, 1, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateAsync_ExportsExperimentalEvidenceWithoutProbingOrUploading(bool liveReadingsEnabled)
+    {
+        const string secret = "private-test-token";
+        var support = new DiagnosticExperimentalSupport(
+            "RZ09-0483", "UpstreamDerived", true, true,
+            [new(DateTimeOffset.UnixEpoch, "Battery", "Readback", "Mismatch", true, "80", "60", secret)]);
+        var runtime = new SnapshotOnlyRuntime(CreateStatus() with
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalWritesPaused = true,
+            ExperimentalSupportSource = "UpstreamDerived",
+        }, experimentalSupport: support);
+        var provider = new DiagnosticArchiveProvider(runtime, new DiagnosticHistory(), new FixedMetadataSource(secret));
+
+        DiagnosticArchive result = await provider.CreateAsync(liveReadingsEnabled, CancellationToken.None);
+
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+        Assert.InRange(result.ZipBytes.Length, 1, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        string content = await ReadEntryAsync(archive, "experimental-support.json");
+        Assert.DoesNotContain(secret, content);
+        using JsonDocument json = JsonDocument.Parse(content);
+        Assert.True(json.RootElement.GetProperty("support").GetProperty("writesPaused").GetBoolean());
+        Assert.Equal("UpstreamDerived", json.RootElement.GetProperty("support").GetProperty("evidenceLevel").GetString());
+        Assert.Equal("Mismatch", json.RootElement.GetProperty("support").GetProperty("observations")[0].GetProperty("outcome").GetString());
+        Assert.Equal(liveReadingsEnabled ? JsonValueKind.Object : JsonValueKind.Null,
+            json.RootElement.GetProperty("liveReadings").ValueKind);
+    }
+
+    [Fact]
     public async Task CreateAsync_UsesOnlyCurrentSnapshotsAndWritesRedactedEntries()
     {
         const string secret = "S-1-5-21-sensitive-token";
@@ -76,7 +139,7 @@ public sealed class DiagnosticArchiveProviderTests
 
         using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
         Assert.Equal(
-            ["versions.json", "device.json", "device-verification.json", "capabilities.json", "configuration.json", "command-results.json", "hyperboost-ownership.json", "logs.jsonl"],
+            ["versions.json", "device.json", "device-verification.json", "capabilities.json", "configuration.json", "command-results.json", "firmware-queries.json", "hyperboost-ownership.json", "logs.jsonl"],
             archive.Entries.Select(entry => entry.FullName));
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
@@ -521,7 +584,8 @@ public sealed class DiagnosticArchiveProviderTests
         ServiceStatusSnapshot status,
         Rz090581CapabilityDiagnostics? capabilityDiagnostics = null,
         DiagnosticHyperBoostOwnershipJournal? hyperBoostJournalDiagnostics = null,
-        DiagnosticDeviceVerification? verificationDiagnostics = null)
+        DiagnosticDeviceVerification? verificationDiagnostics = null,
+        DiagnosticExperimentalSupport? experimentalSupport = null)
         : IServiceControlRuntime
     {
         public int StatusReads { get; private set; }
@@ -535,6 +599,9 @@ public sealed class DiagnosticArchiveProviderTests
             StatusReads++;
             return status;
         }
+
+        public DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics() =>
+            experimentalSupport ?? DiagnosticExperimentalSupport.NotDetected;
 
         public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics()
         {

@@ -38,7 +38,9 @@ internal readonly record struct TemporaryFullChargeValidationTransactionIds(
     byte CandidateTemporaryQuery,
     byte CancelSet,
     byte RestorationProtectionQuery,
-    byte RestorationTemporaryQuery)
+    byte RestorationTemporaryQuery,
+    byte EnableGuardQuery,
+    byte CancelGuardQuery)
 {
     internal byte[] ToArray() =>
         [
@@ -50,6 +52,8 @@ internal readonly record struct TemporaryFullChargeValidationTransactionIds(
             CancelSet,
             RestorationProtectionQuery,
             RestorationTemporaryQuery,
+            EnableGuardQuery,
+            CancelGuardQuery,
         ];
 }
 
@@ -58,7 +62,7 @@ internal sealed class ValidationRunContext
     private const int MaximumTransactionId = byte.MaxValue;
     private const int BatteryValidationTransactionCount = 5;
     private const int ProtectionOffValidationTransactionCount = 8;
-    private const int TemporaryFullChargeValidationTransactionCount = 8;
+    private const int TemporaryFullChargeValidationTransactionCount = 10;
 
     private readonly object sync = new();
     private int nextTransactionId = 1;
@@ -174,7 +178,9 @@ internal sealed class ValidationRunContext
                 (byte)(first + 4),
                 (byte)(first + 5),
                 (byte)(first + 6),
-                (byte)(first + 7));
+                (byte)(first + 7),
+                (byte)(first + 8),
+                (byte)(first + 9));
             nextTransactionId += TemporaryFullChargeValidationTransactionCount;
             return true;
         }

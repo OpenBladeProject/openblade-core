@@ -623,7 +623,7 @@
     <value>电源配置方案已切换</value>
   </data>
   <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
-    <value>USB-C配置方案</value>
+    <value>低功率配置方案</value>
   </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Razer 官方固件更新助手</value>
@@ -644,7 +644,7 @@
     <value>导出 OpenBlade 配置方案</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
-    <value>这会替换已保存的交流电、USB-C、电池和电池保护配置方案。应用或切换配置方案前，当前硬件设置不会改变。</value>
+    <value>这会替换已保存的交流电、低功率、电池和电池保护配置方案。应用或切换配置方案前，当前硬件设置不会改变。</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
     <value>导入配置方案？</value>
@@ -872,7 +872,7 @@
     <value>当前</value>
   </data>
   <data name="MainWindow_TextBlockActiveACUSBCOrBatteryProfile.Text" xml:space="preserve">
-    <value>当前使用的交流电、USB-C 或电池配置方案。</value>
+    <value>当前使用的交流电、低功率或电池配置方案。</value>
   </data>
   <data name="MainWindow_TextBlockAddAdjustment.Text" xml:space="preserve">
     <value>添加调整项</value>
@@ -1598,7 +1598,7 @@
     <value>更新</value>
   </data>
   <data name="MainWindow_TextBlockUSBC.Text" xml:space="preserve">
-    <value>USB-C</value>
+    <value>低功率配置方案</value>
   </data>
   <data name="MainWindow_TextBlockUSBDevice.Text" xml:space="preserve">
     <value>USB 设备</value>
@@ -2008,6 +2008,15 @@
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>检查当前状态</value>
   </data>
+  <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>实验性笔记本支持</value>
+  </data>
+  <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>恢复实验性控制</value>
+  </data>
+  <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
+    <value>恢复实验性控制</value>
+  </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>协助添加支持</value>
   </data>
@@ -2019,5 +2028,11 @@
   </data>
   <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>不支持的笔记本电脑</value>
+  </data>
+  <data name="MainWindow_TextBlockCustomMaximumFans.Text" xml:space="preserve">
+    <value>风扇最高转速</value>
+  </data>
+  <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>风扇最高转速</value>
   </data>
 </root>

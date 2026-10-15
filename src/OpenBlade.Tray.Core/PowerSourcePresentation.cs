@@ -8,7 +8,7 @@ internal static class PowerSourcePresentation
     {
         PowerSource.PluggedIn => "AC",
         PowerSource.Battery => TrayText.Get("Battery"),
-        PowerSource.UsbC => "USB-C",
+        PowerSource.UsbC => TrayText.Get("Low-power adapter"),
         PowerSource.ExternalUnknown => TrayText.Get("External power (unclassified)"),
         _ => TrayText.Get("Power source unavailable"),
     };
@@ -17,7 +17,7 @@ internal static class PowerSourcePresentation
     {
         PowerSource.PluggedIn => TrayText.Get("AC profile"),
         PowerSource.Battery => TrayText.Get("Battery profile"),
-        PowerSource.UsbC => TrayText.Get("USB-C profile"),
+        PowerSource.UsbC => TrayText.Get("Low-power profile"),
         PowerSource.ExternalUnknown => Label(value),
         _ => TrayText.Get("Power source unavailable"),
     };

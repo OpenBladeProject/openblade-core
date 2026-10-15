@@ -20,6 +20,14 @@ files or components and inspect the combined diff before verification.
 
 ## Proportionate execution and authorization reuse
 
+Prefer Synapse's exact-model or demonstrably shared vendor definitions as the
+first evidence source for hardware semantics. Pin and review that source before
+implementing it. Use user diagnostics when Synapse data is missing, does not work,
+or conflicts with observed behavior; do not require users to repeat evidence
+already established by vendor code. Distinguish source-backed behavior from
+physical observations. This preference does not admit new firmware commands,
+weaken exact-device checks, or waive fresh per-write safety admission.
+
 Use the smallest workflow that resolves a concrete uncertainty and completes
 required verification and reviews. Before adding a check, capture, study, or
 validation step, identify what remains uncertain and how its result will affect
@@ -87,12 +95,34 @@ operation may have submitted a write, or confirmation is ambiguous, stop and
 reconcile read-only; do not try an alternative sequence or replay the uncertain
 write. Existing authorization and attended sleep/resume requirements still apply.
 
+## Shared fixes and model scope
+
+For every fix, check whether its cause and benefits apply to shared code or
+other models before choosing its scope. Trace the relevant production paths
+across supported and experimental backends. Apply common correctness,
+synchronization, cancellation, resource-lifetime, diagnostics, and recovery
+improvements at the shared layer when the same contract applies. A report or
+reproduction on one model is not a reason to restrict a generally useful fix
+to that model.
+
+Use a model-specific gate only for a concrete device, firmware, command, or
+backend difference; state that reason near the gate and in its focused test.
+Check whether an existing gate leaves another path with the same defect, and
+remove unnecessary model restrictions together with the fix. Preserve exact
+device admission and model-specific command evidence: shared software hardening
+does not authorize new firmware commands or capabilities. Verify materially
+different paths proportionately, reuse unchanged shared-path evidence, and
+report which models benefit, which already have equivalent handling, and any
+remaining uncertainty.
+
 ## Product boundary
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
-architecture can admit more Blade models, but a hardware capability is enabled
-only for an exact product name and HID identity backed by sanitized, reviewed
-capture evidence. Production host admission verifies the Razer manufacturer and
+architecture admits capabilities only for an exact product name and HID
+identity. Physically validated capabilities use sanitized, reviewed capture
+evidence. Experimental capabilities use separately reviewed, pinned upstream
+model and command definitions; they remain experimental until physical
+validation is complete. Host admission verifies the Razer manufacturer and
 exact product name in both Windows registry sources; SKU is diagnostic metadata
 and must not reject a variant of an admitted product. Developer validation may
 pin a SKU for reproducibility. Hardware-specific backends retain their own
@@ -103,9 +133,18 @@ and no shipped capability imposes one today.
 Never copy a command from another model, expose raw firmware commands, or
 weaken exact-device checks to make a feature appear supported.
 
-Production support is exact-device scoped. Current admitted targets include the
-Razer Blade 16 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`); neither
-model's device-specific assumptions may be copied to the other.
+Physically validated support is exact-device scoped: the Razer Blade 16
+RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`). Neither model's
+device-specific assumptions may be copied to another.
+
+The separately admitted experimental profiles are RZ09-0483 (`1532:029F`),
+RZ09-0482 (`1532:029D`), RZ09-0530 (`1532:02C5`), RZ09-0328 (`1532:0255`),
+and RZ09-0484 (`1532:02A0`). Their available controls are enabled automatically
+when the exact profile is recognized, without a Settings opt-in or release-channel
+gate. See [experimental support](docs/experimental-blade-support.md) for the
+bounded capabilities, upstream provenance, write-pause recovery, and tester
+reports. These profiles do not inherit another model's backends, drivers, or
+physical-validation status.
 
 ## Codebase map
 
@@ -137,8 +176,8 @@ model's device-specific assumptions may be copied to the other.
 
 1. The service is the sole owner of the laptop control HID handle. It exposes
    typed operations only and serializes all hardware access.
-   It also owns keyboard Driver mode continuously while the laptop is fully
-   active: it performs verified read-before-write maintenance and is the only
+   On models that admit keyboard Driver mode, it owns that mode continuously
+   while the laptop is fully active: it performs verified read-before-write maintenance and is the only
    component allowed to change that mode. At a confirmed low-power boundary it
    may restore Normal mode only after the existing identity and
    competing-controller safety checks pass, and it must not reacquire Driver
@@ -151,11 +190,12 @@ model's device-specific assumptions may be copied to the other.
    exact-device, and competing-controller safety checks pass, without changing
    the saved fan intent. A first observation or matching desired state does not
    establish fan ownership; only a successful service fan write does.
-   Production lighting admission is owned by the approved embedded oracle and
+   Capture-backed lighting admission is owned by the approved embedded oracle and
    the reviewed semantic admission manifest. The manifest compares the actual
    device identity, command contracts, report geometry, layout mask, supported
    values, and a known-answer encoded report; unrelated source edits do not
-   require re-approval. A machine-local
+   require re-approval. Experimental lighting uses its own reviewed model-specific
+   backend; it does not admit host-rendered frames. A machine-local
    exact-build validation artifact is developer evidence only and must never
    independently enable production writes.
 2. The Session Agent owns current-user APIs and input observation. The visible
@@ -223,7 +263,16 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
 
 ## Hardware and capture safety
 
-- Treat all uncaptured write commands as unsafe and unsupported.
+- Treat writes outside the exact model's reviewed command contract as unsafe
+  and unsupported. The upstream-derived experimental backend admits only its
+  implemented typed operations; its presence grants no additional developer or
+  physical-validation write authority. Unknown commands still need reviewed
+  evidence and separate authorization.
+- `07/8F` and `07/0F` are a shared Power Mode Control bitmask on every model
+  that uses them, not a full-charge-only value. Keep the shared decoder and
+  pre-write guard, and before admitting a model, especially a mini-LED one,
+  follow
+  [Power Mode Control and local dimming](docs/developer-guide.md#power-mode-control-and-local-dimming).
 - Keep validation proportionate. For transitions using commands already admitted
   for the exact device, prefer a direct test through OpenBlade's typed,
   reversible path. Vendor UI availability or a new capture matrix is not a

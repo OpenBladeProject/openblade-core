@@ -5,13 +5,13 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class TemporaryFullChargeValidationRunFactoryTests
 {
     [Fact]
-    public void TryReserveTemporaryFullChargeValidation_ReturnsAtomicEightIds()
+    public void TryReserveTemporaryFullChargeValidation_ReturnsAtomicTenIds()
     {
         var context = new ValidationRunContext();
 
         Assert.True(context.TryReserveTemporaryFullChargeValidation(
             out TemporaryFullChargeValidationTransactionIds ids));
-        Assert.Equal(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, ids.ToArray());
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, ids.ToArray());
     }
 
     [Fact]

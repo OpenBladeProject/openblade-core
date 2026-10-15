@@ -13,7 +13,10 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 16;
+    internal const int CurrentSchemaVersion = 20;
+    internal const int AutomaticExperimentalSupportSchemaVersion = 19;
+    internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
+    internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
     internal const int FrozenThermalPolicyPredecessorSchemaVersion = 15;
     internal const int LegacyWindowsPowerModeSchemaVersion = 14;
     internal const int LatestSupportedSchemaVersion = 13;
@@ -75,7 +78,7 @@ public sealed class ProfileStore
             out _,
             batteryProtectionDefault: null);
         profiles = ClearLegacyWindowsPowerModes(profiles);
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -263,8 +266,22 @@ public sealed class ProfileStore
             throw new InvalidDataException("The profile schema version is unsupported.");
         }
 
-        validator.Validate(profiles);
+        if (schemaVersion <= ExperimentalFeaturesConsentSchemaVersion)
+        {
+            ValidateLegacyBatteryPolicy(profiles);
+        }
+        validator.ValidateStoredCustomIntent(profiles);
         return profiles;
+    }
+
+    internal static void ValidateLegacyBatteryPolicy(ProfileSet profiles)
+    {
+        int chargeLimit = profiles.BatteryPolicy.ChargeLimitPercent;
+        if (chargeLimit is < 50 or > 80 || chargeLimit % 5 != 0)
+        {
+            throw new InvalidDataException(
+                "Profile schemas 1 through 17 require a battery charge limit from 50 to 80 percent in 5 percent steps.");
+        }
     }
 
     internal static ProfileSet NormalizeLegacyBatteryProfile(
@@ -397,7 +414,7 @@ public sealed class ProfileStore
         {
             ("plugged-in", profiles.PluggedIn),
             ("battery", profiles.Battery),
-            ("USB-C", profiles.UsbC),
+            ("low-power", profiles.UsbC),
         })
         {
             if (profile.WindowsPowerMode is { } mode && !Enum.IsDefined(mode))

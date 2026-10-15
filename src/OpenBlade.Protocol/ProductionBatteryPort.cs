@@ -122,7 +122,8 @@ internal sealed class ProductionBatteryPort :
         DeviceCommandCatalog? hyperBoostCatalog = null,
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
         bool allowPadlessHyperBoostLifecycleValidation = false,
-        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced)
+        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
+        bool supportsDirectManualFanTransitions = false)
         : this(
             session,
             session,
@@ -144,7 +145,8 @@ internal sealed class ProductionBatteryPort :
             hyperBoostCatalog,
             hyperBoostEligibility,
             allowPadlessHyperBoostLifecycleValidation,
-            padlessHyperBoostLifecycleBaseMode)
+            padlessHyperBoostLifecycleBaseMode,
+            supportsDirectManualFanTransitions)
     {
     }
 
@@ -169,11 +171,12 @@ internal sealed class ProductionBatteryPort :
         DeviceCommandCatalog? hyperBoostCatalog = null,
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
         bool allowPadlessHyperBoostLifecycleValidation = false,
-        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced)
+        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
+        bool supportsDirectManualFanTransitions = false)
         : this(
             sharedCommandGate is null
                 ? actor.Session
-                : new Rz090528CommandSessionGate(actor.Session, sharedCommandGate),
+                : new RazerCommandSessionGate(actor.Session, sharedCommandGate),
             actor,
             catalog,
             readEvidence,
@@ -193,7 +196,8 @@ internal sealed class ProductionBatteryPort :
             hyperBoostCatalog,
             hyperBoostEligibility,
             allowPadlessHyperBoostLifecycleValidation,
-            padlessHyperBoostLifecycleBaseMode)
+            padlessHyperBoostLifecycleBaseMode,
+            supportsDirectManualFanTransitions)
     {
     }
 
@@ -218,7 +222,8 @@ internal sealed class ProductionBatteryPort :
         DeviceCommandCatalog? hyperBoostCatalog,
         IHyperBoostEligibilitySource? hyperBoostEligibility,
         bool allowPadlessHyperBoostLifecycleValidation,
-        PerformancePreset padlessHyperBoostLifecycleBaseMode)
+        PerformancePreset padlessHyperBoostLifecycleBaseMode,
+        bool supportsDirectManualFanTransitions)
     {
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
@@ -329,7 +334,8 @@ internal sealed class ProductionBatteryPort :
             observedPowerSourceBehaviors,
             hyperBoostAccess,
             hyperBoostWithoutCoolingPadAccess,
-            hyperBoostBaseModes);
+            hyperBoostBaseModes,
+            supportsDirectManualFanTransitions);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -456,6 +462,7 @@ internal sealed class ProductionBatteryPort :
                 && admittedAdapterPowerStates is not null
                 && !admittedAdapterPowerStates.Contains(result.Value))
             {
+                session.RetainQueryFailure(0x07, 0x8C, FirmwareQueryOutcome.ModelAdmissionRejected);
                 return AdapterPowerState.Unknown;
             }
 
@@ -659,8 +666,8 @@ internal sealed class ProductionBatteryPort :
             : ExecuteThermalSettersAsync(
                 actions,
                 state => state.Performance == value && state.Fans == FanMode.Automatic,
-                state => state.Performance is not null && state.Fans == FanMode.Automatic,
-                "Performance changes require a confirmed Automatic thermal state.",
+                state => CanApplyAutomaticPerformanceFrom(state, value),
+                "Performance changes require a confirmed Automatic thermal state or an admitted direct manual transition.",
                 applyMaximumTiming: false,
                 verifyFinalState: value is PerformancePreset.BatterySaver
                     or PerformancePreset.BatteryBalanced,
@@ -672,6 +679,18 @@ internal sealed class ProductionBatteryPort :
                 ],
                 hyperBoostExitCatalog: hyperBoostCatalog);
     }
+
+    private bool CanApplyAutomaticPerformanceFrom(
+        ProductionPerformanceFanState state,
+        PerformancePreset target) =>
+        !state.HyperBoostActive
+        && (state.Performance is not null && state.Fans == FanMode.Automatic
+            || Capabilities.SupportsDirectManualFanTransitions
+                && state.Fans == FanMode.Maximum
+                && target is PerformancePreset.Silent
+                    or PerformancePreset.Balanced
+                    or PerformancePreset.Performance
+                    or PerformancePreset.Custom);
 
     public Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
         SetHyperBoostAsync(enabled, PerformancePreset.Balanced, cancellationToken);
@@ -741,6 +760,12 @@ internal sealed class ProductionBatteryPort :
         // state for the whole transition. Where both a pad-present and a pad-less path are
         // admitted, no command may proceed under the other path.
         CoolingPadConnectionState? entryPadState = enabled ? journaledPadState : null;
+        // Generic manual readback intentionally has no performance value. The pad-less
+        // path uses the requested, admitted base mode without inventing a firmware value.
+        bool directPadlessManualEntry = enabled
+            && Capabilities.SupportsDirectManualFanTransitions
+            && (journaledPadState == CoolingPadConnectionState.Absent
+                || lifecycleValidation);
         return ExecuteThermalSettersAsync(
             actions,
             state => state.HyperBoostActive == enabled
@@ -748,11 +773,13 @@ internal sealed class ProductionBatteryPort :
                 && (enabled || state.Performance == baseMode),
             enabled
                 ? state => !state.HyperBoostActive
-                    && state.Performance == baseMode
-                    && state.Fans == FanMode.Automatic
+                    && (state.Performance == baseMode
+                            && state.Fans == FanMode.Automatic
+                        || directPadlessManualEntry
+                            && state.Fans == FanMode.Maximum)
                 : state => state.HyperBoostActive && state.Fans == FanMode.Automatic,
             enabled
-                ? $"HyperBoost requires confirmed {baseMode} performance with admitted direct-transition evidence and Automatic fans."
+                ? $"HyperBoost requires confirmed {baseMode} performance with Automatic fans, or admitted pad-absent direct entry from manual fan control."
                 : $"Only a confirmed HyperBoost state can be restored directly to {baseMode}.",
             applyMaximumTiming: false,
             verifyFinalState: true,
@@ -795,7 +822,7 @@ internal sealed class ProductionBatteryPort :
         CancellationToken cancellationToken)
     {
         if (!CustomPerformanceSettings.IsWellFormed(value)
-            || Capabilities.CustomPerformance?.Supports(value) == false)
+            || Capabilities.CustomPerformance?.Supports(value) != true)
         {
             return Task.FromException(KnownNotApplied(
                 "The custom performance CPU/GPU combination is invalid."));
@@ -824,8 +851,10 @@ internal sealed class ProductionBatteryPort :
                 && state.Fans == FanMode.Automatic
                 && state.CustomPerformance == value,
             state => !state.HyperBoostActive
-                && state.Fans == FanMode.Automatic,
-            "Custom performance requires confirmed Automatic fans.",
+                && (state.Fans == FanMode.Automatic
+                    || Capabilities.SupportsDirectManualFanTransitions
+                        && state.Fans == FanMode.Maximum),
+            "Custom performance requires confirmed Automatic fans or an admitted direct manual transition.",
             applyMaximumTiming: false,
             verifyFinalState: true,
             cancellationToken,
@@ -845,6 +874,15 @@ internal sealed class ProductionBatteryPort :
         {
             return Task.FromException(Unavailable(
                 $"Fan mode '{value}' is not admitted for production use."));
+        }
+
+        if (value == FanMode.Maximum
+            && Capabilities.SupportsDirectManualFanTransitions)
+        {
+            return SetFanTargetsWithStateAsync(
+                fanSpeedRange.MaximumRpm,
+                fanSpeedRange.MaximumRpm,
+                cancellationToken);
         }
 
         IReadOnlyList<string>? actions = value switch
@@ -1021,14 +1059,23 @@ internal sealed class ProductionBatteryPort :
                     exception);
             }
             bool manual = current.Fans == FanMode.Maximum;
+            // A known battery selector can persist after reconnecting AC. Admit
+            // direct entry only while fresh physical full-power reads remain valid.
+            bool batteryAutomaticEntry =
+                IsDirectManualFanBatteryAutomaticEntryState(current);
             if (requireAutomaticEntry)
             {
                 if (!manual
-                    && (current.Performance != PerformancePreset.Balanced
-                        || current.Fans != FanMode.Automatic))
+                    && (!Capabilities.SupportsDirectManualFanTransitions
+                        ? current.Fans != FanMode.Automatic
+                            || current.HyperBoostActive
+                            || current.Performance != PerformancePreset.Balanced
+                        : !IsDirectManualFanAutomaticEntryState(current)))
                 {
                     throw KnownNotApplied(
-                        "Fixed and manual fan control require confirmed Balanced performance and Automatic fans.");
+                        Capabilities.SupportsDirectManualFanTransitions
+                            ? "Fixed and manual fan control require a confirmed admitted non-HyperBoost Automatic state."
+                            : "Fixed and manual fan control require confirmed Balanced performance and Automatic fans.");
                 }
             }
             else if (!manual)
@@ -1042,6 +1089,12 @@ internal sealed class ProductionBatteryPort :
             {
                 RazerCommandDefinition command = commands[index];
                 cancellationToken.ThrowIfCancellationRequested();
+                if (batteryAutomaticEntry)
+                {
+                    await EnsureDirectManualFanFullPowerAsync(
+                        submitted,
+                        cancellationToken).ConfigureAwait(false);
+                }
                 submitted = true;
                 HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
                     new RazerCommandSpec(
@@ -1077,7 +1130,12 @@ internal sealed class ProductionBatteryPort :
                         WriteSubmissionState.Indeterminate,
                         failurePhase,
                         "The adjustable fan write outcome is indeterminate after "
-                        + $"{stage} channel {stageIndex} of 2 ({failure}).");
+                        + $"{stage} channel {stageIndex} of 2 ({failure}).")
+                    {
+                        Diagnostic = result.Diagnostic,
+                        CommandClass = command.CommandClass,
+                        CommandId = command.CommandId,
+                    };
                 }
 
                 if (index < commands.Count - 1)
@@ -1125,6 +1183,93 @@ internal sealed class ProductionBatteryPort :
         }
     }
 
+    internal static bool IsDirectManualFanAutomaticEntryState(
+        ProductionPerformanceFanState state) =>
+        state.Fans == FanMode.Automatic
+        && !state.HyperBoostActive
+        && state.Performance is PerformancePreset.Silent
+            or PerformancePreset.Balanced
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom
+            or PerformancePreset.BatterySaver
+            or PerformancePreset.BatteryBalanced;
+
+    private static bool IsDirectManualFanBatteryAutomaticEntryState(
+        ProductionPerformanceFanState state) =>
+        IsDirectManualFanAutomaticEntryState(state)
+        && state.Performance is PerformancePreset.BatterySaver
+            or PerformancePreset.BatteryBalanced;
+
+    private async Task EnsureDirectManualFanFullPowerAsync(
+        bool submitted,
+        CancellationToken cancellationToken)
+    {
+        if (!readEvidence.SupportsAdapterPowerQuery
+            || admittedAdapterPowerStates is null)
+        {
+            throw DirectManualFanPowerFailure(
+                submitted,
+                "Direct manual fan entry from a battery thermal state requires fresh admitted full-power adapter evidence.");
+        }
+
+        HidSessionResult<AdapterPowerState> adapter;
+        try
+        {
+            adapter = await adapterPowerCommands.QueryAsync(
+                AllocateTransactionForRead(),
+                cancellationToken).ConfigureAwait(false);
+            if (adapter.Failure is not null)
+            {
+                ThrowReadFailure(
+                    adapter.Failure.Value,
+                    adapter.Diagnostic,
+                    cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw DirectManualFanPowerFailure(
+                submitted,
+                "The direct manual fan full-power admission read failed.",
+                exception);
+        }
+
+        if (!HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
+            || !admittedAdapterPowerStates.Contains(adapter.Value))
+        {
+            throw DirectManualFanPowerFailure(
+                submitted,
+                "Direct manual fan entry from a battery thermal state requires a confirmed admitted full-power adapter.");
+        }
+    }
+
+    private BladeWriteException DirectManualFanPowerFailure(
+        bool submitted,
+        string message,
+        Exception? innerException = null)
+    {
+        if (submitted)
+        {
+            poisoned = true;
+        }
+
+        return new BladeWriteException(
+            submitted
+                ? WriteSubmissionState.Indeterminate
+                : WriteSubmissionState.KnownNotApplied,
+            submitted
+                ? BladeWriteFailurePhase.Unspecified
+                : BladeWriteFailurePhase.ThermalPreWriteRead,
+            submitted
+                ? "The adjustable fan write outcome is indeterminate because full-power admission was lost after a prior command."
+                : message,
+            innerException);
+    }
+
     public Task SetProtectionOffAsync(CancellationToken cancellationToken)
     {
         if (!readEvidence.SupportsTemporaryFullChargeQuery)
@@ -1148,7 +1293,54 @@ internal sealed class ProductionBatteryPort :
 
         return ExecuteSetterAsync(
             enabled ? TemporaryEnableAction : TemporaryCancelAction,
-            cancellationToken);
+            cancellationToken,
+            RequireNoOtherPowerModeSettingsAsync);
+    }
+
+    /// <summary>
+    /// On every model that uses it, 07/0F replaces the whole Power Mode Control
+    /// byte. The admitted payloads are only 0x00 and 0x04, so a write is sent only
+    /// when a fresh read in the same write session shows the other bits clear.
+    /// Combined payloads are uncaptured and are never written.
+    /// </summary>
+    private async Task RequireNoOtherPowerModeSettingsAsync(
+        CancellationToken cancellationToken)
+    {
+        HidSessionResult<TemporaryFullChargeReading> reading;
+        try
+        {
+            reading = await temporaryCommands.QueryReadingAsync(
+                AllocateTransactionForRead(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw KnownNotApplied("The battery write was canceled before submission.");
+        }
+        catch (Exception exception)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "The temporary full charge pre-write read failed before submission.",
+                exception);
+        }
+
+        if (reading.Failure is not null)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw KnownNotApplied("The battery write was canceled before submission.");
+            }
+
+            throw KnownNotApplied(
+                "The temporary full charge pre-write read failed before submission.");
+        }
+
+        if (reading.Value.OtherSettings != 0)
+        {
+            throw KnownNotApplied(TemporaryFullChargeProtocol.OtherSettingsBlockMessage(
+                reading.Value.OtherSettings));
+        }
     }
 
     public Task ApplyOneShotLaptopControlAsync(
@@ -1237,7 +1429,8 @@ internal sealed class ProductionBatteryPort :
         IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
         DeviceFeatureAccess? hyperBoostAccess = null,
         DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
-        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null)
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
+        bool supportsDirectManualFanTransitions = false)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -1362,7 +1555,11 @@ internal sealed class ProductionBatteryPort :
             OneShotLaptopControls = oneShotControls,
             FanSpeedRange = admittedFanSpeedRange,
             CustomPerformance = performance.Contains(PerformancePreset.Custom)
-                ? customPerformanceCapabilities
+                ? customPerformanceCapabilities ?? new CustomPerformanceCapabilities(
+                    (from cpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+                     from gpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+                     where (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)
+                     select new CustomPerformanceCombination(cpu, gpu)).ToHashSet())
                 : null,
             CpuPowerLimit = cpuPowerLimitCapabilities,
             CpuVoltageOptimizer = cpuVoltageOptimizerCapabilities,
@@ -1370,6 +1567,8 @@ internal sealed class ProductionBatteryPort :
             HyperBoostAccess = hyperBoostAccess,
             HyperBoostWithoutCoolingPadAccess = hyperBoostWithoutCoolingPadAccess,
             HyperBoostBaseModes = hyperBoostBaseModes,
+            SupportsDirectManualFanTransitions = supportsDirectManualFanTransitions
+                && HasDirectManualFanCommandSet(catalog),
             ObservedPowerSourceBehaviors = observedPowerSourceBehaviors is null
                 ? []
                 : [.. observedPowerSourceBehaviors],
@@ -1382,6 +1581,14 @@ internal sealed class ProductionBatteryPort :
         string secondAction) =>
         catalog.TryGet(firstAction, out _)
         && catalog.TryGet(secondAction, out _);
+
+    internal static bool HasDirectManualFanCommandSet(DeviceCommandCatalog catalog) =>
+        HasAll(
+            catalog,
+            FanMaximumStateFirstAction,
+            FanMaximumStateSecondAction,
+            FanMaximumSpeedFirstAction,
+            FanMaximumSpeedSecondAction);
 
     internal static bool HasHyperBoostCommandSet(DeviceCommandCatalog catalog) =>
         HasPair(catalog, HyperBoostEnableFirstAction, HyperBoostEnableSecondAction)
@@ -1483,7 +1690,8 @@ internal sealed class ProductionBatteryPort :
 
     private async Task ExecuteSetterAsync(
         string action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? preWriteCheck = null)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1500,6 +1708,14 @@ internal sealed class ProductionBatteryPort :
         try
         {
             EnsureUsableForWrite();
+            if (preWriteCheck is not null)
+            {
+                // Runs under the same operation gate; it throws KnownNotApplied
+                // without submitting anything when the write is not admitted.
+                await preWriteCheck(cancellationToken).ConfigureAwait(false);
+                EnsureUsableForWrite();
+            }
+
             HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
                 new RazerCommandSpec(
                     command.CommandClass,
@@ -1516,7 +1732,8 @@ internal sealed class ProductionBatteryPort :
             {
                 BladeWriteException failure = MapWriteFailure(
                     result.Failure.Value,
-                    result.Diagnostic);
+                    result.Diagnostic,
+                    command);
                 if (failure.SubmissionState == WriteSubmissionState.Indeterminate)
                 {
                     poisoned = true;
@@ -1861,10 +2078,8 @@ internal sealed class ProductionBatteryPort :
             }
         }
 
-        bool adapterEligible = padAbsentEligibility
-            ? HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
-                && admittedAdapterPowerStates?.Contains(adapter.Value) == true
-            : adapter.Value == AdapterPowerState.FullPower280W;
+        bool adapterEligible = HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
+            && (admittedAdapterPowerStates?.Contains(adapter.Value) ?? padPresentEligibility);
         if (!adapterEligible)
         {
             throw KnownNotApplied(
@@ -1901,6 +2116,7 @@ internal sealed class ProductionBatteryPort :
                 second.Span,
                 out ThermalModeState state))
         {
+            session.RetainQueryFailure(0x0D, 0x82, FirmwareQueryOutcome.ContentRejected);
             poisoned = true;
             throw new RazerProtocolException(
                 "Thermal channels did not report one recognized matching state.",
@@ -1962,8 +2178,13 @@ internal sealed class ProductionBatteryPort :
                 CustomPerformanceDomain.Gpu,
                 cancellationToken).ConfigureAwait(false);
         var custom = new CustomPerformanceSettings(cpu, gpu);
-        if (Capabilities.CustomPerformance?.Supports(custom) == false)
+        // Captured getters are independently admitted even when this port has
+        // no Custom setters, or its writable combination list is narrower.
+        // Keep the validated read vocabulary (Low..High, excluding High/High)
+        // separate from experimental Boost and per-model write admission.
+        if (cpu == CustomPerformanceLevel.High && gpu == CustomPerformanceLevel.High)
         {
+            session.RetainQueryFailure(0x0D, 0x87, FirmwareQueryOutcome.ModelAdmissionRejected);
             poisoned = true;
             throw new RazerProtocolException(
                 "Custom performance returned a combination not admitted for this exact device.",
@@ -2188,13 +2409,14 @@ internal sealed class ProductionBatteryPort :
                     RejectedPayloadHex = diagnostic?.RejectedPayloadHex,
                 };
             default:
-                throw new IOException("Battery state query failed closed.");
+                throw new NativeDeviceReadException(failure, diagnostic, query);
         }
     }
 
     private BladeWriteException MapWriteFailure(
         HidSessionFailureKind failure,
-        HidSessionFailureDiagnostic? diagnostic)
+        HidSessionFailureDiagnostic? diagnostic,
+        RazerCommandDefinition command)
     {
         bool knownNotApplied = failure is
             HidSessionFailureKind.ConflictBlocked
@@ -2213,7 +2435,12 @@ internal sealed class ProductionBatteryPort :
                 : WriteSubmissionState.Indeterminate,
             knownNotApplied
                 ? "The battery write was definitively not applied."
-                : "The battery write outcome is indeterminate.");
+                : "The battery write outcome is indeterminate.")
+        {
+            Diagnostic = diagnostic,
+            CommandClass = command.CommandClass,
+            CommandId = command.CommandId,
+        };
     }
 
     private static BladeWriteException KnownNotApplied(string message) => new(

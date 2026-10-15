@@ -68,6 +68,7 @@ public enum CustomPerformanceLevel
     Low,
     Medium,
     High,
+    Boost,
 }
 
 public sealed record GpuClockOffsetSettings
@@ -133,7 +134,7 @@ public sealed record CustomPerformanceSettings
         if (!IsWellFormed(cpu, gpu))
         {
             throw new ArgumentException(
-                "Custom performance levels are invalid; CPU High and GPU High cannot be combined.");
+                "Custom performance levels are invalid.");
         }
 
         Cpu = cpu;
@@ -143,6 +144,10 @@ public sealed record CustomPerformanceSettings
     public CustomPerformanceLevel Cpu { get; }
 
     public CustomPerformanceLevel Gpu { get; }
+
+    // Separate Custom-mode fan flag, admitted only by an exact model capability.
+    // Legacy profiles and IPC frames deserialize to false.
+    public bool MaximumFans { get; init; }
 
     public static CustomPerformanceSettings Default { get; } = new(
         CustomPerformanceLevel.Medium,
@@ -162,8 +167,7 @@ public sealed record CustomPerformanceSettings
         CustomPerformanceLevel cpu,
         CustomPerformanceLevel gpu) =>
         Enum.IsDefined(cpu)
-        && Enum.IsDefined(gpu)
-        && (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High);
+        && gpu is CustomPerformanceLevel.Low or CustomPerformanceLevel.Medium or CustomPerformanceLevel.High;
 }
 
 public enum FanMode
@@ -597,12 +601,12 @@ public sealed record BatteryPolicy
 {
     public BatteryPolicy(int chargeLimitPercent)
     {
-        if (chargeLimitPercent is < 50 or > 80 || chargeLimitPercent % 5 != 0)
+        if (chargeLimitPercent is < 50 or > 99)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(chargeLimitPercent),
                 chargeLimitPercent,
-                "Charge limit must be from 50 to 80 percent in 5 percent steps.");
+                "Enabled charge limits must be from 50 to 99 percent. No limit is represented by protection off.");
         }
 
         ChargeLimitPercent = chargeLimitPercent;

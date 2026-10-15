@@ -46,13 +46,14 @@ public sealed record CustomPerformanceCombination(
 {
     public bool IsWellFormed =>
         Enum.IsDefined(Cpu)
-        && Enum.IsDefined(Gpu)
-        && (Cpu, Gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High);
+        && Gpu is CustomPerformanceLevel.Low or CustomPerformanceLevel.Medium or CustomPerformanceLevel.High;
 }
 
 public sealed record CustomPerformanceCapabilities(
     IReadOnlySet<CustomPerformanceCombination> AllowedCombinations)
 {
+    public bool SupportsMaximumFans { get; init; }
+
     public bool IsWellFormed =>
         AllowedCombinations is { Count: > 0 }
         && AllowedCombinations.All(combination => combination is not null && combination.IsWellFormed);
@@ -60,6 +61,7 @@ public sealed record CustomPerformanceCapabilities(
     public bool Supports(CustomPerformanceSettings? settings) =>
         IsWellFormed
         && CustomPerformanceSettings.IsWellFormed(settings)
+        && (!settings!.MaximumFans || SupportsMaximumFans)
         && AllowedCombinations.Contains(new(settings!.Cpu, settings.Gpu));
 }
 
@@ -197,7 +199,33 @@ public sealed record DeviceCapabilities(
     bool SupportsBatteryProtectionOff,
     bool SupportsTemporaryFullCharge)
 {
+    /// <summary>
+    /// Indicates that the exact admitted manual-fan backend can transition directly
+    /// between automatic performance states and manual fan control. Older IPC frames
+    /// that omit this member deserialize to the safe default of <see langword="false"/>.
+    /// </summary>
+    public bool SupportsDirectManualFanTransitions { get; init; }
+
+    /// <summary>Exact backend reports the real performance mode and Custom levels
+    /// while manual fans are active, rather than a shared manual selector.</summary>
+    public bool ReportsPerformanceWithManualFans { get; init; }
+
     public bool SupportsKeyboardBrightness { get; init; }
+
+    // Older/full implementations support the complete parameter pickers by default.
+    public bool SupportsBreathingColorSelection { get; init; } = true;
+
+    public IReadOnlySet<BreathingColorMode>? SupportedBreathingColorModes { get; init; }
+
+    public bool SupportsUniformLightingFrames { get; init; }
+
+    public bool SupportsBreathingMode(BreathingColorMode mode) =>
+        Enum.IsDefined(mode)
+        && (SupportedBreathingColorModes?.Contains(mode)
+            ?? (SupportsBreathingColorSelection || mode == BreathingColorMode.Random));
+
+
+    public bool SupportsWaveDirectionSelection { get; init; } = true;
 
     public bool SupportsPlaybackMuteIndicator { get; init; }
 
@@ -248,6 +276,7 @@ public sealed record DeviceCapabilities(
         && IsValidEnumSet(FanModes)
         && IsValidEnumSet(LightingEffects)
         && AreChargeLimitsWellFormed(ChargeLimits)
+        && (SupportedBreathingColorModes is null || IsValidEnumSet(SupportedBreathingColorModes))
         && (FanSpeedRange is null || FanSpeedRange.IsWellFormed)
         && (!FanModes.Any(IsManualFanMode) || FanSpeedRange is not null)
         && (CustomPerformance is null || CustomPerformance.IsWellFormed)
@@ -276,6 +305,7 @@ public sealed record DeviceCapabilities(
             ? !LightingEffects.Contains(LightingEffect.Sequence)
             : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)
                 && LightingEffects.Contains(LightingEffect.Sequence))
+        && (!ChargeLimits.Contains(100) || SupportsBatteryProtectionOff)
         && IsValidEnumSet(SupportedLightingRefreshRates)
         && IsValidEnumSet(ObservedLightingEffects)
         && IsValidEnumSet(LogoLightingModes)
@@ -296,9 +326,9 @@ public sealed record DeviceCapabilities(
         }
 
         int[] values = limits.ToArray();
-        return values.Length <= 7
+        return values.Length <= 51
             && values.Distinct().Count() == values.Length
-            && values.All(value => value is >= 50 and <= 80 && value % 5 == 0);
+            && values.All(value => value is >= 50 and <= 100);
     }
 
     public static DeviceCapabilities Unavailable() => new(
@@ -319,6 +349,11 @@ public sealed record DeviceCapabilities(
     {
         SupportsKeyboardBrightness = true,
         FanSpeedRange = FanSpeedRange.Standard,
+        CustomPerformance = new CustomPerformanceCapabilities(
+            (from cpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+             from gpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+             where (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)
+             select new CustomPerformanceCombination(cpu, gpu)).ToHashSet()),
     };
 
     private bool HasValidSpecialKeySlots()

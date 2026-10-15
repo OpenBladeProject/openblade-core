@@ -13,7 +13,10 @@ public sealed class ProfileValidationPolicy
         IReadOnlySet<LightingEffect> supportedLightingEffects,
         CustomPerformanceCapabilities? customPerformance = null,
         FanSpeedRange? fanSpeedRange = null,
-        string? keyboardLightingLayoutId = null)
+        string? keyboardLightingLayoutId = null,
+        bool supportsBreathingColorSelection = true,
+        bool supportsWaveDirectionSelection = true,
+        IReadOnlySet<BreathingColorMode>? supportedBreathingColorModes = null)
     {
         ArgumentNullException.ThrowIfNull(supportedPerformanceFanCombinations);
         ArgumentNullException.ThrowIfNull(supportedLightingEffects);
@@ -24,9 +27,19 @@ public sealed class ProfileValidationPolicy
             ? null
             : new CustomPerformanceCapabilities(
                 new HashSet<CustomPerformanceCombination>(
-                    customPerformance.AllowedCombinations));
+                    customPerformance.AllowedCombinations))
+            {
+                SupportsMaximumFans = customPerformance.SupportsMaximumFans,
+            };
         FanSpeedRange = fanSpeedRange;
         KeyboardLightingLayoutId = keyboardLightingLayoutId;
+        SupportsBreathingColorSelection = supportsBreathingColorSelection;
+        SupportedBreathingColorModes = supportedBreathingColorModes is null
+            ? supportsBreathingColorSelection
+                ? Enum.GetValues<BreathingColorMode>().ToHashSet()
+                : new HashSet<BreathingColorMode> { BreathingColorMode.Random }
+            : new HashSet<BreathingColorMode>(supportedBreathingColorModes);
+        SupportsWaveDirectionSelection = supportsWaveDirectionSelection;
     }
 
     public IReadOnlySet<PerformanceFanCombination> SupportedPerformanceFanCombinations { get; }
@@ -38,6 +51,12 @@ public sealed class ProfileValidationPolicy
     public FanSpeedRange? FanSpeedRange { get; }
 
     public string? KeyboardLightingLayoutId { get; }
+
+    public bool SupportsBreathingColorSelection { get; }
+
+    public IReadOnlySet<BreathingColorMode> SupportedBreathingColorModes { get; }
+
+    public bool SupportsWaveDirectionSelection { get; }
 
     public static ProfileValidationPolicy CreateUnverifiedSafeDefaults() => new(
         new HashSet<PerformanceFanCombination>
@@ -61,7 +80,16 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.BatterySaver, FanMode.Automatic),
             new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
         },
-        new HashSet<LightingEffect> { LightingEffect.Off });
+        new HashSet<LightingEffect> { LightingEffect.Off },
+        // Offline storage validates intent structurally, including capabilities
+        // from a temporarily unavailable model. It never supplies write authority.
+        new CustomPerformanceCapabilities(
+            (from cpu in Enum.GetValues<CustomPerformanceLevel>()
+             from gpu in new[] { CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High }
+             select new CustomPerformanceCombination(cpu, gpu)).ToHashSet())
+        {
+            SupportsMaximumFans = true,
+        });
 
     public static ProfileValidationPolicy CreateForDeviceCapabilities(
         DeviceCapabilities batteryCapabilities,
@@ -79,9 +107,13 @@ public sealed class ProfileValidationPolicy
         return new ProfileValidationPolicy(
             safeDefaults.SupportedPerformanceFanCombinations,
             supportedLightingEffects,
-            batteryCapabilities.CustomPerformance,
+            batteryCapabilities.CustomPerformance
+                ?? new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>()),
             batteryCapabilities.FanSpeedRange,
-            lightingCapabilities.KeyboardLightingLayoutId);
+            lightingCapabilities.KeyboardLightingLayoutId,
+            lightingCapabilities.SupportsBreathingColorSelection,
+            lightingCapabilities.SupportsWaveDirectionSelection,
+            lightingCapabilities.SupportedBreathingColorModes);
     }
 }
 
@@ -110,11 +142,19 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             lightingCapabilities));
 
     public void Validate(ProfileSet profiles)
+        => ValidateCore(profiles, validateCustomCapabilities: true);
+
+    // The runtime separately admits changed Custom intent against current device
+    // capabilities, while unrelated edits preserve existing unavailable intent.
+    internal void ValidateStoredCustomIntent(ProfileSet profiles)
+        => ValidateCore(profiles, validateCustomCapabilities: false);
+
+    private void ValidateCore(ProfileSet profiles, bool validateCustomCapabilities)
     {
         ArgumentNullException.ThrowIfNull(profiles);
-        ValidateProfile(profiles.PluggedIn, "plugged-in", PowerSource.PluggedIn);
-        ValidateProfile(profiles.Battery, "battery", PowerSource.Battery);
-        ValidateProfile(profiles.UsbC, "USB-C", PowerSource.UsbC);
+        ValidateProfile(profiles.PluggedIn, "plugged-in", PowerSource.PluggedIn, validateCustomCapabilities);
+        ValidateProfile(profiles.Battery, "battery", PowerSource.Battery, validateCustomCapabilities);
+        ValidateProfile(profiles.UsbC, "low-power", PowerSource.UsbC, validateCustomCapabilities);
         ValidateBatteryPolicy(profiles.BatteryPolicy);
         ValidateLightingPowerPolicy(profiles.PluggedIn.LightingPowerPolicy);
         ValidateLightingPowerPolicy(profiles.Battery.LightingPowerPolicy);
@@ -182,7 +222,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidatePerformanceSource(performance, source);
         if (source == PowerSource.UsbC && fans != FanMode.Automatic)
         {
-            throw Invalid("USB-C power supports automatic fans only.");
+            throw Invalid("Low-power adapters support automatic fans only.");
         }
 
         ValidatePerformanceFanCombination(performance, fans);
@@ -191,7 +231,8 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     private void ValidateProfile(
         PowerProfile? profile,
         string name,
-        PowerSource source)
+        PowerSource source,
+        bool validateCustomCapabilities)
     {
         if (profile is null)
         {
@@ -208,7 +249,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
 
         ValidateLighting(profile.Lighting, name);
-        ValidateCustomPerformance(profile, name);
+        ValidateCustomPerformance(profile, name, validateCustomCapabilities);
         ValidateGpuClockTuning(profile, name, source);
         ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
@@ -260,8 +301,13 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
     }
 
-    private void ValidateCustomPerformance(PowerProfile profile, string name)
+    private void ValidateCustomPerformance(PowerProfile profile, string name, bool validateCapabilities)
     {
+        if (profile.Performance == PerformancePreset.Custom
+            && profile.CustomPerformance?.MaximumFans == true && profile.Fans != FanMode.Automatic)
+        {
+            throw Invalid($"The {name} Custom maximum-fan flag requires Automatic fan mode, not fixed targets or a curve.");
+        }
         if (profile.Performance == PerformancePreset.Custom
             && !CustomPerformanceSettings.IsWellFormed(profile.CustomPerformance))
         {
@@ -275,8 +321,15 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} saved custom performance levels are invalid.");
         }
 
-        if (profile.CustomPerformance is not null
-            && validationPolicy.CustomPerformance?.Supports(profile.CustomPerformance) == false)
+        if (validateCapabilities && profile.CustomPerformance is not null
+            && (validationPolicy.CustomPerformance is { } admitted
+                ? !admitted.Supports(profile.CustomPerformance)
+                // Storage-only legacy policies must still load unchanged saved
+                // settings. They never admit any new combination or fan flag;
+                // hardware setters separately require explicit device support.
+                : profile.CustomPerformance.Cpu == CustomPerformanceLevel.Boost
+                    || profile.CustomPerformance is { Cpu: CustomPerformanceLevel.High, Gpu: CustomPerformanceLevel.High }
+                    || profile.CustomPerformance.MaximumFans))
         {
             throw Invalid(
                 $"The {name} custom performance combination is not supported by this device.");
@@ -383,6 +436,17 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} lighting effect parameters are invalid.");
         }
 
+        if (lighting.Parameters is BreathingLightingParameters breathing
+            && !validationPolicy.SupportedBreathingColorModes.Contains(breathing.ColorMode))
+        {
+            throw Invalid($"The {name} lighting policy does not support this Breathing color mode.");
+        }
+        if (!validationPolicy.SupportsWaveDirectionSelection
+            && lighting.Parameters is WaveLightingParameters { Direction: not LightingDirection.Rightward })
+        {
+            throw Invalid($"The {name} lighting policy supports the upstream Wave direction only.");
+        }
+
         if (lighting.Parameters is SequenceLightingParameters sequence
             && !string.Equals(
                 sequence.LayoutId,
@@ -401,10 +465,9 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid("The battery policy is missing.");
         }
 
-        if (batteryPolicy.ChargeLimitPercent is < 50 or > 80
-            || batteryPolicy.ChargeLimitPercent % 5 != 0)
+        if (batteryPolicy.ChargeLimitPercent is < 50 or > 99)
         {
-            throw Invalid("The battery charge limit must be from 50 to 80 percent in 5 percent steps.");
+            throw Invalid("The enabled battery charge limit must be from 50 to 99 percent.");
         }
     }
 

@@ -1,5 +1,7 @@
 # Build, installation, and Nightly releases
 
+English | [简体中文](zh-CN/build-install-and-nightly.md) | [Русский](ru-RU/build-install-and-nightly.md)
+
 This document covers production publishing, installation, recovery, and the
 Nightly release workflow. For ordinary source builds, use the commands in the
 [developer guide](developer-guide.md#build-and-test).
@@ -137,7 +139,7 @@ release steps.
 ## Nightly workflow
 
 - The `Nightly` GitHub Actions workflow builds the latest committed `main`
-  every day at 09:17 UTC and can also be started manually.
+  only when a maintainer starts it manually; it has no schedule.
 - It runs the formatting, build, test, authoring, and production-publish gates
   used by CI, then retains the Actions artifact for 14 days.
 - Each successful build prepares a draft GitHub prerelease with its installer, checksum,
@@ -152,7 +154,10 @@ release steps.
   when the **Nightly** update channel is selected.
 
 Nightlies are test builds. Verify `OpenBlade-Setup.exe` against the included
-SHA-256 file before installation.
+SHA-256 file before installation. To help test your laptop, follow the
+[experimental Blade support guide](experimental-blade-support.md) for available
+controls and test reports. Controls enable automatically on recognized models in
+every update channel.
 
 ### Attestations and signing status
 

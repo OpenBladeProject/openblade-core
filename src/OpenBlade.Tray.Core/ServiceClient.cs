@@ -298,6 +298,13 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
+    public Task<ControlOperationResult> ResumeExperimentalWritesAsync(
+        CancellationToken token) => SendMutationAsync(
+            new ResumeExperimentalWritesRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
+            token);
+
     public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
         CancellationToken token) => SendMutationAsync(
             new ReapplyChangedSettingsRequest(
@@ -386,6 +393,57 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             frame.ToRgbBytes());
+        await ambientFrameGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            for (int attempt = 0; ; attempt++)
+            {
+                Stream connection = ambientFrameConnection ??=
+                    await connectAsync(token).ConfigureAwait(false);
+                try
+                {
+                    ServiceResponse response = await SendOverConnectionAsync(
+                            connection,
+                            request,
+                            token)
+                        .ConfigureAwait(false);
+                    return response.Result
+                        ?? throw new InvalidDataException(
+                            "Service mutation response is missing its result body.");
+                }
+                catch (Exception exception) when (
+                    attempt == 0
+                    && !token.IsCancellationRequested
+                    && IsRetryableTransportFailure(exception))
+                {
+                    await ResetAmbientFrameConnectionCoreAsync().ConfigureAwait(false);
+                    await DelayAfterCapacityRejectionAsync(exception, token)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    await ResetAmbientFrameConnectionCoreAsync().ConfigureAwait(false);
+                    throw;
+                }
+            }
+        }
+        finally
+        {
+            ambientFrameGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        var request = new PushUniformLightingFrameRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            frame);
         await ambientFrameGate.WaitAsync(token).ConfigureAwait(false);
         try
         {

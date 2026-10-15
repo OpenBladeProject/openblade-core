@@ -30,6 +30,8 @@ internal static class BatteryOperationPlanner
             return BlockedBatteryPlan("Battery");
         }
 
+        desired = WithoutStaleFullCharge(desired, confirmed);
+
         if (desired.TemporaryFullCharge != confirmed.TemporaryFullCharge.Value)
         {
             return CreateTemporaryFullChargePlan(
@@ -113,7 +115,8 @@ internal static class BatteryOperationPlanner
 
         bool storedLimitAdmitted = capabilities.ChargeLimits.Contains(
             storedPolicy.ChargeLimitPercent);
-        if (!storedLimitAdmitted || confirmed?.TemporaryFullCharge is not false)
+        if (enabled && !storedLimitAdmitted
+            || confirmed?.TemporaryFullCharge is not false)
         {
             return BlockedBatteryPlan("Battery protection");
         }
@@ -124,9 +127,12 @@ internal static class BatteryOperationPlanner
                 || confirmed is not
                 {
                     ProtectionEnabled: true,
-                    ChargeLimitPercent: var currentLimit,
+                    ChargeLimitPercent: int currentLimit,
                 }
-                || currentLimit != storedPolicy.ChargeLimitPercent)
+                // Protection Off has its own admitted command. The current
+                // limit must be readable and supported, but need not equal
+                // the saved limit used when protection is enabled again.
+                || !capabilities.ChargeLimits.Contains(currentLimit))
             {
                 return BlockedBatteryPlan("Battery protection");
             }
@@ -173,6 +179,20 @@ internal static class BatteryOperationPlanner
             new BatteryOperation.ChargeLimit(storedPolicy),
             MatchesOn);
     }
+
+    // Temporary full charge is a firmware one-shot that is enabled only by an
+    // explicit request. Automatic paths (transitions, reapply, policy and
+    // protection changes) may keep or cancel it, but an intent that reads back
+    // inactive has ended, so it is never planned as an enable.
+    internal static DesiredBatteryState WithoutStaleFullCharge(
+        DesiredBatteryState desired,
+        ConfirmedBatteryState? confirmed) =>
+        desired.TemporaryFullCharge && confirmed?.TemporaryFullCharge == false
+            ? new DesiredBatteryState(
+                desired.ConfiguredPolicy,
+                desired.ProtectionEnabled,
+                false)
+            : desired;
 
     internal static BatteryOperationPlan CreateTemporaryFullChargePlan(
         bool enabled,

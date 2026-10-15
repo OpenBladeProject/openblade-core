@@ -634,7 +634,7 @@
     <value>Профиль питания изменён</value>
   </data>
   <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
-    <value>Профиль USB-C</value>
+    <value>Профиль малой мощности</value>
   </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Помощник по официальным обновлениям прошивки Razer</value>
@@ -655,7 +655,7 @@
     <value>Экспорт профилей OpenBlade</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
-    <value>Это заменит сохранённые профили питания от сети, USB-C, аккумулятора и защиты аккумулятора. Текущие параметры оборудования не изменятся, пока вы не примените или не переключите профиль.</value>
+    <value>Это заменит сохранённые профили питания от сети, малой мощности, аккумулятора и защиты аккумулятора. Текущие параметры оборудования не изменятся, пока вы не примените или не переключите профиль.</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
     <value>Импортировать профили?</value>
@@ -893,7 +893,7 @@
     <value>Активен</value>
   </data>
   <data name="MainWindow_TextBlockActiveACUSBCOrBatteryProfile.Text" xml:space="preserve">
-    <value>Активный профиль питания от сети, USB-C или аккумулятора.</value>
+    <value>Активный профиль питания от сети, малой мощности или аккумулятора.</value>
   </data>
   <data name="MainWindow_TextBlockAddAdjustment.Text" xml:space="preserve">
     <value>Добавить регулировку</value>
@@ -1619,7 +1619,7 @@
     <value>Обновления</value>
   </data>
   <data name="MainWindow_TextBlockUSBC.Text" xml:space="preserve">
-    <value>USB-C</value>
+    <value>Профиль малой мощности</value>
   </data>
   <data name="MainWindow_TextBlockUSBDevice.Text" xml:space="preserve">
     <value>USB-устройство</value>
@@ -2029,6 +2029,15 @@
   <data name="MainWindow_BlockedControlsCheckCurrentStateLabel.Text" xml:space="preserve">
     <value>Проверить текущее состояние</value>
   </data>
+  <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Экспериментальная поддержка ноутбука</value>
+  </data>
+  <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Возобновить экспериментальное управление</value>
+  </data>
+  <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
+    <value>Возобновить экспериментальное управление</value>
+  </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Помочь добавить поддержку</value>
   </data>
@@ -2040,5 +2049,11 @@
   </data>
   <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Неподдерживаемый ноутбук</value>
+  </data>
+  <data name="MainWindow_TextBlockCustomMaximumFans.Text" xml:space="preserve">
+    <value>Максимальные обороты</value>
+  </data>
+  <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Максимальные обороты</value>
   </data>
 </root>

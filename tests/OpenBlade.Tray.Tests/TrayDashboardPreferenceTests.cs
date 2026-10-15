@@ -410,7 +410,7 @@ public sealed class TrayDashboardPreferenceTests
                 connected: true,
                 PowerSource.PluggedIn));
         Assert.Equal(
-            "USB-C",
+            "Low-power adapter",
             TrayDashboardStatusPresentation.PowerSourceText(
                 connected: true,
                 PowerSource.UsbC));

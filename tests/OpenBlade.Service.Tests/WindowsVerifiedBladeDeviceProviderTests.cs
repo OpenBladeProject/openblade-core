@@ -13,6 +13,42 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     private static readonly TimeSpan TestShutdownBudget = TimeSpan.FromMilliseconds(50);
 
     [Fact]
+    public async Task ExperimentalUnsupportedQueries_DoNotOpenOrProbeHidAndHonorCancellation()
+    {
+        var identity = new CountingExperimentalIdentity();
+        var factory = new ExperimentalBladeFactory(ExperimentalBladeModels.All[0], identity,
+            null!, null!, null!, () => PowerSource.ExternalUnknown);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready,
+                BatteryValidationFirmwareCompatibility.ModelScoped), factory, UnavailableFanRpmFactory());
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        Assert.Null(await device.ReadMcuVersionAsync(CancellationToken.None));
+        Assert.Null(await device.ReadRz090581CapabilityDiagnosticsAsync(CancellationToken.None));
+        Assert.Null(await device.ReadStartupAnimationAsync(CancellationToken.None));
+        Assert.Null(await device.ReadFunctionKeyPrimaryAsync(CancellationToken.None));
+        Assert.Null(await device.ReadGamingModeAsync(CancellationToken.None));
+        Assert.Equal(0, identity.Reads);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadMcuVersionAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadRz090581CapabilityDiagnosticsAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadStartupAnimationAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadFunctionKeyPrimaryAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => device.ReadGamingModeAsync(cancellation.Token));
+        Assert.Equal(0, identity.Reads);
+    }
+
+    private sealed class CountingExperimentalIdentity : IHostIdentitySource
+    {
+        internal int Reads { get; private set; }
+        public HostIdentityReadResult ReadExactIdentity()
+        {
+            Reads++;
+            return new(null, HidSessionFailureKind.IdentityBlocked);
+        }
+    }
+
+    [Fact]
     public void VerificationDiagnostics_CachesExactHostFailureAndRetainsItAfterRecovery()
     {
         int probes = 0;
@@ -566,6 +602,29 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(3, factory.OpenCount);
         Assert.Equal(1, port.QueryCount);
         Assert.Equal(1, port.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadState_NativeFailureRetainsClosedDiagnosticAndRejectingQuery()
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.NativeIoFailure, 31, 0);
+        var native = new NativeDeviceReadException(
+            HidSessionFailureKind.NativeIoFailure, diagnostic, null);
+        var factory = new FakeQueryFactory(
+            FakeQueryPort.Throwing(native), FakeQueryPort.Throwing(native), FakeQueryPort.Throwing(native));
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        IOException error = await Assert.ThrowsAsync<IOException>(() => device.ReadStateAsync(default));
+
+        Assert.Contains("query=BatteryProtection", error.Message);
+        Assert.Contains("phase=GetCompletion", error.Message);
+        Assert.Contains("nativeError=31", error.Message);
+        Assert.Contains("bytes=0", error.Message);
+        var cause = Assert.IsType<NativeDeviceReadException>(error.InnerException);
+        Assert.Equal(diagnostic, cause.Diagnostic);
+        Assert.Equal(DeviceStateQuery.BatteryProtection, cause.StateQuery);
     }
 
     [Fact]

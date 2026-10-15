@@ -11,8 +11,8 @@ public static class UnsupportedLaptopReport
     private const string VersionsEntryName = "versions.json";
     private const string DeviceVerificationEntryName = "device-verification.json";
 
-    public static Uri IssueFormUri { get; } = new(
-        "https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml");
+    public static Uri SupportGuideUri { get; } = new(
+        "https://github.com/OpenBladeProject/synapse-observer");
 
     public static IReadOnlyList<string> IncludedEntries { get; } =
     [

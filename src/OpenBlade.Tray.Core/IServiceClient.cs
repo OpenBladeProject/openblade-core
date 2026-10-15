@@ -132,6 +132,12 @@ public interface IServiceClient : IServiceStatusWatcher
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> ResumeExperimentalWritesAsync(
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Experimental writes cannot be resumed."));
+
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(CancellationToken token);
 
     Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(CancellationToken token);
@@ -148,6 +154,12 @@ public interface IServiceClient : IServiceStatusWatcher
     Task<ControlOperationResult> PushAmbientLightingFrameAsync(
         AmbientLightingFrame frame,
         CancellationToken token);
+
+    Task<ControlOperationResult> PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Uniform host-rendered lighting is unavailable."));
 
     Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
         bool muted,

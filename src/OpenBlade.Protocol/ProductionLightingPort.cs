@@ -73,10 +73,13 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
         PendingDisposalRegistry pendingDisposals,
-        Func<bool>? driverModeWriteAllowed = null)
+        Func<bool>? driverModeWriteAllowed = null,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
-        session = actor.Session;
+        session = sharedCommandGate is null
+            ? actor.Session
+            : new RazerCommandSessionGate(actor.Session, sharedCommandGate);
         this.matrixWriter = matrixWriter;
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
@@ -995,6 +998,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             cancellationToken).ConfigureAwait(false);
         if (!LogoLightingProtocol.TryDecodeMode(state.Span, effect.Span, out LogoLightingMode mode))
         {
+            session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
+            session.RetainQueryFailure(0x03, 0x82, FirmwareQueryOutcome.ContentRejected);
             throw new DeviceStateContentRejectedException(
                 "Logo lighting response was malformed or unsupported.",
                 DeviceStateQuery.LogoLightingCombination,
@@ -1227,6 +1232,23 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             return result.Value;
         }
 
+        if (result.Failure is
+                HidSessionFailureKind.QueuedCanceled or
+                HidSessionFailureKind.Exhausted
+            || result.Diagnostic?.Phase == HidSessionFailurePhase.SharedGateAdmission)
+        {
+            string phase = result.Diagnostic?.Phase.ToString() ?? "None";
+            throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                $"The lighting command {command.ClassId:X2}/{command.CommandId:X2} was not submitted " +
+                $"({result.Failure}, {phase}).")
+            {
+                Diagnostic = result.Diagnostic,
+                CommandClass = command.ClassId,
+                CommandId = command.CommandId,
+            };
+        }
+
         if (cancellationToken.IsCancellationRequested)
         {
             throw new BladeWriteException(
@@ -1236,6 +1258,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
         WriteSubmissionState state = result.Failure is
             HidSessionFailureKind.QueuedCanceled or
+            HidSessionFailureKind.Exhausted or
             HidSessionFailureKind.ConflictBlocked or
             HidSessionFailureKind.ConflictDetectionFailed
                 ? WriteSubmissionState.KnownNotApplied
@@ -1287,6 +1310,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
         WriteSubmissionState state = result.Failure is
             HidSessionFailureKind.QueuedCanceled or
+            HidSessionFailureKind.Exhausted or
             HidSessionFailureKind.ConflictBlocked or
             HidSessionFailureKind.ConflictDetectionFailed
                 ? WriteSubmissionState.KnownNotApplied

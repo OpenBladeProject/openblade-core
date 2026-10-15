@@ -336,6 +336,7 @@ public sealed class ServiceClientTests
                 LightingRefreshRate.SixtyHz,
                 timeout.Token),
             await client.SetFirmwareCompatibilityOverrideAsync(true, timeout.Token),
+            await client.ResumeExperimentalWritesAsync(timeout.Token),
             await client.ReapplyChangedSettingsAsync(timeout.Token),
             await client.RecoverHyperBoostRestoreAsync(timeout.Token),
             await client.SetLightingSuppressionAsync(
@@ -395,6 +396,7 @@ public sealed class ServiceClientTests
                 Assert.IsType<SetLightingRefreshRateRequest>(request).RefreshRate),
             request => Assert.True(
                 Assert.IsType<SetFirmwareCompatibilityOverrideRequest>(request).Enabled),
+            request => Assert.IsType<ResumeExperimentalWritesRequest>(request),
             request => Assert.IsType<ReapplyChangedSettingsRequest>(request),
             request => Assert.IsType<RecoverHyperBoostRestoreRequest>(request),
             request =>
@@ -420,7 +422,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(23, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(24, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -527,6 +529,34 @@ public sealed class ServiceClientTests
 
         Assert.Equal(ControlOperationStatus.Applied, (await send).Status);
         await acceptedServer;
+    }
+
+    [Fact]
+    public async Task UniformFrame_UsesTypedStreamingRequest()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        ServiceRequest? observed = null;
+        Task server = RunServerAsync(
+            pipeName,
+            request =>
+            {
+                observed = request;
+                return Applied(request.RequestId);
+            },
+            timeout.Token);
+        var client = new ServiceClient(pipeName, TimeProvider.System);
+        var expected = new UniformLightingFrame(new RgbColor(12, 34, 56));
+
+        ControlOperationResult result = await client.PushUniformLightingFrameAsync(
+            expected,
+            timeout.Token);
+        await server;
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            expected,
+            Assert.IsType<PushUniformLightingFrameRequest>(observed).Frame);
     }
 
     [Fact]
@@ -1133,7 +1163,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 23; index++)
+        for (int index = 0; index < 24; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

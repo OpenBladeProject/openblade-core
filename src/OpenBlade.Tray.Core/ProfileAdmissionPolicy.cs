@@ -4,7 +4,7 @@ namespace OpenBlade.Tray;
 
 /// <summary>
 /// Admits profile edits against current capabilities while preserving unchanged
-/// settings. USB-C thermal restrictions still apply to unchanged profiles.
+/// settings. Low-power thermal restrictions still apply to unchanged profiles.
 /// </summary>
 internal static class ProfileAdmissionPolicy
 {
@@ -33,9 +33,10 @@ internal static class ProfileAdmissionPolicy
                 current.UsbC,
                 capabilities,
                 PowerSource.UsbC)
-            && HasBatteryCapability(capabilities)
-            && capabilities.ChargeLimits.Contains(
-                draft.BatteryPolicy.ChargeLimitPercent);
+            && (draft.BatteryPolicy == current.BatteryPolicy
+                || (HasBatteryCapability(capabilities)
+                    && capabilities.ChargeLimits.Contains(
+                        draft.BatteryPolicy.ChargeLimitPercent)));
     }
 
     private static bool ProfileSupportedOrUnchanged(
@@ -57,17 +58,24 @@ internal static class ProfileAdmissionPolicy
                 && draft.Fans == current.Fans))
         && (draft.Performance != PerformancePreset.Custom
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
+        && (draft.Performance != PerformancePreset.Custom
+            || draft.CustomPerformance?.MaximumFans != true || draft.Fans == FanMode.Automatic)
         && (draft.CustomPerformance is null
-            || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
-        && ThermalCombinationSupported(draft.Performance, draft.Fans)
+            || draft.CustomPerformance == current.CustomPerformance
+            || capabilities.CustomPerformance?.Supports(draft.CustomPerformance) == true)
+        && (ThermalCombinationSupported(draft.Performance, draft.Fans, capabilities)
+            || (draft.Fans == current.Fans
+                && !capabilities.FanModes.Contains(draft.Fans)))
         && (LightingSupported(draft.Lighting, capabilities)
             || draft.Lighting == current.Lighting);
 
     private static bool ThermalCombinationSupported(
         PerformancePreset performance,
-        FanMode fans) =>
+        FanMode fans,
+        DeviceCapabilities capabilities) =>
         fans == FanMode.Automatic
-        || (performance == PerformancePreset.Balanced
+        || ((capabilities.SupportsDirectManualFanTransitions
+                || performance == PerformancePreset.Balanced)
             && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum);
 
     internal static bool FanModeAvailable(PowerSource powerSource, FanMode fans) =>
@@ -98,7 +106,8 @@ internal static class ProfileAdmissionPolicy
 
     internal static bool HasBatteryCapability(DeviceCapabilities? capabilities) =>
         capabilities is not null
-        && capabilities.ChargeLimits.Count is > 0 and <= 7
+        && capabilities.ChargeLimits.Count is > 0 and <= 51
+        && capabilities.ChargeLimits.Any(value => value < 100)
         && capabilities.ChargeLimits.All(
-            value => value is >= 50 and <= 80 && value % 5 == 0);
+            value => value is >= 50 and <= 100);
 }

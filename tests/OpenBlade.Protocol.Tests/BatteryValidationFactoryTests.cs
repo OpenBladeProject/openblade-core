@@ -196,7 +196,7 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
-    public async Task CreateWindowsTemporaryFullChargeValidation_UsesThirtyMillisecondSettleAcrossAllEightExchanges()
+    public async Task CreateWindowsTemporaryFullChargeValidation_UsesThirtyMillisecondSettleAcrossAllTenExchanges()
     {
         var time = new ManualTimeProvider();
         var io = new SuccessfulQueryIo(temporaryFullChargeValidation: true);
@@ -220,25 +220,27 @@ public sealed class BatteryValidationFactoryTests
         Assert.False((await CompleteSettledExchangeAsync(
             2, () => port.QueryTemporaryFullChargeAsync(default), io, time, 30)).Value);
         Assert.Null((await CompleteSettledExchangeAsync(
-            3, () => port.ApplyTemporaryFullChargeAsync(default), io, time, 30)).Failure);
+            3, () => port.ApplyTemporaryFullChargeAsync(default), io, time, 30, 2)).Failure);
         Assert.Equal(BatteryValidationSetting.Limit80, (await CompleteSettledExchangeAsync(
-            4, () => port.QueryProtectionAsync(default), io, time, 30)).Value);
+            5, () => port.QueryProtectionAsync(default), io, time, 30)).Value);
         Assert.True((await CompleteSettledExchangeAsync(
-            5, () => port.QueryTemporaryFullChargeAsync(default), io, time, 30)).Value);
+            6, () => port.QueryTemporaryFullChargeAsync(default), io, time, 30)).Value);
         Assert.Null((await CompleteSettledExchangeAsync(
-            6, () => port.CancelTemporaryFullChargeAsync(default), io, time, 30)).Failure);
+            7, () => port.CancelTemporaryFullChargeAsync(default), io, time, 30, 2)).Failure);
         Assert.Equal(BatteryValidationSetting.Limit80, (await CompleteSettledExchangeAsync(
-            7, () => port.QueryProtectionAsync(default), io, time, 30)).Value);
+            9, () => port.QueryProtectionAsync(default), io, time, 30)).Value);
         Assert.False((await CompleteSettledExchangeAsync(
-            8, () => port.QueryTemporaryFullChargeAsync(default), io, time, 30)).Value);
+            10, () => port.QueryTemporaryFullChargeAsync(default), io, time, 30)).Value);
 
         Assert.Equal(
             [
                 "1:07/92/00",
                 "2:07/8F/00",
+                "9:07/8F/00",
                 "3:07/0F/04",
                 "4:07/92/00",
                 "5:07/8F/00",
+                "10:07/8F/00",
                 "6:07/0F/00",
                 "7:07/92/00",
                 "8:07/8F/00",
@@ -1079,21 +1081,31 @@ public sealed class BatteryValidationFactoryTests
         Func<Task<HidSessionResult<T>>> start,
         SuccessfulQueryIo io,
         ManualTimeProvider time,
-        int settleMilliseconds = 20)
+        int settleMilliseconds = 20,
+        int exchangeCount = 1)
     {
         Task<HidSessionResult<T>> exchange = start();
-        int setCallCount = (exchangeNumber * 2) - 1;
-        await io.WaitForCallsAsync(setCallCount);
-        await time.WaitForTimerCountAsync(exchangeNumber * 2);
+        int lastExchange = exchangeNumber + exchangeCount - 1;
+        for (int current = exchangeNumber; current <= lastExchange; current++)
+        {
+            int setCallCount = (current * 2) - 1;
+            await io.WaitForCallsAsync(setCallCount);
+            await time.WaitForTimerCountAsync(current * 2);
 
-        time.Advance(TimeSpan.FromMilliseconds(settleMilliseconds - 1));
-        await Task.Yield();
-        Assert.Equal(setCallCount, io.CallCount);
-        Assert.False(exchange.IsCompleted);
+            time.Advance(TimeSpan.FromMilliseconds(settleMilliseconds - 1));
+            await Task.Yield();
+            Assert.Equal(setCallCount, io.CallCount);
+            Assert.False(exchange.IsCompleted);
 
-        time.Advance(TimeSpan.FromMilliseconds(1));
+            time.Advance(TimeSpan.FromMilliseconds(1));
+            if (current < lastExchange)
+            {
+                await io.WaitForCallsAsync(current * 2);
+            }
+        }
+
         HidSessionResult<T> result = await exchange;
-        Assert.Equal(exchangeNumber * 2, io.CallCount);
+        Assert.Equal(lastExchange * 2, io.CallCount);
         return result;
     }
 

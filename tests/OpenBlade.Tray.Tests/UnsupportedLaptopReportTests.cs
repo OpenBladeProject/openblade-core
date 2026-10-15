@@ -54,11 +54,11 @@ public sealed class UnsupportedLaptopReportTests
     }
 
     [Fact]
-    public void IssueFormUri_IsTheDeviceSupportTemplate()
+    public void SupportGuideUri_IsTheSynapseObserverRepository()
     {
         Assert.Equal(
-            "https://github.com/OpenBladeProject/openblade-core/issues/new?template=device-support.yml",
-            UnsupportedLaptopReport.IssueFormUri.ToString());
+            "https://github.com/OpenBladeProject/synapse-observer",
+            UnsupportedLaptopReport.SupportGuideUri.ToString());
         Assert.Equal(
             ["versions.json", "device-verification.json"],
             UnsupportedLaptopReport.IncludedEntries);

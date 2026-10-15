@@ -384,8 +384,8 @@
   <data name="Color profile changed outside OpenBlade." xml:space="preserve">
     <value>[!! Cólór prófílé chángéd óútsídé OpenBlade. ~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
-    <value>[!! Cómpáré thé séttíngs stóréd ín ÁC, ÚSB-C, ánd Báttérý prófílés. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Compare the settings stored in AC, low-power, and battery profiles." xml:space="preserve">
+    <value>[!! Cómpáré thé séttíngs stóréd ín ÁC, lów-pówér, ánd báttérý prófílés. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>[!! Cónfígúré lívé réádíngs, sígn-ín, ánd líghtíng ównérshíp. ~~~~~~~~~~~~~~~~~ !!]</value>
@@ -1041,8 +1041,8 @@
   <data name="Save to profile" xml:space="preserve">
     <value>[!! Sávé tó prófílé ~~~~~ !!]</value>
   </data>
-  <data name="Save to USB-C profile" xml:space="preserve">
-    <value>[!! Sávé tó ÚSB-C prófílé ~~~~~~ !!]</value>
+  <data name="Save to low-power profile" xml:space="preserve">
+    <value>[!! Sávé tó lów-pówér prófílé ~~~~~~~~ !!]</value>
   </data>
   <data name="Saved profile comparison" xml:space="preserve">
     <value>[!! Sávéd prófílé cómpárísón ~~~~~~~~ !!]</value>
@@ -1224,11 +1224,14 @@
   <data name="Updates have not been checked." xml:space="preserve">
     <value>[!! Úpdátés hávé nót béén chéckéd. ~~~~~~~~~ !!]</value>
   </data>
-  <data name="USB-C · {0}" xml:space="preserve">
-    <value>[!! ÚSB-C · {0} ~~ !!]</value>
+  <data name="Low-power adapter · {0}" xml:space="preserve">
+    <value>[!! Lów-pówér ádáptér · {0} ~~~~~~ !!]</value>
   </data>
-  <data name="USB-C profile" xml:space="preserve">
-    <value>[!! ÚSB-C prófílé ~~~~ !!]</value>
+  <data name="Low-power adapter" xml:space="preserve">
+    <value>[!! Lów-pówér ádáptér ~~~~~~ !!]</value>
+  </data>
+  <data name="Low-power profile" xml:space="preserve">
+    <value>[!! Lów-pówér prófílé ~~~~~~ !!]</value>
   </data>
   <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
     <value>[!! Úsé á shórtcút súch ás Ctrl+Shift+M. ~~~~~~~ !!]</value>
@@ -1494,8 +1497,8 @@
   <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
     <value>[!! Mánúál fán cóntról ís únáváíláblé fór thís láptóp’s cúrrént cápábílítíés. Fán RPM cán stíll bé shówn. Éxpórt díágnóstícs íf ýóú éxpéctéd mánúál cóntról. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown." xml:space="preserve">
-    <value>[!! Ónlý Áútómátíc fán cóntról ís áváíláblé ón báttérý ór ÚSB-C pówér. Cónnéct thé láptóp’s ÁC chárgér ánd úsé Báláncéd pérfórmáncé fór fíxéd spééd ór á mánúál fán cúrvé. Fán RPM cán stíll bé shówn. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Only Automatic fan control is available on battery or with a low-power adapter. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
+    <value>[!! Ónlý Áútómátíc fán cóntról ís áváíláblé ón báttérý ór wíth á lów-pówér ádáptér. Cónnéct thé láptóp’s ÁC chárgér tó úsé mánúál fán cóntról. Fán RPM cán stíll bé shówn. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
     <value>[!! OpenBlade cán’t cónnéct tó íts sérvícé. Ópén Ábóút ánd séléct Stárt sérvícé. Íf ít stíll cánnót cónnéct, répáír thé ínstállátíón. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -1521,6 +1524,12 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>[!! Sígn ín tó án íntéráctívé Windows séssíón tó chángé láptóp séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
+    <value>[!! Thís láptóp hás éxpéríméntál súppórt énábléd áútómátícállý. Éxpórt díágnóstícs ín Ábóút tó hélp tést súppórt. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>[!! Éxpéríméntál wrítés áré páúséd áftér OpenBlade cóúld nót cónfírm á chángé. Chéck thé cúrrént státé, thén résúmé éxpéríméntál cóntróls. OpenBlade wíll nót rétrý thé prévíóús chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>[!! Láptóp nót súppórtéd ~~~~~~~ !!]</value>
   </data>
@@ -1533,16 +1542,25 @@
   <data name="Identity report not saved." xml:space="preserve">
     <value>[!! Ídéntítý répórt nót sávéd. ~~~~~~~~ !!]</value>
   </data>
-  <data name="Identity report saved to {0}. Attach it to the support form in your browser." xml:space="preserve">
-    <value>[!! Ídéntítý répórt sávéd tó {0}. Áttách ít tó thé súppórt fórm ín ýóúr brówsér. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Identity report saved to {0}. Follow the Synapse Observer guide in your browser to collect and submit evidence." xml:space="preserve">
+    <value>[!! Ídéntítý répórt sávéd tó {0}. Fóllów thé Sýnápsé Óbsérvér gúídé ín ýóúr brówsér tó cólléct ánd súbmít évídéncé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Identity report saved to {0}. Open {1} and attach it to request support." xml:space="preserve">
-    <value>[!! Ídéntítý répórt sávéd tó {0}. Ópén {1} ánd áttách ít tó réqúést súppórt. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Identity report saved to {0}. Open {1} for steps to collect and submit evidence." xml:space="preserve">
+    <value>[!! Ídéntítý répórt sávéd tó {0}. Ópén {1} fór stéps tó cólléct ánd súbmít évídéncé. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Identity report failed: {0}" xml:space="preserve">
     <value>[!! Ídéntítý répórt fáíléd: {0} ~~~~~~~ !!]</value>
   </data>
-  <data name="OpenBlade controls only the laptop models it has been tested on. To help add this one, save a short identity report and attach it to the support form that opens." xml:space="preserve">
-    <value>[!! OpenBlade cóntróls ónlý thé láptóp módéls ít hás béén téstéd ón. Tó hélp ádd thís óné, sávé á shórt ídéntítý répórt ánd áttách ít tó thé súppórt fórm thát ópéns. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop." xml:space="preserve">
+    <value>[!! Sávé á shórt ídéntítý répórt, thén fóllów thé Sýnápsé Óbsérvér gúídé tó hélp ádd súppórt fór thís láptóp. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Boost" xml:space="preserve">
+    <value>[!! Bóóst ~~ !!]</value>
+  </data>
+  <data name="Maximum fans" xml:space="preserve">
+    <value>[!! Máxímúm fáns ~~~~ !!]</value>
+  </data>
+  <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
+    <value>[!! Máxímúm fáns ís cóntróllíng thé fáns. Túrn óff Máxímúm fáns tó chóósé á fán módé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

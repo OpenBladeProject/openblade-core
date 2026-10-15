@@ -261,6 +261,7 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan writeTimeout;
     private readonly IMatrixWriteTimingSink? timingSink;
+    private readonly SemaphoreSlim? sharedCommandGate;
     private readonly Task worker;
     private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
@@ -271,7 +272,8 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         TimeProvider timeProvider,
         TimeSpan writeTimeout,
         ControllerExclusivityPolicy exclusivityPolicy,
-        IMatrixWriteTimingSink? timingSink = null)
+        IMatrixWriteTimingSink? timingSink = null,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(io);
@@ -285,6 +287,7 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         this.writeTimeout = writeTimeout;
         this.exclusivityPolicy = exclusivityPolicy;
         this.timingSink = timingSink;
+        this.sharedCommandGate = sharedCommandGate;
         worker = RunAsync();
     }
 
@@ -298,6 +301,8 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
             }
         }
     }
+
+    internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
     public Task<HidSessionResult<HidUnit>> WriteAsync(
         Pid02E0MatrixReport report,
@@ -432,29 +437,10 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
             {
                 guardStartedTimestamp = timeProvider.GetTimestamp();
             }
-            HardwareAccessDecision access;
-            try
-            {
-                access = guard.Check();
-            }
-            catch
+            if (CheckControllerAccess() is { } guardFailure)
             {
                 return DiagnosticFailure(
-                    HidSessionFailureKind.ConflictDetectionFailed,
-                    HidSessionFailurePhase.Guard);
-            }
-
-            if (access.DetectionFailure is not null)
-            {
-                return DiagnosticFailure(
-                    HidSessionFailureKind.ConflictDetectionFailed,
-                    HidSessionFailurePhase.Guard);
-            }
-
-            if (access.Conflicts.Count != 0)
-            {
-                return DiagnosticFailure(
-                    HidSessionFailureKind.ConflictBlocked,
+                    guardFailure,
                     HidSessionFailurePhase.Guard);
             }
             if (timingSink is not null)
@@ -469,6 +455,99 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
             return Failure(cancellation.Value);
         }
 
+        if (sharedCommandGate is null)
+        {
+            return await ExecuteFeatureWriteAsync(
+                item,
+                deadline.Token,
+                claimedTimestamp,
+                guardStartedTimestamp,
+                guardCompletedTimestamp).ConfigureAwait(false);
+        }
+
+        using var gateCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            item.CancellationToken,
+            deadline.Token);
+        try
+        {
+            await sharedCommandGate.WaitAsync(gateCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (gateCancellation.IsCancellationRequested)
+        {
+            return RazerCommandSessionGate.AdmissionFailure<HidUnit>(
+                item.CancellationToken.IsCancellationRequested
+                    ? HidSessionFailureKind.QueuedCanceled
+                    : HidSessionFailureKind.Exhausted);
+        }
+
+        pendingNativeRetirement = null;
+        try
+        {
+            cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
+            if (cancellation is not null)
+            {
+                return Failure(cancellation.Value);
+            }
+
+            if (CheckControllerAccess() is { } guardFailure)
+            {
+                return DiagnosticFailure(
+                    guardFailure,
+                    HidSessionFailurePhase.Guard);
+            }
+
+            cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
+            return cancellation is null
+                ? await ExecuteFeatureWriteAsync(
+                    item,
+                    deadline.Token,
+                    claimedTimestamp,
+                    guardStartedTimestamp,
+                    guardCompletedTimestamp).ConfigureAwait(false)
+                : Failure(cancellation.Value);
+        }
+        finally
+        {
+            RazerCommandSessionGate.ReleaseAfterRetirement(sharedCommandGate, pendingNativeRetirement);
+        }
+    }
+
+    private HidSessionFailureKind? CheckControllerAccess()
+    {
+        if (exclusivityPolicy != ControllerExclusivityPolicy.Strict)
+        {
+            return null;
+        }
+
+        HardwareAccessDecision access;
+        try
+        {
+            access = guard.Check();
+        }
+        catch
+        {
+            return HidSessionFailureKind.ConflictDetectionFailed;
+        }
+
+        if (access.DetectionFailure is not null)
+        {
+            return HidSessionFailureKind.ConflictDetectionFailed;
+        }
+
+        return access.Conflicts.Count != 0
+            ? HidSessionFailureKind.ConflictBlocked
+            : null;
+    }
+
+    private Task? pendingNativeRetirement;
+
+    private async Task<HidSessionResult<HidUnit>> ExecuteFeatureWriteAsync(
+        WorkItem item,
+        CancellationToken deadline,
+        long claimedTimestamp,
+        long guardStartedTimestamp,
+        long guardCompletedTimestamp)
+    {
         HidFeatureIoResult result;
         try
         {
@@ -477,10 +556,12 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
                 IoctlHidSetFeature,
                 item.Buffer,
                 item.CancellationToken,
-                deadline.Token).ConfigureAwait(false);
+                deadline).ConfigureAwait(false);
+            pendingNativeRetirement = result.NativeRetirement;
         }
         catch (NativeOperationFinalizationException exception)
         {
+            pendingNativeRetirement = exception.Result.NativeRetirement;
             Poison();
             NativeIoCompletion? completion = exception.Result.Completion;
             return DiagnosticFailure(
@@ -505,10 +586,10 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
                 managedHResult: exception.HResult);
         }
 
-        cancellation = ClassifyIoCancellation(
+        HidSessionFailureKind? cancellation = ClassifyIoCancellation(
             result,
             item.CancellationToken,
-            deadline.Token);
+            deadline);
         if (cancellation is not null)
         {
             if (result.WasSubmitted)

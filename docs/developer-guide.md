@@ -55,8 +55,10 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   handle, and it serializes every hardware operation.
 - The protocol layer encodes validated 90-byte Razer reports. Service IPC
   exposes typed operations only; there is no raw-command endpoint.
-- Every admitted write has a trusted capture fixture. Automatic and stateful
-  controls also require independent readback.
+- Physically validated writes retain their captured command and confirmation
+  contracts. Experimental setters use separately reviewed, pinned upstream
+  definitions with decoded baselines and independent readback. Both retain fresh
+  exact-device and controller checks.
 - Temporary pipe, enumeration, or read failures preserve the last confirmed UI
   state, but every write performs fresh identity and safety checks.
 - Competing Razer controllers block affected operations. Verified
@@ -79,6 +81,16 @@ Only an identity that explicitly pins exact versions checks SKU and BIOS
 version. Capture tools are kept outside the installed product, may pin an exact
 BIOS version for reproducibility, and raw captures are never production
 admission artifacts.
+
+Experimental profiles are recognized automatically by `ExperimentalBladeFactory`
+and use `ExperimentalBladePort` with their own bounded capabilities and source
+provenance. They have no Settings consent switch or release-channel gate.
+Pre-releases are the testing route, not a new hardware-admission rule. The
+[experimental support guide](experimental-blade-support.md) lists the five exact
+models and remaining physical validation. Each profile admits its own thermal,
+battery, and lighting commands. The Blade 16 (2023) also admits typed uniform
+host-rendered frames; it does not use another model's key map or brightness
+driver. Experimental evidence stays separate from capture-backed support.
 
 When an admitted laptop's exact Razer driver stack is already present,
 OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
@@ -156,22 +168,53 @@ paths, serial numbers, exception messages, and raw HID reports are not collected
 by this verification record. The USB IDs in `device.json` identify the catalog
 model and do not establish successful HID verification.
 
-When the latest probe read a BIOS manufacturer or product name that matches no
-admitted model, the service status sets `UnsupportedLaptop`. Registry read
+When the latest probe read a BIOS manufacturer or product name that matches
+neither the physically validated nor experimental exact-model catalogs, the service status sets `UnsupportedLaptop`. Registry read
 failures, platform failures, firmware blocks, and failed checks on an admitted
 model leave it false. The tray then
 shows **This laptop isn't supported yet** with **Help add support**. That action
 uses the same export, keeps only `versions.json` and `device-verification.json`,
 saves them as `OpenBlade-identity-report.zip` without tray logs, and opens the
-**Support my laptop** issue form. `device.json` is left out because it has a
-serial-number field.
+[Synapse Observer guide](https://github.com/OpenBladeProject/synapse-observer).
+The guide explains collection and submission to an existing or new model-support
+request. `device.json` is left out because it has a serial-number field.
 
 If device controls are disabled after identity verification succeeds, check
 `configuration.json`'s `status.message` and `command-results.json`. Protocol
 failures identify the rejected battery or thermal query and its validation
 category. Thermal diagnostics distinguish each channel from channel agreement
-and custom CPU/GPU settings. These records omit raw device responses and do not
-change write admission.
+and custom CPU/GPU settings.
+
+`firmware-queries.json` retains results from supported firmware state queries
+on validated and experimental models. Each query and selector has its own
+latest observation, first and last failure, and last failure with a reply.
+Successful recovery, port disposal and ordinary log rotation do not erase
+that failure evidence. The collection lasts for the current service run;
+export before restarting the service.
+
+Replies are exported as bounded hexadecimal payloads after envelope,
+correlation, status and length validation. Decoder and exact-model admission
+rejections retain those payloads, including unrecognized adapter replies.
+Transport and framing failures retain typed failure details instead of an
+untrusted response. Serial queries, device paths and full HID reports are
+excluded. Exporting makes no additional hardware requests and does not change
+write admission.
+
+For adapter classification, use the [pinned Synapse wattage definitions](synapse-adapter-wattage.md)
+first. The reply contains both connected and recommended wattage; insufficient
+power does not identify a connector. Use retained diagnostics when vendor data
+is missing or a device's reply does not match it.
+
+Experimental devices also export `experimental-support.json` with source
+provenance, write-pause state, and the last 32 typed command-stage observations,
+alongside cached telemetry. Exports remain local until a user shares them.
+Collect diagnostics before choosing **Resume experimental controls**. Recovery
+drains the old session, rechecks identity and authority, then reads and reconciles
+current state without sending a setter or replaying the uncertain request. A new
+lighting choice releases the old lighting hold; unrelated profile edits do not.
+See the [tester workflow](experimental-blade-support.md#send-a-useful-test-report)
+for baseline and follow-up reports. The [experimental implementation reference](experimental-blade-reference.md)
+records model identities, command limits, and pinned source provenance.
 
 ## Build and test
 
@@ -214,7 +257,7 @@ installer troubleshooting.
 
 ### Nightly builds
 
-- Built from committed `main` every day at 09:17 UTC or on manual request
+- Built from committed `main` only when a maintainer starts the workflow manually
 - Prepared as draft GitHub prereleases with the installer, checksum, metadata,
   and exact-commit changelog snapshot
 - Published after the generated changelog PR is reviewed and merged, then
@@ -237,6 +280,62 @@ dotnet run --project src\OpenBlade.Capture -- scan
 dotnet run --project src\OpenBlade.Capture -- query-fan-rpm
 dotnet run --project src\OpenBlade.Capture -- validate path\to\fixtures.json
 ```
+
+### Power Mode Control and local dimming
+
+`07/8F` (get) and `07/0F` (set) are Synapse's Power Mode Control, a shared
+bitmask:
+
+| Bit | Meaning |
+|---|---|
+| `0x01` | CPU boost |
+| `0x02` | Max fan speed |
+| `0x04` | One-time full charge ("Allow system to fully charge once") |
+| `0x08` | Local dimming |
+
+A read-only inspection of the installed Synapse 4 code found this reply decoder
+in Synapse's shared Blade device code (`rzDevice25`), not only in RZ09-0581
+code. Synapse changes one bit at a time with read-modify-write. In the inspected
+code, its local dimming action writes `0x08` on Blade series 10 to 12 and
+toggles Windows HDR on other series. Captured evidence covers less: the
+RZ09-0581 shows `00`, `04` and `08` in the field and in local tests, while the
+RZ09-0528 captures show only `00` and `04`. The other bit meanings come from
+Synapse's code, not captures.
+
+On the RZ09-0581, Synapse follows Windows HDR while it runs: turning HDR on sets
+`0x08`, turning it off clears it, and the bit stays set after Synapse exits.
+This happens even though the OLED panel has no local dimming hardware. Evidence
+is in
+[firmware-validation-rz09-0581-mcu-1.7.md](firmware-validation-rz09-0581-mcu-1.7.md).
+
+Because the decoder is shared, OpenBlade applies the same rules to every model
+that reads `07/8F` or writes `07/0F`, in production and in developer validation
+runs:
+
+- Any one-byte value made of the four bits decodes, and temporary full charge is
+  bit `0x04`. Undefined bits (`0x10` to `0x80`) and other lengths are rejected,
+  and the rejected bytes stay in diagnostics.
+- Before every `07/0F` write, read `07/8F` freshly in the same write session.
+  Temporary full charge requires `00` or `04`; otherwise nothing is sent and
+  the product names the other settings that are on. Developer validation reports
+  the refusal as `EnableFailed` or `CancelFailed`. Captured full-charge writes
+  remain limited to bare `00` and `04`.
+- Experimental Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
+  `02` writes. Its fresh guard refuses CPU boost, temporary full charge, or
+  local dimming bits, so replacing the byte cannot clear another enabled option.
+  This does not admit combined writes or a local dimming control.
+
+When you admit a model, check its panel:
+
+- **OLED, or no local dimming hardware** (the RZ09-0581 today): don't offer a
+  local dimming control. Read `0x08` and leave it untouched.
+- **Mini-LED with local dimming**: offer an explicit **Clear** action, shown
+  only while `0x08` is set. Use the captured payloads: write `00`, or `04` when
+  full charge is on, so only `0x08` changes. Confirm by readback, and refuse if
+  `0x01` or `0x02` is set. Gate it on that model's exact identity and panel
+  evidence, for example its mini-LED resolution reading. Don't clear the bit
+  automatically, since it may be a real display setting. Any other combined
+  payload needs capture and reversible validation first.
 
 ### RZ09-0581 lighting cadence validator
 

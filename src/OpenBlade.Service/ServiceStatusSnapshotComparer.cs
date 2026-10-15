@@ -54,6 +54,13 @@ internal static class ServiceStatusSnapshotComparer
             == right.AlwaysOverrideExternalLightingChanges
         && left.LightingRefreshRate == right.LightingRefreshRate
         && left.AllowUntestedFirmware == right.AllowUntestedFirmware
+        && left.AllowExperimentalFeatures == right.AllowExperimentalFeatures
+        && left.ExperimentalWritesPaused == right.ExperimentalWritesPaused
+        && left.IsExperimentalDevice == right.IsExperimentalDevice
+        && string.Equals(
+            left.ExperimentalSupportSource,
+            right.ExperimentalSupportSource,
+            StringComparison.Ordinal)
         && left.FirmwareCompatibility == right.FirmwareCompatibility
         && left.DisplayBrightnessHidAvailability
             == right.DisplayBrightnessHidAvailability
@@ -101,6 +108,7 @@ internal static class ServiceStatusSnapshotComparer
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
+            && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
             && left.SupportedLightingRefreshRates.SetEquals(
@@ -109,6 +117,12 @@ internal static class ServiceStatusSnapshotComparer
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
+            && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection
+            && OptionalSetEquals(
+                left.SupportedBreathingColorModes,
+                right.SupportedBreathingColorModes)
+            && left.SupportsUniformLightingFrames == right.SupportsUniformLightingFrames
+            && left.SupportsWaveDirectionSelection == right.SupportsWaveDirectionSelection
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
             && string.Equals(
@@ -118,11 +132,17 @@ internal static class ServiceStatusSnapshotComparer
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 
+    private static bool OptionalSetEquals<T>(
+        IReadOnlySet<T>? left,
+        IReadOnlySet<T>? right) =>
+        left is null ? right is null : right is not null && left.SetEquals(right);
+
     private static bool CustomPerformanceCapabilitiesEqual(
         CustomPerformanceCapabilities? left,
         CustomPerformanceCapabilities? right) =>
         ReferenceEquals(left, right)
         || (left is not null
             && right is not null
+            && left.SupportsMaximumFans == right.SupportsMaximumFans
             && left.AllowedCombinations.SetEquals(right.AllowedCombinations));
 }

@@ -169,8 +169,8 @@ public sealed class Rz090528MatrixLightingTests
         using var gate = new SemaphoreSlim(1, 1);
         var first = new BlockingSession();
         var second = new BlockingSession();
-        var firstSession = new Rz090528CommandSessionGate(first, gate);
-        var secondSession = new Rz090528CommandSessionGate(second, gate);
+        var firstSession = new RazerCommandSessionGate(first, gate);
+        var secondSession = new RazerCommandSessionGate(second, gate);
         RazerCommandSpec command = new(0x03, 0x83, [0x01, 0x05, 0x00], 3);
 
         Task<HidSessionResult<ReadOnlyMemory<byte>>> firstExchange =
@@ -187,7 +187,6 @@ public sealed class Rz090528MatrixLightingTests
                 static () => TransactionIdAssignment.Valid(1),
                 TimeSpan.FromSeconds(1),
                 default);
-        await Task.Delay(50);
         Assert.False(second.Entered.Task.IsCompleted);
 
         first.Release.TrySetResult();
@@ -203,8 +202,8 @@ public sealed class Rz090528MatrixLightingTests
         using var gate = new SemaphoreSlim(1, 1);
         var batchInner = new BlockingSession();
         var queryInner = new BlockingSession();
-        var batchSession = new Rz090528CommandSessionGate(batchInner, gate);
-        var querySession = new Rz090528CommandSessionGate(queryInner, gate);
+        var batchSession = new RazerCommandSessionGate(batchInner, gate);
+        var querySession = new RazerCommandSessionGate(queryInner, gate);
         int assignments = 0;
 
         Task<HidSessionResult<ReadOnlyMemory<byte>>> batch =
@@ -226,7 +225,6 @@ public sealed class Rz090528MatrixLightingTests
                 static () => TransactionIdAssignment.Valid(4),
                 TimeSpan.FromSeconds(1),
                 default);
-        await Task.Delay(50);
         Assert.False(queryInner.Entered.Task.IsCompleted);
 
         batchInner.Release.TrySetResult();

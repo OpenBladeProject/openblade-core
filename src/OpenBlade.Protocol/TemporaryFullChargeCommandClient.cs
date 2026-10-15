@@ -6,11 +6,25 @@ internal interface ITemporaryFullChargeCommandClient
         byte transactionId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Reads 07/8F with the other Power Mode Control bits, for the pre-write
+    /// guard that every 07/0F write requires.
+    /// </summary>
+    Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+        byte transactionId,
+        CancellationToken cancellationToken);
+
     Task<HidSessionResult<HidUnit>> SetAsync(
         byte transactionId,
         bool enabled,
         CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// A decoded 07/8F reading. <see cref="OtherSettings"/> holds the
+/// other Power Mode Control bits (CPU boost, maximum fan speed, local dimming).
+/// </summary>
+internal readonly record struct TemporaryFullChargeReading(bool Active, byte OtherSettings);
 
 internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCommandClient
 {
@@ -38,6 +52,17 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
         byte transactionId,
         CancellationToken cancellationToken)
     {
+        HidSessionResult<TemporaryFullChargeReading> reading =
+            await QueryReadingAsync(transactionId, cancellationToken).ConfigureAwait(false);
+        return reading.Failure is null
+            ? new(reading.Value.Active, null)
+            : new(default, reading.Failure) { Diagnostic = reading.Diagnostic };
+    }
+
+    public async Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
+        byte transactionId,
+        CancellationToken cancellationToken)
+    {
         TransactionIdAssignment assignment = TransactionIdAssignment.Valid(transactionId);
         HidSessionResult<ReadOnlyMemory<byte>> response = await session.ExecuteAsync(
             QueryCommand,
@@ -50,8 +75,11 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
             return new(default, response.Failure) { Diagnostic = response.Diagnostic };
         }
 
-        return TemporaryFullChargeProtocol.TryDecodeQuery(response.Value.Span, out bool active)
-            ? new(active, null)
+        return TemporaryFullChargeProtocol.TryDecodeQuery(
+            response.Value.Span,
+            out bool active,
+            out byte otherSettings)
+            ? new(new TemporaryFullChargeReading(active, otherSettings), null)
             : new(default, HidSessionFailureKind.ProtocolFailure)
             {
                 Diagnostic = new HidSessionFailureDiagnostic(

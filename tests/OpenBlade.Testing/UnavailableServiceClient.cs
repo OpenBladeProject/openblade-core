@@ -127,6 +127,11 @@ internal abstract class UnavailableServiceClient : IServiceClient
         CancellationToken token) =>
         Unavailable("Firmware compatibility override is unavailable.");
 
+    public virtual Task<ControlOperationResult> SetExperimentalFeaturesAsync(
+        bool enabled,
+        CancellationToken token) =>
+        Unavailable("Experimental laptop controls are unavailable.");
+
     public virtual Task<ControlOperationResult> ReapplyChangedSettingsAsync(
         CancellationToken token) =>
         Unavailable("Changed settings cannot be reapplied.");
@@ -150,6 +155,11 @@ internal abstract class UnavailableServiceClient : IServiceClient
         AmbientLightingFrame frame,
         CancellationToken token) =>
         Unavailable("Ambient Awareness input is unavailable.");
+
+    public virtual Task<ControlOperationResult> PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken token) =>
+        Unavailable("Uniform host-rendered lighting is unavailable.");
 
     public virtual Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
         bool muted,

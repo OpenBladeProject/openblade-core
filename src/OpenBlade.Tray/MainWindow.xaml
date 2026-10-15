@@ -808,6 +808,30 @@
                                                                     SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomMaximumFansVisible}">
+                                <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Uid="MainWindow_TextBlockCustomMaximumFans"
+                                               Text="Maximum fans"
+                                               Style="{StaticResource CardTitleStyle}"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center"
+                                               SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                    <ToggleSwitch x:Uid="MainWindow_CustomMaximumFansToggleText"
+                                                  Grid.Column="1"
+                                                  Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                  IsOn="{x:Bind SelectedCustomMaximumFans, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanEditCustomMaximumFans, Mode=OneWay}"
+                                                  AutomationProperties.Name="Maximum fans"
+                                                  Toggled="OnCustomMaximumFansToggled" />
+                                </Grid>
+                            </Border>
                             <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuAppCleanupVisible}">
@@ -1091,10 +1115,10 @@
                                         </Grid.ColumnDefinitions>
                                         <Slider x:Uid="MainWindow_DashboardChargeLimitSliderText" x:Name="DashboardChargeLimitSlider"
                                                 Style="{StaticResource InlineCardSliderStyle}"
-                                                Minimum="50"
-                                                Maximum="80"
-                                                StepFrequency="5"
-                                                SmallChange="5"
+                                                Minimum="{x:Bind ChargeLimitMinimumPercent, Mode=OneWay}"
+                                                Maximum="{x:Bind ChargeLimitMaximumPercent, Mode=OneWay}"
+                                                StepFrequency="{x:Bind ChargeLimitStepPercent, Mode=OneWay}"
+                                                SmallChange="{x:Bind ChargeLimitStepPercent, Mode=OneWay}"
                                                 LargeChange="5"
                                                 SnapsTo="StepValues"
                                                 IsThumbToolTipEnabled="True"
@@ -1548,7 +1572,7 @@
                                                                         CompactMinWidth="150"
                                                                         ExpandedMinWindowWidth="800"
                                                                         AccessibleName="Breathing color mode"
-                                                                        ItemsSource="{x:Bind LightingBreathingColorModes}"
+                                                                        ItemsSource="{x:Bind LightingBreathingColorModes, Mode=OneWay}"
                                                                         SelectedItem="{x:Bind LightingBreathingColorModeEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -2417,6 +2441,30 @@
                             </InfoBar.ActionButton>
                         </InfoBar>
 
+                        <InfoBar x:Uid="MainWindow_ExperimentalSupportInfoBar" x:Name="ExperimentalSupportInfoBar"
+                                 IsOpen="{x:Bind ViewModel.IsExperimentalDevice, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.IsExperimentalDevice, Mode=OneWay}"
+                                 Message="{x:Bind ViewModel.ExperimentalSupportNotice, Mode=OneWay}"
+                                 Severity="Informational"
+                                 IsClosable="False"
+                                 Margin="0,0,0,12"
+                                 AutomationProperties.Name="Experimental laptop support">
+                            <InfoBar.ActionButton>
+                                <Button x:Uid="MainWindow_ResumeExperimentalWritesButton"
+                                        Command="{x:Bind ViewModel.ResumeExperimentalWritesCommand}"
+                                        Visibility="{x:Bind ViewModel.ExperimentalWritesPaused, Mode=OneWay}"
+                                        AutomationProperties.Name="Resume experimental controls">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ProgressRing Width="16"
+                                                      Height="16"
+                                                      IsActive="{x:Bind ViewModel.IsResumeExperimentalWritesOperationInProgress, Mode=OneWay}"
+                                                      Visibility="{x:Bind ViewModel.IsResumeExperimentalWritesOperationInProgress, Mode=OneWay}" />
+                                        <TextBlock x:Uid="MainWindow_ResumeExperimentalWritesLabel"
+                                                   Text="Resume experimental controls" />
+                                    </StackPanel>
+                                </Button>
+                            </InfoBar.ActionButton>
+                        </InfoBar>
                         <InfoBar x:Uid="MainWindow_UnsupportedLaptopInfoBarText"
                                  IsOpen="{x:Bind ViewModel.IsUnsupportedLaptop, Mode=OneWay}"
                                  Visibility="{x:Bind ViewModel.IsUnsupportedLaptop, Mode=OneWay}"
@@ -2546,7 +2594,7 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock x:Uid="MainWindow_TextBlockUSBC" Text="USB-C" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock x:Uid="MainWindow_TextBlockUSBC" Text="Low-power profile" Style="{StaticResource CardTitleStyle}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
                                             <TextBlock x:Uid="MainWindow_TextBlockActive2" Text="Active"
@@ -3514,7 +3562,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock x:Uid="MainWindow_TextBlockPowerProfileChanges" Text="Power profile changes" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock x:Uid="MainWindow_TextBlockActiveACUSBCOrBatteryProfile" Text="Active AC, USB-C, or Battery profile."
+                                            <TextBlock x:Uid="MainWindow_TextBlockActiveACUSBCOrBatteryProfile" Text="Active AC, low-power, or battery profile."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch x:Uid="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges" Grid.Column="1"

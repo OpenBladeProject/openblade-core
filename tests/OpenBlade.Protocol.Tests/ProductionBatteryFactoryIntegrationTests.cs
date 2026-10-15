@@ -253,71 +253,56 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
-    public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
+    public void DirectManualFanTransitionAdmission_RequiresExactRz090581AndCapturedBackend()
     {
-        AdapterPowerState[] modelScopedExpected =
-        [
-            AdapterPowerState.UsbCPower100W,
-            AdapterPowerState.FullPower280W,
-            AdapterPowerState.FullPower330W,
-            AdapterPowerState.UsbCPower45W,
-            AdapterPowerState.UsbCPower60W,
-            AdapterPowerState.UsbCPower65W,
-            AdapterPowerState.UsbCPower80W,
-            AdapterPowerState.UsbCPower90W,
-        ];
+        DeviceCommandCatalog complete = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()!.Value,
+            TrustedFixtureHashRegistry.Production);
+        DeviceCommandCatalog shapeOnly = DirectManualFanCatalog();
 
-        Assert.Equal(
-            modelScopedExpected,
-            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
-                ExactRz090581Identity("3.01")).Order().ToArray());
-        Assert.Equal(
-            modelScopedExpected,
-            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
-                ExactRz090581Identity("4.00")).Order().ToArray());
-        Assert.Equal(
-            modelScopedExpected,
-            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
-                ExactRz090581Identity(
-                    "99.99",
-                    HostFirmwareCompatibility.ModelScoped)).Order().ToArray());
-        Assert.DoesNotContain(
-            AdapterPowerState.FullPower330W,
-            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(new(
+        Assert.True(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            ExactRz090581Identity("4.00"),
+            complete,
+            trustedExactFixture: true));
+        Assert.False(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            ExactRz090581Identity("4.00"),
+            shapeOnly,
+            trustedExactFixture: false));
+        Assert.False(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            new HostIdentityReadResult(
                 new HostIdentityEvidence(
                     "Razer",
                     "Blade 16 - RZ09-0528",
                     "RZ09-05289EN4",
-                    "4.00"),
+                    "2.02"),
                 null,
-                HostFirmwareCompatibility.Tested)));
-        Assert.DoesNotContain(
-            AdapterPowerState.FullPower330W,
-            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
-                new HostIdentityReadResult(
-                    null,
-                    HidSessionFailureKind.IdentityBlocked)));
+                HostFirmwareCompatibility.Tested),
+            complete,
+            trustedExactFixture: true));
+        Assert.False(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked),
+            complete,
+            trustedExactFixture: true));
+        Assert.False(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            ExactRz090581Identity("4.00"),
+            DeviceCommandCatalog.Empty,
+            trustedExactFixture: true));
     }
 
     [Fact]
-    public void Rz090581AdapterAdmission_UntrustedManifestPreservesReadOnlyFallback()
+    public void Rz090581AdapterAdmission_UsesSynapseDefinitionsForTheExactModel()
     {
-        IReadOnlySet<AdapterPowerState> states =
-            ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
-                ExactRz090581Identity("4.00"),
-                static () => throw new UnvalidatedCommandException("invalid manifest"));
-
-        Assert.Equal(
-            [
-                AdapterPowerState.UsbCPower100W,
-                AdapterPowerState.FullPower280W,
-                AdapterPowerState.UsbCPower45W,
-                AdapterPowerState.UsbCPower60W,
-                AdapterPowerState.UsbCPower65W,
-                AdapterPowerState.UsbCPower80W,
-                AdapterPowerState.UsbCPower90W,
-            ],
-            states.Order().ToArray());
+        foreach (string bios in new[] { "3.01", "4.00", "99.99" })
+        {
+            Assert.True(ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+                ExactRz090581Identity(bios)).SetEquals(AdapterPowerProtocol.SynapseAdapterStates));
+        }
+        Assert.Empty(ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(new(
+            new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "4.00"),
+            null,
+            HostFirmwareCompatibility.Tested)));
+        Assert.Empty(ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(
+            new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked)));
     }
 
     private static HostIdentityReadResult ExactRz090581Identity(
@@ -670,6 +655,30 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             true,
             true,
             true)]);
+
+    private static DeviceCommandCatalog DirectManualFanCatalog()
+    {
+        string[] actions =
+        [
+            ProductionBatteryPort.FanMaximumStateFirstAction,
+            ProductionBatteryPort.FanMaximumStateSecondAction,
+            ProductionBatteryPort.FanMaximumSpeedFirstAction,
+            ProductionBatteryPort.FanMaximumSpeedSecondAction,
+        ];
+        return DeviceCommandCatalog.Create(
+            CapturedFixtureFile.TargetDevice,
+            actions.Select((action, index) => new CapturedCommandFixture(
+                CapturedFixtureFile.TargetDevice,
+                action,
+                0x0D,
+                index < 2 ? (byte)0x02 : (byte)0x01,
+                [(byte)index],
+                true,
+                true,
+                true,
+                true,
+                true)));
+    }
 
     private static DeviceCommandCatalog HyperBoostCatalog()
     {

@@ -113,7 +113,7 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task HelpAddSupport_SavesIdentityReportThenOpensIssueForm()
+    public async Task HelpAddSupport_SavesIdentityReportThenOpensObserverGuide()
     {
         var client = new FakeServiceClient { NextArchive = CreateDiagnosticsArchive() };
         var saver = new FakeDiagnosticArchiveSaver
@@ -140,10 +140,10 @@ public sealed partial class MainViewModelTests
                 zip.Entries.Select(entry => entry.FullName).Order(StringComparer.Ordinal));
         }
 
-        Assert.Equal([UnsupportedLaptopReport.IssueFormUri], launcher.Opened);
+        Assert.Equal([UnsupportedLaptopReport.SupportGuideUri], launcher.Opened);
         Assert.Equal(1, launcher.SavesAtLaunch);
         Assert.Equal(
-            @"Identity report saved to C:\Users\Test\Desktop\OpenBlade-identity-report.zip. Attach it to the support form in your browser.",
+            @"Identity report saved to C:\Users\Test\Desktop\OpenBlade-identity-report.zip. Follow the Synapse Observer guide in your browser to collect and submit evidence.",
             viewModel.OperationStatusMessage);
     }
 
@@ -202,7 +202,7 @@ public sealed partial class MainViewModelTests
             viewModel.OperationStatusMessage,
             StringComparison.Ordinal);
         Assert.Contains(
-            UnsupportedLaptopReport.IssueFormUri.ToString(),
+            UnsupportedLaptopReport.SupportGuideUri.ToString(),
             viewModel.OperationStatusMessage,
             StringComparison.Ordinal);
     }
@@ -224,7 +224,7 @@ public sealed partial class MainViewModelTests
         Assert.Equal(1, saver.ExactCalls);
         Assert.Contains("OpenBlade-diagnostics.zip", viewModel.OperationStatusMessage);
         Assert.Contains(
-            UnsupportedLaptopReport.IssueFormUri.ToString(),
+            UnsupportedLaptopReport.SupportGuideUri.ToString(),
             viewModel.OperationStatusMessage,
             StringComparison.Ordinal);
     }

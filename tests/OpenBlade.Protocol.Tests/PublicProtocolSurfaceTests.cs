@@ -108,6 +108,7 @@ public sealed class PublicProtocolSurfaceTests
                 "ProtocolValidation",
                 "SetCompletion",
                 "SetSubmit",
+                "SharedGateAdmission",
             ],
             Enum.GetNames<HidSessionFailurePhase>()
                 .OrderBy(name => name, StringComparer.Ordinal));

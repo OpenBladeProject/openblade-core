@@ -9,6 +9,10 @@ internal readonly record struct RazerCommandSpec(
 {
     internal Func<bool>? SubmissionAllowed { get; init; }
 
+    // Some firmware effect commands return a status-only ACK or a padded state.
+    // Callers must supply an explicit bounded semantic validator for this opt-in.
+    internal bool AllowVariableResponseLength { get; init; }
+
     internal RazerCommandSpec(
         byte classId,
         byte commandId,
@@ -54,6 +58,10 @@ internal enum RazerCommandSessionDisposition
 internal interface IRazerCommandSession : IAsyncDisposable
 {
     RazerCommandSessionDisposition Disposition { get; }
+
+    void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome)
+    {
+    }
 
     Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
         RazerCommandSpec command,
@@ -119,6 +127,9 @@ internal sealed class WindowsRazerHidSession :
     private readonly TimeSpan featureReportSettleDelay;
     private readonly byte featureReportId;
     private readonly Task worker;
+    private readonly FirmwareQueryDiagnostics? queryDiagnostics;
+    private readonly object queryDiagnosticSync = new();
+    private readonly Dictionary<string, FirmwareQueryObservation> queryObservations = [];
     private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
     internal WindowsRazerHidSession(
@@ -129,7 +140,8 @@ internal sealed class WindowsRazerHidSession :
         ValidationRunContext.ActorLease actorLease,
         ControllerExclusivityPolicy exclusivityPolicy,
         TimeSpan featureReportSettleDelay = default,
-        byte featureReportId = 0)
+        byte featureReportId = 0,
+        FirmwareQueryDiagnostics? queryDiagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(io);
@@ -149,6 +161,7 @@ internal sealed class WindowsRazerHidSession :
         this.actorLease = actorLease;
         this.featureReportSettleDelay = featureReportSettleDelay;
         this.featureReportId = featureReportId;
+        this.queryDiagnostics = queryDiagnostics;
         worker = RunAsync();
     }
 
@@ -167,13 +180,64 @@ internal sealed class WindowsRazerHidSession :
         RazerCommandSpec command,
         Func<TransactionIdAssignment> assignTransactionId,
         TimeSpan exchangeTimeout,
-        CancellationToken cancellationToken) =>
-        Enqueue(
+        CancellationToken cancellationToken)
+    {
+        if (queryDiagnostics is not null)
+        {
+            command = command with { Arguments = command.Arguments.ToArray() };
+        }
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> pending = Enqueue(
             command,
             assignTransactionId,
             exchangeTimeout,
             cancellationToken,
             expectResponse: true);
+        return queryDiagnostics is null ? pending : RecordQueryResultAsync(command, pending);
+    }
+
+    private async Task<HidSessionResult<ReadOnlyMemory<byte>>> RecordQueryResultAsync(
+        RazerCommandSpec command,
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> pending)
+    {
+        HidSessionResult<ReadOnlyMemory<byte>> result = await pending.ConfigureAwait(false);
+        try
+        {
+            lock (queryDiagnosticSync)
+            {
+                if (queryDiagnostics?.Record(command, result, timeProvider.GetUtcNow()) is { } observation)
+                {
+                    queryObservations[observation.Command + ":" + observation.RequestPayloadHex] = observation;
+                }
+            }
+        }
+        catch
+        {
+            // Diagnostic retention must never change the command's outcome.
+        }
+        return result;
+    }
+
+    public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome)
+    {
+        try
+        {
+            lock (queryDiagnosticSync)
+            {
+                string command = $"{classId:X2}/{commandId:X2}";
+                foreach (FirmwareQueryObservation observation in queryObservations.Values)
+                {
+                    if (observation.Command == command)
+                    {
+                        queryDiagnostics?.RecordRejection(observation, outcome);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // A semantic rejection remains fail-closed even if recording fails.
+        }
+    }
 
     public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(
         RazerCommandSpec command,
@@ -231,6 +295,7 @@ internal sealed class WindowsRazerHidSession :
             command.PayloadValidator)
         {
             SubmissionAllowed = command.SubmissionAllowed,
+            AllowVariableResponseLength = command.AllowVariableResponseLength,
         };
         var item = new WorkItem(
             snapshot,
@@ -289,6 +354,7 @@ internal sealed class WindowsRazerHidSession :
                 command.PayloadValidator)
             {
                 SubmissionAllowed = command.SubmissionAllowed,
+                AllowVariableResponseLength = command.AllowVariableResponseLength,
             };
             offset += length;
         }
@@ -303,6 +369,11 @@ internal sealed class WindowsRazerHidSession :
             throw new ArgumentOutOfRangeException(
                 nameof(command),
                 "Command arguments cannot exceed 80 bytes.");
+        }
+
+        if (command.AllowVariableResponseLength && command.PayloadValidator is null)
+        {
+            throw new ArgumentException("Variable responses require a bounded payload validator.", nameof(command));
         }
 
         if (command.ExpectedPayloadLength is < 0 or > RazerReport.MaximumPayloadLength)
@@ -496,12 +567,10 @@ internal sealed class WindowsRazerHidSession :
                 item.CancellationToken,
                 deadline.Token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception exception)
         {
             Poison();
-            return DiagnosticFailure(
-                HidSessionFailureKind.NativeIoFailure,
-                HidSessionFailurePhase.SetSubmit);
+            return IoExceptionFailure(isSet: true, exception);
         }
 
         if (setResult.Termination == HidFeatureTermination.Completed &&
@@ -511,7 +580,7 @@ internal sealed class WindowsRazerHidSession :
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 IoPhase(isSet: true, result: setResult),
-                setResult.Completion);
+                setResult.Completion, nativeRetirement: setResult.NativeRetirement);
         }
 
         cancellation = ClassifyIoCancellation(setResult, item.CancellationToken, deadline.Token);
@@ -526,7 +595,7 @@ internal sealed class WindowsRazerHidSession :
                 ? DiagnosticFailure(
                     cancellation.Value,
                     HidSessionFailurePhase.SetCompletion,
-                    setResult.Completion)
+                    setResult.Completion, nativeRetirement: setResult.NativeRetirement)
                 : Failure(cancellation.Value);
         }
 
@@ -536,7 +605,7 @@ internal sealed class WindowsRazerHidSession :
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 IoPhase(isSet: true, result: setResult),
-                setResult.Completion);
+                setResult.Completion, nativeRetirement: setResult.NativeRetirement);
         }
 
         cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
@@ -591,12 +660,10 @@ internal sealed class WindowsRazerHidSession :
                 item.CancellationToken,
                 deadline.Token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception exception)
         {
             Poison();
-            return DiagnosticFailure(
-                HidSessionFailureKind.NativeIoFailure,
-                HidSessionFailurePhase.GetSubmit);
+            return IoExceptionFailure(isSet: false, exception);
         }
 
         if (getResult.Termination == HidFeatureTermination.Completed &&
@@ -609,7 +676,7 @@ internal sealed class WindowsRazerHidSession :
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 IoPhase(isSet: false, result: getResult),
-                getResult.Completion);
+                getResult.Completion, nativeRetirement: getResult.NativeRetirement);
         }
 
         cancellation = ClassifyIoCancellation(getResult, item.CancellationToken, deadline.Token);
@@ -620,7 +687,7 @@ internal sealed class WindowsRazerHidSession :
                 ? DiagnosticFailure(
                     cancellation.Value,
                     HidSessionFailurePhase.GetCompletion,
-                    getResult.Completion)
+                    getResult.Completion, nativeRetirement: getResult.NativeRetirement)
                 : Failure(cancellation.Value);
         }
 
@@ -630,10 +697,11 @@ internal sealed class WindowsRazerHidSession :
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 IoPhase(isSet: false, result: getResult),
-                getResult.Completion);
+                getResult.Completion, nativeRetirement: getResult.NativeRetirement);
         }
 
         string? rejectedPayloadHex = null;
+        string? queryResponsePayloadHex = null;
         try
         {
             if (getBuffer[0] != featureReportId)
@@ -645,7 +713,11 @@ internal sealed class WindowsRazerHidSession :
 
             ReadOnlyMemory<byte> payload = request.ValidateResponse(
                 getBuffer.AsSpan(1, RazerReport.ReportLength),
-                item.Command.ExpectedPayloadLength);
+                item.Command.AllowVariableResponseLength ? null : item.Command.ExpectedPayloadLength);
+            if (queryDiagnostics is not null && FirmwareQueryDiagnostics.CanRecord(item.Command))
+            {
+                queryResponsePayloadHex = Convert.ToHexString(payload.Span);
+            }
             if (item.Command.PayloadValidator is not null)
             {
                 bool valid;
@@ -674,7 +746,7 @@ internal sealed class WindowsRazerHidSession :
                 }
             }
 
-            return new(payload.ToArray(), null);
+            return new(payload.ToArray(), null) { QueryResponsePayloadHex = queryResponsePayloadHex };
         }
         catch (RazerProtocolException error)
         {
@@ -683,7 +755,10 @@ internal sealed class WindowsRazerHidSession :
                 HidSessionFailureKind.ProtocolFailure,
                 HidSessionFailurePhase.ProtocolValidation,
                 getResult.Completion,
-                error.ValidationFailure);
+                error.ValidationFailure, nativeRetirement: getResult.NativeRetirement) with
+            {
+                QueryResponsePayloadHex = queryResponsePayloadHex,
+            };
             return rejectedPayloadHex is null
                 ? failure
                 : failure with
@@ -788,12 +863,10 @@ internal sealed class WindowsRazerHidSession :
                     item.CancellationToken,
                     deadline.Token).ConfigureAwait(false);
             }
-            catch
+            catch (Exception exception)
             {
                 Poison();
-                return DiagnosticFailure(
-                    HidSessionFailureKind.NativeIoFailure,
-                    HidSessionFailurePhase.SetSubmit);
+                return IoExceptionFailure(isSet: true, exception);
             }
 
             if (setResult.Termination == HidFeatureTermination.Completed
@@ -803,7 +876,7 @@ internal sealed class WindowsRazerHidSession :
                 return DiagnosticFailure(
                     HidSessionFailureKind.NativeIoFailure,
                     IoPhase(isSet: true, result: setResult),
-                    setResult.Completion);
+                    setResult.Completion, nativeRetirement: setResult.NativeRetirement);
             }
 
             cancellation = ClassifyIoCancellation(
@@ -821,7 +894,7 @@ internal sealed class WindowsRazerHidSession :
                     ? DiagnosticFailure(
                         cancellation.Value,
                         HidSessionFailurePhase.SetCompletion,
-                        setResult.Completion)
+                        setResult.Completion, nativeRetirement: setResult.NativeRetirement)
                     : Failure(cancellation.Value);
             }
 
@@ -831,7 +904,7 @@ internal sealed class WindowsRazerHidSession :
                 return DiagnosticFailure(
                     HidSessionFailureKind.NativeIoFailure,
                     IoPhase(isSet: true, result: setResult),
-                    setResult.Completion);
+                    setResult.Completion, nativeRetirement: setResult.NativeRetirement);
             }
 
             cancellation = ClassifyCancellation(
@@ -953,18 +1026,45 @@ internal sealed class WindowsRazerHidSession :
         HidSessionFailureKind failure,
         HidSessionFailurePhase phase,
         NativeIoCompletion? completion = null,
-        HidProtocolValidationFailure? protocolValidationFailure = null) =>
+        HidProtocolValidationFailure? protocolValidationFailure = null,
+        int? managedHResult = null,
+        Task? nativeRetirement = null) =>
         new(default, failure)
         {
+            NativeRetirement = nativeRetirement,
             Diagnostic = new HidSessionFailureDiagnostic(
                 phase,
                 failure,
-                completion?.ErrorCode,
+                completion?.ErrorCode ?? managedHResult,
                 completion?.BytesTransferred)
             {
                 ProtocolValidationFailure = protocolValidationFailure,
             },
         };
+
+    private static HidSessionResult<ReadOnlyMemory<byte>> IoExceptionFailure(
+        bool isSet,
+        Exception exception)
+    {
+        if (exception is NativeOperationFinalizationException finalization)
+        {
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                IoPhase(isSet, finalization.Result),
+                finalization.Result.Completion,
+                managedHResult: finalization.Result.Completion is null
+                    ? finalization.InnerException?.HResult
+                    : null,
+                nativeRetirement: finalization.Result.NativeRetirement);
+        }
+
+        // Match the matrix transport: negative values in the native-error slot
+        // preserve managed HRESULTs without recording arbitrary exception text.
+        return DiagnosticFailure(
+            HidSessionFailureKind.NativeIoFailure,
+            isSet ? HidSessionFailurePhase.SetSubmit : HidSessionFailurePhase.GetSubmit,
+            managedHResult: exception.HResult);
+    }
 
     private static HidSessionFailurePhase IoPhase(
         bool isSet,

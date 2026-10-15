@@ -39,6 +39,8 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
 [JsonDerivedType(typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate")]
 [JsonDerivedType(typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride")]
+[JsonDerivedType(typeof(SetExperimentalFeaturesRequest), "setExperimentalFeatures")]
+[JsonDerivedType(typeof(ResumeExperimentalWritesRequest), "resumeExperimentalWrites")]
 [JsonDerivedType(typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings")]
 [JsonDerivedType(typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore")]
 [JsonDerivedType(typeof(SetThermalControlPolicyRequest), "setThermalControlPolicy")]
@@ -46,6 +48,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
 [JsonDerivedType(typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame")]
+[JsonDerivedType(typeof(PushUniformLightingFrameRequest), "pushUniformLightingFrame")]
 [JsonDerivedType(typeof(SetPlaybackMuteIndicatorRequest), "setPlaybackMuteIndicator")]
 [JsonDerivedType(typeof(SetBatteryPolicyRequest), "setBatteryPolicy")]
 [JsonDerivedType(typeof(SetBatteryProtectionRequest), "setBatteryProtection")]
@@ -232,6 +235,15 @@ public sealed record SetFirmwareCompatibilityOverrideRequest(
     bool Enabled)
     : ServiceRequest(Version, RequestId);
 
+public sealed record SetExperimentalFeaturesRequest(
+    int Version,
+    Guid RequestId,
+    bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ResumeExperimentalWritesRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
+
 public sealed record ReapplyChangedSettingsRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
@@ -331,6 +343,12 @@ public sealed record PushAmbientLightingFrameRequest(
     int Version,
     Guid RequestId,
     byte[] RgbBytes)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record PushUniformLightingFrameRequest(
+    int Version,
+    Guid RequestId,
+    UniformLightingFrame Frame)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetPlaybackMuteIndicatorRequest(
@@ -455,6 +473,14 @@ public sealed record ServiceStatusSnapshot(
 
     public ThermalConvergenceStatus? ThermalConvergence { get; init; }
 
+    // Legacy status member: recognized experimental models are enabled automatically.
+    public bool AllowExperimentalFeatures { get; init; }
+
+    public bool ExperimentalWritesPaused { get; init; }
+
+    public bool IsExperimentalDevice { get; init; }
+
+    public string? ExperimentalSupportSource { get; init; }
     // True only when the latest device check read this laptop's manufacturer
     // or product name and it matches no admitted model. Read failures and
     // other identity blocks leave it false. It never grants hardware access.

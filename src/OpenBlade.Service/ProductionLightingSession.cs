@@ -167,6 +167,16 @@ internal sealed class ProductionLightingSession
                 : RejectProductionWrite("Ambient Awareness input is not admitted.");
     }
 
+    internal Task PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        return lightingFactory.Capabilities.SupportsUniformLightingFrames
+            ? ExecuteProductionUniformLightingFrameAsync(frame, cancellationToken)
+            : RejectProductionWrite("Uniform host-rendered lighting is not admitted.");
+    }
+
     internal Task SetPlaybackMuteIndicatorAsync(
         bool muted,
         CancellationToken cancellationToken) =>
@@ -646,6 +656,113 @@ internal sealed class ProductionLightingSession
         }
     }
 
+    private async Task ExecuteProductionUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken cancellationToken)
+    {
+        IProductionLightingPort? ownedPort = Volatile.Read(ref lightingPort);
+        if (ownedPort?.OwnershipState is
+            LightingRendererOwnershipState.AmbientAwareness or
+            LightingRendererOwnershipState.AudioMeter)
+        {
+            try
+            {
+                ThrowIfOrdinaryLightingWriteBlocked();
+                await ownedPort.PushUniformLightingFrameAsync(frame, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+            catch (CapabilityUnavailableException)
+            {
+                throw;
+            }
+            catch (BladeWriteException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Uniform lighting was canceled before the next frame was queued.");
+            }
+            catch (Exception exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The uniform lighting frame outcome is indeterminate.",
+                    exception);
+            }
+        }
+
+        IProductionLightingPort? port = null;
+        try
+        {
+            await enterHardwareOperation(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Uniform lighting was canceled before a verified session opened.");
+        }
+        catch (ObjectDisposedException exception)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Uniform lighting was blocked because the device provider is closing.",
+                exception);
+        }
+
+        try
+        {
+            port = await GetLightingPortForWriteCoreAsync(
+                LightingPortOperation.AmbientLightingFrame,
+                cancellationToken).ConfigureAwait(false);
+            if (!port.Capabilities.SupportsUniformLightingFrames)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The exact-device lighting session does not support uniform frames.");
+            }
+
+            ThrowIfOrdinaryLightingWriteBlocked();
+            await port.PushUniformLightingFrameAsync(frame, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (CapabilityUnavailableException)
+        {
+            throw;
+        }
+        catch (BladeWriteException exception)
+        {
+            if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
+            {
+                await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+            }
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Uniform lighting was canceled after a verified session opened.");
+        }
+        catch (Exception exception)
+        {
+            await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "The uniform lighting input outcome is indeterminate.",
+                exception);
+        }
+        finally
+        {
+            releaseHardwareOperation();
+        }
+    }
+
     private async Task ExecuteProductionPlaybackMuteIndicatorAsync(
         bool muted,
         CancellationToken cancellationToken)
@@ -757,6 +874,15 @@ internal sealed class ProductionLightingSession
         CancellationToken cancellationToken)
     {
         await AwaitLightingPortRetirementCoreAsync(cancellationToken).ConfigureAwait(false);
+        if (lightingPort is ExperimentalBladePort { IsDisposed: true } experimentalPort)
+        {
+            if (!experimentalPort.IsRecoverySessionDrained)
+            {
+                // Keep ownership until native cleanup is confirmed; never reuse the closed port.
+                throw new IOException("Experimental session cleanup has not confirmed native operation drain.");
+            }
+            await DisposeLightingPortWithinDeadlineAsync().ConfigureAwait(false);
+        }
         if (lowPowerGate?.IsActive == true)
         {
             // A read during suspend may inspect a retained session, but must

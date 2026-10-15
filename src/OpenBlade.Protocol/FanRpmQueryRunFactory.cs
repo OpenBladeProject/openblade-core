@@ -26,6 +26,7 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly SemaphoreSlim? sharedCommandGate;
 
     internal FanRpmQueryRunFactory(
         Func<ValidationRunContext> createContext,
@@ -39,7 +40,8 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
             timeProvider,
             exchangeTimeout,
             cleanupDrainTimeout,
-            PendingDisposalRegistry.Shared)
+            PendingDisposalRegistry.Shared,
+            sharedCommandGate: null)
     {
     }
 
@@ -49,7 +51,8 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry pendingDisposals)
+        PendingDisposalRegistry pendingDisposals,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         ArgumentNullException.ThrowIfNull(createContext);
         ArgumentNullException.ThrowIfNull(actorFactory);
@@ -63,7 +66,10 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals;
+        this.sharedCommandGate = sharedCommandGate;
     }
+
+    internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
     public async Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(
         CancellationToken cancellationToken)
@@ -130,7 +136,8 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
             timeProvider,
             exchangeTimeout,
             cleanupDrainTimeout,
-            pendingDisposals), null);
+            pendingDisposals,
+            sharedCommandGate), null);
     }
 
     private static HidSessionResult<IFanRpmQueryPort> Failure(
@@ -145,6 +152,7 @@ internal sealed class FanRpmQueryPort : IFanRpmQueryPort
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly IRazerCommandSession session;
     private readonly SemaphoreSlim gate = new(1, 1);
     private ValidationActor? actor;
     private bool terminal;
@@ -156,11 +164,15 @@ internal sealed class FanRpmQueryPort : IFanRpmQueryPort
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry pendingDisposals)
+        PendingDisposalRegistry pendingDisposals,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         this.selector1TransactionId = selector1TransactionId;
         this.selector2TransactionId = selector2TransactionId;
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
+        session = sharedCommandGate is null
+            ? actor.Session
+            : new RazerCommandSessionGate(actor.Session, sharedCommandGate);
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         this.pendingDisposals = pendingDisposals
             ?? throw new ArgumentNullException(nameof(pendingDisposals));
@@ -244,7 +256,7 @@ internal sealed class FanRpmQueryPort : IFanRpmQueryPort
             3,
             payload => FanRpmProtocol.TryDecodeQuery(payload.Span, selector, out _));
         TransactionIdAssignment assignment = TransactionIdAssignment.Valid(transactionId);
-        HidSessionResult<ReadOnlyMemory<byte>> response = await actor!.Session.ExecuteAsync(
+        HidSessionResult<ReadOnlyMemory<byte>> response = await session.ExecuteAsync(
             command,
             () => assignment,
             exchangeTimeout,

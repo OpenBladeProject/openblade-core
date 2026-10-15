@@ -44,6 +44,13 @@ internal sealed class AdapterPowerCommandClient
             };
         }
 
+        if (AdapterPowerProtocol.TryDecodeQuery(response.Value.Span, out AdapterPowerState observed)
+            && observed == AdapterPowerState.Unknown)
+        {
+            session.RetainQueryFailure(AdapterPowerProtocol.CommandClass,
+                AdapterPowerProtocol.CommandId, FirmwareQueryOutcome.UnrecognizedValue);
+        }
+
         return AdapterPowerProtocol.TryDecodeQuery(
             response.Value.Span,
             out AdapterPowerState state)

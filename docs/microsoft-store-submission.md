@@ -18,6 +18,11 @@ the fields that must stay synchronized with the release:
 | Minimum operating system | Windows 11 version 24H2 x64, build 26100 or later |
 | Supported hardware | Razer Blade 16 (2026), RZ09-0581, USB `1532:02E0`; Blade 16 (2025), RZ09-0528, USB `1532:02C6` |
 
+The hardware field above lists the physically validated models. Builds containing
+experimental support also recognize the exact profiles described in the
+[experimental guide](experimental-blade-support.md). Include their experimental
+status and current test evidence in the notes for the submitted version.
+
 The submitted package URL must be HTTPS, immutable, and versioned. Never replace
 the file behind an existing URL. A suitable shape is
 `https://<release-host>/vX.Y.Z/OpenBlade-Setup.exe`.
@@ -59,9 +64,12 @@ synchronized with the deployed documentation and Partner Center.
 Use the following as the starting point for Notes for certification:
 
 > OpenBlade is a free, open-source, Razer-only hardware utility. This release
-> supports the Razer Blade 16 (2026), RZ09-0581, USB 1532:02E0, and the
-> Blade 16 (2025), RZ09-0528, USB 1532:02C6. Available controls vary by model;
-> the compatibility page lists them. The app installs its own LocalSystem
+> has physically validated support for the Razer Blade 16 (2026), RZ09-0581,
+> USB 1532:02E0, and Blade 16 (2025), RZ09-0528, USB 1532:02C6. Builds containing
+> the experimental backend also recognize five exact experimental profiles:
+> RZ09-0483, RZ09-0482, RZ09-0530, RZ09-0328, and RZ09-0484. Their bounded
+> controls enable automatically, with physical validation still open. Available
+> controls vary by model; the compatibility page and experimental guide list them. The app installs its own LocalSystem
 > service, which exclusively owns
 > the supported laptop-control HID handle and exposes typed local IPC to the
 > per-user tray and Session Agent. It does not install a kernel driver, require
@@ -75,9 +83,13 @@ Use the following as the starting point for Notes for certification:
 > interval that defaults to Manual only. The LocalSystem service remains offline,
 > and no profiles, diagnostics, or current hardware state are sent with either
 > check; the model-specific Razer support URL identifies the supported model.
-> Unsupported hardware is detected and reported without attempting hardware
-> writes. Hardware and firmware limitations are disclosed in the Store listing
+> Hardware outside both exact-model catalogs is detected and reported without
+> attempting hardware writes. Hardware and firmware limitations are disclosed in the Store listing
 > and compatibility documentation.
+
+Match these notes to the exact submitted source version. The
+[experimental guide](experimental-blade-support.md) records current model scope
+and tester evidence. Store builds use the same device checks as other builds.
 
 Certification must be given a supported test device or another testing
 arrangement accepted by Microsoft. Do not add a production bypass that fakes

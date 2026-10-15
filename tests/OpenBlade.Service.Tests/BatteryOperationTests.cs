@@ -56,6 +56,40 @@ public sealed class BatteryOperationTests
     }
 
     [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task TemporaryFullChargeBlockedByOtherLaptopSettings_ReportsPlainReasonWithoutChange(
+        bool enabled,
+        bool current)
+    {
+        string reason = TemporaryFullChargeProtocol.OtherSettingsBlockMessage(0x08);
+        BatteryTestDevice device = new BatteryTestDevice();
+        device.State = device.State with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, current),
+        };
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsTemporaryFullCharge = true,
+        };
+        device.BatteryWriteFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            reason);
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyTemporaryFullChargeOutcomeAsync(
+            enabled,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.Contains(reason, outcome.Result.Message, StringComparison.Ordinal);
+        Assert.Contains("local dimming", outcome.Result.Message, StringComparison.Ordinal);
+        Assert.False(outcome.WriteAttempted);
+        Assert.False(outcome.DeviceAccessFailed);
+        Assert.Equal(current, device.State.Battery?.TemporaryFullCharge);
+    }
+
+    [Theory]
     [MemberData(nameof(InvalidProtectionDisableStates))]
     public async Task DisableProtection_RejectsInvalidConfirmedStateBeforeSetter(
         ConfirmedBatteryState? confirmed)
@@ -75,6 +109,21 @@ public sealed class BatteryOperationTests
 
         Assert.Equal(ControlResultStatus.Blocked, result.Status);
         Assert.Empty(device.BatterySetterCalls);
+    }
+
+    [Fact]
+    public async Task DisableProtection_DriftedLimitDoesNotRequireStoredLimitReset()
+    {
+        var device = new BatteryTestDevice();
+        device.Capabilities = device.Capabilities with { SupportsBatteryProtectionOff = true };
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult result = await coordinator.ApplyBatteryProtectionAsync(
+            enabled: false, BatteryPolicy.Create(75), CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, result.Status);
+        Assert.Equal(new[] { "SetProtectionOff" }, device.BatterySetterCalls);
+        Assert.Equal(new ConfirmedBatteryState(false, null, false), device.State.Battery);
     }
 
     [Fact]
@@ -257,7 +306,6 @@ public sealed class BatteryOperationTests
     public static TheoryData<ConfirmedBatteryState?> InvalidProtectionDisableStates() => new()
     {
         null,
-        new ConfirmedBatteryState(true, 80, false),
         new ConfirmedBatteryState(true, 75, null),
         new ConfirmedBatteryState(true, 75, true),
     };
