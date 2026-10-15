@@ -55,8 +55,9 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   handle, and it serializes every hardware operation.
 - The protocol layer encodes validated 90-byte Razer reports. Service IPC
   exposes typed operations only; there is no raw-command endpoint.
-- Every admitted write has a trusted capture fixture. Automatic and stateful
-  controls also require independent readback.
+- Physically validated writes have trusted capture fixtures. Experimental writes
+  use separately reviewed, pinned upstream definitions. Both retain exact-device,
+  baseline, and independent-readback checks.
 - Temporary pipe, enumeration, or read failures preserve the last confirmed UI
   state, but every write performs fresh identity and safety checks.
 - Competing Razer controllers block affected operations. Verified
@@ -79,6 +80,15 @@ Only an identity that explicitly pins exact versions checks SKU and BIOS
 version. Capture tools are kept outside the installed product, may pin an exact
 BIOS version for reproducibility, and raw captures are never production
 admission artifacts.
+
+Experimental profiles are recognized automatically by `ExperimentalBladeFactory`
+and use `ExperimentalBladePort` with their own bounded capabilities and source
+provenance. They have no Settings consent switch or release-channel gate.
+Pre-releases are the testing route, not a new hardware-admission rule. The
+[experimental support guide](experimental-blade-support.md) lists the five exact
+models and remaining physical validation. Recognizing a profile does not promote
+its controls to capture-backed support or admit manual fan commands, host-rendered
+lighting, or another model's brightness driver.
 
 When an admitted laptop's exact Razer driver stack is already present,
 OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
@@ -107,8 +117,8 @@ paths, serial numbers, exception messages, and raw HID reports are not collected
 by this verification record. The USB IDs in `device.json` identify the catalog
 model and do not establish successful HID verification.
 
-When the latest probe read a BIOS manufacturer or product name that matches no
-admitted model, the service status sets `UnsupportedLaptop`. Registry read
+When the latest probe read a BIOS manufacturer or product name that matches
+neither the physically validated nor experimental exact-model catalogs, the service status sets `UnsupportedLaptop`. Registry read
 failures, platform failures, firmware blocks, and failed checks on an admitted
 model leave it false. The tray then
 shows **This laptop isn't supported yet** with **Help add support**. That action
@@ -124,10 +134,15 @@ category. Thermal diagnostics distinguish each channel from channel agreement
 and custom CPU/GPU settings. These records omit raw device responses and do not
 change write admission.
 
-Experimental devices also export bounded command-stage observations, write-pause state,
-source provenance, and cached telemetry. See the [experimental support and tester
-guide](experimental-blade-support.md). Experimental authority remains separate
-from physically validated command admission.
+Experimental devices also export `experimental-support.json` with source
+provenance, write-pause state, and the last 32 typed command-stage observations,
+alongside cached telemetry. Exports remain local until a user shares them.
+Collect diagnostics before choosing **Resume experimental controls**. Recovery
+drains the old session, rechecks identity and authority, then reads and reconciles
+current state without sending a setter or replaying the uncertain request. A new
+lighting choice releases the old lighting hold; unrelated profile edits do not.
+See the [tester workflow](experimental-blade-support.md#send-a-useful-test-report)
+for baseline and follow-up reports.
 
 ## Build and test
 

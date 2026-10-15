@@ -8,7 +8,8 @@ us determine which controls can become fully supported.
 
 OpenBlade enables the available experimental controls when it recognizes an exact
 laptop profile below. There is no Settings switch or consent dialog. An older
-saved experimental preference does not disable these controls.
+saved experimental preference does not disable these controls. Pre-releases are
+the testing route; the backend itself is not restricted to an update channel.
 
 The same model, interface, current-state, and competing-controller checks apply
 to each change. A command that OpenBlade cannot confirm pauses experimental
@@ -20,10 +21,10 @@ Choose **Resume experimental controls** in the experimental-support notice.
 OpenBlade drains the previous session, checks the laptop again, and reads the
 current supported settings without writing them. When those checks succeed,
 you can choose a setting to send a new request. The uncertain command is not
-replayed automatically. A new lighting choice or an active profile edit that changes the effective
-lighting releases the hold. Unrelated, inactive, and overridden profile edits
-keep it in place. Failed reads
-or checks leave the pause in place.
+replayed automatically. A new lighting choice or an active profile edit that
+changes the effective lighting releases the hold. Unrelated, inactive, and
+overridden profile edits keep it in place. Failed reads or checks leave the pause
+in place.
 
 ## Initial coverage
 
@@ -109,8 +110,8 @@ cannot update the shared contracts. Older experimental preferences migrate to au
 
 ## Send a useful test report
 
-1. Use a pre-release built from this change. In **About**, note the OpenBlade
-   version and detected model. Close Synapse before testing.
+1. Use a pre-release containing [the experimental support change](https://github.com/OpenBladeProject/openblade-core/pull/744).
+   In **About**, note the OpenBlade version and detected model. Close Synapse before testing.
 2. Use **About → Export diagnostics** to save a baseline
    report. Note the current Synapse settings separately if needed.
 3. Try one available setting and note the time,
