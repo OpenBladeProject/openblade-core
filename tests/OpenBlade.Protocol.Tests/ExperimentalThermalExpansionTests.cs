@@ -246,6 +246,87 @@ public sealed class ExperimentalThermalExpansionTests
         Assert.Single(session.Writes);
     }
 
+    [Theory]
+    [InlineData(8, false)]
+    [InlineData(10, true)]
+    [InlineData(4, false)]
+    [InlineData(1, false)]
+    public async Task MaximumFans_ReadsOnlyItsBitFromSharedPowerModeControl(byte flags, bool expected)
+    {
+        var session = new Session { Mode = 4, PowerModeControlFlags = flags };
+        await using var port = Create(0x029F, session);
+        Assert.Equal(expected, (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).CustomPerformance!.MaximumFans);
+        Assert.Empty(session.Writes);
+    }
+
+    [Theory]
+    [InlineData("10")]
+    [InlineData("80")]
+    [InlineData("")]
+    [InlineData("0000")]
+    public async Task MaximumFans_RejectsUnknownBitsAndWrongPayloadLengths(string hex)
+    {
+        var session = new Session { Mode = 4, PowerModePayloadOverride = Convert.FromHexString(hex) };
+        await using var port = Create(0x029F, session);
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(() =>
+            port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        Assert.Equal(DeviceStateQuery.PerformanceAndFans, error.StateQuery);
+        Assert.Empty(session.Writes);
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(10)]
+    [InlineData(4)]
+    [InlineData(1)]
+    public async Task MaximumFans_OtherPowerModeBitsBlockBeforeAnyCustomWrite(byte flags)
+    {
+        var session = new Session { Mode = 4, PowerModeControlFlags = flags };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
+        await using var port = Create(0x029F, session, policy);
+        var desired = CustomPerformanceSettings.Default with { MaximumFans = (flags & 2) == 0 };
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(desired, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(session.Writes);
+        Assert.Equal(flags, session.PowerModeControlFlags);
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Fact]
+    public async Task MaximumFans_FreshGuardRejectsOtherBitArrivingAfterLevelChanges()
+    {
+        var session = new Session { Mode = 4 };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
+        session.BeforeSubmission = command =>
+        {
+            if (command.ClassId == 7 && command.CommandId == 0x8F && session.Writes.Any())
+            {
+                session.PowerModeControlFlags = 8;
+            }
+        };
+        await using var port = Create(0x029F, session, policy);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(CustomPerformanceSettings.Default with { MaximumFans = true }, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.DoesNotContain(session.Writes, command => command.ClassId == 7 && command.CommandId == 0x0F);
+        Assert.Equal(8, session.PowerModeControlFlags);
+        Assert.False(policy.WritesAllowed);
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(10)]
+    public async Task CustomLevels_PreserveOtherPowerModeBitsWithoutMaximumFanWrite(byte flags)
+    {
+        var session = new Session { Mode = 4, PowerModeControlFlags = flags };
+        await using var port = Create(0x029F, session);
+        await port.SetCustomPerformanceAsync(CustomPerformanceSettings.Default with { MaximumFans = (flags & 2) != 0 },
+            CancellationToken.None);
+        Assert.Equal(flags, session.PowerModeControlFlags);
+        Assert.DoesNotContain(session.Writes, command => command.ClassId == 7);
+    }
+
     [Fact]
     public async Task MaximumFans_BlocksConflictingFixedTargetBeforeWrite()
     {
@@ -271,7 +352,13 @@ public sealed class ExperimentalThermalExpansionTests
         internal byte Gpu { get; set; }
         internal byte FirstTarget { get; set; } = 25;
         internal byte SecondTarget { get; set; } = 25;
-        internal bool MaximumFans { get; set; }
+        internal byte PowerModeControlFlags { get; set; }
+        internal byte[]? PowerModePayloadOverride { get; init; }
+        internal bool MaximumFans
+        {
+            get => (PowerModeControlFlags & 2) != 0;
+            set => PowerModeControlFlags = (byte)((PowerModeControlFlags & ~2) | (value ? 2 : 0));
+        }
         internal bool IgnoreFanTargets { get; init; }
         internal bool IgnoreMaximum { get; init; }
         internal bool ResetTargetsOnModeWrite { get; init; }
@@ -300,7 +387,7 @@ public sealed class ExperimentalThermalExpansionTests
                 case (0x0D, 0x82): payload = [0, payload[1], Mode, Fan]; break;
                 case (0x0D, 0x87): payload = [0, payload[1], payload[1] == 1 ? Cpu : Gpu]; break;
                 case (0x0D, 0x81): payload = [0, payload[1], payload[1] == 1 ? FirstTarget : SecondTarget]; break;
-                case (0x07, 0x8F): payload = [MaximumFans ? (byte)2 : (byte)0]; break;
+                case (0x07, 0x8F): payload = PowerModePayloadOverride ?? [PowerModeControlFlags]; break;
                 case (0x0D, 0x02):
                     Mode = payload[2]; Fan = payload[3];
                     if (ResetTargetsOnModeWrite) { FirstTarget = 30; }
@@ -308,7 +395,7 @@ public sealed class ExperimentalThermalExpansionTests
                 case (0x0D, 0x07):
                     if (payload[1] == 1) { Cpu = payload[2]; } else { Gpu = payload[2]; }
                     break;
-                case (0x07, 0x0F): if (!IgnoreMaximum) { MaximumFans = payload[0] == 2; } break;
+                case (0x07, 0x0F): if (!IgnoreMaximum) { PowerModeControlFlags = payload[0]; } break;
                 case (0x0D, 0x01):
                     if (!IgnoreFanTargets)
                     {

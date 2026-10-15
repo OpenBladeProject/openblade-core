@@ -46,9 +46,16 @@ target. Fan curves remain unavailable because the backend has no admitted live
 temperature source.
 
 Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and Blade
-18 (2023). A change reads `07/8F`, sends one `07/0F` setter, and requires an
-independent `07/8F` result. It is unavailable in ordinary presets and is not a
-substitute for adjustable fixed targets.
+18 (2023). The shared Power Mode Control decoder accepts any one-byte subset of
+`0x0F`; Maximum Fans is bit `0x02`. CPU boost (`0x01`), temporary full charge
+(`0x04`), and local dimming (`0x08`) remain independent observations. Undefined
+bits and other payload lengths are rejected with the bytes retained in diagnostics.
+Because `07/0F` replaces the whole byte, a Maximum Fans change requires every
+other bit to be clear. The backend checks before planned Custom writes and
+again with a fresh `07/8F` immediately before the setter, then confirms the
+result independently. It does not combine bits or clear other settings.
+Unrelated CPU/GPU level changes preserve the flags. The switch is unavailable
+in ordinary presets and is not a substitute for adjustable fixed targets.
 Select Automatic before enabling it; a Fixed baseline is rejected before any
 setter is submitted.
 

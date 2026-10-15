@@ -24,7 +24,8 @@ The Blade 14 (2025) also offers Battery Saver and Battery Balanced on battery po
   Fan curves need a supported temperature source and are not yet available.
 - Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and
   Blade 18 (2023). Select Automatic fans before turning it on. The Blade 18 does
-  not offer adjustable fixed fan targets.
+  not offer adjustable fixed fan targets. Maximum Fans cannot change while another
+  Power Mode Control option is on, such as local dimming or temporary full charge.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
   offers CPU Boost and High/High. Other models exclude High/High.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not

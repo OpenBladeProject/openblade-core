@@ -101,6 +101,16 @@ internal sealed partial class ExperimentalBladePort
             {
                 return;
             }
+            if (CreateCustomCapabilities(model).SupportsMaximumFans)
+            {
+                // 07/0F replaces the entire shared Power Mode Control byte.
+                // Refuse a conflicting maximum-fan change before mode/level writes.
+                byte flags = await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false);
+                if (((flags & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0) != value.MaximumFans)
+                {
+                    RequireMaximumFansWriteBaseline(flags);
+                }
+            }
             CustomPerformanceSettings currentLevels = baselineLevels;
             if (baseline.Performance != PerformancePreset.Custom)
             {
@@ -155,8 +165,13 @@ internal sealed partial class ExperimentalBladePort
             }
             if (currentLevels.MaximumFans != value.MaximumFans)
             {
+                // Recheck immediately before the whole-byte SET in this session;
+                // do not extrapolate read-modify-write or clear another feature.
+                RequireMaximumFansWriteBaseline(
+                    await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false));
                 RequireWriteAdmission(thermal: true);
-                await ExchangeAsync("MaximumFans", 0x07, 0x0F, [value.MaximumFans ? (byte)2 : (byte)0],
+                await ExchangeAsync("MaximumFans", 0x07, 0x0F,
+                    [value.MaximumFans ? TemporaryFullChargeProtocol.MaximumFanSpeedBit : (byte)0],
                     true, cancellationToken).ConfigureAwait(false);
                 submitted = true;
                 if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false) != value.MaximumFans)
@@ -184,17 +199,42 @@ internal sealed partial class ExperimentalBladePort
         }
     }
 
-    private async Task<bool> ReadMaximumFansAsync(CancellationToken cancellationToken)
+    private async Task<bool> ReadMaximumFansAsync(CancellationToken cancellationToken) =>
+        (await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false)
+            & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0;
+
+    private async Task<byte> ReadPowerModeControlAsync(CancellationToken cancellationToken)
     {
         ReadOnlyMemory<byte> payload = await ExchangeAsync("MaximumFans", 0x07, 0x8F,
-            [0], false, cancellationToken).ConfigureAwait(false);
-        return payload.Span[0] switch
+            [0], false, cancellationToken, variableResponse: true).ConfigureAwait(false);
+        if (!TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out _))
         {
-            0 => false,
-            2 => true,
-            _ => throw ContentRejected("Experimental maximum-fan flag is outside the exact contract.",
-                DeviceStateQuery.PerformanceAndFans, payload.Span),
-        };
+            RecordQuery("MaximumFans", "UnsupportedState",
+                DeviceStateContentRejection.FormatPayload(payload.Span), "OutsideSharedPowerModeControlContract");
+            throw ContentRejected("Experimental Power Mode Control is outside the shared bitmask contract.",
+                DeviceStateQuery.PerformanceAndFans, payload.Span);
+        }
+        RecordQuery("MaximumFans", "Confirmed",
+            $"PowerModeControl=0x{payload.Span[0]:X2};MaximumFans={(payload.Span[0] & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0};"
+                + $"OtherSettings=0x{payload.Span[0] & ~TemporaryFullChargeProtocol.MaximumFanSpeedBit:X2}");
+        return payload.Span[0];
+    }
+
+    private static void RequireMaximumFansWriteBaseline(byte flags)
+    {
+        byte otherSettings = (byte)(flags & ~TemporaryFullChargeProtocol.MaximumFanSpeedBit);
+        if (otherSettings == 0)
+        {
+            return;
+        }
+        var names = new List<string>(TemporaryFullChargeProtocol.DescribeOtherSettings(otherSettings));
+        if ((otherSettings & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0)
+        {
+            names.Add("temporary full charge");
+        }
+        throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+            "OpenBlade won't change maximum fans because it would also change other laptop settings that are on ("
+                + string.Join(", ", names) + ").");
     }
 
     private static string FormatCustomPerformance(CustomPerformanceSettings value) =>

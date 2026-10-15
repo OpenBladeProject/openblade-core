@@ -247,13 +247,15 @@ runs:
 - Any one-byte value made of the four bits decodes, and temporary full charge is
   bit `0x04`. Undefined bits (`0x10` to `0x80`) and other lengths are rejected,
   and the rejected bytes stay in diagnostics.
-- Before every `07/0F` write, a fresh `07/8F` read in the same write session must
-  be `00` or `04`. Otherwise nothing is sent. In the product, the result names
-  the settings that are on. The developer validation run reports the refusal
-  as `EnableFailed` or `CancelFailed`, although nothing was sent. OpenBlade has
-  captured only the bare `00` and `04` writes.
-- This does not add `07/8F` or `07/0F` to any model. The experimental backend
-  does not use them.
+- Before every `07/0F` write, read `07/8F` freshly in the same write session.
+  Temporary full charge requires `00` or `04`; otherwise nothing is sent and
+  the product names the other settings that are on. Developer validation reports
+  the refusal as `EnableFailed` or `CancelFailed`. Captured full-charge writes
+  remain limited to bare `00` and `04`.
+- Experimental Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
+  `02` writes. Its fresh guard refuses CPU boost, temporary full charge, or
+  local dimming bits, so replacing the byte cannot clear another enabled option.
+  This does not admit combined writes or a local dimming control.
 
 When you admit a model, check its panel:
 
