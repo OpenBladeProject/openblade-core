@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Expand experimental Blade controls with model-specific Custom levels, fixed and Maximum Fans, keyboard and logo lighting, and 50–100% charge limits. Blade 16 (2023) gains whole-keyboard Static, Ambient Awareness, and Audio Meter; Blade 15 Base (2020) gains single-zone RGB. Diagnostics distinguish tested upstream features from extrapolations. ([#770](https://github.com/OpenBladeProject/openblade-core/pull/770))
+
 ### Fixed
 
 - Recognize all Synapse-defined adapter wattages, including 200 W, on Blade 16 (2025 and 2026). Compare connected and recommended wattage, and label insufficient supplies as low-power adapters without assuming a connector. ([#776](https://github.com/OpenBladeProject/openblade-core/pull/776))

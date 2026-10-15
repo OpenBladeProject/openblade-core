@@ -532,6 +532,34 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task UniformFrame_UsesTypedStreamingRequest()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        ServiceRequest? observed = null;
+        Task server = RunServerAsync(
+            pipeName,
+            request =>
+            {
+                observed = request;
+                return Applied(request.RequestId);
+            },
+            timeout.Token);
+        var client = new ServiceClient(pipeName, TimeProvider.System);
+        var expected = new UniformLightingFrame(new RgbColor(12, 34, 56));
+
+        ControlOperationResult result = await client.PushUniformLightingFrameAsync(
+            expected,
+            timeout.Token);
+        await server;
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            expected,
+            Assert.IsType<PushUniformLightingFrameRequest>(observed).Frame);
+    }
+
+    [Fact]
     public async Task AmbientFrame_CapacityRejectionBacksOffAndRecovers()
     {
         string pipeName = NewPipeName();

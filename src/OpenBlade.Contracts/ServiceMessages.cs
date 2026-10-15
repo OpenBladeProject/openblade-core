@@ -48,6 +48,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
 [JsonDerivedType(typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame")]
+[JsonDerivedType(typeof(PushUniformLightingFrameRequest), "pushUniformLightingFrame")]
 [JsonDerivedType(typeof(SetPlaybackMuteIndicatorRequest), "setPlaybackMuteIndicator")]
 [JsonDerivedType(typeof(SetBatteryPolicyRequest), "setBatteryPolicy")]
 [JsonDerivedType(typeof(SetBatteryProtectionRequest), "setBatteryProtection")]
@@ -342,6 +343,12 @@ public sealed record PushAmbientLightingFrameRequest(
     int Version,
     Guid RequestId,
     byte[] RgbBytes)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record PushUniformLightingFrameRequest(
+    int Version,
+    Guid RequestId,
+    UniformLightingFrame Frame)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetPlaybackMuteIndicatorRequest(

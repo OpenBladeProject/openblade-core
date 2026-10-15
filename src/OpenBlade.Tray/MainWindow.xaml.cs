@@ -1902,9 +1902,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         await ApplyCustomPerformanceChangeAsync(
-            new CustomPerformanceSettings(
-                selected,
-                ViewModel.SelectedCustomGpuLevel),
+            new CustomPerformanceSettings(selected, ViewModel.SelectedCustomGpuLevel)
+            { MaximumFans = ViewModel.SelectedCustomMaximumFans },
             selector);
     }
 
@@ -1922,10 +1921,38 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         await ApplyCustomPerformanceChangeAsync(
-            new CustomPerformanceSettings(
-                ViewModel.SelectedCustomCpuLevel,
-                selected),
+            new CustomPerformanceSettings(ViewModel.SelectedCustomCpuLevel, selected)
+            { MaximumFans = ViewModel.SelectedCustomMaximumFans },
             selector);
+    }
+
+    private async void OnCustomMaximumFansToggled(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleCustomMaximumFansToggledAsync(sender),
+            nameof(OnCustomMaximumFansToggled));
+
+    private async Task HandleCustomMaximumFansToggledAsync(object sender)
+    {
+        if (changingCustomPerformanceSelection
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.SelectedCustomMaximumFans)
+        {
+            return;
+        }
+        changingCustomPerformanceSelection = true;
+        try
+        {
+            if (ViewModel.IsCustomMaximumFansVisible && ViewModel.CanEditPerformance)
+            {
+                await ViewModel.SetCustomMaximumFansAsync(toggle.IsOn, CancellationToken.None);
+            }
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.SelectedCustomMaximumFans;
+            changingCustomPerformanceSelection = false;
+        }
     }
 
     private async void OnGpuClockTuningToggled(object sender, RoutedEventArgs args) =>

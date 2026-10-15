@@ -129,6 +129,12 @@ public interface IBladeDevice
         AmbientLightingFrame frame,
         CancellationToken cancellationToken);
 
+    Task PushUniformLightingFrameAsync(
+        UniformLightingFrame frame,
+        CancellationToken cancellationToken) =>
+        Task.FromException(new CapabilityUnavailableException(
+            "Uniform host-rendered lighting is unavailable."));
+
     Task SetPlaybackMuteIndicatorAsync(
         bool muted,
         CancellationToken cancellationToken);

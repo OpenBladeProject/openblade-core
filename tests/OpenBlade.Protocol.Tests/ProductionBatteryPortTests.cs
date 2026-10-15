@@ -2562,7 +2562,7 @@ public sealed class ProductionBatteryPortTests
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x04, 0x00]),
             Success([0x01, 0x02, 0x04, 0x00]),
-            Success([0x01, 0x01, 0x01]),
+            Success([0x01, 0x01, 0x02]),
             Success([0x01, 0x02, 0x02]));
         var capabilities = new CustomPerformanceCapabilities(
             new HashSet<CustomPerformanceCombination>
@@ -2580,7 +2580,30 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
         Assert.Equal(DeviceStateQuery.CustomPerformanceCombination, error.StateQuery);
-        Assert.Equal("01 01 01 / 01 02 02", error.RejectedPayloadHex);
+        Assert.Equal("01 01 02 / 01 02 02", error.RejectedPayloadHex);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task CustomPerformanceReadback_DoesNotAcquireWriteAdmissionFromCapturedQueries()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x01]),
+            Success([0x01, 0x02, 0x02]));
+        var writable = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>
+        {
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+        });
+        await using var port = CreatePort(session, Catalog(CustomPerformanceFixtures()),
+            customPerformanceCapabilities: writable);
+
+        Assert.Equal(CustomPerformanceSettings.Default,
+            (await port.QueryPerformanceFanStateAsync(default)).CustomPerformance);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(CustomPerformanceSettings.Default, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Equal(4, session.Commands.Count);
     }
 
@@ -2610,6 +2633,21 @@ public sealed class ProductionBatteryPortTests
             [0x82, 0x82, 0x02, 0x02, 0x07, 0x07, 0x82, 0x82, 0x87, 0x87],
             session.Commands.Select(command => command.CommandId).ToArray());
         Assert.Contains(PerformancePreset.Custom, port.Capabilities.PerformancePresets);
+    }
+
+    [Theory]
+    [InlineData(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High, false)]
+    [InlineData(CustomPerformanceLevel.High, CustomPerformanceLevel.High, false)]
+    [InlineData(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High, true)]
+    public async Task ValidatedCustomSetter_DoesNotInheritExperimentalSettings(
+        CustomPerformanceLevel cpu, CustomPerformanceLevel gpu, bool maximumFans)
+    {
+        var session = new ScriptedSession();
+        await using var port = CreatePort(session, Catalog(CustomPerformanceFixtures()));
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(new(cpu, gpu) { MaximumFans = maximumFans }, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(session.Commands);
     }
 
     [Fact]

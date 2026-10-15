@@ -808,6 +808,30 @@
                                                                     SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomMaximumFansVisible}">
+                                <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Uid="MainWindow_TextBlockCustomMaximumFans"
+                                               Text="Maximum fans"
+                                               Style="{StaticResource CardTitleStyle}"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center"
+                                               SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                    <ToggleSwitch x:Uid="MainWindow_CustomMaximumFansToggleText"
+                                                  Grid.Column="1"
+                                                  Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                  IsOn="{x:Bind SelectedCustomMaximumFans, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanEditCustomMaximumFans, Mode=OneWay}"
+                                                  AutomationProperties.Name="Maximum fans"
+                                                  Toggled="OnCustomMaximumFansToggled" />
+                                </Grid>
+                            </Border>
                             <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuAppCleanupVisible}">

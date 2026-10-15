@@ -18,14 +18,15 @@ public sealed class ExperimentalBladeCustomTests
     }
 
     [Fact]
-    public async Task OtherModels_RejectCustomWithoutAnyTraffic()
+    public async Task AdmittedModels_RejectUnadmittedGpuOffsetsWithoutAnyTraffic()
     {
         foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(item => item.ProductId != 0x02A0))
         {
             var session = new Session();
             var policy = new ExperimentalFeaturesPolicy(model);
             await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true, () => PowerSource.PluggedIn);
-            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetCustomPerformanceAsync(Requested, CancellationToken.None));
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetCustomPerformanceAsync(
+                Requested with { GpuClockOffsets = GpuClockOffsetSettings.Default }, CancellationToken.None));
             Assert.Empty(session.Commands);
         }
     }
@@ -122,7 +123,7 @@ public sealed class ExperimentalBladeCustomTests
         await using var port = Create(session, policy);
         await port.SetCustomPerformanceAsync(Requested, CancellationToken.None);
         Assert.Equal(new byte[] { 0x82, 0x82, 0x87, 0x87, 0x02, 0x02, 0x82, 0x82, 0x87, 0x87, 0x07, 0x87, 0x87, 0x07, 0x87, 0x87, 0x82, 0x82, 0x87, 0x87 },
-            session.Commands.Select(command => command.CommandId));
+            session.Commands.Where(command => command.ClassId == 0x0D).Select(command => command.CommandId));
         Assert.Equal(new[] { "01010400", "01020400", "010101", "010202" },
             session.Commands.Where(command => command.CommandId < 0x80).Select(command => Convert.ToHexString(command.Arguments.Span)));
         Assert.Contains(policy.Snapshot().Observations, item => item.Stage == "Baseline" && item.ConfirmedValue == "Balanced/Automatic;CPU=Low;GPU=Low");
@@ -144,7 +145,7 @@ public sealed class ExperimentalBladeCustomTests
         Assert.Equal(new[] { firstWrite, secondWrite }, session.Commands.Where(command => command.CommandId == 0x07)
             .Select(command => Convert.ToHexString(command.Arguments.Span)));
         Assert.Equal(new byte[] { 0x82, 0x82, 0x87, 0x87, 0x07, 0x87, 0x87, 0x07, 0x87, 0x87, 0x82, 0x82, 0x87, 0x87 },
-            session.Commands.Select(command => command.CommandId));
+            session.Commands.Where(command => command.ClassId == 0x0D).Select(command => command.CommandId));
     }
 
     [Fact]
@@ -200,7 +201,7 @@ public sealed class ExperimentalBladeCustomTests
         var session = new Session { Mode = 4, Cpu = 1, Gpu = 2 };
         await using var port = Create(session, Enabled());
         await port.SetCustomPerformanceAsync(Requested, CancellationToken.None);
-        Assert.Equal(new byte[] { 0x82, 0x82, 0x87, 0x87 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x87, 0x87, 0x8F }, session.Commands.Select(command => command.CommandId));
     }
 
     [Fact]
@@ -319,6 +320,10 @@ public sealed class ExperimentalBladeCustomTests
             }
             Commands.Add(command);
             _ = assignTransactionId();
+            if (command.ClassId == 7 && command.CommandId == 0x8F)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0 }, null));
+            }
             Assert.Equal(0x0D, command.ClassId);
             byte[] payload = command.Arguments.ToArray();
             switch (command.CommandId)

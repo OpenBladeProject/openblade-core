@@ -596,6 +596,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,
                         SupportsBreathingColorSelection = lighting.Capabilities.SupportsBreathingColorSelection,
+                        SupportedBreathingColorModes =
+                            lighting.Capabilities.SupportedBreathingColorModes,
+                        SupportsUniformLightingFrames =
+                            lighting.Capabilities.SupportsUniformLightingFrames,
                         SupportsWaveDirectionSelection = lighting.Capabilities.SupportsWaveDirectionSelection,
                         SupportsPlaybackMuteIndicator =
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
@@ -1615,7 +1619,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 || (value == PerformancePreset.Custom
                     ? !CustomPerformanceSettings.IsWellFormed(customPerformance)
                         || batteryFactory.Capabilities.CustomPerformance?.Supports(
-                            customPerformance) == false
+                            customPerformance) != true
                     : customPerformance is not null))
             {
                 await RejectProductionWrite(
@@ -2264,6 +2268,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             AmbientLightingFrame frame,
             CancellationToken cancellationToken) =>
             lightingSession.PushAmbientLightingFrameAsync(frame, cancellationToken);
+
+        public Task PushUniformLightingFrameAsync(
+            UniformLightingFrame frame,
+            CancellationToken cancellationToken) =>
+            lightingSession.PushUniformLightingFrameAsync(frame, cancellationToken);
 
         public Task SetPlaybackMuteIndicatorAsync(
             bool muted,

@@ -301,6 +301,11 @@ public sealed class ControlRequestHandler
                 await runtime.PushAmbientLightingFrameAsync(
                     AmbientLightingFrame.FromRgbBytes(ambient.RgbBytes),
                     cancellationToken)),
+            PushUniformLightingFrameRequest uniform => Result(
+                request.RequestId,
+                await runtime.PushUniformLightingFrameAsync(
+                    uniform.Frame,
+                    cancellationToken)),
             SetPlaybackMuteIndicatorRequest mute => Result(
                 request.RequestId,
                 await runtime.SetPlaybackMuteIndicatorAsync(

@@ -104,6 +104,7 @@ public sealed partial class MainViewModel
             && left.FanSpeedRange == right.FanSpeedRange
             && left.SupportsDirectManualFanTransitions
                 == right.SupportsDirectManualFanTransitions
+            && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
             && left.SupportedLightingRefreshRates.SetEquals(
@@ -113,6 +114,11 @@ public sealed partial class MainViewModel
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
             && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection
+            && (left.SupportedBreathingColorModes is null
+                ? right.SupportedBreathingColorModes is null
+                : right.SupportedBreathingColorModes is not null
+                    && left.SupportedBreathingColorModes.SetEquals(right.SupportedBreathingColorModes))
+            && left.SupportsUniformLightingFrames == right.SupportsUniformLightingFrames
             && left.SupportsWaveDirectionSelection == right.SupportsWaveDirectionSelection
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
@@ -129,5 +135,6 @@ public sealed partial class MainViewModel
         ReferenceEquals(left, right)
         || (left is not null
             && right is not null
+            && left.SupportsMaximumFans == right.SupportsMaximumFans
             && left.AllowedCombinations.SetEquals(right.AllowedCombinations));
 }

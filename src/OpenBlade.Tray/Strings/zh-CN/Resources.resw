@@ -2029,4 +2029,10 @@
   <data name="MainWindow_UnsupportedLaptopInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>不支持的笔记本电脑</value>
   </data>
+  <data name="MainWindow_TextBlockCustomMaximumFans.Text" xml:space="preserve">
+    <value>风扇最高转速</value>
+  </data>
+  <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>风扇最高转速</value>
+  </data>
 </root>

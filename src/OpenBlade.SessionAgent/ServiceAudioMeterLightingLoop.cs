@@ -7,6 +7,8 @@ namespace OpenBlade.SessionAgent;
 public interface IAudioMeterLightingSampler : IDisposable
 {
     AmbientLightingFrame Capture(double colorBoost);
+
+    UniformLightingFrame CaptureUniform(double colorBoost);
 }
 
 public interface IAudioMeterLightingSamplerFactory
@@ -72,15 +74,19 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
     public AmbientLightingFrame Capture(double colorBoost)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-        if (!double.IsFinite(colorBoost)
-            || colorBoost is < 1 or > 4
-            || colorBoost * 4 != Math.Truncate(colorBoost * 4))
-        {
-            throw new ArgumentOutOfRangeException(nameof(colorBoost));
-        }
+        ValidateColorBoost(colorBoost);
 
         float peak = nativeApi.GetPeakValue(meterObject);
         return RenderFrame(peak, colorBoost);
+    }
+
+    public UniformLightingFrame CaptureUniform(double colorBoost)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        ValidateColorBoost(colorBoost);
+
+        float peak = nativeApi.GetPeakValue(meterObject);
+        return RenderUniformFrame(peak, colorBoost);
     }
 
     internal static AmbientLightingFrame RenderFrame(float peak, double colorBoost)
@@ -99,6 +105,30 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
         int litColumns = (int)Math.Ceiling(
             level * AmbientLightingFrame.Columns);
         return RenderColumns(litColumns);
+    }
+
+    internal static UniformLightingFrame RenderUniformFrame(
+        float peak,
+        double colorBoost)
+    {
+        if (float.IsNaN(peak) || peak is < 0 or > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(peak));
+        }
+        ValidateColorBoost(colorBoost);
+        byte intensity = checked((byte)Math.Round(
+            Math.Clamp(peak * colorBoost, 0, 1) * byte.MaxValue));
+        return new UniformLightingFrame(new RgbColor(0, intensity, 0));
+    }
+
+    private static void ValidateColorBoost(double colorBoost)
+    {
+        if (!double.IsFinite(colorBoost)
+            || colorBoost is < 1 or > 4
+            || colorBoost * 4 != Math.Truncate(colorBoost * 4))
+        {
+            throw new ArgumentOutOfRangeException(nameof(colorBoost));
+        }
     }
 
     internal static AmbientLightingFrame RenderColumns(int litColumns)
@@ -347,9 +377,57 @@ internal sealed class AudioMeterDecaySmoother
     }
 }
 
+internal sealed class UniformAudioMeterDecaySmoother
+{
+    private double? displayedIntensity;
+
+    internal UniformLightingFrame Apply(
+        UniformLightingFrame frame,
+        TimeSpan elapsed,
+        int decayMilliseconds)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        if (decayMilliseconds is
+                < LightingSettingsFactory.MinAudioMeterDecayMilliseconds
+                or > LightingSettingsFactory.MaxAudioMeterDecayMilliseconds
+            || decayMilliseconds
+                % LightingSettingsFactory.AudioMeterDecayStepMilliseconds != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(decayMilliseconds));
+        }
+
+        double target = frame.Color.Green;
+        if (decayMilliseconds == 0 || displayedIntensity is null
+            || target >= displayedIntensity.Value)
+        {
+            displayedIntensity = target == 0 ? null : target;
+            return frame;
+        }
+
+        displayedIntensity = Math.Max(
+            target,
+            displayedIntensity.Value
+                - (byte.MaxValue * Math.Max(0, elapsed.TotalMilliseconds)
+                    / decayMilliseconds));
+        if (displayedIntensity.Value <= 0)
+        {
+            Reset();
+            return frame;
+        }
+
+        return new UniformLightingFrame(new RgbColor(
+            0,
+            checked((byte)Math.Ceiling(displayedIntensity.Value)),
+            0));
+    }
+
+    internal void Reset() => displayedIntensity = null;
+}
+
 internal readonly record struct AudioMeterRenderingConfiguration(
     AudioMeterLightingParameters Parameters,
-    LightingRefreshRate RefreshRate);
+    LightingRefreshRate RefreshRate,
+    bool UniformFrames = false);
 
 public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
 {
@@ -402,7 +480,9 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                             AudioMeterLightingParameters audioMeter =>
                         new AudioMeterRenderingConfiguration(
                             audioMeter,
-                            connected.Status.LightingRefreshRate),
+                            connected.Status.LightingRefreshRate,
+                            connected.Status.Capabilities?.SupportsUniformLightingFrames
+                                == true),
                     _ => null,
                 };
                 await SetConfigurationAsync(configuration, cancellationToken)
@@ -483,24 +563,43 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
             delay,
             configuration.RefreshRate);
         var smoother = new AudioMeterDecaySmoother();
+        var uniformSmoother = new UniformAudioMeterDecaySmoother();
         long? lastCaptureTimestamp = null;
         try
         {
             while (true)
             {
-                AmbientLightingFrame frame;
+                AmbientLightingFrame? spatialFrame = null;
+                UniformLightingFrame? uniformFrame = null;
                 try
                 {
                     sampler ??= samplerFactory.Create();
-                    frame = sampler.Capture(parameters.ColorBoost);
+                    if (configuration.UniformFrames)
+                    {
+                        uniformFrame = sampler.CaptureUniform(parameters.ColorBoost);
+                    }
+                    else
+                    {
+                        spatialFrame = sampler.Capture(parameters.ColorBoost);
+                    }
                     long capturedTimestamp = timeProvider.GetTimestamp();
                     TimeSpan elapsed = lastCaptureTimestamp is { } previous
                         ? timeProvider.GetElapsedTime(previous, capturedTimestamp)
                         : TimeSpan.Zero;
-                    frame = smoother.Apply(
-                        frame,
-                        elapsed,
-                        parameters.DecayMilliseconds);
+                    if (uniformFrame is not null)
+                    {
+                        uniformFrame = uniformSmoother.Apply(
+                            uniformFrame,
+                            elapsed,
+                            parameters.DecayMilliseconds);
+                    }
+                    else
+                    {
+                        spatialFrame = smoother.Apply(
+                            spatialFrame!,
+                            elapsed,
+                            parameters.DecayMilliseconds);
+                    }
                     lastCaptureTimestamp = capturedTimestamp;
                 }
                 catch (OperationCanceledException) when (
@@ -512,6 +611,7 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
                 {
                     ResetSampler(ref sampler);
                     smoother.Reset();
+                    uniformSmoother.Reset();
                     lastCaptureTimestamp = null;
                     pacer.Reset();
                     ReportFailure(exception);
@@ -521,18 +621,31 @@ public sealed class ServiceAudioMeterLightingLoop : IAsyncDisposable
 
                 try
                 {
-                    SessionLightingFrameDecision decision = cadence.Evaluate(frame);
+                    SessionLightingFrameDecision decision = uniformFrame is not null
+                        ? cadence.Evaluate(uniformFrame)
+                        : cadence.Evaluate(spatialFrame!);
                     if (decision.ShouldSend)
                     {
-                        ControlOperationResult result = await serviceClient
-                            .PushAmbientLightingFrameAsync(frame, cancellationToken)
-                            .ConfigureAwait(false);
+                        ControlOperationResult result = uniformFrame is not null
+                            ? await serviceClient.PushUniformLightingFrameAsync(
+                                uniformFrame,
+                                cancellationToken).ConfigureAwait(false)
+                            : await serviceClient.PushAmbientLightingFrameAsync(
+                                spatialFrame!,
+                                cancellationToken).ConfigureAwait(false);
                         if (result.Status != ControlOperationStatus.Applied)
                         {
                             throw new InvalidOperationException(result.Message);
                         }
 
-                        cadence.RecordSent(frame);
+                        if (uniformFrame is not null)
+                        {
+                            cadence.RecordSent(uniformFrame);
+                        }
+                        else
+                        {
+                            cadence.RecordSent(spatialFrame!);
+                        }
                     }
 
                     await pacer.WaitAsync(decision.NextInterval, cancellationToken)

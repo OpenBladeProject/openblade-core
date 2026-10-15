@@ -38,4 +38,31 @@ public sealed class AmbientCaptureSynchronizationTests
             WindowsAmbientScreenSampler.ReadCompletedFrame(nint.Zero, buffer, () => false));
         Assert.All(buffer, value => Assert.Equal((byte)0, value));
     }
+
+    [Fact]
+    public void ReadCompletedUniformFrame_ReadsOneLayoutIndependentSample()
+    {
+        byte[] buffer = new byte[4];
+        nint bits = Marshal.AllocHGlobal(buffer.Length);
+        try
+        {
+            Marshal.Copy(buffer, 0, bits, buffer.Length);
+            UniformLightingFrame frame = WindowsAmbientScreenSampler.ReadCompletedUniformFrame(
+                bits,
+                buffer,
+                () =>
+                {
+                    Marshal.WriteByte(bits, 0, 30);
+                    Marshal.WriteByte(bits, 1, 20);
+                    Marshal.WriteByte(bits, 2, 10);
+                    return true;
+                });
+
+            Assert.Equal(new RgbColor(10, 20, 30), frame.Color);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(bits);
+        }
+    }
 }

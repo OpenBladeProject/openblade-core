@@ -343,9 +343,11 @@ type sealed class OpenBlade.Contracts.CustomPerformanceCapabilities
   method OpenBlade.Contracts.CustomPerformanceCapabilities <Clone>$()
   method System.Boolean Supports(OpenBlade.Contracts.CustomPerformanceSettings settings)
   method System.Boolean get_IsWellFormed()
+  method System.Boolean get_SupportsMaximumFans()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> get_AllowedCombinations()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> AllowedCombinations)
   method System.Void set_AllowedCombinations(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> value)
+  method System.Void set_SupportsMaximumFans(System.Boolean value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -353,6 +355,7 @@ type sealed class OpenBlade.Contracts.CustomPerformanceCapabilities
   method static System.Boolean op_Inequality(OpenBlade.Contracts.CustomPerformanceCapabilities left, OpenBlade.Contracts.CustomPerformanceCapabilities right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.CustomPerformanceCapabilities other)
   property System.Boolean IsWellFormed { get; }
+  property System.Boolean SupportsMaximumFans { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> AllowedCombinations { get; init; }
 type sealed class OpenBlade.Contracts.CustomPerformanceCombination
   interface System.IEquatable<OpenBlade.Contracts.CustomPerformanceCombination>
@@ -375,6 +378,7 @@ type sealed class OpenBlade.Contracts.CustomPerformanceCombination
   property System.Boolean IsWellFormed { get; }
 type enum OpenBlade.Contracts.CustomPerformanceLevel
   field System.Int32 value__
+  field const OpenBlade.Contracts.CustomPerformanceLevel Boost = 3
   field const OpenBlade.Contracts.CustomPerformanceLevel High = 2
   field const OpenBlade.Contracts.CustomPerformanceLevel Low = 0
   field const OpenBlade.Contracts.CustomPerformanceLevel Medium = 1
@@ -385,7 +389,9 @@ type sealed class OpenBlade.Contracts.CustomPerformanceSettings
   method OpenBlade.Contracts.CustomPerformanceLevel get_Gpu()
   method OpenBlade.Contracts.CustomPerformanceSettings <Clone>$()
   method OpenBlade.Contracts.GpuClockOffsetSettings get_GpuClockOffsets()
+  method System.Boolean get_MaximumFans()
   method System.Void set_GpuClockOffsets(OpenBlade.Contracts.GpuClockOffsetSettings value)
+  method System.Void set_MaximumFans(System.Boolean value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -398,6 +404,7 @@ type sealed class OpenBlade.Contracts.CustomPerformanceSettings
   property OpenBlade.Contracts.CustomPerformanceLevel Gpu { get; }
   property OpenBlade.Contracts.CustomPerformanceSettings Default { get; }
   property OpenBlade.Contracts.GpuClockOffsetSettings GpuClockOffsets { get; init; }
+  property System.Boolean MaximumFans { get; init; }
 type sealed class OpenBlade.Contracts.CyclePerformanceShortcutRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.CyclePerformanceShortcutRequest>
@@ -473,14 +480,18 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
   method OpenBlade.Contracts.HyperBoostBaseModeCapabilities get_HyperBoostBaseModes()
   method OpenBlade.Contracts.SpecialKeySlotSet get_WritableSpecialKeySlots()
+  method System.Boolean SupportsBreathingMode(OpenBlade.Contracts.BreathingColorMode mode)
+  method System.Boolean get_ReportsPerformanceWithManualFans()
   method System.Boolean get_SupportsBatteryProtectionOff()
   method System.Boolean get_SupportsBreathingColorSelection()
   method System.Boolean get_SupportsDirectManualFanTransitions()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsPlaybackMuteIndicator()
   method System.Boolean get_SupportsTemporaryFullCharge()
+  method System.Boolean get_SupportsUniformLightingFrames()
   method System.Boolean get_SupportsWaveDirectionSelection()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> get_ObservedPowerSourceBehaviors()
+  method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> get_SupportedBreathingColorModes()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> get_FanModes()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> get_LightingEffects()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> get_ObservedLightingEffects()
@@ -513,7 +524,9 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_ObservedPowerSourceBehaviors(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> value)
   method System.Void set_OneShotLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
   method System.Void set_PerformancePresets(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> value)
+  method System.Void set_ReportsPerformanceWithManualFans(System.Boolean value)
   method System.Void set_SpecialKeyBindingsAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
+  method System.Void set_SupportedBreathingColorModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> value)
   method System.Void set_SupportedLightingRefreshRates(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingRefreshRate> value)
   method System.Void set_SupportsBatteryProtectionOff(System.Boolean value)
   method System.Void set_SupportsBreathingColorSelection(System.Boolean value)
@@ -521,6 +534,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_SupportsKeyboardBrightness(System.Boolean value)
   method System.Void set_SupportsPlaybackMuteIndicator(System.Boolean value)
   method System.Void set_SupportsTemporaryFullCharge(System.Boolean value)
+  method System.Void set_SupportsUniformLightingFrames(System.Boolean value)
   method System.Void set_SupportsWaveDirectionSelection(System.Boolean value)
   method System.Void set_WritableSpecialKeySlots(OpenBlade.Contracts.SpecialKeySlotSet value)
   method override System.Boolean Equals(System.Object obj)
@@ -538,14 +552,17 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.GpuOverclockCapabilities GpuOverclock { get; init; }
   property OpenBlade.Contracts.HyperBoostBaseModeCapabilities HyperBoostBaseModes { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
+  property System.Boolean ReportsPerformanceWithManualFans { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
   property System.Boolean SupportsBreathingColorSelection { get; init; }
   property System.Boolean SupportsDirectManualFanTransitions { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsPlaybackMuteIndicator { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
+  property System.Boolean SupportsUniformLightingFrames { get; init; }
   property System.Boolean SupportsWaveDirectionSelection { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors { get; init; }
+  property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> SupportedBreathingColorModes { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> ObservedLightingEffects { get; init; }
@@ -624,6 +641,7 @@ type sealed class OpenBlade.Contracts.DiagnosticExperimentalSupport
   method System.Boolean get_Detected()
   method System.Boolean get_WritesPaused()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ExperimentalControlObservation> get_Observations()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ExperimentalFeatureEvidence> get_FeatureEvidence()
   method System.String get_EvidenceLevel()
   method System.String get_EvidenceSource()
   method System.String get_ModelNumber()
@@ -631,6 +649,7 @@ type sealed class OpenBlade.Contracts.DiagnosticExperimentalSupport
   method System.Void set_Detected(System.Boolean value)
   method System.Void set_EvidenceLevel(System.String value)
   method System.Void set_EvidenceSource(System.String value)
+  method System.Void set_FeatureEvidence(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ExperimentalFeatureEvidence> value)
   method System.Void set_ModelNumber(System.String value)
   method System.Void set_Observations(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ExperimentalControlObservation> value)
   method System.Void set_WritesPaused(System.Boolean value)
@@ -645,6 +664,7 @@ type sealed class OpenBlade.Contracts.DiagnosticExperimentalSupport
   property System.Boolean Detected { get; init; }
   property System.Boolean WritesPaused { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ExperimentalControlObservation> Observations { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ExperimentalFeatureEvidence> FeatureEvidence { get; init; }
   property System.String EvidenceLevel { get; init; }
   property System.String EvidenceSource { get; init; }
   property System.String ModelNumber { get; init; }
@@ -716,6 +736,26 @@ type sealed class OpenBlade.Contracts.ExperimentalControlObservation
   property System.String Outcome { get; init; }
   property System.String RequestedValue { get; init; }
   property System.String Stage { get; init; }
+type sealed class OpenBlade.Contracts.ExperimentalFeatureEvidence
+  interface System.IEquatable<OpenBlade.Contracts.ExperimentalFeatureEvidence>
+  ctor (System.String Feature, System.String Basis, System.Collections.Generic.IReadOnlyList<System.String> Sources)
+  method OpenBlade.Contracts.ExperimentalFeatureEvidence <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<System.String> get_Sources()
+  method System.String get_Basis()
+  method System.String get_Feature()
+  method System.Void Deconstruct(out System.String Feature, out System.String Basis, out System.Collections.Generic.IReadOnlyList<System.String> Sources)
+  method System.Void set_Basis(System.String value)
+  method System.Void set_Feature(System.String value)
+  method System.Void set_Sources(System.Collections.Generic.IReadOnlyList<System.String> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ExperimentalFeatureEvidence left, OpenBlade.Contracts.ExperimentalFeatureEvidence right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ExperimentalFeatureEvidence left, OpenBlade.Contracts.ExperimentalFeatureEvidence right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ExperimentalFeatureEvidence other)
+  property System.Collections.Generic.IReadOnlyList<System.String> Sources { get; init; }
+  property System.String Basis { get; init; }
+  property System.String Feature { get; init; }
 type sealed class OpenBlade.Contracts.ExportDiagnosticsRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.ExportDiagnosticsRequest>
@@ -1383,7 +1423,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 64
+  field const System.Int32 ProtocolVersion = 65
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1620,6 +1660,22 @@ type sealed class OpenBlade.Contracts.PushAmbientLightingFrameRequest
   method virtual OpenBlade.Contracts.PushAmbientLightingFrameRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.PushAmbientLightingFrameRequest other)
   property System.Byte[] RgbBytes { get; init; }
+type sealed class OpenBlade.Contracts.PushUniformLightingFrameRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.PushUniformLightingFrameRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.UniformLightingFrame Frame)
+  method OpenBlade.Contracts.UniformLightingFrame get_Frame()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.UniformLightingFrame Frame)
+  method System.Void set_Frame(OpenBlade.Contracts.UniformLightingFrame value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.PushUniformLightingFrameRequest left, OpenBlade.Contracts.PushUniformLightingFrameRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.PushUniformLightingFrameRequest left, OpenBlade.Contracts.PushUniformLightingFrameRequest right)
+  method virtual OpenBlade.Contracts.PushUniformLightingFrameRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.PushUniformLightingFrameRequest other)
+  property OpenBlade.Contracts.UniformLightingFrame Frame { get; init; }
 type static class OpenBlade.Contracts.RazerBladeModelCatalog
   field const System.String OpenBladeTargetModelNumber = "RZ09-0581"
   field const System.String Rz090528ModelNumber = "RZ09-0528"
@@ -2655,6 +2711,20 @@ type sealed class OpenBlade.Contracts.TidalLightingParameters
   property System.Boolean RandomColors { get; init; }
 type static class OpenBlade.Contracts.TrayShutdownEndpoint
   method static System.String ForExecutablePath(System.String executablePath)
+type sealed class OpenBlade.Contracts.UniformLightingFrame
+  interface System.IEquatable<OpenBlade.Contracts.UniformLightingFrame>
+  ctor (OpenBlade.Contracts.RgbColor Color)
+  method OpenBlade.Contracts.RgbColor get_Color()
+  method OpenBlade.Contracts.UniformLightingFrame <Clone>$()
+  method System.Void Deconstruct(out OpenBlade.Contracts.RgbColor Color)
+  method System.Void set_Color(OpenBlade.Contracts.RgbColor value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.UniformLightingFrame left, OpenBlade.Contracts.UniformLightingFrame right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.UniformLightingFrame left, OpenBlade.Contracts.UniformLightingFrame right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.UniformLightingFrame other)
+  property OpenBlade.Contracts.RgbColor Color { get; init; }
 type sealed class OpenBlade.Contracts.UpdateProfilesRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.UpdateProfilesRequest>

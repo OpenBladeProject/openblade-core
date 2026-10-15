@@ -32,7 +32,7 @@ internal static class ProductionLightingSessionFixture
             params HidSessionResult<IProductionLightingPort>[] additionalResults) =>
             new(new[] { firstResult }.Concat(additionalResults).ToArray());
 
-        public DeviceCapabilities Capabilities { get; } = new(
+        public DeviceCapabilities Capabilities { get; init; } = new(
             new HashSet<PerformancePreset>(),
             new HashSet<FanMode>(),
             new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
@@ -110,7 +110,8 @@ internal static class ProductionLightingSessionFixture
         public FakeLightingPort(
             bool supportsKeyboardBrightness = true,
             string keyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
-            IReadOnlySet<LightingRefreshRate>? supportedLightingRefreshRates = null)
+            IReadOnlySet<LightingRefreshRate>? supportedLightingRefreshRates = null,
+            bool supportsUniformLightingFrames = false)
         {
             Capabilities = new DeviceCapabilities(
                 new HashSet<PerformancePreset>(),
@@ -133,6 +134,7 @@ internal static class ProductionLightingSessionFixture
                     new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
                 SupportedLightingRefreshRates = supportedLightingRefreshRates
                     ?? new HashSet<LightingRefreshRate>(),
+                SupportsUniformLightingFrames = supportsUniformLightingFrames,
             };
         }
 
@@ -147,6 +149,8 @@ internal static class ProductionLightingSessionFixture
         public List<ReactiveKeyPulse> Pulses { get; } = [];
 
         public List<AmbientLightingFrame> AmbientFrames { get; } = [];
+
+        public List<UniformLightingFrame> UniformFrames { get; } = [];
 
         public List<bool> PlaybackMuteIndicatorStates { get; } = [];
 
@@ -326,6 +330,14 @@ internal static class ProductionLightingSessionFixture
             CancellationToken cancellationToken)
         {
             AmbientFrames.Add(frame);
+            return Task.CompletedTask;
+        }
+
+        public Task PushUniformLightingFrameAsync(
+            UniformLightingFrame frame,
+            CancellationToken cancellationToken)
+        {
+            UniformFrames.Add(frame);
             return Task.CompletedTask;
         }
 

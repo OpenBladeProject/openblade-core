@@ -13,7 +13,7 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 19;
+    internal const int CurrentSchemaVersion = 20;
     internal const int AutomaticExperimentalSupportSchemaVersion = 19;
     internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
     internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
@@ -78,7 +78,7 @@ public sealed class ProfileStore
             out _,
             batteryProtectionDefault: null);
         profiles = ClearLegacyWindowsPowerModes(profiles);
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -270,7 +270,7 @@ public sealed class ProfileStore
         {
             ValidateLegacyBatteryPolicy(profiles);
         }
-        validator.Validate(profiles);
+        validator.ValidateStoredCustomIntent(profiles);
         return profiles;
     }
 

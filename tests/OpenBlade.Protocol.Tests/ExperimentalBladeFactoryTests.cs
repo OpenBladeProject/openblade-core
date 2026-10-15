@@ -38,17 +38,25 @@ public sealed class ExperimentalBladeFactoryTests
     [InlineData(0x029D)]
     [InlineData(0x02C5)]
     [InlineData(0x0255)]
-    public async Task LightingAdapter_OtherExperimentalModelsDoNotOpenHid(int productId)
+    public async Task LightingAdapter_AllExperimentalModelsOpenExactHid(int productId)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
         var native = new Native(1) { ProductId = model.ProductId };
         var io = new Io();
         var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
             new Guard(), io, () => PowerSource.ExternalUnknown);
-        HidSessionResult<IProductionLightingPort> result = await factory.CreateLightingFactory().OpenAsync(CancellationToken.None);
-        Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
-        Assert.Empty(io.Commands);
-        Assert.Equal(0, native.BoundCount);
+        IProductionLightingPortFactory lighting = factory.CreateLightingFactory();
+
+        Assert.True(lighting.Capabilities.SupportsKeyboardBrightness);
+        Assert.NotEmpty(lighting.Capabilities.LightingEffects);
+        HidSessionResult<IProductionLightingPort> result = await lighting.OpenAsync(CancellationToken.None);
+
+        Assert.Null(result.Failure);
+        await using IProductionLightingPort port = Assert.IsType<ExperimentalBladePort>(result.Value);
+        Assert.Equal(new byte[] { 0x82, 0x82 }, io.Commands);
+        Assert.Equal(1, native.BoundCount);
+        Assert.True(port.Capabilities.SupportsKeyboardBrightness);
+        Assert.NotEmpty(port.Capabilities.LightingEffects);
     }
 
     [Fact]

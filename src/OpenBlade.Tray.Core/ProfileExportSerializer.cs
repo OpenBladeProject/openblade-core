@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 11;
+    public const int CurrentSchemaVersion = 12;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -80,6 +80,7 @@ public static class ProfileExportSerializer
             9 => DeserializeVersion9(json),
             10 => DeserializeVersion10(json),
             11 => DeserializeVersion11(json),
+            12 => DeserializeVersion11(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
