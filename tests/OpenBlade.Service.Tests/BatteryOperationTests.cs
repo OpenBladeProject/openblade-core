@@ -112,6 +112,21 @@ public sealed class BatteryOperationTests
     }
 
     [Fact]
+    public async Task DisableProtection_DriftedLimitDoesNotRequireStoredLimitReset()
+    {
+        var device = new BatteryTestDevice();
+        device.Capabilities = device.Capabilities with { SupportsBatteryProtectionOff = true };
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult result = await coordinator.ApplyBatteryProtectionAsync(
+            enabled: false, BatteryPolicy.Create(75), CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, result.Status);
+        Assert.Equal(new[] { "SetProtectionOff" }, device.BatterySetterCalls);
+        Assert.Equal(new ConfirmedBatteryState(false, null, false), device.State.Battery);
+    }
+
+    [Fact]
     public async Task DisableProtection_WhenAlreadyOff_IsUnchangedWithoutSetter()
     {
         BatteryTestDevice device = new BatteryTestDevice();
@@ -291,7 +306,6 @@ public sealed class BatteryOperationTests
     public static TheoryData<ConfirmedBatteryState?> InvalidProtectionDisableStates() => new()
     {
         null,
-        new ConfirmedBatteryState(true, 80, false),
         new ConfirmedBatteryState(true, 75, null),
         new ConfirmedBatteryState(true, 75, true),
     };

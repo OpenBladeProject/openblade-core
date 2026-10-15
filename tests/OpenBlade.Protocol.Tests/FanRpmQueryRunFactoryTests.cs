@@ -62,6 +62,64 @@ public sealed class FanRpmQueryRunFactoryTests
         Assert.Equal(1, session.DisposeCount);
     }
 
+    [Fact]
+    public void Rz090581ServiceFactory_UsesItsModelSpecificSharedFeatureCommandGate()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var rz090581Factory = Assert.IsType<FanRpmQueryRunFactory>(
+            BatteryValidationFactory.CreateWindowsRz090581FanRpmForService(
+                compatibilityPolicy: null));
+        var rz090528Factory = Assert.IsType<FanRpmQueryRunFactory>(
+            BatteryValidationFactory.CreateWindowsRz090528FanRpmQuery());
+
+        Assert.Same(
+            Rz090581FeatureCommandGate.Shared,
+            rz090581Factory.SharedCommandGate);
+        Assert.Null(rz090528Factory.SharedCommandGate);
+        Assert.NotSame(
+            Rz090528CommandSessionGate.Shared,
+            rz090581Factory.SharedCommandGate);
+    }
+
+    [Fact]
+    public async Task QueryAsync_HoldsSharedFeatureCommandGateThroughEachSetGetResponse()
+    {
+        using var sharedCommandGate = new SemaphoreSlim(1, 1);
+        var session = new BlockingFanSession();
+        var factory = new FanRpmQueryRunFactory(
+            static () => new ValidationRunContext(),
+            new ActorFactory(Actor(session)),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5),
+            new PendingDisposalRegistry(),
+            sharedCommandGate);
+        IFanRpmQueryPort port = Assert.IsAssignableFrom<IFanRpmQueryPort>(
+            (await factory.OpenAsync(default)).Value);
+
+        Task<HidSessionResult<FanRpmReadings>> query = port.QueryAsync(default);
+        await session.FirstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.False(sharedCommandGate.Wait(0));
+
+        session.ReleaseFirst.TrySetResult();
+        await session.SecondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.False(sharedCommandGate.Wait(0));
+
+        session.ReleaseSecond.TrySetResult();
+        HidSessionResult<FanRpmReadings> result =
+            await query.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Null(result.Failure);
+        Assert.Equal(new FanRpmReadings(3200, 3000), result.Value);
+        Assert.True(sharedCommandGate.Wait(0));
+        sharedCommandGate.Release();
+
+        await port.DisposeAsync();
+    }
+
     private static ValidationActor Actor(IRazerCommandSession session) =>
         new(session, new BatteryCommands(), new TemporaryCommands());
 
@@ -110,6 +168,67 @@ public sealed class FanRpmQueryRunFactoryTests
         public ValueTask DisposeAsync()
         {
             DisposeCount++;
+            Disposition = RazerCommandSessionDisposition.FullyDisposed;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingFanSession : IRazerCommandSession
+    {
+        private int calls;
+
+        internal TaskCompletionSource FirstStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource SecondStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource ReleaseFirst { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource ReleaseSecond { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RazerCommandSessionDisposition Disposition { get; private set; } =
+            RazerCommandSessionDisposition.Healthy;
+
+        public async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = assignTransactionId();
+            int call = Interlocked.Increment(ref calls);
+            Task release;
+            if (call == 1)
+            {
+                FirstStarted.TrySetResult();
+                release = ReleaseFirst.Task;
+            }
+            else if (call == 2)
+            {
+                SecondStarted.TrySetResult();
+                release = ReleaseSecond.Task;
+            }
+            else
+            {
+                throw new InvalidOperationException("Only two fan selectors are expected.");
+            }
+
+            await release.WaitAsync(cancellationToken);
+            byte selector = command.Arguments.Span[1];
+            ReadOnlyMemory<byte> payload = selector switch
+            {
+                0x01 => new byte[] { 0x01, 0x01, 0x20 },
+                0x02 => new byte[] { 0x01, 0x02, 0x1E },
+                _ => throw new InvalidOperationException(),
+            };
+            return new(payload, null);
+        }
+
+        public ValueTask DisposeAsync()
+        {
             Disposition = RazerCommandSessionDisposition.FullyDisposed;
             return ValueTask.CompletedTask;
         }

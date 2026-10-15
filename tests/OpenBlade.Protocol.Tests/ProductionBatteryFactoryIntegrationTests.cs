@@ -259,6 +259,43 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void DirectManualFanTransitionAdmission_RequiresExactRz090581AndCapturedBackend()
+    {
+        DeviceCommandCatalog complete = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()!.Value,
+            TrustedFixtureHashRegistry.Production);
+        DeviceCommandCatalog shapeOnly = DirectManualFanCatalog();
+
+        Assert.True(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            ExactRz090581Identity("4.00"),
+            complete,
+            trustedExactFixture: true));
+        Assert.False(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            ExactRz090581Identity("4.00"),
+            shapeOnly,
+            trustedExactFixture: false));
+        Assert.False(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            new HostIdentityReadResult(
+                new HostIdentityEvidence(
+                    "Razer",
+                    "Blade 16 - RZ09-0528",
+                    "RZ09-05289EN4",
+                    "2.02"),
+                null,
+                HostFirmwareCompatibility.Tested),
+            complete,
+            trustedExactFixture: true));
+        Assert.False(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked),
+            complete,
+            trustedExactFixture: true));
+        Assert.False(ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            ExactRz090581Identity("4.00"),
+            DeviceCommandCatalog.Empty,
+            trustedExactFixture: true));
+    }
+
+    [Fact]
     public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
     {
         AdapterPowerState[] modelScopedExpected =
@@ -676,6 +713,30 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             true,
             true,
             true)]);
+
+    private static DeviceCommandCatalog DirectManualFanCatalog()
+    {
+        string[] actions =
+        [
+            ProductionBatteryPort.FanMaximumStateFirstAction,
+            ProductionBatteryPort.FanMaximumStateSecondAction,
+            ProductionBatteryPort.FanMaximumSpeedFirstAction,
+            ProductionBatteryPort.FanMaximumSpeedSecondAction,
+        ];
+        return DeviceCommandCatalog.Create(
+            CapturedFixtureFile.TargetDevice,
+            actions.Select((action, index) => new CapturedCommandFixture(
+                CapturedFixtureFile.TargetDevice,
+                action,
+                0x0D,
+                index < 2 ? (byte)0x02 : (byte)0x01,
+                [(byte)index],
+                true,
+                true,
+                true,
+                true,
+                true)));
+    }
 
     private static DeviceCommandCatalog HyperBoostCatalog()
     {

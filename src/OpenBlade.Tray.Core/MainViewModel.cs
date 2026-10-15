@@ -2689,7 +2689,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : HyperBoostActive
                 ? TrayText.Get("HyperBoost is controlling the fans. Turn off HyperBoost to choose a fan mode.")
                 : ActivePowerSource is PowerSource.Battery or PowerSource.UsbC
-                    ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown.")
+                    ? TrayText.Get("Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown.")
                     : !CanChangeFanMode
                         ? TrayText.Get("Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control.")
                         : string.Empty;
@@ -4876,15 +4876,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         int storedLimit = status.DesiredState.Battery.ConfiguredPolicy
             .ChargeLimitPercent;
-        if (!capabilities.ChargeLimits.Contains(storedLimit))
-        {
-            return false;
-        }
-
         return confirmed.ProtectionEnabled
             ? capabilities.SupportsBatteryProtectionOff
-                && confirmed.ChargeLimitPercent == storedLimit
-            : confirmed.ChargeLimitPercent is null;
+                && confirmed.ChargeLimitPercent is { } currentLimit
+                && capabilities.ChargeLimits.Contains(currentLimit)
+            : confirmed.ChargeLimitPercent is null
+                && capabilities.ChargeLimits.Contains(storedLimit);
     }
 
     public Task StartAsync()

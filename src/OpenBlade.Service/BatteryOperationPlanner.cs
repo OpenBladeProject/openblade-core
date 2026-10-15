@@ -115,7 +115,8 @@ internal static class BatteryOperationPlanner
 
         bool storedLimitAdmitted = capabilities.ChargeLimits.Contains(
             storedPolicy.ChargeLimitPercent);
-        if (!storedLimitAdmitted || confirmed?.TemporaryFullCharge is not false)
+        if (enabled && !storedLimitAdmitted
+            || confirmed?.TemporaryFullCharge is not false)
         {
             return BlockedBatteryPlan("Battery protection");
         }
@@ -128,9 +129,10 @@ internal static class BatteryOperationPlanner
                     ProtectionEnabled: true,
                     ChargeLimitPercent: int currentLimit,
                 }
-                || (currentLimit != storedPolicy.ChargeLimitPercent
-                    && !(capabilities.ChargeLimits.Contains(100)
-                        && capabilities.ChargeLimits.Contains(currentLimit))))
+                // Protection Off has its own admitted command. The current
+                // limit must be readable and supported, but need not equal
+                // the saved limit used when protection is enabled again.
+                || !capabilities.ChargeLimits.Contains(currentLimit))
             {
                 return BlockedBatteryPlan("Battery protection");
             }

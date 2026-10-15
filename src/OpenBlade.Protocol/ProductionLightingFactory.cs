@@ -17,6 +17,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly SemaphoreSlim? sharedCommandGate;
 
     internal ProductionLightingFactory(
         bool admitted,
@@ -27,7 +28,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
         PendingDisposalRegistry? pendingDisposals = null,
-        bool matrixWriteTimingEnabled = false)
+        bool matrixWriteTimingEnabled = false,
+        SemaphoreSlim? sharedCommandGate = null)
     {
         this.admitted = admitted;
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
@@ -41,6 +43,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
+        this.sharedCommandGate = sharedCommandGate;
         MatrixWriteTimingEnabled = matrixWriteTimingEnabled;
         Capabilities = ProductionLightingPort.CreateCapabilities(admitted);
     }
@@ -48,6 +51,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     public DeviceCapabilities Capabilities { get; }
 
     internal bool MatrixWriteTimingEnabled { get; }
+
+    internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
     public static IProductionLightingPortFactory CreateWindows()
         => CreateWindowsCore(compatibilityPolicy: null);
@@ -217,7 +222,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             exchangeTimeout,
             cleanupDrainTimeout,
             pendingDisposals,
-            driverModeWriteAllowed);
+            driverModeWriteAllowed,
+            sharedCommandGate);
         if (admitted)
         {
             try
@@ -278,6 +284,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                 TargetBladeDevice.MatrixFeatureReportByteLength,
                 TimeProvider.System,
                 captureTiming: true);
+        SemaphoreSlim sharedCommandGate = Rz090581FeatureCommandGate.Shared;
 
         return new ProductionLightingFactory(
             admitted,
@@ -302,7 +309,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                             TimeProvider.System,
                             DefaultExchangeTimeout,
                             exclusivityPolicy,
-                            timingSink),
+                            timingSink,
+                            sharedCommandGate),
                         null)
                     : new HidSessionResult<IPid02E0MatrixFeatureWriter>(
                         null,
@@ -315,7 +323,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
             PendingDisposalRegistry.Shared,
-            matrixWriteTimingEnabled: timingSink is not null);
+            matrixWriteTimingEnabled: timingSink is not null,
+            sharedCommandGate: sharedCommandGate);
     }
 
     private async Task DisposeActorBoundedAsync(ValidationActor actor) =>

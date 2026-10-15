@@ -1494,8 +1494,8 @@
   <data name="Manual fan control is unavailable for this laptop’s current capabilities. Fan RPM can still be shown. Export diagnostics if you expected manual control." xml:space="preserve">
     <value>[!! Mánúál fán cóntról ís únáváíláblé fór thís láptóp’s cúrrént cápábílítíés. Fán RPM cán stíll bé shówn. Éxpórt díágnóstícs íf ýóú éxpéctéd mánúál cóntról. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger and use Balanced performance for fixed speed or a manual fan curve. Fan RPM can still be shown." xml:space="preserve">
-    <value>[!! Ónlý Áútómátíc fán cóntról ís áváíláblé ón báttérý ór ÚSB-C pówér. Cónnéct thé láptóp’s ÁC chárgér ánd úsé Báláncéd pérfórmáncé fór fíxéd spééd ór á mánúál fán cúrvé. Fán RPM cán stíll bé shówn. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Only Automatic fan control is available on battery or USB-C power. Connect the laptop’s AC charger to use manual fan control. Fan RPM can still be shown." xml:space="preserve">
+    <value>[!! Ónlý Áútómátíc fán cóntról ís áváíláblé ón báttérý ór ÚSB-C pówér. Cónnéct thé láptóp’s ÁC chárgér tó úsé mánúál fán cóntról. Fán RPM cán stíll bé shówn. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="OpenBlade can’t connect to its service. Open About and select Start service. If it still cannot connect, repair the installation." xml:space="preserve">
     <value>[!! OpenBlade cán’t cónnéct tó íts sérvícé. Ópén Ábóút ánd séléct Stárt sérvícé. Íf ít stíll cánnót cónnéct, répáír thé ínstállátíón. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>

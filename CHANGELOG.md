@@ -15,6 +15,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- On RZ09-0581 with AC power, apply manual fan, performance and padless HyperBoost changes without first resetting to Balanced or Automatic, and allow those AC profile combinations. Remove the obsolete Balanced instruction. Battery Protection can be turned off without resetting the current supported charge limit first. ([#756](https://github.com/OpenBladeProject/openblade-core/pull/756))
+- Prevent animated keyboard lighting from overlapping fan and battery command exchanges on RZ09-0581. Exported diagnostics now retain the query or command and native I/O error details when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
 - Preserve the selected performance mode on experimental laptops when a saved profile contains unavailable manual-fan settings, without switching to Balanced or writing fans. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Keep independent experimental controls available after unrecognized readings, allow unrelated profile edits with unavailable saved settings, and accept fresh lighting intent after resuming paused controls. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Read temporary full charge correctly on the Razer Blade 16 RZ09-0581 when other laptop settings that share it, such as local dimming, are on, instead of reporting an unrecognized battery value and keeping battery controls unavailable. While local dimming, CPU boost, or maximum fan speed is on, OpenBlade leaves temporary full charge unchanged and explains why, rather than risk switching those settings off. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))

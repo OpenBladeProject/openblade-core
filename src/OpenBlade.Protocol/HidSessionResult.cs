@@ -59,4 +59,6 @@ public readonly record struct HidSessionResult<T>(
     HidSessionFailureKind? Failure)
 {
     public HidSessionFailureDiagnostic? Diagnostic { get; init; }
+
+    internal Task? NativeRetirement { get; init; }
 }

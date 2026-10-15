@@ -197,6 +197,13 @@ public sealed record DeviceCapabilities(
     bool SupportsBatteryProtectionOff,
     bool SupportsTemporaryFullCharge)
 {
+    /// <summary>
+    /// Indicates that the exact admitted manual-fan backend can transition directly
+    /// between automatic performance states and manual fan control. Older IPC frames
+    /// that omit this member deserialize to the safe default of <see langword="false"/>.
+    /// </summary>
+    public bool SupportsDirectManualFanTransitions { get; init; }
+
     public bool SupportsKeyboardBrightness { get; init; }
 
     // Older/full implementations support the complete parameter pickers by default.
