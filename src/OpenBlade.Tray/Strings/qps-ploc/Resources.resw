@@ -2104,9 +2104,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
     <value>[!! Díscárd chángés ~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_ThxAudioEnhancements.Header" xml:space="preserve">
-    <value>[!! Énháncéménts ~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Sóúnd nórmálízátíón ~~~~~~~ !!]</value>
   </data>
@@ -2136,9 +2133,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
     <value>[!! Ápplícátíón áúdíó módé ~~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_ThxAudioApplications.Header" xml:space="preserve">
-    <value>[!! Sávéd áúdíó ánd ápplícátíóns ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
     <value>[!! Cáptúré cúrrént áúdíó séttíngs ~~~~~~~~~~ !!]</value>
@@ -2172,5 +2166,17 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="Navigation_ThxAudio" xml:space="preserve">
     <value>[!! THX Áúdíó ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Sávéd áúdíó ánd ápplícátíóns ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationsTitle.Text" xml:space="preserve">
+    <value>[!! Sávéd áúdíó ánd ápplícátíóns ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Énháncéménts ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
+    <value>[!! Énháncéménts ~~~~~ !!]</value>
   </data>
 </root>

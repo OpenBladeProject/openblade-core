@@ -1697,8 +1697,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Laptop performance\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
-        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
         Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(1, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
@@ -2291,7 +2291,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("OnCustomizeNavigation", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Title = \"Customize navigation\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"TaskbarHoverLabelExpander\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(xaml, "IsExpanded=\"False\""));
+        Assert.Equal(4, CountOccurrences(xaml, "IsExpanded=\"False\""));
         Assert.Contains("App accent color", xaml, StringComparison.Ordinal);
         Assert.Contains("OpenBlade green", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Razer green", window, StringComparison.Ordinal);

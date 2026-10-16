@@ -297,10 +297,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             throw new InvalidOperationException("THX sample data requires disconnected snapshot mode.");
         }
         ThxViewModel.ApplyPreference(true);
-        if (destination == "thx-audio-headphones")
-        {
-            ThxViewModel.SelectEndpoint(ThxAudioEndpoint.Headphones);
-        }
+        ThxViewModel.SelectEndpoint(destination == "thx-audio-headphones"
+            ? ThxAudioEndpoint.Headphones : ThxAudioEndpoint.Speakers);
+        ThxAudioEnhancements.IsExpanded = false;
+        ThxAudioApplications.IsExpanded = false;
         await ThxViewModel.RefreshAsync();
         FrameworkElement target = ThxAudioSection;
         if (destination == "thx-audio-enhancements")

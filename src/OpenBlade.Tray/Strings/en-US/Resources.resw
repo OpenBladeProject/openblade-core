@@ -2104,9 +2104,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
     <value>Discard changes</value>
   </data>
-  <data name="MainWindow_ThxAudioEnhancements.Header" xml:space="preserve">
-    <value>Enhancements</value>
-  </data>
   <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Sound normalization</value>
   </data>
@@ -2136,9 +2133,6 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
     <value>Application audio mode</value>
-  </data>
-  <data name="MainWindow_ThxAudioApplications.Header" xml:space="preserve">
-    <value>Saved audio and applications</value>
   </data>
   <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
     <value>Capture current audio settings</value>
@@ -2172,5 +2166,17 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="Navigation_ThxAudio" xml:space="preserve">
     <value>THX Audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Saved audio and applications</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationsTitle.Text" xml:space="preserve">
+    <value>Saved audio and applications</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Enhancements</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
+    <value>Enhancements</value>
   </data>
 </root>

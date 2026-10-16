@@ -376,6 +376,8 @@ public sealed class CapabilityPresentationTests
                  {
                      "NavigationMenuExpander",
                      "TaskbarHoverLabelExpander",
+                     "ThxAudioEnhancements",
+                     "ThxAudioApplications",
                  })
         {
             XElement expander = NamedElement(document, "Expander", name);

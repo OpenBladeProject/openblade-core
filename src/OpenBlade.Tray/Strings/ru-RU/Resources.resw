@@ -2104,9 +2104,6 @@
   <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
     <value>Отменить изменения</value>
   </data>
-  <data name="MainWindow_ThxAudioEnhancements.Header" xml:space="preserve">
-    <value>Улучшения</value>
-  </data>
   <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Нормализация звука</value>
   </data>
@@ -2136,9 +2133,6 @@
   </data>
   <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
     <value>Режим звука приложения</value>
-  </data>
-  <data name="MainWindow_ThxAudioApplications.Header" xml:space="preserve">
-    <value>Сохранённый звук и приложения</value>
   </data>
   <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
     <value>Считать текущие настройки звука</value>
@@ -2172,5 +2166,17 @@
   </data>
   <data name="Navigation_ThxAudio" xml:space="preserve">
     <value>Звук THX</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Сохранённый звук и приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationsTitle.Text" xml:space="preserve">
+    <value>Сохранённый звук и приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Улучшения</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
+    <value>Улучшения</value>
   </data>
 </root>

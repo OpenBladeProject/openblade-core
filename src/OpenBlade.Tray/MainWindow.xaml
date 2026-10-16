@@ -2143,7 +2143,12 @@
                         <!-- Product736 THX mark; provenance in docs/thx-audio.md.
                              The vector inherits the navigation foreground in both themes. -->
                         <PathIcon x:Name="ThxAudioNavigationLogo" Width="20" Height="20"
-                                  Data="M20,0 L20,1 L3.5,1 L3.5,6.5 L2.5,6.5 L2.5,1 L0,1 L0.01,0 Z M0,8 L20,8 L20,7 L0,7 Z M5.25,6.5 L6.25,6.5 L6.25,4.5 L10.25,4.5 L10.25,6.5 L11.25,6.5 L11.25,1.5 L10.25,1.5 L10.25,3.5 L6.25,3.5 L6.25,1.5 L5.25,1.5 Z M13.5,6.5 L15.522,4.443 L17.5,6.5 L19,6.5 L16.317,3.776 L18.624,1.5 L17.131,1.5 L15.431,3.166 L13.75,1.5 L12.25,1.5 L14.612,3.823 L12,6.5" />
+                                  Data="M20,0 L20,1 L3.5,1 L3.5,6.5 L2.5,6.5 L2.5,1 L0,1 L0.01,0 Z M0,8 L20,8 L20,7 L0,7 Z M5.25,6.5 L6.25,6.5 L6.25,4.5 L10.25,4.5 L10.25,6.5 L11.25,6.5 L11.25,1.5 L10.25,1.5 L10.25,3.5 L6.25,3.5 L6.25,1.5 L5.25,1.5 Z M13.5,6.5 L15.522,4.443 L17.5,6.5 L19,6.5 L16.317,3.776 L18.624,1.5 L17.131,1.5 L15.431,3.166 L13.75,1.5 L12.25,1.5 L14.612,3.823 L12,6.5">
+                            <!-- Center the 20x8 mark inside the 20x20 icon canvas. -->
+                            <PathIcon.RenderTransform>
+                                <TranslateTransform Y="6" />
+                            </PathIcon.RenderTransform>
+                        </PathIcon>
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="MainWindow_LightingNavigationItemText" x:Name="LightingNavigationItem"
@@ -3228,69 +3233,97 @@
                                                         IsEnabled="{x:Bind ThxViewModel.CanEditEqualizerBands, Mode=OneWay}" Click="OnThxFlattenEqualizer" />
                                             </StackPanel>
                                         </StackPanel>
-                                        <Expander x:Name="ThxAudioEnhancements" x:Uid="MainWindow_ThxAudioEnhancements" Header="Enhancements"
-                                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                            <StackPanel Spacing="16" HorizontalAlignment="Stretch">
-                                                <StackPanel Spacing="8" Visibility="{x:Bind ThxViewModel.HasSoundNormalization, Mode=OneWay}">
-                                                    <Grid ColumnSpacing="16">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock x:Uid="MainWindow_ThxAudioNormalizationTitle" Text="Sound normalization" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                                        <ToggleSwitch x:Uid="MainWindow_ThxAudioNormalization" Grid.Column="1"
-                                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
-                                                                      IsOn="{x:Bind ThxViewModel.SoundNormalizationEnabled, Mode=OneWay}"
-                                                                      IsEnabled="{x:Bind ThxViewModel.CanEditSoundNormalization, Mode=OneWay}"
-                                                                      AutomationProperties.Name="Sound normalization" Toggled="OnThxNormalizationToggled" />
-                                                    </Grid>
-                                                    <Grid ColumnSpacing="12">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Slider x:Uid="MainWindow_ThxAudioNormalizationLevel" Minimum="0" Maximum="100" StepFrequency="1"
-                                                                Value="{x:Bind ThxViewModel.SoundNormalizationLevel, Mode=TwoWay}"
-                                                                IsEnabled="{x:Bind ThxViewModel.CanEditSoundNormalizationLevel, Mode=OneWay}"
-                                                                AutomationProperties.Name="Sound normalization level" />
-                                                        <TextBlock Grid.Column="1" Text="{x:Bind ThxViewModel.SoundNormalizationLevelLabel, Mode=OneWay}"
-                                                                   MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" />
-                                                    </Grid>
-                                                    <Button x:Uid="MainWindow_ThxAudioApplyNormalization" Content="Apply normalization level"
-                                                            IsEnabled="{x:Bind ThxViewModel.CanApplySoundNormalization, Mode=OneWay}" Click="OnThxApplyNormalization" />
+                                    </StackPanel>
+                                    <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,1">
+                                        <Expander x:Name="ThxAudioEnhancements" x:Uid="MainWindow_ThxAudioEnhancements"
+                                                  Style="{StaticResource CardContentExpanderStyle}"
+                                                  IsExpanded="False" AutomationProperties.Name="Enhancements">
+                                            <Expander.Resources>
+                                                <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                                <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                            </Expander.Resources>
+                                            <Expander.Header>
+                                                <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                                    <TextBlock x:Uid="MainWindow_ThxAudioEnhancementsTitle" Text="Enhancements"
+                                                               Style="{StaticResource CardTitleStyle}" Margin="16,14,60,14" TextWrapping="Wrap" />
+                                                </Border>
+                                            </Expander.Header>
+                                            <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}">
+                                                <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+                                                    <StackPanel Spacing="8" Visibility="{x:Bind ThxViewModel.HasSoundNormalization, Mode=OneWay}">
+                                                        <Grid ColumnSpacing="16">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock x:Uid="MainWindow_ThxAudioNormalizationTitle" Text="Sound normalization" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                            <ToggleSwitch x:Uid="MainWindow_ThxAudioNormalization" Grid.Column="1"
+                                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                                          IsOn="{x:Bind ThxViewModel.SoundNormalizationEnabled, Mode=OneWay}"
+                                                                          IsEnabled="{x:Bind ThxViewModel.CanEditSoundNormalization, Mode=OneWay}"
+                                                                          AutomationProperties.Name="Sound normalization" Toggled="OnThxNormalizationToggled" />
+                                                        </Grid>
+                                                        <Grid ColumnSpacing="12">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Slider x:Uid="MainWindow_ThxAudioNormalizationLevel" Minimum="0" Maximum="100" StepFrequency="1"
+                                                                    Value="{x:Bind ThxViewModel.SoundNormalizationLevel, Mode=TwoWay}"
+                                                                    IsEnabled="{x:Bind ThxViewModel.CanEditSoundNormalizationLevel, Mode=OneWay}"
+                                                                    AutomationProperties.Name="Sound normalization level" />
+                                                            <TextBlock Grid.Column="1" Text="{x:Bind ThxViewModel.SoundNormalizationLevelLabel, Mode=OneWay}"
+                                                                       MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                        <Button x:Uid="MainWindow_ThxAudioApplyNormalization" Content="Apply normalization level"
+                                                                IsEnabled="{x:Bind ThxViewModel.CanApplySoundNormalization, Mode=OneWay}" Click="OnThxApplyNormalization" />
+                                                    </StackPanel>
+                                                    <StackPanel Spacing="8" Visibility="{x:Bind ThxViewModel.HasVoiceClarity, Mode=OneWay}">
+                                                        <Grid ColumnSpacing="16">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock x:Uid="MainWindow_ThxAudioVoiceClarityTitle" Text="Voice clarity" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                            <ToggleSwitch x:Uid="MainWindow_ThxAudioVoiceClarity" Grid.Column="1"
+                                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                                          IsOn="{x:Bind ThxViewModel.VoiceClarityEnabled, Mode=OneWay}"
+                                                                          IsEnabled="{x:Bind ThxViewModel.CanEditVoiceClarity, Mode=OneWay}"
+                                                                          AutomationProperties.Name="Voice clarity" Toggled="OnThxVoiceClarityToggled" />
+                                                        </Grid>
+                                                        <Grid ColumnSpacing="12">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Slider x:Uid="MainWindow_ThxAudioVoiceClarityLevel" Minimum="0" Maximum="100" StepFrequency="1"
+                                                                    Value="{x:Bind ThxViewModel.VoiceClarityLevel, Mode=TwoWay}"
+                                                                    IsEnabled="{x:Bind ThxViewModel.CanEditVoiceClarityLevel, Mode=OneWay}"
+                                                                    AutomationProperties.Name="Voice clarity level" />
+                                                            <TextBlock Grid.Column="1" Text="{x:Bind ThxViewModel.VoiceClarityLevelLabel, Mode=OneWay}"
+                                                                       MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                        <Button x:Uid="MainWindow_ThxAudioApplyVoiceClarity" Content="Apply voice clarity level"
+                                                                IsEnabled="{x:Bind ThxViewModel.CanApplyVoiceClarity, Mode=OneWay}" Click="OnThxApplyVoiceClarity" />
+                                                    </StackPanel>
                                                 </StackPanel>
-                                                <StackPanel Spacing="8" Visibility="{x:Bind ThxViewModel.HasVoiceClarity, Mode=OneWay}">
-                                                    <Grid ColumnSpacing="16">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock x:Uid="MainWindow_ThxAudioVoiceClarityTitle" Text="Voice clarity" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                                        <ToggleSwitch x:Uid="MainWindow_ThxAudioVoiceClarity" Grid.Column="1"
-                                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
-                                                                      IsOn="{x:Bind ThxViewModel.VoiceClarityEnabled, Mode=OneWay}"
-                                                                      IsEnabled="{x:Bind ThxViewModel.CanEditVoiceClarity, Mode=OneWay}"
-                                                                      AutomationProperties.Name="Voice clarity" Toggled="OnThxVoiceClarityToggled" />
-                                                    </Grid>
-                                                    <Grid ColumnSpacing="12">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Slider x:Uid="MainWindow_ThxAudioVoiceClarityLevel" Minimum="0" Maximum="100" StepFrequency="1"
-                                                                Value="{x:Bind ThxViewModel.VoiceClarityLevel, Mode=TwoWay}"
-                                                                IsEnabled="{x:Bind ThxViewModel.CanEditVoiceClarityLevel, Mode=OneWay}"
-                                                                AutomationProperties.Name="Voice clarity level" />
-                                                        <TextBlock Grid.Column="1" Text="{x:Bind ThxViewModel.VoiceClarityLevelLabel, Mode=OneWay}"
-                                                                   MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" />
-                                                    </Grid>
-                                                    <Button x:Uid="MainWindow_ThxAudioApplyVoiceClarity" Content="Apply voice clarity level"
-                                                            IsEnabled="{x:Bind ThxViewModel.CanApplyVoiceClarity, Mode=OneWay}" Click="OnThxApplyVoiceClarity" />
-                                                </StackPanel>
-                                            </StackPanel>
+                                            </Border>
                                         </Expander>
-                                        <Expander x:Name="ThxAudioApplications" x:Uid="MainWindow_ThxAudioApplications" Header="Saved audio and applications"
-                                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    </Border>
+                                    <Expander x:Name="ThxAudioApplications" x:Uid="MainWindow_ThxAudioApplications"
+                                              Style="{StaticResource CardContentExpanderStyle}"
+                                              IsExpanded="False" AutomationProperties.Name="Saved audio and applications">
+                                        <Expander.Resources>
+                                            <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                            <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                        </Expander.Resources>
+                                        <Expander.Header>
+                                            <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                                <TextBlock x:Uid="MainWindow_ThxAudioApplicationsTitle" Text="Saved audio and applications"
+                                                           Style="{StaticResource CardTitleStyle}" Margin="16,14,60,14" TextWrapping="Wrap" />
+                                            </Border>
+                                        </Expander.Header>
+                                        <Border Style="{StaticResource SettingsLastEmphasizedSubcardStyle}">
                                             <StackPanel Spacing="12">
                                                 <TextBlock x:Uid="MainWindow_ThxAudioProfileDescription"
                                                            Text="Save both outputs to the current power profile. Automation follows the foreground app and uses the saved audio settings when no rule matches."
@@ -3340,8 +3373,8 @@
                                                 <Button x:Uid="MainWindow_ThxAudioSaveProfile" Content="Save audio to current power profile"
                                                         IsEnabled="{x:Bind ThxViewModel.CanSaveAudioProfile, Mode=OneWay}" Click="OnThxSaveAudioProfile" />
                                             </StackPanel>
-                                        </Expander>
-                                    </StackPanel>
+                                        </Border>
+                                    </Expander>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
