@@ -148,8 +148,9 @@ exact target baseline and independent target readback. These semantics and the
 earlier report of ignored RPM remain unresolved, so fixed-fan writes stay
 unavailable. A future implementation must retain the Balanced-only model scope.
 
-There is no Maximum Fans enable request `07/0F [02]`. Whole-byte `07/0F [00]`
-is not temporary-full-charge evidence. Raw CPU level 4 occurs outside action
+The retained reports do not establish a Maximum Fans enable request
+`07/0F [02]`; privacy redaction is not evidence that it never occurred.
+Whole-byte `07/0F [00]` is not temporary-full-charge evidence. Raw CPU level 4 occurs outside action
 windows: the pinned policy uses it as a temporary refresh sentinel near byte
 1637237 and in CPU optimization near 1490935. It is not another admitted normal
 Custom level and is not copied as a prerequisite write.
