@@ -4,7 +4,6 @@
 
 [English](../localization-translators.md) | 简体中文 | [Русский](../ru-RU/localization-translators.md)
 
-翻译 OpenBlade 不需要 Visual Studio 或编程经验。
 维护者会提供一个 ZIP 压缩包，内含可用 Excel 打开的 CSV 文件和英文界面截图。
 你只需填写其中的译文列，再交回 CSV 文件进行自动检查。
 
