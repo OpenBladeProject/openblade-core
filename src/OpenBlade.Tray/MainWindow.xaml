@@ -2136,6 +2136,16 @@
                                    AutomationProperties.Name="Laptop has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
+                <NavigationViewItem x:Uid="MainWindow_ThxAudioNavigationItemText" x:Name="ThxAudioNavigationItem"
+                                    Content="THX Audio" Tag="thx-audio"
+                                    Visibility="{x:Bind ThxAudioNavigationVisibility, Mode=OneWay}">
+                    <NavigationViewItem.Icon>
+                        <!-- Product736 THX mark; provenance in docs/thx-audio.md.
+                             The vector inherits the navigation foreground in both themes. -->
+                        <PathIcon x:Name="ThxAudioNavigationLogo" Width="20" Height="20"
+                                  Data="M20,0 L20,1 L3.5,1 L3.5,6.5 L2.5,6.5 L2.5,1 L0,1 L0.01,0 Z M0,8 L20,8 L20,7 L0,7 Z M5.25,6.5 L6.25,6.5 L6.25,4.5 L10.25,4.5 L10.25,6.5 L11.25,6.5 L11.25,1.5 L10.25,1.5 L10.25,3.5 L6.25,3.5 L6.25,1.5 L5.25,1.5 Z M13.5,6.5 L15.522,4.443 L17.5,6.5 L19,6.5 L16.317,3.776 L18.624,1.5 L17.131,1.5 L15.431,3.166 L13.75,1.5 L12.25,1.5 L14.612,3.823 L12,6.5" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Uid="MainWindow_LightingNavigationItemText" x:Name="LightingNavigationItem"
                                     Content="Lighting"
                                     Tag="lighting">
@@ -3073,10 +3083,28 @@
                             </Border>
                         </StackPanel>
                         </StackPanel>
-                        <StackPanel x:Name="ThxAudioSection" Margin="0,18,0,0"
-                                    Visibility="{x:Bind ThxAudioSectionVisibility, Mode=OneWay}">
-                            <TextBlock x:Uid="MainWindow_ThxAudioHeading" Text="THX audio"
-                                       Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="ThxAudioPage"
+                              Visibility="Collapsed"
+                              HorizontalContentAlignment="Stretch"
+                              HorizontalScrollMode="Disabled"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollMode="Enabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="ThxAudioPageContent"
+                                Padding="28,20,28,28"
+                                Width="{Binding ElementName=ThxAudioPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+                        <StackPanel x:Name="ThxAudioSection">
+                            <TextBlock x:Uid="MainWindow_ThxAudioHeading" Text="THX Audio"
+                                       Style="{StaticResource PageTitleStyle}" />
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Border Style="{StaticResource SettingsRowStyle}">

@@ -2063,7 +2063,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! THX éqúálízér ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioHeading.Text" xml:space="preserve">
-    <value>[!! THX áúdíó ~~~ !!]</value>
+    <value>[!! THX Áúdíó ~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioIntegrationTitle.Text" xml:space="preserve">
     <value>[!! Úsé ínstálléd THX áúdíó ~~~~~~~ !!]</value>
@@ -2166,5 +2166,11 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
     <value>[!! Rését tó fáctórý ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioNavigationItemText.Content" xml:space="preserve">
+    <value>[!! THX Áúdíó ~~~ !!]</value>
+  </data>
+  <data name="Navigation_ThxAudio" xml:space="preserve">
+    <value>[!! THX Áúdíó ~~~ !!]</value>
   </data>
 </root>

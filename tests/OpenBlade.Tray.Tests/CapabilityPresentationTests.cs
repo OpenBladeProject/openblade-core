@@ -1252,6 +1252,7 @@ public sealed class CapabilityPresentationTests
                      "HomePage",
                      "ProfilesPage",
                      "LaptopPage",
+                     "ThxAudioPage",
                      "LightingPage",
                      "DisplayPage",
                      "SettingsPage",
@@ -1866,6 +1867,26 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_ThxAudioOwnsDedicatedModelGatedPageAndNavigationLogo()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement navigation = NamedElement(document, "NavigationViewItem", "ThxAudioNavigationItem");
+        XElement audio = NamedElement(document, "ScrollViewer", "ThxAudioPage");
+        XElement laptop = NamedElement(document, "ScrollViewer", "LaptopPage");
+        XElement section = NamedElement(document, "StackPanel", "ThxAudioSection");
+
+        Assert.Equal("thx-audio", Attribute(navigation, "Tag"));
+        Assert.Equal("{x:Bind ThxAudioNavigationVisibility, Mode=OneWay}", Attribute(navigation, "Visibility"));
+        Assert.Contains(section, audio.Descendants());
+        Assert.DoesNotContain(section, laptop.Descendants());
+        Assert.Single(navigation.Descendants(), element => element.Name.LocalName == "PathIcon");
+        Assert.Contains(audio.Descendants(), element =>
+            Attribute(element, "Uid") == "MainWindow_ThxAudioSpatial");
+        Assert.Contains(audio.Descendants(), element =>
+            Attribute(element, "Uid") == "MainWindow_ThxAudioEqualizer");
+    }
+
+    [Fact]
     public void MainWindow_LaptopPageOwnsFirmwareWideLaptopBehavior()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -2287,7 +2308,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            8,
+            9,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }

@@ -244,6 +244,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (localizationSnapshotMode)
         {
             LaptopPageContent.Transitions.Clear();
+            ThxAudioPageContent.Transitions.Clear();
             Root.Background = new SolidColorBrush(
                 Root.ActualTheme == ElementTheme.Dark
                     ? Microsoft.UI.Colors.Black
@@ -267,7 +268,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public ThxAudioViewModel ThxViewModel { get; }
 
-    public Visibility ThxAudioSectionVisibility => localizationSnapshotMode || string.Equals(
+    public Visibility ThxAudioNavigationVisibility => localizationSnapshotMode || string.Equals(
         RazerBladeModelCatalog.Find(ViewModel.DetectedFirmware?.ModelNumber)?.ModelNumber,
         "RZ09-0581", StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed;
 
@@ -296,18 +297,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             throw new InvalidOperationException("THX sample data requires disconnected snapshot mode.");
         }
         ThxViewModel.ApplyPreference(true);
-        if (destination == "laptop-audio-headphones")
+        if (destination == "thx-audio-headphones")
         {
             ThxViewModel.SelectEndpoint(ThxAudioEndpoint.Headphones);
         }
         await ThxViewModel.RefreshAsync();
         FrameworkElement target = ThxAudioSection;
-        if (destination == "laptop-audio-enhancements")
+        if (destination == "thx-audio-enhancements")
         {
             ThxAudioEnhancements.IsExpanded = true;
             target = ThxAudioEnhancements;
         }
-        else if (destination == "laptop-audio-applications")
+        else if (destination == "thx-audio-applications")
         {
             ThxAudioApplications.IsExpanded = true;
             target = ThxAudioApplications;
@@ -316,11 +317,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 option => option.Output == ThxApplicationAudioOutput.Immersive);
             ThxViewModel.AddApplicationRule();
         }
-        target.StartBringIntoView(new BringIntoViewOptions
+        if (target != ThxAudioSection)
         {
-            AnimationDesired = false,
-            VerticalAlignmentRatio = 0,
-        });
+            target.StartBringIntoView(new BringIntoViewOptions
+            {
+                AnimationDesired = false,
+                VerticalAlignmentRatio = 0,
+            });
+        }
     }
 #endif
 
@@ -1001,7 +1005,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         if (args.PropertyName == nameof(MainViewModel.DetectedFirmware))
         {
-            OnPropertyChanged(nameof(ThxAudioSectionVisibility));
+            OnPropertyChanged(nameof(ThxAudioNavigationVisibility));
             FirmwareUpdateViewModel.UpdateInstalledFirmware(ViewModel.DetectedFirmware);
             FirmwareUpdateViewModel.StartAutomaticCheck();
         }
@@ -1103,9 +1107,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ScheduleLightingCommit();
         }
 
-        if (args.PropertyName == nameof(MainViewModel.IsLightingVisible)
-            && !ViewModel.IsLightingVisible
-            && LightingPage.Visibility == Visibility.Visible)
+        if ((args.PropertyName == nameof(MainViewModel.IsLightingVisible)
+                && !ViewModel.IsLightingVisible
+                && LightingPage.Visibility == Visibility.Visible)
+            || (args.PropertyName == nameof(MainViewModel.DetectedFirmware)
+                && ThxAudioNavigationVisibility == Visibility.Collapsed
+                && ThxAudioPage.Visibility == Visibility.Visible))
         {
             void ReturnToDashboard() => MainNavigation.SelectedItem = HomeNavigationItem;
             if (dispatcherQueue.HasThreadAccess)
@@ -3162,6 +3169,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         LaptopPage.Visibility = destination == "laptop"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        ThxAudioPage.Visibility = destination == "thx-audio"
+            && ThxAudioNavigationVisibility == Visibility.Visible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         LightingPage.Visibility = destination == "lighting"
             && (localizationSnapshotMode || ViewModel.IsLightingVisible)
             ? Visibility.Visible
@@ -3223,6 +3234,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             "home" => HomeNavigationItem,
             "profiles" => ProfilesNavigationItem,
             "laptop" => LaptopNavigationItem,
+            "thx-audio" => ThxAudioNavigationItem,
             "lighting" => LightingNavigationItem,
             "display" => DisplayNavigationItem,
             "settings" => SettingsNavigationItem,
@@ -4812,6 +4824,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             PrimaryNavigationItemKind.Profiles => ProfilesNavigationItem,
             PrimaryNavigationItemKind.Laptop => LaptopNavigationItem,
+            PrimaryNavigationItemKind.ThxAudio => ThxAudioNavigationItem,
             PrimaryNavigationItemKind.Lighting => LightingNavigationItem,
             PrimaryNavigationItemKind.Display => DisplayNavigationItem,
             PrimaryNavigationItemKind.Settings => SettingsNavigationItem,
@@ -4823,6 +4836,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             PrimaryNavigationItemKind.Profiles => LocalizedResources.Get("Navigation_Profiles", "Profiles"),
             PrimaryNavigationItemKind.Laptop => LocalizedResources.Get("Navigation_Laptop", "Laptop"),
+            PrimaryNavigationItemKind.ThxAudio => LocalizedResources.Get("Navigation_ThxAudio", "THX Audio"),
             PrimaryNavigationItemKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
             PrimaryNavigationItemKind.Display => LocalizedResources.Get("Navigation_Display", "Display"),
             PrimaryNavigationItemKind.Settings => LocalizedResources.Get("Navigation_Settings", "Settings"),

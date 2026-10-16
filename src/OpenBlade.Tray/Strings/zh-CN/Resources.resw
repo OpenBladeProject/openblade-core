@@ -2146,4 +2146,10 @@
   <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
     <value>恢复出厂曲线</value>
   </data>
+  <data name="MainWindow_ThxAudioNavigationItemText.Content" xml:space="preserve">
+    <value>THX 音效</value>
+  </data>
+  <data name="Navigation_ThxAudio" xml:space="preserve">
+    <value>THX 音效</value>
+  </data>
 </root>

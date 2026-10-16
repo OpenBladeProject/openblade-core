@@ -2167,4 +2167,10 @@
   <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
     <value>Заводская кривая</value>
   </data>
+  <data name="MainWindow_ThxAudioNavigationItemText.Content" xml:space="preserve">
+    <value>Звук THX</value>
+  </data>
+  <data name="Navigation_ThxAudio" xml:space="preserve">
+    <value>Звук THX</value>
+  </data>
 </root>

@@ -593,10 +593,10 @@ public partial class App
                 "home",
                 "profiles",
                 "laptop",
-                "laptop-audio",
-                "laptop-audio-headphones",
-                "laptop-audio-enhancements",
-                "laptop-audio-applications",
+                "thx-audio",
+                "thx-audio-headphones",
+                "thx-audio-enhancements",
+                "thx-audio-applications",
                 "lighting",
                 "display",
                 "settings",
@@ -652,7 +652,7 @@ public partial class App
                             StringComparison.Ordinal)
                             ? new Windows.Graphics.SizeInt32(1600, 900)
                             : new Windows.Graphics.SizeInt32(1120, 820);
-                if (destination.StartsWith("laptop-audio", StringComparison.Ordinal))
+                if (destination == "thx-audio-headphones")
                 {
                     snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                 }
@@ -660,8 +660,8 @@ public partial class App
                 await WaitForSnapshotLayoutAsync();
                 string navigationDestination = destination is "settings-appearance" or "settings-experimental"
                     ? "settings"
-                    : destination.StartsWith("laptop-audio", StringComparison.Ordinal)
-                        ? "laptop"
+                    : destination.StartsWith("thx-audio", StringComparison.Ordinal)
+                        ? "thx-audio"
                     : captureProfilesVariant
                         ? "profiles"
                         : destination;
@@ -675,7 +675,7 @@ public partial class App
                     snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
                     await WaitForSnapshotLayoutAsync();
                 }
-                if (destination.StartsWith("laptop-audio", StringComparison.Ordinal))
+                if (destination.StartsWith("thx-audio", StringComparison.Ordinal))
                 {
                     await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
                     await WaitForSnapshotLayoutAsync();

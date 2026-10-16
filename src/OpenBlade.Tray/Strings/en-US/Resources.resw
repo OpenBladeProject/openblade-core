@@ -2063,7 +2063,7 @@ OpenBlade did not retry any stop request.</value>
     <value>THX equalizer</value>
   </data>
   <data name="MainWindow_ThxAudioHeading.Text" xml:space="preserve">
-    <value>THX audio</value>
+    <value>THX Audio</value>
   </data>
   <data name="MainWindow_ThxAudioIntegrationTitle.Text" xml:space="preserve">
     <value>Use installed THX audio</value>
@@ -2166,5 +2166,11 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
     <value>Reset to factory</value>
+  </data>
+  <data name="MainWindow_ThxAudioNavigationItemText.Content" xml:space="preserve">
+    <value>THX Audio</value>
+  </data>
+  <data name="Navigation_ThxAudio" xml:space="preserve">
+    <value>THX Audio</value>
   </data>
 </root>

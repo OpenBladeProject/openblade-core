@@ -11,7 +11,7 @@ different THX component builds are not yet supported.
 
 ## Use the controls
 
-1. Close Synapse, then open **Laptop > THX audio** in OpenBlade.
+1. Close Synapse, then select **THX Audio** in the left menu in OpenBlade.
 2. Enable **Use installed THX audio**. This checks the model and installed files.
 3. Select **Speakers** or **Headphones**, then choose **Read settings**.
 4. Once the current settings appear, change Spatial audio or Equalizer, or
@@ -114,6 +114,12 @@ used as evidence for this laptop.
 | Extracted product-736 UI `8923.c2f78964.chunk.js` | `5BE64A2DF27D5E8ECEC1B3C6007A4DFD1CFD975C93D0A366F1D801B1DBF78B14` |
 | Extracted product-736 UI `main.22abe6bb.js` | `75B2D6F6180F5F0B09239E8CCA088D86143E539E1AAF24FFBB0E47C2B651A08B` |
 | Installed `ThxV4Native_v1.1.1.0.dll` | `8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A` |
+
+The navigation icon uses the THX mark from the product-736
+[`appmix_thx.6833fdbb.svg`](https://apps.razer.com/synapse/products/736/ui/static/media/appmix_thx.6833fdbb.svg)
+asset, SHA-256 `D55BE865AB57F2613E6785D3D2CC6E683977416CFCCD55196DE6A6676F2A20F0`.
+The original asset is 24×12 with a green backplate; the navigation uses its
+vector mark with the current theme foreground.
 
 The vendor middleware declares `AddDevice`, `CheckStatus`, `GetProperty`,
 `SetProperty`, preset operations, `RemoveDevice`, and `FreeMalloc`. Device
