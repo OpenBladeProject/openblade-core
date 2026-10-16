@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add an opt-in experimental A/D SnapTap feature with last-pressed-key priority across keyboards. ([#794](https://github.com/OpenBladeProject/openblade-core/pull/794))
+
 ## [0.30.0] - 2026-10-16
 
 ### Changed
