@@ -66,18 +66,16 @@ Zero-based byte offsets in these pinned files locate the relevant definitions:
 
 ## Resulting support and remaining gaps
 
-OpenBlade adds exactly the observed Boost/High combination to this model's
-existing eight Custom combinations. High/High and Boost with Low or Medium GPU
-remain unavailable. Both initial state reads and recovery can now represent
-Boost/High. The setter chooses the shortest path through admitted combinations, confirms
-each change, and pauses on uncertain submission or readback. For example,
-Medium/Low to Boost/High sets GPU High before CPU Boost; it does not reset the
-preset. High/Low or High/Medium to Boost/High needs three single-cluster writes
-through CPU Medium, because either two-write ordering would cross an unadmitted
-combination. This bridge follows the reviewed software contract; it is not a
-claim that firmware requires CPU Medium. Existing exact-device, controller,
-power, ownership, and safety checks
-continue to apply to every write.
+OpenBlade adds the observed Boost/High and Boost/Low pairs to the existing eight
+Custom combinations. High/High and Boost/Medium remain unavailable. Initial
+reads and recovery can represent both admitted Boost pairs. The setter chooses
+the shortest admitted path, confirms each change, and pauses on uncertain
+submission or readback. Medium/Low or High/Low to Boost/High takes two level
+writes through Boost/Low. High/Medium to Boost/High needs three through CPU
+Medium because either two-write ordering crosses an unadmitted combination.
+This follows the reviewed software contract; it does not claim firmware needs
+CPU Medium. The preset is not reset. Existing exact-device, controller, power,
+ownership, and safety checks continue to apply to every write.
 
 A production-provider regression also exposed a shared Custom-state failure: the
 Maximum Fans query allowed a variable response but supplied no bounded payload
@@ -106,3 +104,59 @@ does not promote the model to physically validated support. The next concrete
 validation is a typed Boost/High round trip on this exact model, with saved
 baseline, independent readback, exact restoration, and fresh admission. Sleep
 and resume remain a separate attended step when needed.
+## Follow-up bundle: 2026-10-16
+
+The [second Observer bundle](https://github.com/user-attachments/files/33530069/blade-evidence-20261016-063420.zip)
+has SHA-256 `8251A08A69CB7BDF503B137C86DEAEFDD851F2B5EB63F746B1896C98688A1BF6`
+and collector `0.2.10+6c70d0f03ce07048e1e2a331da4f3d571bbcbfbf`.
+The exact model, HID identity, and BIOS are unchanged. It contains 83,915
+observations, 180 complete retained requests, and twelve semantic thermal
+acknowledgements. All 201 response bodies were omitted. No records were rejected,
+but the observer reports two dropped queue events near the end. The sanitized
+requests are in `tests/OpenBlade.Protocol.Tests/Fixtures/Blade18ObserverFollowupRequests.json`.
+
+| Complete user-reported action | Starting, target, and restored selection | Retained request evidence |
+| --- | --- | --- |
+| Performance | Silent, Custom Boost/High, Silent | `0D/02` mode 4 and 5 for both channels |
+| Fans | 3800, 3000, 3800 RPM | `0D/01 [01,zone,1E]`, then `[01,zone,26]` |
+| Charge limit | 80%, 50%, 80% | `07/12 [B2]`, then `[D0]` |
+| Keyboard lighting | Wheel clockwise, Fire, Wheel clockwise | Matrix setup and redacted frames; no readable effect/frame result |
+| CPU level | Boost, Medium, Boost | `0D/07 [01,01,01]`, then `[01,01,03]` |
+| GPU level | High, Low, High | `0D/07 [01,02,00]`, then `[01,02,02]`; no CPU write within the action window |
+| Keyboard brightness | 100%, 25%, 100% | `03/03 [01,05,40]`, then `[01,05,FF]`; one transient slider value is also retained |
+
+The GPU action adds the source-backed experimental Boost/Low pair. It supplies
+no Boost/Medium or High/High evidence. Successful calls and reported restoration
+still do not establish independent firmware application or restoration.
+
+All 22 retained Custom GETs are CPU `0D/87 [01,01,00]`. The pinned product 672
+policy helper `getAdvFanMode(e,t=1)` near byte 1873321 supplies profile 1, which
+the base getter near 142589 copies into its request. The GPU getter uses the
+same default-profile construction. OpenBlade now uses `[01,01,00]` and
+`[01,02,00]` for this model. The CPU request is observed; the GPU request is
+source-backed and was not retained. Other profiles keep their separately
+admitted upstream shape. This does not prove profile 0 fails. The thermal-mode
+`0D/82` queries remain unchanged: there is no corresponding retained query or
+active exact-product source call to justify a change.
+
+Before the fan action, Synapse enters Balanced fixed mode with
+`0D/02 [01,zone,00,01]`. The owner also reports adjustable RPM only in Balanced
+in [#739](https://github.com/OpenBladeProject/openblade-core/issues/739).
+The 53 retained `0D/88 [01,01,00]` actual-RPM queries have no readable responses;
+there is no `0D/81` stored-target query. The safe fixed-fan backend requires an
+exact target baseline and independent target readback. These semantics and the
+earlier report of ignored RPM remain unresolved, so fixed-fan writes stay
+unavailable. A future implementation must retain the Balanced-only model scope.
+
+There is no Maximum Fans enable request `07/0F [02]`. Whole-byte `07/0F [00]`
+is not temporary-full-charge evidence. Raw CPU level 4 occurs outside action
+windows: the pinned policy uses it as a temporary refresh sentinel near byte
+1637237 and in CPU optimization near 1490935. It is not another admitted normal
+Custom level and is not copied as a prerequisite write.
+
+Advanced Chroma streaming has only a starting marker and no associated reports.
+Logo lighting and Fn/special-key observations are absent. Function-row and
+Gaming Mode activities remain pending; battery protection and temporary full
+charge were marked unavailable. These states do not establish hardware absence.
+The seven recorded actions need no blanket repeat. Independent typed readback,
+restoration, and relevant lifecycle checks remain separate OpenBlade validation.

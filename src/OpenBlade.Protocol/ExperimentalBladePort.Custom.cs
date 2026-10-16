@@ -13,7 +13,8 @@ internal sealed partial class ExperimentalBladePort
          let combination = new CustomPerformanceCombination(cpu, gpu)
          where SupportsExperimentalCustom(model) && combination.IsWellFormed
              && (model.ProductId == 0x029F
-                 || model.ProductId == 0x02A0 && (cpu, gpu) is (CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)
+                 || model.ProductId == 0x02A0 && cpu == CustomPerformanceLevel.Boost
+                     && gpu is CustomPerformanceLevel.Low or CustomPerformanceLevel.High
                  || cpu != CustomPerformanceLevel.Boost
                  && (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High))
          select combination).ToHashSet())
@@ -22,16 +23,20 @@ internal sealed partial class ExperimentalBladePort
     };
 
     // 029F High/High and CPU Boost are explicit Synapse captures in tdakhran
-    // 8e12e778/data/README.md. 02A0 Boost/High is corroborated by the exact
+    // 8e12e778/data/README.md. 02A0 Boost/Low and Boost/High are corroborated by exact
     // Synapse Observer requests in docs/blade18-observer-evidence.md. Other
-    // combinations retain their previous bounds; raw level 4 stays unknown.
+    // combinations retain their bounds; raw level 4 is not a normal Custom level.
     private async Task<CustomPerformanceSettings?> ReadCustomPerformanceAsync(
         CancellationToken cancellationToken, bool includeMaximumFans = true)
     {
+        // Product 672 defaults Custom GETs to profile 1; the exact CPU request
+        // is retained in the 2026-10-16 Observer fixture. Other profiles keep
+        // their separately admitted upstream query shape; this does not prove 0 fails.
+        byte profile = model.ProductId == 0x02A0 ? (byte)1 : (byte)0;
         ReadOnlyMemory<byte> cpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
-            [0, 1, 0], false, cancellationToken).ConfigureAwait(false);
+            [profile, 1, 0], false, cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> gpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
-            [0, 2, 0], false, cancellationToken).ConfigureAwait(false);
+            [profile, 2, 0], false, cancellationToken).ConfigureAwait(false);
         string reported = $"CpuSelector={cpu.Span[1]};CpuLevel={cpu.Span[2]};GpuSelector={gpu.Span[1]};GpuLevel={gpu.Span[2]}";
         if (cpu.Span[1] != 1 || gpu.Span[1] != 2)
         {
@@ -136,8 +141,8 @@ internal sealed partial class ExperimentalBladePort
                 currentLevels = entered.CustomPerformance;
             }
             // Each setter changes one cluster. Use the fewest admitted intermediate
-            // combinations; 02A0 High/Low <-> Boost/High needs a temporary CPU level
-            // because neither High/High nor Boost/Low is in its reviewed contract.
+            // combinations; 02A0 High/Medium <-> Boost/High needs a bridge because
+            // neither High/High nor Boost/Medium is in its reviewed contract.
             CustomPerformanceCombination[] path = PlanCustomLevelChanges(
                 CreateCustomCapabilities(model), currentLevels, value);
             foreach (CustomPerformanceCombination next in path)

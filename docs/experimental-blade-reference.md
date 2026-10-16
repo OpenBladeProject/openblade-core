@@ -45,7 +45,7 @@ The thermal backend uses independent query and setter exchanges:
 
 - preset and fan mode: `0D/82 [0, cluster, 0, 0]` and
   `0D/02 [1, cluster, preset, fan flag]` for clusters 1 and 2;
-- Custom level: `0D/87 [0, cluster, 0]` and
+- Custom level: `0D/87 [profile, cluster, 0]` and
   `0D/07 [1, cluster, level]`;
 - fixed fan target: `0D/81 [0, zone, 0]` and
   `0D/01 [1, zone, RPM/100]`;
@@ -77,9 +77,12 @@ in ordinary presets and is not a substitute for adjustable fixed targets.
 Select Automatic before enabling it; a Fixed baseline is rejected before any
 setter is submitted.
 
+Blade 18 Custom getters use profile `1`, matching exact Synapse requests and
+pinned source. Other experimental profiles retain their admitted profile `0`.
+
 All five profiles admit Custom CPU/GPU levels Low, Medium, and High. The Blade
 16 (2023) also admits CPU Boost and the High/High combination. Blade 18 (2023)
-additionally admits the observed CPU Boost/GPU High pair; other Boost pairs and
+additionally admits CPU Boost with GPU Low or High; Boost/Medium and
 High/High remain unavailable on that model. See the [Observer evidence review](blade18-observer-evidence.md). Other profiles
 exclude High/High. Unrecognized raw levels remain diagnostic observations and
 cannot become a guessed baseline.

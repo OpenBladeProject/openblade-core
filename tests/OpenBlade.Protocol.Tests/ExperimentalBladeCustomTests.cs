@@ -14,7 +14,8 @@ public sealed class ExperimentalBladeCustomTests
     {
         CustomPerformanceCapabilities capabilities = ExperimentalBladePort.CreateCustomCapabilities();
         Assert.True(capabilities.IsWellFormed);
-        Assert.Equal(9, capabilities.AllowedCombinations.Count);
+        Assert.Equal(10, capabilities.AllowedCombinations.Count);
+        Assert.Contains(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.Low), capabilities.AllowedCombinations);
         Assert.Contains(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High), capabilities.AllowedCombinations);
         Assert.DoesNotContain(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.Medium), capabilities.AllowedCombinations);
         Assert.DoesNotContain(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), capabilities.AllowedCombinations);
@@ -287,15 +288,17 @@ public sealed class ExperimentalBladeCustomTests
         Assert.False(policy.WritesAllowed);
     }
 
-    [Fact]
-    public void ObserverRequests_MatchTheProductionReportEncoderWithoutInventingReplies()
+    [Theory]
+    [InlineData("Blade18ObserverRequests.json", 12)]
+    [InlineData("Blade18ObserverFollowupRequests.json", 180)]
+    public void ObserverRequests_MatchTheProductionReportEncoderWithoutInventingReplies(string fileName, int expectedCount)
     {
         using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(
-            Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blade18ObserverRequests.json")));
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName)));
         Assert.False(fixture.RootElement.GetProperty("claimsPhysicalValidation").GetBoolean());
         Assert.Equal("02A0", fixture.RootElement.GetProperty("productId").GetString());
         JsonElement requests = fixture.RootElement.GetProperty("retainedRequests");
-        Assert.Equal(12, requests.GetArrayLength());
+        Assert.Equal(expectedCount, requests.GetArrayLength());
         foreach (JsonElement request in requests.EnumerateArray())
         {
             byte[] report = Convert.FromHexString(request.GetProperty("reportHex").GetString()!);
@@ -319,7 +322,7 @@ public sealed class ExperimentalBladeCustomTests
         int beforeRestore = session.Commands.Count;
         await port.SetCustomPerformanceAsync(baseline, CancellationToken.None);
         Assert.Equal(baseline, (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).CustomPerformance);
-        Assert.Equal(new[] { "010202", "010103" }, session.Commands.Skip(beforeRestore)
+        Assert.Equal(new[] { "010103", "010202" }, session.Commands.Skip(beforeRestore)
             .Where(command => command.CommandId == 0x07)
             .Select(command => Convert.ToHexString(command.Arguments.Span)));
         Assert.DoesNotContain(session.Commands, command => command.ClassId == 0x0D && command.CommandId == 0x02);
@@ -327,11 +330,41 @@ public sealed class ExperimentalBladeCustomTests
     }
 
     [Theory]
-    [InlineData(2, 0, 3, 2, "010101,010202,010103")]
+    [InlineData(2, 0)]
+    [InlineData(0, 2)]
+    public async Task ObservedBoostGpuTransition_ChangesOnlyTheGpuAndConfirmsReadback(byte initialGpu, byte targetGpu)
+    {
+        var session = new Session { Mode = 4, Cpu = 3, Gpu = initialGpu };
+        await using var port = Create(session, Enabled());
+        var target = new CustomPerformanceSettings(CustomPerformanceLevel.Boost, (CustomPerformanceLevel)targetGpu);
+        await port.SetCustomPerformanceAsync(target, CancellationToken.None);
+        RazerCommandSpec setter = Assert.Single(session.Commands, command => command.CommandId < 0x80);
+        Assert.Equal(0x0D, setter.ClassId);
+        Assert.Equal(0x07, setter.CommandId);
+        Assert.Equal(new byte[] { 1, 2, targetGpu }, setter.Arguments.ToArray());
+        Assert.Equal(target, (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).CustomPerformance);
+    }
+
+    [Theory]
+    [InlineData(0x02A0, 1)]
+    [InlineData(0x029F, 0)]
+    public async Task CustomQueries_UseTheExactModelSourceProfile(int productId, byte profile)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        var session = new Session { Mode = 4, Cpu = 3, Gpu = 2 };
+        await using var port = new ExperimentalBladePort(session, new(), model, new(model), () => true, () => PowerSource.PluggedIn);
+        await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.Equal(new[] { $"{profile:X2}0100", $"{profile:X2}0200" },
+            session.Commands.Where(command => command.CommandId == 0x87)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)));
+    }
+
+    [Theory]
+    [InlineData(2, 0, 3, 2, "010103,010202")]
     [InlineData(2, 1, 3, 2, "010101,010202,010103")]
-    [InlineData(3, 2, 2, 0, "010101,010200,010102")]
+    [InlineData(3, 2, 2, 0, "010200,010102")]
     [InlineData(3, 2, 2, 1, "010101,010201,010102")]
-    public async Task BoostAndHighCpu_UseTheShortestAdmittedBridge(
+    public async Task BoostAndHighCpu_UseTheShortestAdmittedPath(
         byte cpu, byte gpu, byte targetCpu, byte targetGpu, string expectedWrites)
     {
         var session = new Session { Mode = 4, Cpu = cpu, Gpu = gpu };
@@ -350,7 +383,6 @@ public sealed class ExperimentalBladeCustomTests
     }
 
     [Theory]
-    [InlineData(CustomPerformanceLevel.Boost, CustomPerformanceLevel.Low)]
     [InlineData(CustomPerformanceLevel.Boost, CustomPerformanceLevel.Medium)]
     [InlineData(CustomPerformanceLevel.High, CustomPerformanceLevel.High)]
     public async Task UnobservedBlade18Combinations_RejectBeforeAnyTraffic(
@@ -366,13 +398,13 @@ public sealed class ExperimentalBladeCustomTests
     [Fact]
     public async Task BridgeReadbackFailure_StopsBeforeBoostAndPausesWithoutReplay()
     {
-        var session = new Session { Mode = 4, Cpu = 2, Gpu = 0 };
+        var session = new Session { Mode = 4, Cpu = 2, Gpu = 1 };
         var policy = Enabled();
         session.AfterCommand = command =>
         {
             if (command.CommandId == 0x07 && command.Arguments.Span[1] == 2)
             {
-                session.Gpu = 0;
+                session.Gpu = 1;
             }
         };
         await using var port = Create(session, policy);
@@ -394,7 +426,7 @@ public sealed class ExperimentalBladeCustomTests
             new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High), CancellationToken.None));
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         RazerCommandSpec setter = Assert.Single(session.Commands, command => command.CommandId == 0x07);
-        Assert.Equal("010202", Convert.ToHexString(setter.Arguments.Span));
+        Assert.Equal("010103", Convert.ToHexString(setter.Arguments.Span));
         Assert.False(policy.WritesAllowed);
     }
 

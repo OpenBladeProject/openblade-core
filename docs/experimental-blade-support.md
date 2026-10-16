@@ -13,7 +13,7 @@ in progress.
 | Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, battery modes, Custom levels, keyboard and logo lighting, 50–100% charge limits |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, fixed and maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, fixed fans, keyboard and logo lighting, 50–100% charge limits |
-| Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels with CPU Boost/GPU High, maximum fans, keyboard and logo lighting, 50–100% charge limits |
+| Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including CPU Boost with GPU Low or High, maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 15 Base (Early 2020) | `RZ09-0328` | Gaming and Custom levels, single-zone keyboard lighting |
 
 Close Synapse before using these controls, or use
@@ -38,7 +38,7 @@ Battery Saver and Battery Balanced on battery power.
   when needed, and checks again before changing the preset.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
   offers CPU Boost and High/High. The Blade 18 (2023) also offers CPU Boost
-  with GPU High. Its other Boost pairs and High/High are not yet supported.
+  with GPU Low or High. Boost/Medium and High/High are not yet supported.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
   supported. The newer models offer brightness, built-in effects, and logo
   lighting. Static RGB on the Blade 16 (2023) and Blade 18 (2023) is one color

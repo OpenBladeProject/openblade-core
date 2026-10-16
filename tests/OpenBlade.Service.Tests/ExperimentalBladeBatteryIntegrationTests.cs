@@ -61,16 +61,19 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
     }
 
     [Theory]
-    [InlineData(0x02A0)]
-    [InlineData(0x029F)]
-    public async Task CustomBoostHigh_PreservesAllIndependentStateThroughProductionProvider(int productId)
+    [InlineData(0x02A0, 2)]
+    [InlineData(0x02A0, 0)]
+    [InlineData(0x029F, 2)]
+    public async Task CustomBoost_PreservesAllIndependentStateThroughProductionProvider(int productId, byte gpu)
     {
-        var io = new Io { Mode = 4, Cpu = 3, Gpu = 2, Raw = 0xD0 };
+        var io = new Io { Mode = 4, Cpu = 3, Gpu = gpu, Raw = 0xD0 };
         var native = new Native { ProductId = (ushort)productId };
         using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io, native: native, productId: productId);
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
         ConfirmedDeviceState state = await device.ReadStateAsync(CancellationToken.None);
-        Assert.Equal(new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High), state.CustomPerformance);
+        Assert.Equal(new CustomPerformanceSettings(CustomPerformanceLevel.Boost, (CustomPerformanceLevel)gpu), state.CustomPerformance);
+        Assert.NotEmpty(io.CustomReadProfiles);
+        Assert.All(io.CustomReadProfiles, profile => Assert.Equal(productId == 0x02A0 ? (byte)1 : (byte)0, profile));
         Assert.Equal(PerformancePreset.Custom, state.Performance);
         Assert.Equal(FanMode.Automatic, state.Fans);
         Assert.Equal(80, state.Battery!.ChargeLimitPercent);
@@ -388,6 +391,7 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         internal Action? AfterLogoRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
         internal List<byte> Setters { get; } = [];
+        internal List<byte> CustomReadProfiles { get; } = [];
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint code,
             byte[] buffer, CancellationToken caller, CancellationToken deadline)
         {
@@ -395,6 +399,10 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             {
                 request = buffer.ToArray();
                 Commands.Add((request[7], request[8]));
+                if (request[7] == 0x0D && request[8] == 0x87)
+                {
+                    CustomReadProfiles.Add(request[9]);
+                }
                 Events?.Add($"query:{handle.FileHandle.DangerousGetHandle().ToInt64()}:{request[7]:X2}/{request[8]:X2}");
                 if (request[7] == 0x07 && request[8] == 0x12)
                 {
