@@ -408,12 +408,28 @@ public sealed class CapabilityPresentationTests
         XElement read = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Uid") == "MainWindow_ThxAudioReadSettings");
         Assert.Equal("{x:Bind ThxViewModel.IsReadSettingsVisible, Mode=OneWay}", Attribute(read, "Visibility"));
-        foreach (string cell in new[] { "ThxNormalizationCell", "ThxVoiceClarityCell" })
+        XElement cpuSelector = NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomCpuSelector");
+        XElement gpuSelector = NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomGpuSelector");
+        XElement customPerformanceSubcell = cpuSelector.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+        XElement customPerformanceLayout = Assert.Single(customPerformanceSubcell.Elements());
+        string? customPerformanceSubcellStyle = Attribute(customPerformanceSubcell, "Style");
+        Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", customPerformanceSubcellStyle);
+        Assert.Equal(customPerformanceSubcellStyle, Attribute(gpuSelector.Ancestors()
+            .First(element => element.Name.LocalName == "Border"), "Style"));
+        foreach (string cell in new[] { "ThxNormalizationCell", "ThxVoiceClarityCell", "ThxAudioRoutingCell" })
         {
             XElement border = NamedElement(document, "Border", cell);
-            Assert.Equal("{StaticResource SettingsEmphasizedSubcardStyle}", Attribute(border, "Style"));
-            Assert.Single(border.Descendants(), element => element.Name.LocalName == "Slider");
+            Assert.Equal(customPerformanceSubcellStyle, Attribute(border, "Style"));
+            Assert.Equal(Attribute(customPerformanceSubcell, "Padding"), Attribute(border, "Padding"));
+            XElement layout = Assert.Single(border.Elements());
+            Assert.Equal(Attribute(customPerformanceLayout, "MinHeight"), Attribute(layout, "MinHeight"));
+            Assert.Equal(Attribute(customPerformanceLayout, "ColumnSpacing"), Attribute(layout, "ColumnSpacing"));
             Assert.Single(border.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+            if (cell != "ThxAudioRoutingCell")
+            {
+                Assert.Single(border.Descendants(), element => element.Name.LocalName == "Slider");
+            }
         }
         XElement expanderStyle = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Key") == "CardContentExpanderStyle");
@@ -431,7 +447,7 @@ public sealed class CapabilityPresentationTests
         XElement applications = NamedElement(document, "Expander", "ThxAudioApplications");
         XElement cells = Assert.Single(applications.Elements(), element => element.Name.LocalName == "StackPanel");
         Assert.All(cells.Elements(), cell =>
-            Assert.Contains("EmphasizedSubcardStyle", Attribute(cell, "Style")!));
+            Assert.DoesNotContain("EmphasizedSubcardStyle", Attribute(cell, "Style")!));
         XElement rules = Assert.Single(applications.Descendants(), element => element.Name.LocalName == "ItemsRepeater");
         Assert.Equal("{x:Bind ThxViewModel.HasApplicationRules, Mode=OneWay}", Attribute(rules, "Visibility"));
         Assert.Single(applications.Descendants(), element => element.Name.LocalName == "ToggleSwitch");

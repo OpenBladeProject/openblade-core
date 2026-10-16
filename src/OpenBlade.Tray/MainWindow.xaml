@@ -3262,10 +3262,10 @@
                                                 </Border>
                                             </Expander.Header>
                                             <StackPanel>
-                                                <Border x:Name="ThxNormalizationCell" Style="{StaticResource SettingsEmphasizedSubcardStyle}"
+                                                <Border x:Name="ThxNormalizationCell" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                                         Padding="{StaticResource DashboardSingleLineRowPadding}"
                                                         Visibility="{x:Bind ThxViewModel.HasSoundNormalization, Mode=OneWay}">
-                                                    <Grid ColumnSpacing="16" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" MinWidth="120" />
                                                             <ColumnDefinition Width="2*" MinWidth="120" />
@@ -3294,10 +3294,10 @@
                                                                       AutomationProperties.Name="Sound normalization" Toggled="OnThxNormalizationToggled" />
                                                     </Grid>
                                                 </Border>
-                                                <Border x:Name="ThxVoiceClarityCell" Style="{StaticResource SettingsEmphasizedSubcardStyle}"
+                                                <Border x:Name="ThxVoiceClarityCell" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                                         Padding="{StaticResource DashboardSingleLineRowPadding}"
                                                         Visibility="{x:Bind ThxViewModel.HasVoiceClarity, Mode=OneWay}">
-                                                    <Grid ColumnSpacing="16" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" MinWidth="120" />
                                                             <ColumnDefinition Width="2*" MinWidth="120" />
@@ -3343,10 +3343,10 @@
                                             </Border>
                                         </Expander.Header>
                                         <StackPanel>
-                                            <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}">
+                                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}">
                                                 <Grid ColumnSpacing="20">
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                                    <StackPanel Spacing="4" VerticalAlignment="Center">
+                                                    <StackPanel Spacing="3" VerticalAlignment="Center">
                                                         <TextBlock x:Uid="MainWindow_ThxAudioProfileDescription"
                                                                    Text="Speaker and headphone settings"
                                                                    TextWrapping="Wrap" Style="{StaticResource CardTitleStyle}" />
@@ -3357,11 +3357,11 @@
                                                         IsEnabled="{x:Bind ThxViewModel.CanCaptureAudioProfile, Mode=OneWay}" Click="OnThxCaptureAudioProfile" />
                                                 </Grid>
                                             </Border>
-                                            <Border x:Name="ThxAudioRoutingCell" Style="{StaticResource SettingsEmphasizedSubcardStyle}"
+                                            <Border x:Name="ThxAudioRoutingCell" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                                     Padding="{StaticResource DashboardSingleLineRowPadding}">
                                                 <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                                    <StackPanel Spacing="4" VerticalAlignment="Center">
+                                                    <StackPanel Spacing="3" VerticalAlignment="Center">
                                                         <ContentControl x:Name="ThxAudioRoutingLabel" x:Uid="MainWindow_ThxAudioRoutingEnabled"
                                                                         Content="Apply saved audio and application rules automatically" IsTabStop="False"
                                                                         HorizontalContentAlignment="Stretch">
@@ -3377,7 +3377,7 @@
                                                                   IsEnabled="{x:Bind ThxViewModel.CanConfigureApplicationRouting, Mode=OneWay}" />
                                                 </Grid>
                                             </Border>
-                                            <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}">
+                                            <Border Style="{StaticResource SettingsEditorSubcardStyle}">
                                                 <StackPanel Spacing="12">
                                                     <ItemsRepeater ItemsSource="{x:Bind ThxViewModel.ApplicationRules}"
                                                                    Visibility="{x:Bind ThxViewModel.HasApplicationRules, Mode=OneWay}">
@@ -3416,7 +3416,7 @@
                                                     </Grid>
                                                 </StackPanel>
                                             </Border>
-                                            <Border x:Name="ThxAudioProfileActionsCell" Style="{StaticResource SettingsLastEmphasizedSubcardStyle}"
+                                            <Border x:Name="ThxAudioProfileActionsCell" Style="{StaticResource SettingsLastNeutralSubcardStyle}"
                                                     Padding="{StaticResource DashboardSingleLineRowPadding}">
                                                 <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
                                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="8">
