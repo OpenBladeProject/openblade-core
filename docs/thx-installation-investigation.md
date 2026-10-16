@@ -48,8 +48,11 @@ The signed rznb11 extension INF binds Realtek codec 0298 to subsystem IDs
 `1A582023`, `1A58300E`, `1A58300F`, `1A58300B`, and `1A58300C`. Its sections
 select PI4110, SO6110, KI8110, and KI8100 speaker tuning. The KI8100 entries
 are explicitly marked testing-only in the vendor source. The SO6110 comment
-names RZ09-0528; KI8110 names RZ09-0529, so the manifest reference alone does
-not prove an RZ09-0530 endpoint match.
+names RZ09-0528. Product 709 identifies Piper11 / Blade 14, matching the INF
+PI4110 Blade 14 (2025) branch; that comment leaves the RZ09 model as a
+placeholder. Its expected subsystem ID is `1A582023`, which still needs
+physical or installed-stack confirmation for RZ09-0530. KI8110 / RZ09-0529
+belongs to the separate product 711 / Blade 18 branch in this shared package.
 
 The INF writes `THX_PRODUCT_ID=rznb11`, speakers/headphones endpoint and
 signal-flow IDs, and `VEN_THX&AID_rznb11APO4` / `VEN_THX&SID_rznb11SVC`
