@@ -86,7 +86,8 @@ public sealed class SessionAudioRequestDispatcherTests
                 SessionAudioIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 ThxAudioEndpoint.Speakers,
-                "not-returned"),
+                "not-returned",
+                [0, 0, 0, 0, 0, 0, 0]),
             CancellationToken.None);
 
         Assert.Equal(ThxAudioOperationStatus.Failed, unknownPreset.Status);
@@ -118,6 +119,109 @@ public sealed class SessionAudioRequestDispatcherTests
         Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status);
         Assert.True(response.State!.SpatialEnabled);
         Assert.IsType<ThxHelperSetPropertyRequest>(worker.Requests[1]);
+    }
+
+    [Fact]
+    public async Task CustomEqualizer_UsesTypedWorkerRequestAndConfirmedBands()
+    {
+        double[] gains = [-3, -2, -1, 0, 1, 2, 3];
+        ThxAudioState confirmed = State() with
+        {
+            SelectedPresetId = "custom",
+            SelectedNativeProfileId = "custom",
+            EqualizerBands = SpeakerBands(gains),
+        };
+        var worker = new RecordingWorker(State())
+        {
+            Next = new ThxAudioWorkerResult(
+                ThxAudioOperationStatus.Succeeded,
+                ThxAudioAvailability.Available,
+                null,
+                confirmed),
+        };
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        await ReadAsync(dispatcher);
+
+        SessionAudioResponse response = await dispatcher.DispatchAsync(
+            new SelectThxPresetRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers,
+                "custom",
+                gains),
+            CancellationToken.None);
+
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status);
+        ThxHelperSelectPresetRequest request = Assert.IsType<
+            ThxHelperSelectPresetRequest>(worker.Requests[1]);
+        Assert.Equal("custom", request.PresetId);
+        Assert.Equal(gains, request.GainsDb);
+    }
+
+    [Fact]
+    public async Task ApplicationProfile_RequiresLatestCatalogAndUsesSemanticRequest()
+    {
+        ThxAudioState applied = State(spatial: true) with
+        {
+            SelectedPresetId = null,
+            SelectedNativeProfileId = "ApexLegends_cmm",
+        };
+        var worker = new RecordingWorker(State())
+        {
+            Next = new ThxAudioWorkerResult(
+                ThxAudioOperationStatus.Succeeded,
+                ThxAudioAvailability.Available,
+                null,
+                applied),
+        };
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        await ReadAsync(dispatcher);
+
+        SessionAudioResponse response = await dispatcher.DispatchAsync(
+            new ApplyThxApplicationProfileRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers,
+                "r5apex.exe",
+                ThxAudioApplicationMode.Competitive),
+            CancellationToken.None);
+
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status);
+        ThxHelperApplyApplicationProfileRequest request = Assert.IsType<
+            ThxHelperApplyApplicationProfileRequest>(worker.Requests[1]);
+        Assert.Equal("r5apex.exe", request.ExecutableName);
+        Assert.Equal(ThxAudioApplicationMode.Competitive, request.Mode);
+    }
+
+    [Fact]
+    public async Task Enhancement_UsesTypedWorkerRequestAndConfirmedReadback()
+    {
+        var worker = new RecordingWorker(State())
+        {
+            Next = new ThxAudioWorkerResult(
+                ThxAudioOperationStatus.Succeeded,
+                ThxAudioAvailability.Available,
+                null,
+                State() with
+                {
+                    SoundNormalization = new ThxAudioEnhancement(true, 60),
+                }),
+        };
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        await ReadAsync(dispatcher);
+
+        SessionAudioResponse response = await dispatcher.DispatchAsync(
+            new SetThxEnhancementRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers,
+                ThxAudioEnhancementKind.SoundNormalization,
+                true,
+                60),
+            CancellationToken.None);
+
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status);
+        Assert.IsType<ThxHelperSetEnhancementRequest>(worker.Requests[1]);
     }
 
     [Fact]
@@ -191,6 +295,165 @@ public sealed class SessionAudioRequestDispatcherTests
         Assert.Equal(1, worker.MaximumConcurrent);
     }
 
+    [Fact]
+    public async Task AutomationRead_DoesNotClearIndeterminatePause()
+    {
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        int explicitReads = 0;
+        dispatcher.ExplicitReadSucceeded += _ =>
+        {
+            explicitReads++;
+            return Task.CompletedTask;
+        };
+        await ReadAsync(dispatcher);
+        Assert.Equal(1, explicitReads);
+
+        worker.Exception = new IOException("helper pipe ended");
+        SessionAudioResponse uncertain = await dispatcher.DispatchAsync(
+            new SetThxSpatialRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers,
+                true),
+            CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Indeterminate, uncertain.Status);
+
+        worker.Exception = null;
+        int callsAfterFailure = worker.Requests.Count;
+        SessionAudioResponse blockedRead = await dispatcher.DispatchAutomationAsync(
+            new ReadThxAudioRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers),
+            CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, blockedRead.Status);
+        Assert.Equal(callsAfterFailure, worker.Requests.Count);
+        Assert.Equal(1, explicitReads);
+
+        await ReadAsync(dispatcher);
+        Assert.Equal(2, explicitReads);
+    }
+
+    [Fact]
+    public async Task PublicDispatch_NotifiesAutomationBeforeManualOperation()
+    {
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        int manualOperations = 0;
+        int successfulMutations = 0;
+        dispatcher.ManualOperationStarting += () => manualOperations++;
+        dispatcher.ManualOperationSucceeded += _ =>
+        {
+            successfulMutations++;
+            return Task.CompletedTask;
+        };
+
+        await dispatcher.DispatchAsync(
+            new DiscoverThxAudioRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid()),
+            CancellationToken.None);
+        Assert.Equal(0, manualOperations);
+
+        await dispatcher.DispatchAutomationAsync(
+            new ReadThxAudioRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers),
+            CancellationToken.None);
+        Assert.Equal(0, manualOperations);
+
+        await dispatcher.DispatchAsync(
+            new ReadThxAudioRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers),
+            CancellationToken.None);
+        Assert.Equal(1, manualOperations);
+        Assert.Equal(0, successfulMutations);
+
+        worker.Next = new ThxAudioWorkerResult(
+            ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available,
+            null,
+            State(spatial: true));
+        await dispatcher.DispatchAsync(
+            new SetThxSpatialRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers,
+                true),
+            CancellationToken.None);
+        Assert.Equal(2, manualOperations);
+        Assert.Equal(1, successfulMutations);
+    }
+
+    [Fact]
+    public async Task PublicConfirmedState_AnnotatesPauseAfterAsyncBarrier()
+    {
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        bool paused = true;
+        dispatcher.ApplicationAutomationPausedProvider = () => paused;
+        dispatcher.ExplicitReadSucceeded += async cancellationToken =>
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            paused = false;
+        };
+
+        SessionAudioResponse response = await dispatcher.DispatchAsync(
+            new ReadThxAudioRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThxAudioEndpoint.Speakers),
+            CancellationToken.None);
+
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status);
+        Assert.False(response.State!.ApplicationAutomationPaused);
+    }
+
+    [Fact]
+    public async Task AutomationLease_PreventsManualInterleavingAcrossMultipleRequests()
+    {
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        var firstStepCompleted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSecondStep = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<int> automation = dispatcher.RunAutomationAsync(
+            async cancellationToken =>
+            {
+                SessionAudioResponse first = await dispatcher.DispatchAutomationAsync(
+                    new ReadThxAudioRequest(
+                        SessionAudioIpc.ProtocolVersion,
+                        Guid.NewGuid(),
+                        ThxAudioEndpoint.Speakers),
+                    cancellationToken);
+                Assert.Equal(ThxAudioOperationStatus.Succeeded, first.Status);
+                firstStepCompleted.SetResult();
+                await releaseSecondStep.Task.WaitAsync(cancellationToken);
+                return 42;
+            },
+            CancellationToken.None);
+        await firstStepCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Task<SessionAudioResponse> manual = dispatcher.DispatchAsync(
+            new DiscoverThxAudioRequest(
+                SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid()),
+            CancellationToken.None);
+        Assert.False(manual.IsCompleted);
+
+        releaseSecondStep.SetResult();
+        Assert.Equal(42, await automation.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.Equal(
+            ThxAudioOperationStatus.Succeeded,
+            (await manual.WaitAsync(TimeSpan.FromSeconds(2))).Status);
+    }
+
     private static async Task ReadAsync(SessionAudioRequestDispatcher dispatcher)
     {
         SessionAudioResponse response = await dispatcher.DispatchAsync(
@@ -210,7 +473,33 @@ public sealed class SessionAudioRequestDispatcherTests
         spatial,
         equalizer,
         "music",
-        [new ThxAudioPreset("music", "music"), new ThxAudioPreset("game", "game")]);
+        [
+            new ThxAudioPreset("music", "Music"),
+            new ThxAudioPreset("game", "Game"),
+            new ThxAudioPreset("custom", "Custom"),
+        ])
+    {
+        SelectedNativeProfileId = "music",
+        EqualizerBands = SpeakerBands([0, 0, 0, 0, 0, 0, 0]),
+        SoundNormalization = new ThxAudioEnhancement(false, 55),
+        VoiceClarity = new ThxAudioEnhancement(false, 55),
+        ApplicationProfiles = ThxAudioFeatureAccess.Available,
+        ApplicationProfileCatalog =
+        [
+            new ThxAudioApplicationProfile(
+                "r5apex.exe",
+                SupportsImmersive: true,
+                SupportsCompetitive: true),
+        ],
+    };
+
+    private static IReadOnlyList<ThxAudioEqualizerBand> SpeakerBands(
+        IReadOnlyList<double> gains)
+    {
+        int[] frequencies = [250, 500, 1000, 2000, 4000, 8000, 16000];
+        return frequencies.Select((frequency, index) =>
+            new ThxAudioEqualizerBand(frequency, gains[index])).ToArray();
+    }
 
     private sealed class FixedAdmission(ThxAudioAdmission value) : IThxAudioAdmissionSource
     {

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -11,14 +12,15 @@ public interface IThxAudioAdapter
     Task<SessionAudioResponse> ReadAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken);
     Task<SessionAudioResponse> SetSpatialAsync(ThxAudioEndpoint endpoint, bool enabled, CancellationToken cancellationToken);
     Task<SessionAudioResponse> SetEqualizerAsync(ThxAudioEndpoint endpoint, bool enabled, CancellationToken cancellationToken);
-    Task<SessionAudioResponse> SelectPresetAsync(ThxAudioEndpoint endpoint, string presetId, CancellationToken cancellationToken);
+    Task<SessionAudioResponse> SelectPresetAsync(ThxAudioEndpoint endpoint, string presetId, IReadOnlyList<double> gainsDb, CancellationToken cancellationToken);
+    Task<SessionAudioResponse> SetEnhancementAsync(ThxAudioEndpoint endpoint, ThxAudioEnhancementKind kind, bool enabled, int? levelPercent, CancellationToken cancellationToken);
 }
 
 /// <summary>
 /// User-requested audio operations only. Restoring the preference, discovering
 /// components, switching endpoints, and disposing never change audio settings.
 /// </summary>
-public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropertyChanged, IAsyncDisposable
+public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IThxAudioAdapter adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
     private readonly CancellationTokenSource lifetime = new();
@@ -30,6 +32,15 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
     private bool busy;
     private bool disposed;
     private Task pendingOperation = Task.CompletedTask;
+    private IReadOnlyList<ThxEqualizerBandViewModel> equalizerBands = [];
+    private double normalizationLevel;
+    private double voiceClarityLevel;
+    private int? confirmedNormalizationLevel;
+    private int? confirmedVoiceClarityLevel;
+    private readonly Dictionary<ThxAudioEndpoint, Dictionary<string, double[]>> presetCurves = [];
+    private readonly Dictionary<ThxAudioEndpoint, Dictionary<string, double[]>> factoryPresetCurves = [];
+    private string? equalizerDraftPresetId;
+    private string? equalizerDraftNativeId;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -47,9 +58,68 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
         new(ThxAudioEndpoint.Headphones, TrayText.Get("Headphones")),
     ];
     public ThxAudioEndpointOption SelectedEndpoint => Endpoints.Single(option => option.Endpoint == endpoint);
-    public IReadOnlyList<ThxAudioPreset> Presets => state?.Presets ?? [];
+    public IReadOnlyList<ThxAudioPreset> Presets => state?.Presets.Select(preset =>
+        preset with { Name = TrayText.Get(preset.Name) }).ToArray() ?? [];
     public ThxAudioPreset? SelectedPreset => Presets.FirstOrDefault(preset => preset.Id == state?.SelectedPresetId);
     public string StatusMessage => TrayText.Get(statusKey);
+    public IReadOnlyList<ThxEqualizerBandViewModel> EqualizerBands => equalizerBands;
+    public bool HasEqualizerBands => equalizerBands.Count > 0;
+    public bool CanEditEqualizerBands => CanEdit && HasEqualizerBands && HasEditableEqualizerPreset;
+    private bool HasEditableEqualizerPreset => state?.SelectedPresetId is "game" or "movie" or "music" or "voice" or "custom";
+    public string EqualizerDraftHint => TrayText.Get(HasEditableEqualizerPreset
+        ? "Adjust the selected preset, then apply your EQ changes."
+        : "Choose Game, Movie, Music, Voice, or Custom to edit EQ.");
+    public bool CanResetEqualizer => CanEditEqualizerBands
+        && factoryPresetCurves.TryGetValue(endpoint, out Dictionary<string, double[]>? curves)
+        && curves.TryGetValue(state!.SelectedPresetId!, out double[]? gains)
+        && gains.Length == equalizerBands.Count;
+    public bool HasEqualizerChanges => equalizerBands.Any(band => band.HasChanges);
+    public bool CanApplyEqualizer => CanEditEqualizerBands && HasEqualizerChanges;
+    public bool CanDiscardEqualizerChanges => CanEditEqualizerBands && HasEqualizerChanges;
+    public bool HasSoundNormalization => state?.SoundNormalization is not null;
+    public bool HasVoiceClarity => state?.VoiceClarity is not null;
+    public bool CanEditSoundNormalization => CanEdit && HasSoundNormalization;
+    public bool CanEditVoiceClarity => CanEdit && HasVoiceClarity;
+    public bool CanEditSoundNormalizationLevel => CanEditSoundNormalization && SoundNormalizationEnabled;
+    public bool CanEditVoiceClarityLevel => CanEditVoiceClarity && VoiceClarityEnabled;
+    public string SoundNormalizationLevelLabel => TrayText.Format("{0}%", normalizationLevel);
+    public string VoiceClarityLevelLabel => TrayText.Format("{0}%", voiceClarityLevel);
+    public bool SoundNormalizationEnabled => state?.SoundNormalization?.Enabled ?? false;
+    public bool VoiceClarityEnabled => state?.VoiceClarity?.Enabled ?? false;
+    public bool CanApplySoundNormalization => CanEditSoundNormalizationLevel
+        && normalizationLevel != state!.SoundNormalization!.LevelPercent;
+    public bool CanApplyVoiceClarity => CanEditVoiceClarityLevel
+        && voiceClarityLevel != state!.VoiceClarity!.LevelPercent;
+    public string ActiveProfileMessage => state is { SelectedPresetId: null, SelectedNativeProfileId: { } id }
+        ? string.Format(CultureInfo.CurrentCulture, TrayText.Get("Active application profile: {0}"), id)
+        : string.Empty;
+    public bool HasActiveApplicationProfile => !string.IsNullOrEmpty(ActiveProfileMessage);
+
+    public double SoundNormalizationLevel
+    {
+        get => normalizationLevel;
+        set
+        {
+            if (CanEditSoundNormalization && double.IsFinite(value) && value is >= 0 and <= 100)
+            {
+                normalizationLevel = Math.Round(value);
+                NotifyAll();
+            }
+        }
+    }
+
+    public double VoiceClarityLevel
+    {
+        get => voiceClarityLevel;
+        set
+        {
+            if (CanEditVoiceClarity && double.IsFinite(value) && value is >= 0 and <= 100)
+            {
+                voiceClarityLevel = Math.Round(value);
+                NotifyAll();
+            }
+        }
+    }
 
     public void ApplyPreference(bool value)
     {
@@ -59,6 +129,7 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
         }
         enabled = value;
         state = null;
+        ResetAdvancedDrafts();
         availability = value ? ThxAudioAvailability.ComponentsUnavailable : ThxAudioAvailability.Disabled;
         statusKey = value ? "Read the current THX settings to connect." : "THX audio integration is off.";
         NotifyAll();
@@ -84,6 +155,7 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
         }
         endpoint = value;
         state = null;
+        ResetAdvancedDrafts();
         statusKey = "Read the current THX settings to connect.";
         NotifyAll();
     }
@@ -107,13 +179,85 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
 
     public Task SelectPresetAsync(ThxAudioPreset preset) => !CanEdit
         || !Presets.Contains(preset) || SelectedPreset?.Id == preset.Id
+        || !presetCurves.TryGetValue(endpoint, out Dictionary<string, double[]>? curves)
+        || !curves.TryGetValue(preset.Id, out double[]? gains)
         ? Task.CompletedTask
-        : StartAsync(token => adapter.SelectPresetAsync(endpoint, preset.Id, token), isMutation: true);
+        : StartAsync(token => adapter.SelectPresetAsync(endpoint, preset.Id, gains.ToArray(), token), isMutation: true,
+            discardEqualizerDraft: true);
+
+    public Task ApplyEqualizerAsync() => !CanApplyEqualizer
+        ? Task.CompletedTask
+        : StartAsync(token => adapter.SelectPresetAsync(endpoint, state!.SelectedPresetId!,
+            equalizerBands.Select(band => band.DraftGainDb).ToArray(), token), isMutation: true,
+            discardEqualizerDraft: true);
+
+    public void ResetEqualizerToFactory()
+    {
+        if (!CanResetEqualizer)
+        {
+            return;
+        }
+        double[] gains = factoryPresetCurves[endpoint][state!.SelectedPresetId!];
+        for (int index = 0; index < equalizerBands.Count; index++)
+        {
+            equalizerBands[index].DraftGainDb = gains[index];
+        }
+    }
+
+    public void FlattenEqualizer()
+    {
+        if (!CanEditEqualizerBands)
+        {
+            return;
+        }
+        foreach (ThxEqualizerBandViewModel band in equalizerBands)
+        {
+            band.DraftGainDb = 0;
+        }
+    }
+
+    public void DiscardEqualizerChanges()
+    {
+        if (!CanEditEqualizerBands)
+        {
+            return;
+        }
+        foreach (ThxEqualizerBandViewModel band in equalizerBands)
+        {
+            band.Discard();
+        }
+    }
+
+    public Task SetSoundNormalizationAsync(bool value) => !CanEditSoundNormalization
+        || SoundNormalizationEnabled == value ? Task.CompletedTask
+        : StartAsync(token => adapter.SetEnhancementAsync(endpoint,
+            ThxAudioEnhancementKind.SoundNormalization, value,
+            null, token), isMutation: true);
+
+    public Task SetVoiceClarityAsync(bool value) => !CanEditVoiceClarity
+        || VoiceClarityEnabled == value ? Task.CompletedTask
+        : StartAsync(token => adapter.SetEnhancementAsync(endpoint,
+            ThxAudioEnhancementKind.VoiceClarity, value,
+            null, token), isMutation: true);
+
+    public Task ApplySoundNormalizationAsync() => !CanApplySoundNormalization ? Task.CompletedTask
+        : StartAsync(token => adapter.SetEnhancementAsync(endpoint,
+            ThxAudioEnhancementKind.SoundNormalization, SoundNormalizationEnabled,
+            (int)normalizationLevel, token), isMutation: true,
+            discardEnhancementDraft: ThxAudioEnhancementKind.SoundNormalization);
+
+    public Task ApplyVoiceClarityAsync() => !CanApplyVoiceClarity ? Task.CompletedTask
+        : StartAsync(token => adapter.SetEnhancementAsync(endpoint,
+            ThxAudioEnhancementKind.VoiceClarity, VoiceClarityEnabled,
+            (int)voiceClarityLevel, token), isMutation: true,
+            discardEnhancementDraft: ThxAudioEnhancementKind.VoiceClarity);
 
     private Task StartAsync(
         Func<CancellationToken, Task<SessionAudioResponse>> action,
         bool isMutation,
-        bool isDiscovery = false)
+        bool isDiscovery = false,
+        bool discardEqualizerDraft = false,
+        ThxAudioEnhancementKind? discardEnhancementDraft = null)
     {
         if (disposed || busy)
         {
@@ -121,14 +265,17 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
         }
         busy = true;
         NotifyAll();
-        pendingOperation = RunAsync(action, isMutation, isDiscovery);
+        pendingOperation = RunAsync(action, isMutation, isDiscovery,
+            discardEqualizerDraft, discardEnhancementDraft);
         return pendingOperation;
     }
 
     private async Task RunAsync(
         Func<CancellationToken, Task<SessionAudioResponse>> action,
         bool isMutation,
-        bool isDiscovery)
+        bool isDiscovery,
+        bool discardEqualizerDraft,
+        ThxAudioEnhancementKind? discardEnhancementDraft)
     {
         try
         {
@@ -145,6 +292,14 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
             {
                 state = response.State is { } confirmed && confirmed.Endpoint == endpoint
                     ? confirmed : null;
+                if (state is not null)
+                {
+                    ConfirmAdvancedDrafts(state, discardEqualizerDraft, discardEnhancementDraft);
+                    if (isMutation)
+                    {
+                        UpdateConfirmedProfileDraft(state);
+                    }
+                }
                 statusKey = state is not null
                     ? "THX settings are up to date."
                     : isDiscovery ? "THX components found. Read the current settings to connect."
@@ -156,7 +311,7 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
                 statusKey = response.Status == ThxAudioOperationStatus.Indeterminate
                     ? "The audio change could not be confirmed. Read the current settings before trying again."
                     : response.Availability == ThxAudioAvailability.ControllerActive
-                    ? "Close Synapse before connecting to THX audio."
+                    ? "Close Synapse and THX Spatial Audio before connecting."
                     : response.Availability == ThxAudioAvailability.UnsupportedModel
                     ? "THX audio controls are available only on RZ09-0581."
                     : response.Availability == ThxAudioAvailability.ComponentsUnavailable
@@ -184,14 +339,111 @@ public sealed class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropert
 
     private void NotifyAll()
     {
+        NotifyProfileEditor();
+        foreach (ThxEqualizerBandViewModel band in equalizerBands)
+        {
+            band.CanEdit = CanEditEqualizerBands;
+        }
         foreach (string property in new[]
         {
             nameof(IsEnabled), nameof(IsBusy), nameof(CanToggleIntegration), nameof(CanRead),
             nameof(CanEdit), nameof(SpatialEnabled), nameof(EqualizerEnabled), nameof(Endpoint),
             nameof(SelectedEndpoint), nameof(Presets), nameof(SelectedPreset), nameof(StatusMessage),
+            nameof(EqualizerBands), nameof(HasEqualizerBands), nameof(CanEditEqualizerBands),
+            nameof(EqualizerDraftHint), nameof(CanResetEqualizer),
+            nameof(HasEqualizerChanges), nameof(CanApplyEqualizer), nameof(CanDiscardEqualizerChanges), nameof(HasSoundNormalization),
+            nameof(HasVoiceClarity), nameof(CanEditSoundNormalization), nameof(CanEditVoiceClarity),
+            nameof(SoundNormalizationEnabled), nameof(VoiceClarityEnabled), nameof(SoundNormalizationLevel),
+            nameof(VoiceClarityLevel), nameof(CanApplySoundNormalization), nameof(CanApplyVoiceClarity),
+            nameof(CanEditSoundNormalizationLevel), nameof(CanEditVoiceClarityLevel),
+            nameof(SoundNormalizationLevelLabel), nameof(VoiceClarityLevelLabel),
+            nameof(ActiveProfileMessage), nameof(HasActiveApplicationProfile),
         })
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
+        }
+    }
+
+    private void ConfirmAdvancedDrafts(ThxAudioState confirmed, bool discardEqualizer,
+        ThxAudioEnhancementKind? discardEnhancement)
+    {
+        factoryPresetCurves[confirmed.Endpoint] = confirmed.FactoryPresetCurves.ToDictionary(
+            curve => curve.PresetId, curve => curve.GainsDb.ToArray(), StringComparer.Ordinal);
+        if (!presetCurves.TryGetValue(confirmed.Endpoint, out Dictionary<string, double[]>? curves))
+        {
+            curves = new(StringComparer.Ordinal);
+            presetCurves[confirmed.Endpoint] = curves;
+        }
+        foreach ((string id, double[] gains) in factoryPresetCurves[confirmed.Endpoint])
+        {
+            curves.TryAdd(id, gains.ToArray());
+        }
+        discardEqualizer |= equalizerDraftPresetId != confirmed.SelectedPresetId
+            || equalizerDraftNativeId != confirmed.SelectedNativeProfileId;
+        equalizerDraftPresetId = confirmed.SelectedPresetId;
+        equalizerDraftNativeId = confirmed.SelectedNativeProfileId;
+        if (confirmed.SelectedPresetId is { } selected && confirmed.EqualizerBands.Count > 0)
+        {
+            curves[selected] = confirmed.EqualizerBands.Select(band => band.GainDb).ToArray();
+        }
+        if (equalizerBands.Select(band => band.FrequencyHz)
+            .SequenceEqual(confirmed.EqualizerBands.Select(band => band.FrequencyHz)))
+        {
+            for (int index = 0; index < equalizerBands.Count; index++)
+            {
+                equalizerBands[index].Confirm(confirmed.EqualizerBands[index].GainDb, discardEqualizer);
+            }
+        }
+        else
+        {
+            foreach (ThxEqualizerBandViewModel band in equalizerBands)
+            {
+                band.PropertyChanged -= OnBandPropertyChanged;
+            }
+            equalizerBands = confirmed.EqualizerBands.Select(band =>
+                new ThxEqualizerBandViewModel(band.FrequencyHz, band.GainDb)).ToArray();
+            foreach (ThxEqualizerBandViewModel band in equalizerBands)
+            {
+                band.PropertyChanged += OnBandPropertyChanged;
+            }
+        }
+        if (confirmed.SoundNormalization is { } normalization)
+        {
+            if (confirmedNormalizationLevel is null || normalizationLevel == confirmedNormalizationLevel
+                || discardEnhancement == ThxAudioEnhancementKind.SoundNormalization)
+            {
+                normalizationLevel = normalization.LevelPercent;
+            }
+            confirmedNormalizationLevel = normalization.LevelPercent;
+        }
+        if (confirmed.VoiceClarity is { } clarity)
+        {
+            if (confirmedVoiceClarityLevel is null || voiceClarityLevel == confirmedVoiceClarityLevel
+                || discardEnhancement == ThxAudioEnhancementKind.VoiceClarity)
+            {
+                voiceClarityLevel = clarity.LevelPercent;
+            }
+            confirmedVoiceClarityLevel = clarity.LevelPercent;
+        }
+    }
+
+    private void ResetAdvancedDrafts()
+    {
+        foreach (ThxEqualizerBandViewModel band in equalizerBands)
+        {
+            band.PropertyChanged -= OnBandPropertyChanged;
+        }
+        equalizerBands = [];
+        equalizerDraftPresetId = equalizerDraftNativeId = null;
+        normalizationLevel = voiceClarityLevel = 0;
+        confirmedNormalizationLevel = confirmedVoiceClarityLevel = null;
+    }
+
+    private void OnBandPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(ThxEqualizerBandViewModel.HasChanges))
+        {
+            NotifyAll();
         }
     }
 

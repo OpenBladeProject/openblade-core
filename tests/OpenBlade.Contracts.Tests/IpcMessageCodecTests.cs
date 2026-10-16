@@ -573,7 +573,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(66, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(67, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -617,7 +617,7 @@ public sealed class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(66, json["version"]!.GetValue<int>());
+        Assert.Equal(67, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -652,7 +652,7 @@ public sealed class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(66, json["version"]!.GetValue<int>());
+        Assert.Equal(67, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1227,7 +1227,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(66, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(67, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1904,7 +1904,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(66, exception.ExpectedVersion);
+        Assert.Equal(67, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1922,7 +1922,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(66, exception.ExpectedVersion);
+        Assert.Equal(67, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1952,7 +1952,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(66, exception.ExpectedVersion);
+        Assert.Equal(67, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2061,6 +2061,96 @@ public sealed class IpcMessageCodecTests
                 KeyboardLightingLayoutId = layoutId,
             },
         });
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RoundTripsExactThxCapability()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                ThxAudio = new ThxAudioCapabilities(
+                    DeviceFeatureAccess.ReadWrite,
+                    ThxAudioProductIds.Rznb12),
+            },
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+        stream.Position = 0;
+        ServiceStatusEvent roundTrip = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+
+        Assert.Equal(status.Capabilities.ThxAudio, roundTrip.Status.Capabilities!.ThxAudio);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownThxProductCapability()
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                ThxAudio = new ThxAudioCapabilities(
+                    DeviceFeatureAccess.ReadWrite,
+                    "unknown-product"),
+            },
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_InvalidThxExecutableNameIsInvalidBody()
+    {
+        static ThxEqualizerCurves Curves(int count)
+        {
+            double[] values = new double[count];
+            return new(values, values, values, values, values);
+        }
+        var settings = new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: true,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, Curves(7),
+                new(false, 0), new(false, 0)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game, Curves(10),
+                new(false, 0), null),
+            ApplicationRules:
+            [
+                new("game.exe", ThxApplicationAudioOutput.Immersive),
+            ]);
+        ProfileSet profiles = CreateStatus().Profiles;
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Profiles = profiles with
+                {
+                    PluggedIn = profiles.PluggedIn with { ThxAudio = settings },
+                },
+            });
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
+        JsonObject serializedProfiles = Assert.IsType<JsonObject>(
+            status[nameof(ServiceStatusSnapshot.Profiles)]);
+        JsonObject pluggedIn = Assert.IsType<JsonObject>(
+            serializedProfiles[nameof(ProfileSet.PluggedIn)]);
+        JsonObject thxAudio = Assert.IsType<JsonObject>(
+            pluggedIn[nameof(PowerProfile.ThxAudio)]);
+        JsonArray rules = Assert.IsType<JsonArray>(
+            thxAudio[nameof(ThxAudioProfileSettings.ApplicationRules)]);
+        Assert.IsType<JsonObject>(rules[0])[nameof(ThxApplicationAudioRule.ExecutableName)] =
+            "bad:name.exe";
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal("IPC message body is invalid.", exception.Message);
+        Assert.IsType<ArgumentException>(exception.InnerException);
     }
 
     [Fact]
@@ -2574,6 +2664,8 @@ public sealed class IpcMessageCodecTests
         Assert.False(projected.ContainsKey("experimentalWritesPaused"));
         Assert.False(projected.ContainsKey("isExperimentalDevice"));
         Assert.False(projected.ContainsKey("experimentalSupportSource"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("thxAudio"));
+        Assert.False(projected["profiles"]!["pluggedIn"]!.AsObject().ContainsKey("thxAudio"));
         Assert.Equal(
             new[] { 50, 55, 60, 65, 70, 75, 80 },
             projected["capabilities"]!["chargeLimits"]!

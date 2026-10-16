@@ -1509,4 +1509,61 @@
   <data name="Headphones" xml:space="preserve">
     <value>耳机</value>
   </data>
+  <data name="{0} kHz" xml:space="preserve">
+    <value>{0} kHz</value>
+  </data>
+  <data name="{0} Hz equalizer gain" xml:space="preserve">
+    <value>{0} Hz 均衡器增益</value>
+  </data>
+  <data name="{0} dB" xml:space="preserve">
+    <value>{0} dB</value>
+  </data>
+  <data name="Active application profile: {0}" xml:space="preserve">
+    <value>当前应用配置：{0}</value>
+  </data>
+  <data name="Game" xml:space="preserve">
+    <value>游戏</value>
+  </data>
+  <data name="Movie" xml:space="preserve">
+    <value>电影</value>
+  </data>
+  <data name="Music" xml:space="preserve">
+    <value>音乐</value>
+  </data>
+  <data name="Voice" xml:space="preserve">
+    <value>人声</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>默认</value>
+  </data>
+  <data name="THX Immersive Mode" xml:space="preserve">
+    <value>THX 沉浸模式</value>
+  </data>
+  <data name="THX Competitive Mode" xml:space="preserve">
+    <value>THX 竞技模式</value>
+  </data>
+  <data name="Choose an EQ preset for both outputs, then capture the current audio settings." xml:space="preserve">
+    <value>为两个输出选择均衡器预设，然后读取当前音效设置。</value>
+  </data>
+  <data name="Saved audio settings are available for this power profile." xml:space="preserve">
+    <value>此电源配置已有音效设置。</value>
+  </data>
+  <data name="Current audio settings captured. Save the profile to keep them." xml:space="preserve">
+    <value>已读取当前音效设置。请保存到配置中。</value>
+  </data>
+  <data name="Choose an EQ preset for both outputs before capturing audio settings." xml:space="preserve">
+    <value>读取音效设置前，请为两个输出选择均衡器预设。</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before connecting." xml:space="preserve">
+    <value>连接前请关闭 Synapse 和 THX Spatial Audio。</value>
+  </data>
+  <data name="Audio automation is paused. Read the current THX settings to resume." xml:space="preserve">
+    <value>音效自动化已暂停。请读取当前 THX 设置以继续。</value>
+  </data>
+  <data name="Adjust the selected preset, then apply your EQ changes." xml:space="preserve">
+    <value>调整所选预设后，应用均衡器更改。</value>
+  </data>
+  <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
+    <value>选择游戏、电影、音乐、人声或自定义以编辑均衡器。</value>
+  </data>
 </root>

@@ -53,6 +53,8 @@ internal static class ThxAudioHelperProtocol
 [JsonDerivedType(typeof(ThxHelperReadRequest), "read")]
 [JsonDerivedType(typeof(ThxHelperSetPropertyRequest), "setProperty")]
 [JsonDerivedType(typeof(ThxHelperSelectPresetRequest), "selectPreset")]
+[JsonDerivedType(typeof(ThxHelperSetEnhancementRequest), "setEnhancement")]
+[JsonDerivedType(typeof(ThxHelperApplyApplicationProfileRequest), "applyApplicationProfile")]
 internal abstract record ThxAudioHelperRequest(int Version, ThxAudioEndpoint Endpoint);
 
 internal sealed record ThxHelperReadRequest(int Version, ThxAudioEndpoint Endpoint)
@@ -68,7 +70,23 @@ internal sealed record ThxHelperSetPropertyRequest(
 internal sealed record ThxHelperSelectPresetRequest(
     int Version,
     ThxAudioEndpoint Endpoint,
-    string PresetId)
+    string PresetId,
+    IReadOnlyList<double> GainsDb)
+    : ThxAudioHelperRequest(Version, Endpoint);
+
+internal sealed record ThxHelperSetEnhancementRequest(
+    int Version,
+    ThxAudioEndpoint Endpoint,
+    ThxAudioEnhancementKind Kind,
+    bool Enabled,
+    int? LevelPercent)
+    : ThxAudioHelperRequest(Version, Endpoint);
+
+internal sealed record ThxHelperApplyApplicationProfileRequest(
+    int Version,
+    ThxAudioEndpoint Endpoint,
+    string ExecutableName,
+    ThxAudioApplicationMode Mode)
     : ThxAudioHelperRequest(Version, Endpoint);
 
 internal sealed record ThxAudioHelperResponse(

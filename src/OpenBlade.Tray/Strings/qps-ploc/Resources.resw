@@ -2095,4 +2095,76 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
     <value>[!! Spátíál áúdíó ~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ThxAudioApplyNormalization.Content" xml:space="preserve">
+    <value>[!! Ápplý nórmálízátíón lévél ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyVoiceClarity.Content" xml:space="preserve">
+    <value>[!! Ápplý vóícé clárítý lévél ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
+    <value>[!! Díscárd chángés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.Header" xml:space="preserve">
+    <value>[!! Énháncéménts ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Sóúnd nórmálízátíón ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Sóúnd nórmálízátíón lévél ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationTitle.Text" xml:space="preserve">
+    <value>[!! Sóúnd nórmálízátíón ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarity.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Vóícé clárítý ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Vóícé clárítý lévél ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityTitle.Text" xml:space="preserve">
+    <value>[!! Vóícé clárítý ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioAddRule.Content" xml:space="preserve">
+    <value>[!! Ádd ápplícátíón rúlé ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.Header" xml:space="preserve">
+    <value>[!! Ápplícátíón éxécútáblé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.PlaceholderText" xml:space="preserve">
+    <value>[!! gámé.éxé ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
+    <value>[!! Ápplícátíón áúdíó módé ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.Header" xml:space="preserve">
+    <value>[!! Sávéd áúdíó ánd ápplícátíóns ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
+    <value>[!! Cáptúré cúrrént áúdíó séttíngs ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
+    <value>[!! Sávé bóth óútpúts tó thé cúrrént pówér prófílé. Áútómátíón fóllóws thé fórégróúnd ápp ánd úsés thé sávéd áúdíó séttíngs whén nó rúlé mátchés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
+    <value>[!! Rémóvé ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioRoutingEnabled.Content" xml:space="preserve">
+    <value>[!! Ápplý sávéd áúdíó ánd ápplícátíón rúlés áútómátícállý ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
+    <value>[!! Sávé áúdíó tó cúrrént pówér prófílé ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
+    <value>[!! Áúdíó módé ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyEqualizer.Content" xml:space="preserve">
+    <value>[!! Ápplý ÉQ ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioFlattenEqualizer.Content" xml:space="preserve">
+    <value>[!! Fláttén ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
+    <value>[!! Rését tó fáctórý ~~~~~ !!]</value>
+  </data>
 </root>

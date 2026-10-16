@@ -12,6 +12,9 @@
     "tray/main-display.png",
     "tray/main-home.png",
     "tray/main-laptop-audio.png",
+    "tray/main-laptop-audio-headphones.png",
+    "tray/main-laptop-audio-enhancements.png",
+    "tray/main-laptop-audio-applications.png",
     "tray/main-laptop.png",
     "tray/main-lighting.png",
     "tray/main-profiles.png",
@@ -27,14 +30,14 @@
       "match": "key",
       "pattern": "^MainWindow_ThxAudio",
       "context": "Optional THX audio controls shown with disconnected sample data.",
-      "screenshots": ["tray/main-laptop-audio.png"]
+      "screenshots": ["tray/main-laptop-audio.png", "tray/main-laptop-audio-headphones.png", "tray/main-laptop-audio-enhancements.png", "tray/main-laptop-audio-applications.png"]
     },
     {
       "surface": "tray-core",
       "match": "source",
       "pattern": "(?i)(?:\\bTHX\\b|audio change could not be confirmed)",
       "context": "Optional THX audio availability, confirmation, or recovery status.",
-      "screenshots": ["tray/main-laptop-audio.png"]
+      "screenshots": ["tray/main-laptop-audio.png", "tray/main-laptop-audio-applications.png"]
     },
     {
       "surface": "tray",

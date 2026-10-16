@@ -2095,4 +2095,76 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
     <value>Spatial audio</value>
   </data>
+  <data name="MainWindow_ThxAudioApplyNormalization.Content" xml:space="preserve">
+    <value>Apply normalization level</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyVoiceClarity.Content" xml:space="preserve">
+    <value>Apply voice clarity level</value>
+  </data>
+  <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
+    <value>Discard changes</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.Header" xml:space="preserve">
+    <value>Enhancements</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Sound normalization</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Sound normalization level</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationTitle.Text" xml:space="preserve">
+    <value>Sound normalization</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarity.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Voice clarity</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Voice clarity level</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityTitle.Text" xml:space="preserve">
+    <value>Voice clarity</value>
+  </data>
+  <data name="MainWindow_ThxAudioAddRule.Content" xml:space="preserve">
+    <value>Add application rule</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.Header" xml:space="preserve">
+    <value>Application executable</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.PlaceholderText" xml:space="preserve">
+    <value>game.exe</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
+    <value>Application audio mode</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.Header" xml:space="preserve">
+    <value>Saved audio and applications</value>
+  </data>
+  <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
+    <value>Capture current audio settings</value>
+  </data>
+  <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
+    <value>Save both outputs to the current power profile. Automation follows the foreground app and uses the saved audio settings when no rule matches.</value>
+  </data>
+  <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="MainWindow_ThxAudioRoutingEnabled.Content" xml:space="preserve">
+    <value>Apply saved audio and application rules automatically</value>
+  </data>
+  <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
+    <value>Save audio to current power profile</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
+    <value>Audio mode</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyEqualizer.Content" xml:space="preserve">
+    <value>Apply EQ</value>
+  </data>
+  <data name="MainWindow_ThxAudioFlattenEqualizer.Content" xml:space="preserve">
+    <value>Flatten</value>
+  </data>
+  <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
+    <value>Reset to factory</value>
+  </data>
 </root>

@@ -13,7 +13,7 @@ public sealed class ThxAudioHelperCommandTests
         string json = System.Text.Json.JsonSerializer.Serialize(
             Enumerable.Range(0, count).Select(index => $"preset-{index}"));
 
-        Assert.Equal(count, ThxVendorJson.ParsePresetList(json).Count);
+        Assert.Equal(count, ThxVendorJson.ParsePresetIds(json).Count);
     }
 
     [Fact]
@@ -22,7 +22,7 @@ public sealed class ThxAudioHelperCommandTests
         string json = System.Text.Json.JsonSerializer.Serialize(
             Enumerable.Range(0, 257).Select(index => $"preset-{index}"));
 
-        Assert.Throws<InvalidDataException>(() => ThxVendorJson.ParsePresetList(json));
+        Assert.Throws<InvalidDataException>(() => ThxVendorJson.ParsePresetIds(json));
     }
 
     [Fact]
@@ -31,8 +31,10 @@ public sealed class ThxAudioHelperCommandTests
         Assert.True(ThxVendorJson.ParseBoolean("true"));
         Assert.False(ThxVendorJson.ParseBoolean("false"));
         Assert.Equal(
-            [new ThxAudioPreset("music", "music"), new ThxAudioPreset("game", "game")],
-            ThxVendorJson.ParsePresetList("[\"music\",\"game\"]"));
+            ["music", "game"],
+            ThxVendorJson.ParsePresetIds("[\"music\",\"game\"]"));
+        Assert.Equal(0.55, ThxVendorJson.ParseFloat("0.55", 0, 1));
+        Assert.Equal(-12, ThxVendorJson.ParseFloat("-12", -12, 12));
         Assert.Equal("music", ThxVendorJson.ParseSelectedPreset("\"music\""));
         Assert.Equal("music", ThxVendorJson.ParseSelectedPreset("music"));
         Assert.Equal("ApexLegends_imm", ThxVendorJson.ParseSelectedPreset("ApexLegends_imm"));
@@ -44,7 +46,9 @@ public sealed class ThxAudioHelperCommandTests
     {
         Assert.Throws<InvalidDataException>(() => ThxVendorJson.ParseBoolean("1"));
         Assert.Throws<InvalidDataException>(
-            () => ThxVendorJson.ParsePresetList("[\"music\",\"music\"]"));
+            () => ThxVendorJson.ParsePresetIds("[\"music\",\"music\"]"));
+        Assert.Throws<InvalidDataException>(() => ThxVendorJson.ParseFloat("NaN", 0, 1));
+        Assert.Throws<InvalidDataException>(() => ThxVendorJson.ParseFloat("1.01", 0, 1));
         Assert.Throws<InvalidDataException>(
             () => ThxVendorJson.ParseSelectedPreset("{\"presetId\":\"music\"}"));
         Assert.Throws<InvalidDataException>(
@@ -248,9 +252,12 @@ public sealed class ThxAudioHelperCommandTests
     [Fact]
     public async Task SelectPreset_RejectsIdMissingFromFreshVendorListBeforeMutation()
     {
-        var native = new FakeNative();
+        var native = new FakeNative
+        {
+            PresetListJson = "[\"music\",\"game\"]",
+        };
         string input = """
-            {"operation":"selectPreset","version":1,"endpoint":0,"presetId":"movie"}
+            {"operation":"selectPreset","version":1,"endpoint":0,"presetId":"movie","gainsDb":[0,0,0,0,0,0,0]}
             """;
         var output = new StringWriter();
         var command = Command(native, input, output);
@@ -262,6 +269,321 @@ public sealed class ThxAudioHelperCommandTests
         Assert.Equal(0, native.SelectPresetCalls);
         Assert.Contains("\"status\":2", output.ToString(), StringComparison.Ordinal);
         Assert.Equal(1, native.RemoveCalls);
+    }
+
+    [Fact]
+    public async Task SelectVoice_MapsToNativePodcastAndReturnsLogicalVoice()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        string input = """
+            {"operation":"selectPreset","version":1,"endpoint":1,"presetId":"voice","gainsDb":[0,0,0,0,0,0,0,0,0,0]}
+            """;
+        var output = new StringWriter();
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("podcast", native.SelectedPreset);
+        Assert.Equal(10, native.PropertyWrites.Count);
+        Assert.All(native.PropertyWrites, write => Assert.Equal("Float", write.PropertyType));
+        Assert.Contains("\"selectedPresetId\":\"voice\"", output.ToString(),
+            StringComparison.Ordinal);
+        Assert.Contains("\"selectedNativeProfileId\":\"podcast\"", output.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Read_PreservesUnknownGameProfileAsReadOnlyNativeId()
+    {
+        var native = new FakeNative
+        {
+            SelectedPreset = "ApexLegends_imm",
+            PresetListJson =
+                "[\"default\",\"custom\",\"music\",\"movie\",\"game\",\"podcast\",\"ApexLegends_imm\"]",
+        };
+        var output = new StringWriter();
+
+        int exitCode = await Command(
+            native,
+            "{\"operation\":\"read\",\"version\":1,\"endpoint\":1}",
+            output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("\"selectedPresetId\":null", output.ToString(),
+            StringComparison.Ordinal);
+        Assert.Contains("\"selectedNativeProfileId\":\"ApexLegends_imm\"", output.ToString(),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("\"id\":\"ApexLegends_imm\"", output.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SelectSpeakerPreset_AppliesCompleteCurveWithThreePinnedBands()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        var output = new StringWriter();
+        string input = """
+            {"operation":"selectPreset","version":1,"endpoint":0,"presetId":"custom","gainsDb":[-3,-2,-1,0,1,2,3]}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("custom", native.SelectedPreset);
+        Assert.Equal(10, native.PropertyWrites.Count);
+        Assert.Equal(
+            Enumerable.Range(1, 10).Select(index => $"eq_band_{index}_gain_db"),
+            native.PropertyWrites.Select(write => write.PropertyId));
+        Assert.All(native.PropertyWrites, write => Assert.Equal("Float", write.PropertyType));
+        Assert.Equal([0d, 0d, 0d, -3d, -2d, -1d, 0d, 1d, 2d, 3d], native.Gains);
+        Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SelectPreset_PartialCurveWriteIsIndeterminate()
+    {
+        var native = new FakeNative
+        {
+            ApplyWritesToReadback = true,
+            FailWriteAt = 5,
+        };
+        var output = new StringWriter();
+        string input = """
+            {"operation":"selectPreset","version":1,"endpoint":1,"presetId":"custom","gainsDb":[0,1,2,3,4,5,6,7,8,9]}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(5, native.PropertyWrites.Count);
+        Assert.Contains("\"status\":3", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SelectPreset_SkipsNativeWritesWhenSelectionAndCurveMatch()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        var output = new StringWriter();
+
+        int exitCode = await Command(
+            native,
+            "{\"operation\":\"selectPreset\",\"version\":1,\"endpoint\":0,\"presetId\":\"music\",\"gainsDb\":[0,0,0,0,0,0,0]}",
+            output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(0, native.SelectPresetCalls);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApplicationProfile_ResolvesPinnedMappingAndEnablesSpatialFirst()
+    {
+        var native = new FakeNative
+        {
+            ApplyWritesToReadback = true,
+            PresetListJson =
+                "[\"default\",\"custom\",\"music\",\"movie\",\"game\",\"podcast\",\"ApexLegends_cmm\"]",
+        };
+        var output = new StringWriter();
+        string input = """
+            {"operation":"applyApplicationProfile","version":1,"endpoint":1,"executableName":"r5apex.exe","mode":1}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Collection(
+            native.PropertyWrites,
+            write =>
+            {
+                Assert.Equal("spatial_enabled", write.PropertyId);
+                Assert.Equal("true", write.JsonValue);
+                Assert.Null(write.PropertyType);
+            });
+        Assert.Equal("ApexLegends_cmm", native.SelectedPreset);
+        Assert.Equal(1, native.SelectPresetCalls);
+        Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApplicationProfile_RejectsUnsupportedModeBeforeMutation()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        var output = new StringWriter();
+        string input = """
+            {"operation":"applyApplicationProfile","version":1,"endpoint":1,"executableName":"shootergame.exe","mode":1}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(0, native.SelectPresetCalls);
+        Assert.Contains("\"status\":2", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ApplicationProfileCatalog_IsExactBoundedPinnedTable()
+    {
+        Assert.Equal(231, ThxAudioApplicationProfileCatalog.Profiles.Count);
+        Assert.True(ThxAudioApplicationProfileCatalog.TryResolve(
+            "r5apex.exe",
+            ThxAudioApplicationMode.Immersive,
+            out string immersive));
+        Assert.Equal("ApexLegends_imm", immersive);
+        Assert.False(ThxAudioApplicationProfileCatalog.TryResolve(
+            "shootergame.exe",
+            ThxAudioApplicationMode.Competitive,
+            out _));
+
+        IReadOnlyList<ThxAudioApplicationProfile> installed =
+            ThxAudioApplicationProfileCatalog.AvailableProfiles(
+                ["ApexLegends_imm", "ARKSurvivalEvolved_imm"]);
+        ThxAudioApplicationProfile apex = Assert.Single(
+            installed,
+            profile => profile.ExecutableName == "r5apex.exe");
+        Assert.True(apex.SupportsImmersive);
+        Assert.False(apex.SupportsCompetitive);
+        Assert.DoesNotContain(
+            installed,
+            profile => profile.ExecutableName == "cs2.exe");
+        Assert.Equal(
+            installed.Select(profile => profile.ExecutableName)
+                .OrderBy(name => name, StringComparer.Ordinal),
+            installed.Select(profile => profile.ExecutableName));
+    }
+
+    [Fact]
+    public async Task SetNormalization_WritesChangedBooleanThenNormalizedFloat()
+    {
+        var native = new FakeNative
+        {
+            ApplyWritesToReadback = true,
+            NormalizationEnabled = false,
+            NormalizationLevel = 0.55,
+        };
+        var output = new StringWriter();
+        string input = """
+            {"operation":"setEnhancement","version":1,"endpoint":0,"kind":0,"enabled":true,"levelPercent":60}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Collection(
+            native.PropertyWrites,
+            write =>
+            {
+                Assert.Equal("volume_leveling_enabled", write.PropertyId);
+                Assert.Equal("true", write.JsonValue);
+                Assert.Null(write.PropertyType);
+            },
+            write =>
+            {
+                Assert.Equal("volume_leveling_level", write.PropertyId);
+                Assert.Equal("0.6", write.JsonValue);
+                Assert.Equal("Float", write.PropertyType);
+            });
+        Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SetVoiceClarity_SkipsPropertiesAlreadyAtRequestedState()
+    {
+        var native = new FakeNative
+        {
+            ApplyWritesToReadback = true,
+            VoiceClarityEnabled = true,
+            VoiceClarityLevel = 0.6,
+        };
+        var output = new StringWriter();
+        string input = """
+            {"operation":"setEnhancement","version":1,"endpoint":1,"kind":1,"enabled":true,"levelPercent":60}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EnhancementToggle_PreservesFractionalNativeLevel()
+    {
+        var native = new FakeNative
+        {
+            ApplyWritesToReadback = true,
+            NormalizationEnabled = false,
+            NormalizationLevel = 0.123456,
+        };
+        var output = new StringWriter();
+        string input = """
+            {"operation":"setEnhancement","version":1,"endpoint":0,"kind":0,"enabled":true,"levelPercent":null}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Collection(
+            native.PropertyWrites,
+            write =>
+            {
+                Assert.Equal("volume_leveling_enabled", write.PropertyId);
+                Assert.Equal("true", write.JsonValue);
+                Assert.Null(write.PropertyType);
+            });
+        Assert.Equal(0.123456, native.NormalizationLevel);
+        Assert.Contains("\"levelPercent\":12", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EnhancementDisable_PreservesFractionalNativeLevel()
+    {
+        var native = new FakeNative
+        {
+            ApplyWritesToReadback = true,
+            VoiceClarityEnabled = true,
+            VoiceClarityLevel = 0.123456,
+        };
+        var output = new StringWriter();
+        string input = """
+            {"operation":"setEnhancement","version":1,"endpoint":1,"kind":1,"enabled":false,"levelPercent":null}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Collection(
+            native.PropertyWrites,
+            write =>
+            {
+                Assert.Equal("voice_clarity_enabled", write.PropertyId);
+                Assert.Equal("false", write.JsonValue);
+                Assert.Null(write.PropertyType);
+            });
+        Assert.Equal(0.123456, native.VoiceClarityLevel);
+        Assert.Contains("\"levelPercent\":12", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EnhancementDisable_RejectsNonNullLevelBeforeNativeRegistration()
+    {
+        var native = new FakeNative();
+        var output = new StringWriter();
+        string input = """
+            {"operation":"setEnhancement","version":1,"endpoint":1,"kind":1,"enabled":false,"levelPercent":50}
+            """;
+
+        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(0, native.AddCalls);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Contains("\"status\":2", output.ToString(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -307,6 +629,16 @@ public sealed class ThxAudioHelperCommandTests
     {
         public bool Spatial { get; set; }
         public bool Equalizer { get; set; }
+        public bool ApplyWritesToReadback { get; set; }
+        public int? FailWriteAt { get; set; }
+        public bool NormalizationEnabled { get; set; }
+        public double NormalizationLevel { get; set; } = 0.55;
+        public bool VoiceClarityEnabled { get; set; }
+        public double VoiceClarityLevel { get; set; } = 0.55;
+        public double[] Gains { get; } = new double[10];
+        public string SelectedPreset { get; set; } = "music";
+        public string PresetListJson { get; set; } =
+            "[\"default\",\"custom\",\"music\",\"movie\",\"game\",\"podcast\"]";
         public int AddCalls { get; private set; }
         public int RemoveCalls { get; private set; }
         public int PresetListCalls { get; private set; }
@@ -334,6 +666,16 @@ public sealed class ThxAudioHelperCommandTests
         {
             "spatial_enabled" => Spatial ? "true" : "false",
             "eq_enabled" => Equalizer ? "true" : "false",
+            "volume_leveling_enabled" => NormalizationEnabled ? "true" : "false",
+            "volume_leveling_level" => Json(NormalizationLevel),
+            "voice_clarity_enabled" => VoiceClarityEnabled ? "true" : "false",
+            "voice_clarity_level" => Json(VoiceClarityLevel),
+            _ when propertyId.StartsWith("eq_band_", StringComparison.Ordinal)
+                && propertyId.EndsWith("_gain_db", StringComparison.Ordinal)
+                && int.TryParse(
+                    propertyId["eq_band_".Length..^"_gain_db".Length],
+                    out int index)
+                && index is >= 1 and <= 10 => Json(Gains[index - 1]),
             _ => throw new InvalidOperationException(),
         };
 
@@ -344,27 +686,74 @@ public sealed class ThxAudioHelperCommandTests
             string? propertyType)
         {
             PropertyWrites.Add((propertyId, jsonValue, propertyType));
-            // Deliberately do not update readback; the helper must not guess success.
+            if (PropertyWrites.Count == FailWriteAt)
+            {
+                return false;
+            }
+            if (ApplyWritesToReadback)
+            {
+                switch (propertyId)
+                {
+                    case "spatial_enabled":
+                        Spatial = bool.Parse(jsonValue);
+                        break;
+                    case "eq_enabled":
+                        Equalizer = bool.Parse(jsonValue);
+                        break;
+                    case "volume_leveling_enabled":
+                        NormalizationEnabled = bool.Parse(jsonValue);
+                        break;
+                    case "volume_leveling_level":
+                        NormalizationLevel = double.Parse(
+                            jsonValue,
+                            System.Globalization.CultureInfo.InvariantCulture);
+                        break;
+                    case "voice_clarity_enabled":
+                        VoiceClarityEnabled = bool.Parse(jsonValue);
+                        break;
+                    case "voice_clarity_level":
+                        VoiceClarityLevel = double.Parse(
+                            jsonValue,
+                            System.Globalization.CultureInfo.InvariantCulture);
+                        break;
+                    default:
+                        int index = int.Parse(
+                            propertyId["eq_band_".Length..^"_gain_db".Length],
+                            System.Globalization.CultureInfo.InvariantCulture);
+                        Gains[index - 1] = double.Parse(
+                            jsonValue,
+                            System.Globalization.CultureInfo.InvariantCulture);
+                        break;
+                }
+            }
             return true;
         }
 
         public string GetPresetList(string deviceJson, string presetGroupId)
         {
             PresetListCalls++;
-            return "[\"music\",\"game\"]";
+            return PresetListJson;
         }
 
-        public string GetSelectedPreset(string deviceJson, string presetGroupId) => "\"music\"";
+        public string GetSelectedPreset(string deviceJson, string presetGroupId) =>
+            SelectedPreset;
 
         public bool SelectPreset(string deviceJson, string presetGroupId, string presetId)
         {
             SelectPresetCalls++;
+            if (ApplyWritesToReadback)
+            {
+                SelectedPreset = presetId;
+            }
             return true;
         }
 
         public void Dispose()
         {
         }
+
+        private static string Json(double value) =>
+            System.Text.Json.JsonSerializer.Serialize(value);
     }
 
     private static ThxAudioHelperCommand Command(

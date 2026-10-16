@@ -2095,4 +2095,76 @@
   <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
     <value>Пространственный звук</value>
   </data>
+  <data name="MainWindow_ThxAudioApplyNormalization.Content" xml:space="preserve">
+    <value>Применить уровень нормализации</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyVoiceClarity.Content" xml:space="preserve">
+    <value>Применить уровень чёткости голоса</value>
+  </data>
+  <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
+    <value>Отменить изменения</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.Header" xml:space="preserve">
+    <value>Улучшения</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Нормализация звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уровень нормализации звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationTitle.Text" xml:space="preserve">
+    <value>Нормализация звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarity.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Чёткость голоса</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уровень чёткости голоса</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityTitle.Text" xml:space="preserve">
+    <value>Чёткость голоса</value>
+  </data>
+  <data name="MainWindow_ThxAudioAddRule.Content" xml:space="preserve">
+    <value>Добавить правило приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.Header" xml:space="preserve">
+    <value>Исполняемый файл приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.PlaceholderText" xml:space="preserve">
+    <value>game.exe</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
+    <value>Режим звука приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.Header" xml:space="preserve">
+    <value>Сохранённый звук и приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
+    <value>Считать текущие настройки звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
+    <value>Сохраните настройки обоих выходов в текущий профиль питания. Автоматизация следует за активным приложением и использует сохранённые настройки, если подходящего правила нет.</value>
+  </data>
+  <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="MainWindow_ThxAudioRoutingEnabled.Content" xml:space="preserve">
+    <value>Автоматически применять сохранённый звук и правила приложений</value>
+  </data>
+  <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
+    <value>Сохранить звук в текущий профиль питания</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
+    <value>Режим звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyEqualizer.Content" xml:space="preserve">
+    <value>Применить эквалайзер</value>
+  </data>
+  <data name="MainWindow_ThxAudioFlattenEqualizer.Content" xml:space="preserve">
+    <value>Выровнять</value>
+  </data>
+  <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
+    <value>Заводская кривая</value>
+  </data>
 </root>

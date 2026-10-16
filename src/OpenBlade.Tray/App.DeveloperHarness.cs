@@ -594,6 +594,9 @@ public partial class App
                 "profiles",
                 "laptop",
                 "laptop-audio",
+                "laptop-audio-headphones",
+                "laptop-audio-enhancements",
+                "laptop-audio-applications",
                 "lighting",
                 "display",
                 "settings",
@@ -649,7 +652,7 @@ public partial class App
                             StringComparison.Ordinal)
                             ? new Windows.Graphics.SizeInt32(1600, 900)
                             : new Windows.Graphics.SizeInt32(1120, 820);
-                if (destination == "laptop-audio")
+                if (destination.StartsWith("laptop-audio", StringComparison.Ordinal))
                 {
                     snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                 }
@@ -657,7 +660,7 @@ public partial class App
                 await WaitForSnapshotLayoutAsync();
                 string navigationDestination = destination is "settings-appearance" or "settings-experimental"
                     ? "settings"
-                    : destination == "laptop-audio"
+                    : destination.StartsWith("laptop-audio", StringComparison.Ordinal)
                         ? "laptop"
                     : captureProfilesVariant
                         ? "profiles"
@@ -672,9 +675,9 @@ public partial class App
                     snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
                     await WaitForSnapshotLayoutAsync();
                 }
-                if (destination == "laptop-audio")
+                if (destination.StartsWith("laptop-audio", StringComparison.Ordinal))
                 {
-                    await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync();
+                    await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
                     await WaitForSnapshotLayoutAsync();
                 }
                 if (destination == "settings-experimental")

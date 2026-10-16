@@ -98,6 +98,7 @@ public sealed partial class MainViewModel
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess
+            && left.ThxAudio == right.ThxAudio
             && left.ObservedPowerSourceBehaviors.SequenceEqual(
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)

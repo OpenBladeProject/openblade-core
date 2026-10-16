@@ -1509,4 +1509,61 @@
   <data name="Headphones" xml:space="preserve">
     <value>Headphones</value>
   </data>
+  <data name="{0} kHz" xml:space="preserve">
+    <value>{0} kHz</value>
+  </data>
+  <data name="{0} Hz equalizer gain" xml:space="preserve">
+    <value>{0} Hz equalizer gain</value>
+  </data>
+  <data name="{0} dB" xml:space="preserve">
+    <value>{0} dB</value>
+  </data>
+  <data name="Active application profile: {0}" xml:space="preserve">
+    <value>Active application profile: {0}</value>
+  </data>
+  <data name="Game" xml:space="preserve">
+    <value>Game</value>
+  </data>
+  <data name="Movie" xml:space="preserve">
+    <value>Movie</value>
+  </data>
+  <data name="Music" xml:space="preserve">
+    <value>Music</value>
+  </data>
+  <data name="Voice" xml:space="preserve">
+    <value>Voice</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>Default</value>
+  </data>
+  <data name="THX Immersive Mode" xml:space="preserve">
+    <value>THX Immersive Mode</value>
+  </data>
+  <data name="THX Competitive Mode" xml:space="preserve">
+    <value>THX Competitive Mode</value>
+  </data>
+  <data name="Choose an EQ preset for both outputs, then capture the current audio settings." xml:space="preserve">
+    <value>Choose an EQ preset for both outputs, then capture the current audio settings.</value>
+  </data>
+  <data name="Saved audio settings are available for this power profile." xml:space="preserve">
+    <value>Saved audio settings are available for this power profile.</value>
+  </data>
+  <data name="Current audio settings captured. Save the profile to keep them." xml:space="preserve">
+    <value>Current audio settings captured. Save the profile to keep them.</value>
+  </data>
+  <data name="Choose an EQ preset for both outputs before capturing audio settings." xml:space="preserve">
+    <value>Choose an EQ preset for both outputs before capturing audio settings.</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before connecting." xml:space="preserve">
+    <value>Close Synapse and THX Spatial Audio before connecting.</value>
+  </data>
+  <data name="Audio automation is paused. Read the current THX settings to resume." xml:space="preserve">
+    <value>Audio automation is paused. Read the current THX settings to resume.</value>
+  </data>
+  <data name="Adjust the selected preset, then apply your EQ changes." xml:space="preserve">
+    <value>Adjust the selected preset, then apply your EQ changes.</value>
+  </data>
+  <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
+    <value>Choose Game, Movie, Music, Voice, or Custom to edit EQ.</value>
+  </data>
 </root>

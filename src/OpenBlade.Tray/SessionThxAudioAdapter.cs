@@ -29,8 +29,11 @@ internal sealed class SessionThxAudioAdapter : IThxAudioAdapter
     public Task<SessionAudioResponse> SetEqualizerAsync(ThxAudioEndpoint endpoint, bool enabled, CancellationToken cancellationToken) =>
         SendAsync(id => new SetThxEqualizerRequest(SessionAudioIpc.ProtocolVersion, id, endpoint, enabled), cancellationToken);
 
-    public Task<SessionAudioResponse> SelectPresetAsync(ThxAudioEndpoint endpoint, string presetId, CancellationToken cancellationToken) =>
-        SendAsync(id => new SelectThxPresetRequest(SessionAudioIpc.ProtocolVersion, id, endpoint, presetId), cancellationToken);
+    public Task<SessionAudioResponse> SelectPresetAsync(ThxAudioEndpoint endpoint, string presetId, IReadOnlyList<double> gainsDb, CancellationToken cancellationToken) =>
+        SendAsync(id => new SelectThxPresetRequest(SessionAudioIpc.ProtocolVersion, id, endpoint, presetId, gainsDb), cancellationToken);
+
+    public Task<SessionAudioResponse> SetEnhancementAsync(ThxAudioEndpoint endpoint, ThxAudioEnhancementKind kind, bool enabled, int? levelPercent, CancellationToken cancellationToken) =>
+        SendAsync(id => new SetThxEnhancementRequest(SessionAudioIpc.ProtocolVersion, id, endpoint, kind, enabled, levelPercent), cancellationToken);
 
     private async Task<SessionAudioResponse> SendAsync(
         Func<Guid, SessionAudioRequest> createRequest,

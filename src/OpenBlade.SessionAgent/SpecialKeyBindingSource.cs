@@ -37,6 +37,8 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
             SingleReader = true,
             SingleWriter = false,
         });
+    internal event Action<UiPreferences?>? PreferencesObserved;
+
     private FileSignature observedSignature;
     private bool signatureInitialized;
     private TimeSpan readRetryInterval;
@@ -222,6 +224,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
             Volatile.Write(
                 ref current,
                 preferences.EffectiveSpecialKeyBindings.ToArray());
+            PreferencesObserved?.Invoke(preferences);
             observedSignature = signature;
             signatureInitialized = true;
             readRetryInterval = TimeSpan.Zero;
@@ -233,6 +236,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         }
         catch (Exception exception)
         {
+            PreferencesObserved?.Invoke(null);
             if (readRetryInterval == TimeSpan.Zero)
             {
                 readRetryInterval = FallbackRefreshInterval;

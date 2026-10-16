@@ -228,8 +228,11 @@ physical-validation status.
    The optional THX audio integration may use the already installed, pinned
    `rznb12` stack on exact RZ09-0581 (`02E0`). It is off by default, uses
    current-user typed Audio IPC and an isolated native helper, and never
-   installs or bundles THX components. Startup, component discovery, and
-   shutdown must not change audio settings. Preserve explicit readback and
+   installs or bundles THX components. Component discovery and shutdown must
+   not change audio settings. Automatic changes, including startup reconciliation,
+   require both the per-user integration preference and the active profile's
+   explicit audio automation opt-in, a known foreground executable, and the
+   exact recognized active Realtek output. Preserve explicit readback and
    stop mutations after ambiguous submission until a successful explicit read.
    This exception does not admit another laptop or component build. Keep
    standalone native/audio validation separate from simulated tests; see

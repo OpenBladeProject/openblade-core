@@ -258,6 +258,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
         ValidateLaptopBehavior(profile.LaptopBehavior, name);
+        ValidateThxAudio(profile.ThxAudio, name);
         if (!profile.BatteryProtectionEnabled.HasValue)
         {
             throw Invalid($"The {name} profile battery protection setting is missing.");
@@ -504,6 +505,21 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             && !Enum.IsDefined(functionKeyMode))
         {
             throw Invalid($"The {name} function key behavior is undefined.");
+        }
+    }
+
+    private static void ValidateThxAudio(
+        ThxAudioProfileSettings? settings,
+        string name)
+    {
+        if (settings is null)
+        {
+            return;
+        }
+
+        if (!ThxAudioProfileSettings.IsWellFormed(settings))
+        {
+            throw Invalid($"The {name} THX audio settings are invalid.");
         }
     }
 

@@ -289,15 +289,34 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     }
 
 #if OPENBLADE_DEVELOPER_HARNESS
-    internal async Task ShowLocalizationSnapshotThxAudioAsync()
+    internal async Task ShowLocalizationSnapshotThxAudioAsync(string destination)
     {
         if (!localizationSnapshotMode)
         {
             throw new InvalidOperationException("THX sample data requires disconnected snapshot mode.");
         }
         ThxViewModel.ApplyPreference(true);
+        if (destination == "laptop-audio-headphones")
+        {
+            ThxViewModel.SelectEndpoint(ThxAudioEndpoint.Headphones);
+        }
         await ThxViewModel.RefreshAsync();
-        ThxAudioSection.StartBringIntoView(new BringIntoViewOptions
+        FrameworkElement target = ThxAudioSection;
+        if (destination == "laptop-audio-enhancements")
+        {
+            ThxAudioEnhancements.IsExpanded = true;
+            target = ThxAudioEnhancements;
+        }
+        else if (destination == "laptop-audio-applications")
+        {
+            ThxAudioApplications.IsExpanded = true;
+            target = ThxAudioApplications;
+            ThxViewModel.ApplicationExecutable = "game.exe";
+            ThxViewModel.ApplicationOutput = ThxViewModel.ApplicationOutputs.FirstOrDefault(
+                option => option.Output == ThxApplicationAudioOutput.Immersive);
+            ThxViewModel.AddApplicationRule();
+        }
+        target.StartBringIntoView(new BringIntoViewOptions
         {
             AnimationDesired = false,
             VerticalAlignmentRatio = 0,
@@ -911,6 +930,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+        ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
+        ThxViewModel.ProfilePersistenceAvailable = ViewModel.CanSaveThxAudioProfile;
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
@@ -966,6 +987,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
         {
             DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+        }
+
+        if (args.PropertyName is nameof(MainViewModel.ActivePowerSource) or nameof(MainViewModel.ActiveSavedThxAudioProfile))
+        {
+            ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.CanSaveThxAudioProfile))
+        {
+            ThxViewModel.ProfilePersistenceAvailable = ViewModel.CanSaveThxAudioProfile;
         }
 
         if (args.PropertyName == nameof(MainViewModel.DetectedFirmware))
@@ -3411,6 +3442,75 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         await RunHandlerAsync(() => ThxViewModel.SelectPresetAsync(preset), nameof(OnThxPresetChanged));
         selector.SelectedItem = ThxViewModel.SelectedPreset;
+    }
+
+    private async void OnThxApplyEqualizer(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.ApplyEqualizerAsync, nameof(OnThxApplyEqualizer));
+
+    private void OnThxDiscardEqualizer(object sender, RoutedEventArgs args) => ThxViewModel.DiscardEqualizerChanges();
+
+    private void OnThxResetEqualizer(object sender, RoutedEventArgs args) => ThxViewModel.ResetEqualizerToFactory();
+
+    private void OnThxFlattenEqualizer(object sender, RoutedEventArgs args) => ThxViewModel.FlattenEqualizer();
+
+    private async void OnThxNormalizationToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is ToggleSwitch toggle && ThxViewModel.CanEditSoundNormalization
+            && toggle.IsOn != ThxViewModel.SoundNormalizationEnabled)
+        {
+            await RunHandlerAsync(() => ThxViewModel.SetSoundNormalizationAsync(toggle.IsOn), nameof(OnThxNormalizationToggled));
+            toggle.IsOn = ThxViewModel.SoundNormalizationEnabled;
+        }
+    }
+
+    private async void OnThxVoiceClarityToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is ToggleSwitch toggle && ThxViewModel.CanEditVoiceClarity
+            && toggle.IsOn != ThxViewModel.VoiceClarityEnabled)
+        {
+            await RunHandlerAsync(() => ThxViewModel.SetVoiceClarityAsync(toggle.IsOn), nameof(OnThxVoiceClarityToggled));
+            toggle.IsOn = ThxViewModel.VoiceClarityEnabled;
+        }
+    }
+
+    private async void OnThxApplyNormalization(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.ApplySoundNormalizationAsync, nameof(OnThxApplyNormalization));
+
+    private async void OnThxApplyVoiceClarity(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.ApplyVoiceClarityAsync, nameof(OnThxApplyVoiceClarity));
+
+    private async void OnThxCaptureAudioProfile(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.CaptureAudioProfileAsync, nameof(OnThxCaptureAudioProfile));
+
+    private async void OnThxSaveAudioProfile(object sender, RoutedEventArgs args)
+    {
+        if (ViewModel.CanSaveThxAudioProfile && ThxViewModel.CanSaveAudioProfile
+            && ThxViewModel.CreateProfileDraft() is { } settings)
+        {
+            PowerSource source = ViewModel.ActivePowerSource;
+            await RunHandlerAsync(async () =>
+            {
+                _ = await ViewModel.SaveThxAudioProfileAsync(settings, source, CancellationToken.None);
+            }, nameof(OnThxSaveAudioProfile));
+        }
+    }
+
+    private void OnThxAddApplicationRule(object sender, RoutedEventArgs args) => ThxViewModel.AddApplicationRule();
+
+    private void OnThxRemoveApplicationRule(object sender, RoutedEventArgs args)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Button { Tag: ThxApplicationRuleOption rule })
+        {
+            ThxViewModel.RemoveApplicationRule(rule);
+        }
+    }
+
+    private void OnThxApplicationOutputChanged(object sender, ResponsiveChoiceSelectionChangedEventArgs args)
+    {
+        if (args.SelectedItem is ThxApplicationOutputOption output)
+        {
+            ThxViewModel.ApplicationOutput = output;
+        }
     }
 
     private async void OnDisplayRefreshRateChanged(

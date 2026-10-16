@@ -82,11 +82,11 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                 return Unsupported("THX audio is admitted only for RZ09-0581 with USB 1532:02E0.");
             }
 
-            if (IsSynapseRunning())
+            if (IsCompetingControllerRunning())
             {
                 return new ThxAudioAdmission(
                     ThxAudioAvailability.ControllerActive,
-                    "Razer Synapse is active. Close it before controlling THX audio.");
+                    "Razer Synapse or THX Spatial Audio is active. Close it before controlling THX audio.");
             }
 
             if (!HasPinnedComponents(out string? componentError))
@@ -220,10 +220,13 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         }
     }
 
-    private static bool IsSynapseRunning() =>
+    private static bool IsCompetingControllerRunning() =>
         HasProcess("RazerAppEngine")
         || HasProcess("Razer Synapse Service")
         || HasProcess("RazerSynapseService")
+        // Product 736 registers this exact standalone client as a competing
+        // THX UI and presents a modal while it is running.
+        || HasProcess("THXSpatialAudioClient")
         || HasRunningService(
             static (name, displayName) =>
                 string.Equals(name, "RazerSynapseService", StringComparison.OrdinalIgnoreCase)

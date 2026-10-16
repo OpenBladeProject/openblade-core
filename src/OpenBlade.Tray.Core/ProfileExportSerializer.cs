@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 12;
+    public const int CurrentSchemaVersion = 13;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -38,6 +38,7 @@ public static class ProfileExportSerializer
         profiles = ClearLegacyWindowsPowerModes(profiles);
         ValidateBatteryProtection(profiles);
         ValidateWindowsPowerModes(profiles.WindowsPowerModes);
+        ValidateThxAudio(profiles);
         if (string.IsNullOrWhiteSpace(applicationVersion))
         {
             throw new ArgumentException(
@@ -81,6 +82,7 @@ public static class ProfileExportSerializer
             10 => DeserializeVersion10(json),
             11 => DeserializeVersion11(json),
             12 => DeserializeVersion11(json),
+            13 => DeserializeVersion11(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -90,6 +92,7 @@ public static class ProfileExportSerializer
         {
             ValidateLegacyBatteryPolicy(profiles);
         }
+        ValidateThxAudio(profiles);
         return profiles;
     }
 
@@ -111,7 +114,8 @@ public static class ProfileExportSerializer
 
             return schemaVersion;
         }
-        catch (JsonException exception)
+        catch (Exception exception) when (exception is
+            JsonException or NotSupportedException or ArgumentException)
         {
             throw InvalidDocument(exception);
         }
@@ -285,6 +289,24 @@ public static class ProfileExportSerializer
         }
     }
 
+    private static void ValidateThxAudio(ProfileSet profiles)
+    {
+        foreach (PowerProfile profile in new[]
+        {
+            profiles.PluggedIn,
+            profiles.Battery,
+            profiles.UsbC,
+        })
+        {
+            if (profile.ThxAudio is { } thxAudio
+                && !ThxAudioProfileSettings.IsWellFormed(thxAudio))
+            {
+                throw new InvalidDataException(
+                    "The profile file contains invalid THX audio settings.");
+            }
+        }
+    }
+
     private static void ValidateWindowsPowerModes(
         WindowsPowerModeAssociations associations)
     {
@@ -348,7 +370,8 @@ public static class ProfileExportSerializer
                 SerializerOptions)
                 ?? throw new InvalidDataException("The profile file is empty.");
         }
-        catch (JsonException exception)
+        catch (Exception exception) when (exception is
+            JsonException or NotSupportedException or ArgumentException)
         {
             throw InvalidDocument(exception);
         }

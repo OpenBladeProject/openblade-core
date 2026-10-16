@@ -99,6 +99,9 @@ public sealed class DiagnosticArchiveProviderTests
                     | SpecialKeySlotSet.M4
                     | SpecialKeySlotSet.M5,
                 LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+                ThxAudio = new ThxAudioCapabilities(
+                    DeviceFeatureAccess.ReadWrite,
+                    ThxAudioProductIds.Rznb12),
                 ObservedLightingEffects =
                     new HashSet<LightingEffect>
                     {
@@ -242,6 +245,12 @@ public sealed class DiagnosticArchiveProviderTests
             configuration.RootElement.GetProperty("capability.lampArrayLightingAccess").GetString());
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite.ToString(),
+            configuration.RootElement.GetProperty("capability.thxAudioAccess").GetString());
+        Assert.Equal(
+            ThxAudioProductIds.Rznb12,
+            configuration.RootElement.GetProperty("capability.thxAudioProductId").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite.ToString(),
             configuration.RootElement.GetProperty("capability.hyperBoostAccess").GetString());
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite.ToString(),
@@ -281,6 +290,10 @@ public sealed class DiagnosticArchiveProviderTests
             capabilities.RootElement.GetProperty("lighting.lampArray.observed").GetBoolean());
         Assert.False(
             capabilities.RootElement.GetProperty("lighting.lampArray.write").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("audio.thx.observed").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("audio.thx.write").GetBoolean());
         Assert.True(
             capabilities.RootElement.GetProperty("performance.hyperBoost.write").GetBoolean());
         Assert.True(

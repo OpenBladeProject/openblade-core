@@ -198,11 +198,19 @@ internal static class Program
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "OpenBlade",
                     "preferences.json");
+                await using var audioAutomationCoordinator = new ThxAudioAutomationCoordinator(
+                    new SessionThxAudioAutomationController(audioDispatcher, preferencesPath));
+                audioDispatcher.ManualOperationStarting += audioAutomationCoordinator.PauseForManualOperation;
+                audioDispatcher.ExplicitReadSucceeded += _ => audioAutomationCoordinator.ResetAfterExplicitReadAsync();
+                audioDispatcher.ManualOperationSucceeded += _ => audioAutomationCoordinator.ResetAfterExplicitReadAsync();
+                audioDispatcher.ApplicationAutomationPausedProvider = () => audioAutomationCoordinator.IsPaused;
                 var specialKeyBindings = new SpecialKeyBindingSource(
                     preferencesPath,
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade shortcut preference refresh failed: {0}",
                         exception.Message));
+                specialKeyBindings.PreferencesObserved += preferences =>
+                    audioAutomationCoordinator.SetIntegrationEnabled(preferences?.ThxAudioIntegrationEnabled == true);
                 var specialKeyInput = new WindowsSpecialKeyInputSender();
                 await using var specialKeyServiceClient = new ServiceClient();
                 var specialKeyExecutor = new SpecialKeyActionExecutor(
@@ -224,6 +232,8 @@ internal static class Program
                 await using var statusServiceClient = new ServiceClient();
                 await using var statusFeed = new SharedServiceStatusFeed(
                     statusServiceClient);
+                var audioAutomation = new ServiceThxAudioAutomationLoop(
+                    statusFeed, new WindowsThxForegroundSource(), audioAutomationCoordinator);
                 var automation = new ServiceDisplayAutomationLoop(
                     statusFeed,
                     coordinator);
@@ -328,6 +338,7 @@ internal static class Program
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task gpuServerTask = gpuServer.RunAsync(lifetime.Token);
                 Task audioServerTask = audioServer.RunAsync(lifetime.Token);
+                Task audioAutomationTask = audioAutomation.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task powerModeAutomationTask = powerModeAutomation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
@@ -343,6 +354,7 @@ internal static class Program
                     serverTask,
                     gpuServerTask,
                     audioServerTask,
+                    audioAutomationTask,
                     statusFeedTask,
                     specialKeyBindingsTask,
                     automationTask,

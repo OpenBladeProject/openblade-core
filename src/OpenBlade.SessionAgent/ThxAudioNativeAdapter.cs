@@ -285,7 +285,7 @@ internal static class ThxVendorJson
                 : throw new InvalidDataException("The THX property is not a Boolean value.");
     }
 
-    internal static IReadOnlyList<ThxAudioPreset> ParsePresetList(string json)
+    internal static IReadOnlyList<string> ParsePresetIds(string json)
     {
         using JsonDocument document = Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
@@ -293,7 +293,7 @@ internal static class ThxVendorJson
             throw new InvalidDataException("The THX preset list is not an array.");
         }
 
-        var presets = new List<ThxAudioPreset>();
+        var presets = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (JsonElement element in document.RootElement.EnumerateArray())
         {
@@ -304,13 +304,27 @@ internal static class ThxVendorJson
             {
                 throw new InvalidDataException("The THX preset list contains an invalid ID.");
             }
-            presets.Add(new ThxAudioPreset(id, id));
+            presets.Add(id);
             if (presets.Count > SessionAudioIpc.MaximumPresets)
             {
                 throw new InvalidDataException("The THX preset list exceeds the supported limit.");
             }
         }
         return presets;
+    }
+
+    internal static double ParseFloat(string json, double minimum, double maximum)
+    {
+        using JsonDocument document = Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Number
+            || !document.RootElement.TryGetDouble(out double value)
+            || !double.IsFinite(value)
+            || value < minimum
+            || value > maximum)
+        {
+            throw new InvalidDataException("The THX property is not a valid Float value.");
+        }
+        return value;
     }
 
     internal static string? ParseSelectedPreset(string json)

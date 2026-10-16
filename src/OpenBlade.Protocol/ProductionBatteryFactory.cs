@@ -39,6 +39,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly bool allowPadlessHyperBoostLifecycleValidation;
     private readonly PerformancePreset padlessHyperBoostLifecycleBaseMode;
     private readonly bool supportsDirectManualFanTransitions;
+    private readonly ThxAudioCapabilities? thxAudioCapabilities;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -65,7 +66,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
         bool allowPadlessHyperBoostLifecycleValidation = false,
         PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
-        bool supportsDirectManualFanTransitions = false)
+        bool supportsDirectManualFanTransitions = false,
+        ThxAudioCapabilities? thxAudioCapabilities = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.hyperBoostCatalog = hyperBoostCatalog ?? DeviceCommandCatalog.Empty;
@@ -110,6 +112,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             allowPadlessHyperBoostLifecycleValidation;
         this.padlessHyperBoostLifecycleBaseMode = padlessHyperBoostLifecycleBaseMode;
         this.supportsDirectManualFanTransitions = supportsDirectManualFanTransitions;
+        this.thxAudioCapabilities = thxAudioCapabilities;
         ValidateHyperBoostBaseModes(
             this.hyperBoostAccess,
             this.hyperBoostBaseModes,
@@ -173,7 +176,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.hyperBoostAccess,
             this.hyperBoostWithoutCoolingPadAccess,
             this.hyperBoostBaseModes,
-            this.supportsDirectManualFanTransitions);
+            this.supportsDirectManualFanTransitions,
+            this.thxAudioCapabilities);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -369,7 +373,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 hyperBoostEligibility,
                 allowPadlessHyperBoostLifecycleValidation,
                 padlessHyperBoostLifecycleBaseMode,
-                supportsDirectManualFanTransitions),
+                supportsDirectManualFanTransitions,
+                thxAudioCapabilities),
             null);
     }
 
@@ -437,6 +442,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 exactIdentity,
                 catalog,
                 directManualFanTransitionEvidenceAdmitted);
+        ThxAudioCapabilities? thxAudioCapabilities =
+            GetRz090581ThxAudioCapabilities(exactIdentity);
         return new ProductionBatteryFactory(
             catalog,
             admittedReadEvidence,
@@ -463,7 +470,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             hyperBoostEligibility: hyperBoostEligibility,
             allowPadlessHyperBoostLifecycleValidation:
                 allowPadlessHyperBoostLifecycleValidation,
-            supportsDirectManualFanTransitions: supportsDirectManualFanTransitions);
+            supportsDirectManualFanTransitions: supportsDirectManualFanTransitions,
+            thxAudioCapabilities: thxAudioCapabilities);
     }
 
     internal static bool GetRz090581SupportsDirectManualFanTransitions(
@@ -485,6 +493,14 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         IsExactModelScopedRz090581Identity(exactIdentity)
             ? ProductionBatteryReadEvidence.Rz090581ModelScoped
             : ProductionBatteryReadEvidence.Production;
+
+    internal static ThxAudioCapabilities? GetRz090581ThxAudioCapabilities(
+        HostIdentityReadResult exactIdentity) =>
+        IsExactModelScopedRz090581Identity(exactIdentity)
+            ? new ThxAudioCapabilities(
+                DeviceFeatureAccess.ReadWrite,
+                ThxAudioProductIds.Rznb12)
+            : null;
 
     internal static GpuOverclockCapabilities? GetRz090581GpuOverclockCapabilities(
         HostIdentityReadResult exactIdentity) => exactIdentity is
