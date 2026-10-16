@@ -1629,8 +1629,8 @@
   <data name="THX Competitive Mode" xml:space="preserve">
     <value>[!! THX Cómpétítívé Módé ~~~~~~~ !!]</value>
   </data>
-  <data name="Choose an EQ preset for both outputs, then capture the current audio settings." xml:space="preserve">
-    <value>[!! Chóósé án ÉQ prését fór bóth óútpúts, thén cáptúré thé cúrrént áúdíó séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Choose EQ presets, then capture." xml:space="preserve">
+    <value>[!! Chóósé ÉQ préséts, thén cáptúré. ~~~~~~~~~~ !!]</value>
   </data>
   <data name="Saved audio settings are available for this power profile." xml:space="preserve">
     <value>[!! Sávéd áúdíó séttíngs áré áváíláblé fór thís pówér prófílé. ~~~~~~~~~~~~~~~~~~ !!]</value>

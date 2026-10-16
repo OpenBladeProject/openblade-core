@@ -3345,8 +3345,8 @@
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                     <StackPanel Spacing="4" VerticalAlignment="Center">
                                                         <TextBlock x:Uid="MainWindow_ThxAudioProfileDescription"
-                                                                   Text="Save both outputs to the current power profile. Automation follows the foreground app and uses the saved audio settings when no rule matches."
-                                                                   TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" />
+                                                                   Text="Speaker and headphone settings"
+                                                                   TextWrapping="Wrap" Style="{StaticResource CardTitleStyle}" />
                                                         <TextBlock Text="{x:Bind ThxViewModel.AudioProfileMessage, Mode=OneWay}"
                                                                    TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" AutomationProperties.LiveSetting="Polite" />
                                                     </StackPanel>
@@ -3409,13 +3409,15 @@
                                                                   SelectedItem="{x:Bind ThxViewModel.ApplicationOutput, Mode=OneWay}"
                                                                   SelectionChanged="OnThxApplicationOutputChanged" />
                                                     </Grid>
-                                                    <Button x:Uid="MainWindow_ThxAudioAddRule" HorizontalAlignment="Right" Content="Add application rule"
-                                                            IsEnabled="{x:Bind ThxViewModel.CanAddApplicationRule, Mode=OneWay}" Click="OnThxAddApplicationRule" />
                                                 </StackPanel>
                                             </Border>
                                             <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}">
-                                                <Button x:Uid="MainWindow_ThxAudioSaveProfile" HorizontalAlignment="Right" Content="Save audio to current power profile"
-                                                        IsEnabled="{x:Bind ThxViewModel.CanSaveAudioProfile, Mode=OneWay}" Click="OnThxSaveAudioProfile" />
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                                                    <Button x:Uid="MainWindow_ThxAudioAddRule" Content="Add application rule"
+                                                            IsEnabled="{x:Bind ThxViewModel.CanAddApplicationRule, Mode=OneWay}" Click="OnThxAddApplicationRule" />
+                                                    <Button x:Uid="MainWindow_ThxAudioSaveProfile" Content="Save to power profile"
+                                                            IsEnabled="{x:Bind ThxViewModel.CanSaveAudioProfile, Mode=OneWay}" Click="OnThxSaveAudioProfile" />
+                                                </StackPanel>
                                             </Border>
                                         </StackPanel>
                                     </Expander>

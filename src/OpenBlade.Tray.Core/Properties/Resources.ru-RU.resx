@@ -1539,8 +1539,8 @@
   <data name="THX Competitive Mode" xml:space="preserve">
     <value>Соревновательный режим THX</value>
   </data>
-  <data name="Choose an EQ preset for both outputs, then capture the current audio settings." xml:space="preserve">
-    <value>Выберите пресет эквалайзера для обоих выходов, затем считайте текущие настройки звука.</value>
+  <data name="Choose EQ presets, then capture." xml:space="preserve">
+    <value>Выберите пресеты эквалайзера, затем считайте настройки.</value>
   </data>
   <data name="Saved audio settings are available for this power profile." xml:space="preserve">
     <value>Для этого профиля питания сохранены настройки звука.</value>

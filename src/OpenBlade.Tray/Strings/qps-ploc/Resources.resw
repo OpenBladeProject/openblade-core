@@ -2132,7 +2132,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Cáptúré cúrrént áúdíó séttíngs ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
-    <value>[!! Sávé bóth óútpúts tó thé cúrrént pówér prófílé. Áútómátíón fóllóws thé fórégróúnd ápp ánd úsés thé sávéd áúdíó séttíngs whén nó rúlé mátchés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Spéákér ánd héádphóné séttíngs ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
     <value>[!! Rémóvé ~~~ !!]</value>
@@ -2141,7 +2141,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Ápplý sávéd áúdíó ánd ápplícátíón rúlés áútómátícállý ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
-    <value>[!! Sávé áúdíó tó cúrrént pówér prófílé ~~~~~~~~~~~ !!]</value>
+    <value>[!! Sávé tó pówér prófílé ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
     <value>[!! Áúdíó módé ~~~~ !!]</value>

@@ -16,7 +16,7 @@ public sealed partial class ThxAudioViewModel
     private bool applicationRoutingEnabled;
     private string applicationExecutable = string.Empty;
     private ThxApplicationOutputOption? applicationOutput;
-    private string profileMessageKey = "Choose an EQ preset for both outputs, then capture the current audio settings.";
+    private string profileMessageKey = "Choose EQ presets, then capture.";
     private bool profilePersistenceAvailable;
 
     public ObservableCollection<ThxApplicationRuleOption> ApplicationRules { get; } = [];
@@ -118,7 +118,7 @@ public sealed partial class ThxAudioViewModel
         profileDraft = settings;
         loadedProfile = settings;
         profileMessageKey = settings is null
-            ? "Choose an EQ preset for both outputs, then capture the current audio settings."
+            ? "Choose EQ presets, then capture."
             : "Saved audio settings are available for this power profile.";
         applicationRoutingEnabled = settings?.ApplicationRoutingEnabled ?? false;
         ApplicationRules.Clear();

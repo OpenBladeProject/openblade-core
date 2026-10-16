@@ -2111,7 +2111,7 @@
     <value>读取当前音效设置</value>
   </data>
   <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
-    <value>将两个输出的设置保存到当前电源配置。自动化根据前台应用切换；没有匹配规则时使用已保存的音效设置。</value>
+    <value>扬声器和耳机设置</value>
   </data>
   <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
     <value>移除</value>
@@ -2120,7 +2120,7 @@
     <value>自动应用已保存音效和应用规则</value>
   </data>
   <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
-    <value>将音效保存到当前电源配置</value>
+    <value>保存到电源配置</value>
   </data>
   <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
     <value>音效模式</value>

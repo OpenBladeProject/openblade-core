@@ -2132,7 +2132,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Capture current audio settings</value>
   </data>
   <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
-    <value>Save both outputs to the current power profile. Automation follows the foreground app and uses the saved audio settings when no rule matches.</value>
+    <value>Speaker and headphone settings</value>
   </data>
   <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
     <value>Remove</value>
@@ -2141,7 +2141,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Apply saved audio and application rules automatically</value>
   </data>
   <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
-    <value>Save audio to current power profile</value>
+    <value>Save to power profile</value>
   </data>
   <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
     <value>Audio mode</value>

@@ -2132,7 +2132,7 @@
     <value>Считать текущие настройки звука</value>
   </data>
   <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
-    <value>Сохраните настройки обоих выходов в текущий профиль питания. Автоматизация следует за активным приложением и использует сохранённые настройки, если подходящего правила нет.</value>
+    <value>Настройки динамиков и наушников</value>
   </data>
   <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
     <value>Удалить</value>
@@ -2141,7 +2141,7 @@
     <value>Автоматически применять сохранённый звук и правила приложений</value>
   </data>
   <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
-    <value>Сохранить звук в текущий профиль питания</value>
+    <value>Сохранить в профиль питания</value>
   </data>
   <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
     <value>Режим звука</value>
