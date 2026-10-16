@@ -115,6 +115,7 @@ internal sealed class ServiceMuteIndicatorLoop
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         throw new IOException(statusEndedMessage);
     }
 
@@ -134,6 +135,7 @@ internal sealed class ServiceMuteIndicatorLoop
                     SignalStateChanged();
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 throw new IOException(muteSubscriptionEndedMessage);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
