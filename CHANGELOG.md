@@ -5,19 +5,27 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add the observed CPU Boost/GPU High combination on Blade 18 (2023), and retain additional Synapse lighting effects and the unresolved fixed-fan limitation in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
+
+### Fixed
+
+- Fix Custom-state reads on Blade 16 (2023) and Blade 18 (2023) by supplying the bounded validator required by the Maximum Fans query. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
+
+## [0.30.0] - 2026-10-16
+
 ### Changed
 
 - Rewrite Chinese and Russian guides with clearer instructions and more natural wording. ([#781](https://github.com/OpenBladeProject/openblade-core/pull/781))
 
 ### Added
 
-- Add the observed CPU Boost/GPU High combination on Blade 18 (2023), and retain additional Synapse lighting effects and the unresolved fixed-fan limitation in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 - Allow fixed fan speed on battery and fixed speed or manual curves on low-power adapters for Blade 16 RZ09-0528 and RZ09-0581. Experimental RZ09-0483 and RZ09-0482 also gain battery fixed speed; their low-power fan controls remain Automatic-only. ([#784](https://github.com/OSSBlade/openblade-core/pull/784))
 - Add Simplified Chinese and Russian versions of the README and user guides, with language navigation and stable section links. ([#769](https://github.com/OpenBladeProject/openblade-core/pull/769))
 
 ### Fixed
 
-- Fix Custom-state reads on Blade 16 (2023) and Blade 18 (2023) by supplying the bounded validator required by the Maximum Fans query. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 - Apply Blade 16 (2025) manual fan changes directly, and let both the 2025 and 2026 models enter HyperBoost from manual fans on either admitted cooling-pad path without resetting to Automatic first. ([#785](https://github.com/OpenBladeProject/openblade-core/pull/785))
 
 ## [0.29.0-nightly.91] - 2026-10-15
@@ -2082,7 +2090,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.29.0-nightly.91...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.29.0-nightly.91...v0.30.0
 [0.29.0-nightly.91]: https://github.com/OSSBlade/openblade-core/compare/v0.28.1-nightly.90...v0.29.0-nightly.91
 [0.28.1-nightly.90]: https://github.com/OSSBlade/openblade-core/compare/v0.27.5-nightly.89...v0.28.1-nightly.90
 [0.27.5-nightly.89]: https://github.com/OSSBlade/openblade-core/compare/v0.26.2-nightly.87...v0.27.5-nightly.89
