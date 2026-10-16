@@ -12,7 +12,7 @@ in progress.
 | --- | --- | --- |
 | Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, battery modes, Custom levels, keyboard and logo lighting, 50–100% charge limits |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, HyperBoost with or without the cooling pad, fixed and maximum fans, keyboard and logo lighting, 50–100% charge limits |
-| Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, fixed fans, keyboard and logo lighting, 50–100% charge limits |
+| Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 15 Base (Early 2020) | `RZ09-0328` | Gaming and Custom levels, single-zone keyboard lighting |
 
@@ -45,13 +45,16 @@ Battery Saver and Battery Balanced on battery power.
   Firmware idle fade can restore the built-in effect; select Static again to repaint.
   The Blade 16 also offers whole-keyboard Ambient Awareness and Audio Meter.
   The Blade 15 offers random or single-color Breathing.
-- Blade 16 (2023) offers experimental HyperBoost on full-power AC, with or without
-  the Razer Laptop Cooling Pad. MCU firmware 1.5.0.0 or later is required.
+- Blade 14 (2023) and Blade 16 (2023) offer experimental HyperBoost on full-power
+  AC, with or without the Razer Laptop Cooling Pad. They require MCU firmware
+  1.1.1.3 or later on the Blade 14, and 1.5.0.0 or later on the Blade 16.
   OpenBlade restores your saved performance and fan settings when HyperBoost ends.
-  Padless behavior still needs community hardware testing.
+  Hardware behavior still needs community testing. On the Blade 14, turn off
+  Maximum Fans in Synapse first if it was enabled there; OpenBlade cannot yet
+  restore that option on this model.
   Blade 16 (2025), RZ09-0528, already supports HyperBoost with or without the pad.
-  Blade 14 (2023) and Blade 18 (2023) remain observed-only: turn HyperBoost off
-  in Synapse before changing performance.
+  Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
+  changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not
   support charge limits. Temporary full charge is not yet supported.
 

@@ -134,13 +134,15 @@ internal sealed partial class ExperimentalBladePort(
                 SupportsExperimentalWaveDirectionSelection(model),
             SupportsUniformLightingFrames =
                 SupportsExperimentalUniformFrames(model, enabled),
-            HyperBoostAccess = model.ProductId == 0x029F && enabled ? DeviceFeatureAccess.ReadWrite
+            HyperBoostAccess = SupportsExperimentalHyperBoost(model) && enabled ? DeviceFeatureAccess.ReadWrite
                 : model.ProductId is 0x02A0 or 0x029F or 0x029D ? DeviceFeatureAccess.ObservedOnly : null,
-            HyperBoostWithoutCoolingPadAccess = model.ProductId == 0x029F && enabled ? DeviceFeatureAccess.ReadWrite : null,
-            HyperBoostBaseModes = model.ProductId == 0x029F && enabled
-                ? new(DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite)
+            HyperBoostWithoutCoolingPadAccess = SupportsExperimentalHyperBoost(model) && enabled ? DeviceFeatureAccess.ReadWrite : null,
+            HyperBoostBaseModes = SupportsExperimentalHyperBoost(model) && enabled
+                ? new(DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite,
+                    model.ProductId == 0x029F ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly)
                 {
                     Custom = DeviceFeatureAccess.ReadWrite,
+                    CoolingPadEntryBaseMode = model.ProductId == 0x029D ? PerformancePreset.Balanced : null,
                 } : null,
             ObservedLightingEffects = CreateExperimentalLightingEffects(model, true),
         };
@@ -237,8 +239,8 @@ internal sealed partial class ExperimentalBladePort(
             5 => PerformancePreset.Silent,
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
             6 when model.ProductId == 0x02C5 => PerformancePreset.BatteryBalanced,
-            // Product 671 maps battery Balanced to raw 6 (AC Balanced is 0).
-            6 when model.ProductId == 0x029F && capturePowerSource() == PowerSource.Battery => PerformancePreset.Balanced,
+            // Products 671/669 map battery Balanced to raw 6 (AC Balanced is 0).
+            6 when SupportsExperimentalHyperBoost(model) && capturePowerSource() == PowerSource.Battery => PerformancePreset.Balanced,
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
             2 when model.ProductId is 0x02A0 or 0x029F => PerformancePreset.Performance,
             7 when model.ProductId is 0x02A0 or 0x029F or 0x029D => null,

@@ -98,8 +98,8 @@ internal sealed partial class ExperimentalBladePort
             }
             byte mode = baseline.Performance switch
             {
-                // Product 671 uses DC Balanced raw 6; preserve its battery mode.
-                PerformancePreset.Balanced => model.ProductId == 0x029F
+                // Products 671/669 use DC Balanced raw 6; preserve their battery mode.
+                PerformancePreset.Balanced => SupportsExperimentalHyperBoost(model)
                     && source == PowerSource.Battery ? (byte)6 : (byte)0,
                 PerformancePreset.Performance => 2,
                 PerformancePreset.Silent => 5,

@@ -187,7 +187,7 @@ public sealed partial class ExperimentalThermalExpansionTests
 
         await port.SetFanTargetsAsync(minimum, 5000, CancellationToken.None);
 
-        Assert.Equal(pid == 0x029F ? 6 : 0, session.Mode);
+        Assert.Equal(6, session.Mode);
         Assert.Equal(1, session.Fan);
         Assert.Equal(minimum / 100, session.FirstTarget);
         Assert.Equal(50, session.SecondTarget);

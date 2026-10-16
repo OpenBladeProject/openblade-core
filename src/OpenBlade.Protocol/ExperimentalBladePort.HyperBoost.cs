@@ -4,10 +4,10 @@ namespace OpenBlade.Protocol;
 
 internal sealed partial class ExperimentalBladePort
 {
-    // Synapse product 671 enables mode 7 for 029F. Experimental padless use
+    // Synapse products 671/669 enable mode 7 for 029F/029D. Experimental padless use
     // shares that exact command; see docs/experimental-hyperboost-evidence.md.
     public Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
-        SetHyperBoostAsync(enabled, PerformancePreset.Performance,
+        SetHyperBoostAsync(enabled, model.ProductId == 0x029D ? PerformancePreset.Balanced : PerformancePreset.Performance,
             ObserveHyperBoostCoolingPad() == CoolingPadConnectionState.PresentExact, cancellationToken);
 
     public Task SetHyperBoostAsync(bool enabled, PerformancePreset baseMode,
@@ -18,7 +18,7 @@ internal sealed partial class ExperimentalBladePort
     public async Task SetHyperBoostAsync(bool enabled, PerformancePreset baseMode,
         bool requiresCoolingPad, CancellationToken cancellationToken)
     {
-        if (model.ProductId != 0x029F
+        if (!SupportsExperimentalHyperBoost(model)
             || Capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
             || Capabilities.HyperBoostBaseModes?.AccessFor(baseMode) != DeviceFeatureAccess.ReadWrite)
         {
@@ -49,14 +49,15 @@ internal sealed partial class ExperimentalBladePort
             }
             if (enabled)
             {
-                // Exact product-671 firmwareMinimumRequired, not BIOS provenance.
+                // Exact product-specific firmwareMinimumRequired, not BIOS provenance.
+                Version minimum = model.ProductId == 0x029D ? new(1, 1, 1, 3) : new(1, 5, 0, 0);
                 ReadOnlyMemory<byte> firmware = await ExchangeAsync("HyperBoostFirmware", 0, 0x87,
                     [0, 0, 0, 0], false, cancellationToken).ConfigureAwait(false);
                 if (!McuVersionProtocol.TryDecodeQuery(firmware.Span, out string version)
-                    || !Version.TryParse(version, out Version? parsed) || parsed < new Version(1, 5, 0, 0))
+                    || !Version.TryParse(version, out Version? parsed) || parsed < minimum)
                 {
                     throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                        "Blade 16 (2023) HyperBoost requires MCU firmware 1.5.0.0 or later.");
+                        $"{model.ModelNumber} HyperBoost requires MCU firmware {minimum} or later.");
                 }
                 RecordQuery("HyperBoostFirmware", "Confirmed", version);
             }
@@ -77,11 +78,18 @@ internal sealed partial class ExperimentalBladePort
                 byte flags = await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false);
                 if ((flags & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0)
                 {
+                    // Product 669 proves this flag exists, but this backend cannot
+                    // journal/restore it. Do not clear an unrepresentable baseline.
+                    if (!CreateCustomCapabilities(model).SupportsMaximumFans)
+                    {
+                        throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                            "Turn off Maximum Fans in Synapse before enabling HyperBoost; OpenBlade cannot restore that option on this model.");
+                    }
                     RequireMaximumFansWriteBaseline(flags);
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0], true, cancellationToken,
                         requireAdequateAdapter: true, writeAdmission: StillAdmitted).ConfigureAwait(false);
                     submitted = true;
-                    if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false))
+                    if (await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false) != 0)
                     {
                         throw new IOException("HyperBoost Maximum Fans cleanup was not confirmed.");
                     }
@@ -126,6 +134,9 @@ internal sealed partial class ExperimentalBladePort
             operationGate.Release();
         }
     }
+
+    private static bool SupportsExperimentalHyperBoost(ExperimentalBladeModel model) =>
+        model.ProductId is 0x029F or 0x029D;
 
     private CoolingPadConnectionState ObserveHyperBoostCoolingPad()
     {

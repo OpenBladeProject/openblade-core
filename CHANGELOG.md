@@ -7,11 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add experimental HyperBoost with or without the cooling pad for Blade 16 (2023), RZ09-0483, using its reviewed Synapse command path. Padless behavior awaits community hardware testing. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
+- Add experimental HyperBoost with or without the cooling pad for Blade 14 (2023), RZ09-0482, and Blade 16 (2023), RZ09-0483, using each model's reviewed Synapse command path. Padless behavior awaits community hardware testing. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 
 ### Fixed
 
-- Keep Blade 16 (2023) battery fan changes in DC Balanced and reject power-source changes before submission. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
+- Keep Blade 14 (2023) and Blade 16 (2023) battery fan changes in DC Balanced and reject power-source changes before submission. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 - Allow read-only experimental recovery before an explicit saved HyperBoost restore, and match saved Custom levels during journal recovery. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 
 ## [0.30.0] - 2026-10-16

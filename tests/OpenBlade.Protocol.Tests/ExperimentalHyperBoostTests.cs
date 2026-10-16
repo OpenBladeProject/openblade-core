@@ -92,7 +92,7 @@ public sealed partial class ExperimentalThermalExpansionTests
             var session = new Session();
             await using var port = new ExperimentalBladePort(session, new(), model, new(model),
                 () => true, () => PowerSource.PluggedIn, coolingPadDiscovery: new Pad());
-            if (model.ProductId != 0x029F)
+            if (model.ProductId is not (0x029F or 0x029D))
             {
                 await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
                     port.SetHyperBoostAsync(true, PerformancePreset.Balanced, false, CancellationToken.None));
@@ -100,7 +100,7 @@ public sealed partial class ExperimentalThermalExpansionTests
                     port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, CancellationToken.None));
             }
             Assert.Empty(session.Commands);
-            Assert.Equal(model.ProductId == 0x029F ? DeviceFeatureAccess.ReadWrite : (DeviceFeatureAccess?)null,
+            Assert.Equal(model.ProductId is 0x029F or 0x029D ? DeviceFeatureAccess.ReadWrite : (DeviceFeatureAccess?)null,
                 port.Capabilities.HyperBoostWithoutCoolingPadAccess);
         }
     }
@@ -273,21 +273,9 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Empty(session.Writes);
     }
 
-    [Fact]
-    public async Task Blade14_SynapseHyperBoostRemainsObservedOnlyOutsidePublishedCompatibility()
-    {
-        var session = new Session { Mode = 7 };
-        await using var port = Create(0x029D, session);
-        Assert.Equal(DeviceFeatureAccess.ObservedOnly, port.Capabilities.HyperBoostAccess);
-        Assert.True((await port.QueryPerformanceFanStateAsync(CancellationToken.None)).HyperBoostActive);
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
-            port.SetHyperBoostAsync(true, PerformancePreset.Balanced, false, CancellationToken.None));
-        Assert.Empty(session.Writes);
-    }
-
     private static ExperimentalBladePort HyperBoostPort(Session session, Pad pad,
-        ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null) =>
-        new(session, new(), Model(0x029F), policy ?? new(Model(0x029F)), () => true,
+        ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null, int pid = 0x029F) =>
+        new(session, new(), Model(pid), policy ?? new(Model(pid)), () => true,
             power ?? (() => PowerSource.PluggedIn), coolingPadDiscovery: pad);
 
     private sealed class Pad : ICoolingPadDiscoverySource
