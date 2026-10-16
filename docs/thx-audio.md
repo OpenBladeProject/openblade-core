@@ -118,7 +118,7 @@ its own source review and admission.
 
 The tray stores an additive per-user opt-in preference. It uses a separate
 current-user/session Audio IPC endpoint, version 1. Saved audio uses profile
-store schema 21, export schema 13, and service IPC version 67. Existing Display
+store schema 21, export schema 13, and service IPC version 68. Existing Display
 and GPU IPC versions are unchanged. This change requires a coordinated full
 installation; it is not eligible for tray-only deployment.
 
@@ -363,14 +363,16 @@ connection lifetime without copying the vendor's startup or shutdown EQ writes.
 The inspected middleware SHA-256 was
 `26022B8618DDE19E54A3B2C386E5CD16E1D62F036C05B01A1E53E8B6540F9888`.
 
-## Remaining validation
+## Remaining experimental validation
 
-The draft implementation still needs separately authorized audible-processing
-and interruption validation on the exact admitted stack. No playback or
-audio-quality test was performed by these runtime runs. The first foreground
-observation was Unknown, so live known-foreground switching remains unvalidated.
-Immersive/Competitive native selection, active-headphone output detection,
-and speaker-normalization writes also remain untested.
-Keep the change draft until those results are recorded. Any UI preview must
-use a disconnected, simulated backend and must not connect to the installed
-Session Agent's THX endpoint.
+The RZ09-0581 reversible round trips above and the user's audible built-in
+speaker spatial check remain the recorded physical evidence. Other outputs,
+native behavior on RZ09-0528 and RZ09-0530, live known-foreground switching,
+Immersive/Competitive selection, active-headphone output detection, speaker
+normalization writes, and interruption recovery remain unvalidated. No broader
+playback or audio-quality test was performed by the runtime runs.
+
+These gaps keep the integration experimental and prevent a production-ready
+claim; they do not block an experimental release with the limits stated here.
+Any UI preview must use a disconnected, simulated backend and must not connect
+to the installed Session Agent's THX endpoint.

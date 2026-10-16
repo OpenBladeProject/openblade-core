@@ -2229,7 +2229,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     "Too many GPU apps to verify"),
                 LocalizedResources.Format(
                     "MainWindow_GpuApps_ListTruncatedWarning",
-                    "More than {0} applications are using the NVIDIA GPU. OpenBlade cannot verify a safe close from a partial list. Close apps manually, then scan again.",
+                    "More than {0} apps are using the NVIDIA GPU. Close apps manually, then scan again.",
                     SessionGpuIpc.MaximumApps)),
             GpuAppCleanupOutcomeKind.NothingToClose => ShowGpuAppsMessageAsync(
                 LocalizedResources.Get(
@@ -3880,7 +3880,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 Title = LocalizedResources.Get("MainWindow_StopRazer_ConfirmTitle", "Stop Razer services?"),
                 Content = LocalizedResources.Format(
                     "MainWindow_StopRazer_ConfirmBody",
-                    "These known controller services are currently active:\n\n{0}\n\nAfter approval, OpenBlade will freshly check the same reviewed allowlist and stop any active matches. This does not uninstall Razer software or disable service startup. Razer software may start the services again, and features that depend on them may stop working until then.",
+                    "These Razer services are running:\n\n{0}\n\nOpenBlade will check this list again and stop services that are still running. Razer software may restart them. Features that use them may be unavailable until they restart.",
                     serviceList),
                 PrimaryButtonText = LocalizedResources.Get("MainWindow_StopRazer_StopButton", "Stop services"),
                 CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
@@ -3909,7 +3909,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     LocalizedResources.Get("MainWindow_StopRazer_CanceledTitle", "Razer service stop canceled"),
                     LocalizedResources.Get(
                         "MainWindow_StopRazer_CanceledBody",
-                        "Windows did not grant administrator permission. OpenBlade did not retry the request."));
+                        "Windows did not grant administrator permission."));
                 return;
             }
 
@@ -5295,7 +5295,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     "Import keyboard lighting?"),
                 Content = LocalizedResources.Format(
                     "MainWindow_LightingImport_ConfirmBody",
-                    "{0} uses the {1} effect at {2}. Importing applies it through OpenBlade and keeps it as an unsaved change for the active power profile.",
+                    "{0} uses the {1} effect at {2}. Importing applies it as an unsaved change to the active power profile.",
                     preset.Name,
                     effect,
                     brightness)

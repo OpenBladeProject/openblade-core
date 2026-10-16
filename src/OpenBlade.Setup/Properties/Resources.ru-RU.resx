@@ -12,8 +12,12 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="OpenBlade and its background service will be removed.&#xA;&#xA;Your saved profiles and preferences will be kept so they are available if you reinstall.&#xA;&#xA;Do you want to continue?" xml:space="preserve">
-    <value>OpenBlade и его фоновая служба будут удалены.&#xA;&#xA;Ваши сохранённые профили и параметры останутся на компьютере и будут доступны после повторной установки.&#xA;&#xA;Продолжить?</value>
+  <data name="OpenBlade and its background service will be removed.&#xA;&#xA;Your saved profiles and preferences will be kept.&#xA;&#xA;Do you want to continue?" xml:space="preserve">
+    <value>OpenBlade и его фоновая служба будут удалены.
+
+Сохранённые профили и предпочтения останутся.
+
+Продолжить?</value>
   </data>
   <data name="Uninstall OpenBlade" xml:space="preserve">
     <value>Удаление OpenBlade</value>

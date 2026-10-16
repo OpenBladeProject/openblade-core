@@ -404,7 +404,7 @@
     <value>Оставить запущенными</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
-    <value>Более {0} приложений используют GPU NVIDIA. OpenBlade не может проверить безопасное закрытие по неполному списку. Закройте приложения вручную и повторите сканирование.</value>
+    <value>Графический процессор NVIDIA используют более {0} приложений. Закройте приложения вручную и повторите поиск.</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
     <value>Слишком много приложений с активным GPU</value>
@@ -545,7 +545,7 @@
     <value>Яркость {0}%</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>В файле {0} задан эффект «{1}» ({2}). После импорта OpenBlade применит его и оставит как несохранённое изменение в активном профиле питания.</value>
+    <value>{0} использует эффект {1} с яркостью {2}. Импорт применит его как несохранённое изменение активного профиля питания.</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>Импортировать подсветку клавиатуры?</value>
@@ -796,7 +796,7 @@
     <value>Остановить службы Razer</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
-    <value>Windows не предоставила права администратора. Повторный запрос не отправлялся.</value>
+    <value>Windows не предоставила права администратора.</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
     <value>Остановка служб Razer отменена</value>
@@ -805,11 +805,11 @@
     <value>Проверка…</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>Сейчас работают следующие известные службы управления:
+    <value>Работают следующие службы Razer:
 
 {0}
 
-После подтверждения OpenBlade снова проверит тот же проверенный список разрешённых служб и остановит те из них, которые по-прежнему работают. Это не удаляет ПО Razer и не отключает запуск служб. ПО Razer может снова запустить службы, а зависящие от них функции до этого момента могут не работать.</value>
+OpenBlade повторно проверит этот список и остановит работающие службы. ПО Razer может запустить их снова. До перезапуска служб зависящие от них функции могут быть недоступны.</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>Остановить службы Razer?</value>

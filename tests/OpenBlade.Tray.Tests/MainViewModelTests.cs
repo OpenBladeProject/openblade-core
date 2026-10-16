@@ -6464,7 +6464,7 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.IsExperimentalDevice);
         Assert.False(viewModel.ExperimentalWritesPaused);
         Assert.False(viewModel.CanResumeExperimentalWrites);
-        Assert.Contains("enabled automatically", viewModel.ExperimentalSupportNotice);
+        Assert.Contains("Experimental controls are available", viewModel.ExperimentalSupportNotice);
     }
 
     [Fact]
@@ -8165,7 +8165,7 @@ public sealed partial class MainViewModelTests
             "OpenBlade has not tested this configuration: MCU 1.08.",
             viewModel.DashboardTestedPlatformWarningMessage);
         Assert.Contains(
-            "This is a compatibility notice, not a hardware failure.",
+            "Controls remain available, but behavior may differ from the tested configuration.",
             viewModel.AboutTestedPlatformWarningMessage,
             StringComparison.Ordinal);
 

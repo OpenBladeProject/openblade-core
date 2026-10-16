@@ -573,7 +573,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(67, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(68, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -601,7 +601,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task Protocol66DirectManualFanTransitionCapability_OmittedDefaultsFalse()
+    public async Task CurrentProtocolDirectManualFanTransitionCapability_OmittedDefaultsFalse()
     {
         using MemoryStream encoded = new();
         await IpcMessageCodec.WriteServerFrameAsync(
@@ -617,7 +617,7 @@ public sealed class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(67, json["version"]!.GetValue<int>());
+        Assert.Equal(68, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -652,7 +652,7 @@ public sealed class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(67, json["version"]!.GetValue<int>());
+        Assert.Equal(68, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1227,7 +1227,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(67, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(68, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1904,7 +1904,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(67, exception.ExpectedVersion);
+        Assert.Equal(68, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1922,7 +1922,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(67, exception.ExpectedVersion);
+        Assert.Equal(68, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1952,7 +1952,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(67, exception.ExpectedVersion);
+        Assert.Equal(68, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -3265,6 +3265,89 @@ public sealed class IpcMessageCodecTests
                 });
         });
     }
+
+    [Fact]
+    public async Task HyperBoostCoolingPadEntryBaseMode_RoundTrips()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite)
+            {
+                CoolingPadEntryBaseMode = PerformancePreset.Balanced,
+            },
+        };
+
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(
+            CreateStatus() with { Capabilities = capabilities });
+
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            decoded.Capabilities!.HyperBoostBaseModes!.CoolingPadEntryBaseMode);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(decoded.Capabilities));
+    }
+
+    [Fact]
+    public async Task HyperBoostCoolingPadEntryBaseMode_OmittedUsesLegacyPerformanceInference()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite),
+        };
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            new ServiceStatusEvent(
+                OpenBladeIpc.ProtocolVersion,
+                CreateStatus() with { Capabilities = capabilities }),
+            CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        JsonObject status = Assert.IsType<JsonObject>(json["status"]);
+        JsonObject serializedCapabilities = Assert.IsType<JsonObject>(status["capabilities"]);
+        JsonObject baseModes = Assert.IsType<JsonObject>(serializedCapabilities["hyperBoostBaseModes"]);
+
+        Assert.False(baseModes.ContainsKey("coolingPadEntryBaseMode"));
+        using MemoryStream omittedFieldFrame = FrameJson(json.ToJsonString());
+        ServiceStatusEvent decoded = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(omittedFieldFrame, CancellationToken.None));
+        Assert.Null(decoded.Status.Capabilities!.HyperBoostBaseModes!.CoolingPadEntryBaseMode);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(decoded.Status.Capabilities));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData((PerformancePreset)99)]
+    public async Task ReadServerFrameAsync_RejectsMalformedCoolingPadEntryBaseMode(
+        PerformancePreset declaredBase)
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            capabilities[nameof(DeviceCapabilities.HyperBoostAccess)] =
+                (int)DeviceFeatureAccess.ReadWrite;
+            capabilities[nameof(DeviceCapabilities.HyperBoostBaseModes)] =
+                JsonSerializer.SerializeToNode(
+                    new HyperBoostBaseModeCapabilities(
+                        DeviceFeatureAccess.ObservedOnly,
+                        DeviceFeatureAccess.ReadWrite,
+                        DeviceFeatureAccess.ObservedOnly)
+                    {
+                        CoolingPadEntryBaseMode = declaredBase,
+                    });
+        });
+    }
+
     private static async Task AssertMalformedNestedCapabilityRejectedAsync(
         Action<JsonObject> mutateCapabilities)
     {

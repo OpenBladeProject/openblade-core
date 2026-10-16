@@ -93,8 +93,14 @@
   <data name="{0} minutes" xml:space="preserve">
     <value>{0} minutes</value>
   </data>
-  <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
-    <value>{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ.</value>
+  <data name="{0} Controls remain available, but behavior may differ from the tested configuration." xml:space="preserve">
+    <value>{0} Controls remain available, but behavior may differ from the tested configuration.</value>
+  </data>
+  <data name="{0} Controls are blocked. Enable the firmware override to request access." xml:space="preserve">
+    <value>{0} Controls are blocked. Enable the firmware override to request access.</value>
+  </data>
+  <data name="{0} The firmware override is enabled while OpenBlade checks control access." xml:space="preserve">
+    <value>{0} The firmware override is enabled while OpenBlade checks control access.</value>
   </data>
   <data name="{0} unavailable" xml:space="preserve">
     <value>{0} unavailable</value>
@@ -174,8 +180,8 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>Ambient Awareness, full screen</value>
   </data>
-  <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
-    <value>Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back.</value>
+  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
+    <value>OpenBlade shows changes made by another Razer app without changing them back.</value>
   </data>
   <data name="Another Razer app is running" xml:space="preserve">
     <value>Another Razer app is running</value>
@@ -1143,8 +1149,8 @@
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>The diagnostic saver returned an invalid result.</value>
   </data>
-  <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
-    <value>The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout.</value>
+  <data name="The matching Razer driver shows the Windows brightness flyout. OpenBlade uses its own flyout when the driver is unavailable." xml:space="preserve">
+    <value>The matching Razer driver shows the Windows brightness flyout. OpenBlade uses its own flyout when the driver is unavailable.</value>
   </data>
   <data name="Tidal" xml:space="preserve">
     <value>Tidal</value>
@@ -1275,8 +1281,8 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows did not confirm the requested start-at-sign-in setting.</value>
   </data>
-  <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
-    <value>Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies.</value>
+  <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
+    <value>Windows Dynamic Lighting manages keyboard lighting.</value>
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>Windows power mode</value>
@@ -1434,8 +1440,8 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Sign in to an interactive Windows session to change laptop settings.</value>
   </data>
-  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
-    <value>This laptop has experimental support enabled automatically. Export diagnostics in About to help test support.</value>
+  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
+    <value>Experimental controls are available on this laptop. Export diagnostics in About to help test them.</value>
   </data>
   <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
     <value>Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.</value>

@@ -146,6 +146,31 @@ bounded capabilities, upstream provenance, write-pause recovery, and tester
 reports. These profiles do not inherit another model's backends, drivers, or
 physical-validation status.
 
+## Source-backed experimental admission
+
+Physical validation is the promotion gate for validated support, not a
+prerequisite for releasing a separately implemented experimental control for
+community testing. The maintainer need not own every experimental laptop.
+Review and pin the exact model's vendor or upstream command definitions, expose
+its experimental provenance in capabilities and diagnostics, and document what
+users still need to test. Do not claim another model's physical results.
+
+When an exact model's reviewed HyperBoost implementation uses the same typed
+thermal commands with or without a cooling pad, those commands may be offered
+on both paths experimentally. Record padless use as source-backed extrapolation
+until community validation is reviewed. Do not fabricate a pad connection or
+issue additional accessory-status writes to emulate one. Preserve any concrete
+firmware prerequisites established by the exact model's source.
+
+Keep fresh exact-device, controller, power, session and ownership admission,
+independent readback, durable restoration, and stop-on-ambiguity behavior on
+every experimental path. Software tests must cover failure and recovery before
+release. Physical-validation manifests belonging to the separately validated
+backends remain required for those backends; they do not automatically gate
+source-backed experimental backends. New or unknown commands still require
+separate exact-model source review. This policy authorizes no development-time
+hardware writes, installations, or unattended sleep/resume tests.
+
 ## Codebase map
 
 - `src/OpenBlade.Contracts`: shared service IPC, profiles, capabilities, and
@@ -252,16 +277,19 @@ inventing a page-specific appearance:
    model or driver build. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
-   The optional THX audio integration may use the already installed, pinned
-   `rznb12` stack on exact RZ09-0581 (`02E0`). It is off by default, uses
-   current-user typed Audio IPC and an isolated native helper, and never
-   installs or bundles THX components. Component discovery and shutdown must
-   not change audio settings. Automatic changes, including startup reconciliation,
-   require both the per-user integration preference and the active profile's
-   explicit audio automation opt-in, a known foreground executable, and the
-   exact recognized active Realtek output. Preserve explicit readback and
-   stop mutations after ambiguous submission until a successful explicit read.
-   This exception does not admit another laptop or component build. Keep
+   The optional experimental THX audio integration may use the already
+   installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
+   `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off
+   by default, uses current-user typed Audio IPC and an isolated native helper,
+   and never installs or bundles THX components. Component discovery and
+   shutdown must not change audio settings. Automatic changes, including
+   startup reconciliation, require both the per-user integration preference
+   and the active profile's explicit audio automation opt-in, a known
+   foreground executable, and the exact recognized active Realtek output.
+   Preserve explicit readback and stop mutations after ambiguous submission
+   until a successful explicit read. RZ09-0528 and RZ09-0530 remain
+   source-backed experimental support until their native behavior is physically
+   validated. This exception admits no other laptop or component build. Keep
    standalone native/audio validation separate from simulated tests; see
    [THX audio](docs/thx-audio.md).
 7. Prefer one shared implementation or presentation primitive over
@@ -485,6 +513,17 @@ reference for user-facing documentation.
 - Review documentation edits for factual accuracy, length, repetition, and
   tone. Verify changed behavior claims against the implementation. Detailed
   engineering guides should retain the precision their readers need.
+
+- Delete redundant disclaimers outright; do not replace a removed caveat with
+  another warning or reassurance. Include a limitation when it changes what the
+  reader can do, needs to check, or should expect.
+- State actions positively, for example, "Start HyperBoost manually." Avoid
+  stacking statements about what a feature never does. Routine entry and
+  restoration behavior belongs in usage or technical detail when needed, not
+  as a caveat attached to every feature description.
+- Preserve meaning while shortening: safety gates, model and firmware limits,
+  process exclusions, and benchmark sampling conditions must remain accurate.
+  Keep English, Russian, and Chinese versions aligned.
 
 ## Versioning and commits
 

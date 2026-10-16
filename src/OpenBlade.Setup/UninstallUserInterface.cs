@@ -32,7 +32,7 @@ internal static class UninstallUserInterface
     public static bool ConfirmPreservingProfiles() => MessageBox(
         0,
         SetupStrings.Get(
-            "OpenBlade and its background service will be removed.\n\nYour saved profiles and preferences will be kept so they are available if you reinstall.\n\nDo you want to continue?"),
+            "OpenBlade and its background service will be removed.\n\nYour saved profiles and preferences will be kept.\n\nDo you want to continue?"),
         SetupStrings.Get("Uninstall OpenBlade"),
         YesNo | IconQuestion | TaskModal) == Yes;
 

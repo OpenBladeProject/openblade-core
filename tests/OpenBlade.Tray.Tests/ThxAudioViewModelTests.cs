@@ -1,5 +1,5 @@
-using OpenBlade.Session;
 using OpenBlade.Contracts;
+using OpenBlade.Session;
 
 namespace OpenBlade.Tray.Tests;
 

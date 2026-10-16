@@ -3,14 +3,13 @@
 English | [简体中文](zh-CN/keyboard-lighting-file-format.md) | [Русский](ru-RU/keyboard-lighting-file-format.md)
 
 OpenBlade keyboard lighting files are UTF-8 JSON documents with the `.oblight`
-extension. Version 1 stores one portable keyboard effect preset. Importing a
-preset never grants a hardware capability: the effect must already be admitted
-for the exact connected Blade and its firmware.
+extension. Version 1 stores one portable keyboard effect preset for effects
+supported by the connected Blade and its firmware.
 
 Keyboard lighting file import is experimental. Enable **Lab features** in
 OpenBlade Settings to show the importer on the Lighting page. Turning Labs off
 later hides new imports without disabling an effect that is already active or
-saved in a power profile. The importer accepts effects supported by your model.
+saved in a power profile.
 [Experimental laptop controls](experimental-blade-support.md) turn on automatically,
 independently of Lab features.
 

@@ -72,15 +72,17 @@ The APO and service are Windows audio components; the THX client association
 is separate. Together with the Synapse-closed validation in
 [THX audio](thx-audio.md), this supports controlling an already installed,
 correctly matched stack without Synapse running. Retention after Synapse
-uninstall and audible processing remain unvalidated.
+uninstall and audible processing outside the confirmed RZ09-0581 built-in
+speaker spatial check remain unvalidated.
 
 OpenBlade now admits experimental manual controls and application routing for
 exact RZ09-0528 and RZ09-0530 identities with their own reviewed rznb11 base stack and signed-INF
 codec match. The 709/710/736 middleware native ABI and property operations
 are byte-identical around the reviewed calls. Each model uses its own speaker
 factory EQ vectors; headphone vectors are identical in the three definitions.
-Only RZ09-0581 has physical round-trip evidence. New model support remains
-experimental; no native calls or writes on those models occurred here.
+Only RZ09-0581 has physical round-trip evidence. RZ09-0528 and RZ09-0530 remain
+source-backed experimental support; no native calls or writes on those models
+occurred here, and their support is not production-ready.
 
 The current vendor definitions for RZ09-0328/-0482/-0483/-0484 supply no THX
 activation or resources. A force toggle supplies neither missing endpoint

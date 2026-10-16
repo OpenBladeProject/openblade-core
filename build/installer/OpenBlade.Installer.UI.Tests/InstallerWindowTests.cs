@@ -1291,7 +1291,7 @@ public sealed class InstallerWindowTests
     [Theory]
     [InlineData(true, true, "choose Repair or Uninstall")]
     [InlineData(false, false, "cached installer is unavailable")]
-    [InlineData(false, true, "cannot safely choose one maintenance owner")]
+    [InlineData(false, true, "Windows Installed apps")]
     public void SameVersionConflictGuidanceMatchesTheFullMaintenanceGate(
         bool canOfferMaintenance,
         bool relatedBundleCached,
