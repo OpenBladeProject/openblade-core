@@ -3136,7 +3136,6 @@
                                                           IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
                                                           AutomationProperties.Name="THX Spatial Audio" Toggled="OnThxSpatialToggled" />
                                         </Grid>
-                                        <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}" />
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
