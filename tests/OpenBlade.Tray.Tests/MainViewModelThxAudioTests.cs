@@ -4,8 +4,10 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed partial class MainViewModelTests
 {
-    [Fact]
-    public async Task AudioSavePreservesOtherProfilesAndUnsavedDisplayDraft()
+    [Theory]
+    [InlineData(ThxAudioProductIds.Rznb12)]
+    [InlineData(ThxAudioProductIds.Rznb11)]
+    public async Task AudioSavePreservesOtherProfilesAndUnsavedDisplayDraft(string productId)
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -15,7 +17,7 @@ public sealed partial class MainViewModelTests
         {
             Capabilities = status.Capabilities! with
             {
-                ThxAudio = new(DeviceFeatureAccess.ReadWrite, ThxAudioProductIds.Rznb12),
+                ThxAudio = new(DeviceFeatureAccess.ReadWrite, productId),
             },
         });
         await WaitUntilAsync(() => viewModel.CanSaveThxAudioProfile);

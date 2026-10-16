@@ -9,7 +9,7 @@ public sealed partial class MainViewModel
             ? GetProfile(ActivePowerSource).ThxAudio : null;
 
     public bool CanSaveThxAudioProfile => CanMutate
-        && Capabilities.ThxAudio is { Access: DeviceFeatureAccess.ReadWrite, ProductId: ThxAudioProductIds.Rznb12 }
+        && Capabilities.ThxAudio is { Access: DeviceFeatureAccess.ReadWrite, ProductId: ThxAudioProductIds.Rznb11 or ThxAudioProductIds.Rznb12 }
         && ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
 
     public async Task<bool> SaveThxAudioProfileAsync(
