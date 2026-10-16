@@ -415,6 +415,19 @@ public sealed class CapabilityPresentationTests
             Assert.Single(border.Descendants(), element => element.Name.LocalName == "Slider");
             Assert.Single(border.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
         }
+        XElement expanderStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "CardContentExpanderStyle");
+        Assert.Contains(expanderStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "Padding" && Attribute(setter, "Value") == "0");
+        foreach (string cell in new[] { "ThxNormalizationCell", "ThxVoiceClarityCell",
+            "ThxAudioRoutingCell", "ThxAudioProfileActionsCell" })
+        {
+            XElement border = NamedElement(document, "Border", cell);
+            Assert.Equal("{StaticResource DashboardSingleLineRowPadding}", Attribute(border, "Padding"));
+            XElement content = Assert.Single(border.Elements());
+            Assert.Equal("{StaticResource DashboardSingleLineRowContentMinHeight}", Attribute(content, "MinHeight"));
+            Assert.Null(Attribute(border, "Height"));
+        }
         XElement applications = NamedElement(document, "Expander", "ThxAudioApplications");
         Assert.DoesNotContain(applications.Descendants(), element =>
             Attribute(element, "Style")?.Contains("EmphasizedSubcard", StringComparison.Ordinal) == true);
@@ -590,7 +603,8 @@ public sealed class CapabilityPresentationTests
         XElement[] compactRows = document.Descendants()
             .Where(element =>
                 element.Name.LocalName == "Border"
-                && Attribute(element, "Padding") == compactPaddingReference)
+                && Attribute(element, "Padding") == compactPaddingReference
+                && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
         Assert.Equal(16, compactRows.Length);
