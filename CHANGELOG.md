@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Cache the verified Windows Desktop Runtime installer across full builds and worktrees. ([#800](https://github.com/OpenBladeProject/openblade-core/pull/800))
 - Simplify app helper text and confirmation dialogs in English, Simplified Chinese, and Russian. ([#797](https://github.com/OpenBladeProject/openblade-core/pull/797))
 
 ### Added
@@ -17,6 +18,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Avoid a Session Agent shutdown error when playback or microphone mute subscriptions finish after cancellation. ([#802](https://github.com/OpenBladeProject/openblade-core/pull/802))
 - Remove duplicate padding inside nested settings, match THX subcell spacing and hover states to Custom performance, hide empty application-rule spacing, and bound saved rules so service status stays available. ([#790](https://github.com/OpenBladeProject/openblade-core/pull/790))
 - Keep Blade 14 (2023) and Blade 16 (2023) battery fan changes in DC Balanced and reject power-source changes before submission. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 - Allow read-only experimental recovery before an explicit saved HyperBoost restore, and match saved Custom levels during journal recovery. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
