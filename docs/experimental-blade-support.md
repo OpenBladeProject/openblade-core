@@ -49,7 +49,7 @@ Battery Saver and Battery Balanced on battery power.
   the Razer Laptop Cooling Pad. MCU firmware 1.5.0.0 or later is required.
   OpenBlade restores your saved performance and fan settings when HyperBoost ends.
   Padless behavior still needs community hardware testing.
-  Blade 16 (2024), RZ09-0528, already supports HyperBoost with or without the pad.
+  Blade 16 (2025), RZ09-0528, already supports HyperBoost with or without the pad.
   Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
   changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not

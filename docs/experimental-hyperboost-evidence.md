@@ -3,13 +3,35 @@
 Razer's [14 October 2026 Synapse release notes](https://insider.razer.com/release-versions-feedback-67/14-october-2026-synapse-chroma-for-windows-90679)
 name Blade 16 (2023–2026) with the Razer Laptop Cooling Pad. This is model-family
 availability evidence, not a command specification or evidence for padless use.
-Blade 16 (2024), RZ09-0528 / `1532:02C6`, already has independently admitted
+Blade 16 (2025), RZ09-0528 / `1532:02C6`, already has independently admitted
 HyperBoost and padless HyperBoost in OpenBlade. Its command fixtures and physical
 validation do not transfer to the 2023 laptop.
 
 The experimental addition is scoped to the existing exact RZ09-0483 profile,
 Windows product `Blade 16 - RZ09-0483`, USB `1532:029F`. Other experimental
 Blade families retain their existing capabilities.
+
+## Published compatibility and experimental scope
+
+Razer's [current HyperBoost compatibility list](https://www.razer.com/technology/razer-hyperboost),
+checked on 2026-10-16, names these models:
+
+| Blade 16 | Model | Listed NVIDIA GPUs | OpenBlade status |
+| --- | --- | --- | --- |
+| 2023 | `RZ09-0483` | RTX 4060–4090 | Existing experimental profile; HyperBoost added here |
+| 2024 | `RZ09-0510` | RTX 4060–4090 | Outside the current model registry |
+| 2025 | `RZ09-0528` | RTX 5080–5090 | Existing validated backend with HyperBoost |
+| 2026 | `RZ09-0581` | RTX 5070 Ti–5090 | Existing validated backend with HyperBoost |
+
+Razer's [2024 support page](https://mysupport.razer.com/app/answers/detail/a_id/13849)
+and [2025 BIOS page](https://mysupport.razer.com/app/answers/detail/a_id/15235)
+confirm the distinct model numbers. RZ09-0528 is the 2025 laptop.
+
+The other experimental profiles—Blade 14 (2023 and 2025), Blade 18 (2023),
+and Blade 15 Base (2020)—are absent from that list. They gain no HyperBoost
+write capability. Observing a generic mode-7 value is not a model-specific
+HyperBoost support claim. The 2024 Blade would require a separate exact-model
+backend; it is outside this change's existing-experimental-model scope.
 
 ## Vendor evidence
 
