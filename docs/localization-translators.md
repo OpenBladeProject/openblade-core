@@ -2,7 +2,6 @@
 
 English | [简体中文](zh-CN/localization-translators.md) | [Русский](ru-RU/localization-translators.md)
 
-You do not need Visual Studio or programming experience to translate OpenBlade.
 Maintainers export one ZIP file containing an Excel-compatible CSV and source-language
 screenshots. You edit one column and return the CSV for automated validation.
 

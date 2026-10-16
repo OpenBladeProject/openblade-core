@@ -2,7 +2,7 @@
 
 English | [简体中文](zh-CN/synapse-blade-blocker.md) | [Русский](ru-RU/synapse-blade-blocker.md)
 
-[Synapse Blade Blocker](https://github.com/OpenBladeProject/synapse-blade-blocker) is an optional, separately installed patch that lets Synapse serve peripherals while excluding recognized Blade devices. Its repository is the source of truth for current model coverage and patch instructions. OpenBlade does not install or depend on it.
+[Synapse Blade Blocker](https://github.com/OpenBladeProject/synapse-blade-blocker) lets Synapse manage peripherals while excluding recognized Blade laptops. Check its repository for supported models and installation instructions.
 
 ## Setup
 
