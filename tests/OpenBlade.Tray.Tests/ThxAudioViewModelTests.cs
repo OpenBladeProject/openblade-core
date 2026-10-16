@@ -6,6 +6,29 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ThxAudioViewModelTests
 {
     [Fact]
+    public async Task ReadOnlyCompatibilityDisplaysNativeStateWithoutEnablingChanges()
+    {
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, AdvancedState()) with
+            { Availability = ThxAudioAvailability.AvailableReadOnly },
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        Assert.True(viewModel.CanRead);
+        Assert.False(viewModel.CanEdit);
+        Assert.False(viewModel.CanEditEqualizerBands);
+        Assert.False(viewModel.CanCaptureAudioProfile);
+        Assert.False(viewModel.CanConfigureApplicationRouting);
+        viewModel.ApplicationRoutingEnabled = true;
+        Assert.False(viewModel.ApplicationRoutingEnabled);
+        Assert.NotEmpty(viewModel.EqualizerBands);
+        await viewModel.SetSpatialAsync(true);
+        Assert.Equal(["discover", "read:Speakers"], adapter.Calls);
+    }
+
+    [Fact]
     public async Task PreferenceRestoreAndShutdownDoNotContactAudioBackend()
     {
         var adapter = new FakeAdapter();
@@ -197,6 +220,7 @@ public sealed class ThxAudioViewModelTests
         {
             ReadResponse = Response(ThxAudioOperationStatus.Succeeded, AdvancedState() with
             {
+                ApplicationProfiles = ThxAudioFeatureAccess.Available,
                 ApplicationProfileCatalog = [new("game.exe", true, false)],
             })
         };

@@ -652,7 +652,10 @@ public static class BatteryValidationFactory
             // The code-defined 02C6 catalog above owns this model's admitted manual
             // state and 2000-5000 RPM targets. Reuse the shared direct path without
             // transferring 02E0 command or physical-validation evidence.
-            supportsDirectManualFanTransitions: true);
+            supportsDirectManualFanTransitions: true,
+            thxAudioCapabilities: new ThxAudioCapabilities(
+                DeviceFeatureAccess.ReadWrite,
+                ThxAudioProductIds.Rznb11));
     }
 
     internal static ProductionBatteryReadEvidence

@@ -1,13 +1,23 @@
 # Optional THX audio controls
 
 OpenBlade can connect to the supported THX components already installed on a
-Razer Blade 16 RZ09-0581 (`1532:02E0`). The integration is experimental and off
+Razer Blade 16 RZ09-0581 (`1532:02E0`), Blade 16 RZ09-0528 (`1532:02C6`),
+or Blade 14 RZ09-0530 (`1532:02C5`). The integration is experimental and off
 by default. Reading settings and reversible speaker and headphone changes with
 Synapse closed have been validated on the admitted stack. Audible processing
 still needs validation.
 
-OpenBlade does not install THX software or drivers. Other Blade models and
-different THX component builds are not yet supported. See the
+OpenBlade checks the exact laptop, present audio hardware IDs from the signed
+installer INF, and a complete pinned THX stack before connecting. RZ09-0581
+uses rznb12 4.2.41.2499; RZ09-0528 and RZ09-0530 use the reviewed rznb11
+4.2.29.1159 driver stack with the official 4.2.37.1845 active configuration.
+The immutable properties archive and surround configuration are pinned too;
+mutable user settings remain editable. Other payloads are not yet admitted.
+The two rznb11 models have vendor-backed controls and their own speaker EQ
+curves, but have not been physically tested in OpenBlade.
+
+OpenBlade does not install THX software or drivers. Other Blade models are
+not yet supported. See the
 [installation compatibility investigation](thx-installation-investigation.md)
 for the package and codec restrictions.
 
@@ -26,7 +36,8 @@ for the package and codec restrictions.
    Turn an enhancement on and adjust its level. Changes apply after a drag
    finishes or a short pause in keyboard changes. Each row shows its level.
 
-Speakers have seven EQ bands; headphones have ten. Both support -12 to +12 dB.
+RZ09-0581 speakers have seven EQ bands. The rznb11 models and all headphone
+outputs have ten. All bands support -12 to +12 dB.
 Editing Music keeps Music selected; Custom is also available as its own preset.
 An observed Default or application preset must be changed to one of the five
 EQ choices before editing. Preset selection applies the complete saved curve.
@@ -53,6 +64,9 @@ automation with the Session Agent. Unresolved foreground identity preserves
 the current state. Hosted applications whose executable cannot be identified
 are not yet supported for automatic switching.
 
+Application routing is currently enabled only on RZ09-0581. It stays disabled
+on RZ09-0528 and RZ09-0530; their manual controls and saved EQ curves are available.
+
 Automatic changes target only the recognized Windows default Realtek output.
 An external, missing, or ambiguous default output leaves THX unchanged.
 
@@ -69,10 +83,18 @@ Synapse may remove required components; their retention has not been tested.
 
 ## Component and process boundaries
 
-The current admission is specific to the installed `rznb12` THX stack and
-`ThxV4Native_v1.1.1.0.dll`. RZ09-0528 (`02C6`) does not inherit that product ID
-or driver admission. A new component build needs its own source review and
-validation.
+Admission pairs each exact model with its own product ID, signed-INF audio
+hardware IDs, service, and complete component hashes. It requires matching
+host names in both registry sources and the model's present USB identity.
+DriverStore directory suffixes are discovered; complete package hashes and
+the running service path must match without mixing directories or versions.
+Admission also checks the immutable properties archive and surround config in
+`ProgramData\thx\{productId}`. It does not hash mutable property values or
+preset selections, so normal user changes do not invalidate admission.
+All models use the pinned `ThxV4Native_v1.1.1.0.dll`. The rznb11 middleware
+ABI and typed property operations match the reviewed rznb12 implementation;
+factory speaker curves remain model-specific. A new component build needs
+its own source review and admission.
 
 The tray stores an additive per-user opt-in preference. It uses a separate
 current-user/session Audio IPC endpoint, version 1. Saved audio uses profile

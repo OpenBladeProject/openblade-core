@@ -6,6 +6,84 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class ThxAudioHelperCommandTests
 {
     [Theory]
+    [InlineData("RZ09-0528")]
+    [InlineData("RZ09-0530")]
+    public async Task Rznb11ManualEqWritesAndConfirmsAllTenBands(string model)
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        using var output = new StringWriter();
+        double[] gains = Enumerable.Range(1, 10).Select(value => (double)value).ToArray();
+        string input = System.Text.Json.JsonSerializer.Serialize<ThxAudioHelperRequest>(
+            new ThxHelperSelectPresetRequest(1, ThxAudioEndpoint.Speakers, "music", gains),
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        var command = new ThxAudioHelperCommand(() => native,
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null)
+            { ProductId = "rznb11", ModelNumber = model, MutationAllowed = true }),
+            new StringReader(input), output);
+        await command.RunAsync(CancellationToken.None);
+        Assert.Equal(gains, native.Gains);
+        Assert.Equal(10, native.PropertyWrites.Count);
+        using System.Text.Json.JsonDocument json = System.Text.Json.JsonDocument.Parse(output.ToString());
+        Assert.Equal((int)ThxAudioOperationStatus.Succeeded, json.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal(10, json.RootElement.GetProperty("state").GetProperty("equalizerBands").GetArrayLength());
+    }
+
+    [Theory]
+    [InlineData("RZ09-0581", "rznb12", 2, 0, 0, 3, 4, 3, 1)]
+    [InlineData("RZ09-0528", "rznb11", 1, -1, -1, 2, 3, 2, 0)]
+    [InlineData("RZ09-0530", "rznb11", 2, -3, -1, 2, 3, 2, 1)]
+    public async Task ModelFactoryCurvesUseExactVendorSpeakerSeeds(string model, string product, params int[] expected)
+    {
+        var native = new FakeNative();
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => native,
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null)
+            { ProductId = product, ModelNumber = model, MutationAllowed = true }),
+            new StringReader("""{"operation":"read","version":1,"endpoint":0}"""), output);
+        await command.RunAsync(CancellationToken.None);
+        using System.Text.Json.JsonDocument json = System.Text.Json.JsonDocument.Parse(output.ToString());
+        System.Text.Json.JsonElement curve = json.RootElement.GetProperty("state").GetProperty("factoryPresetCurves")
+            .EnumerateArray().Single(value => value.GetProperty("presetId").GetString() == "music");
+        Assert.Equal((model == "RZ09-0581" ? expected : new[] { 0, 0, 0 }.Concat(expected)).Select(value => (double)value),
+            curve.GetProperty("gainsDb").EnumerateArray().Select(value => value.GetDouble()));
+        Assert.Contains(product, native.LastDevice);
+    }
+
+    [Fact]
+    public async Task ReadOnlyStackUsesAdmittedProductAndNeverExportsAnotherModelsFactoryCurves()
+    {
+        var native = new FakeNative();
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => native,
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.AvailableReadOnly, null)
+            { ProductId = "rznb11", ModelNumber = "RZ09-0528", MutationAllowed = false }),
+            new StringReader("""{"operation":"read","version":1,"endpoint":0}"""), output);
+        await command.RunAsync(CancellationToken.None);
+        Assert.Contains("rznb11", native.LastDevice);
+        Assert.DoesNotContain("rznb12", native.LastDevice);
+        Assert.Contains("\"availability\":5", output.ToString());
+        Assert.Contains("\"factoryPresetCurves\":[]", output.ToString());
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(0, native.SelectPresetCalls);
+    }
+
+    [Theory]
+    [InlineData("rznb11", false)]
+    [InlineData(null, true)]
+    [InlineData("unknown", true)]
+    public async Task UnvalidatedOrUnknownStackCannotLoadNativeForMutation(string? product, bool mutationAllowed)
+    {
+        bool created = false;
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => { created = true; return new FakeNative(); },
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.AvailableReadOnly, null)
+            { ProductId = product, ModelNumber = "RZ09-0528", MutationAllowed = mutationAllowed }),
+            new StringReader("""{"operation":"setProperty","version":1,"endpoint":0,"propertyId":"spatial_enabled","value":true}"""), output);
+        await command.RunAsync(CancellationToken.None);
+        Assert.False(created);
+    }
+
+    [Theory]
     [InlineData(218)]
     [InlineData(256)]
     public void VendorJson_AcceptsObservedCatalogAndBoundedHeadroom(int count)
@@ -164,7 +242,7 @@ public sealed class ThxAudioHelperCommandTests
                 constructed = true;
                 return new FakeNative();
             },
-            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null)));
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null) { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true }));
         int parentProcessId = 42;
         var invocation = new ThxAudioHelperInvocation(
             ThxAudioHelperProtocol.CreatePipeName(parentProcessId, Guid.NewGuid()),
@@ -648,9 +726,12 @@ public sealed class ThxAudioHelperCommandTests
             get;
         } = [];
 
+        public string? LastDevice { get; private set; }
+
         public bool AddDevice(string deviceJson)
         {
             AddCalls++;
+            LastDevice = deviceJson;
             return true;
         }
 
@@ -761,7 +842,7 @@ public sealed class ThxAudioHelperCommandTests
         string input,
         StringWriter output) => new(
             () => native,
-            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null)),
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null) { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true }),
             new StringReader(input),
             output);
 
@@ -775,7 +856,7 @@ public sealed class ThxAudioHelperCommandTests
         public ThxAudioAdmission Check()
         {
             observed();
-            return new ThxAudioAdmission(ThxAudioAvailability.Available, null);
+            return new ThxAudioAdmission(ThxAudioAvailability.Available, null) { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true };
         }
     }
 

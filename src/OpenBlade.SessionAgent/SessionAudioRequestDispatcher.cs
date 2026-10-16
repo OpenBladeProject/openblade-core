@@ -117,7 +117,7 @@ public sealed class SessionAudioRequestDispatcher
                 return Response(
                     request,
                     ThxAudioOperationStatus.Succeeded,
-                    ThxAudioAvailability.Available,
+                    current.Availability,
                     null,
                     null);
             }
@@ -137,10 +137,17 @@ public sealed class SessionAudioRequestDispatcher
                         request,
                         read.Endpoint,
                         clearPause: isExplicitRead,
+                        current.Availability,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
 
+            if (!current.MutationAllowed)
+            {
+                return Response(request, ThxAudioOperationStatus.Unavailable,
+                    ThxAudioAvailability.AvailableReadOnly,
+                    "This THX stack requires model-specific write validation.", null);
+            }
             ThxAudioEndpoint endpoint = GetEndpoint(request);
             if (mutationsPaused || !confirmed.TryGetValue(endpoint, out ThxAudioState? prior))
             {
@@ -248,6 +255,7 @@ public sealed class SessionAudioRequestDispatcher
         SessionAudioRequest request,
         ThxAudioEndpoint endpoint,
         bool clearPause,
+        ThxAudioAvailability admittedAvailability,
         CancellationToken cancellationToken)
     {
         ThxAudioWorkerResult result;
@@ -281,7 +289,8 @@ public sealed class SessionAudioRequestDispatcher
             return Response(
                 request,
                 result.Status,
-                result.Availability,
+                admittedAvailability == ThxAudioAvailability.AvailableReadOnly
+                    ? ThxAudioAvailability.AvailableReadOnly : result.Availability,
                 null,
                 state);
         }
@@ -394,6 +403,10 @@ public sealed class SessionAudioRequestDispatcher
         ThxAudioState state,
         ApplyThxApplicationProfileRequest request)
     {
+        if (state.ApplicationProfiles != ThxAudioFeatureAccess.Available)
+        {
+            return false;
+        }
         ThxAudioApplicationProfile? profile = state.ApplicationProfileCatalog.FirstOrDefault(
             value => string.Equals(
                 value.ExecutableName,

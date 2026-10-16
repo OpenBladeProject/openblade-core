@@ -135,6 +135,11 @@ internal sealed partial class ExperimentalBladePort(
                 SupportsExperimentalUniformFrames(model, enabled),
             HyperBoostAccess = model.ProductId is 0x02A0 or 0x029F ? DeviceFeatureAccess.ObservedOnly : null,
             ObservedLightingEffects = CreateExperimentalLightingEffects(model, true),
+            ThxAudio = model.ProductId == 0x02C5
+                ? new ThxAudioCapabilities(
+                    DeviceFeatureAccess.ReadWrite,
+                    ThxAudioProductIds.Rznb11)
+                : null,
         };
 
     private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>

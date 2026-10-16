@@ -4,7 +4,7 @@ using OpenBlade.Session;
 namespace OpenBlade.Tray;
 
 /// <summary>Disconnected UI data; never contacts a pipe or native component.</summary>
-internal sealed class LocalizationSnapshotThxAudioAdapter : IThxAudioAdapter
+internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = false) : IThxAudioAdapter
 {
     public Task<SessionAudioResponse> DiscoverAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Response(null));
@@ -13,15 +13,16 @@ internal sealed class LocalizationSnapshotThxAudioAdapter : IThxAudioAdapter
         Task.FromResult(Response(new ThxAudioState(endpoint, true, true, "music",
             [new("game", "Game"), new("movie", "Movie"), new("music", "Music"), new("voice", "Voice"), new("custom", "Custom")])
         {
-            EqualizerBands = (endpoint == ThxAudioEndpoint.Speakers
+            EqualizerBands = (endpoint == ThxAudioEndpoint.Speakers && !usesRznb11
                 ? new[] { 250, 500, 1000, 2000, 4000, 8000, 16000 }
                 : new[] { 31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 })
                 .Select(frequency => new ThxAudioEqualizerBand(frequency, 0)).ToArray(),
             SoundNormalization = endpoint == ThxAudioEndpoint.Speakers ? new(false, 50) : null,
             VoiceClarity = new(false, 50),
+            ApplicationProfiles = usesRznb11 ? ThxAudioFeatureAccess.ObservedOnly : ThxAudioFeatureAccess.Available,
             ApplicationProfileCatalog = [new("game.exe", true, true)],
             FactoryPresetCurves = new[] { "game", "movie", "music", "voice", "custom" }
-                .Select(id => new ThxAudioPresetCurve(id, new double[endpoint == ThxAudioEndpoint.Speakers ? 7 : 10])).ToArray(),
+                .Select(id => new ThxAudioPresetCurve(id, new double[endpoint == ThxAudioEndpoint.Speakers && !usesRznb11 ? 7 : 10])).ToArray(),
         }));
 
     public Task<SessionAudioResponse> SetSpatialAsync(ThxAudioEndpoint endpoint, bool enabled, CancellationToken cancellationToken) =>

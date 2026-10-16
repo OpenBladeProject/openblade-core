@@ -2063,16 +2063,20 @@ public sealed class IpcMessageCodecTests
         });
     }
 
-    [Fact]
-    public async Task WriteServerFrameAsync_RoundTripsExactThxCapability()
+    [Theory]
+    [InlineData(DeviceFeatureAccess.ReadWrite, ThxAudioProductIds.Rznb11)]
+    [InlineData(DeviceFeatureAccess.ReadWrite, ThxAudioProductIds.Rznb12)]
+    public async Task WriteServerFrameAsync_RoundTripsKnownThxCapability(
+        DeviceFeatureAccess access,
+        string productId)
     {
         ServiceStatusSnapshot status = CreateStatus() with
         {
             Capabilities = DeviceCapabilities.Unavailable() with
             {
                 ThxAudio = new ThxAudioCapabilities(
-                    DeviceFeatureAccess.ReadWrite,
-                    ThxAudioProductIds.Rznb12),
+                    access,
+                    productId),
             },
         };
         using MemoryStream stream = new();
@@ -2098,6 +2102,91 @@ public sealed class IpcMessageCodecTests
                 ThxAudio = new ThxAudioCapabilities(
                     DeviceFeatureAccess.ReadWrite,
                     "unknown-product"),
+            },
+        });
+    }
+
+    [Theory]
+    [InlineData(ThxAudioProfileSettings.SpeakerEqualizerBandCount)]
+    [InlineData(ThxAudioProfileSettings.HeadphoneEqualizerBandCount)]
+    public async Task WriteServerFrameAsync_RoundTripsSupportedSpeakerThxGeometry(
+        int speakerBandCount)
+    {
+        static ThxEqualizerCurves Curves(int count)
+        {
+            double[] values = Enumerable.Range(0, count).Select(index => (double)index).ToArray();
+            return new(values, values, values, values, values);
+        }
+        var settings = new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: false,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, Curves(speakerBandCount),
+                new(false, 50), new(false, 50)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game,
+                Curves(ThxAudioProfileSettings.HeadphoneEqualizerBandCount),
+                new(false, 50), null),
+            ApplicationRules: []);
+        ProfileSet profiles = CreateStatus().Profiles;
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Profiles = profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { ThxAudio = settings },
+            },
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+        stream.Position = 0;
+        ServiceStatusEvent roundTrip = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+
+        ThxAudioProfileSettings actual = Assert.IsType<ThxAudioProfileSettings>(
+            roundTrip.Status.Profiles.PluggedIn.ThxAudio);
+        Assert.All(
+            new[]
+            {
+                actual.Speakers.EqualizerCurves.Game,
+                actual.Speakers.EqualizerCurves.Movie,
+                actual.Speakers.EqualizerCurves.Music,
+                actual.Speakers.EqualizerCurves.Voice,
+                actual.Speakers.EqualizerCurves.Custom,
+            },
+            curve => Assert.Equal(speakerBandCount, curve.Count));
+        Assert.Equal(
+            ThxAudioProfileSettings.HeadphoneEqualizerBandCount,
+            actual.Headphones.EqualizerCurves.Game.Count);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsMixedSpeakerThxGeometry()
+    {
+        static double[] Gains(int count) => new double[count];
+        var speakerCurves = new ThxEqualizerCurves(
+            Gains(ThxAudioProfileSettings.HeadphoneEqualizerBandCount),
+            Gains(ThxAudioProfileSettings.SpeakerEqualizerBandCount),
+            Gains(ThxAudioProfileSettings.SpeakerEqualizerBandCount),
+            Gains(ThxAudioProfileSettings.SpeakerEqualizerBandCount),
+            Gains(ThxAudioProfileSettings.SpeakerEqualizerBandCount));
+        double[] headphoneGains = Gains(ThxAudioProfileSettings.HeadphoneEqualizerBandCount);
+        var headphoneCurves = new ThxEqualizerCurves(
+            headphoneGains, headphoneGains, headphoneGains, headphoneGains, headphoneGains);
+        var settings = new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: false,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, speakerCurves,
+                new(false, 50), new(false, 50)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game, headphoneCurves,
+                new(false, 50), null),
+            ApplicationRules: []);
+        ProfileSet profiles = CreateStatus().Profiles;
+
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            Profiles = profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { ThxAudio = settings },
             },
         });
     }

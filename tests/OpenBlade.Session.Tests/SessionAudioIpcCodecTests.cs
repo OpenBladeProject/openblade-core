@@ -7,14 +7,37 @@ namespace OpenBlade.Session.Tests;
 public sealed class SessionAudioIpcCodecTests
 {
     [Fact]
-    public async Task Response_RoundTripsSourceBackedAudioState()
+    public async Task Response_RoundTripsRznb11TenBandSpeakers()
+    {
+        ThxAudioState baseline = State(ThxAudioEndpoint.Speakers);
+        int[] frequencies = [31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+        ThxAudioState state = baseline with
+        {
+            EqualizerBands = frequencies.Select(frequency => new ThxAudioEqualizerBand(frequency, 0)).ToArray(),
+            FactoryPresetCurves = baseline.FactoryPresetCurves.Select(curve =>
+                curve with { GainsDb = new[] { 0d, 0d, 0d }.Concat(curve.GainsDb).ToArray() }).ToArray(),
+        };
+        var response = new SessionAudioResponse(1, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available, null, state);
+        using var stream = new MemoryStream();
+        await SessionAudioIpcCodec.WriteResponseAsync(stream, response);
+        stream.Position = 0;
+        SessionAudioResponse decoded = await SessionAudioIpcCodec.ReadResponseAsync(stream);
+        Assert.Equal(frequencies, decoded.State!.EqualizerBands.Select(band => band.FrequencyHz));
+        Assert.All(decoded.State.FactoryPresetCurves, curve => Assert.Equal(10, curve.GainsDb.Count));
+    }
+
+    [Theory]
+    [InlineData(ThxAudioAvailability.Available)]
+    [InlineData(ThxAudioAvailability.AvailableReadOnly)]
+    public async Task Response_RoundTripsSourceBackedAudioState(ThxAudioAvailability availability)
     {
         ThxAudioState state = State(ThxAudioEndpoint.Speakers);
         var response = new SessionAudioResponse(
             SessionAudioIpc.ProtocolVersion,
             Guid.NewGuid(),
             ThxAudioOperationStatus.Succeeded,
-            ThxAudioAvailability.Available,
+            availability,
             null,
             state);
         using var stream = new MemoryStream();
@@ -23,6 +46,7 @@ public sealed class SessionAudioIpcCodecTests
         stream.Position = 0;
         SessionAudioResponse decoded = await SessionAudioIpcCodec.ReadResponseAsync(stream);
 
+        Assert.Equal(availability, decoded.Availability);
         Assert.Equal(state.Endpoint, decoded.State!.Endpoint);
         Assert.Equal(state.SelectedNativeProfileId, decoded.State.SelectedNativeProfileId);
         Assert.Equal(state.Presets, decoded.State!.Presets);

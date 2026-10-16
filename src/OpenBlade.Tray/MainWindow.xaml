@@ -3333,7 +3333,11 @@
                                                 <Button x:Uid="MainWindow_ThxAudioCaptureProfile" Content="Capture current audio settings"
                                                         IsEnabled="{x:Bind ThxViewModel.CanCaptureAudioProfile, Mode=OneWay}" Click="OnThxCaptureAudioProfile" />
                                                 <CheckBox x:Uid="MainWindow_ThxAudioRoutingEnabled" Content="Apply saved audio and application rules automatically"
-                                                          IsChecked="{x:Bind ThxViewModel.ApplicationRoutingEnabled, Mode=TwoWay}" />
+                                                          IsChecked="{x:Bind ThxViewModel.ApplicationRoutingEnabled, Mode=TwoWay}"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanConfigureApplicationRouting, Mode=OneWay}" />
+                                                <TextBlock Text="{x:Bind ThxViewModel.ApplicationRoutingUnavailableHint, Mode=OneWay}"
+                                                           Visibility="{x:Bind ThxViewModel.ApplicationRoutingUnavailable, Mode=OneWay}"
+                                                           TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" />
                                                 <ItemsRepeater ItemsSource="{x:Bind ThxViewModel.ApplicationRules}">
                                                     <ItemsRepeater.ItemTemplate>
                                                         <DataTemplate x:DataType="local:ThxApplicationRuleOption">

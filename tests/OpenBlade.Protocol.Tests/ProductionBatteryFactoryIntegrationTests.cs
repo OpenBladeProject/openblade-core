@@ -56,6 +56,18 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090528ProductionCapability_ReportsWritableRznb11ThxAudio()
+    {
+        IProductionBatteryPortFactory factory =
+            BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+
+        ThxAudioCapabilities capability =
+            Assert.IsType<ThxAudioCapabilities>(factory.Capabilities.ThxAudio);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, capability.Access);
+        Assert.Equal(ThxAudioProductIds.Rznb11, capability.ProductId);
+    }
+
+    [Fact]
     public void Rz090581ProductionPolicies_DoNotRequireABiosVersionWhenModelScoped()
     {
         HostIdentityReadResult baseline = ExactRz090581Identity(

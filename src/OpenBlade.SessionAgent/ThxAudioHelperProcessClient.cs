@@ -250,7 +250,7 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
             || !Enum.IsDefined(response.Status)
             || !Enum.IsDefined(response.Availability)
             || response.Status == ThxAudioOperationStatus.Succeeded
-                && (response.Availability != ThxAudioAvailability.Available
+                && (response.Availability is not (ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly)
                     || response.Error is not null
                     || response.State is null)
             || response.Status != ThxAudioOperationStatus.Succeeded

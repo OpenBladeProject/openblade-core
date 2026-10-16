@@ -74,14 +74,44 @@ is separate. Together with the Synapse-closed validation in
 correctly matched stack without Synapse running. Retention after Synapse
 uninstall and audible processing remain unvalidated.
 
-RZ09-0528 and RZ09-0530 warrant model-specific investigation because their
-vendor definitions activate THX v4. Admission still needs the exact installed
-stack, codec/endpoint match, and per-model runtime validation. The current
-vendor definitions for RZ09-0328/-0482/-0483/-0484 supply no THX activation or
-resources. A force toggle supplies neither missing endpoint bindings nor
-correct tuning. No support was expanded by this inspection.
+OpenBlade now admits experimental manual controls for exact RZ09-0528 and
+RZ09-0530 identities with their own reviewed rznb11 base stack and signed-INF
+codec match. The 709/710/736 middleware native ABI and property operations
+are byte-identical around the reviewed calls. Each model uses its own speaker
+factory EQ vectors; headphone vectors are identical in the three definitions.
+Only RZ09-0581 has physical round-trip evidence. New model support remains
+experimental; no native calls or writes on those models occurred here.
+
+The current vendor definitions for RZ09-0328/-0482/-0483/-0484 supply no THX
+activation or resources. A force toggle supplies neither missing endpoint
+bindings nor correct tuning. New component builds require their own pins.
 
 No machine entitlement gate was found in the inspected MSI/custom-action
 path; this does not establish that native code has none. These packages are
 not bundled with OpenBlade. Altering a signed INF would invalidate its
 catalog relationship and is outside this investigation.
+
+## Active configuration admission
+
+The signed rznb11 4.2.37.1845 properties updater embeds its archive as a
+contiguous generated stack byte array. Static reconstruction, without running
+the updater, recovered a valid 481,431-byte ZIP with 378 entries and clean
+CRCs. Its SHA-256 is
+`4FDDEEF868014DB94B902475CA2DB1919E8A902D027CFCE8A7ED691E403319EF`.
+This is the reviewed active `ProgramData\thx\rznb11\thx_rznb11_props.dat`
+payload, used alongside the pinned 4.2.29.1159 driver packages.
+
+The rznb12 updater was independently reconstructed into a valid 478,742-byte,
+377-entry ZIP, exactly matching the installed active archive. Its SHA-256 is
+`E2E69163AFFEAE1F4FD19E347EB92E63CA7CAA32C13E8E1500AA459D76823031`.
+The reviewed version-13 `surround_714_config.json` has SHA-256
+`1AC5DC1DD9B6E60843E6E3076DC94F4C2492D9DB02600442AF276FD6A9CCFD6C`.
+The signed rznb11/rznb12 patch updaters share the same code and JSON constants.
+Static reconstruction of the version-13 configuration reproduced the exact
+1,243-byte CRLF JSON and hash above. No updater or vendor native code was run.
+
+DriverStore presence alone is insufficient: the service uses active files in
+ProgramData. OpenBlade pins both immutable active files as well as the complete
+driver packages. Mutable `properties.json`, endpoint values, and preset
+selection files are excluded from hash admission because legitimate control
+changes update them. Unknown immutable payloads fail closed.

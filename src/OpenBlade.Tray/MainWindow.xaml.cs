@@ -276,9 +276,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public ThxAudioViewModel ThxViewModel { get; }
 
-    public Visibility ThxAudioNavigationVisibility => localizationSnapshotMode || string.Equals(
-        RazerBladeModelCatalog.Find(ViewModel.DetectedFirmware?.ModelNumber)?.ModelNumber,
-        "RZ09-0581", StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ThxAudioNavigationVisibility => localizationSnapshotMode
+        || RazerBladeModelCatalog.Find(ViewModel.DetectedFirmware?.ModelNumber)?.ModelNumber
+            is "RZ09-0581" or "RZ09-0528" or "RZ09-0530"
+        ? Visibility.Visible : Visibility.Collapsed;
 
     public DisplaySettingsViewModel DisplayViewModel { get; }
 
@@ -291,7 +292,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 #if OPENBLADE_DEVELOPER_HARNESS
         if (snapshotMode)
         {
-            return new LocalizationSnapshotThxAudioAdapter();
+            return new LocalizationSnapshotThxAudioAdapter(usesRznb11: string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_STACK"),
+                "rznb11", StringComparison.Ordinal));
         }
 #endif
         return new SessionThxAudioAdapter();

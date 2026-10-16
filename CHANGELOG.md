@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add experimental, opt-in controls on a dedicated THX Audio page for Blade 16 RZ09-0581, including custom EQ, audio enhancements, and saved application rules, using the supported THX components already installed. Audible processing validation is still pending. ([#790](https://github.com/OSSBlade/openblade-core/pull/790))
+- Add experimental, opt-in controls on a dedicated THX Audio page for Blade 16 RZ09-0581 and RZ09-0528 and Blade 14 RZ09-0530, including custom EQ and audio enhancements, using each model's supported THX components already installed. RZ09-0581 also supports saved application routing. Audible processing validation is still pending. ([#790](https://github.com/OSSBlade/openblade-core/pull/790))
 
 ## [0.30.0] - 2026-10-16
 

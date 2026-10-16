@@ -182,7 +182,7 @@ public static class SessionAudioIpcCodec
             && validError
             && (response.State is null || ValidState(response.State))
             && (response.Status == ThxAudioOperationStatus.Succeeded
-                ? response.Availability == ThxAudioAvailability.Available
+                ? response.Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly
                     || response is { State: null, Availability: not ThxAudioAvailability.Available }
                 : response.State is null);
         if (!valid)
@@ -258,14 +258,14 @@ public static class SessionAudioIpcCodec
         ThxAudioEndpoint endpoint,
         IReadOnlyList<double>? gains) =>
         gains is not null
-        && gains.Count == (endpoint == ThxAudioEndpoint.Speakers ? 7 : 10)
+        && (gains.Count == 10 || endpoint == ThxAudioEndpoint.Speakers && gains.Count == 7)
         && gains.All(ValidGain);
 
     private static bool ValidEqualizerBands(
         ThxAudioEndpoint endpoint,
         IReadOnlyList<ThxAudioEqualizerBand> bands)
     {
-        int[] expected = endpoint == ThxAudioEndpoint.Speakers
+        int[] expected = endpoint == ThxAudioEndpoint.Speakers && bands.Count == 7
             ? [250, 500, 1000, 2000, 4000, 8000, 16000]
             : [31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
         return bands.Count == expected.Length

@@ -20,9 +20,10 @@ public sealed partial class ThxAudioViewModel
     private bool profilePersistenceAvailable;
 
     public ObservableCollection<ThxApplicationRuleOption> ApplicationRules { get; } = [];
-    public bool CanCaptureAudioProfile => CanRead;
+    public bool CanCaptureAudioProfile => CanRead && availability != ThxAudioAvailability.AvailableReadOnly;
     public bool HasAudioProfile => profileDraft is not null;
-    public bool CanSaveAudioProfile => HasAudioProfile && profilePersistenceAvailable && !busy && !disposed;
+    public bool CanSaveAudioProfile => HasAudioProfile && profilePersistenceAvailable && !busy && !disposed
+        && availability != ThxAudioAvailability.AvailableReadOnly;
     public bool ProfilePersistenceAvailable
     {
         get => profilePersistenceAvailable;
@@ -35,6 +36,9 @@ public sealed partial class ThxAudioViewModel
             }
         }
     }
+    public bool CanConfigureApplicationRouting => state?.ApplicationProfiles != ThxAudioFeatureAccess.ObservedOnly;
+    public bool ApplicationRoutingUnavailable => !CanConfigureApplicationRouting;
+    public string ApplicationRoutingUnavailableHint => TrayText.Get("Application routing is not yet enabled for this model.");
     public string AudioProfileMessage => TrayText.Get(state?.ApplicationAutomationPaused == true
         ? "Audio automation is paused. Read the current THX settings to resume."
         : profileMessageKey);
@@ -43,7 +47,7 @@ public sealed partial class ThxAudioViewModel
         get => applicationRoutingEnabled;
         set
         {
-            if (applicationRoutingEnabled != value)
+            if (applicationRoutingEnabled != value && (!value || CanConfigureApplicationRouting))
             {
                 applicationRoutingEnabled = value;
                 NotifyProfileEditor();
@@ -93,7 +97,7 @@ public sealed partial class ThxAudioViewModel
                 .Select(output => new ThxApplicationOutputOption(output, ApplicationOutputLabel(output))).ToArray();
         }
     }
-    public bool CanAddApplicationRule => !disposed && ApplicationOutput is { } selected
+    public bool CanAddApplicationRule => !disposed && CanConfigureApplicationRouting && ApplicationOutput is { } selected
         && ApplicationOutputs.Contains(selected)
         && ApplicationRules.Count < ThxAudioProfileSettings.MaximumApplicationRules
         && IsValidExecutable(applicationExecutable)
@@ -292,7 +296,7 @@ public sealed partial class ThxAudioViewModel
     {
         foreach (string property in new[] { nameof(CanCaptureAudioProfile), nameof(HasAudioProfile), nameof(CanSaveAudioProfile),
             nameof(ApplicationRoutingEnabled), nameof(ApplicationExecutable), nameof(ApplicationOutput),
-            nameof(ApplicationOutputs), nameof(CanAddApplicationRule), nameof(AudioProfileMessage) })
+            nameof(ApplicationOutputs), nameof(CanAddApplicationRule), nameof(AudioProfileMessage), nameof(CanConfigureApplicationRouting), nameof(ApplicationRoutingUnavailable), nameof(ApplicationRoutingUnavailableHint) })
         {
             PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(property));
         }

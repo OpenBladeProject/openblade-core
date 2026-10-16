@@ -5,6 +5,39 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class SessionAudioRequestDispatcherTests
 {
     [Fact]
+    public async Task ObservedOnlyApplicationCatalogCannotAuthorizeAProfileMutation()
+    {
+        var worker = new RecordingWorker(State() with { ApplicationProfiles = ThxAudioFeatureAccess.ObservedOnly });
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        await dispatcher.DispatchAsync(new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion,
+            Guid.NewGuid(), ThxAudioEndpoint.Speakers), CancellationToken.None);
+        SessionAudioResponse response = await dispatcher.DispatchAsync(new ApplyThxApplicationProfileRequest(
+            SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers,
+            "r5apex.exe", ThxAudioApplicationMode.Immersive), CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Failed, response.Status);
+        Assert.Single(worker.Requests);
+    }
+
+    [Fact]
+    public async Task ReadOnlyAdmissionAllowsReadButBlocksMutationBeforeWorkerSubmission()
+    {
+        var worker = new RecordingWorker(State());
+        var admission = new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.AvailableReadOnly, null)
+        { ProductId = "rznb11", ModelNumber = "RZ09-0528", MutationAllowed = false });
+        var dispatcher = new SessionAudioRequestDispatcher(admission, worker);
+        SessionAudioResponse read = await dispatcher.DispatchAsync(
+            new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers),
+            CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, read.Status);
+        Assert.Equal(ThxAudioAvailability.AvailableReadOnly, read.Availability);
+        SessionAudioResponse write = await dispatcher.DispatchAsync(
+            new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers, true),
+            CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, write.Status);
+        Assert.Single(worker.Requests);
+    }
+
+    [Fact]
     public async Task Discover_PerformsAdmissionWithoutStartingNativeWorker()
     {
         var worker = new RecordingWorker(State());
@@ -466,7 +499,7 @@ public sealed class SessionAudioRequestDispatcherTests
     }
 
     private static IThxAudioAdmissionSource Available() => new FixedAdmission(
-        new ThxAudioAdmission(ThxAudioAvailability.Available, null));
+        new ThxAudioAdmission(ThxAudioAvailability.Available, null) { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true });
 
     private static ThxAudioState State(bool spatial = false, bool equalizer = false) => new(
         ThxAudioEndpoint.Speakers,

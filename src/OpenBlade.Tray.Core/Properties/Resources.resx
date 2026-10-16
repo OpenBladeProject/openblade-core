@@ -1491,9 +1491,6 @@
   <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
     <value>The audio change could not be confirmed. Read the current settings before trying again.</value>
   </data>
-  <data name="THX audio controls are available only on RZ09-0581." xml:space="preserve">
-    <value>THX audio controls are available only on RZ09-0581.</value>
-  </data>
   <data name="The supported THX components are unavailable." xml:space="preserve">
     <value>The supported THX components are unavailable.</value>
   </data>
@@ -1565,5 +1562,14 @@
   </data>
   <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
     <value>Choose Game, Movie, Music, Voice, or Custom to edit EQ.</value>
+  </data>
+  <data name="THX audio is unavailable for this model or audio device." xml:space="preserve">
+    <value>THX audio is unavailable for this model or audio device.</value>
+  </data>
+  <data name="THX is available for reading. Controls await validation for this model." xml:space="preserve">
+    <value>THX is available for reading. Controls await validation for this model.</value>
+  </data>
+  <data name="Application routing is not yet enabled for this model." xml:space="preserve">
+    <value>Application routing is not yet enabled for this model.</value>
   </data>
 </root>

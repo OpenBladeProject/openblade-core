@@ -69,6 +69,30 @@ internal sealed class ThxAudioHelperCommand(
             ["custom"] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         };
 
+    // Exact product710 (0528) and709 (0530) DEFAULTPROFILE speaker seeds.
+    // Main SHA256s: 201541BA7E521BB4B161CFCD077BC95EA2577BFFC37B3452D1CCBFB57A57F626
+    // and CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1.
+    // Their headphone seeds are byte-identical to product736; speaker seeds differ.
+    private static readonly IReadOnlyDictionary<string, double[]> Rz090528SpeakerFactoryCurves =
+        new Dictionary<string, double[]>(StringComparer.Ordinal)
+        {
+            ["game"] = [-1, 1, 3, 4, 0, -3, -6],
+            ["movie"] = [2, -4, -5, 3, 4, 3, -1],
+            ["music"] = [1, -1, -1, 2, 3, 2, 0],
+            ["voice"] = [-5, -1, 2, 5, 4, 0, -7],
+            ["custom"] = [0, 0, 0, 0, 0, 0, 0],
+        };
+
+    private static readonly IReadOnlyDictionary<string, double[]> Rz090530SpeakerFactoryCurves =
+        new Dictionary<string, double[]>(StringComparer.Ordinal)
+        {
+            ["game"] = [-1, 2, 3, 4, 0, -2, -4],
+            ["movie"] = [2, -4, -4, 3, 4, 3, 0],
+            ["music"] = [2, -3, -1, 2, 3, 2, 1],
+            ["voice"] = [-4, -1, 2, 5, 4, -1, -6],
+            ["custom"] = [0, 0, 0, 0, 0, 0, 0],
+        };
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         RespectRequiredConstructorParameters = true,
@@ -121,11 +145,31 @@ internal sealed class ThxAudioHelperCommand(
                 current.Error ?? "THX audio is unavailable.");
         }
 
+        if ((current.ProductId, current.ModelNumber) is not
+            (("rznb12", "RZ09-0581") or ("rznb11", "RZ09-0528") or ("rznb11", "RZ09-0530")))
+        {
+            return Unavailable(ThxAudioAvailability.ComponentsUnavailable, "The THX product identity is unverified.");
+        }
+        if (request is not ThxHelperReadRequest && !current.MutationAllowed)
+        {
+            return Unavailable(ThxAudioAvailability.AvailableReadOnly, "This THX stack requires model-specific write validation.");
+        }
+        if (request is ThxHelperSelectPresetRequest preset
+            && preset.GainsDb.Count != (preset.Endpoint == ThxAudioEndpoint.Speakers
+                && current.ModelNumber == "RZ09-0581" ? 7 : 10))
+        {
+            return Failed("The EQ vector does not match this model and endpoint.");
+        }
+        if (request is ThxHelperApplyApplicationProfileRequest && current.ModelNumber != "RZ09-0581")
+        {
+            return Unavailable(ThxAudioAvailability.Available,
+                "Application routing is not enabled for this model.");
+        }
         using IThxAudioNativeAdapter native = createNative();
         string device = JsonSerializer.Serialize(
             new
             {
-                productId = WindowsThxAudioAdmissionSource.ProductId,
+                productId = current.ProductId,
                 endpointId = request.Endpoint == ThxAudioEndpoint.Speakers
                     ? "speakers"
                     : "headphones",
@@ -172,7 +216,7 @@ internal sealed class ThxAudioHelperCommand(
                     : Indeterminate("The THX mutation was not acknowledged.");
             }
 
-            ThxAudioState state = ReadState(native, device, request.Endpoint);
+            ThxAudioState state = ReadState(native, device, request.Endpoint, current.ModelNumber, current.MutationAllowed);
             if (!MatchesRequestedMutation(request, state))
             {
                 return Indeterminate("The THX mutation could not be confirmed by readback.");
@@ -180,7 +224,7 @@ internal sealed class ThxAudioHelperCommand(
             return new ThxAudioHelperResponse(
                 ThxAudioHelperProtocol.Version,
                 ThxAudioOperationStatus.Succeeded,
-                ThxAudioAvailability.Available,
+                current.MutationAllowed ? ThxAudioAvailability.Available : ThxAudioAvailability.AvailableReadOnly,
                 null,
                 state);
         }
@@ -216,7 +260,9 @@ internal sealed class ThxAudioHelperCommand(
     private static ThxAudioState ReadState(
         IThxAudioNativeAdapter native,
         string device,
-        ThxAudioEndpoint endpoint)
+        ThxAudioEndpoint endpoint,
+        string modelNumber,
+        bool mutationAllowed)
     {
         bool spatial = ThxVendorJson.ParseBoolean(
             native.GetProperty(device, SpatialPropertyId));
@@ -245,7 +291,7 @@ internal sealed class ThxAudioHelperCommand(
             .ToArray();
 
         double[] nativeGains = ReadNativeGains(native, device);
-        int firstVisibleBand = endpoint == ThxAudioEndpoint.Speakers ? 3 : 0;
+        int firstVisibleBand = endpoint == ThxAudioEndpoint.Speakers && modelNumber == "RZ09-0581" ? 3 : 0;
         IReadOnlyList<ThxAudioEqualizerBand> visibleBands = nativeGains
             .Skip(firstVisibleBand)
             .Select((gain, index) => new ThxAudioEqualizerBand(
@@ -272,10 +318,10 @@ internal sealed class ThxAudioHelperCommand(
         {
             SelectedNativeProfileId = selectedNative,
             EqualizerBands = visibleBands,
-            FactoryPresetCurves = FactoryCurves(endpoint),
+            FactoryPresetCurves = mutationAllowed ? FactoryCurves(endpoint, modelNumber) : [],
             SoundNormalization = normalization,
             VoiceClarity = voiceClarity,
-            ApplicationProfiles = applicationProfiles.Count == 0
+            ApplicationProfiles = !mutationAllowed || modelNumber != "RZ09-0581" ? ThxAudioFeatureAccess.ObservedOnly : applicationProfiles.Count == 0
                 ? ThxAudioFeatureAccess.Unavailable
                 : ThxAudioFeatureAccess.Available,
             ApplicationProfileCatalog = applicationProfiles,
@@ -374,20 +420,27 @@ internal sealed class ThxAudioHelperCommand(
 
     private static double[] ToNativeGains(
         ThxAudioEndpoint endpoint,
-        IReadOnlyList<double> visibleGains) => endpoint == ThxAudioEndpoint.Speakers
+        IReadOnlyList<double> visibleGains) => endpoint == ThxAudioEndpoint.Speakers && visibleGains.Count == 7
         ? [0, 0, 0, .. visibleGains]
         : [.. visibleGains];
 
     private static IReadOnlyList<ThxAudioPresetCurve> FactoryCurves(
-        ThxAudioEndpoint endpoint)
+        ThxAudioEndpoint endpoint, string modelNumber)
     {
         IReadOnlyDictionary<string, double[]> source =
             endpoint == ThxAudioEndpoint.Speakers
-                ? SpeakerFactoryCurves
+                ? modelNumber switch
+                {
+                    "RZ09-0581" => SpeakerFactoryCurves,
+                    "RZ09-0528" => Rz090528SpeakerFactoryCurves,
+                    "RZ09-0530" => Rz090530SpeakerFactoryCurves,
+                    _ => throw new InvalidDataException("The THX model is unsupported."),
+                }
                 : HeadphoneFactoryCurves;
         return [.. source.Select(pair => new ThxAudioPresetCurve(
             pair.Key,
-            pair.Value.ToArray()))];
+            endpoint == ThxAudioEndpoint.Speakers && modelNumber != "RZ09-0581"
+                ? [0, 0, 0, .. pair.Value] : pair.Value.ToArray()))];
     }
 
     private static bool SetEnhancement(
@@ -534,7 +587,7 @@ internal sealed class ThxAudioHelperCommand(
         ThxAudioEndpoint endpoint,
         IReadOnlyList<double>? gains) =>
         gains is not null
-        && gains.Count == (endpoint == ThxAudioEndpoint.Speakers ? 7 : 10)
+        && (gains.Count == 10 || endpoint == ThxAudioEndpoint.Speakers && gains.Count == 7)
         && gains.All(value => double.IsFinite(value) && value is >= -12 and <= 12);
 
     private static bool ValidExecutableName(string? value) =>

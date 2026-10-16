@@ -76,6 +76,7 @@ public sealed record ThxAudioProfileSettings(
     ThxAudioEndpointSettings Headphones,
     IReadOnlyList<ThxApplicationAudioRule> ApplicationRules)
 {
+    // RZ09-0581 speaker geometry. Rznb11 speaker curves use all ten native bands.
     public const int SpeakerEqualizerBandCount = 7;
     public const int HeadphoneEqualizerBandCount = 10;
     public const int MaximumApplicationRules = 256;
@@ -86,8 +87,8 @@ public sealed record ThxAudioProfileSettings(
 
     public static bool IsWellFormed(ThxAudioProfileSettings? value) =>
         value is not null
-        && IsWellFormedEndpoint(value.Speakers, SpeakerEqualizerBandCount, true)
-        && IsWellFormedEndpoint(value.Headphones, HeadphoneEqualizerBandCount, false)
+        && IsWellFormedEndpoint(value.Speakers, isSpeaker: true)
+        && IsWellFormedEndpoint(value.Headphones, isSpeaker: false)
         && value.ApplicationRules is not null
         && value.ApplicationRules.Count <= MaximumApplicationRules
         && value.ApplicationRules.All(IsWellFormedRule)
@@ -98,13 +99,17 @@ public sealed record ThxAudioProfileSettings(
 
     private static bool IsWellFormedEndpoint(
         ThxAudioEndpointSettings? value,
-        int expectedBandCount,
-        bool requireSoundNormalization) =>
-        value is not null
+        bool isSpeaker)
+    {
+        int bandCount = value?.EqualizerCurves?.Game?.Count ?? -1;
+        return value is not null
+        && (isSpeaker
+            ? bandCount is SpeakerEqualizerBandCount or HeadphoneEqualizerBandCount
+            : bandCount == HeadphoneEqualizerBandCount)
         && Enum.IsDefined(value.SelectedPreset)
         && value.EqualizerCurves is not null
         && IsWellFormedEnhancement(value.VoiceClarity)
-        && requireSoundNormalization == (value.SoundNormalization is not null)
+        && isSpeaker == (value.SoundNormalization is not null)
         && (value.SoundNormalization is null
             || IsWellFormedEnhancement(value.SoundNormalization))
         && new[]
@@ -115,9 +120,10 @@ public sealed record ThxAudioProfileSettings(
             value.EqualizerCurves.Voice,
             value.EqualizerCurves.Custom,
         }.All(curve => curve is not null
-            && curve.Count == expectedBandCount
+            && curve.Count == bandCount
             && curve.All(gain => double.IsFinite(gain)
                 && gain is >= MinimumEqualizerGainDb and <= MaximumEqualizerGainDb));
+    }
 
     private static bool IsWellFormedEnhancement(ThxAudioEnhancementSettings? value) =>
         value?.LevelPercent is
@@ -146,6 +152,7 @@ public sealed record ThxAudioProfileSettings(
 
 public static class ThxAudioProductIds
 {
+    public const string Rznb11 = "rznb11";
     public const string Rznb12 = "rznb12";
 }
 
@@ -155,5 +162,5 @@ public sealed record ThxAudioCapabilities(
 {
     internal bool IsWellFormed =>
         Enum.IsDefined(Access)
-        && string.Equals(ProductId, ThxAudioProductIds.Rznb12, StringComparison.Ordinal);
+        && ProductId is ThxAudioProductIds.Rznb11 or ThxAudioProductIds.Rznb12;
 }

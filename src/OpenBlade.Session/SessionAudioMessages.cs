@@ -26,6 +26,7 @@ public enum ThxAudioAvailability
     ComponentsUnavailable,
     ControllerActive,
     Available,
+    AvailableReadOnly,
 }
 
 public enum ThxAudioOperationStatus

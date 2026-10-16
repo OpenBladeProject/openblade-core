@@ -2784,6 +2784,7 @@ type sealed class OpenBlade.Contracts.ThxAudioEnhancementSettings
   property System.Boolean Enabled { get; init; }
   property System.Int32 LevelPercent { get; init; }
 type static class OpenBlade.Contracts.ThxAudioProductIds
+  field const System.String Rznb11 = "rznb11"
   field const System.String Rznb12 = "rznb12"
 type sealed class OpenBlade.Contracts.ThxAudioProfileSettings
   interface System.IEquatable<OpenBlade.Contracts.ThxAudioProfileSettings>

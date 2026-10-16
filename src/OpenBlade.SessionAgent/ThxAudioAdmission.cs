@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Management;
-using System.Security.Cryptography;
 using System.Security.Principal;
 using Microsoft.Win32;
 using OpenBlade.Session;
@@ -11,8 +10,13 @@ internal sealed record ThxAudioAdmission(
     ThxAudioAvailability Availability,
     string? Error)
 {
+    public string? ProductId { get; init; }
+    public string? ModelNumber { get; init; }
+    public bool MutationAllowed { get; init; }
     public bool IsAvailable =>
-        Availability == ThxAudioAvailability.Available && Error is null;
+        Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly
+        && ThxAudioCompatibility.Profiles.Any(profile =>
+            profile.ProductId == ProductId && profile.ModelNumber == ModelNumber) && Error is null;
 }
 
 internal interface IThxAudioAdmissionSource
@@ -24,44 +28,9 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
 {
     internal const string NativeDllSha256 =
         "8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A";
-    internal const string ProductId = "rznb12";
-    private const string ExpectedManufacturer = "Razer";
-    private const string ExpectedProductName = "Blade 16 - RZ09-0581";
     private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
     private const string SystemInformationKey =
         @"SYSTEM\CurrentControlSet\Control\SystemInformation";
-    private const string UsbIdentityPrefix = "VID_1532&PID_02E0";
-
-    private static readonly (string RelativePath, string Sha256)[] DriverFiles =
-    [
-        (
-            @"thx_rznb12_svc.inf_amd64_36ca69c6d3eda8ed\thx_rznb12_svc.inf",
-            "0B312BA852C34727A0CD51BABCFE6B8E56E7A40D83BFB5BE8F9F8218B60AB610"),
-        (
-            @"thx_rznb12_svc.inf_amd64_36ca69c6d3eda8ed\thx_rznb12_svc.exe",
-            "BD1DC54D4ABECC67DD3A8FA25A39223577E035A623FEF38C915F70A659E8DD42"),
-        (
-            @"thx_rznb12_svc.inf_amd64_36ca69c6d3eda8ed\thx_rznb12_svc.cat",
-            "C8F088106319AF05D5D57D7A04BF918E19BF795AF62F0B6FA8B93C31D5CBF9C7"),
-        (
-            @"thx_rznb12_apo4.inf_amd64_4796d3a237351feb\thx_rznb12_apo4.inf",
-            "475EAA14B62F4C17DB5DCC89CB1F4A5381F8A3D6DE75E14DD92A4EC09002A914"),
-        (
-            @"thx_rznb12_apo4.inf_amd64_4796d3a237351feb\thx_rznb12_apo4.dll",
-            "C8C1FCD4869DC7F384E69ACE5A320D9816FFC2D81C03D0667BC19644D9EF4122"),
-        (
-            @"thx_rznb12_apo4.inf_amd64_4796d3a237351feb\thx_rznb12_apo4_grpc.dll",
-            "7A220E038B76F799ED079BBFBF864C4C30D16EE2777881A46FA0E7861EDC328B"),
-        (
-            @"thx_rznb12_apo4.inf_amd64_4796d3a237351feb\thx_rznb12_apo4.cat",
-            "F7CA851E858BDA079B0B481D5BEDCD83EA8E5B18976D2A404B299AFDF95237D2"),
-        (
-            @"thx_rznb12_ext.inf_amd64_510b44355ff422ff\thx_rznb12_ext.inf",
-            "4559784C6F2C0951CCE99DFAE8E26321B2AF4E0C01BF717F3455354C455CAD5D"),
-        (
-            @"thx_rznb12_ext.inf_amd64_510b44355ff422ff\thx_rznb12_ext.cat",
-            "9754CAA20A26963F2512A215DDB1E09877265E25A011C5D283B6E8E9B2E9F242"),
-    ];
 
     public ThxAudioAdmission Check()
     {
@@ -77,24 +46,34 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                 return Unsupported("THX audio requires an interactive Windows user session.");
             }
 
-            if (!HasExactHostIdentity() || !HasExactUsbIdentity())
+            ThxAudioCompatibilityProfile? profile = GetExactHostProfile();
+            if (profile is null || !HasExactDeviceIdentities(profile))
             {
-                return Unsupported("THX audio is admitted only for RZ09-0581 with USB 1532:02E0.");
+                return Unsupported("The exact Razer model, USB identity, and signed-package audio codec could not be verified.");
             }
 
             if (IsCompetingControllerRunning())
             {
                 return new ThxAudioAdmission(
                     ThxAudioAvailability.ControllerActive,
-                    "Razer Synapse or THX Spatial Audio is active. Close it before controlling THX audio.");
+                    "Razer Synapse or THX Spatial Audio is active. Close it before controlling THX audio.")
+                { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
             }
 
-            if (!HasPinnedComponents(out string? componentError))
+            if (!HasPinnedComponents(profile, out string? componentError))
             {
-                return Unavailable(componentError!);
+                return Unavailable(componentError!) with { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
             }
 
-            return new ThxAudioAdmission(ThxAudioAvailability.Available, null);
+            if (!profile.ReadAllowed)
+            {
+                return Unavailable("This model's THX native read contract is awaiting validation.")
+                    with
+                { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
+            }
+            return new ThxAudioAdmission(profile.MutationAllowed
+                ? ThxAudioAvailability.Available : ThxAudioAvailability.AvailableReadOnly, null)
+            { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber, MutationAllowed = profile.MutationAllowed };
         }
         catch (Exception exception)
         {
@@ -114,110 +93,67 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         "ThxV4Native_v1.1.1.0.dll");
 
     internal static bool HasPinnedNativeDll() =>
-        HasHash(GetNativeDllPath(), NativeDllSha256);
+        ThxAudioCompatibility.HasHash(GetNativeDllPath(), NativeDllSha256);
 
-    private static bool HasExactHostIdentity()
+    private static ThxAudioCompatibilityProfile? GetExactHostProfile()
     {
-        using RegistryKey localMachine = RegistryKey.OpenBaseKey(
-            RegistryHive.LocalMachine,
-            RegistryView.Registry64);
-        return ReadExact(localMachine, BiosKey, "SystemManufacturer", ExpectedManufacturer)
-            && ReadExact(localMachine, BiosKey, "SystemProductName", ExpectedProductName)
-            && ReadExact(
-                localMachine,
-                SystemInformationKey,
-                "SystemManufacturer",
-                ExpectedManufacturer)
-            && ReadExact(
-                localMachine,
-                SystemInformationKey,
-                "SystemProductName",
-                ExpectedProductName);
+        using RegistryKey localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+        string? biosManufacturer = ReadString(localMachine, BiosKey, "SystemManufacturer");
+        string? biosProduct = ReadString(localMachine, BiosKey, "SystemProductName");
+        string? systemManufacturer = ReadString(localMachine, SystemInformationKey, "SystemManufacturer");
+        string? systemProduct = ReadString(localMachine, SystemInformationKey, "SystemProductName");
+        return ThxAudioCompatibility.Profiles.SingleOrDefault(profile => ThxAudioCompatibility.MatchesHost(
+            profile, biosManufacturer, biosProduct, systemManufacturer, systemProduct));
     }
 
-    private static bool HasExactUsbIdentity()
+    private static bool HasExactDeviceIdentities(ThxAudioCompatibilityProfile profile)
     {
+        bool usb = false;
+        bool codec = false;
         using ManagementObjectSearcher searcher = CreateSearcher(
-            "SELECT PNPDeviceID FROM Win32_PnPEntity WHERE Present = TRUE");
+            "SELECT PNPDeviceID, HardwareID FROM Win32_PnPEntity WHERE Present = TRUE");
         using ManagementObjectCollection devices = searcher.Get();
         foreach (ManagementBaseObject device in devices)
         {
             using (device)
             {
-                if (device["PNPDeviceID"] is string id && IsExactUsbPnpDeviceId(id))
-                {
-                    return true;
-                }
+                usb |= device["PNPDeviceID"] is string id && ThxAudioCompatibility.MatchesUsb(profile, id);
+                codec |= device["HardwareID"] is string[] ids && ThxAudioCompatibility.MatchesCodec(profile, ids);
             }
         }
-        return false;
+        return usb && codec;
     }
 
-    internal static bool IsExactUsbPnpDeviceId(string value)
-    {
-        string prefix = $"USB\\{UsbIdentityPrefix}";
-        if (!value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-        return value.Length == prefix.Length
-            || value[prefix.Length] is '\\' or '&';
-    }
+    internal static bool IsExactUsbPnpDeviceId(string value) =>
+        ThxAudioCompatibility.MatchesUsb(ThxAudioCompatibility.Profiles[0], value);
 
-    private static bool HasPinnedComponents(out string? error)
+    private static bool HasPinnedComponents(ThxAudioCompatibilityProfile profile, out string? error)
     {
-        string dll = GetNativeDllPath();
-        if (!HasHash(dll, NativeDllSha256))
+        if (!HasPinnedNativeDll())
         {
             error = "The pinned THX native component is unavailable or has changed.";
             return false;
         }
-
-        string driverStore = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-            "System32",
-            "DriverStore",
-            "FileRepository");
-        foreach ((string relativePath, string sha256) in DriverFiles)
+        string driverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            "System32", "DriverStore", "FileRepository");
+        if (!ThxAudioCompatibility.TryResolveDriverStack(driverStore, profile.Stack, out string? serviceBinary))
         {
-            if (!HasHash(Path.Combine(driverStore, relativePath), sha256))
-            {
-                error = "The pinned THX service and audio driver stack is unavailable or has changed.";
-                return false;
-            }
+            error = "The pinned THX service and audio driver stack is unavailable, ambiguous, or has changed.";
+            return false;
         }
-
-        string serviceBinary = Path.Combine(
-            driverStore,
-            @"thx_rznb12_svc.inf_amd64_36ca69c6d3eda8ed\thx_rznb12_svc.exe");
-        if (!HasRunningPinnedService(serviceBinary))
+        if (!ThxAudioCompatibility.HasPinnedActiveConfiguration(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), profile))
+        {
+            error = "The pinned active THX configuration is unavailable or has changed.";
+            return false;
+        }
+        if (!HasRunningPinnedService(profile.Stack.ServiceName, serviceBinary!))
         {
             error = "The pinned THX Spatial Audio service is not installed and running.";
             return false;
         }
-
         error = null;
         return true;
-    }
-
-    private static bool HasHash(string path, string expected)
-    {
-        try
-        {
-            using FileStream stream = new(
-                path,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read);
-            return CryptographicOperations.FixedTimeEquals(
-                Convert.FromHexString(expected),
-                SHA256.HashData(stream));
-        }
-        catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException or CryptographicException)
-        {
-            return false;
-        }
     }
 
     private static bool IsCompetingControllerRunning() =>
@@ -235,11 +171,11 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                     "Razer Synapse Service",
                     StringComparison.OrdinalIgnoreCase));
 
-    private static bool HasRunningPinnedService(string expectedBinary)
+    private static bool HasRunningPinnedService(string serviceName, string expectedBinary)
     {
         using ManagementObjectSearcher searcher = CreateSearcher(
             "SELECT Name, PathName FROM Win32_Service "
-            + "WHERE Name = 'thx_rznb12_service' AND State = 'Running'");
+            + $"WHERE Name = '{serviceName}' AND State = 'Running'");
         using ManagementObjectCollection services = searcher.Get();
         foreach (ManagementBaseObject service in services)
         {
@@ -248,7 +184,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                 if (service["Name"] is string name
                     && string.Equals(
                         name,
-                        "thx_rznb12_service",
+                        serviceName,
                         StringComparison.OrdinalIgnoreCase)
                     && service["PathName"] is string path
                     && string.Equals(
@@ -320,18 +256,11 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         }
     }
 
-    private static bool ReadExact(
-        RegistryKey localMachine,
-        string keyPath,
-        string valueName,
-        string expected)
+    private static string? ReadString(RegistryKey localMachine, string keyPath, string valueName)
     {
         using RegistryKey? key = localMachine.OpenSubKey(keyPath, writable: false);
-        return key?.GetValue(
-            valueName,
-            defaultValue: null,
-            RegistryValueOptions.DoNotExpandEnvironmentNames) is string value
-            && string.Equals(value, expected, StringComparison.Ordinal);
+        return key?.GetValue(valueName, defaultValue: null,
+            RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
     }
 
     private static ThxAudioAdmission Unsupported(string error) =>

@@ -732,6 +732,7 @@ type sealed class OpenBlade.Session.ThxAudioAutomationTarget
 type enum OpenBlade.Session.ThxAudioAvailability
   field System.Int32 value__
   field const OpenBlade.Session.ThxAudioAvailability Available = 4
+  field const OpenBlade.Session.ThxAudioAvailability AvailableReadOnly = 5
   field const OpenBlade.Session.ThxAudioAvailability ComponentsUnavailable = 2
   field const OpenBlade.Session.ThxAudioAvailability ControllerActive = 3
   field const OpenBlade.Session.ThxAudioAvailability Disabled = 0

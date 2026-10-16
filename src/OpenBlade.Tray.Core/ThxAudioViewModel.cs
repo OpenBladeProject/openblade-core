@@ -172,7 +172,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     {
         SessionAudioResponse discovery = await adapter.DiscoverAsync(token);
         return discovery.Status == ThxAudioOperationStatus.Succeeded
-            && discovery.Availability == ThxAudioAvailability.Available
+            && discovery.Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly
             ? await adapter.ReadAsync(endpoint, token)
             : discovery;
     }, isMutation: false);
@@ -395,7 +395,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             }
             availability = response.Availability;
             if (response.Status == ThxAudioOperationStatus.Succeeded
-                && response.Availability == ThxAudioAvailability.Available)
+                && response.Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly)
             {
                 state = response.State is { } confirmed && confirmed.Endpoint == endpoint
                     ? confirmed : null;
@@ -408,7 +408,9 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
                         UpdateConfirmedProfileDraft(state);
                     }
                 }
-                statusKey = state is not null
+                statusKey = availability == ThxAudioAvailability.AvailableReadOnly
+                    ? "THX is available for reading. Controls await validation for this model."
+                    : state is not null
                     ? "THX settings are up to date."
                     : isDiscovery ? "THX components found. Read the current settings to connect."
                     : "THX settings could not be confirmed. Read them again before making changes.";
@@ -421,7 +423,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
                     : response.Availability == ThxAudioAvailability.ControllerActive
                     ? "Close Synapse and THX Spatial Audio before connecting."
                     : response.Availability == ThxAudioAvailability.UnsupportedModel
-                    ? "THX audio controls are available only on RZ09-0581."
+                    ? "THX audio is unavailable for this model or audio device."
                     : response.Availability == ThxAudioAvailability.ComponentsUnavailable
                     ? "The supported THX components are unavailable."
                     : "THX settings could not be confirmed. Read them again before making changes.";

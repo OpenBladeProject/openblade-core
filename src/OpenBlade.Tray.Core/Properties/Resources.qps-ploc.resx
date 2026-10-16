@@ -1581,9 +1581,6 @@
   <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
     <value>[!! Thé áúdíó chángé cóúld nót bé cónfírméd. Réád thé cúrrént séttíngs béfóré trýíng ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="THX audio controls are available only on RZ09-0581." xml:space="preserve">
-    <value>[!! THX áúdíó cóntróls áré áváíláblé ónlý ón RZ09-0581. ~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="The supported THX components are unavailable." xml:space="preserve">
     <value>[!! Thé súppórtéd THX cómpónénts áré únáváíláblé. ~~~~~~~~~~~~~~ !!]</value>
   </data>
@@ -1655,5 +1652,14 @@
   </data>
   <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
     <value>[!! Chóósé Gámé, Móvíé, Músíc, Vóícé, ór Cústóm tó édít ÉQ. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX audio is unavailable for this model or audio device." xml:space="preserve">
+    <value>[!! THX áúdíó ís únáváíláblé fór thís módél ór áúdíó dévícé. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX is available for reading. Controls await validation for this model." xml:space="preserve">
+    <value>[!! THX ís áváíláblé fór réádíng. Cóntróls áwáít válídátíón fór thís módél. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Application routing is not yet enabled for this model." xml:space="preserve">
+    <value>[!! Ápplícátíón róútíng ís nót ýét énábléd fór thís módél. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

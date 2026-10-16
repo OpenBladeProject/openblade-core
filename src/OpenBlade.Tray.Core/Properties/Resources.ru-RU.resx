@@ -1491,9 +1491,6 @@
   <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
     <value>Не удалось подтвердить изменение звука. Прочитайте текущие настройки перед повторной попыткой.</value>
   </data>
-  <data name="THX audio controls are available only on RZ09-0581." xml:space="preserve">
-    <value>Управление THX Audio доступно только на RZ09-0581.</value>
-  </data>
   <data name="The supported THX components are unavailable." xml:space="preserve">
     <value>Поддерживаемые компоненты THX недоступны.</value>
   </data>
@@ -1565,5 +1562,14 @@
   </data>
   <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
     <value>Выберите Игры, Кино, Музыка, Голос или Свой, чтобы настроить эквалайзер.</value>
+  </data>
+  <data name="THX audio is unavailable for this model or audio device." xml:space="preserve">
+    <value>THX Audio недоступен для этой модели или аудиоустройства.</value>
+  </data>
+  <data name="THX is available for reading. Controls await validation for this model." xml:space="preserve">
+    <value>Доступно чтение настроек THX. Управление ожидает проверки на этой модели.</value>
+  </data>
+  <data name="Application routing is not yet enabled for this model." xml:space="preserve">
+    <value>Автоматическое переключение звука пока недоступно для этой модели.</value>
   </data>
 </root>
