@@ -411,7 +411,7 @@ public sealed class CapabilityPresentationTests
         foreach (string cell in new[] { "ThxNormalizationCell", "ThxVoiceClarityCell" })
         {
             XElement border = NamedElement(document, "Border", cell);
-            Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", Attribute(border, "Style"));
+            Assert.Equal("{StaticResource SettingsEmphasizedSubcardStyle}", Attribute(border, "Style"));
             Assert.Single(border.Descendants(), element => element.Name.LocalName == "Slider");
             Assert.Single(border.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
         }
@@ -429,8 +429,11 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(border, "Height"));
         }
         XElement applications = NamedElement(document, "Expander", "ThxAudioApplications");
-        Assert.DoesNotContain(applications.Descendants(), element =>
-            Attribute(element, "Style")?.Contains("EmphasizedSubcard", StringComparison.Ordinal) == true);
+        XElement cells = Assert.Single(applications.Elements(), element => element.Name.LocalName == "StackPanel");
+        Assert.All(cells.Elements(), cell =>
+            Assert.Contains("EmphasizedSubcardStyle", Attribute(cell, "Style")!));
+        XElement rules = Assert.Single(applications.Descendants(), element => element.Name.LocalName == "ItemsRepeater");
+        Assert.Equal("{x:Bind ThxViewModel.HasApplicationRules, Mode=OneWay}", Attribute(rules, "Visibility"));
         Assert.Single(applications.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
     }
 

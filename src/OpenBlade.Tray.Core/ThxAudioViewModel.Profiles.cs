@@ -22,6 +22,7 @@ public sealed partial class ThxAudioViewModel
     public ObservableCollection<ThxApplicationRuleOption> ApplicationRules { get; } = [];
     public bool CanCaptureAudioProfile => CanRead && availability != ThxAudioAvailability.AvailableReadOnly;
     public bool HasAudioProfile => profileDraft is not null;
+    public bool HasApplicationRules => ApplicationRules.Count > 0;
     public bool CanSaveAudioProfile => HasAudioProfile && profilePersistenceAvailable && !busy && !disposed
         && availability != ThxAudioAvailability.AvailableReadOnly;
     public bool ProfilePersistenceAvailable
@@ -296,7 +297,7 @@ public sealed partial class ThxAudioViewModel
     {
         foreach (string property in new[] { nameof(CanCaptureAudioProfile), nameof(HasAudioProfile), nameof(CanSaveAudioProfile),
             nameof(ApplicationRoutingEnabled), nameof(ApplicationExecutable), nameof(ApplicationOutput),
-            nameof(ApplicationOutputs), nameof(CanAddApplicationRule), nameof(AudioProfileMessage), nameof(CanConfigureApplicationRouting), nameof(ApplicationRoutingUnavailable), nameof(ApplicationRoutingUnavailableHint) })
+            nameof(ApplicationOutputs), nameof(HasApplicationRules), nameof(CanAddApplicationRule), nameof(AudioProfileMessage), nameof(CanConfigureApplicationRouting), nameof(ApplicationRoutingUnavailable), nameof(ApplicationRoutingUnavailableHint) })
         {
             PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(property));
         }

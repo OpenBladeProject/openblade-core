@@ -369,11 +369,23 @@ public sealed class ThxAudioViewModelTests
         viewModel.LoadProfile(PowerSource.PluggedIn, ProfileSettings());
         viewModel.ApplyPreference(true);
         await viewModel.RefreshAsync();
+        Assert.False(viewModel.HasApplicationRules);
+        var changedProperties = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
         viewModel.ApplicationExecutable = " GAME.EXE ";
         Assert.DoesNotContain(viewModel.ApplicationOutputs, output => output.Output == ThxApplicationAudioOutput.Competitive);
         viewModel.ApplicationOutput = viewModel.ApplicationOutputs.Single(output => output.Output == ThxApplicationAudioOutput.Immersive);
         viewModel.AddApplicationRule();
         Assert.Equal("game.exe", Assert.Single(viewModel.ApplicationRules).ExecutableName);
+        Assert.True(viewModel.HasApplicationRules);
+        Assert.Contains(nameof(viewModel.HasApplicationRules), changedProperties);
+        changedProperties.Clear();
+        viewModel.RemoveApplicationRule(Assert.Single(viewModel.ApplicationRules));
+        Assert.False(viewModel.HasApplicationRules);
+        Assert.Contains(nameof(viewModel.HasApplicationRules), changedProperties);
+        viewModel.ApplicationExecutable = "game.exe";
+        viewModel.ApplicationOutput = viewModel.ApplicationOutputs.Single(output => output.Output == ThxApplicationAudioOutput.Immersive);
+        viewModel.AddApplicationRule();
         viewModel.ApplicationExecutable = "Game.exe";
         Assert.False(viewModel.CanAddApplicationRule);
         Assert.Single(adapter.Calls);
@@ -382,6 +394,7 @@ public sealed class ThxAudioViewModelTests
         Assert.Single(viewModel.ApplicationRules); // Equivalent status refresh preserves the draft.
         viewModel.LoadProfile(PowerSource.Battery, null);
         Assert.Empty(viewModel.ApplicationRules);
+        Assert.False(viewModel.HasApplicationRules);
         Assert.Null(viewModel.CreateProfileDraft());
     }
 

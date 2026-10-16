@@ -11,7 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Remove duplicate padding inside nested settings and match THX single-line controls to the app's compact row spacing. ([#790](https://github.com/OpenBladeProject/openblade-core/pull/790))
+- Remove duplicate padding inside nested settings, keep THX subcells visually distinct, and hide empty application-rule spacing. ([#790](https://github.com/OpenBladeProject/openblade-core/pull/790))
 
 ## [0.30.0] - 2026-10-16
 

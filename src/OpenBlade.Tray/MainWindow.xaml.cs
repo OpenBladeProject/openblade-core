@@ -331,10 +331,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             ThxAudioApplications.IsExpanded = true;
             target = ThxAudioApplications;
-            ThxViewModel.ApplicationExecutable = "game.exe";
-            ThxViewModel.ApplicationOutput = ThxViewModel.ApplicationOutputs.FirstOrDefault(
-                option => option.Output == ThxApplicationAudioOutput.Immersive);
-            ThxViewModel.AddApplicationRule();
+            if (!string.Equals(Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_EMPTY_RULES"),
+                "1", StringComparison.Ordinal))
+            {
+                ThxViewModel.ApplicationExecutable = "game.exe";
+                ThxViewModel.ApplicationOutput = ThxViewModel.ApplicationOutputs.FirstOrDefault(
+                    option => option.Output == ThxApplicationAudioOutput.Immersive);
+                ThxViewModel.AddApplicationRule();
+            }
         }
         if (target != ThxAudioSection)
         {
