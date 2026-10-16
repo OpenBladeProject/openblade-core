@@ -33,6 +33,24 @@ write capability. Observing a generic mode-7 value is not a model-specific
 HyperBoost support claim. The 2024 Blade would require a separate exact-model
 backend; it is outside this change's existing-experimental-model scope.
 
+### Conflicting Blade 14 source evidence
+
+Product 669's exact Blade 14 (2023) module includes a HyperBoost performance-mode
+entry, despite the model being absent from the published compatibility list.
+OpenBlade records that difference as observed-only capability and diagnostic
+provenance; no HyperBoost write path is admitted for it.
+
+- [669 main](https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js),
+  SHA-256 `EEB8A171E77D1E066655D7FC997E4015B420B0F936F2464A27A87FDAFB5AC302`:
+  exact product identity near character 142,139 and mode entry near 145,359.
+- [669 policy](https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js),
+  SHA-256 `D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B`:
+  pad/firmware selection policy near character 1,468,407.
+
+Blade 18 product 672 has no HyperBoost entry in its exact mode list. A shared
+enum reference is insufficient to enable it. Its existing observed-only state
+remains unchanged.
+
 ## Vendor evidence
 
 The official Synapse product 671 module enables `isHyperBoostSystem`, supplies

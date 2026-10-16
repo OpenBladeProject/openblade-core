@@ -110,8 +110,11 @@ The shared service journals ownership and restores saved intent, including
 Custom levels and fixed fans. Unknown or mismatched submission/readback pauses
 experimental writes; recovery performs fresh reads and never replays a setter.
 
-Blade 18 (2023) remains observed-only for HyperBoost. Turn it off in Synapse
-before using performance controls; no HyperBoost setter is admitted for that model.
+Blade 14 (2023) has an exact Synapse HyperBoost mode entry but is absent from
+Razer's current compatibility list. Its capability and diagnostics retain this
+difference as observed-only. Blade 18 (2023) also remains observed-only.
+Turn HyperBoost off in Synapse before using performance controls on these two
+models; neither admits a HyperBoost setter.
 
 ## Battery protection
 

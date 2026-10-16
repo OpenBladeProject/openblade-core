@@ -42,6 +42,9 @@ internal static class ExperimentalBladeModels
                 new("UniformAmbientAndAudio", "SourceBackedExtrapolationWithoutRgbReadback", [MaintainedRazerCtlSource, OpenRazerSource]),
                 new("ChargeLimits50To100", "UpstreamOwnerTested", [MaintainedRazerCtlSource])],
             0x029D => [
+                new("HyperBoostObserved", "SynapseSourceBackedNotPubliclyListed", [
+                    "https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js",
+                    "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js"]),
                 new("CustomAndFixedFans", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("KeyboardLightingAndLogoOnOff", "UpstreamOwnerReported", [OpenRazerSource, "https://github.com/openrazer/openrazer/pull/2237"]),
                 new("LogoStaticAndBreathing", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),

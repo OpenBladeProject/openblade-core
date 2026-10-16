@@ -11,6 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep Blade 16 (2023) battery fan changes in DC Balanced and reject power-source changes before submission. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 - Allow read-only experimental recovery before an explicit saved HyperBoost restore, and match saved Custom levels during journal recovery. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 
 ## [0.30.0] - 2026-10-16

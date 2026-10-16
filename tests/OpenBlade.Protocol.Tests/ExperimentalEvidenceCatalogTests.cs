@@ -21,6 +21,12 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal(model.AdapterPowerEvidenceSource, Assert.Single(feature.Sources));
                     Assert.StartsWith("https://apps.razer.com/synapse/products/", model.AdapterPowerEvidenceSource);
                 }
+                else if (feature.Feature == "HyperBoostObserved")
+                {
+                    Assert.Equal((ushort)0x029D, model.ProductId);
+                    Assert.Equal("SynapseSourceBackedNotPubliclyListed", feature.Basis);
+                    Assert.All(feature.Sources, source => Assert.StartsWith("https://apps.razer.com/synapse/products/669/mw/", source));
+                }
                 else if (feature.Feature is "HyperBoost" or "PadlessHyperBoost")
                 {
                     Assert.Equal((ushort)0x029F, model.ProductId);

@@ -273,6 +273,18 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Empty(session.Writes);
     }
 
+    [Fact]
+    public async Task Blade14_SynapseHyperBoostRemainsObservedOnlyOutsidePublishedCompatibility()
+    {
+        var session = new Session { Mode = 7 };
+        await using var port = Create(0x029D, session);
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, port.Capabilities.HyperBoostAccess);
+        Assert.True((await port.QueryPerformanceFanStateAsync(CancellationToken.None)).HyperBoostActive);
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Balanced, false, CancellationToken.None));
+        Assert.Empty(session.Writes);
+    }
+
     private static ExperimentalBladePort HyperBoostPort(Session session, Pad pad,
         ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null) =>
         new(session, new(), Model(0x029F), policy ?? new(Model(0x029F)), () => true,
