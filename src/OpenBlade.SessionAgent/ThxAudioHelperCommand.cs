@@ -215,7 +215,9 @@ internal sealed class ThxAudioHelperCommand(
 
             ThxAudioState state = ReadState(native, device, request.Endpoint, current.ModelNumber, current.MutationAllowed) with
             {
-                SystemEffectsDisabled = ReadSystemEffectsDisabled(current.ProductId!, request.Endpoint),
+                // Advisory calls never run after a possible native write.
+                SystemEffectsDisabled = request is ThxHelperReadRequest
+                    ? ReadSystemEffectsDisabled(current.ProductId!, request.Endpoint) : null,
             };
             if (!MatchesRequestedMutation(request, state))
             {

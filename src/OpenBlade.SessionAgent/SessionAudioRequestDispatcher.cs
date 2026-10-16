@@ -311,6 +311,12 @@ public sealed class SessionAudioRequestDispatcher
             && state.Endpoint == endpoint
             && Matches(request, state))
         {
+            if (confirmed.TryGetValue(endpoint, out ThxAudioState? previous))
+            {
+                // The optional Windows-effects observation is refreshed by reads,
+                // never by adding COM/registry work after a native mutation.
+                state = state with { SystemEffectsDisabled = previous.SystemEffectsDisabled };
+            }
             confirmed[endpoint] = state;
             return Response(
                 request,

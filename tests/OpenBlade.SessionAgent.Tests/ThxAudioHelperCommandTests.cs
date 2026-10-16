@@ -136,15 +136,16 @@ public sealed class ThxAudioHelperCommandTests
     }
 
     [Fact]
-    public async Task AdvisoryFailureDoesNotInvalidateConfirmedSpatialMutation()
+    public async Task MutationsNeverInvokeOptionalWindowsEffectsProbe()
     {
         var native = new FakeNative { ApplyWritesToReadback = true };
+        bool probed = false;
         using var output = new StringWriter();
         var command = new ThxAudioHelperCommand(() => native,
             new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null)
             { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true }),
             new StringReader("""{"operation":"setProperty","version":1,"endpoint":0,"propertyId":"spatial_enabled","value":true}"""), output,
-            (_, _) => throw new IOException("Unavailable diagnostic"));
+            (_, _) => { probed = true; throw new IOException("Unavailable diagnostic"); });
         await command.RunAsync(CancellationToken.None);
         using var json = System.Text.Json.JsonDocument.Parse(output.ToString());
         Assert.Equal((int)ThxAudioOperationStatus.Succeeded, json.RootElement.GetProperty("status").GetInt32());
@@ -152,10 +153,13 @@ public sealed class ThxAudioHelperCommandTests
         Assert.Equal(System.Text.Json.JsonValueKind.Null,
             json.RootElement.GetProperty("state").GetProperty("systemEffectsDisabled").ValueKind);
         Assert.Single(native.PropertyWrites);
+        Assert.False(probed);
     }
 
-    [Fact]
-    public async Task ReadReportsWindowsBypassWithoutChangingConfirmedSpatialSetting()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadReportsWindowsBypassWithoutChangingConfirmedSpatialSetting(bool probeThrows)
     {
         var native = new FakeNative { Spatial = true };
         using var output = new StringWriter();
@@ -167,13 +171,15 @@ public sealed class ThxAudioHelperCommandTests
             {
                 Assert.Equal("rznb12", product);
                 Assert.Equal(ThxAudioEndpoint.Speakers, endpoint);
+                if (probeThrows) throw new IOException("Unavailable advisory");
                 return true;
             });
         await command.RunAsync(CancellationToken.None);
         using var json = System.Text.Json.JsonDocument.Parse(output.ToString());
         var state = json.RootElement.GetProperty("state");
         Assert.True(state.GetProperty("spatialEnabled").GetBoolean());
-        Assert.True(state.GetProperty("systemEffectsDisabled").GetBoolean());
+        Assert.Equal(probeThrows ? System.Text.Json.JsonValueKind.Null : System.Text.Json.JsonValueKind.True,
+            state.GetProperty("systemEffectsDisabled").ValueKind);
         Assert.Empty(native.PropertyWrites);
     }
 

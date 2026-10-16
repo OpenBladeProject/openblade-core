@@ -50,8 +50,9 @@ Windows must allow audio enhancements for THX to affect playback. If Windows
 audio enhancements are off, select **Device Default Effects** under Windows
 **Settings > System > Sound > Speakers > Audio enhancements**. OpenBlade shows
 a warning when it detects this bypass on the selected default output. It does
-not change that Windows setting. A confirmed THX switch reports the stored THX
-setting; it does not measure the resulting sound.
+not change that Windows setting. The warning refreshes when settings are read.
+A confirmed THX switch reports the stored THX setting; it does not measure the
+resulting sound.
 
 ## Saved audio and applications
 

@@ -19,6 +19,26 @@ public sealed class SessionAudioRequestDispatcherTests
     }
 
     [Fact]
+    public async Task MutationsPreserveAdvisoryFromLastReadAndExplicitReadRefreshesIt()
+    {
+        var worker = new RecordingWorker(State() with { SystemEffectsDisabled = true });
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        await dispatcher.DispatchAsync(new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion,
+            Guid.NewGuid(), ThxAudioEndpoint.Speakers), CancellationToken.None);
+        worker.Next = new ThxAudioWorkerResult(ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available, null, State(spatial: true));
+        SessionAudioResponse changed = await dispatcher.DispatchAsync(new SetThxSpatialRequest(
+            SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers, true), CancellationToken.None);
+        Assert.True(changed.State!.SpatialEnabled);
+        Assert.True(changed.State.SystemEffectsDisabled);
+        worker.Next = new ThxAudioWorkerResult(ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available, null, State(spatial: true) with { SystemEffectsDisabled = false });
+        SessionAudioResponse read = await dispatcher.DispatchAsync(new ReadThxAudioRequest(
+            SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers), CancellationToken.None);
+        Assert.False(read.State!.SystemEffectsDisabled);
+    }
+
+    [Fact]
     public async Task HelperReadOnlyAdmissionIsPreservedAndDeniesMutation()
     {
         var worker = new RecordingWorker(State())
