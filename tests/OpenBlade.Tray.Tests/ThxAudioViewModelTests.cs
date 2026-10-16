@@ -121,7 +121,10 @@ public sealed class ThxAudioViewModelTests
     [Fact]
     public async Task OnlyAdvertisedPresetsCanBeSubmitted()
     {
-        var adapter = new FakeAdapter();
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, AdvancedState() with { Presets = State().Presets }),
+        };
         await using var viewModel = new ThxAudioViewModel(adapter);
         viewModel.ApplyPreference(true);
         await viewModel.RefreshAsync();
