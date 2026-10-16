@@ -5,8 +5,8 @@
 [English](../synapse-blade-blocker.md) | 简体中文 | [Русский](../ru-RU/synapse-blade-blocker.md)
 
 [Synapse Blade Blocker](https://github.com/OpenBladeProject/synapse-blade-blocker)
-是一个需要单独安装的可选补丁。它能让 Synapse 继续管理外设，同时从设备列表中排除已识别的 Blade 笔记本。
-支持的型号和安装说明以该仓库为准。OpenBlade 不会自动安装这个补丁，也不依赖它运行。
+能让 Synapse 继续管理外设，同时排除已识别的 Blade 笔记本。
+请到该仓库查看支持的型号和安装说明。
 
 <a id="setup"></a>
 
