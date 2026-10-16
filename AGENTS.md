@@ -443,11 +443,14 @@ unrelated worktrees and checkout changes.
     changes. If local modifications or divergence prevent a safe fast-forward,
     report the blocker rather than stashing, resetting, or discarding work.
 
-## README and documentation language
+## README, documentation, and UI language
 
 Use the concise [README](README.md), approved in
 [PR #558](https://github.com/OSSBlade/openblade-core/pull/558), as the writing
-reference for user-facing documentation.
+reference for user-facing documentation and app UI text. These rules cover
+labels, helper text, tooltips, status messages, notifications, and confirmation
+dialogs in the tray, graphical installer, and native setup, including their
+translations.
 
 - Write for laptop owners in plain, direct English. Prefer familiar words,
   concrete actions, and short sentences over implementation jargon.
@@ -468,8 +471,8 @@ reference for user-facing documentation.
   not do.
 - Write instructions positively and concretely, for example: "Start it
   normally; setup asks for administrator permission when needed."
-- Review documentation edits for factual accuracy, length, repetition, and
-  tone. Verify changed behavior claims against the implementation. Detailed
+- Review documentation and UI text edits for factual accuracy, length,
+  repetition, and tone. Verify changed behavior claims against the implementation. Detailed
   engineering guides should retain the precision their readers need.
 
 - Delete redundant disclaimers outright; do not replace a removed caveat with
@@ -482,6 +485,13 @@ reference for user-facing documentation.
 - Preserve meaning while shortening: safety gates, model and firmware limits,
   process exclusions, and benchmark sampling conditions must remain accurate.
   Keep English, Russian, and Chinese versions aligned.
+- In UI text, state the current condition, consequence, and next action when
+  needed. Keep data-loss warnings, uncertain-write and recovery instructions,
+  and required safety or compatibility limits explicit. Remove internal
+  implementation detail that does not help the user decide or act.
+- Follow [the localization workflow](docs/localization.md) when changing UI
+  text: update source fallbacks and matching translations, preserve placeholders
+  and access keys, and regenerate the authoritative catalogs and pseudo locale.
 
 ## Versioning and commits
 
