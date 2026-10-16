@@ -34,8 +34,8 @@ internal static class Program
             }
             catch
             {
-                // The one-shot helper reports only bounded typed failures over
-                // stdout. It never writes native paths or device data to a log.
+                // The helper reports only bounded typed failures over
+                // its authenticated private pipe. It never writes native paths or device data to a log.
                 return 2;
             }
         }

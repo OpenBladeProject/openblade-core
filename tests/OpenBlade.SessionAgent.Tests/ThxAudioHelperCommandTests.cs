@@ -356,7 +356,12 @@ public sealed class ThxAudioHelperCommandTests
             ConfirmExitResult = false,
             TerminateResult = false,
             HasExitedValue = false,
-            Response = SuccessfulHelperResponse(spatial: true),
+            Response = new ThxAudioHelperResponse(
+                ThxAudioHelperProtocol.Version,
+                ThxAudioOperationStatus.Indeterminate,
+                ThxAudioAvailability.Available,
+                "The mutation readback is uncertain.",
+                null),
         };
         var factory = new FakeChildFactory(child);
         await using var client = new ThxAudioHelperProcessClient(childFactory: factory);
@@ -763,6 +768,337 @@ public sealed class ThxAudioHelperCommandTests
         }
     }
 
+    [Fact]
+    public async Task WarmSession_ReusesAdapterAndBothEndpointRegistrationsWithFreshChecks()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        int created = 0;
+        int admissionChecks = 0;
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(
+            () => { created++; return native; },
+            new CountingAdmission(() => admissionChecks++),
+            new StringReader(RequestLines(
+                ReadRequest(),
+                SpatialRequest(true),
+                ReadRequest(ThxAudioEndpoint.Headphones),
+                ReadRequest(),
+                ReadRequest(ThxAudioEndpoint.Headphones))),
+            output);
+
+        Assert.Equal(0, await command.RunAsync(CancellationToken.None));
+
+        Assert.Equal(1, created);
+        Assert.Equal(5, admissionChecks);
+        Assert.Equal(5, native.CheckStatusCalls);
+        Assert.Equal(2, native.AddCalls);
+        Assert.Equal(2, native.RegisteredDevices.Distinct().Count());
+        Assert.Equal(native.RegisteredDevices, native.RemovedDevices);
+        Assert.Equal(1, native.DisposeCalls);
+        Assert.Single(native.PropertyWrites);
+        Assert.True(native.Spatial);
+        Assert.False(native.Equalizer);
+        Assert.All(ReadResponses(output), response =>
+            Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status));
+    }
+
+    [Fact]
+    public async Task WarmSession_DoesNotCacheMutationPermissionOrReadPresentation()
+    {
+        var native = new FakeNative();
+        int checks = 0;
+        var admission = new ChangingAdmission(() => Admitted() with
+        {
+            Availability = ++checks == 1
+                ? ThxAudioAvailability.Available : ThxAudioAvailability.AvailableReadOnly,
+            MutationAllowed = checks == 1,
+        });
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => native, admission,
+            new StringReader(RequestLines(ReadRequest(), ReadRequest(), SpatialRequest(true))), output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        ThxAudioHelperResponse[] responses = ReadResponses(output);
+        Assert.Equal(3, checks);
+        Assert.Equal(2, native.CheckStatusCalls);
+        Assert.Equal(1, native.AddCalls);
+        Assert.NotEmpty(responses[0].State!.FactoryPresetCurves);
+        Assert.Empty(responses[1].State!.FactoryPresetCurves);
+        Assert.Equal(ThxAudioAvailability.AvailableReadOnly, responses[1].Availability);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, responses[2].Status);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(1, native.RemoveCalls);
+    }
+
+    [Fact]
+    public async Task WarmSession_FailedSecondAdmissionStopsBeforeWriteAndIgnoresFollowingRequest()
+    {
+        var native = new FakeNative();
+        int checks = 0;
+        var admission = new ChangingAdmission(() => ++checks == 1 ? Admitted()
+            : new ThxAudioAdmission(ThxAudioAvailability.ControllerActive, "A controller is active."));
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => native, admission,
+            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true), SpatialRequest(false))), output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, checks);
+        Assert.Equal(1, native.CheckStatusCalls);
+        Assert.Equal(2, ReadResponses(output).Length);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, ReadResponses(output)[1].Status);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(1, native.RemoveCalls);
+    }
+
+    [Fact]
+    public async Task WarmSession_ChangedAdmittedIdentityCannotReuseRegistration()
+    {
+        var native = new FakeNative();
+        int checks = 0;
+        var admission = new ChangingAdmission(() => ++checks == 1 ? Admitted()
+            : Admitted() with { ProductId = "rznb11", ModelNumber = "RZ09-0528" });
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => native, admission,
+            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))), output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, native.AddCalls);
+        Assert.Equal(1, native.CheckStatusCalls);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, ReadResponses(output)[1].Status);
+    }
+
+    [Fact]
+    public async Task WarmSession_ChecksServiceAgainBeforeSecondMutation()
+    {
+        var native = new FakeNative();
+        int checks = 0;
+        var admission = new ChangingAdmission(() =>
+        {
+            native.CheckStatusResult = ++checks == 1;
+            return Admitted();
+        });
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => native, admission,
+            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))), output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, native.CheckStatusCalls);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(ThxAudioOperationStatus.Failed, ReadResponses(output)[1].Status);
+        Assert.Equal(1, native.RemoveCalls);
+    }
+
+    [Fact]
+    public async Task WarmSession_UnconfirmedMutationRetiresWithoutProcessingAnotherWrite()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = false };
+        using var output = new StringWriter();
+        var command = Command(native,
+            RequestLines(ReadRequest(), SpatialRequest(true), SpatialRequest(false)), output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, native.CheckStatusCalls);
+        Assert.Single(native.PropertyWrites);
+        Assert.Equal(2, ReadResponses(output).Length);
+        Assert.Equal(ThxAudioOperationStatus.Indeterminate, ReadResponses(output)[1].Status);
+        Assert.Equal(1, native.RemoveCalls);
+        Assert.Equal(1, native.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task WarmSession_InvalidSecondMessageRetiresWithoutAnotherNativeCall()
+    {
+        var native = new FakeNative();
+        using var output = new StringWriter();
+        var command = Command(native, RequestLines(ReadRequest()) + "{invalid}\n"
+            + RequestLines(SpatialRequest(true)), output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, native.CheckStatusCalls);
+        Assert.Equal(2, ReadResponses(output).Length);
+        Assert.Equal(ThxAudioOperationStatus.Failed, ReadResponses(output)[1].Status);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(1, native.RemoveCalls);
+    }
+
+    [Fact]
+    public async Task ProcessClient_WarmRequestsShareOneOwnedChildAndShutdownWithEof()
+    {
+        var child = new FakeChild { AssignResult = true };
+        var factory = new FakeChildFactory(child);
+        var client = new ThxAudioHelperProcessClient(childFactory: factory);
+        try
+        {
+            Assert.Equal(ThxAudioOperationStatus.Succeeded,
+                (await client.ExecuteAsync(ReadRequest(), CancellationToken.None)).Status);
+            Assert.Equal(ThxAudioOperationStatus.Succeeded,
+                (await client.ExecuteAsync(ReadRequest(), CancellationToken.None)).Status);
+            Assert.Equal(1, factory.StartCalls);
+            Assert.Equal(1, child.AssignCalls);
+            Assert.Equal(2, child.ExchangeCalls);
+            Assert.Equal(0, child.ConfirmExitCalls);
+            Assert.Equal(0, child.CloseCalls);
+            Assert.Equal(0, child.DisposeCalls);
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+        Assert.Equal(1, child.CloseCalls);
+        Assert.Equal(1, child.ConfirmExitCalls);
+        Assert.Equal(0, child.TerminateCalls);
+        Assert.Equal(1, child.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task ProcessClient_SerializesWarmExchangesAndCancelsQueuedRequestWithoutSending()
+    {
+        var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int exchanges = 0;
+        var child = new FakeChild
+        {
+            AssignResult = true,
+            Exchange = async (_, token) =>
+            {
+                if (++exchanges == 1)
+                {
+                    firstEntered.SetResult();
+                    await releaseFirst.Task.WaitAsync(token);
+                }
+                return SuccessfulHelperResponse();
+            },
+        };
+        await using var client = new ThxAudioHelperProcessClient(childFactory: new FakeChildFactory(child));
+        Task<ThxAudioWorkerResult> first = client.ExecuteAsync(ReadRequest(), CancellationToken.None);
+        await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var canceled = new CancellationTokenSource();
+        Task<ThxAudioWorkerResult> queued = client.ExecuteAsync(SpatialRequest(true), canceled.Token);
+        Task<ThxAudioWorkerResult> second = client.ExecuteAsync(ReadRequest(), CancellationToken.None);
+        canceled.Cancel();
+        Assert.Equal(1, child.ExchangeCalls);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued);
+        releaseFirst.SetResult();
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, (await first).Status);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, (await second).Status);
+        Assert.Equal(2, child.ExchangeCalls);
+        Assert.Equal(1, child.AssignCalls);
+    }
+
+    [Fact]
+    public async Task ProcessClient_CanceledMutationKillsChildWithoutReplayAndNextReadStartsFresh()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var child = new FakeChild
+        {
+            AssignResult = true,
+            Exchange = async (_, token) =>
+            {
+                entered.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return SuccessfulHelperResponse();
+            },
+        };
+        var replacement = new FakeChild { AssignResult = true };
+        var factory = new QueuedChildFactory(child, replacement);
+        await using var client = new ThxAudioHelperProcessClient(childFactory: factory);
+        using var canceled = new CancellationTokenSource();
+        Task<ThxAudioWorkerResult> pending = client.ExecuteAsync(SpatialRequest(true), canceled.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        canceled.Cancel();
+
+        Assert.Equal(ThxAudioOperationStatus.Indeterminate, (await pending).Status);
+        Assert.Equal(1, factory.StartCalls);
+        Assert.Equal(1, child.ExchangeCalls);
+        Assert.Equal(1, child.TerminateCalls);
+        Assert.Equal(1, child.DisposeCalls);
+        Assert.Equal(0, replacement.ExchangeCalls);
+
+        Assert.Equal(ThxAudioOperationStatus.Succeeded,
+            (await client.ExecuteAsync(ReadRequest(), CancellationToken.None)).Status);
+        Assert.Equal(2, factory.StartCalls);
+        Assert.Equal(1, replacement.ExchangeCalls);
+    }
+
+    [Fact]
+    public async Task ProcessClient_InvalidResponseRetiresBeforeAnotherCall()
+    {
+        var child = new FakeChild
+        {
+            AssignResult = true,
+            Response = SuccessfulHelperResponse() with { Version = -1 },
+        };
+        var factory = new FakeChildFactory(child);
+        await using var client = new ThxAudioHelperProcessClient(childFactory: factory);
+
+        ThxAudioWorkerResult result = await client.ExecuteAsync(SpatialRequest(true), CancellationToken.None);
+
+        Assert.Equal(ThxAudioOperationStatus.Indeterminate, result.Status);
+        Assert.Equal(1, factory.StartCalls);
+        Assert.Equal(1, child.ExchangeCalls);
+        Assert.Equal(1, child.TerminateCalls);
+        Assert.Equal(1, child.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task ProcessClient_GracefulShutdownFailureUsesBoundedTermination()
+    {
+        var child = new FakeChild { AssignResult = true, ConfirmExitResult = false };
+        var client = new ThxAudioHelperProcessClient(childFactory: new FakeChildFactory(child));
+        await client.ExecuteAsync(ReadRequest(), CancellationToken.None);
+
+        await client.DisposeAsync();
+
+        Assert.Equal(1, child.CloseCalls);
+        Assert.Equal(1, child.ConfirmExitCalls);
+        Assert.Equal(1, child.TerminateCalls);
+        Assert.Equal(1, child.DisposeCalls);
+    }
+
+    private static ThxHelperReadRequest ReadRequest(ThxAudioEndpoint endpoint = ThxAudioEndpoint.Speakers) =>
+        new(ThxAudioHelperProtocol.Version, endpoint);
+
+    private static ThxHelperSetPropertyRequest SpatialRequest(bool value) =>
+        new(ThxAudioHelperProtocol.Version, ThxAudioEndpoint.Speakers, "spatial_enabled", value);
+
+    private static ThxAudioAdmission Admitted() => new(ThxAudioAvailability.Available, null)
+    {
+        ProductId = "rznb12",
+        ModelNumber = "RZ09-0581",
+        MutationAllowed = true,
+    };
+
+    private static string RequestLines(params ThxAudioHelperRequest[] requests) =>
+        string.Concat(requests.Select(request => System.Text.Json.JsonSerializer.Serialize(
+            request, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) + "\n"));
+
+    private static ThxAudioHelperResponse[] ReadResponses(StringWriter output) => output.ToString()
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        .Select(line => System.Text.Json.JsonSerializer.Deserialize<ThxAudioHelperResponse>(line,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!)
+        .ToArray();
+
+    private sealed class ChangingAdmission(Func<ThxAudioAdmission> read) : IThxAudioAdmissionSource
+    {
+        public ThxAudioAdmission Check() => read();
+    }
+
+    private sealed class QueuedChildFactory(params IThxAudioHelperChild[] children) : IThxAudioHelperChildFactory
+    {
+        public int StartCalls { get; private set; }
+
+        public IThxAudioHelperChild Start() => children[StartCalls++];
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class FakeNative : IThxAudioNativeAdapter
     {
         public bool Spatial { get; set; }
@@ -778,7 +1114,12 @@ public sealed class ThxAudioHelperCommandTests
         public string PresetListJson { get; set; } =
             "[\"default\",\"custom\",\"music\",\"movie\",\"game\",\"podcast\"]";
         public int AddCalls { get; private set; }
+        public int CheckStatusCalls { get; private set; }
         public int RemoveCalls { get; private set; }
+        public int DisposeCalls { get; private set; }
+        public bool CheckStatusResult { get; set; } = true;
+        public List<string> RegisteredDevices { get; } = [];
+        public List<string> RemovedDevices { get; } = [];
         public int PresetListCalls { get; private set; }
         public int SelectPresetCalls { get; private set; }
         public List<(string PropertyId, string JsonValue, string? PropertyType)> PropertyWrites
@@ -792,14 +1133,20 @@ public sealed class ThxAudioHelperCommandTests
         {
             AddCalls++;
             LastDevice = deviceJson;
+            RegisteredDevices.Add(deviceJson);
             return true;
         }
 
-        public bool CheckStatus(string deviceJson) => true;
+        public bool CheckStatus(string deviceJson)
+        {
+            CheckStatusCalls++;
+            return CheckStatusResult;
+        }
 
         public bool RemoveDevice(string deviceJson)
         {
             RemoveCalls++;
+            RemovedDevices.Add(deviceJson);
             return true;
         }
 
@@ -891,6 +1238,7 @@ public sealed class ThxAudioHelperCommandTests
 
         public void Dispose()
         {
+            DisposeCalls++;
         }
 
         private static string Json(double value) =>
@@ -972,35 +1320,59 @@ public sealed class ThxAudioHelperCommandTests
         public bool AssignResult { get; init; }
         public bool ConfirmExitResult { get; init; } = true;
         public bool TerminateResult { get; init; } = true;
-        public bool HasExitedValue { get; init; } = true;
+        public bool HasExitedValue { get; set; }
+        public int AssignCalls { get; private set; }
         public int ExchangeCalls { get; private set; }
         public int TerminateCalls { get; private set; }
+        public int ConfirmExitCalls { get; private set; }
+        public int CloseCalls { get; private set; }
+        public int DisposeCalls { get; private set; }
         public ThxAudioHelperResponse Response { get; init; } = SuccessfulHelperResponse();
+        public Func<ThxAudioHelperRequest, CancellationToken, Task<ThxAudioHelperResponse>>? Exchange { get; init; }
 
         public bool HasExited => HasExitedValue;
 
         public int? ExitCode => HasExitedValue ? 0 : null;
 
-        public bool AssignToLifetimeOwner() => AssignResult;
+        public bool AssignToLifetimeOwner()
+        {
+            AssignCalls++;
+            return AssignResult;
+        }
 
         public Task<ThxAudioHelperResponse> ExchangeAsync(
             ThxAudioHelperRequest request,
             CancellationToken cancellationToken)
         {
             ExchangeCalls++;
-            return Task.FromResult(Response);
+            return Exchange?.Invoke(request, cancellationToken) ?? Task.FromResult(Response);
         }
 
-        public Task<bool> ConfirmExitAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(ConfirmExitResult);
+        public Task<bool> ConfirmExitAsync(CancellationToken cancellationToken)
+        {
+            ConfirmExitCalls++;
+            HasExitedValue |= ConfirmExitResult;
+            return Task.FromResult(ConfirmExitResult);
+        }
+
+        public Task CloseConnectionAsync()
+        {
+            CloseCalls++;
+            return Task.CompletedTask;
+        }
 
         public Task<bool> TerminateAndConfirmExitAsync()
         {
             TerminateCalls++;
+            HasExitedValue |= TerminateResult;
             return Task.FromResult(TerminateResult);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            DisposeCalls++;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static ThxAudioHelperResponse SuccessfulHelperResponse(bool spatial = false) => new(

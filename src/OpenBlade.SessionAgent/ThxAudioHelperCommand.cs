@@ -100,40 +100,77 @@ internal sealed class ThxAudioHelperCommand(
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
+    private IThxAudioNativeAdapter? native;
+    private (string? ProductId, string? ModelNumber)? registeredIdentity;
+    private readonly Dictionary<ThxAudioEndpoint, string> registeredDevices = [];
+
     internal async Task<int> RunAsync(CancellationToken cancellationToken)
     {
-        ThxAudioHelperResponse response;
         try
         {
-            string? line = await ThxAudioHelperProtocol.ReadBoundedLineAsync(
-                input,
-                cancellationToken).ConfigureAwait(false);
-            if (line is null || line.Length == 0)
+            while (true)
             {
-                throw new InvalidDataException("The THX helper request is invalid.");
-            }
-            ThxAudioHelperRequest request = JsonSerializer.Deserialize<ThxAudioHelperRequest>(
-                line,
-                JsonOptions) ?? throw new InvalidDataException("The THX helper request is missing.");
-            Validate(request);
-            response = Execute(request);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            response = new ThxAudioHelperResponse(
-                ThxAudioHelperProtocol.Version,
-                ThxAudioOperationStatus.Failed,
-                ThxAudioAvailability.ComponentsUnavailable,
-                $"THX helper failed: {exception.GetType().Name}.",
-                null);
-        }
+                ThxAudioHelperResponse response;
+                try
+                {
+                    string? line = await ThxAudioHelperProtocol.ReadBoundedLineAsync(
+                        input,
+                        cancellationToken).ConfigureAwait(false);
+                    if (line is null)
+                    {
+                        return 0;
+                    }
+                    if (line.Length == 0)
+                    {
+                        throw new InvalidDataException("The THX helper request is invalid.");
+                    }
+                    ThxAudioHelperRequest request = JsonSerializer.Deserialize<ThxAudioHelperRequest>(
+                        line,
+                        JsonOptions) ?? throw new InvalidDataException("The THX helper request is missing.");
+                    Validate(request);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    response = Execute(request);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    response = new ThxAudioHelperResponse(
+                        ThxAudioHelperProtocol.Version,
+                        ThxAudioOperationStatus.Failed,
+                        ThxAudioAvailability.ComponentsUnavailable,
+                        $"THX helper failed: {exception.GetType().Name}.",
+                        null);
+                }
 
-        string json = JsonSerializer.Serialize(response, JsonOptions);
-        await output.WriteLineAsync(json.AsMemory(), cancellationToken).ConfigureAwait(false);
-        await output.FlushAsync(cancellationToken).ConfigureAwait(false);
-        // Any fully encoded typed response is a successful helper protocol
-        // exchange. Nonzero exit codes are reserved for process-level failure.
-        return 0;
+                string json = JsonSerializer.Serialize(response, JsonOptions);
+                await output.WriteLineAsync(json.AsMemory(), cancellationToken).ConfigureAwait(false);
+                await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+                if (response.Status != ThxAudioOperationStatus.Succeeded)
+                {
+                    // Do not reuse a connection after failed admission or an
+                    // uncertain native result. The parent confirms our exit.
+                    return 0;
+                }
+            }
+        }
+        finally
+        {
+            if (native is not null)
+            {
+                foreach (string device in registeredDevices.Values)
+                {
+                    try
+                    {
+                        _ = native.RemoveDevice(device);
+                    }
+                    catch
+                    {
+                        // Cleanup changes no setting and never retries a write.
+                        // The parent bounds shutdown; the DLL stays process-pinned.
+                    }
+                }
+                native.Dispose();
+            }
+        }
     }
 
     private ThxAudioHelperResponse Execute(ThxAudioHelperRequest request)
@@ -162,23 +199,36 @@ internal sealed class ThxAudioHelperCommand(
             return Failed("The EQ vector does not match this model and endpoint.");
         }
 
-        using IThxAudioNativeAdapter native = createNative();
-        string device = JsonSerializer.Serialize(
-            new
-            {
-                productId = current.ProductId,
-                endpointId = request.Endpoint == ThxAudioEndpoint.Speakers
-                    ? "speakers"
-                    : "headphones",
-            });
-        bool added = false;
+        if (registeredIdentity is { } identity
+            && identity != (current.ProductId, current.ModelNumber))
+        {
+            return Unavailable(
+                ThxAudioAvailability.ComponentsUnavailable,
+                "The THX device identity changed. Connect again before controlling audio.");
+        }
+
+        native ??= createNative();
         try
         {
-            if (!native.AddDevice(device))
+            if (!registeredDevices.TryGetValue(request.Endpoint, out string? device))
             {
-                return Failed("The THX device could not be registered.");
+                device = JsonSerializer.Serialize(
+                    new
+                    {
+                        productId = current.ProductId,
+                        endpointId = request.Endpoint == ThxAudioEndpoint.Speakers
+                            ? "speakers"
+                            : "headphones",
+                    });
+                if (!native.AddDevice(device))
+                {
+                    return Failed("The THX device could not be registered.");
+                }
+                // The pinned vendor client retains an IPC object per endpoint.
+                // Register each of the two typed endpoints once, not per setting.
+                registeredDevices.Add(request.Endpoint, device);
+                registeredIdentity = (current.ProductId, current.ModelNumber);
             }
-            added = true;
             if (!native.CheckStatus(device))
             {
                 return Failed("The THX service is not ready.");
@@ -240,22 +290,6 @@ internal sealed class ThxAudioHelperCommand(
                 ? Failed($"THX state could not be read: {exception.GetType().Name}.")
                 : Indeterminate(
                     $"THX mutation readback failed: {exception.GetType().Name}.");
-        }
-        finally
-        {
-            if (added)
-            {
-                try
-                {
-                    _ = native.RemoveDevice(device);
-                }
-                catch
-                {
-                    // The helper is one-shot and exits immediately. Cleanup
-                    // failure must not trigger a second mutation or obscure
-                    // an already-indeterminate write/readback result.
-                }
-            }
         }
     }
 

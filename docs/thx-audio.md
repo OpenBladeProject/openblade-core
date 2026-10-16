@@ -120,12 +120,16 @@ store schema 21, export schema 13, and service IPC version 67. Existing Display
 and GPU IPC versions are unchanged. This change requires a coordinated full
 installation; it is not eligible for tray-only deployment.
 
-The Session Agent serializes typed audio requests. A bounded helper process
-accepts a single request over a private connection to its verified parent and
-loads the pinned native client only for an explicit read or setting change.
+The Session Agent serializes typed audio requests. One bounded helper process
+retains an authenticated private connection to its verified parent and lazily
+registers the two supported outputs. It loads the pinned native client on the
+first read or setting change and reuses that connection for later operations.
+Each request still performs fresh admission and native readiness checks; neither
+audio state nor write permission is cached. Present-device and service checks use
+SetupAPI and the Service Control Manager directly, avoiding WMI inventory queries.
 The helper belongs to a kill-on-close Windows job before it receives work.
 An unconfirmed helper exit blocks further operations until its exit is confirmed.
-The native DLL stays mapped until the one-shot helper exits because its async
+The native DLL stays mapped until the helper exits because its async
 callbacks can outlive client unregistration. Windows provides this lifetime
 through [module pinning](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandleexw).
 The client talks to the separately installed THX properties service, while
@@ -138,7 +142,12 @@ Discovery checks exact host identity, present USB identity, and the pinned
 installed components without loading the native DLL. Each operation repeats
 admission. Successful setting changes require matching readback. A timeout,
 crash, or ambiguous mutation pauses further changes until the helper has exited
-and an explicit read reconciles the state. Optional foreground automation
+and an explicit read reconciles the state. A failed request retires the helper
+without replaying the request. Normal disposal closes the private pipe, unregisters
+the outputs, and bounds shutdown with a termination fallback. Turning off the
+integration stops requests; the bounded idle helper remains until Session Agent
+shutdown. Neither registration nor cleanup changes audio settings.
+Optional foreground automation
 shares the same serialized dispatcher with manual controls. Manual control
 interrupts pending automation; uncertain writes are never replayed. Startup
 and shutdown do not reset audio settings.
@@ -330,6 +339,27 @@ The tested Session Agent assembly SHA-256 was
 `C51289354AE00E58A3760839E4F659E3F27D84739293179E53D2B62F045857CB`.
 Application catalogs were compared in canonical ordinal order; all native
 queried setting values and selected IDs matched the original baseline.
+
+## Read-only warm connection validation
+
+On 2026-10-16, a developer runner exercised the production helper client,
+parent authentication, job containment, admission, host, and native adapter on
+RZ09-0581 with Synapse closed. Its wrapper rejected both native mutation methods.
+Seven sequential requests read speakers four times, headphones twice, then
+speakers again. Every response succeeded and repeated endpoint states matched.
+
+The first speaker read took 851 ms. Later speaker reads took 141, 161, 174,
+and 157 ms. First headphone registration took 217 ms; its next read took 153 ms.
+These measurements include fresh admission and complete native readback. The
+helper exited after disposal, with no surviving runner process. No setting or
+preset mutation was sent. Live write latency and a timed Synapse comparison
+were not measured; writes share the retained helper and fresh admission path.
+
+The vendor product-736 middleware retains registered endpoint objects for normal
+get/set operations and removes them during termination. OpenBlade follows that
+connection lifetime without copying the vendor's startup or shutdown EQ writes.
+The inspected middleware SHA-256 was
+`26022B8618DDE19E54A3B2C386E5CD16E1D62F036C05B01A1E53E8B6540F9888`.
 
 ## Remaining validation
 

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO.Pipes;
-using System.Management;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
@@ -70,19 +69,13 @@ internal sealed class ThxAudioHelperHost(
     IThxAudioAdmissionSource admission,
     Func<string, ThxAudioEndpoint, bool?>? readSystemEffectsDisabled = null)
 {
-    private static readonly TimeSpan HostTimeout = TimeSpan.FromSeconds(15);
-
     internal async Task<int> RunAsync(
         ThxAudioHelperInvocation invocation,
         CancellationToken cancellationToken)
     {
-        using var deadline = new CancellationTokenSource(HostTimeout);
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            deadline.Token);
         await using IThxAudioHelperClientChannel channel = await connector.ConnectAsync(
             invocation,
-            linked.Token).ConfigureAwait(false);
+            cancellationToken).ConfigureAwait(false);
         if (!parentVerifier.IsTrustedParent(channel, invocation.ParentProcessId))
         {
             return 2;
@@ -94,7 +87,9 @@ internal sealed class ThxAudioHelperHost(
                 channel.Input,
                 channel.Output,
                 readSystemEffectsDisabled)
-            .RunAsync(linked.Token)
+            // The parent bounds each exchange and owns the helper's kill-on-close
+            // job. A whole-process deadline would race later warm requests.
+            .RunAsync(cancellationToken)
             .ConfigureAwait(false);
     }
 }
@@ -182,7 +177,7 @@ internal sealed class WindowsThxAudioHelperParentVerifier : IThxAudioHelperParen
                     windowsChannel.PipeHandle,
                     out uint serverProcessId)
                 || serverProcessId != (uint)expectedParentProcessId
-                || GetActualParentProcessId() != expectedParentProcessId)
+                || WindowsThxHelperParentProcess.ReadCurrentParentId() != expectedParentProcessId)
             {
                 return false;
             }
@@ -201,28 +196,6 @@ internal sealed class WindowsThxAudioHelperParentVerifier : IThxAudioHelperParen
         {
             return false;
         }
-    }
-
-    private static int GetActualParentProcessId()
-    {
-        using var searcher = new ManagementObjectSearcher(
-            $"SELECT ParentProcessId FROM Win32_Process WHERE ProcessId = {Environment.ProcessId}");
-        searcher.Options.Timeout = TimeSpan.FromSeconds(2);
-        searcher.Options.ReturnImmediately = true;
-        searcher.Options.Rewindable = false;
-        using ManagementObjectCollection processes = searcher.Get();
-        foreach (ManagementBaseObject process in processes)
-        {
-            using (process)
-            {
-                if (process["ParentProcessId"] is uint parentProcessId
-                    && parentProcessId <= int.MaxValue)
-                {
-                    return (int)parentProcessId;
-                }
-            }
-        }
-        return 0;
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]

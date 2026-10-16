@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Management;
 using System.Security.Principal;
 using Microsoft.Win32;
 using OpenBlade.Session;
@@ -47,7 +46,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
             }
 
             ThxAudioCompatibilityProfile? profile = GetExactHostProfile();
-            if (profile is null || !HasExactDeviceIdentities(profile))
+            if (profile is null || !WindowsThxAdmissionQueries.HasExactDeviceIdentities(profile))
             {
                 return Unsupported("The exact Razer model, USB identity, and signed-package audio codec could not be verified.");
             }
@@ -106,24 +105,6 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
             profile, biosManufacturer, biosProduct, systemManufacturer, systemProduct));
     }
 
-    private static bool HasExactDeviceIdentities(ThxAudioCompatibilityProfile profile)
-    {
-        bool usb = false;
-        bool codec = false;
-        using ManagementObjectSearcher searcher = CreateSearcher(
-            "SELECT PNPDeviceID, HardwareID FROM Win32_PnPEntity WHERE Present = TRUE");
-        using ManagementObjectCollection devices = searcher.Get();
-        foreach (ManagementBaseObject device in devices)
-        {
-            using (device)
-            {
-                usb |= device["PNPDeviceID"] is string id && ThxAudioCompatibility.MatchesUsb(profile, id);
-                codec |= device["HardwareID"] is string[] ids && ThxAudioCompatibility.MatchesCodec(profile, ids);
-            }
-        }
-        return usb && codec;
-    }
-
     internal static bool IsExactUsbPnpDeviceId(string value) =>
         ThxAudioCompatibility.MatchesUsb(ThxAudioCompatibility.Profiles[0], value);
 
@@ -147,7 +128,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
             error = "The pinned active THX configuration is unavailable or has changed.";
             return false;
         }
-        if (!HasRunningPinnedService(profile.Stack.ServiceName, serviceBinary!))
+        if (!WindowsThxAdmissionQueries.HasRunningPinnedService(profile.Stack.ServiceName, serviceBinary!))
         {
             error = "The pinned THX Spatial Audio service is not installed and running.";
             return false;
@@ -163,82 +144,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         // Product 736 registers this exact standalone client as a competing
         // THX UI and presents a modal while it is running.
         || HasProcess("THXSpatialAudioClient")
-        || HasRunningService(
-            static (name, displayName) =>
-                string.Equals(name, "RazerSynapseService", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(
-                    displayName,
-                    "Razer Synapse Service",
-                    StringComparison.OrdinalIgnoreCase));
-
-    private static bool HasRunningPinnedService(string serviceName, string expectedBinary)
-    {
-        using ManagementObjectSearcher searcher = CreateSearcher(
-            "SELECT Name, PathName FROM Win32_Service "
-            + $"WHERE Name = '{serviceName}' AND State = 'Running'");
-        using ManagementObjectCollection services = searcher.Get();
-        foreach (ManagementBaseObject service in services)
-        {
-            using (service)
-            {
-                if (service["Name"] is string name
-                    && string.Equals(
-                        name,
-                        serviceName,
-                        StringComparison.OrdinalIgnoreCase)
-                    && service["PathName"] is string path
-                    && string.Equals(
-                        NormalizeServiceBinary(path),
-                        Path.GetFullPath(expectedBinary),
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static bool HasRunningService(Func<string, string, bool> predicate)
-    {
-        using ManagementObjectSearcher searcher = CreateSearcher(
-            "SELECT Name, DisplayName FROM Win32_Service WHERE State = 'Running'");
-        using ManagementObjectCollection services = searcher.Get();
-        foreach (ManagementBaseObject service in services)
-        {
-            using (service)
-            {
-                string name = service["Name"] as string ?? string.Empty;
-                string displayName = service["DisplayName"] as string ?? string.Empty;
-                if (predicate(name, displayName))
-                {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static ManagementObjectSearcher CreateSearcher(string query)
-    {
-        var searcher = new ManagementObjectSearcher(query);
-        searcher.Options.Timeout = TimeSpan.FromSeconds(2);
-        searcher.Options.ReturnImmediately = true;
-        searcher.Options.Rewindable = false;
-        return searcher;
-    }
-
-    private static string NormalizeServiceBinary(string commandLine)
-    {
-        string value = commandLine.Trim();
-        if (value.StartsWith('"'))
-        {
-            int end = value.IndexOf('"', 1);
-            return end > 1 ? Path.GetFullPath(value[1..end]) : string.Empty;
-        }
-        int separator = value.IndexOf(' ');
-        return Path.GetFullPath(separator < 0 ? value : value[..separator]);
-    }
+        || WindowsThxAdmissionQueries.HasCompetingService();
 
     private static bool HasProcess(string name)
     {

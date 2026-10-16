@@ -23,6 +23,8 @@ internal interface IThxAudioHelperChild : IAsyncDisposable
 
     Task<bool> ConfirmExitAsync(CancellationToken cancellationToken);
 
+    Task CloseConnectionAsync();
+
     Task<bool> TerminateAndConfirmExitAsync();
 }
 
@@ -37,6 +39,7 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
     private readonly TimeSpan mutationTimeout;
     private IThxAudioHelperChildFactory? childFactory;
     private readonly SemaphoreSlim gate = new(1, 1);
+    private IThxAudioHelperChild? activeChild;
     private IThxAudioHelperChild? unresolvedChild;
     private bool disposed;
 
@@ -65,32 +68,42 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
             }
 
             bool mutation = request is not ThxHelperReadRequest;
-            IThxAudioHelperChild child;
-            try
+            if (activeChild is { HasExited: true } exitedChild)
             {
-                childFactory ??= new WindowsThxAudioHelperChildFactory();
-                child = childFactory.Start();
+                await exitedChild.DisposeAsync().ConfigureAwait(false);
+                activeChild = null;
             }
-            catch (Exception exception)
+            if (activeChild is null)
             {
-                return new ThxAudioWorkerResult(
-                    ThxAudioOperationStatus.Failed,
-                    ThxAudioAvailability.ComponentsUnavailable,
-                    $"The THX helper could not be started: {exception.GetType().Name}.",
-                    null);
+                IThxAudioHelperChild started;
+                try
+                {
+                    childFactory ??= new WindowsThxAudioHelperChildFactory();
+                    started = childFactory.Start();
+                }
+                catch (Exception exception)
+                {
+                    return new ThxAudioWorkerResult(
+                        ThxAudioOperationStatus.Failed,
+                        ThxAudioAvailability.ComponentsUnavailable,
+                        $"The THX helper could not be started: {exception.GetType().Name}.",
+                        null);
+                }
+                if (!started.AssignToLifetimeOwner())
+                {
+                    bool stopped = await started.TerminateAndConfirmExitAsync().ConfigureAwait(false);
+                    await RetainOrDisposeAsync(started, stopped).ConfigureAwait(false);
+                    return new ThxAudioWorkerResult(
+                        ThxAudioOperationStatus.Failed,
+                        ThxAudioAvailability.ComponentsUnavailable,
+                        stopped
+                            ? "The THX helper could not be assigned to its lifetime owner."
+                            : "The THX helper lifetime could not be contained or confirmed.",
+                        null);
+                }
+                activeChild = started;
             }
-            if (!child.AssignToLifetimeOwner())
-            {
-                bool stopped = await child.TerminateAndConfirmExitAsync().ConfigureAwait(false);
-                await RetainOrDisposeAsync(child, stopped).ConfigureAwait(false);
-                return new ThxAudioWorkerResult(
-                    ThxAudioOperationStatus.Failed,
-                    ThxAudioAvailability.ComponentsUnavailable,
-                    stopped
-                        ? "The THX helper could not be assigned to its lifetime owner."
-                        : "The THX helper lifetime could not be contained or confirmed.",
-                    null);
-            }
+            IThxAudioHelperChild child = activeChild;
 
             TimeSpan timeout = mutation ? mutationTimeout : readTimeout;
             using var deadline = new CancellationTokenSource(timeout);
@@ -102,23 +115,20 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
                 ThxAudioHelperResponse response = await child.ExchangeAsync(
                     request,
                     linked.Token).ConfigureAwait(false);
-                bool exited = await child.ConfirmExitAsync(linked.Token).ConfigureAwait(false);
-                if (!exited)
-                {
-                    bool stopped = await child.TerminateAndConfirmExitAsync().ConfigureAwait(false);
-                    await RetainOrDisposeAsync(child, stopped).ConfigureAwait(false);
-                    return stopped
-                        ? TerminatedAfterUnconfirmedExit(mutation)
-                        : UnconfirmedExit(mutation);
-                }
-
-                if (child.ExitCode != 0)
+                if (child.HasExited && child.ExitCode != 0)
                 {
                     throw new InvalidDataException("The THX helper exited abnormally.");
                 }
 
                 ValidateResponse(response);
-                await child.DisposeAsync().ConfigureAwait(false);
+                if (response.Status != ThxAudioOperationStatus.Succeeded)
+                {
+                    bool stopped = await RetireActiveChildAsync(graceful: true).ConfigureAwait(false);
+                    if (!stopped)
+                    {
+                        return UnconfirmedExit(mutation);
+                    }
+                }
                 return new ThxAudioWorkerResult(
                     response.Status,
                     response.Availability,
@@ -127,8 +137,7 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
             }
             catch (OperationCanceledException)
             {
-                bool stopped = await child.TerminateAndConfirmExitAsync().ConfigureAwait(false);
-                await RetainOrDisposeAsync(child, stopped).ConfigureAwait(false);
+                bool stopped = await RetireActiveChildAsync(graceful: false).ConfigureAwait(false);
                 return mutation
                     ? new ThxAudioWorkerResult(
                         ThxAudioOperationStatus.Indeterminate,
@@ -147,8 +156,7 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                bool stopped = await child.TerminateAndConfirmExitAsync().ConfigureAwait(false);
-                await RetainOrDisposeAsync(child, stopped).ConfigureAwait(false);
+                bool stopped = await RetireActiveChildAsync(graceful: false).ConfigureAwait(false);
                 return mutation
                     ? new ThxAudioWorkerResult(
                         ThxAudioOperationStatus.Indeterminate,
@@ -182,6 +190,7 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
                 return;
             }
             disposed = true;
+            _ = await RetireActiveChildAsync(graceful: true).ConfigureAwait(false);
             if (unresolvedChild is not null)
             {
                 _ = await unresolvedChild.TerminateAndConfirmExitAsync().ConfigureAwait(false);
@@ -197,6 +206,39 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
         {
             gate.Release();
         }
+    }
+
+    private async Task<bool> RetireActiveChildAsync(bool graceful)
+    {
+        IThxAudioHelperChild? child = activeChild;
+        if (child is null)
+        {
+            return unresolvedChild is null;
+        }
+        activeChild = null;
+        bool exited = child.HasExited;
+        if (!exited && graceful)
+        {
+            try
+            {
+                // Closing this private connection delivers EOF. The helper
+                // unregisters its devices without changing audio settings.
+                await child.CloseConnectionAsync().ConfigureAwait(false);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                exited = await child.ConfirmExitAsync(deadline.Token).ConfigureAwait(false);
+            }
+            catch
+            {
+                // A broken pipe or failed graceful exit still requires a
+                // bounded termination attempt before another helper may run.
+            }
+        }
+        if (!exited)
+        {
+            exited = await child.TerminateAndConfirmExitAsync().ConfigureAwait(false);
+        }
+        await RetainOrDisposeAsync(child, exited).ConfigureAwait(false);
+        return exited || child.HasExited;
     }
 
     private async Task<bool> ReconcileUnresolvedChildAsync()
@@ -236,12 +278,6 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
         mutation ? ThxAudioOperationStatus.Indeterminate : ThxAudioOperationStatus.Failed,
         ThxAudioAvailability.ComponentsUnavailable,
         "The THX helper exit could not be confirmed. THX audio remains blocked.",
-        null);
-
-    private static ThxAudioWorkerResult TerminatedAfterUnconfirmedExit(bool mutation) => new(
-        mutation ? ThxAudioOperationStatus.Indeterminate : ThxAudioOperationStatus.Failed,
-        ThxAudioAvailability.Available,
-        "The THX helper did not exit normally and was terminated.",
         null);
 
     private static void ValidateResponse(ThxAudioHelperResponse response)
@@ -446,6 +482,9 @@ internal sealed class WindowsThxAudioHelperChild(
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
+    private StreamReader? input;
+    private StreamWriter? output;
+    private bool authenticated;
     private bool disposed;
 
     public bool HasExited
@@ -494,36 +533,39 @@ internal sealed class WindowsThxAudioHelperChild(
         ThxAudioHelperRequest request,
         CancellationToken cancellationToken)
     {
-        await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
-        if (!GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint childProcessId)
-            || childProcessId != (uint)process.Id)
+        if (!authenticated)
         {
-            throw new InvalidDataException("The THX helper pipe client identity is invalid.");
+            await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+            if (!GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint childProcessId)
+                || childProcessId != (uint)process.Id)
+            {
+                throw new InvalidDataException("The THX helper pipe client identity is invalid.");
+            }
+            input = new StreamReader(
+                pipe,
+                new UTF8Encoding(false, true),
+                detectEncodingFromByteOrderMarks: false,
+                bufferSize: 4096,
+                leaveOpen: true);
+            output = new StreamWriter(
+                pipe,
+                new UTF8Encoding(false, true),
+                bufferSize: 4096,
+                leaveOpen: true)
+            {
+                AutoFlush = true,
+            };
+            authenticated = true;
         }
-
-        using var input = new StreamReader(
-            pipe,
-            new UTF8Encoding(false, true),
-            detectEncodingFromByteOrderMarks: false,
-            bufferSize: 4096,
-            leaveOpen: true);
-        using var output = new StreamWriter(
-            pipe,
-            new UTF8Encoding(false, true),
-            bufferSize: 4096,
-            leaveOpen: true)
-        {
-            AutoFlush = true,
-        };
         string requestJson = JsonSerializer.Serialize(request, JsonOptions);
         if (requestJson.Length > ThxAudioHelperProtocol.MaximumLineCharacters)
         {
             throw new InvalidDataException("The THX helper request exceeds 64 KiB.");
         }
-        await output.WriteLineAsync(requestJson.AsMemory(), cancellationToken)
+        await output!.WriteLineAsync(requestJson.AsMemory(), cancellationToken)
             .ConfigureAwait(false);
         string? responseJson = await ThxAudioHelperProtocol.ReadBoundedLineAsync(
-            input,
+            input!,
             cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrEmpty(responseJson))
         {
@@ -532,6 +574,8 @@ internal sealed class WindowsThxAudioHelperChild(
         return JsonSerializer.Deserialize<ThxAudioHelperResponse>(responseJson, JsonOptions)
             ?? throw new InvalidDataException("The THX helper response is missing.");
     }
+
+    public async Task CloseConnectionAsync() => await pipe.DisposeAsync().ConfigureAwait(false);
 
     public async Task<bool> ConfirmExitAsync(CancellationToken cancellationToken)
     {
@@ -570,6 +614,19 @@ internal sealed class WindowsThxAudioHelperChild(
         {
             disposed = true;
             await pipe.DisposeAsync().ConfigureAwait(false);
+            // The connection is already closed; do not flush a canceled write
+            // while disposing the text wrappers.
+            input?.Dispose();
+            try
+            {
+                output?.Dispose();
+            }
+            catch (IOException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
             process.Dispose();
         }
     }

@@ -101,7 +101,7 @@ internal sealed class ThxAudioNativeAdapter : IThxAudioNativeAdapter
             // The admitted native client can leave worker threads running after
             // RemoveDevice. Runtime validation observed an execute fault in its
             // unloaded image during FreeLibrary. This adapter runs only in the
-            // bounded one-shot helper: pin the image until process exit so those
+            // isolated, job-owned helper: pin the image until process exit so those
             // threads cannot execute unmapped code. The OS reclaims the image
             // with the helper; Dispose still releases our owned loader handle.
             if (!GetModuleHandleExW(
