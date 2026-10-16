@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add experimental, opt-in THX audio controls for Blade 16 RZ09-0581 using the supported THX components already installed. Standalone audio validation is still pending. ([#790](https://github.com/OSSBlade/openblade-core/pull/790))
+
 ## [0.30.0] - 2026-10-16
 
 ### Changed
