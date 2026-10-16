@@ -37,18 +37,60 @@ function Assert-OpenBladeDotNetRuntimePrerequisite {
 function Copy-OpenBladeDotNetRuntime {
     param(
         [string]$SourcePath,
-        [Parameter(Mandatory)][string]$DestinationDirectory
+        [Parameter(Mandatory)][string]$DestinationDirectory,
+        [string]$CacheDirectory = (Join-Path (
+            [Environment]::GetFolderPath('LocalApplicationData')) 'OpenBlade\BuildCache\Prerequisites')
     )
 
     $prerequisite = Get-OpenBladeDotNetRuntimePrerequisite
     New-Item -ItemType Directory -Path $DestinationDirectory -Force | Out-Null
     $destination = Join-Path $DestinationDirectory $prerequisite.FileName
     if ([string]::IsNullOrWhiteSpace($SourcePath)) {
-        Invoke-WebRequest -Uri $prerequisite.Uri -OutFile $destination
+        # Keep paths short on Windows. Full integrity checks still use the entire pin.
+        $entryDirectory = Join-Path $CacheDirectory $prerequisite.Sha512.Substring(0, 16)
+        $cached = Join-Path $entryDirectory $prerequisite.FileName
+        $cacheValid = $false
+        if (Test-Path -LiteralPath $cached -PathType Leaf) {
+            try {
+                Assert-OpenBladeDotNetRuntimePrerequisite -Path $cached
+                $cacheValid = $true
+            }
+            catch {
+                Write-Verbose 'The cached Windows Desktop Runtime failed verification; downloading a replacement.'
+            }
+        }
+
+        if (-not $cacheValid) {
+            New-Item -ItemType Directory -Path $entryDirectory -Force | Out-Null
+            $download = Join-Path $entryDirectory ([Guid]::NewGuid().ToString('N') + '.download')
+            try {
+                Invoke-WebRequest -Uri $prerequisite.Uri -OutFile $download
+                Assert-OpenBladeDotNetRuntimePrerequisite -Path $download
+                try {
+                    if ([IO.File]::Exists($cached)) {
+                        [IO.File]::Replace($download, $cached, [NullString]::Value)
+                    }
+                    else {
+                        [IO.File]::Move($download, $cached)
+                    }
+                }
+                catch [IO.IOException] {
+                    # Another build may have published the same pinned entry first.
+                    Assert-OpenBladeDotNetRuntimePrerequisite -Path $cached
+                }
+            }
+            finally {
+                if (Test-Path -LiteralPath $download) {
+                    Remove-Item -LiteralPath $download -Force
+                }
+            }
+        }
+        Copy-Item -LiteralPath $cached -Destination $destination -ErrorAction Stop
     }
     else {
         Copy-Item -LiteralPath $SourcePath -Destination $destination -ErrorAction Stop
     }
+    # Recheck staged bytes, including after a cache hit or explicit override.
     Assert-OpenBladeDotNetRuntimePrerequisite -Path $destination
     return $destination
 }
