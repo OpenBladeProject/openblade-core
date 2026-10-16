@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Cache the verified Windows Desktop Runtime installer across full builds and worktrees. ([#800](https://github.com/OpenBladeProject/openblade-core/pull/800))
 - Simplify app helper text and confirmation dialogs in English, Simplified Chinese, and Russian. ([#797](https://github.com/OpenBladeProject/openblade-core/pull/797))
 
 ### Added

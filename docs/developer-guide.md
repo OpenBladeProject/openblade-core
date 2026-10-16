@@ -243,6 +243,12 @@ Create the installer and production artifacts:
 .\build\Publish.ps1
 ```
 
+The pinned Windows Desktop Runtime installer is cached under
+`%LOCALAPPDATA%\OpenBlade\BuildCache\Prerequisites` and reused across worktrees.
+Each build verifies its SHA-512 and Microsoft signature before staging it. An
+invalid cache entry is downloaded again; changing the runtime pin uses a new
+entry. `-DotNetRuntimePath` supplies an explicit installer instead of the cache.
+
 - Graphical installer: `artifacts\win-x64\OpenBlade-Setup.exe`
 - Normal installation: double-click the graphical installer; do not use
   **Run as administrator**
