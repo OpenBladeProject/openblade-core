@@ -483,8 +483,15 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     private void ConfirmAdvancedDrafts(ThxAudioState confirmed, bool discardEqualizer,
         ThxAudioEnhancementKind? discardEnhancement, bool updateProfileCurves)
     {
-        factoryPresetCurves[confirmed.Endpoint] = confirmed.FactoryPresetCurves.ToDictionary(
+        Dictionary<string, double[]> confirmedFactoryCurves = confirmed.FactoryPresetCurves.ToDictionary(
             curve => curve.PresetId, curve => curve.GainsDb.ToArray(), StringComparer.Ordinal);
+        bool factoryGeometryConfirmed = confirmed.EqualizerBands.Count > 0
+            && confirmedFactoryCurves.Count == 5
+            && confirmedFactoryCurves.Values.All(
+                gains => gains.Length == confirmed.EqualizerBands.Count);
+        factoryPresetCurves[confirmed.Endpoint] = factoryGeometryConfirmed
+            ? confirmedFactoryCurves
+            : new(StringComparer.Ordinal);
         // Native readback stays visible, but an older operation must not replace
         // curves loaded for a newly selected power profile.
         if (updateProfileCurves)
@@ -496,7 +503,14 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             }
             foreach ((string id, double[] gains) in factoryPresetCurves[confirmed.Endpoint])
             {
-                curves.TryAdd(id, gains.ToArray());
+                if (!curves.TryGetValue(id, out double[]? existing))
+                {
+                    curves[id] = gains.ToArray();
+                }
+                else if (existing.Length != gains.Length)
+                {
+                    curves[id] = AlignHighFrequencyGains(existing, gains);
+                }
             }
             if (confirmed.SelectedPresetId is { } selected && confirmed.EqualizerBands.Count > 0)
             {
@@ -546,6 +560,19 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             }
             confirmedVoiceClarityLevel = clarity.LevelPercent;
         }
+    }
+
+    private static double[] AlignHighFrequencyGains(
+        IReadOnlyList<double> existing,
+        IReadOnlyList<double> factory)
+    {
+        double[] aligned = factory.ToArray();
+        int overlap = Math.Min(existing.Count, aligned.Length);
+        for (int index = 1; index <= overlap; index++)
+        {
+            aligned[^index] = existing[^index];
+        }
+        return aligned;
     }
 
     private void ResetAdvancedDrafts()

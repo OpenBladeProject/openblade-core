@@ -512,12 +512,126 @@ public sealed class ThxAudioViewModelTests
         Assert.False(viewModel.CanSaveAudioProfile);
     }
 
+    [Theory]
+    [InlineData(7, 10)]
+    [InlineData(10, 7)]
+    public async Task ImportedSpeakerGeometryAlignsHighBandsBeforeSelectingAnotherPreset(
+        int importedCount,
+        int confirmedCount)
+    {
+        static double[] Gains(int count, double start) => Enumerable.Range(0, count)
+            .Select(index => start + index).ToArray();
+        static ThxEqualizerCurves Curves(int count) => new(
+            Gains(count, 1), Gains(count, -10), Gains(count, -5),
+            Gains(count, -3), Gains(count, 0));
+
+        ThxAudioProfileSettings imported = ProfileSettings() with
+        {
+            Speakers = ProfileSettings().Speakers with
+            {
+                EqualizerCurves = Curves(importedCount),
+            },
+        };
+        ThxAudioState confirmed = SpeakerState(confirmedCount);
+        double[] factoryGame = confirmed.FactoryPresetCurves.Single(
+            curve => curve.PresetId == "game").GainsDb.ToArray();
+        double[] importedGame = imported.Speakers.EqualizerCurves.Game.ToArray();
+        double[] expected = factoryGame.ToArray();
+        int overlap = Math.Min(importedGame.Length, expected.Length);
+        Array.Copy(importedGame, importedGame.Length - overlap,
+            expected, expected.Length - overlap, overlap);
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, confirmed),
+            MutationResponse = Response(ThxAudioOperationStatus.Succeeded, confirmed with
+            {
+                SelectedPresetId = "game",
+                EqualizerBands = confirmed.EqualizerBands.Select((band, index) =>
+                    band with { GainDb = expected[index] }).ToArray(),
+            }),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.LoadProfile(PowerSource.PluggedIn, imported);
+        viewModel.ApplyPreference(true);
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(importedCount,
+            viewModel.CreateProfileDraft()!.Speakers.EqualizerCurves.Game.Count);
+        await viewModel.SelectPresetAsync(
+            viewModel.Presets.Single(preset => preset.Id == "game"));
+        Assert.Equal(expected, adapter.PresetRequests[^1].Gains);
+        ThxEqualizerCurves captured = viewModel.CreateProfileDraft()!.Speakers.EqualizerCurves;
+        Assert.All(new[] { captured.Game, captured.Movie, captured.Music,
+            captured.Voice, captured.Custom }, curve => Assert.Equal(confirmedCount, curve.Count));
+        Assert.Equal(expected, captured.Game);
+    }
+
+    [Fact]
+    public async Task LateReadFromOldProfileDoesNotNormalizeReplacementProfileCurves()
+    {
+        var pending = new TaskCompletionSource<SessionAudioResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var adapter = new FakeAdapter
+        {
+            AsyncReadHandler = _ => pending.Task,
+            MutationResponse = Response(ThxAudioOperationStatus.Succeeded, SpeakerState(7) with
+            {
+                SelectedPresetId = "game",
+            }),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.LoadProfile(PowerSource.PluggedIn, ProfileSettings());
+        viewModel.ApplyPreference(true);
+        Task refresh = viewModel.RefreshAsync();
+        ThxAudioProfileSettings replacement = ProfileSettings() with
+        {
+            Speakers = ProfileSettings().Speakers with
+            {
+                EqualizerCurves = UniformCurves(10, 6),
+            },
+        };
+
+        viewModel.LoadProfile(PowerSource.Battery, replacement);
+        pending.SetResult(Response(ThxAudioOperationStatus.Succeeded, SpeakerState(7)));
+        await refresh;
+
+        Assert.Same(replacement.Speakers, viewModel.CreateProfileDraft()!.Speakers);
+        await viewModel.SelectPresetAsync(
+            viewModel.Presets.Single(preset => preset.Id == "game"));
+        Assert.Equal(Enumerable.Repeat(6d, 10), adapter.PresetRequests[^1].Gains);
+    }
+
     private static ThxAudioProfileSettings ProfileSettings()
     {
         static ThxAudioEndpointSettings Endpoint(int count, bool speakers) => new(false, true, ThxEqualizerPreset.Music,
             new(new double[count], new double[count], new double[count], new double[count], new double[count]),
             new(false, 25), speakers ? new(false, 50) : null);
         return new(false, Endpoint(7, true), Endpoint(10, false), []);
+    }
+
+    private static ThxEqualizerCurves UniformCurves(int count, double gain)
+    {
+        double[] values = Enumerable.Repeat(gain, count).ToArray();
+        return new(values, values, values, values, values);
+    }
+
+    private static ThxAudioState SpeakerState(int count)
+    {
+        int[] frequencies = count == 7
+            ? [250, 500, 1000, 2000, 4000, 8000, 16000]
+            : [31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+        double[] factory = count == 7
+            ? [0, 0, 0, 0, 0, 0, 0]
+            : [-3, -2, -1, 0, 0, 0, 0, 0, 0, 0];
+        return AdvancedState() with
+        {
+            Presets = [new("music", "Music"), new("game", "Game")],
+            EqualizerBands = frequencies.Select(frequency =>
+                new ThxAudioEqualizerBand(frequency, 0)).ToArray(),
+            FactoryPresetCurves = new[] { "game", "movie", "music", "voice", "custom" }
+                .Select(id => new ThxAudioPresetCurve(id, factory.ToArray())).ToArray(),
+        };
     }
 
     [Fact]
