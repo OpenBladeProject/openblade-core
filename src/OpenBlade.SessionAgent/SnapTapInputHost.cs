@@ -350,9 +350,9 @@ internal static class SnapTapInputHost
                     targetWindow = foreground;
                     targetKeyboardLayout = KeyboardLayout(foreground);
                 }
-                bool consumed = core.Handle(new SnapTapKeyStroke(
+                SnapTapInputResult result = core.Handle(new SnapTapKeyStroke(
                     (ushort)key.Scan, message is 0x100 or 0x104));
-                if (consumed)
+                if (result.Handled)
                 {
                     confirmedInput = true;
                     publisher!.Publish(SnapTapRuntimeState.Active);
@@ -361,7 +361,7 @@ internal static class SnapTapInputHost
                 {
                     RequestFailure();
                 }
-                return consumed ? 1 : Native.CallNextHookEx(hook, code, message, data);
+                return result.Suppress ? 1 : Native.CallNextHookEx(hook, code, message, data);
             }
             catch (Exception exception) when (exception is InvalidOperationException
                 or System.ComponentModel.Win32Exception or ObjectDisposedException)

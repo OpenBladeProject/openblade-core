@@ -4,6 +4,8 @@ public readonly record struct SnapTapKeyStroke(ushort ScanCode, bool IsDown);
 
 public readonly record struct SnapTapOutputBatch(SnapTapKeyStroke First, SnapTapKeyStroke Second, int Count);
 
+public readonly record struct SnapTapInputResult(bool Handled, bool Suppress);
+
 /// <summary>Single-threaded last-pressed priority for the fixed A/D scan-code pair.</summary>
 public sealed class SnapTapPriorityCore(Func<SnapTapOutputBatch, int> send)
 {
@@ -43,11 +45,11 @@ public sealed class SnapTapPriorityCore(Func<SnapTapOutputBatch, int> send)
         }
     }
 
-    public bool Handle(SnapTapKeyStroke key)
+    public SnapTapInputResult Handle(SnapTapKeyStroke key)
     {
         if (key.ScanCode is not (0x1E or 0x20))
         {
-            return false;
+            return default;
         }
 
         bool held = first == key.ScanCode || second == key.ScanCode;
@@ -77,24 +79,41 @@ public sealed class SnapTapPriorityCore(Func<SnapTapOutputBatch, int> send)
 
         if (!Enabled)
         {
-            return false;
+            return default;
         }
 
         ushort desired = second != 0 ? second : first;
         if (desired == Winner)
         {
-            // A repeat belongs to the existing physical press; it never changes priority.
-            return Emit(key.IsDown && held && desired == key.ScanCode
-                ? new(key, default, 1)
-                : default, desired);
+            // Preserve physical winner repeats and releases. Only a losing repeat
+            // must be suppressed; it belongs to an older physical press.
+            return new(true, key.IsDown && held && desired != key.ScanCode);
         }
 
-        SnapTapOutputBatch batch = Winner == 0
-            ? new(new(desired, true), default, 1)
-            : desired == 0
-                ? new(new(Winner, false), default, 1)
-                : new(new(Winner, false), new(desired, true), 2);
-        return Emit(batch, desired);
+        if (key.IsDown)
+        {
+            // The original press carries its Raw Input device identity. Release
+            // the old winner before forwarding it. Native delivery ordering is
+            // verified separately from this single-threaded output plan.
+            if (Winner != 0 && !Emit(new(new(Winner, false), default, 1), desired))
+            {
+                // Do not add a new down after an uncertain release.
+                return new(false, true);
+            }
+            Winner = desired;
+            return new(true, false);
+        }
+
+        if (desired == 0)
+        {
+            Winner = 0;
+            return new(true, false);
+        }
+
+        // Restoring a still-held key has no new physical press. Keep the release
+        // and restoration together, suppressing the original release on success.
+        bool restored = Emit(new(new(Winner, false), new(desired, true), 2), desired);
+        return new(restored, restored);
     }
 
     private bool Emit(SnapTapOutputBatch batch, ushort desired)

@@ -6,6 +6,8 @@ public sealed class SnapTapPriorityCoreTests
 {
     private const ushort A = 0x1E;
     private const ushort D = 0x20;
+    private static readonly SnapTapInputResult Passed = new(true, false);
+    private static readonly SnapTapInputResult Suppressed = new(true, true);
 
     [Fact]
     public void Handle_AllFiveEventSequencesMatchIndependentPressIndexOracle()
@@ -13,11 +15,11 @@ public sealed class SnapTapPriorityCoreTests
         SnapTapKeyStroke[] events = [new(A, true), new(A, false), new(D, true), new(D, false)];
         for (int sequence = 0; sequence < 1024; sequence++)
         {
-            List<SnapTapOutputBatch> actual = [];
-            SnapTapPriorityCore core = new(batch => { actual.Add(batch); return batch.Count; });
+            List<SnapTapOutputBatch> injected = [];
+            SnapTapPriorityCore core = new(batch => { injected.Add(batch); return batch.Count; });
             Assert.True(core.Enable());
             Dictionary<ushort, int> pressedAt = [];
-            ushort previousWinner = 0;
+            HashSet<ushort> logicalDown = [];
             int encoded = sequence;
             for (int step = 0; step < 5; step++)
             {
@@ -32,40 +34,46 @@ public sealed class SnapTapPriorityCoreTests
                 {
                     pressedAt.Remove(key.ScanCode);
                 }
-
                 ushort expectedWinner = pressedAt.Count == 0
-                    ? (ushort)0
-                    : pressedAt.MaxBy(pair => pair.Value).Key;
-                List<SnapTapKeyStroke> expected = [];
-                if (expectedWinner != previousWinner)
+                    ? (ushort)0 : pressedAt.MaxBy(pair => pair.Value).Key;
+                injected.Clear();
+                SnapTapInputResult result = core.Handle(key);
+                Assert.True(result.Handled);
+                if (key.IsDown && !wasHeld)
                 {
-                    if (previousWinner != 0)
+                    Assert.False(result.Suppress);
+                }
+                // This verifies the planned order only. Windows delivery ordering
+                // between SendInput and a forwarded hook event needs a native test.
+                foreach (SnapTapOutputBatch batch in injected)
+                {
+                    Assert.InRange(batch.Count, 1, 2);
+                    Apply(batch.First);
+                    if (batch.Count == 2)
                     {
-                        expected.Add(new(previousWinner, false));
-                    }
-                    if (expectedWinner != 0)
-                    {
-                        expected.Add(new(expectedWinner, true));
+                        Apply(batch.Second);
                     }
                 }
-                else if (wasHeld && key.IsDown && key.ScanCode == expectedWinner)
+                if (!result.Suppress)
                 {
-                    expected.Add(key);
+                    Apply(key);
                 }
-
-                actual.Clear();
-                Assert.True(core.Handle(key));
                 Assert.Equal(expectedWinner, core.Winner);
                 Assert.Equal(pressedAt.Count == 0, core.ArePhysicallyReleased);
-                Assert.Equal(expected.Count == 0 ? 0 : 1, actual.Count);
-                if (expected.Count != 0)
+                Assert.Equal(expectedWinner == 0 ? Array.Empty<ushort>() : [expectedWinner], logicalDown.ToArray());
+
+                void Apply(SnapTapKeyStroke output)
                 {
-                    SnapTapOutputBatch batch = Assert.Single(actual);
-                    Assert.Equal(expected.Count, batch.Count);
-                    Assert.Equal(expected[0], batch.First);
-                    Assert.Equal(expected.Count == 2 ? expected[1] : default, batch.Second);
+                    if (output.IsDown)
+                    {
+                        logicalDown.Add(output.ScanCode);
+                    }
+                    else
+                    {
+                        logicalDown.Remove(output.ScanCode);
+                    }
+                    Assert.True(logicalDown.Count <= 1, "The planned output must never hold A and D together.");
                 }
-                previousWinner = expectedWinner;
             }
         }
     }
@@ -73,33 +81,42 @@ public sealed class SnapTapPriorityCoreTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Handle_HandoffRepeatsAndBothReleaseOrders(bool releaseWinnerFirst)
+    public void Handle_PreservesPhysicalPressesAndWinnerRepeatsAcrossBothReleaseOrders(bool releaseWinnerFirst)
     {
         List<SnapTapOutputBatch> sent = [];
         SnapTapPriorityCore core = new(batch => { sent.Add(batch); return batch.Count; });
         Assert.True(core.Enable());
-        Assert.True(core.Handle(new(A, true)));
-        Assert.True(core.Handle(new(D, true)));
-        Assert.Equal(new(new(A, false), new(D, true), 2), sent[^1]);
-        Assert.True(core.Handle(new(A, true)));
-        Assert.Equal(2, sent.Count);
+        Assert.Equal(Passed, core.Handle(new(A, true)));
+        Assert.Equal(Passed, core.Handle(new(A, true)));
+        Assert.Empty(sent);
+        Assert.Equal(Passed, core.Handle(new(D, true)));
+        Assert.Equal(new(new(A, false), default, 1), Assert.Single(sent));
+        Assert.Equal(Suppressed, core.Handle(new(A, true)));
+        Assert.Equal(Passed, core.Handle(new(D, true)));
+        Assert.Single(sent);
         Assert.Equal(D, core.Winner);
-        Assert.True(core.Handle(new(D, true)));
-        Assert.Equal(new(new(D, true), default, 1), sent[^1]);
-        Assert.True(core.Handle(new(releaseWinnerFirst ? D : A, false)));
+        Assert.Equal(releaseWinnerFirst ? Suppressed : Passed,
+            core.Handle(new(releaseWinnerFirst ? D : A, false)));
         Assert.Equal(releaseWinnerFirst ? A : D, core.Winner);
         if (releaseWinnerFirst)
         {
+            Assert.Equal(2, sent.Count);
             Assert.Equal(new(new(D, false), new(A, true), 2), sent[^1]);
+            Assert.Equal(Passed, core.Handle(new(A, true)));
+            Assert.Equal(2, sent.Count);
         }
         else
         {
-            Assert.Equal(3, sent.Count);
+            Assert.Single(sent);
         }
-        Assert.True(core.Handle(new(releaseWinnerFirst ? A : D, false)));
-        Assert.Equal(new(new(releaseWinnerFirst ? A : D, false), default, 1), sent[^1]);
+        int beforeFinalRelease = sent.Count;
+        Assert.Equal(Passed, core.Handle(new(releaseWinnerFirst ? A : D, false)));
+        Assert.Equal(beforeFinalRelease, sent.Count);
         Assert.Equal((ushort)0, core.Winner);
         Assert.True(core.ArePhysicallyReleased);
+        Assert.Equal(Passed, core.Handle(new(D, true)));
+        Assert.Equal(Passed, core.Handle(new(A, true)));
+        Assert.Equal(new(new(D, false), default, 1), sent[^1]);
     }
 
     [Fact]
@@ -107,101 +124,106 @@ public sealed class SnapTapPriorityCoreTests
     {
         List<SnapTapOutputBatch> sent = [];
         SnapTapPriorityCore core = new(batch => { sent.Add(batch); return batch.Count; });
-        Assert.False(core.Handle(new(A, true)));
-        Assert.False(core.Handle(new(D, true)));
+        Assert.Equal(default, core.Handle(new(A, true)));
+        Assert.Equal(default, core.Handle(new(D, true)));
         Assert.False(core.Enable());
-        Assert.False(core.Handle(new(A, false)));
+        Assert.Equal(default, core.Handle(new(A, false)));
         Assert.False(core.Enable());
-        Assert.False(core.Handle(new(D, false)));
+        Assert.Equal(default, core.Handle(new(D, false)));
         Assert.True(core.ArePhysicallyReleased);
         Assert.True(core.Enable());
         Assert.Empty(sent);
-        Assert.True(core.Handle(new(A, true)));
+        Assert.Equal(Passed, core.Handle(new(A, true)));
         Assert.False(core.Enable());
         core.Disable();
         Assert.False(core.Enabled);
-        Assert.Equal(new(new(A, false), default, 1), sent[^1]);
+        Assert.Equal(new(new(A, false), default, 1), Assert.Single(sent));
         core.Disable();
-        Assert.Equal(2, sent.Count);
+        Assert.Single(sent);
         Assert.False(core.Enable());
-        Assert.False(core.Handle(new(A, false)));
+        Assert.Equal(default, core.Handle(new(A, false)));
         Assert.True(core.Enable());
     }
 
     [Theory]
-    [InlineData(0, false)]
-    [InlineData(1, false)]
-    [InlineData(2, true)]
-    public void Handoff_FailedSubmissionPermanentlyPoisonsWithoutRetry(int accepted, bool throws)
+    [InlineData(false, 0)]
+    [InlineData(false, 2)]
+    [InlineData(false, 3)]
+    [InlineData(true, 0)]
+    [InlineData(true, 1)]
+    [InlineData(true, 2)]
+    [InlineData(true, 3)]
+    public void Handoff_FailurePermanentlyPoisonsAndOnlySuppressesFreshDown(bool restoring, int failure)
     {
         int calls = 0;
-        SnapTapPriorityCore core = new(batch =>
+        SnapTapPriorityCore? core = null;
+        core = new(batch =>
         {
             calls++;
-            if (calls == 1)
+            if (restoring && calls == 1)
             {
                 return batch.Count;
             }
-            if (throws)
+            if (failure == 2)
             {
-                throw new InvalidOperationException("Sender failed after possible submission.");
+                throw new InvalidOperationException("Submission is uncertain.");
             }
-            return accepted;
+            if (failure == 3)
+            {
+                core!.Poison();
+                return batch.Count;
+            }
+            return failure;
         });
         Assert.True(core.Enable());
-        Assert.True(core.Handle(new(A, true)));
-        Assert.False(core.Handle(new(D, true)));
+        Assert.Equal(Passed, core.Handle(new(A, true)));
+        if (restoring)
+        {
+            Assert.Equal(Passed, core.Handle(new(D, true)));
+        }
+        Assert.Equal(new(false, !restoring), core.Handle(new(D, !restoring)));
         AssertPermanentlyPoisoned(core);
-        Assert.Equal(2, calls);
-    }
-
-    [Fact]
-    public void Handle_ReentrantPoisonIsNotOverwrittenBySuccessfulSender()
-    {
-        SnapTapPriorityCore? core = null;
-        int calls = 0;
-        core = new(batch => { calls++; core!.Poison(); return batch.Count; });
-        Assert.True(core.Enable());
-        Assert.False(core.Handle(new(A, true)));
-        AssertPermanentlyPoisoned(core);
-        Assert.Equal(1, calls);
+        Assert.Equal(restoring ? 2 : 1, calls);
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Disable_FailurePoisonsAndNeverRetriesCleanup(bool throws)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Disable_FailurePoisonsAndNeverRetriesCleanup(int failure)
     {
         int calls = 0;
-        SnapTapPriorityCore core = new(batch =>
+        SnapTapPriorityCore? core = null;
+        core = new(batch =>
         {
             calls++;
-            if (calls == 1)
-            {
-                return batch.Count;
-            }
-            if (throws)
+            if (failure == 1)
             {
                 throw new InvalidOperationException();
+            }
+            if (failure == 2)
+            {
+                core!.Poison();
+                return batch.Count;
             }
             return 0;
         });
         Assert.True(core.Enable());
-        Assert.True(core.Handle(new(A, true)));
+        Assert.Equal(Passed, core.Handle(new(A, true)));
         core.Disable();
         AssertPermanentlyPoisoned(core);
-        Assert.Equal(2, calls);
+        Assert.Equal(1, calls);
     }
 
     [Fact]
     public void Handle_UnselectedScansAreIgnored()
     {
         SnapTapPriorityCore core = new(_ => throw new InvalidOperationException());
-        Assert.False(core.Handle(new(0x11, true)));
+        Assert.Equal(default, core.Handle(new(0x11, true)));
         Assert.True(core.ArePhysicallyReleased);
         Assert.True(core.Enable());
-        Assert.False(core.Handle(new(0x11, true)));
-        Assert.False(core.Handle(new(0x11, false)));
+        Assert.Equal(default, core.Handle(new(0x11, true)));
+        Assert.Equal(default, core.Handle(new(0x11, false)));
         Assert.True(core.Enabled);
         Assert.False(core.Faulted);
         Assert.Equal((ushort)0, core.Winner);
@@ -213,11 +235,11 @@ public sealed class SnapTapPriorityCoreTests
         Assert.False(core.Enabled);
         Assert.Equal((ushort)0, core.Winner);
         core.Disable();
-        Assert.False(core.Handle(new(A, false)));
-        Assert.False(core.Handle(new(D, false)));
+        Assert.Equal(default, core.Handle(new(A, false)));
+        Assert.Equal(default, core.Handle(new(D, false)));
         Assert.True(core.ArePhysicallyReleased);
         Assert.False(core.Enable());
-        Assert.False(core.Handle(new(A, true)));
+        Assert.Equal(default, core.Handle(new(A, true)));
         core.Disable();
         Assert.True(core.Faulted);
         Assert.Equal((ushort)0, core.Winner);
