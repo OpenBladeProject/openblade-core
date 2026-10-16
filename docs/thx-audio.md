@@ -2,9 +2,9 @@
 
 OpenBlade can connect to the supported THX components already installed on a
 Razer Blade 16 RZ09-0581 (`1532:02E0`). The integration is experimental and off
-by default. Reading settings and reversible speaker changes with Synapse closed
-have been validated on the admitted stack. Headphone writes and audible
-processing still need validation.
+by default. Reading settings and reversible speaker and headphone changes with
+Synapse closed have been validated on the admitted stack. Audible processing
+still needs validation.
 
 OpenBlade does not install THX software or drivers. Other Blade models and
 different THX component builds are not yet supported.
@@ -158,12 +158,35 @@ state, or missing cleanup audit. The baseline SHA-256 was
 The tested production code was `b4f30e347efec689845c71851b5d57591d4244ca`;
 this validation changed no product code, installed component, or HID state.
 
+## Reversible headphone validation
+
+A separately authorized run on 2026-10-16 repeated the three round trips on
+headphones with fresh baseline queries and the same production code and
+component pins. The runner changed only its typed target, prior-state
+comparison, and native mutation guard from speakers to headphones. Both
+endpoints' complete states remained part of every final baseline comparison.
+
+| Headphone control | Applied and confirmed | Restored and confirmed |
+| --- | --- | --- |
+| Spatial audio | On | Off |
+| Equalizer | On | Off |
+| Preset | `music` | `default` |
+
+All six writes and all three exact restorations passed, with no failed cleanup,
+surviving helper, or new helper crash. Speakers stayed Off/Off/`music` and
+headphones finished Off/Off/`default`, each with 218 advertised presets. The
+fresh baseline hash matched the earlier baseline:
+`0964A8A663DC6D543BC423BA0D4526DCD57B0CCCC94BBBE25701DF0B3153243B`.
+No speaker setting was written in this run. The tested production code was
+unchanged from `b4f30e347efec689845c71851b5d57591d4244ca`.
+
 ## Remaining validation
 
 The draft implementation still needs separately authorized audible-processing
-and interruption validation on the exact admitted stack. Headphone writes were
-not exercised; they use the shared typed backend but retain that validation
-limit. No playback or audio-quality test was performed by either runtime run.
+and interruption validation on the exact admitted stack. No playback or
+audio-quality test was performed by these runtime runs. Custom EQ and other
+vendor controls are being inventoried separately; these results cover the
+spatial switch, EQ switch, and selected preset only.
 Keep the change draft until those results are recorded. Any UI preview must
 use a disconnected, simulated backend and must not connect to the installed
 Session Agent's THX endpoint.
