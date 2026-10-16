@@ -611,9 +611,11 @@ public partial class App
                 "profiles-wide",
                 StringComparison.Ordinal);
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
+            bool captureSnapTap = string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
+                && !captureSnapTap
                 && !string.Equals(
                     requestedPage,
                     "tray-dashboard",
@@ -622,7 +624,7 @@ public partial class App
                 throw new InvalidOperationException(
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
-            IEnumerable<string> destinations = captureProfilesVariant
+            IEnumerable<string> destinations = captureProfilesVariant || captureSnapTap
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -652,6 +654,8 @@ public partial class App
                 await WaitForSnapshotLayoutAsync();
                 string navigationDestination = destination is "settings-appearance" or "settings-experimental"
                     ? "settings"
+                    : captureSnapTap
+                        ? "laptop"
                     : captureProfilesVariant
                         ? "profiles"
                         : destination;
@@ -668,6 +672,11 @@ public partial class App
                 if (destination == "settings-experimental")
                 {
                     snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
+                    await WaitForSnapshotLayoutAsync();
+                }
+                if (captureSnapTap)
+                {
+                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap();
                     await WaitForSnapshotLayoutAsync();
                 }
                 await SaveSnapshotAsync(

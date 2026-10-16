@@ -14,6 +14,11 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (SnapTapInputHost.IsRequested(args))
+        {
+            return SnapTapInputHost.Run(args);
+        }
+
         if (MicrophoneMuteStateProbeCommand.IsRequested(args))
         {
             try
@@ -158,6 +163,10 @@ internal static class Program
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade shortcut preference refresh failed: {0}",
                         exception.Message));
+                var snapTap = new SnapTapProcessCoordinator(
+                    specialKeyBindings,
+                    SnapTapInputProcess.Start,
+                    status => SnapTapStatusStore.Write(status));
                 var specialKeyInput = new WindowsSpecialKeyInputSender();
                 await using var specialKeyServiceClient = new ServiceClient();
                 var specialKeyExecutor = new SpecialKeyActionExecutor(
@@ -280,6 +289,7 @@ internal static class Program
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
+                Task snapTapTask = snapTap.RunAsync(lifetime.Token);
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task gpuServerTask = gpuServer.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
@@ -298,6 +308,7 @@ internal static class Program
                     gpuServerTask,
                     statusFeedTask,
                     specialKeyBindingsTask,
+                    snapTapTask,
                     automationTask,
                     powerModeAutomationTask,
                     reactiveTask,

@@ -702,6 +702,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
+            snapTapEnabled = preferences.SnapTapEnabled;
             initialUpdateChannel = preferences.EffectiveUpdateChannel;
             initialUpdateCheckInterval = preferences.EffectiveUpdateCheckInterval;
             initialUpdateCheckPromptShown = preferences.UpdateCheckPromptShown;
@@ -788,6 +789,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        SnapTapToggle.IsOn = snapTapEnabled;
+        RefreshSnapTapStatus();
         ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
         LabFeaturesToggle.IsOn = ViewModel.LabFeaturesEnabled;
         ApplyNotificationPreferences(initialNotifications);
@@ -1185,7 +1188,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastNotifiedFirmwareSignature: notificationCoordinator.LastNotifiedFirmwareSignature,
                 TrayDashboard: trayDashboardPreference,
                 LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
-                Language: ViewModel.LanguagePreference));
+                Language: ViewModel.LanguagePreference,
+                SnapTapEnabled: snapTapEnabled));
         }
         catch (ObjectDisposedException)
         {
@@ -3200,6 +3204,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DispatcherQueueTimer sender,
         object args)
     {
+        if (Volatile.Read(ref disposed) == 0 && LaptopPage.Visibility == Visibility.Visible)
+        {
+            RefreshSnapTapStatus();
+        }
         if (Volatile.Read(ref disposed) != 0
             || (DisplayPage.Visibility != Visibility.Visible
                 && !(HomePage.Visibility == Visibility.Visible
@@ -3219,8 +3227,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void UpdateDisplayRefreshState()
     {
+        if (windowVisible && LaptopPage.Visibility == Visibility.Visible)
+        {
+            RefreshSnapTapStatus();
+        }
         bool shouldRefresh = windowVisible
             && (DisplayPage.Visibility == Visibility.Visible
+                || LaptopPage.Visibility == Visibility.Visible
                 || (HomePage.Visibility == Visibility.Visible
                     && IsDashboardCardPinned(DashboardCardKind.Display)));
         if (shouldRefresh)

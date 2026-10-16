@@ -11,6 +11,37 @@ public sealed class SpecialKeyBindingSourceTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task SnapTapPreference_EmitsOnlyConfirmedTransitionsAndRetainsOnReadFailure()
+    {
+        bool enabled = true;
+        bool failRead = false;
+        var transitions = new List<bool>();
+        var source = new SpecialKeyBindingSource(
+            Path.Combine(directory, "preferences.json"),
+            _ => failRead
+                ? Task.FromException<UiPreferences>(new IOException("temporarily unavailable"))
+                : Task.FromResult(UiPreferences.Default with { SnapTapEnabled = enabled }));
+        source.SnapTapEnabledChanged += transitions.Add;
+        Assert.False(source.SnapTapEnabled);
+
+        await source.ReloadIfChangedAsync(force: true, CancellationToken.None);
+        await source.ReloadIfChangedAsync(force: true, CancellationToken.None);
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal([true], transitions);
+
+        failRead = true;
+        await source.ReloadIfChangedAsync(force: true, CancellationToken.None);
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal([true], transitions);
+
+        failRead = false;
+        enabled = false;
+        await source.ReloadIfChangedAsync(force: true, CancellationToken.None);
+        Assert.False(source.SnapTapEnabled);
+        Assert.Equal([true, false], transitions);
+    }
+
+    [Fact]
     public async Task ReloadIfChangedAsync_TransientReadFailureRetainsAndRetriesBindings()
     {
         Directory.CreateDirectory(directory);

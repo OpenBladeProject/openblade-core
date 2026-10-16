@@ -435,3 +435,7 @@ target.
 Commits follow Conventional Commits. Version and migration rules are in
 [VERSIONING.md](../VERSIONING.md). Resource keys, fallback behavior, and the
 pseudo-localization review workflow are in [localization.md](localization.md).
+
+## SnapTap input helper
+
+The opt-in experimental A/D priority feature runs in a separate current-user input process. See [SnapTap](snap-tap.md) for its isolation boundary, input failure handling, and exact-build validation requirements. It does not add a hardware command or change the service's exclusive device ownership.

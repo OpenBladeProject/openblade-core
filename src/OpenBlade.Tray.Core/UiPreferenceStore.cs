@@ -61,7 +61,8 @@ public sealed record UiPreferences(
     string? LastNotifiedFirmwareSignature = null,
     TrayDashboardPreference? TrayDashboard = null,
     bool LabFeaturesEnabled = false,
-    UiLanguagePreference Language = UiLanguagePreference.FollowSystem)
+    UiLanguagePreference Language = UiLanguagePreference.FollowSystem,
+    bool SnapTapEnabled = false)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,

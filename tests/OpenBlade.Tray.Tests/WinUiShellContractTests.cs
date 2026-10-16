@@ -6,6 +6,30 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void SnapTapRemainsAvailableWithoutShortcutHardwareAndAnnouncesRuntimeState()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement card = NamedElement(document, "Border", "SnapTapCard");
+        Assert.DoesNotContain(card.Ancestors(), element =>
+            Attribute(element, "Name") is "ShortcutKeysSection" or "LaptopCardsHost");
+        XElement toggle = NamedElement(document, "ToggleSwitch", "SnapTapToggle");
+        Assert.Equal("SnapTap (A/D)", Attribute(toggle, "AutomationProperties.Name"));
+        Assert.Null(Attribute(toggle, "IsOn"));
+        XElement status = NamedElement(document, "TextBlock", "SnapTapStatusText");
+        Assert.Equal("Polite", Attribute(status, "AutomationProperties.LiveSetting"));
+        Assert.Equal("Wrap", Attribute(status, "TextWrapping"));
+
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs").ReplaceLineEndings("\n");
+        Assert.Contains(
+            "localizationSnapshotMode\n"
+                + "            ? new SnapTapRuntimeStatus(SnapTapRuntimeState.Off, DateTimeOffset.UnixEpoch)\n"
+                + "            : SnapTapStatusStore.Read()",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExperimentalSupportIsAutomaticAndPausedWritesExposeOneExplicitResumeAction()
     {
         XDocument document = XDocument.Parse(
