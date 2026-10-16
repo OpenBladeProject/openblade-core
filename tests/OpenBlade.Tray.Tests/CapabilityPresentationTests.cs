@@ -397,7 +397,12 @@ public sealed class CapabilityPresentationTests
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         XElement status = NamedElement(document, "Grid", "ThxAudioStatusArea");
-        Assert.Single(status.Elements(), element => element.Name.LocalName == "TextBlock");
+        XElement measure = Assert.Single(status.Elements(), element =>
+            element.Name.LocalName == "TextBlock" && Attribute(element, "Opacity") == "0");
+        Assert.Equal("Raw", Attribute(measure, "AccessibilityView"));
+        Assert.Null(Attribute(measure, "Visibility"));
+        Assert.Single(status.Elements(), element => element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Visibility") == "{x:Bind ThxViewModel.ShowStatusMessage, Mode=OneWay}");
         Assert.Single(status.Elements(), element => element.Name.LocalName == "ProgressBar");
         Assert.DoesNotContain(status.Descendants(), element => element.Name.LocalName == "RowDefinition");
         XElement read = Assert.Single(document.Descendants(), element =>

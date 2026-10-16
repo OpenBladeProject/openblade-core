@@ -3154,6 +3154,10 @@
                                                     IsEnabled="{x:Bind ThxViewModel.CanRead, Mode=OneWay}" Click="OnThxReadSettings" />
                                         </Grid>
                                         <Grid x:Name="ThxAudioStatusArea" MinHeight="20">
+                                            <!-- Retain the wrapped status height while the visible text is replaced by progress. -->
+                                            <TextBlock Text="{x:Bind ThxViewModel.StatusMessage, Mode=OneWay}" TextWrapping="Wrap"
+                                                       Style="{StaticResource SecondaryTextStyle}" Opacity="0" IsHitTestVisible="False"
+                                                       AutomationProperties.AccessibilityView="Raw" />
                                             <TextBlock Text="{x:Bind ThxViewModel.StatusMessage, Mode=OneWay}" TextWrapping="Wrap"
                                                        Visibility="{x:Bind ThxViewModel.ShowStatusMessage, Mode=OneWay}"
                                                        VerticalAlignment="Center" Style="{StaticResource SecondaryTextStyle}"
