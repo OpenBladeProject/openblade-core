@@ -2,8 +2,9 @@
 
 OpenBlade can connect to the supported THX components already installed on a
 Razer Blade 16 RZ09-0581 (`1532:02E0`). The integration is experimental and off
-by default. Reading settings with Synapse closed has been validated on the
-admitted stack. Setting changes and audible processing still need validation.
+by default. Reading settings and reversible speaker changes with Synapse closed
+have been validated on the admitted stack. Headphone writes and audible
+processing still need validation.
 
 OpenBlade does not install THX software or drivers. Other Blade models and
 different THX component builds are not yet supported.
@@ -124,12 +125,45 @@ bounded and must belong to the endpoint's returned catalog. Pinning the native
 image until helper exit resolved the observed unload failure. Successful reads
 were repeated after these corrections, with no new helper crash events.
 
+## Reversible speaker validation
+
+On 2026-10-16, separately authorized validation exercised the three exposed
+speaker controls through the same production dispatcher and native helper:
+
+| Control | Applied and confirmed | Restored and confirmed |
+| --- | --- | --- |
+| Spatial audio | On | Off |
+| Equalizer | On | Off |
+| Preset | `default` | `music` |
+
+Before any write, the runner durably saved both endpoints' complete confirmed
+states. Speakers started with spatial audio Off, EQ Off, and preset `music`;
+headphones started with both switches Off and preset `default`. Each round trip
+checked the immutable baseline hash and fresh speaker state, admitted one exact
+typed change, confirmed it by readback, read again before restoration, and
+restored the saved value. It then independently read both endpoints and required
+their complete states, including the 218-entry catalogs, to match the baseline.
+
+All three round trips passed. The six setting writes comprised four
+`SetProperty` calls and two `SelectPreset` calls. Every helper cleanup and exit
+was confirmed, with no retry, ambiguous result, surviving validation process,
+or new helper crash. Synapse stayed closed and the THX service stayed running.
+The final baseline was exact: speakers Off/Off/`music`, headphones
+Off/Off/`default`. No headphone setting was written.
+
+The developer runner restricted each helper to one exact mutation ticket for
+`rznb12` speakers and stopped further writes on any failed response, unexpected
+state, or missing cleanup audit. The baseline SHA-256 was
+`0964A8A663DC6D543BC423BA0D4526DCD57B0CCCC94BBBE25701DF0B3153243B`.
+The tested production code was `b4f30e347efec689845c71851b5d57591d4244ca`;
+this validation changed no product code, installed component, or HID state.
+
 ## Remaining validation
 
-The draft implementation still needs separately authorized setting-change and
-audio validation on the exact admitted stack. Check audible processing,
-matching mutation readback, interruption handling, and restoration of the
-original settings. No such setting changes were part of the read-only run.
+The draft implementation still needs separately authorized audible-processing
+and interruption validation on the exact admitted stack. Headphone writes were
+not exercised; they use the shared typed backend but retain that validation
+limit. No playback or audio-quality test was performed by either runtime run.
 Keep the change draft until those results are recorded. Any UI preview must
 use a disconnected, simulated backend and must not connect to the installed
 Session Agent's THX endpoint.
