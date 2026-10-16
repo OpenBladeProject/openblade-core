@@ -175,6 +175,12 @@ public sealed record HyperBoostBaseModeCapabilities(
     // Direct entry from and restoration to Custom; null where it has not been admitted.
     public DeviceFeatureAccess? Custom { get; init; }
 
+    // Explicit cooling-pad entry baseline for models whose vendor path does not use Performance.
+    // Omitted capabilities retain the legacy inferred Performance baseline.
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public PerformancePreset? CoolingPadEntryBaseMode { get; init; }
+
     public DeviceFeatureAccess? AccessFor(PerformancePreset preset) => preset switch
     {
         PerformancePreset.Silent => Silent,
@@ -188,7 +194,13 @@ public sealed record HyperBoostBaseModeCapabilities(
         Enum.IsDefined(Silent)
         && Enum.IsDefined(Balanced)
         && Enum.IsDefined(Performance)
-        && (Custom is null || Enum.IsDefined(Custom.Value));
+        && (Custom is null || Enum.IsDefined(Custom.Value))
+        && (CoolingPadEntryBaseMode is null
+            || CoolingPadEntryBaseMode is PerformancePreset.Silent
+                or PerformancePreset.Balanced
+                or PerformancePreset.Performance
+                or PerformancePreset.Custom
+                && AccessFor(CoolingPadEntryBaseMode.Value) == DeviceFeatureAccess.ReadWrite);
 }
 
 public sealed record DeviceCapabilities(

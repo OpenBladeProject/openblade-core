@@ -146,6 +146,31 @@ bounded capabilities, upstream provenance, write-pause recovery, and tester
 reports. These profiles do not inherit another model's backends, drivers, or
 physical-validation status.
 
+## Source-backed experimental admission
+
+Physical validation is the promotion gate for validated support, not a
+prerequisite for releasing a separately implemented experimental control for
+community testing. The maintainer need not own every experimental laptop.
+Review and pin the exact model's vendor or upstream command definitions, expose
+its experimental provenance in capabilities and diagnostics, and document what
+users still need to test. Do not claim another model's physical results.
+
+When an exact model's reviewed HyperBoost implementation uses the same typed
+thermal commands with or without a cooling pad, those commands may be offered
+on both paths experimentally. Record padless use as source-backed extrapolation
+until community validation is reviewed. Do not fabricate a pad connection or
+issue additional accessory-status writes to emulate one. Preserve any concrete
+firmware prerequisites established by the exact model's source.
+
+Keep fresh exact-device, controller, power, session and ownership admission,
+independent readback, durable restoration, and stop-on-ambiguity behavior on
+every experimental path. Software tests must cover failure and recovery before
+release. Physical-validation manifests belonging to the separately validated
+backends remain required for those backends; they do not automatically gate
+source-backed experimental backends. New or unknown commands still require
+separate exact-model source review. This policy authorizes no development-time
+hardware writes, installations, or unattended sleep/resume tests.
+
 ## Codebase map
 
 - `src/OpenBlade.Contracts`: shared service IPC, profiles, capabilities, and
