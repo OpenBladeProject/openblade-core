@@ -256,7 +256,7 @@ type sealed class OpenBlade.Session.SessionAgentPipeEndpoint
   property System.String PipeName { get; init; }
 type static class OpenBlade.Session.SessionAudioIpc
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 MaximumPresets = 128
+  field const System.Int32 MaximumPresets = 256
   field const System.Int32 ProtocolVersion = 1
   field const System.String PipeNamePrefix = "OpenBlade.Session.Audio.v1"
 type static class OpenBlade.Session.SessionAudioIpcCodec

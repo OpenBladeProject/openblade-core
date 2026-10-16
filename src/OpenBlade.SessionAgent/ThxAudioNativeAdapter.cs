@@ -33,6 +33,8 @@ internal interface IThxAudioNativeAdapter : IDisposable
 internal sealed class ThxAudioNativeAdapter : IThxAudioNativeAdapter
 {
     private const uint LoadLibrarySearchSystem32 = 0x00000800;
+    private const uint GetModuleHandleExFlagPin = 0x00000001;
+    private const uint GetModuleHandleExFlagFromAddress = 0x00000004;
     private const int MaximumNativeJsonBytes = 64 * 1024;
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -96,6 +98,20 @@ internal sealed class ThxAudioNativeAdapter : IThxAudioNativeAdapter
 
         try
         {
+            // The admitted native client can leave worker threads running after
+            // RemoveDevice. Runtime validation observed an execute fault in its
+            // unloaded image during FreeLibrary. This adapter runs only in the
+            // bounded one-shot helper: pin the image until process exit so those
+            // threads cannot execute unmapped code. The OS reclaims the image
+            // with the helper; Dispose still releases our owned loader handle.
+            if (!GetModuleHandleExW(
+                    GetModuleHandleExFlagPin | GetModuleHandleExFlagFromAddress,
+                    library.DangerousGetHandle(),
+                    out _))
+            {
+                throw new InvalidOperationException(
+                    "The THX native component could not be pinned to its helper lifetime.");
+            }
             addDevice = GetExport<DeviceCall>("AddDevice");
             checkStatus = GetExport<DeviceCall>("CheckStatus");
             removeDevice = GetExport<DeviceCall>("RemoveDevice");
@@ -217,6 +233,10 @@ internal sealed class ThxAudioNativeAdapter : IThxAudioNativeAdapter
     [DllImport("kernel32.dll", EntryPoint = "GetProcAddress", CharSet = CharSet.Ansi)]
     private static extern nint GetProcAddress(SafeLibraryHandle module, string procedureName);
 
+    [DllImport("kernel32.dll", EntryPoint = "GetModuleHandleExW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetModuleHandleExW(uint flags, nint moduleAddress, out nint module);
+
     private sealed class SafeLibraryHandle : SafeHandleZeroOrMinusOneIsInvalid
     {
         private SafeLibraryHandle() : base(ownsHandle: true)
@@ -295,6 +315,16 @@ internal static class ThxVendorJson
 
     internal static string? ParseSelectedPreset(string json)
     {
+        // The pinned DLL returned the bare preset ID "music" at runtime,
+        // while cached middleware also describes JSON string/null responses.
+        // Accept bounded plain IDs as well; ReadState still requires membership
+        // in the catalog returned by this same endpoint.
+        if (json != "null" && ValidId(json)
+            && json.All(character => char.IsAsciiLetterOrDigit(character)
+                || character is '_' or '-' or '.'))
+        {
+            return json;
+        }
         using JsonDocument document = Parse(json);
         if (document.RootElement.ValueKind == JsonValueKind.Null)
         {

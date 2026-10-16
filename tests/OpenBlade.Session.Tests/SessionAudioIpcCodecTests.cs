@@ -6,6 +6,49 @@ namespace OpenBlade.Session.Tests;
 
 public sealed class SessionAudioIpcCodecTests
 {
+    [Theory]
+    [InlineData(218)]
+    [InlineData(256)]
+    public async Task Response_RoundTripsObservedAndMaximumPresetCatalogs(int count)
+    {
+        var presets = Enumerable.Range(0, count)
+            .Select(index => new ThxAudioPreset($"preset-{index}", $"preset-{index}"))
+            .ToArray();
+        var response = new SessionAudioResponse(
+            SessionAudioIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available,
+            null,
+            new ThxAudioState(ThxAudioEndpoint.Speakers, false, false, "preset-0", presets));
+        using var stream = new MemoryStream();
+
+        await SessionAudioIpcCodec.WriteResponseAsync(stream, response);
+        stream.Position = 0;
+        SessionAudioResponse decoded = await SessionAudioIpcCodec.ReadResponseAsync(stream);
+
+        Assert.Equal(presets, decoded.State!.Presets);
+    }
+
+    [Fact]
+    public async Task Response_RejectsPresetCatalogBeyondBound()
+    {
+        var presets = Enumerable.Range(0, 257)
+            .Select(index => new ThxAudioPreset($"preset-{index}", $"preset-{index}"))
+            .ToArray();
+        var response = new SessionAudioResponse(
+            SessionAudioIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available,
+            null,
+            new ThxAudioState(ThxAudioEndpoint.Speakers, false, false, "preset-0", presets));
+        using var stream = new MemoryStream();
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => SessionAudioIpcCodec.WriteResponseAsync(stream, response));
+    }
+
     public static TheoryData<SessionAudioRequest> Requests => new()
     {
         new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid()),

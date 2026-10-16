@@ -6,7 +6,9 @@ public static class SessionAudioIpc
 {
     public const int ProtocolVersion = 1;
     public const int MaximumMessageBytes = 64 * 1024;
-    public const int MaximumPresets = 128;
+    // The admitted rznb12 stack returned 218 profile presets during runtime
+    // validation. Retain a bounded list alongside the independent 64 KiB frame cap.
+    public const int MaximumPresets = 256;
     public const string PipeNamePrefix = "OpenBlade.Session.Audio.v1";
 }
 

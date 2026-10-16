@@ -5,6 +5,26 @@ namespace OpenBlade.SessionAgent.Tests;
 
 public sealed class ThxAudioHelperCommandTests
 {
+    [Theory]
+    [InlineData(218)]
+    [InlineData(256)]
+    public void VendorJson_AcceptsObservedCatalogAndBoundedHeadroom(int count)
+    {
+        string json = System.Text.Json.JsonSerializer.Serialize(
+            Enumerable.Range(0, count).Select(index => $"preset-{index}"));
+
+        Assert.Equal(count, ThxVendorJson.ParsePresetList(json).Count);
+    }
+
+    [Fact]
+    public void VendorJson_RejectsCatalogBeyondBound()
+    {
+        string json = System.Text.Json.JsonSerializer.Serialize(
+            Enumerable.Range(0, 257).Select(index => $"preset-{index}"));
+
+        Assert.Throws<InvalidDataException>(() => ThxVendorJson.ParsePresetList(json));
+    }
+
     [Fact]
     public void VendorJson_ParsesSourceBackedPrimitiveShapes()
     {
@@ -14,6 +34,8 @@ public sealed class ThxAudioHelperCommandTests
             [new ThxAudioPreset("music", "music"), new ThxAudioPreset("game", "game")],
             ThxVendorJson.ParsePresetList("[\"music\",\"game\"]"));
         Assert.Equal("music", ThxVendorJson.ParseSelectedPreset("\"music\""));
+        Assert.Equal("music", ThxVendorJson.ParseSelectedPreset("music"));
+        Assert.Equal("ApexLegends_imm", ThxVendorJson.ParseSelectedPreset("ApexLegends_imm"));
         Assert.Null(ThxVendorJson.ParseSelectedPreset("null"));
     }
 
@@ -25,6 +47,10 @@ public sealed class ThxAudioHelperCommandTests
             () => ThxVendorJson.ParsePresetList("[\"music\",\"music\"]"));
         Assert.Throws<InvalidDataException>(
             () => ThxVendorJson.ParseSelectedPreset("{\"presetId\":\"music\"}"));
+        Assert.Throws<InvalidDataException>(
+            () => ThxVendorJson.ParseSelectedPreset(" music "));
+        Assert.Throws<InvalidDataException>(
+            () => ThxVendorJson.ParseSelectedPreset(new string('x', 257)));
     }
 
     [Fact]
