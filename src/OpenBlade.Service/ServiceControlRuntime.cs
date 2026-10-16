@@ -4037,9 +4037,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && !lowPowerGate.IsActive
                 && !thermalConvergenceShutdown
                 && ConfigurationIsAdmitted
-                && deviceProvider.IsExperimentalDevice
-                && !hyperBoostRestorePending
-                && !hyperBoostJournalSafetyBlock;
+                && deviceProvider.IsExperimentalDevice;
             if (!StillAdmitted() || !deviceProvider.IsExperimentalWritesPaused)
             {
                 return new ControlOperationResult(ControlOperationStatus.Blocked,
@@ -4078,12 +4076,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     }
                     return true;
                 }, StillAuthorized, token).ConfigureAwait(false);
-            const string message = "Experimental controls resumed. Choose a setting to send a new request.";
+            bool retainedHyperBoostRecovery = hyperBoostRestorePending
+                || hyperBoostJournalSafetyBlock;
+            string message = retainedHyperBoostRecovery
+                ? "Experimental controls resumed for the saved HyperBoost recovery. Retry the saved restore explicitly."
+                : "Experimental controls resumed. Choose a setting to send a new request.";
             consecutiveDeviceProbeFailures = 0;
             PublishIfChanged(GetStatus() with
             {
                 DeviceVerified = true,
-                WritesBlocked = false,
+                // Provider recovery is read-only. It may rearm the experimental
+                // port, but it must not clear a durable HyperBoost recovery gate
+                // or continue the write that caused the pause.
+                WritesBlocked = retainedHyperBoostRecovery,
                 ConfirmedState = confirmed,
                 Capabilities = deviceProvider.ExperimentalCapabilities,
                 ActivePowerSource = source,
@@ -7147,7 +7152,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         confirmed.HyperBoostActive == false
         && confirmed.Performance == journal.BaseMode
         && confirmed.Fans == FanMode.Automatic
-        && confirmed.CustomPerformance is null
+        && (journal.BaseMode == PerformancePreset.Custom
+            ? journal.RestoreIntent.Performance == PerformancePreset.Custom
+                && confirmed.CustomPerformance
+                    == journal.RestoreIntent.CustomPerformance
+            : confirmed.CustomPerformance is null)
         && (journal.RestoreIntent.GpuClockTuning is { } tuning
             ? confirmed.GpuClockOffsets?.Current == tuning.EffectiveOffsets
             : confirmed.GpuClockOffsets is null);

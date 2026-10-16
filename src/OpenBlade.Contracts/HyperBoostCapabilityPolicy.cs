@@ -6,14 +6,22 @@ public static class HyperBoostCapabilityPolicy
     public static bool RequiresCoolingPad(DeviceCapabilities capabilities) =>
         capabilities.HyperBoostWithoutCoolingPadAccess != DeviceFeatureAccess.ReadWrite;
 
-    // Base mode for an entry with the exact cooling pad connected: the captured
-    // Performance transition, or null when that path is not admitted.
-    public static PerformancePreset? PadPresentEntryBaseMode(DeviceCapabilities capabilities) =>
-        capabilities.HyperBoostAccess == DeviceFeatureAccess.ReadWrite
-        && capabilities.HyperBoostBaseModes?.AccessFor(PerformancePreset.Performance)
-            == DeviceFeatureAccess.ReadWrite
-            ? PerformancePreset.Performance
+    // Base mode for an entry with the exact cooling pad connected: an explicit
+    // declaration where provided, otherwise the legacy Performance inference.
+    public static PerformancePreset? PadPresentEntryBaseMode(DeviceCapabilities capabilities)
+    {
+        if (capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
+            || capabilities.HyperBoostBaseModes is not { } baseModes)
+        {
+            return null;
+        }
+
+        PerformancePreset candidate = baseModes.CoolingPadEntryBaseMode
+            ?? PerformancePreset.Performance;
+        return baseModes.AccessFor(candidate) == DeviceFeatureAccess.ReadWrite
+            ? candidate
             : null;
+    }
 
     // Base mode for an entry with no cooling pad: the model's admitted direct
     // transition (Balanced where admitted, otherwise Performance), or null.
