@@ -88,6 +88,8 @@ Turning the integration off stops automation and leaves the current audio
 settings in place.
 
 Opening the THX page connects automatically when the integration is enabled.
+Read settings appears only after a failed operation, when an explicit read is
+needed for recovery. Loading replaces the status message in the same area.
 Automatic connections never clear an uncertain-write pause. If a change cannot
 be confirmed, use **Read settings** before trying another change. OpenBlade does not repeat an uncertain command. If the supported
 components are unavailable, the audio controls remain disabled. Uninstalling

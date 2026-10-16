@@ -393,6 +393,30 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_ThxUsesRecoveryOnlyReadAndSharedStatusAndSettingCells()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement status = NamedElement(document, "Grid", "ThxAudioStatusArea");
+        Assert.Single(status.Elements(), element => element.Name.LocalName == "TextBlock");
+        Assert.Single(status.Elements(), element => element.Name.LocalName == "ProgressBar");
+        Assert.DoesNotContain(status.Descendants(), element => element.Name.LocalName == "RowDefinition");
+        XElement read = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Uid") == "MainWindow_ThxAudioReadSettings");
+        Assert.Equal("{x:Bind ThxViewModel.IsReadSettingsVisible, Mode=OneWay}", Attribute(read, "Visibility"));
+        foreach (string cell in new[] { "ThxNormalizationCell", "ThxVoiceClarityCell" })
+        {
+            XElement border = NamedElement(document, "Border", cell);
+            Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", Attribute(border, "Style"));
+            Assert.Single(border.Descendants(), element => element.Name.LocalName == "Slider");
+            Assert.Single(border.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+        }
+        XElement applications = NamedElement(document, "Expander", "ThxAudioApplications");
+        Assert.DoesNotContain(applications.Descendants(), element =>
+            Attribute(element, "Style")?.Contains("EmphasizedSubcard", StringComparison.Ordinal) == true);
+        Assert.Single(applications.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+    }
+
+    [Fact]
     public void MainWindow_ShowsUnsavedNavigationBadgesAndStretchesFanCurveSliders()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

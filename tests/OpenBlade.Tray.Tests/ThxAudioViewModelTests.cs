@@ -35,9 +35,12 @@ public sealed class ThxAudioViewModelTests
         await using (var viewModel = new ThxAudioViewModel(adapter))
         {
             Assert.False(viewModel.IsEnabled);
+            Assert.False(viewModel.IsReadSettingsVisible);
             viewModel.ApplyPreference(true);
             Assert.True(viewModel.CanRead);
             Assert.False(viewModel.CanEdit);
+            Assert.False(viewModel.IsReadSettingsVisible);
+            Assert.True(viewModel.ShowStatusMessage);
         }
         Assert.Empty(adapter.Calls);
     }
@@ -51,6 +54,7 @@ public sealed class ThxAudioViewModelTests
         Assert.Equal(["connect:Speakers"], adapter.Calls);
         Assert.True(viewModel.CanEdit);
         Assert.NotEmpty(viewModel.Presets);
+        Assert.False(viewModel.IsReadSettingsVisible);
     }
 
     [Fact]
@@ -113,12 +117,14 @@ public sealed class ThxAudioViewModelTests
         await viewModel.SetSpatialAsync(true);
         Assert.False(viewModel.CanEdit);
         Assert.False(viewModel.SpatialEnabled);
+        Assert.True(viewModel.IsReadSettingsVisible);
         await viewModel.SetSpatialAsync(true);
         await viewModel.ConnectIfNeededAsync();
         Assert.Equal(1, adapter.Calls.Count(call => call == "spatial:True"));
         Assert.DoesNotContain(adapter.Calls, call => call.StartsWith("connect:", StringComparison.Ordinal));
         await viewModel.RefreshAsync();
         Assert.True(viewModel.CanEdit);
+        Assert.False(viewModel.IsReadSettingsVisible);
     }
 
     [Fact]
@@ -148,6 +154,7 @@ public sealed class ThxAudioViewModelTests
         await viewModel.SetEqualizerAsync(true);
         Assert.Equal(["read:Speakers"], adapter.Calls);
         Assert.False(viewModel.CanEdit);
+        Assert.True(viewModel.IsReadSettingsVisible);
     }
 
     [Fact]
@@ -168,15 +175,18 @@ public sealed class ThxAudioViewModelTests
         await viewModel.SetSpatialAsync(true);
 
         viewModel.SelectEndpoint(ThxAudioEndpoint.Headphones);
+        Assert.False(viewModel.IsReadSettingsVisible);
         await viewModel.ConnectIfNeededAsync();
 
         Assert.Equal(["read:Speakers", "spatial:True", "connect:Headphones"], adapter.Calls);
         Assert.True(viewModel.CanRead);
         Assert.False(viewModel.CanEdit);
+        Assert.True(viewModel.IsReadSettingsVisible);
 
         await viewModel.RefreshAsync();
         Assert.Equal("read:Headphones", adapter.Calls[^1]);
         Assert.True(viewModel.CanEdit);
+        Assert.False(viewModel.IsReadSettingsVisible);
     }
 
     [Fact]
@@ -224,7 +234,54 @@ public sealed class ThxAudioViewModelTests
         await viewModel.SetSpatialAsync(true);
         Assert.False(viewModel.CanEdit);
         Assert.False(viewModel.IsBusy);
+        Assert.True(viewModel.IsReadSettingsVisible);
         Assert.Equal(1, adapter.Calls.Count(call => call == "spatial:True"));
+    }
+
+    [Fact]
+    public async Task FailedAutomaticConnectShowsReadRecoveryUntilExplicitReadSucceeds()
+    {
+        var adapter = new FakeAdapter
+        {
+            ConnectResponse = Response(ThxAudioOperationStatus.Unavailable),
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, State()),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+
+        await viewModel.SetEnabledAsync(true);
+
+        Assert.True(viewModel.IsReadSettingsVisible);
+        Assert.True(viewModel.ShowStatusMessage);
+
+        await viewModel.SetEnabledAsync(false);
+        Assert.False(viewModel.IsReadSettingsVisible);
+        await viewModel.SetEnabledAsync(true);
+        Assert.True(viewModel.IsReadSettingsVisible);
+
+        await viewModel.RefreshAsync();
+        Assert.False(viewModel.IsReadSettingsVisible);
+    }
+
+    [Fact]
+    public async Task SuccessfulConnectWithPausedAutomationShowsReadRecoveryUntilExplicitReadResumesIt()
+    {
+        var adapter = new FakeAdapter
+        {
+            ConnectResponse = Response(ThxAudioOperationStatus.Succeeded,
+                State() with { ApplicationAutomationPaused = true }),
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, State()),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+
+        await viewModel.SetEnabledAsync(true);
+
+        Assert.True(viewModel.CanEdit);
+        Assert.True(viewModel.IsReadSettingsVisible);
+        Assert.Equal("Audio automation is paused. Read the current THX settings to resume.",
+            viewModel.AudioProfileMessage);
+
+        await viewModel.RefreshAsync();
+        Assert.False(viewModel.IsReadSettingsVisible);
     }
 
     [Fact]
@@ -533,6 +590,7 @@ public sealed class ThxAudioViewModelTests
         viewModel.EqualizerBands[0].DraftGainDb = 7;
         Task mutation = viewModel.ApplyEqualizerAsync();
         Assert.True(viewModel.IsBusy);
+        Assert.False(viewModel.ShowStatusMessage);
 
         ThxAudioProfileSettings battery = ProfileSettings();
         battery = battery with
@@ -554,6 +612,7 @@ public sealed class ThxAudioViewModelTests
                 index == 0 ? band with { GainDb = 7 } : band).ToArray(),
         }));
         await mutation;
+        Assert.True(viewModel.ShowStatusMessage);
 
         ThxAudioProfileSettings saved = viewModel.CreateProfileDraft()!;
         Assert.Same(battery.Speakers, saved.Speakers);

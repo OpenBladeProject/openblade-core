@@ -241,9 +241,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         gpuClockOffsetCommitTimer.Tick += OnGpuClockOffsetCommitTimerTick;
         if (localizationSnapshotMode)
         {
-            Root.RequestedTheme = ElementTheme.Light;
+            Root.RequestedTheme = string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_DARK_THEME"),
+                "1", StringComparison.Ordinal) ? ElementTheme.Dark : ElementTheme.Light;
             var snapshotTitleForeground = new SolidColorBrush(
-                Microsoft.UI.Colors.Black);
+                Root.RequestedTheme == ElementTheme.Dark
+                    ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black);
             AppTitleBar.Foreground = snapshotTitleForeground;
             AppTitleBar.Resources["TitleBarDeactivatedForegroundBrush"] =
                 snapshotTitleForeground;

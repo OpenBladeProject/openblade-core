@@ -37,6 +37,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     private string statusKey = "THX audio integration is off.";
     private bool enabled;
     private bool busy;
+    private bool isReadSettingsVisible;
     private bool disposed;
     private bool automaticConnectionAttempted;
     private Task pendingOperation = Task.CompletedTask;
@@ -56,6 +57,8 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
 
     public bool IsEnabled => enabled;
     public bool IsBusy => busy;
+    public bool ShowStatusMessage => !busy;
+    public bool IsReadSettingsVisible => isReadSettingsVisible;
     public bool CanToggleIntegration => !busy && !disposed;
     public bool CanRead => enabled && !busy && !disposed;
     public bool CanEdit => CanRead && state is not null && availability == ThxAudioAvailability.Available;
@@ -139,6 +142,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         }
         enabled = value;
         state = null;
+        isReadSettingsVisible = false;
         automaticConnectionAttempted = false;
         ResetAdvancedDrafts();
         availability = value ? ThxAudioAvailability.ComponentsUnavailable : ThxAudioAvailability.Disabled;
@@ -174,6 +178,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         }
         endpoint = value;
         state = null;
+        isReadSettingsVisible = false;
         automaticConnectionAttempted = false;
         ResetAdvancedDrafts();
         statusKey = "Read the current THX settings to connect.";
@@ -187,7 +192,8 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             return Task.CompletedTask;
         }
         automaticConnectionAttempted = true;
-        return StartAsync(token => adapter.ReadAsync(endpoint, token), isMutation: false);
+        return StartAsync(token => adapter.ReadAsync(endpoint, token), isMutation: false,
+            isExplicitRead: true);
     }
 
     public Task SetSpatialAsync(bool value) => !CanEdit || SpatialEnabled == value
@@ -373,6 +379,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         Func<CancellationToken, Task<SessionAudioResponse>> action,
         bool isMutation,
         bool isDiscovery = false,
+        bool isExplicitRead = false,
         bool discardEqualizerDraft = false,
         ThxAudioEnhancementKind? discardEnhancementDraft = null)
     {
@@ -384,7 +391,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         busy = true;
         pendingEnhancementKind = discardEnhancementDraft;
         NotifyAll();
-        pendingOperation = RunAsync(action, isMutation, isDiscovery,
+        pendingOperation = RunAsync(action, isMutation, isDiscovery, isExplicitRead,
             discardEqualizerDraft, discardEnhancementDraft, operationProfileRevision);
         return pendingOperation;
     }
@@ -393,6 +400,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         Func<CancellationToken, Task<SessionAudioResponse>> action,
         bool isMutation,
         bool isDiscovery,
+        bool isExplicitRead,
         bool discardEqualizerDraft,
         ThxAudioEnhancementKind? discardEnhancementDraft,
         long operationProfileRevision)
@@ -412,6 +420,18 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             {
                 state = response.State is { } confirmed && confirmed.Endpoint == endpoint
                     ? confirmed : null;
+                if (state?.ApplicationAutomationPaused == true)
+                {
+                    isReadSettingsVisible = true;
+                }
+                else if (isExplicitRead && state is not null)
+                {
+                    isReadSettingsVisible = false;
+                }
+                else if (state is null && !isDiscovery)
+                {
+                    isReadSettingsVisible = true;
+                }
                 if (state is not null)
                 {
                     bool sameProfile = operationProfileRevision == profileRevision;
@@ -433,6 +453,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             else
             {
                 state = null;
+                isReadSettingsVisible = true;
                 statusKey = response.Status == ThxAudioOperationStatus.Indeterminate
                     ? "The audio change could not be confirmed. Read the current settings before trying again."
                     : response.Availability == ThxAudioAvailability.ControllerActive
@@ -448,6 +469,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             or OperationCanceledException or UnauthorizedAccessException)
         {
             state = null;
+            isReadSettingsVisible = true;
             statusKey = isMutation
                 ? "The audio change could not be confirmed. Read the current settings before trying again."
                 : "The Session Agent could not read THX settings.";
@@ -477,7 +499,8 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         }
         foreach (string property in new[]
         {
-            nameof(IsEnabled), nameof(IsBusy), nameof(CanToggleIntegration), nameof(CanRead),
+            nameof(IsEnabled), nameof(IsBusy), nameof(ShowStatusMessage), nameof(IsReadSettingsVisible),
+            nameof(CanToggleIntegration), nameof(CanRead),
             nameof(CanEdit), nameof(SpatialEnabled), nameof(EqualizerEnabled), nameof(Endpoint),
             nameof(SelectedEndpoint), nameof(Presets), nameof(SelectedPreset), nameof(StatusMessage),
             nameof(EqualizerBands), nameof(HasEqualizerBands), nameof(CanEditEqualizerBands),
