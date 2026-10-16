@@ -2095,12 +2095,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
     <value>[!! Spátíál áúdíó ~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_ThxAudioApplyNormalization.Content" xml:space="preserve">
-    <value>[!! Ápplý nórmálízátíón lévél ~~~~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_ThxAudioApplyVoiceClarity.Content" xml:space="preserve">
-    <value>[!! Ápplý vóícé clárítý lévél ~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
     <value>[!! Díscárd chángés ~~~~~ !!]</value>
   </data>

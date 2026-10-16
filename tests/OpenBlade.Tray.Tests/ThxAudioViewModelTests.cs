@@ -409,6 +409,66 @@ public sealed class ThxAudioViewModelTests
         Assert.Same(headphones, saved.Headphones);
     }
     [Fact]
+    public async Task PowerProfileChangeDuringMutationPreservesNewSavedSettingsAndPresetCurves()
+    {
+        var pending = new TaskCompletionSource<SessionAudioResponse>();
+        ThxAudioState initial = AdvancedState();
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, initial),
+            AsyncMutationHandler = _ => pending.Task,
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.LoadProfile(PowerSource.PluggedIn, ProfileSettings());
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        viewModel.EqualizerBands[0].DraftGainDb = 7;
+        Task mutation = viewModel.ApplyEqualizerAsync();
+        Assert.True(viewModel.IsBusy);
+
+        ThxAudioProfileSettings battery = ProfileSettings();
+        battery = battery with
+        {
+            Speakers = battery.Speakers with
+            {
+                SpatialEnabled = true,
+                EqualizerCurves = battery.Speakers.EqualizerCurves with
+                {
+                    Music = Enumerable.Repeat(3d, 7).ToArray(),
+                    Custom = Enumerable.Repeat(4d, 7).ToArray(),
+                },
+            },
+        };
+        viewModel.LoadProfile(PowerSource.Battery, battery);
+        pending.SetResult(Response(ThxAudioOperationStatus.Succeeded, initial with
+        {
+            EqualizerBands = initial.EqualizerBands.Select((band, index) =>
+                index == 0 ? band with { GainDb = 7 } : band).ToArray(),
+        }));
+        await mutation;
+
+        ThxAudioProfileSettings saved = viewModel.CreateProfileDraft()!;
+        Assert.Same(battery.Speakers, saved.Speakers);
+        Assert.Same(battery.Headphones, saved.Headphones);
+        Assert.False(viewModel.SpatialEnabled);
+        Assert.Equal(7, viewModel.EqualizerBands[0].DraftGainDb);
+        Assert.False(viewModel.HasEqualizerChanges);
+
+        adapter.AsyncMutationHandler = null;
+        foreach ((string id, double gain) in new[] { ("custom", 4d), ("music", 3d) })
+        {
+            adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded, initial with
+            {
+                SelectedPresetId = id,
+                EqualizerBands = initial.EqualizerBands.Select(band => band with { GainDb = gain }).ToArray(),
+            });
+            await viewModel.SelectPresetAsync(viewModel.Presets.Single(preset => preset.Id == id));
+            Assert.Equal(id, adapter.PresetRequests[^1].Id);
+            Assert.Equal(Enumerable.Repeat(gain, 7), adapter.PresetRequests[^1].Gains);
+        }
+    }
+
+    [Fact]
     public async Task ConfirmedMutationWithUnrepresentablePresetRequiresRecapture()
     {
         var adapter = new FakeAdapter
@@ -458,6 +518,181 @@ public sealed class ThxAudioViewModelTests
         Assert.Equal(["read:Speakers", "read:Headphones"], adapter.Calls);
     }
 
+    [Fact]
+    public async Task EnhancementGestureCaptureStagesWithoutWritingAndRejectsInvalidOrDisabledInput()
+    {
+        ThxAudioState initial = EnabledEnhancements();
+        var adapter = new FakeAdapter { ReadResponse = Response(ThxAudioOperationStatus.Succeeded, initial) };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        viewModel.VoiceClarityLevel = 70;
+        Assert.Equal(2, adapter.Calls.Count);
+        ThxEnhancementCommitRequest request = Assert.IsType<ThxEnhancementCommitRequest>(
+            viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75));
+        Assert.Equal(ThxAudioEndpoint.Speakers, request.Endpoint);
+        Assert.Equal(75, request.LevelPercent);
+        Assert.Equal(75, viewModel.VoiceClarityLevel);
+        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Null(viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, double.NaN));
+        Assert.Null(viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 101));
+        Assert.Null(viewModel.CaptureEnhancementCommit((ThxAudioEnhancementKind)99, 50));
+        adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded,
+            initial with { VoiceClarity = new(false, 25) });
+        await viewModel.SetVoiceClarityAsync(false);
+        Assert.Null(viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75));
+        await viewModel.CommitEnhancementAsync(request);
+        Assert.Equal(25, viewModel.VoiceClarityLevel);
+        Assert.Equal(3, adapter.Calls.Count);
+    }
+
+    [Fact]
+    public async Task EnhancementGestureCannotCrossEndpointOrIntegrationContext()
+    {
+        var adapter = new FakeAdapter
+        {
+            ReadHandler = output => Response(ThxAudioOperationStatus.Succeeded, EnabledEnhancements(output)),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        ThxEnhancementCommitRequest oldEndpoint = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75)!;
+        viewModel.SelectEndpoint(ThxAudioEndpoint.Headphones);
+        await viewModel.RefreshAsync();
+        viewModel.VoiceClarityLevel = 75;
+        await viewModel.CommitEnhancementAsync(oldEndpoint);
+        ThxEnhancementCommitRequest oldPreference = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75)!;
+        viewModel.ApplyPreference(false);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        viewModel.VoiceClarityLevel = 75;
+        await viewModel.CommitEnhancementAsync(oldPreference);
+        Assert.DoesNotContain(adapter.Calls, call => call.StartsWith("enhancement:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task EnhancementGestureProfileRevisionIgnoresEquivalentRefreshButRejectsReplacement()
+    {
+        var adapter = new FakeAdapter { ReadResponse = Response(ThxAudioOperationStatus.Succeeded, EnabledEnhancements()) };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.LoadProfile(PowerSource.PluggedIn, ProfileSettings());
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        ThxEnhancementCommitRequest request = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75)!;
+        viewModel.LoadProfile(PowerSource.PluggedIn, ProfileSettings());
+        Assert.Equal(75, viewModel.VoiceClarityLevel);
+        adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded,
+            EnabledEnhancements() with { VoiceClarity = new(true, 75) });
+        await viewModel.CommitEnhancementAsync(request);
+        Assert.Equal("enhancement:VoiceClarity:True:75", adapter.Calls[^1]);
+        request = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 80)!;
+        viewModel.LoadProfile(PowerSource.Battery, ProfileSettings());
+        Assert.Equal(75, viewModel.VoiceClarityLevel);
+        await viewModel.CommitEnhancementAsync(request);
+        Assert.Equal(3, adapter.Calls.Count);
+    }
+
+    [Fact]
+    public async Task SupersededEnhancementGestureDoesNotOverwriteNewerDraft()
+    {
+        var adapter = new FakeAdapter { ReadResponse = Response(ThxAudioOperationStatus.Succeeded, EnabledEnhancements()) };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        ThxEnhancementCommitRequest old = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75)!;
+        ThxEnhancementCommitRequest latest = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 60)!;
+        await viewModel.CommitEnhancementAsync(old);
+        Assert.Equal(60, viewModel.VoiceClarityLevel);
+        Assert.Equal(2, adapter.Calls.Count);
+        adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded,
+            EnabledEnhancements() with { VoiceClarity = new(true, 60) });
+        await viewModel.CommitEnhancementAsync(latest);
+        Assert.Equal("enhancement:VoiceClarity:True:60", adapter.Calls[^1]);
+    }
+
+    [Fact]
+    public async Task OtherEnhancementCommitWaitsOnceAndPreservesExplicitGesture()
+    {
+        var pending = new TaskCompletionSource<SessionAudioResponse>();
+        ThxAudioState initial = EnabledEnhancements();
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, initial),
+            AsyncMutationHandler = call => call.Contains("SoundNormalization", StringComparison.Ordinal)
+                ? pending.Task
+                : Task.FromResult(Response(ThxAudioOperationStatus.Succeeded,
+                    initial with { SoundNormalization = new(true, 60), VoiceClarity = new(true, 75) })),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        Task normalization = viewModel.CommitEnhancementAsync(
+            viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.SoundNormalization, 60)!);
+        ThxEnhancementCommitRequest clarityRequest = Assert.IsType<ThxEnhancementCommitRequest>(
+            viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75));
+        Task clarity = viewModel.CommitEnhancementAsync(clarityRequest);
+        Assert.False(clarity.IsCompleted);
+        Assert.Equal(3, adapter.Calls.Count);
+        pending.SetResult(Response(ThxAudioOperationStatus.Succeeded, initial with { SoundNormalization = new(true, 60) }));
+        await Task.WhenAll(normalization, clarity);
+        Assert.Equal("enhancement:VoiceClarity:True:75", adapter.Calls[^1]);
+        Assert.Equal(4, adapter.Calls.Count);
+        Assert.Equal(75, viewModel.VoiceClarityLevel);
+    }
+
+    [Fact]
+    public async Task AmbiguousOtherEnhancementInvalidatesQueuedGestureEvenAfterRead()
+    {
+        var pending = new TaskCompletionSource<SessionAudioResponse>();
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, EnabledEnhancements()),
+            AsyncMutationHandler = _ => pending.Task,
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        Task normalization = viewModel.CommitEnhancementAsync(
+            viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.SoundNormalization, 60)!);
+        ThxEnhancementCommitRequest request = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75)!;
+        Task clarity = viewModel.CommitEnhancementAsync(request);
+        pending.SetResult(Response(ThxAudioOperationStatus.Indeterminate));
+        await Task.WhenAll(normalization, clarity);
+        Assert.False(viewModel.CanEdit);
+        Assert.Equal(3, adapter.Calls.Count);
+        await viewModel.RefreshAsync();
+        Assert.Equal(25, viewModel.VoiceClarityLevel);
+        await viewModel.CommitEnhancementAsync(request);
+        Assert.Equal(5, adapter.Calls.Count);
+    }
+
+    [Fact]
+    public async Task UnrelatedBusyOperationRejectsGestureAndRestoresOnlyItsUnchangedDraft()
+    {
+        var pending = new TaskCompletionSource<SessionAudioResponse>();
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, EnabledEnhancements()),
+            AsyncMutationHandler = _ => pending.Task,
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        ThxEnhancementCommitRequest request = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75)!;
+        Task spatial = viewModel.SetSpatialAsync(true);
+        await viewModel.CommitEnhancementAsync(request);
+        Assert.Equal(25, viewModel.VoiceClarityLevel);
+        Assert.Equal(3, adapter.Calls.Count);
+        pending.SetResult(Response(ThxAudioOperationStatus.Succeeded, EnabledEnhancements() with { SpatialEnabled = true }));
+        await spatial;
+    }
+
+    private static ThxAudioState EnabledEnhancements(ThxAudioEndpoint output = ThxAudioEndpoint.Speakers) =>
+        AdvancedState(output) with
+        {
+            SoundNormalization = output == ThxAudioEndpoint.Speakers ? new(true, 50) : null,
+            VoiceClarity = new(true, 25),
+        };
     private static ThxAudioState AdvancedState(ThxAudioEndpoint endpoint = ThxAudioEndpoint.Speakers) => State(endpoint) with
     {
         Presets = [new("music", "Music"), new("custom", "Custom")],
@@ -490,6 +725,7 @@ public sealed class ThxAudioViewModelTests
         public Func<ThxAudioEndpoint, Task<SessionAudioResponse>>? AsyncReadHandler { get; init; }
         public SessionAudioResponse MutationResponse { get; set; } = Response(ThxAudioOperationStatus.Succeeded, State());
         public bool ThrowOnMutation { get; init; }
+        public Func<string, Task<SessionAudioResponse>>? AsyncMutationHandler { get; set; }
 
         public Task<SessionAudioResponse> DiscoverAsync(CancellationToken cancellationToken)
         {
@@ -517,7 +753,7 @@ public sealed class ThxAudioViewModelTests
             Calls.Add(operation);
             return ThrowOnMutation
                 ? Task.FromException<SessionAudioResponse>(new IOException("Disconnected"))
-                : Task.FromResult(MutationResponse);
+                : AsyncMutationHandler?.Invoke(operation) ?? Task.FromResult(MutationResponse);
         }
     }
 }

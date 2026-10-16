@@ -223,6 +223,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         chargeLimitCommitTimer.Interval = ChargeLimitCommitDelay;
         chargeLimitCommitTimer.IsRepeating = false;
         chargeLimitCommitTimer.Tick += OnChargeLimitCommitTimerTick;
+        thxNormalizationCommitTimer = dispatcherQueue.CreateTimer();
+        thxVoiceClarityCommitTimer = dispatcherQueue.CreateTimer();
+        foreach (DispatcherQueueTimer timer in new[] { thxNormalizationCommitTimer, thxVoiceClarityCommitTimer })
+        {
+            timer.Interval = ThxEnhancementCommitDelay;
+            timer.IsRepeating = false;
+            timer.Tick += OnThxEnhancementCommitTimerTick;
+        }
         lightingCommitTimer = dispatcherQueue.CreateTimer();
         lightingCommitTimer.Interval = LightingCommitDelay;
         lightingCommitTimer.IsRepeating = false;
@@ -624,6 +632,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         chargeLimitCommits.Dispose();
+        DisposeThxEnhancementCommits();
         lightingCommitTimer.Stop();
         lightingCommitTimer.Tick -= OnLightingCommitTimerTick;
         lightingCommits.Dispose();
@@ -3484,12 +3493,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             toggle.IsOn = ThxViewModel.VoiceClarityEnabled;
         }
     }
-
-    private async void OnThxApplyNormalization(object sender, RoutedEventArgs args) =>
-        await RunHandlerAsync(ThxViewModel.ApplySoundNormalizationAsync, nameof(OnThxApplyNormalization));
-
-    private async void OnThxApplyVoiceClarity(object sender, RoutedEventArgs args) =>
-        await RunHandlerAsync(ThxViewModel.ApplyVoiceClarityAsync, nameof(OnThxApplyVoiceClarity));
 
     private async void OnThxCaptureAudioProfile(object sender, RoutedEventArgs args) =>
         await RunHandlerAsync(ThxViewModel.CaptureAudioProfileAsync, nameof(OnThxCaptureAudioProfile));

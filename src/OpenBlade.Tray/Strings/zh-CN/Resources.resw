@@ -2074,12 +2074,6 @@
   <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
     <value>空间音频</value>
   </data>
-  <data name="MainWindow_ThxAudioApplyNormalization.Content" xml:space="preserve">
-    <value>应用音量标准化级别</value>
-  </data>
-  <data name="MainWindow_ThxAudioApplyVoiceClarity.Content" xml:space="preserve">
-    <value>应用人声清晰度级别</value>
-  </data>
   <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
     <value>放弃更改</value>
   </data>

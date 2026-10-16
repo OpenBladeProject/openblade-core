@@ -21,7 +21,8 @@ different THX component builds are not yet supported.
    **Reset to factory** stages that preset’s original curve; **Flatten** stages
    zero gain. **Discard changes** returns to the last confirmed curve.
 6. Open **Enhancements** for Voice clarity and speaker Sound normalization.
-   Turn an enhancement on, adjust its level, then choose its Apply button.
+   Turn an enhancement on and adjust its level. Changes apply after a drag
+   finishes or a short pause in keyboard changes. Each row shows its level.
 
 Speakers have seven EQ bands; headphones have ten. Both support -12 to +12 dB.
 Editing Music keeps Music selected; Custom is also available as its own preset.

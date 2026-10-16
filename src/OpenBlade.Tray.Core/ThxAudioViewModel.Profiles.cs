@@ -106,6 +106,9 @@ public sealed partial class ThxAudioViewModel
         {
             return;
         }
+        enhancementContextRevision++;
+        normalizationLevel = state?.SoundNormalization?.LevelPercent ?? 0;
+        voiceClarityLevel = state?.VoiceClarity?.LevelPercent ?? 0;
         profileSource = source;
         profileRevision++;
         profileDraft = settings;
@@ -125,7 +128,7 @@ public sealed partial class ThxAudioViewModel
             LoadCurves(ThxAudioEndpoint.Speakers, settings.Speakers.EqualizerCurves);
             LoadCurves(ThxAudioEndpoint.Headphones, settings.Headphones.EqualizerCurves);
         }
-        NotifyProfileEditor();
+        NotifyAll();
     }
 
     public Task CaptureAudioProfileAsync()

@@ -6,6 +6,18 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void ThxEnhancementSlidersUseSharedInlineCardStyle()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        foreach (string uid in new[] { "MainWindow_ThxAudioNormalizationLevel", "MainWindow_ThxAudioVoiceClarityLevel" })
+        {
+            XElement slider = UidElement(document, "Slider", uid);
+            Assert.Equal("{StaticResource InlineCardSliderStyle}", Attribute(slider, "Style"));
+        }
+    }
+
+    [Fact]
     public void ExperimentalSupportIsAutomaticAndPausedWritesExposeOneExplicitResumeAction()
     {
         XDocument document = XDocument.Parse(

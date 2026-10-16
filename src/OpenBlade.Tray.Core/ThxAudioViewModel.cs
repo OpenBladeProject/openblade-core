@@ -6,6 +6,12 @@ namespace OpenBlade.Tray;
 
 public sealed record ThxAudioEndpointOption(ThxAudioEndpoint Endpoint, string Label);
 
+public sealed record ThxEnhancementCommitRequest(
+    ThxAudioEndpoint Endpoint,
+    ThxAudioEnhancementKind Kind,
+    int LevelPercent,
+    long ContextRevision);
+
 public interface IThxAudioAdapter
 {
     Task<SessionAudioResponse> DiscoverAsync(CancellationToken cancellationToken);
@@ -32,6 +38,8 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     private bool busy;
     private bool disposed;
     private Task pendingOperation = Task.CompletedTask;
+    private ThxAudioEnhancementKind? pendingEnhancementKind;
+    private long enhancementContextRevision;
     private IReadOnlyList<ThxEqualizerBandViewModel> equalizerBands = [];
     private double normalizationLevel;
     private double voiceClarityLevel;
@@ -232,13 +240,15 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         || SoundNormalizationEnabled == value ? Task.CompletedTask
         : StartAsync(token => adapter.SetEnhancementAsync(endpoint,
             ThxAudioEnhancementKind.SoundNormalization, value,
-            null, token), isMutation: true);
+            null, token), isMutation: true,
+            discardEnhancementDraft: value ? null : ThxAudioEnhancementKind.SoundNormalization);
 
     public Task SetVoiceClarityAsync(bool value) => !CanEditVoiceClarity
         || VoiceClarityEnabled == value ? Task.CompletedTask
         : StartAsync(token => adapter.SetEnhancementAsync(endpoint,
             ThxAudioEnhancementKind.VoiceClarity, value,
-            null, token), isMutation: true);
+            null, token), isMutation: true,
+            discardEnhancementDraft: value ? null : ThxAudioEnhancementKind.VoiceClarity);
 
     public Task ApplySoundNormalizationAsync() => !CanApplySoundNormalization ? Task.CompletedTask
         : StartAsync(token => adapter.SetEnhancementAsync(endpoint,
@@ -252,6 +262,100 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             (int)voiceClarityLevel, token), isMutation: true,
             discardEnhancementDraft: ThxAudioEnhancementKind.VoiceClarity);
 
+    // Called only by a completed pointer/keyboard gesture. Bound setters remain
+    // draft-only; a delayed UI callback carries its original endpoint/context.
+    public ThxEnhancementCommitRequest? CaptureEnhancementCommit(ThxAudioEnhancementKind kind, double value)
+    {
+        if (!enabled || disposed || state is null || availability != ThxAudioAvailability.Available
+            || !double.IsFinite(value) || value is < 0 or > 100
+            || busy && (pendingEnhancementKind is null || pendingEnhancementKind == kind))
+        {
+            return null;
+        }
+        ThxAudioEnhancement? confirmed = kind switch
+        {
+            ThxAudioEnhancementKind.SoundNormalization => state.SoundNormalization,
+            ThxAudioEnhancementKind.VoiceClarity => state.VoiceClarity,
+            _ => null,
+        };
+        if (confirmed?.Enabled != true)
+        {
+            return null;
+        }
+        int level = (int)Math.Round(value);
+        if (kind == ThxAudioEnhancementKind.SoundNormalization)
+        {
+            normalizationLevel = level;
+        }
+        else
+        {
+            voiceClarityLevel = level;
+        }
+        NotifyAll();
+        return level == confirmed.LevelPercent ? null
+            : new(endpoint, kind, level, enhancementContextRevision);
+    }
+
+    public async Task CommitEnhancementAsync(ThxEnhancementCommitRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.ContextRevision != enhancementContextRevision || request.Endpoint != endpoint || disposed)
+        {
+            return;
+        }
+        if (busy)
+        {
+            if (pendingEnhancementKind is null || pendingEnhancementKind == request.Kind)
+            {
+                DiscardRejectedEnhancementCommit(request);
+                return;
+            }
+            // One wait, never a retry. The UI coalesces subsequent gestures.
+            await pendingOperation;
+        }
+        if (request.ContextRevision != enhancementContextRevision || request.Endpoint != endpoint || disposed)
+        {
+            return;
+        }
+        if (request.Kind == ThxAudioEnhancementKind.SoundNormalization
+            && normalizationLevel == request.LevelPercent && CanApplySoundNormalization)
+        {
+            await ApplySoundNormalizationAsync();
+        }
+        else if (request.Kind == ThxAudioEnhancementKind.VoiceClarity
+            && voiceClarityLevel == request.LevelPercent && CanApplyVoiceClarity)
+        {
+            await ApplyVoiceClarityAsync();
+        }
+        else
+        {
+            DiscardRejectedEnhancementCommit(request);
+        }
+    }
+
+    private void DiscardRejectedEnhancementCommit(ThxEnhancementCommitRequest request)
+    {
+        if (disposed || request.Endpoint != endpoint || request.ContextRevision != enhancementContextRevision)
+        {
+            return;
+        }
+        if (request.Kind == ThxAudioEnhancementKind.SoundNormalization
+            && normalizationLevel == request.LevelPercent && state?.SoundNormalization is { } normalization)
+        {
+            normalizationLevel = normalization.LevelPercent;
+        }
+        else if (request.Kind == ThxAudioEnhancementKind.VoiceClarity
+            && voiceClarityLevel == request.LevelPercent && state?.VoiceClarity is { } clarity)
+        {
+            voiceClarityLevel = clarity.LevelPercent;
+        }
+        else
+        {
+            return;
+        }
+        NotifyAll();
+    }
+
     private Task StartAsync(
         Func<CancellationToken, Task<SessionAudioResponse>> action,
         bool isMutation,
@@ -263,10 +367,12 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         {
             return Task.CompletedTask;
         }
+        long operationProfileRevision = profileRevision;
         busy = true;
+        pendingEnhancementKind = discardEnhancementDraft;
         NotifyAll();
         pendingOperation = RunAsync(action, isMutation, isDiscovery,
-            discardEqualizerDraft, discardEnhancementDraft);
+            discardEqualizerDraft, discardEnhancementDraft, operationProfileRevision);
         return pendingOperation;
     }
 
@@ -275,7 +381,8 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         bool isMutation,
         bool isDiscovery,
         bool discardEqualizerDraft,
-        ThxAudioEnhancementKind? discardEnhancementDraft)
+        ThxAudioEnhancementKind? discardEnhancementDraft,
+        long operationProfileRevision)
     {
         try
         {
@@ -294,8 +401,9 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
                     ? confirmed : null;
                 if (state is not null)
                 {
-                    ConfirmAdvancedDrafts(state, discardEqualizerDraft, discardEnhancementDraft);
-                    if (isMutation)
+                    bool sameProfile = operationProfileRevision == profileRevision;
+                    ConfirmAdvancedDrafts(state, discardEqualizerDraft, discardEnhancementDraft, sameProfile);
+                    if (isMutation && sameProfile)
                     {
                         UpdateConfirmedProfileDraft(state);
                     }
@@ -329,6 +437,12 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         }
         finally
         {
+            if (state is null)
+            {
+                enhancementContextRevision++;
+                confirmedNormalizationLevel = confirmedVoiceClarityLevel = null;
+            }
+            pendingEnhancementKind = null;
             busy = false;
             if (!disposed)
             {
@@ -365,27 +479,32 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     }
 
     private void ConfirmAdvancedDrafts(ThxAudioState confirmed, bool discardEqualizer,
-        ThxAudioEnhancementKind? discardEnhancement)
+        ThxAudioEnhancementKind? discardEnhancement, bool updateProfileCurves)
     {
         factoryPresetCurves[confirmed.Endpoint] = confirmed.FactoryPresetCurves.ToDictionary(
             curve => curve.PresetId, curve => curve.GainsDb.ToArray(), StringComparer.Ordinal);
-        if (!presetCurves.TryGetValue(confirmed.Endpoint, out Dictionary<string, double[]>? curves))
+        // Native readback stays visible, but an older operation must not replace
+        // curves loaded for a newly selected power profile.
+        if (updateProfileCurves)
         {
-            curves = new(StringComparer.Ordinal);
-            presetCurves[confirmed.Endpoint] = curves;
-        }
-        foreach ((string id, double[] gains) in factoryPresetCurves[confirmed.Endpoint])
-        {
-            curves.TryAdd(id, gains.ToArray());
+            if (!presetCurves.TryGetValue(confirmed.Endpoint, out Dictionary<string, double[]>? curves))
+            {
+                curves = new(StringComparer.Ordinal);
+                presetCurves[confirmed.Endpoint] = curves;
+            }
+            foreach ((string id, double[] gains) in factoryPresetCurves[confirmed.Endpoint])
+            {
+                curves.TryAdd(id, gains.ToArray());
+            }
+            if (confirmed.SelectedPresetId is { } selected && confirmed.EqualizerBands.Count > 0)
+            {
+                curves[selected] = confirmed.EqualizerBands.Select(band => band.GainDb).ToArray();
+            }
         }
         discardEqualizer |= equalizerDraftPresetId != confirmed.SelectedPresetId
             || equalizerDraftNativeId != confirmed.SelectedNativeProfileId;
         equalizerDraftPresetId = confirmed.SelectedPresetId;
         equalizerDraftNativeId = confirmed.SelectedNativeProfileId;
-        if (confirmed.SelectedPresetId is { } selected && confirmed.EqualizerBands.Count > 0)
-        {
-            curves[selected] = confirmed.EqualizerBands.Select(band => band.GainDb).ToArray();
-        }
         if (equalizerBands.Select(band => band.FrequencyHz)
             .SequenceEqual(confirmed.EqualizerBands.Select(band => band.FrequencyHz)))
         {
@@ -429,6 +548,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
 
     private void ResetAdvancedDrafts()
     {
+        enhancementContextRevision++;
         foreach (ThxEqualizerBandViewModel band in equalizerBands)
         {
             band.PropertyChanged -= OnBandPropertyChanged;
@@ -454,6 +574,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             return;
         }
         disposed = true;
+        enhancementContextRevision++;
         await lifetime.CancelAsync();
         await pendingOperation;
         lifetime.Dispose();
