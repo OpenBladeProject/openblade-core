@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace OpenBlade.Contracts;
 
 public enum ThxEqualizerPreset
@@ -80,6 +82,9 @@ public sealed record ThxAudioProfileSettings(
     public const int SpeakerEqualizerBandCount = 7;
     public const int HeadphoneEqualizerBandCount = 10;
     public const int MaximumApplicationRules = 256;
+    // Reserve status-frame space for all three profiles, EQ curves, and maximum sequence lighting.
+    public const int MaximumApplicationRuleBytes = 4096;
+    private static readonly JsonSerializerOptions RuleSerializerOptions = new(JsonSerializerDefaults.Web);
     public const double MinimumEqualizerGainDb = -12;
     public const double MaximumEqualizerGainDb = 12;
     public const int MinimumEnhancementLevelPercent = 0;
@@ -95,7 +100,13 @@ public sealed record ThxAudioProfileSettings(
         && value.ApplicationRules
             .Select(rule => rule.ExecutableName)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count() == value.ApplicationRules.Count;
+            .Count() == value.ApplicationRules.Count
+        && ApplicationRulesFitWithinByteLimit(value.ApplicationRules);
+
+    public static bool ApplicationRulesFitWithinByteLimit(IReadOnlyList<ThxApplicationAudioRule>? rules) =>
+        rules is not null
+        && rules.Count <= MaximumApplicationRules
+        && JsonSerializer.SerializeToUtf8Bytes(rules, RuleSerializerOptions).Length <= MaximumApplicationRuleBytes;
 
     private static bool IsWellFormedEndpoint(
         ThxAudioEndpointSettings? value,

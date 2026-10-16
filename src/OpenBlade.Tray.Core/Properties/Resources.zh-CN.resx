@@ -1581,4 +1581,7 @@
   <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
     <value>此输出的 Windows 音频增强已关闭。请在 Windows 声音设置中启用“设备默认效果”以听到 THX 效果。</value>
   </data>
+  <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
+    <value>应用规则列表已满。请先移除一条规则，再添加新规则。</value>
+  </data>
 </root>

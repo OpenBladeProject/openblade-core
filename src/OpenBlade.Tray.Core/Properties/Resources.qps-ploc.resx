@@ -1671,4 +1671,7 @@
   <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
     <value>[!! Windows áúdíó énháncéménts áré óff fór thís óútpút. Énáblé Dévícé Défáúlt Éffécts ín Windows sóúnd séttíngs tó héár THX. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
+    <value>[!! Thé ápplícátíón rúlé líst ís fúll. Rémóvé á rúlé béfóré áddíng ánóthér. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

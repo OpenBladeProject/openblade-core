@@ -119,7 +119,9 @@ its own source review and admission.
 The tray stores an additive per-user opt-in preference. It uses a separate
 current-user/session Audio IPC endpoint, version 1. Saved audio uses profile
 store schema 21, export schema 13, and service IPC version 68. Existing Display
-and GPU IPC versions are unchanged. This change requires a coordinated full
+and GPU IPC versions are unchanged. Each power profile limits its application-rule
+list to 4 KiB of encoded JSON so all three profiles and maximum lighting settings
+fit in a service status response. The editor reports when the rule list is full. This change requires a coordinated full
 installation; it is not eligible for tray-only deployment.
 
 The Session Agent serializes typed audio requests. One bounded helper process

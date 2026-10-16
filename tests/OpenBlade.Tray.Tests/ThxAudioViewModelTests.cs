@@ -355,6 +355,41 @@ public sealed class ThxAudioViewModelTests
     }
 
     [Fact]
+    public async Task ApplicationRules_StopAtWireBudgetWithoutChangingTheDraftOrWritingAudio()
+    {
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, AdvancedState() with
+            {
+                ApplicationProfiles = ThxAudioFeatureAccess.Available,
+            }),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.LoadProfile(PowerSource.PluggedIn, ProfileSettings());
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        for (int index = 0; index < ThxAudioProfileSettings.MaximumApplicationRules; index++)
+        {
+            viewModel.ApplicationExecutable = index.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + new string('界', 240) + ".exe";
+            if (!viewModel.CanAddApplicationRule)
+            {
+                break;
+            }
+            viewModel.AddApplicationRule();
+        }
+        ThxAudioProfileSettings draft = viewModel.CreateProfileDraft()!;
+        Assert.NotEmpty(draft.ApplicationRules);
+        Assert.True(ThxAudioProfileSettings.IsWellFormed(draft));
+        Assert.False(viewModel.CanAddApplicationRule);
+        Assert.Contains("rule list is full", viewModel.AudioProfileMessage, StringComparison.Ordinal);
+        int count = viewModel.ApplicationRules.Count;
+        viewModel.AddApplicationRule();
+        Assert.Equal(count, viewModel.ApplicationRules.Count);
+        Assert.Single(adapter.Calls);
+    }
+
+    [Fact]
     public async Task ApplicationRulesAreSemanticUniqueAndDoNotWriteAudio()
     {
         var adapter = new FakeAdapter

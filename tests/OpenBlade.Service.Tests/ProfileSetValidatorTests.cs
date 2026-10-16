@@ -37,6 +37,32 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Fact]
+    public async Task Validate_RejectsOversizedThxRuleListsBeforePersistence()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ThxAudioProfileSettings settings = CreateThxSettings() with
+        {
+            ApplicationRules = Enumerable.Range(0, 180).Select(index => new ThxApplicationAudioRule(
+                index.ToString(System.Globalization.CultureInfo.InvariantCulture) + new string('a', 240) + ".exe",
+                ThxApplicationAudioOutput.Game)).ToArray(),
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+        foreach (ProfileSet profiles in new[]
+        {
+            defaults with { PluggedIn = defaults.PluggedIn with { ThxAudio = settings } },
+            defaults with { Battery = defaults.Battery with { ThxAudio = settings } },
+            defaults with { UsbC = defaults.UsbC with { ThxAudio = settings } },
+        })
+        {
+            using var requestStream = new MemoryStream();
+            await IpcMessageCodec.WriteRequestAsync(requestStream,
+                new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles), CancellationToken.None);
+            Assert.InRange(requestStream.Length, 1, OpenBladeIpc.MaximumMessageBytes + sizeof(int));
+            Assert.Throws<InvalidDataException>(() => validator.Validate(profiles));
+        }
+    }
+
+    [Fact]
     public void Validate_RejectsWrongThxEndpointGeometryAndHeadphoneNormalization()
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();

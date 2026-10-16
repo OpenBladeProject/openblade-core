@@ -2795,6 +2795,7 @@ type sealed class OpenBlade.Contracts.ThxAudioProfileSettings
   field const System.Double MaximumEqualizerGainDb = 12
   field const System.Double MinimumEqualizerGainDb = -12
   field const System.Int32 HeadphoneEqualizerBandCount = 10
+  field const System.Int32 MaximumApplicationRuleBytes = 4096
   field const System.Int32 MaximumApplicationRules = 256
   field const System.Int32 MaximumEnhancementLevelPercent = 100
   field const System.Int32 MinimumEnhancementLevelPercent = 0
@@ -2812,6 +2813,7 @@ type sealed class OpenBlade.Contracts.ThxAudioProfileSettings
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
+  method static System.Boolean ApplicationRulesFitWithinByteLimit(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThxApplicationAudioRule> rules)
   method static System.Boolean IsWellFormed(OpenBlade.Contracts.ThxAudioProfileSettings value)
   method static System.Boolean op_Equality(OpenBlade.Contracts.ThxAudioProfileSettings left, OpenBlade.Contracts.ThxAudioProfileSettings right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.ThxAudioProfileSettings left, OpenBlade.Contracts.ThxAudioProfileSettings right)

@@ -4,6 +4,30 @@ namespace OpenBlade.Contracts.Tests;
 
 public sealed class ThxAudioProfileContractTests
 {
+    [Theory]
+    [InlineData('a')]
+    [InlineData('界')]
+    public void ApplicationRules_RespectEncodedByteBudget(char character)
+    {
+        var rules = new List<ThxApplicationAudioRule>();
+        while (true)
+        {
+            var candidate = new ThxApplicationAudioRule(
+                rules.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + new string(character, 240) + ".exe", ThxApplicationAudioOutput.Competitive);
+            ThxApplicationAudioRule[] next = [.. rules, candidate];
+            if (!ThxAudioProfileSettings.ApplicationRulesFitWithinByteLimit(next))
+            {
+                Assert.NotEmpty(rules);
+                Assert.True(ThxAudioProfileSettings.ApplicationRulesFitWithinByteLimit(rules));
+                Assert.True(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(next).Length
+                    > ThxAudioProfileSettings.MaximumApplicationRuleBytes);
+                break;
+            }
+            rules.Add(candidate);
+        }
+    }
+
     [Fact]
     public void ApplicationRule_NormalizesExecutableBasename()
     {

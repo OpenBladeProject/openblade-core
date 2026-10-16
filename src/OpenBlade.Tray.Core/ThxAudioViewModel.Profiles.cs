@@ -42,7 +42,9 @@ public sealed partial class ThxAudioViewModel
     public string ApplicationRoutingUnavailableHint => TrayText.Get("Application routing is not yet enabled for this model.");
     public string AudioProfileMessage => TrayText.Get(state?.ApplicationAutomationPaused == true
         ? "Audio automation is paused. Read the current THX settings to resume."
-        : profileMessageKey);
+        : IsValidExecutable(applicationExecutable) && ApplicationOutput is { } selected && !CanFitApplicationRule(selected)
+            ? "The application rule list is full. Remove a rule before adding another."
+            : profileMessageKey);
     public bool ApplicationRoutingEnabled
     {
         get => applicationRoutingEnabled;
@@ -102,8 +104,14 @@ public sealed partial class ThxAudioViewModel
         && ApplicationOutputs.Contains(selected)
         && ApplicationRules.Count < ThxAudioProfileSettings.MaximumApplicationRules
         && IsValidExecutable(applicationExecutable)
+        && CanFitApplicationRule(selected)
         && !ApplicationRules.Any(rule => string.Equals(rule.ExecutableName,
             applicationExecutable.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private bool CanFitApplicationRule(ThxApplicationOutputOption selected) =>
+        ThxAudioProfileSettings.ApplicationRulesFitWithinByteLimit(ApplicationRules
+            .Select(rule => new ThxApplicationAudioRule(rule.ExecutableName, rule.Output))
+            .Append(new ThxApplicationAudioRule(applicationExecutable, selected.Output)).ToArray());
 
     public void LoadProfile(PowerSource source, ThxAudioProfileSettings? settings)
     {

@@ -1986,6 +1986,74 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MaximumThxRulesAndSequenceLightingFitAllProfilesAndStatus(bool escapedNames)
+    {
+        var rules = new List<ThxApplicationAudioRule>();
+        for (int index = 0; ; index++)
+        {
+            var next = new ThxApplicationAudioRule(index.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + new string(escapedNames ? '界' : 'a', 240) + ".exe", ThxApplicationAudioOutput.Competitive);
+            if (!ThxAudioProfileSettings.ApplicationRulesFitWithinByteLimit([.. rules, next]))
+            {
+                break;
+            }
+            rules.Add(next);
+        }
+        for (int index = 0; ; index++)
+        {
+            var next = new ThxApplicationAudioRule("tail" + index.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ".exe", ThxApplicationAudioOutput.Competitive);
+            if (!ThxAudioProfileSettings.ApplicationRulesFitWithinByteLimit([.. rules, next]))
+            {
+                break;
+            }
+            rules.Add(next);
+        }
+        Assert.InRange(JsonSerializer.SerializeToUtf8Bytes(rules).Length,
+            ThxAudioProfileSettings.MaximumApplicationRuleBytes - 64,
+            ThxAudioProfileSettings.MaximumApplicationRuleBytes);
+        double[] gains = Enumerable.Repeat(-1.2345678901234567E-100, 10).ToArray();
+        var curves = new ThxEqualizerCurves(gains, gains, gains, gains, gains);
+        var audio = new ThxAudioProfileSettings(true,
+            new(false, false, ThxEqualizerPreset.Custom, curves, new(false, 100), new(false, 100)),
+            new(false, false, ThxEqualizerPreset.Custom, curves, new(false, 100), null), rules);
+        Assert.True(ThxAudioProfileSettings.IsWellFormed(audio));
+        LightingSettings lighting = LightingSettingsFactory.Sequence(KeyboardLightingLayoutIds.Rz09_0581,
+            KeyboardLightingSequenceCodec.Encode(CreateMaximumSizedSequenceFrames()), loop: true, brightness: 100);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = lighting, ThxAudio = audio },
+            Battery = defaults.Battery with { Lighting = lighting, ThxAudio = audio },
+            UsbC = defaults.UsbC with { Lighting = lighting, ThxAudio = audio },
+        };
+        using var requestStream = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(requestStream,
+            new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles), CancellationToken.None);
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            Profiles = profiles,
+            ConfirmedState = new ConfirmedDeviceState(null, null, null, lighting),
+            DesiredState = baseline.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(lighting, SettingValueSource.PowerProfile),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(lighting, OverrideLifetime.Persistent),
+        };
+        using var statusStream = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(statusStream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
+        statusStream.Position = 0;
+        ServiceStatusEvent response = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(statusStream, CancellationToken.None));
+        Assert.Equal(rules.Count, response.Status.Profiles.Battery.ThxAudio!.ApplicationRules.Count);
+        Assert.InRange(statusStream.Length, 30_000, OpenBladeIpc.MaximumMessageBytes + sizeof(int));
+    }
+
     [Fact]
     public async Task MaximumSequenceTimelineFitsWorstCaseStatusFrame()
     {
