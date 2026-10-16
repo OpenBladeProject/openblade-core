@@ -100,10 +100,18 @@ state, the affected transition is blocked. Each submitted setting requires its
 own exact readback; a mismatch or ambiguous submission pauses experimental
 writes and never triggers an alternate sequence or setter replay.
 
-The Blade 16 (2023) and Blade 18 (2023) can report firmware HyperBoost, but
-OpenBlade exposes it as observed-only. It never submits a HyperBoost command.
-The product does not expose an exit action for this observed-only state. Turn
-HyperBoost off in Synapse before using performance controls.
+The Blade 16 (2023), RZ09-0483, admits experimental HyperBoost with the exact
+Razer Laptop Cooling Pad or without it on confirmed full-power AC. Its own
+pinned Synapse module enables mode 7; experimental padless access uses the same
+commands as source-backed extrapolation and remains physically unvalidated.
+It does not inherit another model's capture fixtures or validation status.
+See [vendor evidence and transition contract](experimental-hyperboost-evidence.md).
+The shared service journals ownership and restores saved intent, including
+Custom levels and fixed fans. Unknown or mismatched submission/readback pauses
+experimental writes; recovery performs fresh reads and never replays a setter.
+
+Blade 18 (2023) remains observed-only for HyperBoost. Turn it off in Synapse
+before using performance controls; no HyperBoost setter is admitted for that model.
 
 ## Battery protection
 

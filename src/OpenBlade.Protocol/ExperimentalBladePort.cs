@@ -12,7 +12,8 @@ internal sealed partial class ExperimentalBladePort(
     Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null,
     bool recordQueries = true,
     SemaphoreSlim? sharedOperationGate = null,
-    ExperimentalLightingOwnershipState? sharedLightingOwnership = null)
+    ExperimentalLightingOwnershipState? sharedLightingOwnership = null,
+    ICoolingPadDiscoverySource? coolingPadDiscovery = null)
     : IProductionBatteryPort, IProductionLightingPort
 {
     private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
@@ -133,7 +134,14 @@ internal sealed partial class ExperimentalBladePort(
                 SupportsExperimentalWaveDirectionSelection(model),
             SupportsUniformLightingFrames =
                 SupportsExperimentalUniformFrames(model, enabled),
-            HyperBoostAccess = model.ProductId is 0x02A0 or 0x029F ? DeviceFeatureAccess.ObservedOnly : null,
+            HyperBoostAccess = model.ProductId == 0x029F && enabled ? DeviceFeatureAccess.ReadWrite
+                : model.ProductId is 0x02A0 or 0x029F ? DeviceFeatureAccess.ObservedOnly : null,
+            HyperBoostWithoutCoolingPadAccess = model.ProductId == 0x029F && enabled ? DeviceFeatureAccess.ReadWrite : null,
+            HyperBoostBaseModes = model.ProductId == 0x029F && enabled
+                ? new(DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite)
+                {
+                    Custom = DeviceFeatureAccess.ReadWrite,
+                } : null,
             ObservedLightingEffects = CreateExperimentalLightingEffects(model, true),
         };
 
@@ -229,6 +237,8 @@ internal sealed partial class ExperimentalBladePort(
             5 => PerformancePreset.Silent,
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
             6 when model.ProductId == 0x02C5 => PerformancePreset.BatteryBalanced,
+            // Product 671 maps battery Balanced to raw 6 (AC Balanced is 0).
+            6 when model.ProductId == 0x029F => PerformancePreset.Balanced,
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
             2 when model.ProductId is 0x02A0 or 0x029F => PerformancePreset.Performance,
             7 when model.ProductId is 0x02A0 or 0x029F => null,
@@ -407,6 +417,14 @@ internal sealed partial class ExperimentalBladePort(
                 && FanCommandSourceIsAdmitted(source, operation, arguments);
         }
 
+        // Balanced/Automatic is the typed HyperBoost low-power handoff. Its
+        // adapter/source pair and unchanged source are checked by the caller.
+        if (operation == "HyperBoostRestore" && commandClass == 0x0D && commandId == 0x02
+            && arguments.Length == 4 && arguments[2] == 6 && arguments[3] == 0
+            && capturePowerSource() == PowerSource.Battery)
+        {
+            return true;
+        }
         // 02C5 battery-mode evidence: blade-control issue #2 and pinned
         // bc48c916 PerformanceService.cs. Recheck at native submission, not just
         // before a queued operation; never replay an uncertain mode command.
@@ -436,13 +454,14 @@ internal sealed partial class ExperimentalBladePort(
         byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken,
         bool variableResponse = false, Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null,
         bool requireEcho = true, bool recordAcknowledgedSubmission = true,
-        bool requireAdequateAdapter = false)
+        bool requireAdequateAdapter = false, Func<bool>? writeAdmission = null)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         PowerSource? admittedFanSource = null;
         if (write && IsThermalSet(commandClass, commandId)
-            && !IsBatteryModeSet(commandClass, commandId, arguments))
+            && (!IsBatteryModeSet(commandClass, commandId, arguments)
+                || model.ProductId != 0x02C5 || operation == "HyperBoostRestore"))
         {
             AdapterPowerState adapter = await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
             bool fanOperation = IsFanOperation(operation);
@@ -456,10 +475,19 @@ internal sealed partial class ExperimentalBladePort(
             }
             bool limitedCleanupAllowed = !requireAdequateAdapter && IsLimitedAdapter(adapter)
                 && AllowsLimitedPowerSet(operation, commandClass, commandId, arguments);
+            if (operation == "HyperBoostRestore" && !FanPowerMatchesSource(adapter, currentSource))
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "The HyperBoost exit adapter reading disagrees with the current power source.");
+            }
+            bool batteryHyperBoostCleanup = operation == "HyperBoostRestore"
+                && currentSource == PowerSource.Battery && adapter == AdapterPowerState.Battery
+                && commandClass == 0x0D && commandId == 0x02
+                && arguments.Length == 4 && arguments[2] == 6 && arguments[3] == 0;
             if (fanOperation && !fanPowerAllowed
                 || !fanOperation
                     && !HyperBoostValidationPower.IsAdmittedFullPower(adapter)
-                    && !limitedCleanupAllowed)
+                    && !limitedCleanupAllowed && !batteryHyperBoostCleanup)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "The adapter does not admit this thermal write on the current power source.");
@@ -471,6 +499,7 @@ internal sealed partial class ExperimentalBladePort(
             AllowVariableResponseLength = variableResponse,
             SubmissionAllowed = write ? () => policy.WritesAllowed && exactHostStillPresent()
                 && additionalWriteAdmission?.Invoke() != false
+                && writeAdmission?.Invoke() != false
                 && ThermalSubmissionAllowed(
                     operation,
                     commandClass,
@@ -625,7 +654,7 @@ internal sealed partial class ExperimentalBladePort(
         commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[3] == 0
             // Automatic handback preserves a freshly confirmed mode before the
             // service selects Balanced. Do not force an intermediate preset.
-            && (operation == "Fans" || operation == "Performance" && arguments[2] == 0)
+            && (operation == "Fans" || (operation is "Performance" or "HyperBoostRestore") && arguments[2] == 0)
         || commandClass == 0x07 && commandId == 0x0F && operation == "MaximumFans"
             && arguments.Length == 1 && arguments[0] == 0;
     public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) => Unavailable();

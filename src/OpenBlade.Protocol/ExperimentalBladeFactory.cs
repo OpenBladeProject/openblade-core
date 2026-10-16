@@ -274,7 +274,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     () => identity.ReadExactIdentity() is { Evidence: not null, Failure: null }, capturePowerSource,
                     recordQueries: false,
                     sharedOperationGate: operationGate,
-                    sharedLightingOwnership: lightingOwnership);
+                    sharedLightingOwnership: lightingOwnership,
+                    coolingPadDiscovery: new WindowsHyperBoostEligibilitySource(native));
                 try
                 {
                     // Correctly correlated selectors identify the interface even when

@@ -27,6 +27,14 @@ internal static class ExperimentalBladeModels
         IReadOnlyList<ExperimentalFeatureEvidence> features = model.ProductId switch
         {
             0x029F => [
+                new("HyperBoost", "SynapseSourceBacked", [
+                    "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js",
+                    "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
+                    "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js"]),
+                new("PadlessHyperBoost", "SourceBackedExtrapolation", [
+                    "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js",
+                    "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
+                    "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js"]),
                 new("PerformanceAndCustom", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("FixedFansAndMaximumFans", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("KeyboardAndLogoLighting", "UpstreamOwnerTested", [MaintainedRazerCtlSource]),
