@@ -171,7 +171,10 @@ public sealed class ThxAudioHelperCommandTests
             {
                 Assert.Equal("rznb12", product);
                 Assert.Equal(ThxAudioEndpoint.Speakers, endpoint);
-                if (probeThrows) throw new IOException("Unavailable advisory");
+                if (probeThrows)
+                {
+                    throw new IOException("Unavailable advisory");
+                }
                 return true;
             });
         await command.RunAsync(CancellationToken.None);
