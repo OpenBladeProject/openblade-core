@@ -6,11 +6,18 @@ namespace OpenBlade.Tray;
 public sealed partial class MainWindow
 {
     private bool snapTapEnabled;
+    private SnapTapRuntimeState localizationSnapshotSnapTapState = SnapTapRuntimeState.Off;
 
-    internal void ShowLocalizationSnapshotSnapTap()
+    internal void ShowLocalizationSnapshotSnapTap(bool showFailure = false)
     {
         if (localizationSnapshotMode)
         {
+            localizationSnapshotSnapTapState = showFailure
+                ? SnapTapRuntimeState.Failed
+                : SnapTapRuntimeState.Off;
+            // Set the backing state first so the preview toggle cannot queue a preference save.
+            snapTapEnabled = showFailure;
+            SnapTapToggle.IsOn = snapTapEnabled;
             RefreshSnapTapStatus();
             SnapTapCard.StartBringIntoView(new BringIntoViewOptions
             {
@@ -37,7 +44,7 @@ public sealed partial class MainWindow
     private void RefreshSnapTapStatus()
     {
         SnapTapRuntimeStatus? status = localizationSnapshotMode
-            ? new SnapTapRuntimeStatus(SnapTapRuntimeState.Off, DateTimeOffset.UnixEpoch)
+            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch)
             : SnapTapStatusStore.Read();
         SnapTapStatusText.Text = status?.State switch
         {

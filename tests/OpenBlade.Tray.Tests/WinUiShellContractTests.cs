@@ -23,9 +23,49 @@ public sealed class WinUiShellContractTests
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs").ReplaceLineEndings("\n");
         Assert.Contains(
             "localizationSnapshotMode\n"
-                + "            ? new SnapTapRuntimeStatus(SnapTapRuntimeState.Off, DateTimeOffset.UnixEpoch)\n"
+                + "            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch)\n"
                 + "            : SnapTapStatusStore.Read()",
             source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SnapTapFailureSnapshotIsIsolatedAndDoesNotSavePreferences()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs")
+            .ReplaceLineEndings("\n");
+        int previewStart = source.IndexOf("internal void ShowLocalizationSnapshotSnapTap(", StringComparison.Ordinal);
+        int previewEnd = source.IndexOf("private void OnSnapTapToggled(", previewStart, StringComparison.Ordinal);
+        Assert.True(previewStart >= 0 && previewEnd > previewStart);
+        string preview = source[previewStart..previewEnd];
+        Assert.Contains(
+            "if (localizationSnapshotMode)\n"
+                + "        {\n"
+                + "            localizationSnapshotSnapTapState = showFailure\n"
+                + "                ? SnapTapRuntimeState.Failed\n"
+                + "                : SnapTapRuntimeState.Off;",
+            preview,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "snapTapEnabled = showFailure;\n"
+                + "            SnapTapToggle.IsOn = snapTapEnabled;\n"
+                + "            RefreshSnapTapStatus();",
+            preview,
+            StringComparison.Ordinal);
+        Assert.Contains("|| toggle.IsOn == snapTapEnabled)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("QueuePreferenceSave", preview, StringComparison.Ordinal);
+        Assert.DoesNotContain("SnapTapStatusStore", preview, StringComparison.Ordinal);
+        Assert.Contains(
+            "private SnapTapRuntimeState localizationSnapshotSnapTapState = SnapTapRuntimeState.Off;",
+            source,
+            StringComparison.Ordinal);
+
+        string harness = ReadRepositoryFile("src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
+        Assert.Contains("\"laptop-snap-tap-failed\"", harness, StringComparison.Ordinal);
+        Assert.Contains("bool captureSnapTap = captureSnapTapFailure", harness, StringComparison.Ordinal);
+        Assert.Contains(
+            "snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure);",
+            harness,
             StringComparison.Ordinal);
     }
 

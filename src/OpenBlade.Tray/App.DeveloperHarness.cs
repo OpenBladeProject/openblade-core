@@ -615,7 +615,10 @@ public partial class App
                 "profiles-wide",
                 StringComparison.Ordinal);
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
-            bool captureSnapTap = string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
+            bool captureSnapTapFailure = string.Equals(
+                requestedPage, "laptop-snap-tap-failed", StringComparison.Ordinal);
+            bool captureSnapTap = captureSnapTapFailure
+                || string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
@@ -691,7 +694,7 @@ public partial class App
                 }
                 if (captureSnapTap)
                 {
-                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap();
+                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure);
                     await WaitForSnapshotLayoutAsync();
                 }
                 await SaveSnapshotAsync(
