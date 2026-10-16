@@ -2057,39 +2057,39 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Máxímúm fáns ~~~~ !!]</value>
   </data>
   <data name="SnapTap_Title.Text" xml:space="preserve">
-    <value>[!! SnapTap (A/D) !!]</value>
+    <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>[!! Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified. !!]</value>
+    <value>[!! Éxpéríméntál. Whén Á ánd D óvérláp, thé lást présséd kéý wíns. Ápplíés tó áll kéýbóárds. Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! SnapTap (A/D) !!]</value>
+    <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Starting" xml:space="preserve">
-    <value>[!! Starting… !!]</value>
+    <value>[!! Stártíng… ~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
-    <value>[!! Release A and D to activate. !!]</value>
+    <value>[!! Réléásé Á ánd D tó áctíváté. ~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Active" xml:space="preserve">
-    <value>[!! Active — the last pressed key takes priority. !!]</value>
+    <value>[!! Áctívé — thé lást présséd kéý tákés príórítý. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Paused" xml:space="preserve">
-    <value>[!! Paused — input handling is unavailable. !!]</value>
+    <value>[!! Páúséd — ínpút hándlíng ís únáváíláblé. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Failed" xml:space="preserve">
-    <value>[!! Paused after an input error. Release A and D, then turn SnapTap off and on. !!]</value>
+    <value>[!! Páúséd áftér án ínpút érrór. Réléásé Á ánd D, thén túrn SnápTáp óff ánd ón. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Off" xml:space="preserve">
-    <value>[!! Off !!]</value>
+    <value>[!! Óff ~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Unavailable" xml:space="preserve">
-    <value>[!! Waiting for the input helper… !!]</value>
+    <value>[!! Wáítíng fór thé ínpút hélpér… ~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Unknown" xml:space="preserve">
-    <value>[!! Off requested — runtime status unavailable. !!]</value>
+    <value>[!! Óff réqúéstéd — rúntímé státús únáváíláblé. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Armed" xml:space="preserve">
-    <value>[!! Ready — press A or D to verify input. !!]</value>
+    <value>[!! Réádý — préss Á ór D tó vérífý ínpút. ~~~~~~~~~~ !!]</value>
   </data>
 </root>
