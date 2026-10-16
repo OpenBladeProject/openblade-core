@@ -582,6 +582,56 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_SharedSettingsRowsKeepTheirPresentationDefaults()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        var rowStyles = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "SettingsRowStyle", "SettingsLastRowStyle",
+            "SettingsNeutralSubcardStyle", "SettingsLastNeutralSubcardStyle",
+            "SettingsEditorSubcardStyle", "SettingsLastEditorSubcardStyle",
+        };
+        foreach (XElement style in document.Descendants().Where(element => element.Name.LocalName == "Style"))
+        {
+            if (rowStyles.Any(key => Attribute(style, "BasedOn") == "{StaticResource " + key + "}"))
+            {
+                rowStyles.Add(Attribute(style, "Key")!);
+            }
+            if (rowStyles.Contains(Attribute(style, "Key") ?? string.Empty))
+            {
+                Assert.All(style.Elements().Where(setter => Attribute(setter, "Property") == "Background"),
+                    setter => Assert.Equal("Transparent", Attribute(setter, "Value")));
+                Assert.DoesNotContain(style.Elements(), setter => Attribute(setter, "Property") is "Height" or "MinHeight");
+                Assert.All(style.Elements().Where(setter => Attribute(setter, "Property") == "Padding"),
+                    setter => Assert.Contains(Attribute(setter, "Value"),
+                        new[] { "16,14", "{StaticResource DashboardSingleLineRowPadding}" }));
+            }
+        }
+        XElement[] rows = document.Descendants().Where(element => element.Name.LocalName == "Border"
+            && rowStyles.Any(key => Attribute(element, "Style") == "{StaticResource " + key + "}"))
+            .ToArray();
+        Assert.NotEmpty(rows);
+        foreach (XElement row in rows)
+        {
+            foreach (string property in new[] { "Background", "BorderBrush", "BorderThickness",
+                "CornerRadius", "Margin", "Height", "MinHeight" })
+            {
+                Assert.Null(Attribute(row, property));
+            }
+            Assert.DoesNotContain(row.Attributes(), attribute =>
+                attribute.Name.LocalName.StartsWith("SettingsCardPointerVisual.", StringComparison.Ordinal));
+            string? padding = Attribute(row, "Padding");
+            Assert.True(padding is null or "0" or "{StaticResource DashboardSingleLineRowPadding}",
+                "Settings rows must reuse shared padding; zero is reserved for row containers.");
+            if (padding == "{StaticResource DashboardSingleLineRowPadding}")
+            {
+                XElement layout = row.Descendants().First(element => element.Name.LocalName == "Grid");
+                Assert.Equal("{StaticResource DashboardSingleLineRowContentMinHeight}", Attribute(layout, "MinHeight"));
+            }
+        }
+    }
+
+    [Fact]
     public void MainWindow_DashboardRowsCompactOnlySingleLineContent()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
