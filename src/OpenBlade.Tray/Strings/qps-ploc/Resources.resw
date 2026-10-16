@@ -404,7 +404,7 @@ Répórtéd fáílúrés:
     <value>[!! Kéép rúnníng ~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
-    <value>[!! Móré thán {0} ápplícátíóns áré úsíng thé NVIDIA GPÚ. OpenBlade cánnót vérífý á sáfé clósé fróm á pártíál líst. Clósé ápps mánúállý, thén scán ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Móré thán {0} ápps áré úsíng thé NVIDIA GPÚ. Clósé ápps mánúállý, thén scán ágáín. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
     <value>[!! Tóó máný GPÚ ápps tó vérífý ~~~~~~~~ !!]</value>
@@ -545,7 +545,7 @@ Répórtéd fáílúrés:
     <value>[!! {0}% bríghtnéss ~~~~ !!]</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>[!! {0} úsés thé {1} éfféct át {2}. Ímpórtíng ápplíés ít thróúgh OpenBlade ánd kééps ít ás án únsávéd chángé fór thé áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! {0} úsés thé {1} éfféct át {2}. Ímpórtíng ápplíés ít ás án únsávéd chángé tó thé áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>[!! Ímpórt kéýbóárd líghtíng? ~~~~~~~~ !!]</value>
@@ -796,7 +796,7 @@ Répórtéd fáílúrés:
     <value>[!! Stóp Razer sérvícés ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
-    <value>[!! Windows díd nót gránt ádmínístrátór pérmíssíón. OpenBlade díd nót rétrý thé réqúést. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Windows díd nót gránt ádmínístrátór pérmíssíón. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
     <value>[!! Razer sérvícé stóp cáncéléd ~~~~~~~ !!]</value>
@@ -805,11 +805,11 @@ Répórtéd fáílúrés:
     <value>[!! Chéckíng… ~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>[!! Thésé knówn cóntróllér sérvícés áré cúrréntlý áctívé:
+    <value>[!! Thésé Razer sérvícés áré rúnníng:
 
 {0}
 
-Áftér áppróvál, OpenBlade wíll fréshlý chéck thé sámé révíéwéd állówlíst ánd stóp áný áctívé mátchés. Thís dóés nót únínstáll Razer sóftwáré ór dísáblé sérvícé stártúp. Razer sóftwáré máý stárt thé sérvícés ágáín, ánd féátúrés thát dépénd ón thém máý stóp wórkíng úntíl thén. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+OpenBlade wíll chéck thís líst ágáín ánd stóp sérvícés thát áré stíll rúnníng. Razer sóftwáré máý réstárt thém. Féátúrés thát úsé thém máý bé únáváíláblé úntíl théý réstárt. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>[!! Stóp Razer sérvícés? ~~~~~ !!]</value>

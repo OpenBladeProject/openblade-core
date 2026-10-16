@@ -397,7 +397,7 @@
     <value>继续运行</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
-    <value>超过 {0} 个应用正在使用 NVIDIA GPU。OpenBlade 无法根据不完整的列表验证能否安全关闭。请手动关闭应用，然后重新扫描。</value>
+    <value>使用 NVIDIA GPU 的应用超过 {0} 个。请手动关闭应用，然后重新扫描。</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
     <value>使用 GPU 的应用过多</value>
@@ -534,7 +534,7 @@
     <value>{0}% 亮度</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>{0} 使用 {1} 效果，亮度为 {2}。导入后，OpenBlade 会立即应用这些设置，并将其保留为当前电源配置方案中尚未保存的更改。</value>
+    <value>{0} 使用 {1} 灯效，亮度为 {2}。导入后将应用到当前电源配置方案，但不会保存。</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>导入键盘灯光？</value>
@@ -785,7 +785,7 @@
     <value>停止 Razer 服务</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
-    <value>Windows 未授予管理员权限。OpenBlade 未重试该请求。</value>
+    <value>Windows 未授予管理员权限。</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
     <value>已取消停止 Razer 服务</value>
@@ -794,7 +794,11 @@
     <value>正在检查…</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>以下已知控制器服务正在运行：&#xA;&#xA;{0}&#xA;&#xA;获得管理员授权后，OpenBlade 会重新检查同一份经审核的允许列表，并停止所有仍在运行的匹配服务。这不会卸载 Razer 软件，也不会禁用这些服务自动启动。Razer 软件可能会再次启动它们；在此之前，依赖这些服务的功能可能无法使用。</value>
+    <value>以下 Razer 服务正在运行：
+
+{0}
+
+OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软件可能会重新启动这些服务。依赖它们的功能可能在服务重启前无法使用。</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>停止 Razer 服务？</value>

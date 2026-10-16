@@ -12,8 +12,12 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="OpenBlade and its background service will be removed.&#xA;&#xA;Your saved profiles and preferences will be kept so they are available if you reinstall.&#xA;&#xA;Do you want to continue?" xml:space="preserve">
-    <value>即将卸载 OpenBlade，并移除其后台服务。&#xA;&#xA;已保存的配置方案和偏好设置将保留，重新安装后可继续使用。&#xA;&#xA;是否继续？</value>
+  <data name="OpenBlade and its background service will be removed.&#xA;&#xA;Your saved profiles and preferences will be kept.&#xA;&#xA;Do you want to continue?" xml:space="preserve">
+    <value>将卸载 OpenBlade 及其后台服务。
+
+保留已保存的配置方案和偏好设置。
+
+是否继续？</value>
   </data>
   <data name="Uninstall OpenBlade" xml:space="preserve">
     <value>卸载 OpenBlade</value>
