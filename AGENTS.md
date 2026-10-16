@@ -472,6 +472,17 @@ reference for user-facing documentation.
   tone. Verify changed behavior claims against the implementation. Detailed
   engineering guides should retain the precision their readers need.
 
+- Delete redundant disclaimers outright; do not replace a removed caveat with
+  another warning or reassurance. Include a limitation when it changes what the
+  reader can do, needs to check, or should expect.
+- State actions positively, for example, "Start HyperBoost manually." Avoid
+  stacking statements about what a feature never does. Routine entry and
+  restoration behavior belongs in usage or technical detail when needed, not
+  as a caveat attached to every feature description.
+- Preserve meaning while shortening: safety gates, model and firmware limits,
+  process exclusions, and benchmark sampling conditions must remain accurate.
+  Keep English, Russian, and Chinese versions aligned.
+
 ## Versioning and commits
 
 Follow [VERSIONING.md](VERSIONING.md). The short form is:
