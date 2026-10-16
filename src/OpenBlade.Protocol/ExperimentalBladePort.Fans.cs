@@ -67,6 +67,8 @@ internal sealed partial class ExperimentalBladePort
         bool submitted = false;
         try
         {
+            PowerSource source = capturePowerSource();
+            bool SourceUnchanged() => capturePowerSource() == source;
             RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             if (baseline.HyperBoostActive || baseline.Performance is not (PerformancePreset.Balanced
@@ -98,7 +100,7 @@ internal sealed partial class ExperimentalBladePort
             {
                 // Product 671 uses DC Balanced raw 6; preserve its battery mode.
                 PerformancePreset.Balanced => model.ProductId == 0x029F
-                    && capturePowerSource() == PowerSource.Battery ? (byte)6 : (byte)0,
+                    && source == PowerSource.Battery ? (byte)6 : (byte)0,
                 PerformancePreset.Performance => 2,
                 PerformancePreset.Silent => 5,
                 PerformancePreset.Custom => 4,
@@ -110,7 +112,7 @@ internal sealed partial class ExperimentalBladePort
                 {
                     RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
                     await ExchangeAsync("Fans", 0x0D, 0x02, [1, zone, mode, targets.HasValue ? (byte)1 : (byte)0],
-                        true, cancellationToken).ConfigureAwait(false);
+                        true, cancellationToken, writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                 }
                 ProductionPerformanceFanState entered = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
@@ -128,7 +130,7 @@ internal sealed partial class ExperimentalBladePort
                     int rpm = zone == 1 ? target.First : target.Second;
                     RequireWriteAdmission(fanMode: FanMode.Fixed);
                     await ExchangeAsync("FanTargets", 0x0D, 0x01, [1, zone, checked((byte)(rpm / 100))],
-                        true, cancellationToken).ConfigureAwait(false);
+                        true, cancellationToken, writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                     saved = zone == 1 ? (rpm, saved.Second) : (saved.First, rpm);
                     if (await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) != saved)

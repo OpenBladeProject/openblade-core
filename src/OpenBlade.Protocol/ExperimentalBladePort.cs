@@ -238,7 +238,7 @@ internal sealed partial class ExperimentalBladePort(
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
             6 when model.ProductId == 0x02C5 => PerformancePreset.BatteryBalanced,
             // Product 671 maps battery Balanced to raw 6 (AC Balanced is 0).
-            6 when model.ProductId == 0x029F => PerformancePreset.Balanced,
+            6 when model.ProductId == 0x029F && capturePowerSource() == PowerSource.Battery => PerformancePreset.Balanced,
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
             2 when model.ProductId is 0x02A0 or 0x029F => PerformancePreset.Performance,
             7 when model.ProductId is 0x02A0 or 0x029F => null,

@@ -238,6 +238,41 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.False(policy.WritesAllowed);
     }
 
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.PluggedIn)]
+    public async Task Blade16_BalancedFanModeFreezesSourceBeforeAdapterPreflight(PowerSource source)
+    {
+        PowerSource initial = source;
+        var session = new Session { Mode = source == PowerSource.Battery ? (byte)6 : (byte)0 };
+        session.BeforeSubmission = command =>
+        {
+            if (command.ClassId == 7 && command.CommandId == 0x8C)
+            {
+                source = initial == PowerSource.Battery ? PowerSource.PluggedIn : PowerSource.Battery;
+                session.AdapterPowerPayload = source == PowerSource.Battery ? [0, 17] : [17, 17];
+            }
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
+        await using var port = Create(0x029F, session, policy, () => source);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanTargetsAsync(3000, 3000, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Empty(session.Writes);
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task Blade16_DcBalancedIsRejectedOnExternalPower(PowerSource source)
+    {
+        var session = new Session { Mode = 6 };
+        await using var port = Create(0x029F, session, power: () => source);
+        await Assert.ThrowsAsync<RazerProtocolException>(() => port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        Assert.Empty(session.Writes);
+    }
+
     private static ExperimentalBladePort HyperBoostPort(Session session, Pad pad,
         ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null) =>
         new(session, new(), Model(0x029F), policy ?? new(Model(0x029F)), () => true,
