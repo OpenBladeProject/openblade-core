@@ -347,7 +347,7 @@
                        HorizontalAlignment="Center" />
             <TextBlock Margin="16,12,16,0" TextWrapping="Wrap" TextAlignment="Center"
                        Foreground="{DynamicResource SecondaryTextBrush}"
-                       Text="OpenBlade will stop safely and restore the previous installation state." />
+                       Text="Setup will stop and restore the previous installation state." />
           </StackPanel>
           <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button x:Name="KeepWorkingButton" Content="Keep _working"

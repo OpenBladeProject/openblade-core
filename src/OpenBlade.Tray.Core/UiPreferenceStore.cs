@@ -62,6 +62,7 @@ public sealed record UiPreferences(
     TrayDashboardPreference? TrayDashboard = null,
     bool LabFeaturesEnabled = false,
     UiLanguagePreference Language = UiLanguagePreference.FollowSystem,
+    bool ThxAudioIntegrationEnabled = false,
     bool SnapTapEnabled = false)
 {
     public static UiPreferences Default { get; } = new(

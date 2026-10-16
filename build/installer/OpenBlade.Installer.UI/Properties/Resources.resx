@@ -150,17 +150,11 @@
   <data name="OpenBlade uninstall could not verify complete removal: {0}" xml:space="preserve">
     <value>OpenBlade uninstall could not verify complete removal: {0}</value>
   </data>
-  <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
-    <value>OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again.</value>
-  </data>
   <data name="OpenBlade was installed, but it could not be launched: {0}" xml:space="preserve">
     <value>OpenBlade was installed, but it could not be launched: {0}</value>
   </data>
   <data name="OpenBlade was removed" xml:space="preserve">
     <value>OpenBlade was removed</value>
-  </data>
-  <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
-    <value>OpenBlade will stop safely and restore the previous installation state.</value>
   </data>
   <data name="Preparing OpenBlade files…" xml:space="preserve">
     <value>Preparing OpenBlade files…</value>
@@ -240,9 +234,6 @@
   <data name="Setup" xml:space="preserve">
     <value>Setup</value>
   </data>
-  <data name="Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first." xml:space="preserve">
-    <value>Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first.</value>
-  </data>
   <data name="Setup completed successfully." xml:space="preserve">
     <value>Setup completed successfully.</value>
   </data>
@@ -308,5 +299,14 @@
   </data>
   <data name="Installing Microsoft .NET 10 Desktop Runtime…" xml:space="preserve">
     <value>Installing Microsoft .NET 10 Desktop Runtime…</value>
+  </data>
+  <data name="Repair or remove the registered OpenBlade installation in Windows Installed apps, then try again." xml:space="preserve">
+    <value>Repair or remove the registered OpenBlade installation in Windows Installed apps, then try again.</value>
+  </data>
+  <data name="Setup found {0} OpenBlade installer entries and stopped to avoid a conflict. Uninstall each OpenBlade entry when available. If duplicate entries remain, use Windows installer recovery, then try again." xml:space="preserve">
+    <value>Setup found {0} OpenBlade installer entries and stopped to avoid a conflict. Uninstall each OpenBlade entry when available. If duplicate entries remain, use Windows installer recovery, then try again.</value>
+  </data>
+  <data name="Setup will stop and restore the previous installation state." xml:space="preserve">
+    <value>Setup will stop and restore the previous installation state.</value>
   </data>
 </root>

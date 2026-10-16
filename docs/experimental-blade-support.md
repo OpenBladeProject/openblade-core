@@ -10,7 +10,7 @@ in progress.
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
-| Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, battery modes, Custom levels, keyboard and logo lighting, 50–100% charge limits |
+| Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, battery modes, Custom levels, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, HyperBoost with or without the cooling pad, fixed and maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, maximum fans, keyboard and logo lighting, 50–100% charge limits |
@@ -23,19 +23,18 @@ external-power performance or fan changes. A confirmed limited adapter allows
 Balanced and returning fans to Automatic; other external-power thermal changes
 wait for confirmed full power. Models with fixed-speed control also offer
 Automatic and fixed fans on battery. Fixed speed on a limited adapter is not
-yet admitted for these experimental models. An unknown reading blocks the change. The
-reading does not identify the connector. The Blade 14 (2025) also offers
+yet supported for these experimental models. If wattage cannot be confirmed,
+the change is blocked. The Blade 14 (2025) also offers
 Battery Saver and Battery Balanced on battery power.
 
 - Fixed fan targets cover 2,000–5,000 RPM on the Blade 16 (2023), and
   2,200–5,000 RPM on the Blade 14 (2023). Automatic hands control back to firmware.
-  Fan curves need a supported temperature source and are not yet available.
+  Fan curves are not yet supported.
 - Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and
   Blade 18 (2023). Select Automatic fans before turning it on. The Blade 18 does
   not offer adjustable fixed fan targets. Maximum Fans cannot change while another
   Power Mode Control option is on, such as local dimming or temporary full charge.
-  Before leaving Custom, OpenBlade confirms Maximum Fans is off, turns it off
-  when needed, and checks again before changing the preset.
+  OpenBlade turns Maximum Fans off before leaving Custom.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
   offers CPU Boost and High/High. Other models exclude High/High.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
@@ -48,11 +47,9 @@ Battery Saver and Battery Balanced on battery power.
 - Blade 14 (2023) and Blade 16 (2023) offer experimental HyperBoost on full-power
   AC, with or without the Razer Laptop Cooling Pad. They require MCU firmware
   1.1.1.3 or later on the Blade 14, and 1.5.0.0 or later on the Blade 16.
-  OpenBlade restores your saved performance and fan settings when HyperBoost ends.
-  Hardware behavior still needs community testing. On the Blade 14, turn off
+  On the Blade 14, turn off
   Maximum Fans in Synapse first if it was enabled there; OpenBlade cannot yet
   restore that option on this model.
-  Blade 16 (2025), RZ09-0528, already supports HyperBoost with or without the pad.
   Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
   changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not

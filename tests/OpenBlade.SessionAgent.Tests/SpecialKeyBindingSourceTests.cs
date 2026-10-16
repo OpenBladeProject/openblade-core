@@ -43,6 +43,26 @@ public sealed class SpecialKeyBindingSourceTests : IDisposable
         Assert.Equal([true, false], transitions);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RealInputPreferences_PreserveThxOptInForSharedWatcher(bool enabled)
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path,
+            "{\"primaryNavigationItems\":[\"FuturePage\"],\"snapTapEnabled\":true,"
+            + "\"thxAudioIntegrationEnabled\":" + (enabled ? "true" : "false") + "}");
+        var source = new SpecialKeyBindingSource(path);
+        UiPreferences? observed = null;
+        source.PreferencesObserved += preferences => observed = preferences;
+
+        Assert.True(await source.ReloadIfChangedAsync(force: true, CancellationToken.None));
+        Assert.True(source.SnapTapEnabled);
+        Assert.NotNull(observed);
+        Assert.Equal(enabled, observed.ThxAudioIntegrationEnabled);
+    }
+
     [Fact]
     public async Task SnapTapPreference_EmitsOnlyConfirmedTransitionsAndRetainsOnReadFailure()
     {

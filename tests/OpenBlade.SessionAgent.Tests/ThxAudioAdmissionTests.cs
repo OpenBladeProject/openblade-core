@@ -1,0 +1,197 @@
+using System.Security.Cryptography;
+using OpenBlade.Session;
+
+namespace OpenBlade.SessionAgent.Tests;
+
+public sealed class ThxAudioAdmissionTests : IDisposable
+{
+    private readonly string directory = Path.Combine(Path.GetTempPath(),
+        "OpenBlade.ThxAudioAdmission.Tests", Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public void AdmissionDefaultsDoNotAuthorizeNativeAccess()
+    {
+        var admission = new ThxAudioAdmission(ThxAudioAvailability.Available, null);
+        Assert.Null(admission.ProductId);
+        Assert.False(admission.MutationAllowed);
+        Assert.False(admission.IsAvailable);
+    }
+
+    [Fact]
+    public void CatalogKeepsExactModelCodecAndStackPairsSeparate()
+    {
+        Assert.Equal(3, ThxAudioCompatibility.Profiles.Count);
+        ThxAudioCompatibilityProfile sonya12 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0581");
+        ThxAudioCompatibilityProfile sonya11 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0528");
+        ThxAudioCompatibilityProfile piper11 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0530");
+        Assert.Equal(("02E0", "rznb12", "thx_rznb12_service"), (sonya12.UsbProductId, sonya12.ProductId, sonya12.Stack.ServiceName));
+        Assert.Equal(("02C6", "rznb11", "thx_rznb11_service"), (sonya11.UsbProductId, sonya11.ProductId, sonya11.Stack.ServiceName));
+        Assert.Equal(("02C5", "rznb11", "thx_rznb11_service"), (piper11.UsbProductId, piper11.ProductId, piper11.Stack.ServiceName));
+        Assert.Equal(7, sonya12.CodecHardwareIds.Count);
+        Assert.False(ThxAudioCompatibility.MatchesCodec(sonya12,
+            [@"INTELAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583011"]));
+        Assert.False(ThxAudioCompatibility.MatchesCodec(sonya12,
+            [@"SOUNDWIRE\SDCA_FUNCTION_11&MAN_025D&FUNC_0721&TYPE_0B&VER_01&ADR_04&SUBSYS_30101A58"]));
+        Assert.False(ThxAudioCompatibility.MatchesCodec(sonya11, piper11.CodecHardwareIds));
+        Assert.False(ThxAudioCompatibility.MatchesCodec(piper11, sonya11.CodecHardwareIds));
+        foreach (ThxAudioCompatibilityProfile profile in ThxAudioCompatibility.Profiles)
+        {
+            Assert.True(ThxAudioCompatibility.MatchesCodec(profile, profile.CodecHardwareIds));
+            Assert.Equal(32, Convert.FromHexString(profile.ActivePropertiesSha256).Length);
+            Assert.Equal(32, Convert.FromHexString(profile.SurroundConfigSha256).Length);
+            Assert.True(profile.ReadAllowed);
+            Assert.True(profile.MutationAllowed);
+            Assert.Equal(12, profile.Stack.Packages.Sum(package => package.Files.Count));
+            Assert.Contains(profile.Stack.Packages.SelectMany(package => package.Files), file => file.Name.EndsWith("_props.dat", StringComparison.Ordinal));
+            Assert.Contains(profile.Stack.Packages.SelectMany(package => package.Files), file => file.Name.EndsWith("_apo4_data.bin", StringComparison.Ordinal));
+            Assert.All(profile.Stack.Packages, package =>
+            {
+                Assert.Contains(package.Files, file => file.Name == package.InfName);
+                Assert.Contains(package.Files, file => file.Name == Path.ChangeExtension(package.InfName, ".cat"));
+                Assert.All(package.Files, file => Assert.Equal(32, Convert.FromHexString(file.Sha256).Length));
+            });
+        }
+        Assert.Equal("2C5AB38CEB9A5FDD3962FCA12FC7E256DC2BA1A6C138D8DA2933CB74109E0D98",
+            sonya11.Stack.Packages.SelectMany(package => package.Files).Single(file => file.Name == "thx_rznb11_props.dat").Sha256);
+    }
+
+    [Theory]
+    [InlineData("rznb12", "RZ09-0581", true)]
+    [InlineData("rznb11", "RZ09-0528", true)]
+    [InlineData("rznb11", "RZ09-0530", true)]
+    [InlineData("rznb12", "RZ09-0528", false)]
+    [InlineData("rznb11", "RZ09-0581", false)]
+    [InlineData(null, "RZ09-0581", false)]
+    public void NativeAvailabilityRequiresKnownProductModelPair(string? productId, string modelNumber, bool expected)
+    {
+        var admission = new ThxAudioAdmission(ThxAudioAvailability.Available, null)
+        { ProductId = productId, ModelNumber = modelNumber };
+        Assert.Equal(expected, admission.IsAvailable);
+        Assert.False((admission with { Error = "Admission failed" }).IsAvailable);
+    }
+
+    [Fact]
+    public void HardwareIdentityRequiresBothExactRegistryValuesAndWholeCodecId()
+    {
+        var profile = new ThxAudioCompatibilityProfile("RZ09-0581", "Blade 16 - RZ09-0581", "02E0", "rznb12",
+            [@"HDAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A581234"], Stack(), true, true);
+        Assert.True(ThxAudioCompatibility.MatchesHost(profile, "Razer", profile.ProductName, "Razer", profile.ProductName));
+        Assert.False(ThxAudioCompatibility.MatchesHost(profile, "Razer", profile.ProductName, "Razer", "Blade 16 - RZ09-0528"));
+        Assert.False(ThxAudioCompatibility.MatchesHost(profile, "Razer", profile.ProductName, "Other", profile.ProductName));
+        Assert.True(ThxAudioCompatibility.MatchesUsb(profile, @"USB\VID_1532&PID_02E0&MI_00\instance"));
+        Assert.False(ThxAudioCompatibility.MatchesUsb(profile, @"USB\VID_1532&PID_02E01\instance"));
+        Assert.False(ThxAudioCompatibility.MatchesUsb(profile, @"USB\VID_1532&PID_02C6\instance"));
+        Assert.True(ThxAudioCompatibility.MatchesCodec(profile, profile.CodecHardwareIds));
+        Assert.False(ThxAudioCompatibility.MatchesCodec(profile, [@"HDAUDIO\FUNC_01&VEN_10EC&DEV_9999&SUBSYS_1A581234"]));
+        Assert.False(ThxAudioCompatibility.MatchesCodec(profile, [profile.CodecHardwareIds[0] + "&REV_1"]));
+    }
+
+    [Fact]
+    public void DriverStoreSuffixMayChangeButEveryPackageFileMustMatchTogether()
+    {
+        ThxAudioDriverStack stack = Stack();
+        string package = WritePackage("reviewed_svc.inf_amd64_newinstallation", stack.Packages[0]);
+        Assert.True(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out string? binary));
+        Assert.Equal(Path.Combine(package, "reviewed_svc.exe"), binary);
+        File.WriteAllText(Path.Combine(package, "reviewed_svc.exe"), "changed");
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _));
+    }
+
+    [Fact]
+    public void SplitOrDuplicateMatchingPackagesAreRejected()
+    {
+        ThxAudioDriverStack stack = Stack();
+        string first = WritePackage("reviewed_svc.inf_amd64_first", stack.Packages[0]);
+        string second = WritePackage("reviewed_svc.inf_amd64_second", stack.Packages[0]);
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _));
+        File.WriteAllText(Path.Combine(first, "reviewed_svc.exe"), "changed");
+        File.WriteAllText(Path.Combine(second, "reviewed_svc.inf"), "changed");
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _));
+    }
+
+    [Fact]
+    public void PackageSearchIsBoundedAndDoesNotUseUnrelatedFolders()
+    {
+        ThxAudioDriverStack stack = Stack();
+        WritePackage("other_svc.inf_amd64_samefiles", stack.Packages[0]);
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _));
+        WritePackage("reviewed_svc.inf_amd64_matching", stack.Packages[0]);
+        for (int index = 0; index < 64; index++)
+        {
+            Directory.CreateDirectory(Path.Combine(directory, $"reviewed_svc.inf_amd64_extra{index}"));
+        }
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _));
+    }
+
+    [Theory]
+    [InlineData("rznb11")]
+    [InlineData("rznb12")]
+    public void ActiveConfigurationPinsDefinitionsButIgnoresMutableUserSettings(string productId)
+    {
+        ThxAudioCompatibilityProfile profile = WriteActiveConfiguration(productId);
+        Assert.True(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile));
+        string productDirectory = Path.Combine(directory, "thx", productId);
+        File.WriteAllText(Path.Combine(productDirectory, "properties.json"), "changed EQ gains and enhancement levels");
+        File.WriteAllText(Path.Combine(productDirectory, "preset_selection"), "changed selected preset");
+        Directory.CreateDirectory(Path.Combine(productDirectory, "speakers"));
+        File.WriteAllText(Path.Combine(productDirectory, "speakers", "properties.json"), "changed endpoint state");
+        Assert.True(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile));
+        Assert.False(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory,
+            profile with { ProductId = "../rznb12" }));
+        Assert.False(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory,
+            profile with { ActivePropertiesSha256 = string.Empty }));
+    }
+
+    [Theory]
+    [InlineData("thx_rznb11_props.dat")]
+    [InlineData("surround_714_config.json")]
+    public void MissingOrChangedActiveDefinitionBlocksAdmission(string fileName)
+    {
+        ThxAudioCompatibilityProfile profile = WriteActiveConfiguration("rznb11");
+        string file = Path.Combine(directory, "thx", "rznb11", fileName);
+        File.WriteAllText(file, "unreviewed updater output");
+        Assert.False(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile));
+        File.Delete(file);
+        Assert.False(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile));
+    }
+
+    private ThxAudioCompatibilityProfile WriteActiveConfiguration(string productId)
+    {
+        ThxAudioCompatibilityProfile profile = ThxAudioCompatibility.Profiles.First(profile => profile.ProductId == productId) with
+        {
+            ActivePropertiesSha256 = Convert.ToHexString(SHA256.HashData("reviewed properties archive"u8)),
+            SurroundConfigSha256 = Convert.ToHexString(SHA256.HashData("reviewed surround configuration"u8)),
+        };
+        string productDirectory = Path.Combine(directory, "thx", productId);
+        Directory.CreateDirectory(productDirectory);
+        File.WriteAllBytes(Path.Combine(productDirectory, $"thx_{productId}_props.dat"), "reviewed properties archive"u8.ToArray());
+        File.WriteAllBytes(Path.Combine(productDirectory, "surround_714_config.json"), "reviewed surround configuration"u8.ToArray());
+        return profile;
+    }
+
+    private static ThxAudioDriverStack Stack()
+    {
+        string hash = Convert.ToHexString(SHA256.HashData("fixture"u8));
+        return new("reviewed_service", "reviewed_svc.exe",
+            [new("reviewed_svc.inf", [new("reviewed_svc.inf", hash), new("reviewed_svc.exe", hash), new("reviewed_svc.cat", hash)])]);
+    }
+
+    private string WritePackage(string name, ThxAudioDriverPackage package)
+    {
+        string path = Path.Combine(directory, name);
+        Directory.CreateDirectory(path);
+        foreach (ThxAudioPinnedFile file in package.Files)
+        {
+            File.WriteAllBytes(Path.Combine(path, file.Name), "fixture"u8.ToArray());
+        }
+        return path;
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+}

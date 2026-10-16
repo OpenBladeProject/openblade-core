@@ -145,6 +145,11 @@ internal sealed partial class ExperimentalBladePort(
                     CoolingPadEntryBaseMode = model.ProductId == 0x029D ? PerformancePreset.Balanced : null,
                 } : null,
             ObservedLightingEffects = CreateExperimentalLightingEffects(model, true),
+            ThxAudio = model.ProductId == 0x02C5
+                ? new ThxAudioCapabilities(
+                    DeviceFeatureAccess.ReadWrite,
+                    ThxAudioProductIds.Rznb11)
+                : null,
         };
 
     private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>

@@ -5,12 +5,11 @@
 [English](../keyboard-lighting-file-format.md) | 简体中文 | [Русский](../ru-RU/keyboard-lighting-file-format.md)
 
 OpenBlade 键盘灯光文件是扩展名为 `.oblight` 的 UTF-8 JSON 文档。
-版本 1 用于保存可在设备间分享的键盘灯效预设。导入文件不会让硬件增加新的功能：
-OpenBlade 必须已经允许当前 Blade 型号及其固件使用该灯效。
+版本 1 用于保存可在设备间分享的键盘灯效预设，灯效须受当前 Blade 型号及其固件支持。
 
 键盘灯光文件导入属于实验性功能。在 OpenBlade 设置中启用**实验功能**，
 灯光页面就会显示导入入口。之后关闭实验功能，只会隐藏这个入口，
-已经应用或保存在电源配置中的灯效仍然有效。只能导入当前型号支持的灯效。
+已经应用或保存在电源配置中的灯效仍然有效。
 [实验性型号的控制功能](experimental-blade-support.md)会自动启用，不受“实验功能”开关影响。
 
 媒体类型为 `application/vnd.openblade.keyboard-lighting+json`。

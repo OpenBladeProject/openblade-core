@@ -5,6 +5,44 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class UiPreferenceStoreTests : IDisposable
 {
+    [Fact]
+    public async Task ThxOptInDefaultsOffForExistingPreferencesAndRoundTrips()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "thx-preferences.json");
+        await File.WriteAllTextAsync(path, "{\"theme\":\"FollowWindows\"}");
+        var store = new UiPreferenceStore(path);
+        UiPreferences original = await store.LoadAsync();
+        Assert.False(original.ThxAudioIntegrationEnabled);
+        await store.SaveAsync(original with { ThxAudioIntegrationEnabled = true });
+        Assert.True((await store.LoadAsync()).ThxAudioIntegrationEnabled);
+    }
+
+    [Fact]
+    public async Task LegacyNumericNavigationPreservesCustomOrderAndPersistsThxAudio()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "navigation-preferences.json");
+        await File.WriteAllTextAsync(path,
+            "{\"theme\":\"FollowWindows\",\"primaryNavigationItems\":[4,3,1,0,2]}");
+        var store = new UiPreferenceStore(path);
+        UiPreferences loaded = await store.LoadAsync();
+        PrimaryNavigationItemKind[] expected =
+        [
+            PrimaryNavigationItemKind.Settings,
+            PrimaryNavigationItemKind.Display,
+            PrimaryNavigationItemKind.Laptop,
+            PrimaryNavigationItemKind.Profiles,
+            PrimaryNavigationItemKind.Lighting,
+            PrimaryNavigationItemKind.ThxAudio,
+        ];
+        Assert.Equal(expected, loaded.EffectivePrimaryNavigationItems);
+        await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
+        UiPreferences reloaded = await store.LoadAsync();
+        Assert.Equal(expected, reloaded.PrimaryNavigationItems);
+        Assert.Equal(expected, reloaded.EffectivePrimaryNavigationItems);
+    }
+
     private readonly string directory = Path.Combine(
         Path.GetTempPath(),
         "OpenBlade.Tray.Tests",
@@ -598,6 +636,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 PrimaryNavigationItemKind.Display,
                 PrimaryNavigationItemKind.Laptop,
                 PrimaryNavigationItemKind.Profiles,
+                PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
             ],
             reloaded.EffectivePrimaryNavigationItems);

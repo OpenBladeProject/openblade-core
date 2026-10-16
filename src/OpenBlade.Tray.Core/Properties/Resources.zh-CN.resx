@@ -93,8 +93,14 @@
   <data name="{0} minutes" xml:space="preserve">
     <value>{0} 分钟</value>
   </data>
-  <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
-    <value>{0} 这是兼容性提示，并非硬件故障。控制仍可使用，但实际行为可能有所不同。</value>
+  <data name="{0} Controls remain available, but behavior may differ from the tested configuration." xml:space="preserve">
+    <value>{0} 控制项仍可用，但行为可能与已测试的配置不同。</value>
+  </data>
+  <data name="{0} Controls are blocked. Enable the firmware override to request access." xml:space="preserve">
+    <value>{0} 控制项已禁用。请启用固件覆盖以请求访问权限。</value>
+  </data>
+  <data name="{0} The firmware override is enabled while OpenBlade checks control access." xml:space="preserve">
+    <value>{0} 已启用固件覆盖，OpenBlade 正在检查控制访问权限。</value>
   </data>
   <data name="{0} unavailable" xml:space="preserve">
     <value>{0} 不可用</value>
@@ -174,8 +180,8 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>环境感知，全屏</value>
   </data>
-  <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
-    <value>其他 Razer 应用也能更改这些设置。OpenBlade 会显示这些更改，不会自动改回。</value>
+  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
+    <value>OpenBlade 会显示其他 Razer 应用所做的更改，但不会改回。</value>
   </data>
   <data name="Another Razer app is running" xml:space="preserve">
     <value>另一个 Razer 应用正在运行</value>
@@ -1143,8 +1149,8 @@
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>诊断保存程序返回了无效结果。</value>
   </data>
-  <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
-    <value>通过准入验证且精确匹配的 Razer 驱动可让 Windows 显示系统原生亮度提示。每次按键时，OpenBlade 都会重新验证设备路径是否精确匹配；如果原生路径不可用，则改用 OpenBlade 的亮度提示。</value>
+  <data name="The matching Razer driver shows the Windows brightness flyout. OpenBlade uses its own flyout when the driver is unavailable." xml:space="preserve">
+    <value>与此型号匹配的 Razer 驱动可显示 Windows 系统亮度浮窗。驱动不可用时，OpenBlade 会显示自己的亮度浮窗。</value>
   </data>
   <data name="Tidal" xml:space="preserve">
     <value>潮汐</value>
@@ -1275,8 +1281,8 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows 未确认请求的登录时启动设置。</value>
   </data>
-  <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
-    <value>Windows 动态照明拥有键盘控制权。OpenBlade 不会更改键盘亮度、效果或灯光电源策略。</value>
+  <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
+    <value>Windows 动态照明管理键盘灯光。</value>
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>Windows 电源模式</value>
@@ -1434,8 +1440,8 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>请登录交互式 Windows 会话以更改笔记本设置。</value>
   </data>
-  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
-    <value>此笔记本电脑会自动启用实验性支持。请在“关于”页面导出诊断信息以帮助测试。</value>
+  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
+    <value>此笔记本电脑可使用实验性控制项。请在“关于”中导出诊断信息，帮助测试这些功能。</value>
   </data>
   <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
     <value>由于 OpenBlade 无法确认某项更改，实验性写入已暂停。请先检查当前状态，再恢复实验性控制。OpenBlade 不会重试之前的更改。</value>
@@ -1472,5 +1478,110 @@
   </data>
   <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
     <value>“风扇最高转速”正在控制风扇。关闭此选项后即可选择风扇模式。</value>
+  </data>
+  <data name="THX audio integration is off." xml:space="preserve">
+    <value>THX 音频集成已关闭。</value>
+  </data>
+  <data name="Read the current THX settings to connect." xml:space="preserve">
+    <value>读取当前 THX 设置以连接。</value>
+  </data>
+  <data name="THX settings are up to date." xml:space="preserve">
+    <value>THX 设置已更新。</value>
+  </data>
+  <data name="THX components found. Read the current settings to connect." xml:space="preserve">
+    <value>已找到 THX 组件。读取当前设置以连接。</value>
+  </data>
+  <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
+    <value>无法确认 THX 设置。请重新读取后再进行更改。</value>
+  </data>
+  <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
+    <value>无法确认音频更改。请读取当前设置后再重试。</value>
+  </data>
+  <data name="The supported THX components are unavailable." xml:space="preserve">
+    <value>受支持的 THX 组件不可用。</value>
+  </data>
+  <data name="The Session Agent could not read THX settings." xml:space="preserve">
+    <value>Session Agent 无法读取 THX 设置。</value>
+  </data>
+  <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
+    <value>请关闭 Synapse 后再连接 THX 音频。</value>
+  </data>
+  <data name="Speakers" xml:space="preserve">
+    <value>扬声器</value>
+  </data>
+  <data name="Headphones" xml:space="preserve">
+    <value>耳机</value>
+  </data>
+  <data name="{0} kHz" xml:space="preserve">
+    <value>{0} kHz</value>
+  </data>
+  <data name="{0} Hz equalizer gain" xml:space="preserve">
+    <value>{0} Hz 均衡器增益</value>
+  </data>
+  <data name="{0} dB" xml:space="preserve">
+    <value>{0} dB</value>
+  </data>
+  <data name="Active application profile: {0}" xml:space="preserve">
+    <value>当前应用配置：{0}</value>
+  </data>
+  <data name="Game" xml:space="preserve">
+    <value>游戏</value>
+  </data>
+  <data name="Movie" xml:space="preserve">
+    <value>电影</value>
+  </data>
+  <data name="Music" xml:space="preserve">
+    <value>音乐</value>
+  </data>
+  <data name="Voice" xml:space="preserve">
+    <value>人声</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>默认</value>
+  </data>
+  <data name="THX Immersive Mode" xml:space="preserve">
+    <value>THX 沉浸模式</value>
+  </data>
+  <data name="THX Competitive Mode" xml:space="preserve">
+    <value>THX 竞技模式</value>
+  </data>
+  <data name="Choose EQ presets, then capture." xml:space="preserve">
+    <value>选择均衡器预设，然后读取设置。</value>
+  </data>
+  <data name="Saved audio settings are available for this power profile." xml:space="preserve">
+    <value>此电源配置已有音效设置。</value>
+  </data>
+  <data name="Current audio settings captured. Save the profile to keep them." xml:space="preserve">
+    <value>已读取当前音效设置。请保存到配置中。</value>
+  </data>
+  <data name="Choose an EQ preset for both outputs before capturing audio settings." xml:space="preserve">
+    <value>读取音效设置前，请为两个输出选择均衡器预设。</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before connecting." xml:space="preserve">
+    <value>连接前请关闭 Synapse 和 THX Spatial Audio。</value>
+  </data>
+  <data name="Audio automation is paused. Read the current THX settings to resume." xml:space="preserve">
+    <value>音效自动化已暂停。请读取当前 THX 设置以继续。</value>
+  </data>
+  <data name="Adjust the selected preset, then apply your EQ changes." xml:space="preserve">
+    <value>调整所选预设后，应用均衡器更改。</value>
+  </data>
+  <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
+    <value>选择游戏、电影、音乐、人声或自定义以编辑均衡器。</value>
+  </data>
+  <data name="THX audio is unavailable for this model or audio device." xml:space="preserve">
+    <value>此型号或音频设备不支持 THX 音效。</value>
+  </data>
+  <data name="THX is available for reading. Controls await validation for this model." xml:space="preserve">
+    <value>可以读取 THX 设置。此型号的控制功能尚待验证。</value>
+  </data>
+  <data name="Application routing is not yet enabled for this model." xml:space="preserve">
+    <value>此型号尚未启用应用音效自动切换。</value>
+  </data>
+  <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
+    <value>此输出的 Windows 音频增强已关闭。请在 Windows 声音设置中启用“设备默认效果”以听到 THX 效果。</value>
+  </data>
+  <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
+    <value>应用规则列表已满。请先移除一条规则，再添加新规则。</value>
   </data>
 </root>

@@ -150,17 +150,11 @@
   <data name="OpenBlade uninstall could not verify complete removal: {0}" xml:space="preserve">
     <value>[!! OpenBlade únínstáll cóúld nót vérífý cómplété rémóvál: {0} ~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
-    <value>[!! OpenBlade sétúp fóúnd {0} rélátéd ínstállér régístrátíóns. Sétúp stóppéd béfóré mákíng chángés bécáúsé éxécútíng óné légácý búndlé cán récúrsívélý láúnch thé óthérs. Úsé Únínstáll ón éách régístéréd OpenBlade éntrý whén áváíláblé. Íf dúplícátés rémáín, úsé Windows ínstállér récóvérý béfóré rúnníng thís ínstállér ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="OpenBlade was installed, but it could not be launched: {0}" xml:space="preserve">
     <value>[!! OpenBlade wás ínstálléd, bút ít cóúld nót bé láúnchéd: {0} ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="OpenBlade was removed" xml:space="preserve">
     <value>[!! OpenBlade wás rémóvéd ~~~~ !!]</value>
-  </data>
-  <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
-    <value>[!! OpenBlade wíll stóp sáfélý ánd réstóré thé prévíóús ínstállátíón státé. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Preparing OpenBlade files…" xml:space="preserve">
     <value>[!! Prépáríng OpenBlade fílés… ~~~~~ !!]</value>
@@ -240,9 +234,6 @@
   <data name="Setup" xml:space="preserve">
     <value>[!! Sétúp ~~ !!]</value>
   </data>
-  <data name="Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first." xml:space="preserve">
-    <value>[!! Sétúp cánnót sáfélý chóósé óné máínténáncé ównér fór thís státé. Úsé Windows Ínstálléd ápps tó répáír ór rémóvé thé régístéréd búndlé fírst. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="Setup completed successfully." xml:space="preserve">
     <value>[!! Sétúp cómplétéd súccéssfúllý. ~~~~~~~~~~ !!]</value>
   </data>
@@ -308,5 +299,14 @@
   </data>
   <data name="Installing Microsoft .NET 10 Desktop Runtime…" xml:space="preserve">
     <value>[!! Ínstállíng Mícrósóft .NÉT 10 Désktóp Rúntímé… ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Repair or remove the registered OpenBlade installation in Windows Installed apps, then try again." xml:space="preserve">
+    <value>[!! Répáír ór rémóvé thé régístéréd OpenBlade ínstállátíón ín Windows Ínstálléd ápps, thén trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Setup found {0} OpenBlade installer entries and stopped to avoid a conflict. Uninstall each OpenBlade entry when available. If duplicate entries remain, use Windows installer recovery, then try again." xml:space="preserve">
+    <value>[!! Sétúp fóúnd {0} OpenBlade ínstállér éntríés ánd stóppéd tó ávóíd á cónflíct. Únínstáll éách OpenBlade éntrý whén áváíláblé. Íf dúplícáté éntríés rémáín, úsé Windows ínstállér récóvérý, thén trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Setup will stop and restore the previous installation state." xml:space="preserve">
+    <value>[!! Sétúp wíll stóp ánd réstóré thé prévíóús ínstállátíón státé. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

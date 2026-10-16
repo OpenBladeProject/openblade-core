@@ -98,6 +98,10 @@ RZ09-0528 have separate, model-specific stacks. WMI remains the fallback. See
 the [Razer driver package notes](razer-brightness-driver-package.md) for the
 validation and redistribution limits.
 
+The [optional THX audio integration](thx-audio.md) uses the separately installed,
+pinned `rznb12` audio stack on RZ09-0581. It is off by default and does not use
+the laptop HID transport. Standalone native and audio validation is pending.
+
 ## Direct fan-entry validation
 
 The developer-only RZ09-0581 validator tests Performance/Automatic to fixed

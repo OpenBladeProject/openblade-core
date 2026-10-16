@@ -37,6 +37,8 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
             SingleReader = true,
             SingleWriter = false,
         });
+    internal event Action<UiPreferences?>? PreferencesObserved;
+
     private FileSignature observedSignature;
     private bool signatureInitialized;
     private TimeSpan readRetryInterval;
@@ -65,6 +67,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
             {
                 SpecialKeyBindings = input.SpecialKeyBindings,
                 SnapTapEnabled = input.SnapTapEnabled,
+                ThxAudioIntegrationEnabled = input.ThxAudioIntegrationEnabled,
             };
         };
     }
@@ -249,6 +252,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
             {
                 SnapTapEnabledChanged?.Invoke(enabled != 0);
             }
+            PreferencesObserved?.Invoke(preferences);
             observedSignature = signature;
             signatureInitialized = true;
             readRetryInterval = TimeSpan.Zero;
@@ -260,6 +264,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
         }
         catch (Exception exception)
         {
+            PreferencesObserved?.Invoke(null);
             if (readRetryInterval == TimeSpan.Zero)
             {
                 readRetryInterval = FallbackRefreshInterval;

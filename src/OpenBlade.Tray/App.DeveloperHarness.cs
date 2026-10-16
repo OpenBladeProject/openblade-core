@@ -593,6 +593,10 @@ public partial class App
                 "home",
                 "profiles",
                 "laptop",
+                "thx-audio",
+                "thx-audio-headphones",
+                "thx-audio-enhancements",
+                "thx-audio-applications",
                 "lighting",
                 "display",
                 "settings",
@@ -650,12 +654,18 @@ public partial class App
                             StringComparison.Ordinal)
                             ? new Windows.Graphics.SizeInt32(1600, 900)
                             : new Windows.Graphics.SizeInt32(1120, 820);
+                if (destination == "thx-audio-headphones")
+                {
+                    snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
+                }
                 snapshotMainWindow.AppWindow.Resize(snapshotSize);
                 await WaitForSnapshotLayoutAsync();
                 string navigationDestination = destination is "settings-appearance" or "settings-experimental"
                     ? "settings"
                     : captureSnapTap
                         ? "laptop"
+                    : destination.StartsWith("thx-audio", StringComparison.Ordinal)
+                        ? "thx-audio"
                     : captureProfilesVariant
                         ? "profiles"
                         : destination;
@@ -667,6 +677,11 @@ public partial class App
                     StringComparison.Ordinal))
                 {
                     snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
+                    await WaitForSnapshotLayoutAsync();
+                }
+                if (destination.StartsWith("thx-audio", StringComparison.Ordinal))
+                {
+                    await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
                     await WaitForSnapshotLayoutAsync();
                 }
                 if (destination == "settings-experimental")

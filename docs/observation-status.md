@@ -11,8 +11,8 @@ must not change service, tray, or Session Agent behavior.
 | `RefreshingControls` | A bounded device-access retry retains confirmed controls. |
 | `RetainedPowerSource` | Power classification is uncertain and retains the last known source. |
 
-The reason never authorizes a hardware write. Existing device identity, session,
-power, controller, and confirmed-state admission still applies. Tray retained-power
+Hardware writes require fresh device identity, session, power, controller,
+and confirmed-state checks regardless of the observation reason. Tray retained-power
 presentation also requires verified status, blocked writes, and a retained
 PluggedIn or USB-C source. Session Agent temporary reactive-state retention uses
 only the two device-access reasons and retains its existing input safety gates.
@@ -27,9 +27,9 @@ This field was introduced when the closed service IPC protocol advanced from 54
 to 55 because old readers reject unknown properties. The current protocol is
 set in `IpcMessageCodec`; all service clients must be updated together. The existing protocol-51 read-only projection
 omits both observation reason and thermal convergence state and continues to block
-hardware mutations. No new legacy control path is introduced.
+hardware mutations.
 
 A missing reason defaults to `None`; readers do not infer a reason from message
 text. Undefined enum values are rejected by the codec. The reviewed wire-shape
 and public API baselines cover the new enum and snapshot property. This change
-requires a coordinated full product update, not a tray-only binary patch.
+requires a coordinated full product update.

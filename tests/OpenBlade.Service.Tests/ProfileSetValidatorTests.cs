@@ -6,6 +6,92 @@ namespace OpenBlade.Service.Tests;
 public sealed class ProfileSetValidatorTests
 {
     [Fact]
+    public void Validate_AcceptsCompleteThxProfileAndRejectsDuplicateApplicationRule()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ThxAudioProfileSettings settings = CreateThxSettings();
+        ProfileSetValidator validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+
+        validator.Validate(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { ThxAudio = settings },
+        });
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            validator.Validate(defaults with
+            {
+                PluggedIn = defaults.PluggedIn with
+                {
+                    ThxAudio = settings with
+                    {
+                        ApplicationRules =
+                        [
+                            new("game.exe", ThxApplicationAudioOutput.Game),
+                            new("GAME.EXE", ThxApplicationAudioOutput.Competitive),
+                        ],
+                    },
+                },
+            }));
+
+        Assert.Contains("THX audio settings are invalid", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Validate_RejectsOversizedThxRuleListsBeforePersistence()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ThxAudioProfileSettings settings = CreateThxSettings() with
+        {
+            ApplicationRules = Enumerable.Range(0, 180).Select(index => new ThxApplicationAudioRule(
+                index.ToString(System.Globalization.CultureInfo.InvariantCulture) + new string('a', 240) + ".exe",
+                ThxApplicationAudioOutput.Game)).ToArray(),
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+        foreach (ProfileSet profiles in new[]
+        {
+            defaults with { PluggedIn = defaults.PluggedIn with { ThxAudio = settings } },
+            defaults with { Battery = defaults.Battery with { ThxAudio = settings } },
+            defaults with { UsbC = defaults.UsbC with { ThxAudio = settings } },
+        })
+        {
+            using var requestStream = new MemoryStream();
+            await IpcMessageCodec.WriteRequestAsync(requestStream,
+                new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles), CancellationToken.None);
+            Assert.InRange(requestStream.Length, 1, OpenBladeIpc.MaximumMessageBytes + sizeof(int));
+            Assert.Throws<InvalidDataException>(() => validator.Validate(profiles));
+        }
+    }
+
+    [Fact]
+    public void Validate_RejectsWrongThxEndpointGeometryAndHeadphoneNormalization()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ThxAudioProfileSettings settings = CreateThxSettings();
+        ProfileSetValidator validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+
+        ThxAudioEndpointSettings invalidSpeakers = settings.Speakers with
+        {
+            EqualizerCurves = settings.Speakers.EqualizerCurves with { Game = [0, 0] },
+        };
+        ThxAudioEndpointSettings invalidHeadphones = settings.Headphones with
+        {
+            SoundNormalization = new ThxAudioEnhancementSettings(false, 0),
+        };
+
+        foreach (ThxAudioProfileSettings invalidSettings in new[]
+        {
+            settings with { Speakers = invalidSpeakers },
+            settings with { Headphones = invalidHeadphones },
+        })
+        {
+            Assert.Throws<InvalidDataException>(() => validator.Validate(defaults with
+            {
+                PluggedIn = defaults.PluggedIn with { ThxAudio = invalidSettings },
+            }));
+        }
+    }
+
+    [Fact]
     public void RestrictedLightingPolicy_RetainsSupportedProfilesAndRejectsUnsupportedParameters()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
@@ -640,6 +726,38 @@ public sealed class ProfileSetValidatorTests
             new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
             new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
         });
+
+    private static ThxAudioProfileSettings CreateThxSettings()
+    {
+        static ThxEqualizerCurves Curves(int count)
+        {
+            double[] gains = new double[count];
+            return new(gains, gains, gains, gains, gains);
+        }
+
+        return new(
+            ApplicationRoutingEnabled: false,
+            Speakers: new ThxAudioEndpointSettings(
+                SpatialEnabled: true,
+                EqualizerEnabled: true,
+                SelectedPreset: ThxEqualizerPreset.Game,
+                EqualizerCurves: Curves(ThxAudioProfileSettings.SpeakerEqualizerBandCount),
+                VoiceClarity: new ThxAudioEnhancementSettings(false, 0),
+                SoundNormalization: new ThxAudioEnhancementSettings(false, 0)),
+            Headphones: new ThxAudioEndpointSettings(
+                SpatialEnabled: true,
+                EqualizerEnabled: true,
+                SelectedPreset: ThxEqualizerPreset.Game,
+                EqualizerCurves: Curves(ThxAudioProfileSettings.HeadphoneEqualizerBandCount),
+                VoiceClarity: new ThxAudioEnhancementSettings(false, 0),
+                SoundNormalization: null),
+            ApplicationRules:
+            [
+                new ThxApplicationAudioRule(
+                    "ExampleGame.EXE",
+                    ThxApplicationAudioOutput.Immersive),
+            ]);
+    }
 
     private static ProfileSetValidator CreateValidator(
         IReadOnlySet<PerformanceFanCombination>? combinations = null,

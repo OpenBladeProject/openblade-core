@@ -30,6 +30,18 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void ThxEnhancementSlidersUseSharedInlineCardStyle()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        foreach (string uid in new[] { "MainWindow_ThxAudioNormalizationLevel", "MainWindow_ThxAudioVoiceClarityLevel" })
+        {
+            XElement slider = UidElement(document, "Slider", uid);
+            Assert.Equal("{StaticResource InlineCardSliderStyle}", Attribute(slider, "Style"));
+        }
+    }
+
+    [Fact]
     public void ExperimentalSupportIsAutomaticAndPausedWritesExposeOneExplicitResumeAction()
     {
         XDocument document = XDocument.Parse(
@@ -1233,7 +1245,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnStopRazerServices\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Stop Razer services?", window, StringComparison.Ordinal);
-        Assert.Contains("Razer software may start the services again", window, StringComparison.Ordinal);
+        Assert.Contains("Razer software may restart them", window, StringComparison.Ordinal);
         Assert.Contains("PrimaryButtonStyle = (Style)Root.Resources[\"DestructiveButtonStyle\"]", window, StringComparison.Ordinal);
         Assert.Contains("RazerServiceStopOperation.ActiveServices", window, StringComparison.Ordinal);
         Assert.Contains("ElevatedServiceControlOutcome.Canceled", window, StringComparison.Ordinal);
@@ -1723,8 +1735,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.Equal(1, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.Equal(10, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Key=\"SettingsLastSubcardStyle\"", xaml, StringComparison.Ordinal);
@@ -2315,7 +2327,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("OnCustomizeNavigation", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Title = \"Customize navigation\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"TaskbarHoverLabelExpander\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(xaml, "IsExpanded=\"False\""));
+        Assert.Equal(4, CountOccurrences(xaml, "IsExpanded=\"False\""));
         Assert.Contains("App accent color", xaml, StringComparison.Ordinal);
         Assert.Contains("OpenBlade green", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Razer green", window, StringComparison.Ordinal);

@@ -93,8 +93,14 @@
   <data name="{0} minutes" xml:space="preserve">
     <value>[!! {0} mínútés ~~~ !!]</value>
   </data>
-  <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
-    <value>[!! {0} Thís ís á cómpátíbílítý nótícé, nót á hárdwáré fáílúré. Cóntróls rémáín áváíláblé, bút béhávíór máý díffér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="{0} Controls remain available, but behavior may differ from the tested configuration." xml:space="preserve">
+    <value>[!! {0} Cóntróls rémáín áváíláblé, bút béhávíór máý díffér fróm thé téstéd cónfígúrátíón. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="{0} Controls are blocked. Enable the firmware override to request access." xml:space="preserve">
+    <value>[!! {0} Cóntróls áré blóckéd. Énáblé thé fírmwáré óvérrídé tó réqúést áccéss. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="{0} The firmware override is enabled while OpenBlade checks control access." xml:space="preserve">
+    <value>[!! {0} Thé fírmwáré óvérrídé ís énábléd whílé OpenBlade chécks cóntról áccéss. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="{0} unavailable" xml:space="preserve">
     <value>[!! {0} únáváíláblé ~~~~ !!]</value>
@@ -174,8 +180,8 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>[!! Ámbíént Áwárénéss, fúll scréén ~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
-    <value>[!! Ánóthér Razer ápp cán álsó chángé thésé séttíngs. OpenBlade wíll shów chángés ínstéád óf chángíng thém báck. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
+    <value>[!! OpenBlade shóws chángés mádé bý ánóthér Razer ápp wíthóút chángíng thém báck. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Another Razer app is running" xml:space="preserve">
     <value>[!! Ánóthér Razer ápp ís rúnníng ~~~~~~~ !!]</value>
@@ -1143,8 +1149,8 @@
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>[!! Thé díágnóstíc sávér rétúrnéd án ínválíd résúlt. ~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
-    <value>[!! Thé éxáct ádmíttéd Razer drívér léts Windows shów íts nátívé bríghtnéss flýóút. OpenBlade réválídátés thé éxáct dévícé páth fór évérý kéý préss. Whén thé nátívé páth ís únáváíláblé, OpenBlade úsés íts ówn flýóút. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="The matching Razer driver shows the Windows brightness flyout. OpenBlade uses its own flyout when the driver is unavailable." xml:space="preserve">
+    <value>[!! Thé mátchíng Razer drívér shóws thé Windows bríghtnéss flýóút. OpenBlade úsés íts ówn flýóút whén thé drívér ís únáváíláblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Tidal" xml:space="preserve">
     <value>[!! Tídál ~~ !!]</value>
@@ -1275,8 +1281,8 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>[!! Windows díd nót cónfírm thé réqúéstéd stárt-át-sígn-ín séttíng. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
-    <value>[!! Windows Dynamic Lighting ówns thé kéýbóárd. OpenBlade wíll nót chángé kéýbóárd bríghtnéss, éffécts, ór líghtíng pówér pólícíés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
+    <value>[!! Windows Dynamic Lighting mánágés kéýbóárd líghtíng. ~~~~~~~~~ !!]</value>
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>[!! Windows pówér módé ~~~~ !!]</value>
@@ -1524,8 +1530,8 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>[!! Sígn ín tó án íntéráctívé Windows séssíón tó chángé láptóp séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
-    <value>[!! Thís láptóp hás éxpéríméntál súppórt énábléd áútómátícállý. Éxpórt díágnóstícs ín Ábóút tó hélp tést súppórt. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
+    <value>[!! Éxpéríméntál cóntróls áré áváíláblé ón thís láptóp. Éxpórt díágnóstícs ín Ábóút tó hélp tést thém. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
     <value>[!! Éxpéríméntál wrítés áré páúséd áftér OpenBlade cóúld nót cónfírm á chángé. Chéck thé cúrrént státé, thén résúmé éxpéríméntál cóntróls. OpenBlade wíll nót rétrý thé prévíóús chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -1562,5 +1568,110 @@
   </data>
   <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
     <value>[!! Máxímúm fáns ís cóntróllíng thé fáns. Túrn óff Máxímúm fáns tó chóósé á fán módé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX audio integration is off." xml:space="preserve">
+    <value>[!! THX áúdíó íntégrátíón ís óff. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Read the current THX settings to connect." xml:space="preserve">
+    <value>[!! Réád thé cúrrént THX séttíngs tó cónnéct. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX settings are up to date." xml:space="preserve">
+    <value>[!! THX séttíngs áré úp tó dáté. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX components found. Read the current settings to connect." xml:space="preserve">
+    <value>[!! THX cómpónénts fóúnd. Réád thé cúrrént séttíngs tó cónnéct. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
+    <value>[!! THX séttíngs cóúld nót bé cónfírméd. Réád thém ágáín béfóré mákíng chángés. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
+    <value>[!! Thé áúdíó chángé cóúld nót bé cónfírméd. Réád thé cúrrént séttíngs béfóré trýíng ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The supported THX components are unavailable." xml:space="preserve">
+    <value>[!! Thé súppórtéd THX cómpónénts áré únáváíláblé. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The Session Agent could not read THX settings." xml:space="preserve">
+    <value>[!! Thé Session Agent cóúld nót réád THX séttíngs. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
+    <value>[!! Clósé Sýnápsé béfóré cónnéctíng tó THX áúdíó. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Speakers" xml:space="preserve">
+    <value>[!! Spéákérs ~~~ !!]</value>
+  </data>
+  <data name="Headphones" xml:space="preserve">
+    <value>[!! Héádphónés ~~~~ !!]</value>
+  </data>
+  <data name="{0} kHz" xml:space="preserve">
+    <value>[!! {0} kHz ~~ !!]</value>
+  </data>
+  <data name="{0} Hz equalizer gain" xml:space="preserve">
+    <value>[!! {0} Hz éqúálízér gáín ~~~~~~ !!]</value>
+  </data>
+  <data name="{0} dB" xml:space="preserve">
+    <value>[!! {0} dB ~~ !!]</value>
+  </data>
+  <data name="Active application profile: {0}" xml:space="preserve">
+    <value>[!! Áctívé ápplícátíón prófílé: {0} ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Game" xml:space="preserve">
+    <value>[!! Gámé ~~ !!]</value>
+  </data>
+  <data name="Movie" xml:space="preserve">
+    <value>[!! Móvíé ~~ !!]</value>
+  </data>
+  <data name="Music" xml:space="preserve">
+    <value>[!! Músíc ~~ !!]</value>
+  </data>
+  <data name="Voice" xml:space="preserve">
+    <value>[!! Vóícé ~~ !!]</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>[!! Défáúlt ~~~ !!]</value>
+  </data>
+  <data name="THX Immersive Mode" xml:space="preserve">
+    <value>[!! THX Ímmérsívé Módé ~~~~~~ !!]</value>
+  </data>
+  <data name="THX Competitive Mode" xml:space="preserve">
+    <value>[!! THX Cómpétítívé Módé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose EQ presets, then capture." xml:space="preserve">
+    <value>[!! Chóósé ÉQ préséts, thén cáptúré. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Saved audio settings are available for this power profile." xml:space="preserve">
+    <value>[!! Sávéd áúdíó séttíngs áré áváíláblé fór thís pówér prófílé. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Current audio settings captured. Save the profile to keep them." xml:space="preserve">
+    <value>[!! Cúrrént áúdíó séttíngs cáptúréd. Sávé thé prófílé tó kéép thém. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose an EQ preset for both outputs before capturing audio settings." xml:space="preserve">
+    <value>[!! Chóósé án ÉQ prését fór bóth óútpúts béfóré cáptúríng áúdíó séttíngs. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before connecting." xml:space="preserve">
+    <value>[!! Clósé Sýnápsé ánd THX Spátíál Áúdíó béfóré cónnéctíng. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Audio automation is paused. Read the current THX settings to resume." xml:space="preserve">
+    <value>[!! Áúdíó áútómátíón ís páúséd. Réád thé cúrrént THX séttíngs tó résúmé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Adjust the selected preset, then apply your EQ changes." xml:space="preserve">
+    <value>[!! Ádjúst thé séléctéd prését, thén ápplý ýóúr ÉQ chángés. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
+    <value>[!! Chóósé Gámé, Móvíé, Músíc, Vóícé, ór Cústóm tó édít ÉQ. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX audio is unavailable for this model or audio device." xml:space="preserve">
+    <value>[!! THX áúdíó ís únáváíláblé fór thís módél ór áúdíó dévícé. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX is available for reading. Controls await validation for this model." xml:space="preserve">
+    <value>[!! THX ís áváíláblé fór réádíng. Cóntróls áwáít válídátíón fór thís módél. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Application routing is not yet enabled for this model." xml:space="preserve">
+    <value>[!! Ápplícátíón róútíng ís nót ýét énábléd fór thís módél. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
+    <value>[!! Windows áúdíó énháncéménts áré óff fór thís óútpút. Énáblé Dévícé Défáúlt Éffécts ín Windows sóúnd séttíngs tó héár THX. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
+    <value>[!! Thé ápplícátíón rúlé líst ís fúll. Rémóvé á rúlé béfóré áddíng ánóthér. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

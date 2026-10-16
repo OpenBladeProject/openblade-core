@@ -515,6 +515,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.LampArrayLightingAccess is not null;
         result["lighting.lampArray.write"] =
             capabilities.LampArrayLightingAccess == DeviceFeatureAccess.ReadWrite;
+        result["audio.thx.observed"] = capabilities.ThxAudio is not null;
+        result["audio.thx.write"] =
+            capabilities.ThxAudio?.Access == DeviceFeatureAccess.ReadWrite;
         foreach (PowerSourceBehaviorObservation observation
             in capabilities.ObservedPowerSourceBehaviors)
         {
@@ -632,6 +635,10 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.WritableSpecialKeySlots.ToString(),
             ["capability.lampArrayLightingAccess"] =
                 capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable",
+            ["capability.thxAudioAccess"] =
+                capabilities.ThxAudio?.Access.ToString() ?? "Unavailable",
+            ["capability.thxAudioProductId"] =
+                capabilities.ThxAudio?.ProductId ?? "Unavailable",
             ["capability.hyperBoostAccess"] =
                 capabilities.HyperBoostAccess?.ToString() ?? "Unavailable",
             ["capability.hyperBoostWithoutCoolingPadAccess"] =

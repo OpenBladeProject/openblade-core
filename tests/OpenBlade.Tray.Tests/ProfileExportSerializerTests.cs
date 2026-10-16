@@ -8,6 +8,97 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ProfileExportSerializerTests
 {
     [Fact]
+    public void CurrentSchema_RoundTripsThxSemanticSettingsWithoutNativeIds()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        static ThxEqualizerCurves Curves(int count)
+        {
+            double[] values = new double[count];
+            return new(values, values, values, values, values);
+        }
+        ThxAudioProfileSettings thx = new(
+            ApplicationRoutingEnabled: true,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, Curves(7),
+                new(true, 20), new(true, 30)),
+            Headphones: new(true, true, ThxEqualizerPreset.Music, Curves(10),
+                new(false, 0), null),
+            ApplicationRules:
+            [
+                new("GAME.EXE", ThxApplicationAudioOutput.Immersive),
+            ]);
+
+        string json = ProfileExportSerializer.Serialize(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { ThxAudio = thx },
+        }, "1.0.0", DateTimeOffset.UtcNow);
+        ProfileSet imported = ProfileExportSerializer.Deserialize(json);
+
+        Assert.Equal(ProfileExportSerializer.CurrentSchemaVersion,
+            JsonNode.Parse(json)!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal("game.exe", Assert.Single(
+            imported.PluggedIn.ThxAudio!.ApplicationRules).ExecutableName);
+        Assert.DoesNotContain("nativeProfile", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Serialize_RejectsMalformedThxGainGeometry()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var curves = new ThxEqualizerCurves([0, 0], [0, 0], [0, 0], [0, 0], [0, 0]);
+        var invalid = new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: false,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, curves,
+                new(false, 0), new(false, 0)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game, curves,
+                new(false, 0), null),
+            ApplicationRules: []);
+
+        Assert.Throws<InvalidDataException>(() => ProfileExportSerializer.Serialize(
+            defaults with
+            {
+                PluggedIn = defaults.PluggedIn with { ThxAudio = invalid },
+            },
+            "1.0.0",
+            DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public void Deserialize_InvalidThxExecutableNameIsReportedAsInvalidDocument()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        static ThxEqualizerCurves Curves(int count)
+        {
+            double[] values = new double[count];
+            return new(values, values, values, values, values);
+        }
+        var settings = new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: true,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, Curves(7),
+                new(false, 0), new(false, 0)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game, Curves(10),
+                new(false, 0), null),
+            ApplicationRules:
+            [
+                new("game.exe", ThxApplicationAudioOutput.Game),
+            ]);
+        string invalidJson = ProfileExportSerializer.Serialize(
+            defaults with
+            {
+                PluggedIn = defaults.PluggedIn with { ThxAudio = settings },
+            },
+            "1.0.0",
+            DateTimeOffset.UtcNow)
+            .Replace("game.exe", "bad:name.exe", StringComparison.Ordinal);
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            ProfileExportSerializer.Deserialize(invalidJson));
+
+        Assert.Equal("The selected file is not a valid OpenBlade profile export.",
+            exception.Message);
+        Assert.IsType<ArgumentException>(exception.InnerException);
+    }
+
+    [Fact]
     public void ExpandedCustom_RoundTripsAndLegacyVersionDefaultsMaximumFansOff()
     {
         var custom = new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High) { MaximumFans = true };
@@ -35,7 +126,7 @@ public sealed class ProfileExportSerializerTests
 
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(12, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(13, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("0.1.0+abcdef0", root.GetProperty("applicationVersion").GetString());
         Assert.Equal(exportedAt, root.GetProperty("exportedAtUtc").GetDateTimeOffset());
         JsonElement exportedProfiles = root.GetProperty("profiles");
@@ -155,7 +246,7 @@ public sealed class ProfileExportSerializerTests
             profiles,
             "0.5.6",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 12",
+                "\"schemaVersion\": 13",
                 "\"schemaVersion\": 7",
                 StringComparison.Ordinal);
 
@@ -281,7 +372,7 @@ public sealed class ProfileExportSerializerTests
             expected,
             "0.16.0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 12",
+                "\"schemaVersion\": 13",
                 "\"schemaVersion\": 10",
                 StringComparison.Ordinal);
 
@@ -299,7 +390,7 @@ public sealed class ProfileExportSerializerTests
             profiles,
             "0.17.0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 12",
+                "\"schemaVersion\": 13",
                 "\"schemaVersion\": 10",
                 StringComparison.Ordinal);
 
@@ -363,7 +454,7 @@ public sealed class ProfileExportSerializerTests
             legacy,
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 12",
+                "\"schemaVersion\": 13",
                 "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
@@ -439,7 +530,7 @@ public sealed class ProfileExportSerializerTests
             legacy,
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 12",
+                "\"schemaVersion\": 13",
                 "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
@@ -458,14 +549,14 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 12",
                 "\"schemaVersion\": 13",
+                "\"schemaVersion\": 14",
                 StringComparison.Ordinal);
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ProfileExportSerializer.Deserialize(json));
 
-        Assert.Contains("schema 13", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("schema 14", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("newer version", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -476,7 +567,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 12",
+                "\"schemaVersion\": 13",
                 "\"schemaVersion\": 0",
                 StringComparison.Ordinal);
 
@@ -493,7 +584,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 12",
+                "\"schemaVersion\": 13",
                 "\"schemaVersion\": 1",
                 StringComparison.Ordinal);
 
