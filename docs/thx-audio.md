@@ -7,7 +7,9 @@ Synapse closed have been validated on the admitted stack. Audible processing
 still needs validation.
 
 OpenBlade does not install THX software or drivers. Other Blade models and
-different THX component builds are not yet supported.
+different THX component builds are not yet supported. See the
+[installation compatibility investigation](thx-installation-investigation.md)
+for the package and codec restrictions.
 
 ## Use the controls
 
