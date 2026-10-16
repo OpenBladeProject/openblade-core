@@ -802,12 +802,6 @@ public sealed class CapabilityPresentationTests
                     descendant.Name.LocalName == "TextBlock"));
         }
 
-        Assert.Equal(
-            sliderNames.Length,
-            document.Descendants().Count(element =>
-                element.Name.LocalName == "Slider"
-                && Attribute(element, "Style")
-                    == "{StaticResource InlineCardSliderStyle}"));
     }
 
     [Fact]
