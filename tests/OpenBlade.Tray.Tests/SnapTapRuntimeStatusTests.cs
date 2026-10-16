@@ -96,6 +96,25 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
         Assert.True(document.RootElement.TryGetProperty("status", out _));
     }
 
+    [Fact]
+    public void Status_ReplacementPreservesOpenReaderSnapshot()
+    {
+        var off = new SnapTapRuntimeStatus(SnapTapRuntimeState.Off, DateTimeOffset.UtcNow);
+        SnapTapStatusStore.Write(off, StatusPath);
+        using FileStream reader = new(StatusPath, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        var armed = new SnapTapRuntimeStatus(
+            SnapTapRuntimeState.Armed, DateTimeOffset.UtcNow, Environment.ProcessId);
+
+        SnapTapStatusStore.Write(armed, StatusPath);
+
+        Assert.Equal(armed, SnapTapStatusStore.Read(StatusPath));
+        using JsonDocument original = JsonDocument.Parse(reader);
+        Assert.Equal((int)SnapTapRuntimeState.Off,
+            original.RootElement.GetProperty("status").GetProperty("state").GetInt32());
+        Assert.Single(Directory.GetFiles(directory));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

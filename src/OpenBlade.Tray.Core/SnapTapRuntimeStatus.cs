@@ -105,7 +105,24 @@ public static class SnapTapStatusStore
                 JsonSerializer.Serialize(stream, new StatusEnvelope(1, status), Options);
                 stream.Flush(flushToDisk: true);
             }
-            File.Move(temporary, destination, overwrite: true);
+            // Windows readers keep the old file open with delete sharing. Replace
+            // preserves that snapshot; Move(overwrite: true) can reject the open target.
+            if (File.Exists(destination))
+            {
+                File.Replace(temporary, destination, destinationBackupFileName: null);
+            }
+            else
+            {
+                try
+                {
+                    File.Move(temporary, destination);
+                }
+                catch (IOException) when (File.Exists(destination))
+                {
+                    // The parent and helper can race to create the first status file.
+                    File.Replace(temporary, destination, destinationBackupFileName: null);
+                }
+            }
         }
         finally
         {
