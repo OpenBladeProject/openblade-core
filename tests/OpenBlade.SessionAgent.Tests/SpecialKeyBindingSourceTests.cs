@@ -11,6 +11,39 @@ public sealed class SpecialKeyBindingSourceTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task RealInputPreferences_IgnoreUiEnumsAndRetainConfirmedStateOnMalformedInput()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        const string json = """
+            {"primaryNavigationItems":["ThxAudio"],"thxAudioIntegrationEnabled":true,
+             "specialKeyBindings":[{"slot":"M1","action":{"kind":"Disabled"}}],
+             "snapTapEnabled":true}
+            """;
+        await File.WriteAllTextAsync(path, json);
+        var errors = new List<Exception>();
+        var transitions = new List<bool>();
+        var source = new SpecialKeyBindingSource(path, errors.Add);
+        source.SnapTapEnabledChanged += transitions.Add;
+
+        Assert.True(await source.ReloadIfChangedAsync(force: true, CancellationToken.None));
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal(SpecialKeyActionKind.Disabled, source.GetAction(SpecialKeySlot.M1).Kind);
+
+        await File.WriteAllTextAsync(path, "{\"snapTapEnabled\":\"yes\"}");
+        Assert.False(await source.ReloadIfChangedAsync(force: true, CancellationToken.None));
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal(SpecialKeyActionKind.Disabled, source.GetAction(SpecialKeySlot.M1).Kind);
+        Assert.Single(errors);
+        Assert.Equal([true], transitions);
+
+        await File.WriteAllTextAsync(path, json.Replace("true}", "false}"));
+        Assert.True(await source.ReloadIfChangedAsync(force: true, CancellationToken.None));
+        Assert.False(source.SnapTapEnabled);
+        Assert.Equal([true, false], transitions);
+    }
+
+    [Fact]
     public async Task SnapTapPreference_EmitsOnlyConfirmedTransitionsAndRetainsOnReadFailure()
     {
         bool enabled = true;

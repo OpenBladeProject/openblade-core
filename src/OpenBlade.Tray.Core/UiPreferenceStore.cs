@@ -321,6 +321,35 @@ public sealed class UiPreferenceStore
         }
     }
 
+    /// <summary>
+    /// Reads only current-user input settings. Invalid input data propagates so
+    /// the Session Agent can retain its last confirmed bindings and retry.
+    /// </summary>
+    public async Task<UiInputPreferences> LoadInputPreferencesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!File.Exists(path))
+        {
+            return new UiInputPreferences();
+        }
+
+        await using FileStream file = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using MemoryStream content = await ReadBoundedAsync(
+            file,
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        using JsonDocument document = ParseContent(content);
+        return document.RootElement.Deserialize<UiInputPreferences>(SerializerOptions)
+            ?? throw new JsonException("Input preferences must be an object.");
+    }
+
     public async Task SaveAsync(
         UiPreferences preferences,
         CancellationToken cancellationToken = default)

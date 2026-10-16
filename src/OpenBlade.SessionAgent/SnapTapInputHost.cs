@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
@@ -34,7 +35,7 @@ internal static class SnapTapInputHost
             string preferencesPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "OpenBlade", "preferences.json");
-            if (!new UiPreferenceStore(preferencesPath).LoadAsync().GetAwaiter().GetResult().SnapTapEnabled)
+            if (!new UiPreferenceStore(preferencesPath).LoadInputPreferencesAsync().GetAwaiter().GetResult().SnapTapEnabled)
             {
                 return 0;
             }
@@ -77,7 +78,7 @@ internal static class SnapTapInputHost
                 mutex.ReleaseMutex();
             }
         }
-        catch (Exception exception) when (exception is IOException
+        catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException
             or UnauthorizedAccessException or System.ComponentModel.Win32Exception
             or InvalidOperationException or WaitHandleCannotBeOpenedException)
         {

@@ -48,9 +48,25 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
         Action<Exception>? errorHandler = null)
         : this(
             preferencesPath,
-            new UiPreferenceStore(Path.GetFullPath(preferencesPath)).LoadAsync,
+            CreateInputPreferenceLoader(preferencesPath),
             errorHandler)
     {
+    }
+
+    private static Func<CancellationToken, Task<UiPreferences>> CreateInputPreferenceLoader(
+        string preferencesPath)
+    {
+        var store = new UiPreferenceStore(Path.GetFullPath(preferencesPath));
+        return async cancellationToken =>
+        {
+            UiInputPreferences input = await store.LoadInputPreferencesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return UiPreferences.Default with
+            {
+                SpecialKeyBindings = input.SpecialKeyBindings,
+                SnapTapEnabled = input.SnapTapEnabled,
+            };
+        };
     }
 
     internal SpecialKeyBindingSource(
