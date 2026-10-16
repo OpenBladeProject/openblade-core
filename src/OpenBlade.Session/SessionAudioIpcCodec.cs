@@ -141,6 +141,7 @@ public static class SessionAudioIpcCodec
         {
             DiscoverThxAudioRequest => true,
             ReadThxAudioRequest value => Enum.IsDefined(value.Endpoint),
+            ConnectThxAudioRequest value => Enum.IsDefined(value.Endpoint),
             SetThxSpatialRequest value => Enum.IsDefined(value.Endpoint),
             SetThxEqualizerRequest value => Enum.IsDefined(value.Endpoint),
             SelectThxPresetRequest value =>

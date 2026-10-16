@@ -29,7 +29,7 @@ public sealed class SessionAudioPipeServer : IAsyncDisposable
                 static request => request switch
                 {
                     DiscoverThxAudioRequest => DiscoverDispatchTimeout,
-                    ReadThxAudioRequest => ReadDispatchTimeout,
+                    ReadThxAudioRequest or ConnectThxAudioRequest => ReadDispatchTimeout,
                     _ => MutationDispatchTimeout,
                 },
                 DispatchFailure: null),

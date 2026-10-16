@@ -1572,4 +1572,7 @@
   <data name="Application routing is not yet enabled for this model." xml:space="preserve">
     <value>此型号尚未启用应用音效自动切换。</value>
   </data>
+  <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
+    <value>此输出的 Windows 音频增强已关闭。请在 Windows 声音设置中启用“设备默认效果”以听到 THX 效果。</value>
+  </data>
 </root>

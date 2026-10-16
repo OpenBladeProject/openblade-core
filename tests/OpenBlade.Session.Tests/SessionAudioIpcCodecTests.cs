@@ -89,6 +89,7 @@ public sealed class SessionAudioIpcCodecTests
     public static TheoryData<SessionAudioRequest> Requests => new()
     {
         new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid()),
+        new ConnectThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers),
         new ReadThxAudioRequest(
             SessionAudioIpc.ProtocolVersion,
             Guid.NewGuid(),

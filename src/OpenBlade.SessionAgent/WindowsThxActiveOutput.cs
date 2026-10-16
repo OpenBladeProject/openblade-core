@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using Microsoft.Win32;
 using OpenBlade.Session;
 
 namespace OpenBlade.SessionAgent;
@@ -28,7 +29,58 @@ internal static partial class WindowsThxActiveOutput
         return container == BuiltInContainer ? ThxAudioEndpoint.Speakers : ThxAudioEndpoint.Headphones;
     }
 
+    private static readonly PropertyKey ThxProduct = new(new("4a82dc8f-2acc-466f-b11a-3fbf40a339a0"), 0);
+    private static readonly PropertyKey ThxEndpoint = new(new("4a82dc8f-2acc-466f-b11a-3fbf40a339a0"), 2);
+
+    private sealed record DefaultOutput(string Id, string? Name, Guid? Container, string? Product, string? Endpoint);
+
     internal static ThxAudioEndpoint? Read()
+    {
+        DefaultOutput? output = ReadDefaultOutput();
+        return output is null ? null : Classify(output.Name, output.Container);
+    }
+
+    // Advisory only: a stored THX switch does not override Windows bypassing its APO.
+    internal static bool? ReadSystemEffectsDisabled(string productId, ThxAudioEndpoint endpoint)
+    {
+        DefaultOutput? output = ReadDefaultOutput();
+        if (output is null || output.Product != productId
+            || output.Endpoint != (endpoint == ThxAudioEndpoint.Speakers ? "speakers" : "headphones")
+            || !TryGetRenderEndpointId(output.Id, out Guid id))
+        {
+            return null;
+        }
+        try
+        {
+            using RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using RegistryKey? effects = machine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render\"
+                + id.ToString("B") + @"\FxProperties", writable: false);
+            return ParseSystemEffectsDisabled(effects?.GetValue("{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5"));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    internal static bool TryGetRenderEndpointId(string value, out Guid id)
+    {
+        const string prefix = "{0.0.0.00000000}.";
+        id = default;
+        return value.StartsWith(prefix, StringComparison.Ordinal)
+            && value.Length == prefix.Length + 38
+            && Guid.TryParseExact(value[prefix.Length..], "B", out id);
+    }
+
+    internal static bool? ParseSystemEffectsDisabled(object? value) => value switch
+    {
+        0 => false,
+        1 => true,
+        _ => null,
+    };
+
+    private static DefaultOutput? ReadDefaultOutput()
     {
         object? native = null;
         IMMDevice? endpoint = null;
@@ -55,7 +107,8 @@ internal static partial class WindowsThxActiveOutput
             Marshal.ThrowExceptionForHR(endpoint.OpenPropertyStore(0, out properties)); // STGM_READ
             string? name = ReadString(properties, FriendlyName);
             Guid? container = ReadGuid(properties, ContainerId);
-            return Classify(name, container);
+            return new DefaultOutput(endpointId, name, container,
+                ReadOptionalString(properties, ThxProduct), ReadOptionalString(properties, ThxEndpoint));
         }
         catch
         {
@@ -79,6 +132,19 @@ internal static partial class WindowsThxActiveOutput
             instance => Marshal.ThrowExceptionForHR(((IMMDeviceEnumerator)instance).RegisterEndpointNotificationCallback(callback)),
             instance => _ = ((IMMDeviceEnumerator)instance).UnregisterEndpointNotificationCallback(callback),
             _ => changed(), () => { }, () => { }, Release);
+    }
+
+    private static string? ReadOptionalString(IPropertyStore properties, PropertyKey key)
+    {
+        try
+        {
+            return ReadString(properties, key);
+        }
+        catch
+        {
+            // Missing advisory metadata must not affect ordinary output selection.
+            return null;
+        }
     }
 
     private static string? ReadString(IPropertyStore properties, PropertyKey key)

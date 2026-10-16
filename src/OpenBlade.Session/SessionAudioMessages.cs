@@ -94,11 +94,14 @@ public sealed record ThxAudioState(
     public IReadOnlyList<ThxAudioApplicationProfile> ApplicationProfileCatalog { get; init; } = [];
 
     public bool ApplicationAutomationPaused { get; init; }
+
+    public bool? SystemEffectsDisabled { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
 [JsonDerivedType(typeof(DiscoverThxAudioRequest), "discover")]
 [JsonDerivedType(typeof(ReadThxAudioRequest), "read")]
+[JsonDerivedType(typeof(ConnectThxAudioRequest), "connect")]
 [JsonDerivedType(typeof(SetThxSpatialRequest), "setSpatial")]
 [JsonDerivedType(typeof(SetThxEqualizerRequest), "setEqualizer")]
 [JsonDerivedType(typeof(SelectThxPresetRequest), "selectPreset")]
@@ -110,6 +113,12 @@ public sealed record DiscoverThxAudioRequest(int Version, Guid RequestId)
     : SessionAudioRequest(Version, RequestId);
 
 public sealed record ReadThxAudioRequest(
+    int Version,
+    Guid RequestId,
+    ThxAudioEndpoint Endpoint)
+    : SessionAudioRequest(Version, RequestId);
+
+public sealed record ConnectThxAudioRequest(
     int Version,
     Guid RequestId,
     ThxAudioEndpoint Endpoint)

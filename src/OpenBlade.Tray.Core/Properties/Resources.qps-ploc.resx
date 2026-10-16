@@ -1662,4 +1662,7 @@
   <data name="Application routing is not yet enabled for this model." xml:space="preserve">
     <value>[!! Ápplícátíón róútíng ís nót ýét énábléd fór thís módél. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
+    <value>[!! Windows áúdíó énháncéménts áré óff fór thís óútpút. Énáblé Dévícé Défáúlt Éffécts ín Windows sóúnd séttíngs tó héár THX. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

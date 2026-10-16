@@ -8,7 +8,8 @@ internal sealed class ThxAudioHelperCommand(
     Func<IThxAudioNativeAdapter> createNative,
     IThxAudioAdmissionSource admission,
     TextReader input,
-    TextWriter output)
+    TextWriter output,
+    Func<string, ThxAudioEndpoint, bool?>? readSystemEffectsDisabled = null)
 {
     private const string PresetGroupId = "profile_presets";
     private const string SpatialPropertyId = "spatial_enabled";
@@ -212,7 +213,10 @@ internal sealed class ThxAudioHelperCommand(
                     : Indeterminate("The THX mutation was not acknowledged.");
             }
 
-            ThxAudioState state = ReadState(native, device, request.Endpoint, current.ModelNumber, current.MutationAllowed);
+            ThxAudioState state = ReadState(native, device, request.Endpoint, current.ModelNumber, current.MutationAllowed) with
+            {
+                SystemEffectsDisabled = ReadSystemEffectsDisabled(current.ProductId!, request.Endpoint),
+            };
             if (!MatchesRequestedMutation(request, state))
             {
                 return Indeterminate("The THX mutation could not be confirmed by readback.");
@@ -250,6 +254,19 @@ internal sealed class ThxAudioHelperCommand(
                     // an already-indeterminate write/readback result.
                 }
             }
+        }
+    }
+
+    private bool? ReadSystemEffectsDisabled(string productId, ThxAudioEndpoint endpoint)
+    {
+        try
+        {
+            return readSystemEffectsDisabled?.Invoke(productId, endpoint);
+        }
+        catch
+        {
+            // A diagnostic failure cannot change an independently confirmed mutation.
+            return null;
         }
     }
 

@@ -1572,4 +1572,7 @@
   <data name="Application routing is not yet enabled for this model." xml:space="preserve">
     <value>Application routing is not yet enabled for this model.</value>
   </data>
+  <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
+    <value>Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX.</value>
+  </data>
 </root>

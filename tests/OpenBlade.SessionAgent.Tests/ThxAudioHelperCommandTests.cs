@@ -136,6 +136,48 @@ public sealed class ThxAudioHelperCommandTests
     }
 
     [Fact]
+    public async Task AdvisoryFailureDoesNotInvalidateConfirmedSpatialMutation()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => native,
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null)
+            { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true }),
+            new StringReader("""{"operation":"setProperty","version":1,"endpoint":0,"propertyId":"spatial_enabled","value":true}"""), output,
+            (_, _) => throw new IOException("Unavailable diagnostic"));
+        await command.RunAsync(CancellationToken.None);
+        using var json = System.Text.Json.JsonDocument.Parse(output.ToString());
+        Assert.Equal((int)ThxAudioOperationStatus.Succeeded, json.RootElement.GetProperty("status").GetInt32());
+        Assert.True(json.RootElement.GetProperty("state").GetProperty("spatialEnabled").GetBoolean());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null,
+            json.RootElement.GetProperty("state").GetProperty("systemEffectsDisabled").ValueKind);
+        Assert.Single(native.PropertyWrites);
+    }
+
+    [Fact]
+    public async Task ReadReportsWindowsBypassWithoutChangingConfirmedSpatialSetting()
+    {
+        var native = new FakeNative { Spatial = true };
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(() => native,
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null)
+            { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true }),
+            new StringReader("""{"operation":"read","version":1,"endpoint":0}"""), output,
+            (product, endpoint) =>
+            {
+                Assert.Equal("rznb12", product);
+                Assert.Equal(ThxAudioEndpoint.Speakers, endpoint);
+                return true;
+            });
+        await command.RunAsync(CancellationToken.None);
+        using var json = System.Text.Json.JsonDocument.Parse(output.ToString());
+        var state = json.RootElement.GetProperty("state");
+        Assert.True(state.GetProperty("spatialEnabled").GetBoolean());
+        Assert.True(state.GetProperty("systemEffectsDisabled").GetBoolean());
+        Assert.Empty(native.PropertyWrites);
+    }
+
+    [Fact]
     public async Task Read_DoesNotSetPropertiesAndAlwaysRemovesDevice()
     {
         var native = new FakeNative();

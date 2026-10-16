@@ -1880,6 +1880,19 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "Uid") == "MainWindow_ThxAudioSpatial");
         Assert.Contains(audio.Descendants(), element =>
             Attribute(element, "Uid") == "MainWindow_ThxAudioEqualizer");
+
+        string window = ReadTraySource("MainWindow.xaml.cs");
+        Assert.Contains(
+            "else if (destination == \"thx-audio\" && !localizationSnapshotMode)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "private async void OnThxEndpointChanged(",
+            window,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            window.Split("ThxViewModel.ConnectIfNeededAsync", StringSplitOptions.None).Length - 1);
     }
 
     [Fact]

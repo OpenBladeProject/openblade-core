@@ -25,7 +25,7 @@ public sealed class ThxAudioViewModelTests
         Assert.False(viewModel.ApplicationRoutingEnabled);
         Assert.NotEmpty(viewModel.EqualizerBands);
         await viewModel.SetSpatialAsync(true);
-        Assert.Equal(["discover", "read:Speakers"], adapter.Calls);
+        Assert.Equal(["read:Speakers"], adapter.Calls);
     }
 
     [Fact]
@@ -43,18 +43,33 @@ public sealed class ThxAudioViewModelTests
     }
 
     [Fact]
-    public async Task EnablingDiscoversComponentsWithoutRegisteringNativeDevice()
+    public async Task EnablingAutomaticallyConnectsTheSelectedEndpoint()
     {
         var adapter = new FakeAdapter();
         await using var viewModel = new ThxAudioViewModel(adapter);
         await viewModel.SetEnabledAsync(true);
-        Assert.Equal(["discover"], adapter.Calls);
-        Assert.False(viewModel.CanEdit);
-        Assert.Empty(viewModel.Presets);
+        Assert.Equal(["connect:Speakers"], adapter.Calls);
+        Assert.True(viewModel.CanEdit);
+        Assert.NotEmpty(viewModel.Presets);
     }
 
     [Fact]
-    public async Task ExplicitReadEnablesOnlyConfirmedEndpointControls()
+    public async Task PageActivationConnectsOnceAfterPreferenceRestore()
+    {
+        var adapter = new FakeAdapter();
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        Assert.Empty(adapter.Calls);
+
+        await viewModel.ConnectIfNeededAsync();
+        await viewModel.ConnectIfNeededAsync();
+
+        Assert.Equal(["connect:Speakers"], adapter.Calls);
+        Assert.True(viewModel.CanEdit);
+    }
+
+    [Fact]
+    public async Task ExplicitReadDirectlyReadsTheSelectedEndpoint()
     {
         var adapter = new FakeAdapter();
         await using var viewModel = new ThxAudioViewModel(adapter);
@@ -62,14 +77,29 @@ public sealed class ThxAudioViewModelTests
         await viewModel.SetSpatialAsync(true);
         Assert.Empty(adapter.Calls);
         await viewModel.RefreshAsync();
-        Assert.Equal(["discover", "read:Speakers"], adapter.Calls);
+        Assert.Equal(["read:Speakers"], adapter.Calls);
         Assert.True(viewModel.CanEdit);
         Assert.False(viewModel.SpatialEnabled);
         Assert.Equal("music", viewModel.SelectedPreset?.Id);
         viewModel.SelectEndpoint(ThxAudioEndpoint.Headphones);
         Assert.False(viewModel.CanEdit);
         Assert.Empty(viewModel.Presets);
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
+    }
+
+    [Fact]
+    public async Task EndpointChangeAutomaticallyConnectsOnlyTheNewEndpoint()
+    {
+        var adapter = new FakeAdapter();
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        await viewModel.SetEnabledAsync(true);
+
+        viewModel.SelectEndpoint(ThxAudioEndpoint.Headphones);
+        await viewModel.ConnectIfNeededAsync();
+
+        Assert.Equal(["connect:Speakers", "connect:Headphones"], adapter.Calls);
+        Assert.Equal(ThxAudioEndpoint.Headphones, viewModel.Endpoint);
+        Assert.True(viewModel.CanEdit);
     }
 
     [Fact]
@@ -84,7 +114,9 @@ public sealed class ThxAudioViewModelTests
         Assert.False(viewModel.CanEdit);
         Assert.False(viewModel.SpatialEnabled);
         await viewModel.SetSpatialAsync(true);
+        await viewModel.ConnectIfNeededAsync();
         Assert.Equal(1, adapter.Calls.Count(call => call == "spatial:True"));
+        Assert.DoesNotContain(adapter.Calls, call => call.StartsWith("connect:", StringComparison.Ordinal));
         await viewModel.RefreshAsync();
         Assert.True(viewModel.CanEdit);
     }
@@ -103,19 +135,68 @@ public sealed class ThxAudioViewModelTests
     }
 
     [Fact]
-    public async Task MissingComponentsNeverReachNativeReadOrMutation()
+    public async Task MissingComponentsBlockMutationAfterExplicitRead()
     {
         var adapter = new FakeAdapter
         {
-            DiscoveryResponse = new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ReadResponse = new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
                 ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, null, null),
         };
         await using var viewModel = new ThxAudioViewModel(adapter);
         viewModel.ApplyPreference(true);
         await viewModel.RefreshAsync();
         await viewModel.SetEqualizerAsync(true);
-        Assert.Equal(["discover"], adapter.Calls);
+        Assert.Equal(["read:Speakers"], adapter.Calls);
         Assert.False(viewModel.CanEdit);
+    }
+
+    [Fact]
+    public async Task EndpointAutomaticConnectionCannotRecoverIndeterminateMutation()
+    {
+        var denied = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.Available,
+            "An explicit THX read is required after an uncertain write.", null);
+        var adapter = new FakeAdapter
+        {
+            ConnectResponse = denied,
+            ReadHandler = endpoint => Response(ThxAudioOperationStatus.Succeeded, State(endpoint)),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+        await viewModel.RefreshAsync();
+        adapter.MutationResponse = Response(ThxAudioOperationStatus.Indeterminate);
+        await viewModel.SetSpatialAsync(true);
+
+        viewModel.SelectEndpoint(ThxAudioEndpoint.Headphones);
+        await viewModel.ConnectIfNeededAsync();
+
+        Assert.Equal(["read:Speakers", "spatial:True", "connect:Headphones"], adapter.Calls);
+        Assert.True(viewModel.CanRead);
+        Assert.False(viewModel.CanEdit);
+
+        await viewModel.RefreshAsync();
+        Assert.Equal("read:Headphones", adapter.Calls[^1]);
+        Assert.True(viewModel.CanEdit);
+    }
+
+    [Fact]
+    public async Task DisabledWindowsEffectsShowAdvisoryWithoutMutatingConfirmedState()
+    {
+        var state = State() with { SpatialEnabled = true, SystemEffectsDisabled = true };
+        var adapter = new FakeAdapter
+        {
+            ReadResponse = Response(ThxAudioOperationStatus.Succeeded, state),
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        viewModel.ApplyPreference(true);
+
+        await viewModel.RefreshAsync();
+
+        Assert.True(viewModel.SpatialEnabled);
+        Assert.Equal(
+            "Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX.",
+            viewModel.StatusMessage);
+        Assert.Equal(["read:Speakers"], adapter.Calls);
     }
 
     [Fact]
@@ -130,7 +211,7 @@ public sealed class ThxAudioViewModelTests
         await viewModel.RefreshAsync();
         await viewModel.SelectPresetAsync(new ThxAudioPreset("unknown", "Unknown"));
         await viewModel.SelectPresetAsync(viewModel.Presets[1]);
-        Assert.Equal(["discover", "read:Speakers", "preset:game"], adapter.Calls);
+        Assert.Equal(["read:Speakers", "preset:game"], adapter.Calls);
     }
 
     [Fact]
@@ -155,7 +236,7 @@ public sealed class ThxAudioViewModelTests
         viewModel.ApplyPreference(true);
         await viewModel.RefreshAsync();
         viewModel.EqualizerBands[0].DraftGainDb = 2;
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
         Assert.True(viewModel.CanApplyEqualizer);
         adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded, initial with
         {
@@ -186,7 +267,7 @@ public sealed class ThxAudioViewModelTests
         Assert.Equal(-3, viewModel.EqualizerBands[0].DraftGainDb);
         viewModel.DiscardEqualizerChanges();
         Assert.Equal(0, viewModel.EqualizerBands[0].DraftGainDb);
-        Assert.Equal(3, adapter.Calls.Count);
+        Assert.Equal(2, adapter.Calls.Count);
         viewModel.EqualizerBands[0].DraftGainDb = double.NaN;
         viewModel.EqualizerBands[0].DraftGainDb = 13;
         Assert.False(viewModel.HasEqualizerChanges);
@@ -205,7 +286,7 @@ public sealed class ThxAudioViewModelTests
         viewModel.SoundNormalizationLevel = 75;
         Assert.False(viewModel.CanApplySoundNormalization);
         await viewModel.ApplySoundNormalizationAsync();
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
         adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded, initial with { SoundNormalization = new(true, 50) });
         await viewModel.SetSoundNormalizationAsync(true);
         Assert.Equal("enhancement:SoundNormalization:True:", adapter.Calls[^1]);
@@ -238,7 +319,7 @@ public sealed class ThxAudioViewModelTests
         Assert.Equal("game.exe", Assert.Single(viewModel.ApplicationRules).ExecutableName);
         viewModel.ApplicationExecutable = "Game.exe";
         Assert.False(viewModel.CanAddApplicationRule);
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
         Assert.Equal(ThxApplicationAudioOutput.Immersive, Assert.Single(viewModel.CreateProfileDraft()!.ApplicationRules).Output);
         viewModel.LoadProfile(PowerSource.PluggedIn, ProfileSettings());
         Assert.Single(viewModel.ApplicationRules); // Equivalent status refresh preserves the draft.
@@ -299,7 +380,7 @@ public sealed class ThxAudioViewModelTests
         Assert.All(viewModel.EqualizerBands, band => Assert.Equal(5, band.DraftGainDb));
         viewModel.FlattenEqualizer();
         Assert.All(viewModel.EqualizerBands, band => Assert.Equal(0, band.DraftGainDb));
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
         adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded, initial with
         { EqualizerBands = initial.EqualizerBands.Select(band => band with { GainDb = 0 }).ToArray() });
         await viewModel.ApplyEqualizerAsync();
@@ -360,7 +441,7 @@ public sealed class ThxAudioViewModelTests
         viewModel.ResetEqualizerToFactory();
         await viewModel.ApplyEqualizerAsync();
         Assert.Equal(5, viewModel.EqualizerBands[0].DraftGainDb);
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
         adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded, initial with { SelectedPresetId = "music" });
         await viewModel.SelectPresetAsync(viewModel.Presets.Single(preset => preset.Id == "music"));
         Assert.True(viewModel.CanEditEqualizerBands);
@@ -668,13 +749,13 @@ public sealed class ThxAudioViewModelTests
         viewModel.ApplyPreference(true);
         await viewModel.RefreshAsync();
         viewModel.VoiceClarityLevel = 70;
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
         ThxEnhancementCommitRequest request = Assert.IsType<ThxEnhancementCommitRequest>(
             viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75));
         Assert.Equal(ThxAudioEndpoint.Speakers, request.Endpoint);
         Assert.Equal(75, request.LevelPercent);
         Assert.Equal(75, viewModel.VoiceClarityLevel);
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
         Assert.Null(viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, double.NaN));
         Assert.Null(viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 101));
         Assert.Null(viewModel.CaptureEnhancementCommit((ThxAudioEnhancementKind)99, 50));
@@ -684,7 +765,7 @@ public sealed class ThxAudioViewModelTests
         Assert.Null(viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75));
         await viewModel.CommitEnhancementAsync(request);
         Assert.Equal(25, viewModel.VoiceClarityLevel);
-        Assert.Equal(3, adapter.Calls.Count);
+        Assert.Equal(2, adapter.Calls.Count);
     }
 
     [Fact]
@@ -730,7 +811,7 @@ public sealed class ThxAudioViewModelTests
         viewModel.LoadProfile(PowerSource.Battery, ProfileSettings());
         Assert.Equal(75, viewModel.VoiceClarityLevel);
         await viewModel.CommitEnhancementAsync(request);
-        Assert.Equal(3, adapter.Calls.Count);
+        Assert.Equal(2, adapter.Calls.Count);
     }
 
     [Fact]
@@ -744,7 +825,7 @@ public sealed class ThxAudioViewModelTests
         ThxEnhancementCommitRequest latest = viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 60)!;
         await viewModel.CommitEnhancementAsync(old);
         Assert.Equal(60, viewModel.VoiceClarityLevel);
-        Assert.Equal(2, adapter.Calls.Count);
+        Assert.Single(adapter.Calls);
         adapter.MutationResponse = Response(ThxAudioOperationStatus.Succeeded,
             EnabledEnhancements() with { VoiceClarity = new(true, 60) });
         await viewModel.CommitEnhancementAsync(latest);
@@ -773,11 +854,11 @@ public sealed class ThxAudioViewModelTests
             viewModel.CaptureEnhancementCommit(ThxAudioEnhancementKind.VoiceClarity, 75));
         Task clarity = viewModel.CommitEnhancementAsync(clarityRequest);
         Assert.False(clarity.IsCompleted);
-        Assert.Equal(3, adapter.Calls.Count);
+        Assert.Equal(2, adapter.Calls.Count);
         pending.SetResult(Response(ThxAudioOperationStatus.Succeeded, initial with { SoundNormalization = new(true, 60) }));
         await Task.WhenAll(normalization, clarity);
         Assert.Equal("enhancement:VoiceClarity:True:75", adapter.Calls[^1]);
-        Assert.Equal(4, adapter.Calls.Count);
+        Assert.Equal(3, adapter.Calls.Count);
         Assert.Equal(75, viewModel.VoiceClarityLevel);
     }
 
@@ -800,11 +881,11 @@ public sealed class ThxAudioViewModelTests
         pending.SetResult(Response(ThxAudioOperationStatus.Indeterminate));
         await Task.WhenAll(normalization, clarity);
         Assert.False(viewModel.CanEdit);
-        Assert.Equal(3, adapter.Calls.Count);
+        Assert.Equal(2, adapter.Calls.Count);
         await viewModel.RefreshAsync();
         Assert.Equal(25, viewModel.VoiceClarityLevel);
         await viewModel.CommitEnhancementAsync(request);
-        Assert.Equal(5, adapter.Calls.Count);
+        Assert.Equal(3, adapter.Calls.Count);
     }
 
     [Fact]
@@ -823,7 +904,7 @@ public sealed class ThxAudioViewModelTests
         Task spatial = viewModel.SetSpatialAsync(true);
         await viewModel.CommitEnhancementAsync(request);
         Assert.Equal(25, viewModel.VoiceClarityLevel);
-        Assert.Equal(3, adapter.Calls.Count);
+        Assert.Equal(2, adapter.Calls.Count);
         pending.SetResult(Response(ThxAudioOperationStatus.Succeeded, EnabledEnhancements() with { SpatialEnabled = true }));
         await spatial;
     }
@@ -861,6 +942,8 @@ public sealed class ThxAudioViewModelTests
         public List<string> Calls { get; } = [];
         public List<(string Id, double[] Gains)> PresetRequests { get; } = [];
         public SessionAudioResponse DiscoveryResponse { get; init; } = Response(ThxAudioOperationStatus.Succeeded);
+        public SessionAudioResponse? ConnectResponse { get; init; }
+        public Func<ThxAudioEndpoint, SessionAudioResponse>? ConnectHandler { get; init; }
         public SessionAudioResponse ReadResponse { get; init; } = Response(ThxAudioOperationStatus.Succeeded, State());
         public Func<ThxAudioEndpoint, SessionAudioResponse>? ReadHandler { get; set; }
         public Func<ThxAudioEndpoint, Task<SessionAudioResponse>>? AsyncReadHandler { get; init; }
@@ -872,6 +955,13 @@ public sealed class ThxAudioViewModelTests
         {
             Calls.Add("discover");
             return Task.FromResult(DiscoveryResponse);
+        }
+        public Task<SessionAudioResponse> ConnectAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken)
+        {
+            Calls.Add("connect:" + endpoint);
+            return Task.FromResult(ConnectHandler?.Invoke(endpoint)
+                ?? ConnectResponse
+                ?? Response(ThxAudioOperationStatus.Succeeded, State(endpoint)));
         }
         public Task<SessionAudioResponse> ReadAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken)
         {

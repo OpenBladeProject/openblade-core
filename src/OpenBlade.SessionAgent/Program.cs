@@ -26,7 +26,8 @@ internal static class Program
                         new WindowsThxAudioHelperChannelConnector(),
                         new WindowsThxAudioHelperParentVerifier(),
                         static () => new ThxAudioNativeAdapter(),
-                        new WindowsThxAudioAdmissionSource())
+                        new WindowsThxAudioAdmissionSource(),
+                        WindowsThxActiveOutput.ReadSystemEffectsDisabled)
                     .RunAsync(invocation!, CancellationToken.None)
                     .GetAwaiter()
                     .GetResult();

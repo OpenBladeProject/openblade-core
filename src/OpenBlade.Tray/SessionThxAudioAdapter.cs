@@ -20,6 +20,9 @@ internal sealed class SessionThxAudioAdapter : IThxAudioAdapter
     public Task<SessionAudioResponse> DiscoverAsync(CancellationToken cancellationToken) =>
         SendAsync(id => new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, id), cancellationToken);
 
+    public Task<SessionAudioResponse> ConnectAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken) =>
+        SendAsync(id => new ConnectThxAudioRequest(SessionAudioIpc.ProtocolVersion, id, endpoint), cancellationToken);
+
     public Task<SessionAudioResponse> ReadAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken) =>
         SendAsync(id => new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion, id, endpoint), cancellationToken);
 

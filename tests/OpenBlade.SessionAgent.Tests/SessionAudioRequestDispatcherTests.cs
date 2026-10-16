@@ -19,29 +19,38 @@ public sealed class SessionAudioRequestDispatcherTests
     }
 
     [Fact]
-    public async Task ReadOnlyAdmissionAllowsReadButBlocksMutationBeforeWorkerSubmission()
+    public async Task HelperReadOnlyAdmissionIsPreservedAndDeniesMutation()
     {
-        var worker = new RecordingWorker(State());
-        var admission = new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.AvailableReadOnly, null)
-        { ProductId = "rznb11", ModelNumber = "RZ09-0528", MutationAllowed = false });
-        var dispatcher = new SessionAudioRequestDispatcher(admission, worker);
+        var worker = new RecordingWorker(State())
+        {
+            Next = new ThxAudioWorkerResult(ThxAudioOperationStatus.Succeeded,
+                ThxAudioAvailability.AvailableReadOnly, null, State()),
+        };
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
         SessionAudioResponse read = await dispatcher.DispatchAsync(
             new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers),
             CancellationToken.None);
         Assert.Equal(ThxAudioOperationStatus.Succeeded, read.Status);
         Assert.Equal(ThxAudioAvailability.AvailableReadOnly, read.Availability);
+        // The helper's fresh admission rejects the mutation before constructing
+        // native code, as covered by ThxAudioHelperCommandTests.
+        worker.Next = new ThxAudioWorkerResult(ThxAudioOperationStatus.Unavailable,
+            ThxAudioAvailability.AvailableReadOnly, "This stack is read-only.", null);
         SessionAudioResponse write = await dispatcher.DispatchAsync(
             new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers, true),
             CancellationToken.None);
         Assert.Equal(ThxAudioOperationStatus.Unavailable, write.Status);
-        Assert.Single(worker.Requests);
+        Assert.Equal(ThxAudioAvailability.AvailableReadOnly, write.Availability);
+        Assert.Null(write.State);
+        Assert.Equal(2, worker.Requests.Count);
     }
 
     [Fact]
     public async Task Discover_PerformsAdmissionWithoutStartingNativeWorker()
     {
         var worker = new RecordingWorker(State());
-        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        var admission = Available();
+        var dispatcher = new SessionAudioRequestDispatcher(admission, worker);
 
         SessionAudioResponse response = await dispatcher.DispatchAsync(
             new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid()),
@@ -51,6 +60,131 @@ public sealed class SessionAudioRequestDispatcherTests
         Assert.Equal(ThxAudioAvailability.Available, response.Availability);
         Assert.Null(response.State);
         Assert.Empty(worker.Requests);
+        Assert.Equal(1, admission.Checks);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NativeRequests_RelyOnFreshHelperAdmissionWithoutDuplicateDiscovery(bool automation)
+    {
+        var admission = Available();
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(admission, worker);
+        var read = new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion,
+            Guid.NewGuid(), ThxAudioEndpoint.Speakers);
+        SessionAudioResponse readResult = automation
+            ? await dispatcher.DispatchAutomationAsync(read, CancellationToken.None)
+            : await dispatcher.DispatchAsync(read, CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, readResult.Status);
+        worker.Next = new ThxAudioWorkerResult(ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available, null, State(spatial: true));
+        var write = new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion,
+            Guid.NewGuid(), ThxAudioEndpoint.Speakers, true);
+        SessionAudioResponse writeResult = automation
+            ? await dispatcher.DispatchAutomationAsync(write, CancellationToken.None)
+            : await dispatcher.DispatchAsync(write, CancellationToken.None);
+
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, writeResult.Status);
+        Assert.Equal(2, worker.Requests.Count);
+        Assert.Equal(0, admission.Checks);
+    }
+
+    [Theory]
+    [InlineData(false, ThxAudioAvailability.ControllerActive)]
+    [InlineData(true, ThxAudioAvailability.ControllerActive)]
+    [InlineData(false, ThxAudioAvailability.ComponentsUnavailable)]
+    [InlineData(true, ThxAudioAvailability.ComponentsUnavailable)]
+    [InlineData(true, ThxAudioAvailability.AvailableReadOnly)]
+    public async Task HelperAdmissionFailure_InvalidatesBothOutputs(bool mutation, ThxAudioAvailability availability)
+    {
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        await ReadAsync(dispatcher);
+        worker.Next = new ThxAudioWorkerResult(ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available, null, State() with { Endpoint = ThxAudioEndpoint.Headphones });
+        SessionAudioResponse headphones = await dispatcher.DispatchAsync(
+            new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(), ThxAudioEndpoint.Headphones), CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, headphones.Status);
+
+        worker.Next = new ThxAudioWorkerResult(ThxAudioOperationStatus.Unavailable,
+            availability, "Fresh helper admission failed.", null);
+        SessionAudioRequest failedRequest = mutation
+            ? new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(), ThxAudioEndpoint.Speakers, true)
+            : new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(), ThxAudioEndpoint.Speakers);
+        SessionAudioResponse failed = await dispatcher.DispatchAsync(failedRequest, CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, failed.Status);
+        Assert.Equal(availability, failed.Availability);
+
+        int submitted = worker.Requests.Count;
+        foreach (ThxAudioEndpoint endpoint in Enum.GetValues<ThxAudioEndpoint>())
+        {
+            SessionAudioResponse blocked = await dispatcher.DispatchAsync(
+                new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion,
+                    Guid.NewGuid(), endpoint, true), CancellationToken.None);
+            Assert.Equal(ThxAudioOperationStatus.Unavailable, blocked.Status);
+            Assert.Equal("Read THX state before changing it.", blocked.Error);
+        }
+        Assert.Equal(submitted, worker.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Connect_ReadsStateWithoutManualOperationOrReconciliationEvents()
+    {
+        var admission = Available();
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(admission, worker);
+        int manualOperations = 0;
+        int explicitReads = 0;
+        dispatcher.ManualOperationStarting += () => manualOperations++;
+        dispatcher.ExplicitReadSucceeded += _ =>
+        {
+            explicitReads++;
+            return Task.CompletedTask;
+        };
+
+        SessionAudioResponse connected = await dispatcher.DispatchAsync(
+            new ConnectThxAudioRequest(SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(), ThxAudioEndpoint.Speakers), CancellationToken.None);
+
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, connected.Status);
+        Assert.NotNull(connected.State);
+        Assert.IsType<ThxHelperReadRequest>(Assert.Single(worker.Requests));
+        Assert.Equal(0, admission.Checks);
+        Assert.Equal(0, manualOperations);
+        Assert.Equal(0, explicitReads);
+    }
+
+    [Fact]
+    public async Task Connect_CannotReadOrClearPauseAfterUncertainMutation()
+    {
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker);
+        await ReadAsync(dispatcher);
+        worker.Exception = new IOException("helper pipe ended");
+        SessionAudioResponse uncertain = await dispatcher.DispatchAsync(
+            new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(), ThxAudioEndpoint.Speakers, true), CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Indeterminate, uncertain.Status);
+        worker.Exception = null;
+        int submitted = worker.Requests.Count;
+
+        SessionAudioResponse connect = await dispatcher.DispatchAsync(
+            new ConnectThxAudioRequest(SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(), ThxAudioEndpoint.Speakers), CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, connect.Status);
+        Assert.Null(connect.State);
+        SessionAudioResponse blocked = await dispatcher.DispatchAsync(
+            new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion,
+                Guid.NewGuid(), ThxAudioEndpoint.Speakers, true), CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, blocked.Status);
+        Assert.Equal(submitted, worker.Requests.Count);
+
+        await ReadAsync(dispatcher);
+        Assert.Equal(submitted + 1, worker.Requests.Count);
     }
 
     [Fact]
@@ -498,7 +632,7 @@ public sealed class SessionAudioRequestDispatcherTests
         Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status);
     }
 
-    private static IThxAudioAdmissionSource Available() => new FixedAdmission(
+    private static FixedAdmission Available() => new(
         new ThxAudioAdmission(ThxAudioAvailability.Available, null) { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true });
 
     private static ThxAudioState State(bool spatial = false, bool equalizer = false) => new(
@@ -536,7 +670,13 @@ public sealed class SessionAudioRequestDispatcherTests
 
     private sealed class FixedAdmission(ThxAudioAdmission value) : IThxAudioAdmissionSource
     {
-        public ThxAudioAdmission Check() => value;
+        public int Checks { get; private set; }
+
+        public ThxAudioAdmission Check()
+        {
+            Checks++;
+            return value;
+        }
     }
 
     private sealed class RecordingWorker(ThxAudioState state) : IThxAudioWorker

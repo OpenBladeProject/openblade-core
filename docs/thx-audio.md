@@ -4,8 +4,9 @@ OpenBlade can connect to the supported THX components already installed on a
 Razer Blade 16 RZ09-0581 (`1532:02E0`), Blade 16 RZ09-0528 (`1532:02C6`),
 or Blade 14 RZ09-0530 (`1532:02C5`). The integration is experimental and off
 by default. Reading settings and reversible speaker and headphone changes with
-Synapse closed have been validated on the admitted stack. Audible processing
-still needs validation.
+Synapse closed have been validated on RZ09-0581. The user also confirmed an
+audible spatial change on its built-in speakers after enabling Windows audio
+enhancements. Other outputs and rznb11 audible processing remain unvalidated.
 
 OpenBlade checks the exact laptop, present audio hardware IDs from the signed
 installer INF, and a complete pinned THX stack before connecting. RZ09-0581
@@ -24,8 +25,9 @@ for the package and codec restrictions.
 ## Use the controls
 
 1. Close Synapse, then select **THX Audio** in the left menu in OpenBlade.
-2. Enable **Use installed THX audio**. This checks the model and installed files.
-3. Select **Speakers** or **Headphones**, then choose **Read settings**.
+2. Enable **Use installed THX audio**. OpenBlade checks the installed stack and
+   reads the selected output automatically.
+3. Select **Speakers** or **Headphones** to read that output.
 4. Once the current settings appear, change Spatial audio or Equalizer, or
    choose Game, Movie, Music, Voice, or Custom. An observed Default preset is
    retained so its exact settings can be restored.
@@ -43,6 +45,13 @@ An observed Default or application preset must be changed to one of the five
 EQ choices before editing. Preset selection applies the complete saved curve.
 Application-specific THX
 profiles are separate from the five EQ choices.
+
+Windows must allow audio enhancements for THX to affect playback. If Windows
+audio enhancements are off, select **Device Default Effects** under Windows
+**Settings > System > Sound > Speakers > Audio enhancements**. OpenBlade shows
+a warning when it detects this bypass on the selected default output. It does
+not change that Windows setting. A confirmed THX switch reports the stored THX
+setting; it does not measure the resulting sound.
 
 ## Saved audio and applications
 
@@ -77,8 +86,9 @@ not apply audio settings unless saved audio automation was explicitly enabled.
 Turning the integration off stops automation and leaves the current audio
 settings in place.
 
-If a change cannot be confirmed, use **Read settings** before trying another
-change. OpenBlade does not repeat an uncertain command. If the supported
+Opening the THX page connects automatically when the integration is enabled.
+Automatic connections never clear an uncertain-write pause. If a change cannot
+be confirmed, use **Read settings** before trying another change. OpenBlade does not repeat an uncertain command. If the supported
 components are unavailable, the audio controls remain disabled. Uninstalling
 Synapse may remove required components; their retention has not been tested.
 
@@ -92,6 +102,12 @@ the running service path must match without mixing directories or versions.
 Admission also checks the immutable properties archive and surround config in
 `ProgramData\thx\{productId}`. It does not hash mutable property values or
 preset selections, so normal user changes do not invalidate admission.
+For native reads and changes, the isolated helper performs full fresh admission;
+the dispatcher does not repeat those same scans. Discovery still performs full
+admission without loading native code. The DLL hash is checked again with the
+file locked through native loading to prevent replacement between verification
+and loading. Full native readback and pause-on-uncertainty remain unchanged.
+
 All models use the pinned `ThxV4Native_v1.1.1.0.dll`. The rznb11 middleware
 ABI and typed property operations match the reviewed rznb12 implementation;
 factory speaker curves remain model-specific. A new component build needs

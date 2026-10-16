@@ -15,6 +15,7 @@ public sealed record ThxEnhancementCommitRequest(
 public interface IThxAudioAdapter
 {
     Task<SessionAudioResponse> DiscoverAsync(CancellationToken cancellationToken);
+    Task<SessionAudioResponse> ConnectAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken);
     Task<SessionAudioResponse> ReadAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken);
     Task<SessionAudioResponse> SetSpatialAsync(ThxAudioEndpoint endpoint, bool enabled, CancellationToken cancellationToken);
     Task<SessionAudioResponse> SetEqualizerAsync(ThxAudioEndpoint endpoint, bool enabled, CancellationToken cancellationToken);
@@ -37,6 +38,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     private bool enabled;
     private bool busy;
     private bool disposed;
+    private bool automaticConnectionAttempted;
     private Task pendingOperation = Task.CompletedTask;
     private ThxAudioEnhancementKind? pendingEnhancementKind;
     private long enhancementContextRevision;
@@ -137,6 +139,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         }
         enabled = value;
         state = null;
+        automaticConnectionAttempted = false;
         ResetAdvancedDrafts();
         availability = value ? ThxAudioAvailability.ComponentsUnavailable : ThxAudioAvailability.Disabled;
         statusKey = value ? "Read the current THX settings to connect." : "THX audio integration is off.";
@@ -150,9 +153,17 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             return Task.CompletedTask;
         }
         ApplyPreference(value);
-        // Enabling discovers installed files only. Native registration is
-        // reserved for the separate, explicit Read settings action.
-        return value ? StartAsync(adapter.DiscoverAsync, isMutation: false, isDiscovery: true) : Task.CompletedTask;
+        return value ? ConnectIfNeededAsync() : Task.CompletedTask;
+    }
+
+    public Task ConnectIfNeededAsync()
+    {
+        if (!CanRead || state is not null || automaticConnectionAttempted)
+        {
+            return Task.CompletedTask;
+        }
+        automaticConnectionAttempted = true;
+        return StartAsync(token => adapter.ConnectAsync(endpoint, token), isMutation: false);
     }
 
     public void SelectEndpoint(ThxAudioEndpoint value)
@@ -163,19 +174,21 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         }
         endpoint = value;
         state = null;
+        automaticConnectionAttempted = false;
         ResetAdvancedDrafts();
         statusKey = "Read the current THX settings to connect.";
         NotifyAll();
     }
 
-    public Task RefreshAsync() => !CanRead ? Task.CompletedTask : StartAsync(async token =>
+    public Task RefreshAsync()
     {
-        SessionAudioResponse discovery = await adapter.DiscoverAsync(token);
-        return discovery.Status == ThxAudioOperationStatus.Succeeded
-            && discovery.Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly
-            ? await adapter.ReadAsync(endpoint, token)
-            : discovery;
-    }, isMutation: false);
+        if (!CanRead)
+        {
+            return Task.CompletedTask;
+        }
+        automaticConnectionAttempted = true;
+        return StartAsync(token => adapter.ReadAsync(endpoint, token), isMutation: false);
+    }
 
     public Task SetSpatialAsync(bool value) => !CanEdit || SpatialEnabled == value
         ? Task.CompletedTask
@@ -408,7 +421,9 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
                         UpdateConfirmedProfileDraft(state);
                     }
                 }
-                statusKey = availability == ThxAudioAvailability.AvailableReadOnly
+                statusKey = state?.SystemEffectsDisabled == true
+                    ? "Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX."
+                    : availability == ThxAudioAvailability.AvailableReadOnly
                     ? "THX is available for reading. Controls await validation for this model."
                     : state is not null
                     ? "THX settings are up to date."

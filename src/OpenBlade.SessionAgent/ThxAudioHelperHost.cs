@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Session;
 
 namespace OpenBlade.SessionAgent;
 
@@ -66,7 +67,8 @@ internal sealed class ThxAudioHelperHost(
     IThxAudioHelperChannelConnector connector,
     IThxAudioHelperParentVerifier parentVerifier,
     Func<IThxAudioNativeAdapter> createNative,
-    IThxAudioAdmissionSource admission)
+    IThxAudioAdmissionSource admission,
+    Func<string, ThxAudioEndpoint, bool?>? readSystemEffectsDisabled = null)
 {
     private static readonly TimeSpan HostTimeout = TimeSpan.FromSeconds(15);
 
@@ -90,7 +92,8 @@ internal sealed class ThxAudioHelperHost(
                 createNative,
                 admission,
                 channel.Input,
-                channel.Output)
+                channel.Output,
+                readSystemEffectsDisabled)
             .RunAsync(linked.Token)
             .ConfigureAwait(false);
     }

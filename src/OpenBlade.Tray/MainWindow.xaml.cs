@@ -294,7 +294,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             return new LocalizationSnapshotThxAudioAdapter(usesRznb11: string.Equals(
                 Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_STACK"),
-                "rznb11", StringComparison.Ordinal));
+                "rznb11", StringComparison.Ordinal), systemEffectsDisabled: string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_EFFECTS_DISABLED"),
+                "1", StringComparison.Ordinal));
         }
 #endif
         return new SessionThxAudioAdapter();
@@ -3235,6 +3237,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             _ = RefreshDisplaySettingsAsync();
         }
+        else if (destination == "thx-audio" && !localizationSnapshotMode)
+        {
+            _ = RunHandlerAsync(
+                ThxViewModel.ConnectIfNeededAsync,
+                nameof(ApplyNavigationDestination));
+        }
 
         UpdateDisplayRefreshState();
     }
@@ -3425,12 +3433,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private async void OnThxReadSettings(object sender, RoutedEventArgs args) =>
         await RunHandlerAsync(ThxViewModel.RefreshAsync, nameof(OnThxReadSettings));
 
-    private void OnThxEndpointChanged(object sender, ResponsiveChoiceSelectionChangedEventArgs args)
+    private async void OnThxEndpointChanged(object sender, ResponsiveChoiceSelectionChangedEventArgs args)
     {
         if (sender is ResponsiveChoiceSelector selector && args.SelectedItem is ThxAudioEndpointOption option)
         {
+            bool endpointChanged = ThxViewModel.Endpoint != option.Endpoint;
             ThxViewModel.SelectEndpoint(option.Endpoint);
             selector.SelectedItem = ThxViewModel.SelectedEndpoint;
+            if (endpointChanged)
+            {
+                await RunHandlerAsync(
+                    ThxViewModel.ConnectIfNeededAsync,
+                    nameof(OnThxEndpointChanged));
+            }
         }
     }
 

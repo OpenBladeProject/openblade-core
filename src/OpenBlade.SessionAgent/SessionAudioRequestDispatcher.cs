@@ -100,20 +100,20 @@ public sealed class SessionAudioRequestDispatcher
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            ThxAudioAdmission current = admission.Check();
-            if (!current.IsAvailable)
-            {
-                confirmed.Clear();
-                return Response(
-                    request,
-                    ThxAudioOperationStatus.Unavailable,
-                    current.Availability,
-                    current.Error,
-                    null);
-            }
-
             if (request is DiscoverThxAudioRequest)
             {
+                ThxAudioAdmission current = admission.Check();
+                if (!current.IsAvailable)
+                {
+                    confirmed.Clear();
+                    return Response(
+                        request,
+                        ThxAudioOperationStatus.Unavailable,
+                        current.Availability,
+                        current.Error,
+                        null);
+                }
+
                 return Response(
                     request,
                     ThxAudioOperationStatus.Succeeded,
@@ -122,9 +122,13 @@ public sealed class SessionAudioRequestDispatcher
                     null);
             }
 
-            if (request is ReadThxAudioRequest read)
+            // The helper performs fresh full admission immediately before native
+            // access. Repeating the same WMI and component scans here adds latency
+            // without authorizing any additional operation.
+            if (request is ReadThxAudioRequest or ConnectThxAudioRequest)
             {
-                if (!isExplicitRead && mutationsPaused)
+                bool clearPause = request is ReadThxAudioRequest && isExplicitRead;
+                if (!clearPause && mutationsPaused)
                 {
                     return Response(
                         request,
@@ -135,19 +139,12 @@ public sealed class SessionAudioRequestDispatcher
                 }
                 return await ExecuteReadAsync(
                         request,
-                        read.Endpoint,
-                        clearPause: isExplicitRead,
-                        current.Availability,
+                        request is ReadThxAudioRequest read ? read.Endpoint : ((ConnectThxAudioRequest)request).Endpoint,
+                        clearPause,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
 
-            if (!current.MutationAllowed)
-            {
-                return Response(request, ThxAudioOperationStatus.Unavailable,
-                    ThxAudioAvailability.AvailableReadOnly,
-                    "This THX stack requires model-specific write validation.", null);
-            }
             ThxAudioEndpoint endpoint = GetEndpoint(request);
             if (mutationsPaused || !confirmed.TryGetValue(endpoint, out ThxAudioState? prior))
             {
@@ -255,7 +252,6 @@ public sealed class SessionAudioRequestDispatcher
         SessionAudioRequest request,
         ThxAudioEndpoint endpoint,
         bool clearPause,
-        ThxAudioAvailability admittedAvailability,
         CancellationToken cancellationToken)
     {
         ThxAudioWorkerResult result;
@@ -289,13 +285,12 @@ public sealed class SessionAudioRequestDispatcher
             return Response(
                 request,
                 result.Status,
-                admittedAvailability == ThxAudioAvailability.AvailableReadOnly
-                    ? ThxAudioAvailability.AvailableReadOnly : result.Availability,
+                result.Availability,
                 null,
                 state);
         }
 
-        confirmed.Remove(endpoint);
+        InvalidateConfirmed(endpoint, result);
         return Response(
             request,
             result.Status == ThxAudioOperationStatus.Indeterminate
@@ -325,6 +320,7 @@ public sealed class SessionAudioRequestDispatcher
                 state);
         }
 
+        InvalidateConfirmed(endpoint, result);
         if (result.Status == ThxAudioOperationStatus.Indeterminate
             || result.Status == ThxAudioOperationStatus.Succeeded)
         {
@@ -337,13 +333,26 @@ public sealed class SessionAudioRequestDispatcher
                 null);
         }
 
-        confirmed.Remove(endpoint);
         return Response(
             request,
             result.Status,
             result.Availability,
             result.Error ?? "The THX mutation failed.",
             null);
+    }
+
+    private void InvalidateConfirmed(ThxAudioEndpoint endpoint, ThxAudioWorkerResult result)
+    {
+        if (result.Status == ThxAudioOperationStatus.Unavailable
+            || result.Availability is not (ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly))
+        {
+            // Admission covers the whole stack, not just the requested output.
+            confirmed.Clear();
+        }
+        else
+        {
+            confirmed.Remove(endpoint);
+        }
     }
 
     private void MarkIndeterminate(ThxAudioEndpoint endpoint)
