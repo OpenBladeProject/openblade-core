@@ -113,6 +113,7 @@ try {
             'profiles-narrow',
             'profiles-wide',
             'laptop',
+            'laptop-audio',
             'lighting',
             'display',
             'settings',
