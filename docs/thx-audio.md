@@ -2,8 +2,8 @@
 
 OpenBlade can connect to the supported THX components already installed on a
 Razer Blade 16 RZ09-0581 (`1532:02E0`). The integration is experimental and off
-by default. Standalone operation with Synapse closed still needs physical
-validation; the implementation has only been tested with a simulated backend.
+by default. Reading settings with Synapse closed has been validated on the
+admitted stack. Setting changes and audible processing still need validation.
 
 OpenBlade does not install THX software or drivers. Other Blade models and
 different THX component builds are not yet supported.
@@ -43,6 +43,9 @@ accepts a single request over a private connection to its verified parent and
 loads the pinned native client only for an explicit read or setting change.
 The helper belongs to a kill-on-close Windows job before it receives work.
 An unconfirmed helper exit blocks further operations until its exit is confirmed.
+The native DLL stays mapped until the one-shot helper exits because its async
+callbacks can outlive client unregistration. Windows provides this lifetime
+through [module pinning](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandleexw).
 The client talks to the separately installed THX properties service, while
 the Windows Audio APO performs audio processing. The helper does not open
 the laptop control HID handle, launch Synapse, install drivers, or elevate.
@@ -84,15 +87,49 @@ disable spatial audio. OpenBlade does not copy those EQ side effects.
 
 The cached updater metadata referenced THX `4.2.37.1846`; the inspected
 installed driver package is `4.2.41.2499`. They are separate evidence
-snapshots. No vendor code was loaded, no THX API was called, and no audio
-settings or installed processes were changed during implementation.
+snapshots. Initial implementation used static inspection and simulated calls;
+the later authorized read-only runtime validation is recorded below.
+
+## Read-only runtime validation
+
+On 2026-10-16, both exact RZ09-0581 host identity sources, present USB
+`1532:02E0`, the pinned component hashes, and the running THX service passed
+production admission. The native DLL had a valid Razer signature. The user
+closed Synapse; no AppEngine process was present during the queries.
+
+An isolated developer runner used the production dispatcher, authenticated
+helper pipe, Windows job, and native adapter. Its adapter rejected
+`SetProperty` and `SelectPreset` before any native invocation. It queried
+Speakers, Headphones, Speakers, then Headphones, with fresh admission each time.
+
+| Endpoint | Spatial audio | Equalizer | Selected preset | Presets |
+| --- | --- | --- | --- | --- |
+| Speakers | Off | Off | `music` | 218 |
+| Headphones | Off | Off | `default` | 218 |
+
+Repeated states matched. All four `AddDevice`, `CheckStatus`, and
+`RemoveDevice` calls succeeded; all helpers exited normally. No setting or
+preset mutation was invoked, no helper remained, and the THX service remained
+running. This confirms standalone state access, not audible processing or
+setting-change behavior. The first query establishes the available baseline;
+it cannot prove state from before client registration.
+
+The first attempts exposed three implementation gaps, corrected in
+`6b955bd04e1f9e7e91d77b917a912053d72a6f45`: the 218-entry catalog exceeded
+the original 128-entry limit; the selected preset was a bare UTF-8 ID rather
+than a JSON string; and unloading the DLL after successful unregistration
+caused a helper access violation in its unloaded image. The list limit is now
+256 with the independent 64 KiB frame limit retained. Selected IDs remain
+bounded and must belong to the endpoint's returned catalog. Pinning the native
+image until helper exit resolved the observed unload failure. Successful reads
+were repeated after these corrections, with no new helper crash events.
 
 ## Remaining validation
 
-The draft implementation needs separately authorized standalone native and
-audio validation on the exact admitted stack. Check endpoint selection,
-native registration and cleanup effects, supported presets, confirmed
-readback, interruption handling, and preservation of the original settings.
+The draft implementation still needs separately authorized setting-change and
+audio validation on the exact admitted stack. Check audible processing,
+matching mutation readback, interruption handling, and restoration of the
+original settings. No such setting changes were part of the read-only run.
 Keep the change draft until those results are recorded. Any UI preview must
 use a disconnected, simulated backend and must not connect to the installed
 Session Agent's THX endpoint.
