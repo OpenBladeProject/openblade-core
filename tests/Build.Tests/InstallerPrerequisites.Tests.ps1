@@ -59,6 +59,7 @@ $script:runtimeDownloadCount = 0
 $script:runtimeDownloadFailure = $false
 $script:runtimeBadDownloadSignature = $false
 $script:runtimePublishCompetitor = $false
+$script:runtimeCompetitorLock = $null
 $script:runtimeFixture = [byte[]]@(1, 2, 3)
 $fixtureFile = Join-Path $cacheTestRoot 'fixture.exe'
 try {
@@ -80,6 +81,9 @@ try {
         if ($script:runtimeDownloadFailure) { throw 'Simulated interrupted download' }
         if ($script:runtimePublishCompetitor) {
             [IO.File]::WriteAllBytes($cached, $script:runtimeFixture)
+            # Allow reads but reject replacement, forcing the IOException winner path.
+            $script:runtimeCompetitorLock = [IO.File]::Open(
+                $cached, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
         }
     }
     function Copy-TestRuntime([string]$Name, [string]$Source = '') {
@@ -134,7 +138,13 @@ try {
     # Simulate another build publishing while this one downloads.
     Remove-Item -LiteralPath $cached
     $script:runtimePublishCompetitor = $true
-    $null = Copy-TestRuntime 'concurrent-winner'
+    try { $null = Copy-TestRuntime 'concurrent-winner' }
+    finally {
+        if ($null -ne $script:runtimeCompetitorLock) {
+            $script:runtimeCompetitorLock.Dispose()
+            $script:runtimeCompetitorLock = $null
+        }
+    }
     Assert-DownloadCount 7
     $script:runtimePublishCompetitor = $false
     if (@(Get-ChildItem -LiteralPath $cacheTestDirectory -Recurse -Filter '*.download').Count -ne 0) {
@@ -142,6 +152,7 @@ try {
     }
 }
 finally {
+    if ($null -ne $script:runtimeCompetitorLock) { $script:runtimeCompetitorLock.Dispose() }
     Remove-Item Function:\Get-AuthenticodeSignature -ErrorAction SilentlyContinue
     Remove-Item Function:\Invoke-WebRequest -ErrorAction SilentlyContinue
     Remove-Item Function:\Copy-TestRuntime -ErrorAction SilentlyContinue
