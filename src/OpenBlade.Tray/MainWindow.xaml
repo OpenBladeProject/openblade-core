@@ -3110,6 +3110,7 @@
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <local:ResponsiveChoiceSelector x:Uid="MainWindow_ThxAudioOutput"
+                                                          ExpandedMinWindowWidth="800"
                                                           ItemsSource="{x:Bind ThxViewModel.Endpoints, Mode=OneWay}"
                                                           SelectedItem="{x:Bind ThxViewModel.SelectedEndpoint, Mode=OneWay}"
                                                           DisplayMemberPath="Label" AccessibleName="THX audio output"
@@ -3160,6 +3161,7 @@
                                             <TextBlock x:Uid="MainWindow_ThxAudioPresetTitle" Text="Equalizer preset"
                                                        Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
                                             <local:ResponsiveChoiceSelector x:Uid="MainWindow_ThxAudioPreset"
+                                                      ExpandedMinWindowWidth="800"
                                                       DisplayMemberPath="Name" AccessibleName="THX equalizer preset"
                                                       ItemsSource="{x:Bind ThxViewModel.Presets, Mode=OneWay}"
                                                       SelectedItem="{x:Bind ThxViewModel.SelectedPreset, Mode=OneWay}"
