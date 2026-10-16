@@ -123,7 +123,8 @@ internal sealed class ProductionBatteryPort :
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
         bool allowPadlessHyperBoostLifecycleValidation = false,
         PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
-        bool supportsDirectManualFanTransitions = false)
+        bool supportsDirectManualFanTransitions = false,
+        ThxAudioCapabilities? thxAudioCapabilities = null)
         : this(
             session,
             session,
@@ -146,7 +147,8 @@ internal sealed class ProductionBatteryPort :
             hyperBoostEligibility,
             allowPadlessHyperBoostLifecycleValidation,
             padlessHyperBoostLifecycleBaseMode,
-            supportsDirectManualFanTransitions)
+            supportsDirectManualFanTransitions,
+            thxAudioCapabilities)
     {
     }
 
@@ -172,7 +174,8 @@ internal sealed class ProductionBatteryPort :
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
         bool allowPadlessHyperBoostLifecycleValidation = false,
         PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
-        bool supportsDirectManualFanTransitions = false)
+        bool supportsDirectManualFanTransitions = false,
+        ThxAudioCapabilities? thxAudioCapabilities = null)
         : this(
             sharedCommandGate is null
                 ? actor.Session
@@ -197,7 +200,8 @@ internal sealed class ProductionBatteryPort :
             hyperBoostEligibility,
             allowPadlessHyperBoostLifecycleValidation,
             padlessHyperBoostLifecycleBaseMode,
-            supportsDirectManualFanTransitions)
+            supportsDirectManualFanTransitions,
+            thxAudioCapabilities)
     {
     }
 
@@ -223,7 +227,8 @@ internal sealed class ProductionBatteryPort :
         IHyperBoostEligibilitySource? hyperBoostEligibility,
         bool allowPadlessHyperBoostLifecycleValidation,
         PerformancePreset padlessHyperBoostLifecycleBaseMode,
-        bool supportsDirectManualFanTransitions)
+        bool supportsDirectManualFanTransitions,
+        ThxAudioCapabilities? thxAudioCapabilities)
     {
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
@@ -335,7 +340,8 @@ internal sealed class ProductionBatteryPort :
             hyperBoostAccess,
             hyperBoostWithoutCoolingPadAccess,
             hyperBoostBaseModes,
-            supportsDirectManualFanTransitions);
+            supportsDirectManualFanTransitions,
+            thxAudioCapabilities);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -1552,7 +1558,8 @@ internal sealed class ProductionBatteryPort :
         DeviceFeatureAccess? hyperBoostAccess = null,
         DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
-        bool supportsDirectManualFanTransitions = false)
+        bool supportsDirectManualFanTransitions = false,
+        ThxAudioCapabilities? thxAudioCapabilities = null)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -1696,6 +1703,7 @@ internal sealed class ProductionBatteryPort :
             ObservedPowerSourceBehaviors = observedPowerSourceBehaviors is null
                 ? []
                 : [.. observedPowerSourceBehaviors],
+            ThxAudio = thxAudioCapabilities,
         };
     }
 

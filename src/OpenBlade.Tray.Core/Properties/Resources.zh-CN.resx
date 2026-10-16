@@ -1479,4 +1479,109 @@
   <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
     <value>“风扇最高转速”正在控制风扇。关闭此选项后即可选择风扇模式。</value>
   </data>
+  <data name="THX audio integration is off." xml:space="preserve">
+    <value>THX 音频集成已关闭。</value>
+  </data>
+  <data name="Read the current THX settings to connect." xml:space="preserve">
+    <value>读取当前 THX 设置以连接。</value>
+  </data>
+  <data name="THX settings are up to date." xml:space="preserve">
+    <value>THX 设置已更新。</value>
+  </data>
+  <data name="THX components found. Read the current settings to connect." xml:space="preserve">
+    <value>已找到 THX 组件。读取当前设置以连接。</value>
+  </data>
+  <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
+    <value>无法确认 THX 设置。请重新读取后再进行更改。</value>
+  </data>
+  <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
+    <value>无法确认音频更改。请读取当前设置后再重试。</value>
+  </data>
+  <data name="The supported THX components are unavailable." xml:space="preserve">
+    <value>受支持的 THX 组件不可用。</value>
+  </data>
+  <data name="The Session Agent could not read THX settings." xml:space="preserve">
+    <value>Session Agent 无法读取 THX 设置。</value>
+  </data>
+  <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
+    <value>请关闭 Synapse 后再连接 THX 音频。</value>
+  </data>
+  <data name="Speakers" xml:space="preserve">
+    <value>扬声器</value>
+  </data>
+  <data name="Headphones" xml:space="preserve">
+    <value>耳机</value>
+  </data>
+  <data name="{0} kHz" xml:space="preserve">
+    <value>{0} kHz</value>
+  </data>
+  <data name="{0} Hz equalizer gain" xml:space="preserve">
+    <value>{0} Hz 均衡器增益</value>
+  </data>
+  <data name="{0} dB" xml:space="preserve">
+    <value>{0} dB</value>
+  </data>
+  <data name="Active application profile: {0}" xml:space="preserve">
+    <value>当前应用配置：{0}</value>
+  </data>
+  <data name="Game" xml:space="preserve">
+    <value>游戏</value>
+  </data>
+  <data name="Movie" xml:space="preserve">
+    <value>电影</value>
+  </data>
+  <data name="Music" xml:space="preserve">
+    <value>音乐</value>
+  </data>
+  <data name="Voice" xml:space="preserve">
+    <value>人声</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>默认</value>
+  </data>
+  <data name="THX Immersive Mode" xml:space="preserve">
+    <value>THX 沉浸模式</value>
+  </data>
+  <data name="THX Competitive Mode" xml:space="preserve">
+    <value>THX 竞技模式</value>
+  </data>
+  <data name="Choose EQ presets, then capture." xml:space="preserve">
+    <value>选择均衡器预设，然后读取设置。</value>
+  </data>
+  <data name="Saved audio settings are available for this power profile." xml:space="preserve">
+    <value>此电源配置已有音效设置。</value>
+  </data>
+  <data name="Current audio settings captured. Save the profile to keep them." xml:space="preserve">
+    <value>已读取当前音效设置。请保存到配置中。</value>
+  </data>
+  <data name="Choose an EQ preset for both outputs before capturing audio settings." xml:space="preserve">
+    <value>读取音效设置前，请为两个输出选择均衡器预设。</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before connecting." xml:space="preserve">
+    <value>连接前请关闭 Synapse 和 THX Spatial Audio。</value>
+  </data>
+  <data name="Audio automation is paused. Read the current THX settings to resume." xml:space="preserve">
+    <value>音效自动化已暂停。请读取当前 THX 设置以继续。</value>
+  </data>
+  <data name="Adjust the selected preset, then apply your EQ changes." xml:space="preserve">
+    <value>调整所选预设后，应用均衡器更改。</value>
+  </data>
+  <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
+    <value>选择游戏、电影、音乐、人声或自定义以编辑均衡器。</value>
+  </data>
+  <data name="THX audio is unavailable for this model or audio device." xml:space="preserve">
+    <value>此型号或音频设备不支持 THX 音效。</value>
+  </data>
+  <data name="THX is available for reading. Controls await validation for this model." xml:space="preserve">
+    <value>可以读取 THX 设置。此型号的控制功能尚待验证。</value>
+  </data>
+  <data name="Application routing is not yet enabled for this model." xml:space="preserve">
+    <value>此型号尚未启用应用音效自动切换。</value>
+  </data>
+  <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
+    <value>此输出的 Windows 音频增强已关闭。请在 Windows 声音设置中启用“设备默认效果”以听到 THX 效果。</value>
+  </data>
+  <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
+    <value>应用规则列表已满。请先移除一条规则，再添加新规则。</value>
+  </data>
 </root>

@@ -155,6 +155,7 @@
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="0" />
             </Style>
             <Style x:Key="SettingsExpanderHeaderStyle" TargetType="Border">
                 <Setter Property="Margin" Value="-16,0,-60,0" />
@@ -2136,6 +2137,21 @@
                                    AutomationProperties.Name="Laptop has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
+                <NavigationViewItem x:Uid="MainWindow_ThxAudioNavigationItemText" x:Name="ThxAudioNavigationItem"
+                                    Content="THX Audio" Tag="thx-audio"
+                                    Visibility="{x:Bind ThxAudioNavigationVisibility, Mode=OneWay}">
+                    <NavigationViewItem.Icon>
+                        <!-- Product736 THX mark; provenance in docs/thx-audio.md.
+                             The vector inherits the navigation foreground in both themes. -->
+                        <PathIcon x:Name="ThxAudioNavigationLogo" Width="20" Height="20"
+                                  Data="M20,0 L20,1 L3.5,1 L3.5,6.5 L2.5,6.5 L2.5,1 L0,1 L0.01,0 Z M0,8 L20,8 L20,7 L0,7 Z M5.25,6.5 L6.25,6.5 L6.25,4.5 L10.25,4.5 L10.25,6.5 L11.25,6.5 L11.25,1.5 L10.25,1.5 L10.25,3.5 L6.25,3.5 L6.25,1.5 L5.25,1.5 Z M13.5,6.5 L15.522,4.443 L17.5,6.5 L19,6.5 L16.317,3.776 L18.624,1.5 L17.131,1.5 L15.431,3.166 L13.75,1.5 L12.25,1.5 L14.612,3.823 L12,6.5">
+                            <!-- Center the 20x8 mark inside the 20x20 icon canvas. -->
+                            <PathIcon.RenderTransform>
+                                <TranslateTransform Y="6" />
+                            </PathIcon.RenderTransform>
+                        </PathIcon>
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Uid="MainWindow_LightingNavigationItemText" x:Name="LightingNavigationItem"
                                     Content="Lighting"
                                     Tag="lighting">
@@ -3072,6 +3088,349 @@
                                 </ItemsRepeater>
                             </Border>
                         </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="ThxAudioPage"
+                              Visibility="Collapsed"
+                              HorizontalContentAlignment="Stretch"
+                              HorizontalScrollMode="Disabled"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollMode="Enabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="ThxAudioPageContent"
+                                Padding="28,20,28,28"
+                                Width="{Binding ElementName=ThxAudioPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+                        <StackPanel x:Name="ThxAudioSection">
+                            <TextBlock x:Uid="MainWindow_ThxAudioHeading" Text="THX Audio"
+                                       Style="{StaticResource PageTitleStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="4">
+                                                <TextBlock x:Uid="MainWindow_ThxAudioIntegrationTitle" Text="Use installed THX audio"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Uid="MainWindow_ThxAudioDescription"
+                                                           Text="Experimental. Requires the supported THX components already installed."
+                                                           Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ToggleSwitch x:Uid="MainWindow_ThxAudioIntegrationToggle" Grid.Column="1"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          IsOn="{x:Bind ThxViewModel.IsEnabled, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanToggleIntegration, Mode=OneWay}"
+                                                          AutomationProperties.Name="Use installed THX audio"
+                                                          Toggled="OnThxIntegrationToggled" />
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Margin="16,14,16,18" Spacing="16">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_ThxAudioOutputTitle" Text="Output"
+                                                       Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                            <local:ResponsiveChoiceSelector x:Uid="MainWindow_ThxAudioOutput" Grid.Column="1"
+                                                      ExpandedMinWindowWidth="720"
+                                                      ItemsSource="{x:Bind ThxViewModel.Endpoints, Mode=OneWay}"
+                                                      SelectedItem="{x:Bind ThxViewModel.SelectedEndpoint, Mode=OneWay}"
+                                                      DisplayMemberPath="Label" AccessibleName="THX audio output"
+                                                      IsEnabled="{x:Bind ThxViewModel.CanRead, Mode=OneWay}"
+                                                      SelectionChanged="OnThxEndpointChanged" />
+                                            <Button x:Uid="MainWindow_ThxAudioReadSettings" Grid.Column="2" Content="Read settings"
+                                                    Visibility="{x:Bind ThxViewModel.IsReadSettingsVisible, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind ThxViewModel.CanRead, Mode=OneWay}" Click="OnThxReadSettings" />
+                                        </Grid>
+                                        <Grid x:Name="ThxAudioStatusArea" MinHeight="20">
+                                            <!-- Retain the wrapped status height while the visible text is replaced by progress. -->
+                                            <TextBlock Text="{x:Bind ThxViewModel.StatusMessage, Mode=OneWay}" TextWrapping="Wrap"
+                                                       Style="{StaticResource SecondaryTextStyle}" Opacity="0" IsHitTestVisible="False"
+                                                       AutomationProperties.AccessibilityView="Raw" />
+                                            <TextBlock Text="{x:Bind ThxViewModel.StatusMessage, Mode=OneWay}" TextWrapping="Wrap"
+                                                       Visibility="{x:Bind ThxViewModel.ShowStatusMessage, Mode=OneWay}"
+                                                       VerticalAlignment="Center" Style="{StaticResource SecondaryTextStyle}"
+                                                       AutomationProperties.LiveSetting="Polite" />
+                                            <ProgressBar IsIndeterminate="True" Height="3" VerticalAlignment="Center"
+                                                         Visibility="{x:Bind ThxViewModel.IsBusy, Mode=OneWay}" />
+                                        </Grid>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_ThxAudioSpatialTitle" Text="Spatial audio"
+                                                       Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                            <ToggleSwitch x:Uid="MainWindow_ThxAudioSpatial" Grid.Column="1"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          IsOn="{x:Bind ThxViewModel.SpatialEnabled, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
+                                                          AutomationProperties.Name="THX Spatial Audio" Toggled="OnThxSpatialToggled" />
+                                        </Grid>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_ThxAudioEqualizerTitle" Text="Equalizer"
+                                                       Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                            <ToggleSwitch x:Uid="MainWindow_ThxAudioEqualizer" Grid.Column="1"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          IsOn="{x:Bind ThxViewModel.EqualizerEnabled, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
+                                                          AutomationProperties.Name="THX equalizer" Toggled="OnThxEqualizerToggled" />
+                                        </Grid>
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_ThxAudioPresetTitle" Text="Equalizer preset"
+                                                       Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                            <local:ResponsiveChoiceSelector x:Uid="MainWindow_ThxAudioPreset" Grid.Column="1"
+                                                      ExpandedMinWindowWidth="800"
+                                                      DisplayMemberPath="Name" AccessibleName="THX equalizer preset"
+                                                      ItemsSource="{x:Bind ThxViewModel.Presets, Mode=OneWay}"
+                                                      SelectedItem="{x:Bind ThxViewModel.SelectedPreset, Mode=OneWay}"
+                                                      IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}" SelectionChanged="OnThxPresetChanged" />
+                                        </Grid>
+                                        <TextBlock Text="{x:Bind ThxViewModel.ActiveProfileMessage, Mode=OneWay}"
+                                                   Visibility="{x:Bind ThxViewModel.HasActiveApplicationProfile, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        <StackPanel Spacing="10" Visibility="{x:Bind ThxViewModel.HasEqualizerBands, Mode=OneWay}">
+                                            <ItemsRepeater ItemsSource="{x:Bind ThxViewModel.EqualizerBands, Mode=OneWay}">
+                                                <ItemsRepeater.Layout>
+                                                    <UniformGridLayout MinItemWidth="52" MinColumnSpacing="4" ItemsJustification="SpaceBetween" />
+                                                </ItemsRepeater.Layout>
+                                                <ItemsRepeater.ItemTemplate>
+                                                    <DataTemplate x:DataType="local:ThxEqualizerBandViewModel">
+                                                        <StackPanel Spacing="6" HorizontalAlignment="Stretch">
+                                                            <TextBlock Text="{x:Bind GainLabel, Mode=OneWay}" FontSize="12" TextWrapping="Wrap" TextAlignment="Center" />
+                                                            <Slider Orientation="Vertical" Height="124" Minimum="-12" Maximum="12"
+                                                                    SmallChange="1" LargeChange="1" StepFrequency="1"
+                                                                    Value="{x:Bind DraftGainDb, Mode=TwoWay}"
+                                                                    IsEnabled="{x:Bind CanEdit, Mode=OneWay}"
+                                                                    AutomationProperties.Name="{x:Bind AccessibleName}" HorizontalAlignment="Center" />
+                                                            <TextBlock Text="{x:Bind FrequencyLabel}" FontSize="12" TextWrapping="Wrap" TextAlignment="Center" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsRepeater.ItemTemplate>
+                                            </ItemsRepeater>
+                                            <TextBlock Text="{x:Bind ThxViewModel.EqualizerDraftHint, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                            <Grid x:Name="ThxEqualizerActions" ColumnSpacing="16">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <Button x:Uid="MainWindow_ThxAudioResetEqualizer" Content="Reset to factory"
+                                                            IsEnabled="{x:Bind ThxViewModel.CanResetEqualizer, Mode=OneWay}" Click="OnThxResetEqualizer" />
+                                                    <Button x:Uid="MainWindow_ThxAudioFlattenEqualizer" Content="Flatten"
+                                                            IsEnabled="{x:Bind ThxViewModel.CanEditEqualizerBands, Mode=OneWay}" Click="OnThxFlattenEqualizer" />
+                                                </StackPanel>
+                                                <StackPanel x:Name="ThxEqualizerCommitActions" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                                                    <Button x:Uid="MainWindow_ThxAudioDiscard" Content="Discard changes"
+                                                            IsEnabled="{x:Bind ThxViewModel.CanDiscardEqualizerChanges, Mode=OneWay}" Click="OnThxDiscardEqualizer" />
+                                                    <Button x:Uid="MainWindow_ThxAudioApplyEqualizer" Content="Apply EQ" Style="{StaticResource AccentButtonStyle}"
+                                                            IsEnabled="{x:Bind ThxViewModel.CanApplyEqualizer, Mode=OneWay}" Click="OnThxApplyEqualizer" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,1">
+                                        <Expander x:Name="ThxAudioEnhancements" x:Uid="MainWindow_ThxAudioEnhancements"
+                                                  Style="{StaticResource CardContentExpanderStyle}"
+                                                  IsExpanded="False" AutomationProperties.Name="Enhancements">
+                                            <Expander.Resources>
+                                                <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                                <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                            </Expander.Resources>
+                                            <Expander.Header>
+                                                <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                                    <TextBlock x:Uid="MainWindow_ThxAudioEnhancementsTitle" Text="Enhancements"
+                                                               Style="{StaticResource CardTitleStyle}" Margin="16,14,60,14" TextWrapping="Wrap" />
+                                                </Border>
+                                            </Expander.Header>
+                                            <StackPanel>
+                                                <Border x:Name="ThxNormalizationCell" Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
+                                                        Visibility="{x:Bind ThxViewModel.HasSoundNormalization, Mode=OneWay}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" MinWidth="120" />
+                                                            <ColumnDefinition Width="2*" MinWidth="120" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock x:Uid="MainWindow_ThxAudioNormalizationTitle" Text="Sound normalization"
+                                                                   Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                                        <Slider x:Uid="MainWindow_ThxAudioNormalizationLevel" Grid.Column="1"
+                                                                Style="{StaticResource InlineCardSliderStyle}"
+                                                                Minimum="0" Maximum="100" StepFrequency="1" Tag="SoundNormalization"
+                                                                Value="{x:Bind ThxViewModel.SoundNormalizationLevel, Mode=TwoWay}"
+                                                                IsEnabled="{x:Bind ThxViewModel.CanEditSoundNormalizationLevel, Mode=OneWay}"
+                                                                AutomationProperties.Name="Sound normalization level"
+                                                                PointerPressed="OnThxEnhancementPointerPressed"
+                                                                PointerReleased="OnThxEnhancementPointerCompleted"
+                                                                PointerCaptureLost="OnThxEnhancementPointerCompleted"
+                                                                PointerWheelChanged="OnThxEnhancementPointerWheelChanged"
+                                                                KeyUp="OnThxEnhancementKeyUp" LostFocus="OnThxEnhancementLostFocus" />
+                                                        <TextBlock Grid.Column="2" Text="{x:Bind ThxViewModel.SoundNormalizationLevelLabel, Mode=OneWay}"
+                                                                   MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" />
+                                                        <ToggleSwitch x:Uid="MainWindow_ThxAudioNormalization" Grid.Column="3"
+                                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                                      IsOn="{x:Bind ThxViewModel.SoundNormalizationEnabled, Mode=OneWay}"
+                                                                      IsEnabled="{x:Bind ThxViewModel.CanEditSoundNormalization, Mode=OneWay}"
+                                                                      AutomationProperties.Name="Sound normalization" Toggled="OnThxNormalizationToggled" />
+                                                    </Grid>
+                                                </Border>
+                                                <Border x:Name="ThxVoiceClarityCell" Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
+                                                        Visibility="{x:Bind ThxViewModel.HasVoiceClarity, Mode=OneWay}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" MinWidth="120" />
+                                                            <ColumnDefinition Width="2*" MinWidth="120" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock x:Uid="MainWindow_ThxAudioVoiceClarityTitle" Text="Voice clarity"
+                                                                   Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                                        <Slider x:Uid="MainWindow_ThxAudioVoiceClarityLevel" Grid.Column="1"
+                                                                Style="{StaticResource InlineCardSliderStyle}"
+                                                                Minimum="0" Maximum="100" StepFrequency="1" Tag="VoiceClarity"
+                                                                Value="{x:Bind ThxViewModel.VoiceClarityLevel, Mode=TwoWay}"
+                                                                IsEnabled="{x:Bind ThxViewModel.CanEditVoiceClarityLevel, Mode=OneWay}"
+                                                                AutomationProperties.Name="Voice clarity level"
+                                                                PointerPressed="OnThxEnhancementPointerPressed"
+                                                                PointerReleased="OnThxEnhancementPointerCompleted"
+                                                                PointerCaptureLost="OnThxEnhancementPointerCompleted"
+                                                                PointerWheelChanged="OnThxEnhancementPointerWheelChanged"
+                                                                KeyUp="OnThxEnhancementKeyUp" LostFocus="OnThxEnhancementLostFocus" />
+                                                        <TextBlock Grid.Column="2" Text="{x:Bind ThxViewModel.VoiceClarityLevelLabel, Mode=OneWay}"
+                                                                   MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" />
+                                                        <ToggleSwitch x:Uid="MainWindow_ThxAudioVoiceClarity" Grid.Column="3"
+                                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                                      IsOn="{x:Bind ThxViewModel.VoiceClarityEnabled, Mode=OneWay}"
+                                                                      IsEnabled="{x:Bind ThxViewModel.CanEditVoiceClarity, Mode=OneWay}"
+                                                                      AutomationProperties.Name="Voice clarity" Toggled="OnThxVoiceClarityToggled" />
+                                                    </Grid>
+                                                </Border>
+                                            </StackPanel>
+                                        </Expander>
+                                    </Border>
+                                    <Expander x:Name="ThxAudioApplications" x:Uid="MainWindow_ThxAudioApplications"
+                                              Style="{StaticResource CardContentExpanderStyle}"
+                                              IsExpanded="False" AutomationProperties.Name="Saved audio and applications">
+                                        <Expander.Resources>
+                                            <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                            <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                        </Expander.Resources>
+                                        <Expander.Header>
+                                            <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                                <TextBlock x:Uid="MainWindow_ThxAudioApplicationsTitle" Text="Saved audio and applications"
+                                                           Style="{StaticResource CardTitleStyle}" Margin="16,14,60,14" TextWrapping="Wrap" />
+                                            </Border>
+                                        </Expander.Header>
+                                        <StackPanel>
+                                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}">
+                                                <Grid ColumnSpacing="20">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                                        <TextBlock x:Uid="MainWindow_ThxAudioProfileDescription"
+                                                                   Text="Speaker and headphone settings"
+                                                                   TextWrapping="Wrap" Style="{StaticResource CardTitleStyle}" />
+                                                        <TextBlock Text="{x:Bind ThxViewModel.AudioProfileMessage, Mode=OneWay}"
+                                                                   TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" AutomationProperties.LiveSetting="Polite" />
+                                                    </StackPanel>
+                                                <Button x:Uid="MainWindow_ThxAudioCaptureProfile" Grid.Column="1" VerticalAlignment="Center" Content="Capture current audio settings"
+                                                        IsEnabled="{x:Bind ThxViewModel.CanCaptureAudioProfile, Mode=OneWay}" Click="OnThxCaptureAudioProfile" />
+                                                </Grid>
+                                            </Border>
+                                            <Border x:Name="ThxAudioRoutingCell" Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                                        <ContentControl x:Name="ThxAudioRoutingLabel" x:Uid="MainWindow_ThxAudioRoutingEnabled"
+                                                                        Content="Apply saved audio and application rules automatically" IsTabStop="False"
+                                                                        HorizontalContentAlignment="Stretch">
+                                                            <ContentControl.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Style="{StaticResource CardTitleStyle}" SizeChanged="OnDashboardSingleLineTitleSizeChanged" /></DataTemplate></ContentControl.ContentTemplate>
+                                                        </ContentControl>
+                                                        <TextBlock Text="{x:Bind ThxViewModel.ApplicationRoutingUnavailableHint, Mode=OneWay}"
+                                                                   Visibility="{x:Bind ThxViewModel.ApplicationRoutingUnavailable, Mode=OneWay}"
+                                                                   TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" />
+                                                    </StackPanel>
+                                                    <ToggleSwitch Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                                  AutomationProperties.Name="{Binding ElementName=ThxAudioRoutingLabel, Path=Content}"
+                                                                  IsOn="{x:Bind ThxViewModel.ApplicationRoutingEnabled, Mode=TwoWay}"
+                                                                  IsEnabled="{x:Bind ThxViewModel.CanConfigureApplicationRouting, Mode=OneWay}" />
+                                                </Grid>
+                                            </Border>
+                                            <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                                <StackPanel Spacing="12">
+                                                    <ItemsRepeater ItemsSource="{x:Bind ThxViewModel.ApplicationRules}"
+                                                                   Visibility="{x:Bind ThxViewModel.HasApplicationRules, Mode=OneWay}">
+                                                        <ItemsRepeater.ItemTemplate>
+                                                            <DataTemplate x:DataType="local:ThxApplicationRuleOption">
+                                                                <Grid ColumnSpacing="12" Margin="0,4">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <StackPanel Spacing="2">
+                                                                        <TextBlock Text="{x:Bind ExecutableName}" TextWrapping="Wrap" />
+                                                                        <TextBlock Text="{x:Bind Label}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                                    </StackPanel>
+                                                                    <Button x:Uid="MainWindow_ThxAudioRemoveRule" Grid.Column="1" Content="Remove"
+                                                                            Tag="{x:Bind}" Click="OnThxRemoveApplicationRule" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsRepeater.ItemTemplate>
+                                                    </ItemsRepeater>
+                                                    <TextBox x:Uid="MainWindow_ThxAudioApplicationExecutable" Header="Application executable" PlaceholderText="game.exe"
+                                                             Text="{x:Bind ThxViewModel.ApplicationExecutable, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             MaxLength="260" />
+                                                    <Grid ColumnSpacing="16">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock x:Uid="MainWindow_ThxAudioApplicationModeTitle" Text="Audio mode"
+                                                                   VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                        <local:ResponsiveChoiceSelector x:Uid="MainWindow_ThxAudioApplicationOutput" Grid.Column="1" ExpandedMinWindowWidth="1200"
+                                                                  AccessibleName="Application audio mode" DisplayMemberPath="Label"
+                                                                  ItemsSource="{x:Bind ThxViewModel.ApplicationOutputs, Mode=OneWay}"
+                                                                  SelectedItem="{x:Bind ThxViewModel.ApplicationOutput, Mode=OneWay}"
+                                                                  SelectionChanged="OnThxApplicationOutputChanged" />
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Border>
+                                            <Border x:Name="ThxAudioProfileActionsCell" Style="{StaticResource SettingsLastNeutralSubcardStyle}"
+                                                    Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="8">
+                                                        <Button x:Uid="MainWindow_ThxAudioAddRule" Content="Add application rule"
+                                                                IsEnabled="{x:Bind ThxViewModel.CanAddApplicationRule, Mode=OneWay}" Click="OnThxAddApplicationRule" />
+                                                        <Button x:Uid="MainWindow_ThxAudioSaveProfile" Content="Save to power profile"
+                                                                IsEnabled="{x:Bind ThxViewModel.CanSaveAudioProfile, Mode=OneWay}" Click="OnThxSaveAudioProfile" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Expander>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

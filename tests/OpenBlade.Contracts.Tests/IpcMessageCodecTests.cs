@@ -573,7 +573,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(67, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(68, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -617,7 +617,7 @@ public sealed class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(67, json["version"]!.GetValue<int>());
+        Assert.Equal(68, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -652,7 +652,7 @@ public sealed class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(67, json["version"]!.GetValue<int>());
+        Assert.Equal(68, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1227,7 +1227,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(67, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(68, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1904,7 +1904,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(67, exception.ExpectedVersion);
+        Assert.Equal(68, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1922,7 +1922,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(67, exception.ExpectedVersion);
+        Assert.Equal(68, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1952,7 +1952,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(67, exception.ExpectedVersion);
+        Assert.Equal(68, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1984,6 +1984,74 @@ public sealed class IpcMessageCodecTests
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MaximumThxRulesAndSequenceLightingFitAllProfilesAndStatus(bool escapedNames)
+    {
+        var rules = new List<ThxApplicationAudioRule>();
+        for (int index = 0; ; index++)
+        {
+            var next = new ThxApplicationAudioRule(index.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + new string(escapedNames ? '界' : 'a', 240) + ".exe", ThxApplicationAudioOutput.Competitive);
+            if (!ThxAudioProfileSettings.ApplicationRulesFitWithinByteLimit([.. rules, next]))
+            {
+                break;
+            }
+            rules.Add(next);
+        }
+        for (int index = 0; ; index++)
+        {
+            var next = new ThxApplicationAudioRule("tail" + index.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ".exe", ThxApplicationAudioOutput.Competitive);
+            if (!ThxAudioProfileSettings.ApplicationRulesFitWithinByteLimit([.. rules, next]))
+            {
+                break;
+            }
+            rules.Add(next);
+        }
+        Assert.InRange(JsonSerializer.SerializeToUtf8Bytes(rules).Length,
+            ThxAudioProfileSettings.MaximumApplicationRuleBytes - 64,
+            ThxAudioProfileSettings.MaximumApplicationRuleBytes);
+        double[] gains = Enumerable.Repeat(-1.2345678901234567E-100, 10).ToArray();
+        var curves = new ThxEqualizerCurves(gains, gains, gains, gains, gains);
+        var audio = new ThxAudioProfileSettings(true,
+            new(false, false, ThxEqualizerPreset.Custom, curves, new(false, 100), new(false, 100)),
+            new(false, false, ThxEqualizerPreset.Custom, curves, new(false, 100), null), rules);
+        Assert.True(ThxAudioProfileSettings.IsWellFormed(audio));
+        LightingSettings lighting = LightingSettingsFactory.Sequence(KeyboardLightingLayoutIds.Rz09_0581,
+            KeyboardLightingSequenceCodec.Encode(CreateMaximumSizedSequenceFrames()), loop: true, brightness: 100);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = lighting, ThxAudio = audio },
+            Battery = defaults.Battery with { Lighting = lighting, ThxAudio = audio },
+            UsbC = defaults.UsbC with { Lighting = lighting, ThxAudio = audio },
+        };
+        using var requestStream = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(requestStream,
+            new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles), CancellationToken.None);
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            Profiles = profiles,
+            ConfirmedState = new ConfirmedDeviceState(null, null, null, lighting),
+            DesiredState = baseline.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(lighting, SettingValueSource.PowerProfile),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(lighting, OverrideLifetime.Persistent),
+        };
+        using var statusStream = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(statusStream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
+        statusStream.Position = 0;
+        ServiceStatusEvent response = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(statusStream, CancellationToken.None));
+        Assert.Equal(rules.Count, response.Status.Profiles.Battery.ThxAudio!.ApplicationRules.Count);
+        Assert.InRange(statusStream.Length, 30_000, OpenBladeIpc.MaximumMessageBytes + sizeof(int));
     }
 
     [Fact]
@@ -2061,6 +2129,185 @@ public sealed class IpcMessageCodecTests
                 KeyboardLightingLayoutId = layoutId,
             },
         });
+    }
+
+    [Theory]
+    [InlineData(DeviceFeatureAccess.ReadWrite, ThxAudioProductIds.Rznb11)]
+    [InlineData(DeviceFeatureAccess.ReadWrite, ThxAudioProductIds.Rznb12)]
+    public async Task WriteServerFrameAsync_RoundTripsKnownThxCapability(
+        DeviceFeatureAccess access,
+        string productId)
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                ThxAudio = new ThxAudioCapabilities(
+                    access,
+                    productId),
+            },
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+        stream.Position = 0;
+        ServiceStatusEvent roundTrip = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+
+        Assert.Equal(status.Capabilities.ThxAudio, roundTrip.Status.Capabilities!.ThxAudio);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownThxProductCapability()
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                ThxAudio = new ThxAudioCapabilities(
+                    DeviceFeatureAccess.ReadWrite,
+                    "unknown-product"),
+            },
+        });
+    }
+
+    [Theory]
+    [InlineData(ThxAudioProfileSettings.SpeakerEqualizerBandCount)]
+    [InlineData(ThxAudioProfileSettings.HeadphoneEqualizerBandCount)]
+    public async Task WriteServerFrameAsync_RoundTripsSupportedSpeakerThxGeometry(
+        int speakerBandCount)
+    {
+        static ThxEqualizerCurves Curves(int count)
+        {
+            double[] values = Enumerable.Range(0, count).Select(index => (double)index).ToArray();
+            return new(values, values, values, values, values);
+        }
+        var settings = new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: false,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, Curves(speakerBandCount),
+                new(false, 50), new(false, 50)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game,
+                Curves(ThxAudioProfileSettings.HeadphoneEqualizerBandCount),
+                new(false, 50), null),
+            ApplicationRules: []);
+        ProfileSet profiles = CreateStatus().Profiles;
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Profiles = profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { ThxAudio = settings },
+            },
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+        stream.Position = 0;
+        ServiceStatusEvent roundTrip = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+
+        ThxAudioProfileSettings actual = Assert.IsType<ThxAudioProfileSettings>(
+            roundTrip.Status.Profiles.PluggedIn.ThxAudio);
+        Assert.All(
+            new[]
+            {
+                actual.Speakers.EqualizerCurves.Game,
+                actual.Speakers.EqualizerCurves.Movie,
+                actual.Speakers.EqualizerCurves.Music,
+                actual.Speakers.EqualizerCurves.Voice,
+                actual.Speakers.EqualizerCurves.Custom,
+            },
+            curve => Assert.Equal(speakerBandCount, curve.Count));
+        Assert.Equal(
+            ThxAudioProfileSettings.HeadphoneEqualizerBandCount,
+            actual.Headphones.EqualizerCurves.Game.Count);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsMixedSpeakerThxGeometry()
+    {
+        static double[] Gains(int count) => new double[count];
+        var speakerCurves = new ThxEqualizerCurves(
+            Gains(ThxAudioProfileSettings.HeadphoneEqualizerBandCount),
+            Gains(ThxAudioProfileSettings.SpeakerEqualizerBandCount),
+            Gains(ThxAudioProfileSettings.SpeakerEqualizerBandCount),
+            Gains(ThxAudioProfileSettings.SpeakerEqualizerBandCount),
+            Gains(ThxAudioProfileSettings.SpeakerEqualizerBandCount));
+        double[] headphoneGains = Gains(ThxAudioProfileSettings.HeadphoneEqualizerBandCount);
+        var headphoneCurves = new ThxEqualizerCurves(
+            headphoneGains, headphoneGains, headphoneGains, headphoneGains, headphoneGains);
+        var settings = new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: false,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, speakerCurves,
+                new(false, 50), new(false, 50)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game, headphoneCurves,
+                new(false, 50), null),
+            ApplicationRules: []);
+        ProfileSet profiles = CreateStatus().Profiles;
+
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            Profiles = profiles with
+            {
+                PluggedIn = profiles.PluggedIn with { ThxAudio = settings },
+            },
+        });
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_InvalidThxExecutableNameIsInvalidBody()
+    {
+        static ThxEqualizerCurves Curves(int count)
+        {
+            double[] values = new double[count];
+            return new(values, values, values, values, values);
+        }
+        var settings = new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: true,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, Curves(7),
+                new(false, 0), new(false, 0)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game, Curves(10),
+                new(false, 0), null),
+            ApplicationRules:
+            [
+                new("game.exe", ThxApplicationAudioOutput.Immersive),
+            ]);
+        ProfileSet profiles = CreateStatus().Profiles;
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Profiles = profiles with
+                {
+                    PluggedIn = profiles.PluggedIn with { ThxAudio = settings },
+                },
+            });
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
+        JsonObject serializedProfiles = Assert.IsType<JsonObject>(
+            status[nameof(ServiceStatusSnapshot.Profiles)]);
+        JsonObject pluggedIn = Assert.IsType<JsonObject>(
+            serializedProfiles[nameof(ProfileSet.PluggedIn)]);
+        JsonObject thxAudio = Assert.IsType<JsonObject>(
+            pluggedIn[nameof(PowerProfile.ThxAudio)]);
+        JsonArray rules = Assert.IsType<JsonArray>(
+            thxAudio[nameof(ThxAudioProfileSettings.ApplicationRules)]);
+        Assert.IsType<JsonObject>(rules[0])[nameof(ThxApplicationAudioRule.ExecutableName)] =
+            "bad:name.exe";
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal("IPC message body is invalid.", exception.Message);
+        Assert.IsType<ArgumentException>(exception.InnerException);
     }
 
     [Fact]
@@ -2574,6 +2821,8 @@ public sealed class IpcMessageCodecTests
         Assert.False(projected.ContainsKey("experimentalWritesPaused"));
         Assert.False(projected.ContainsKey("isExperimentalDevice"));
         Assert.False(projected.ContainsKey("experimentalSupportSource"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("thxAudio"));
+        Assert.False(projected["profiles"]!["pluggedIn"]!.AsObject().ContainsKey("thxAudio"));
         Assert.Equal(
             new[] { 50, 55, 60, 65, 70, 75, 80 },
             projected["capabilities"]!["chargeLimits"]!

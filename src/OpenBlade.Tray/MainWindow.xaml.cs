@@ -180,6 +180,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             gpuAppAdapter.QueryAsync,
             gpuAppAdapter.CloseAsync,
             ViewModel.SetGpuAppCleanupVisibleAsync);
+        ThxViewModel = new ThxAudioViewModel(CreateThxAudioAdapter(localizationSnapshotMode));
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
@@ -222,6 +223,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         chargeLimitCommitTimer.Interval = ChargeLimitCommitDelay;
         chargeLimitCommitTimer.IsRepeating = false;
         chargeLimitCommitTimer.Tick += OnChargeLimitCommitTimerTick;
+        thxNormalizationCommitTimer = dispatcherQueue.CreateTimer();
+        thxVoiceClarityCommitTimer = dispatcherQueue.CreateTimer();
+        foreach (DispatcherQueueTimer timer in new[] { thxNormalizationCommitTimer, thxVoiceClarityCommitTimer })
+        {
+            timer.Interval = ThxEnhancementCommitDelay;
+            timer.IsRepeating = false;
+            timer.Tick += OnThxEnhancementCommitTimerTick;
+        }
         lightingCommitTimer = dispatcherQueue.CreateTimer();
         lightingCommitTimer.Interval = LightingCommitDelay;
         lightingCommitTimer.IsRepeating = false;
@@ -233,8 +242,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (localizationSnapshotMode)
         {
             Root.RequestedTheme = ElementTheme.Light;
+            if (string.Equals(Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_DARK_THEME"),
+                    "1", StringComparison.Ordinal))
+            {
+                Root.RequestedTheme = ElementTheme.Dark;
+            }
             var snapshotTitleForeground = new SolidColorBrush(
-                Microsoft.UI.Colors.Black);
+                Root.RequestedTheme == ElementTheme.Dark
+                    ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black);
             AppTitleBar.Foreground = snapshotTitleForeground;
             AppTitleBar.Resources["TitleBarDeactivatedForegroundBrush"] =
                 snapshotTitleForeground;
@@ -243,6 +258,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (localizationSnapshotMode)
         {
             LaptopPageContent.Transitions.Clear();
+            ThxAudioPageContent.Transitions.Clear();
             Root.Background = new SolidColorBrush(
                 Root.ActualTheme == ElementTheme.Dark
                     ? Microsoft.UI.Colors.Black
@@ -264,11 +280,76 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public MainViewModel ViewModel { get; }
 
+    public ThxAudioViewModel ThxViewModel { get; }
+
+    public Visibility ThxAudioNavigationVisibility => localizationSnapshotMode
+        || RazerBladeModelCatalog.Find(ViewModel.DetectedFirmware?.ModelNumber)?.ModelNumber
+            is "RZ09-0581" or "RZ09-0528" or "RZ09-0530"
+        ? Visibility.Visible : Visibility.Collapsed;
+
     public DisplaySettingsViewModel DisplayViewModel { get; }
 
     public UpdateCheckViewModel UpdateViewModel { get; }
 
     public FirmwareUpdateAssistantViewModel FirmwareUpdateViewModel { get; }
+
+    private static IThxAudioAdapter CreateThxAudioAdapter(bool snapshotMode)
+    {
+#if OPENBLADE_DEVELOPER_HARNESS
+        if (snapshotMode)
+        {
+            return new LocalizationSnapshotThxAudioAdapter(usesRznb11: string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_STACK"),
+                "rznb11", StringComparison.Ordinal), systemEffectsDisabled: string.Equals(
+                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_EFFECTS_DISABLED"),
+                "1", StringComparison.Ordinal));
+        }
+#endif
+        return new SessionThxAudioAdapter();
+    }
+
+#if OPENBLADE_DEVELOPER_HARNESS
+    internal async Task ShowLocalizationSnapshotThxAudioAsync(string destination)
+    {
+        if (!localizationSnapshotMode)
+        {
+            throw new InvalidOperationException("THX sample data requires disconnected snapshot mode.");
+        }
+        ThxViewModel.ApplyPreference(true);
+        ThxViewModel.SelectEndpoint(destination == "thx-audio-headphones"
+            ? ThxAudioEndpoint.Headphones : ThxAudioEndpoint.Speakers);
+        ThxAudioEnhancements.IsExpanded = false;
+        ThxAudioApplications.IsExpanded = false;
+        await ThxViewModel.RefreshAsync();
+        FrameworkElement target = ThxAudioSection;
+        if (destination == "thx-audio-enhancements")
+        {
+            ThxAudioEnhancements.IsExpanded = true;
+            target = ThxAudioEnhancements;
+        }
+        else if (destination == "thx-audio-applications")
+        {
+            ThxAudioApplications.IsExpanded = true;
+            target = ThxAudioApplications;
+            if (!string.Equals(Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_EMPTY_RULES"),
+                "1", StringComparison.Ordinal))
+            {
+                ThxViewModel.ApplicationExecutable = "game.exe";
+                ThxViewModel.ApplicationOutput = ThxViewModel.ApplicationOutputs.FirstOrDefault(
+                    option => option.Output == ThxApplicationAudioOutput.Immersive);
+                ThxViewModel.AddApplicationRule();
+            }
+        }
+        if (target != ThxAudioSection)
+        {
+            target.StartBringIntoView(new BringIntoViewOptions
+            {
+                AnimationDesired = false,
+                VerticalAlignmentRatio = 0,
+            });
+        }
+    }
+#endif
 
     internal static MainWindow CreateLocalizationSnapshot() => new(
         WindowsProcessorEfficiencyPolicy.Discover(),
@@ -566,6 +647,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         chargeLimitCommits.Dispose();
+        DisposeThxEnhancementCommits();
         lightingCommitTimer.Stop();
         lightingCommitTimer.Tick -= OnLightingCommitTimerTick;
         lightingCommits.Dispose();
@@ -596,6 +678,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             "preference save queue",
             preferenceSaveQueue.DisposeAsync);
         await DisposeComponentSafelyAsync(
+            "THX audio view model",
+            ThxViewModel.DisposeAsync);
+        await DisposeComponentSafelyAsync(
             "display view model",
             DisplayViewModel.DisposeAsync);
         await DisposeComponentSafelyAsync(
@@ -624,6 +709,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         ThemePreference initialTheme = ThemePreference.FollowWindows;
         UiLanguagePreference initialLanguage = UiLanguagePreference.FollowSystem;
+        bool initialThxAudioIntegrationEnabled = false;
         LiveReadingsCadence liveReadingsRefreshCadence =
             LiveReadingsCadence.EveryTwoSeconds;
         TrayHoverLabelMode trayHoverLabelMode =
@@ -681,6 +767,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
             initialLanguage = initialLanguageOverride ?? preferences.EffectiveLanguage;
+            initialThxAudioIntegrationEnabled = preferences.ThxAudioIntegrationEnabled;
             liveReadingsRefreshCadence = preferences.EffectiveLiveReadingsCadence;
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
             dashboardTelemetryItems = preferences.EffectiveDashboardTelemetryItems;
@@ -773,6 +860,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         ViewModel.Theme = initialTheme;
         ViewModel.LanguagePreference = initialLanguage;
+        ThxViewModel.ApplyPreference(initialThxAudioIntegrationEnabled);
         ViewModel.LiveReadingsRefreshCadence = liveReadingsRefreshCadence;
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
@@ -870,6 +958,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+        ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
+        ThxViewModel.ProfilePersistenceAvailable = ViewModel.CanSaveThxAudioProfile;
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
@@ -927,8 +1017,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
         }
 
+        if (args.PropertyName is nameof(MainViewModel.ActivePowerSource) or nameof(MainViewModel.ActiveSavedThxAudioProfile))
+        {
+            ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.CanSaveThxAudioProfile))
+        {
+            ThxViewModel.ProfilePersistenceAvailable = ViewModel.CanSaveThxAudioProfile;
+        }
+
         if (args.PropertyName == nameof(MainViewModel.DetectedFirmware))
         {
+            OnPropertyChanged(nameof(ThxAudioNavigationVisibility));
             FirmwareUpdateViewModel.UpdateInstalledFirmware(ViewModel.DetectedFirmware);
             FirmwareUpdateViewModel.StartAutomaticCheck();
         }
@@ -1030,9 +1131,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ScheduleLightingCommit();
         }
 
-        if (args.PropertyName == nameof(MainViewModel.IsLightingVisible)
-            && !ViewModel.IsLightingVisible
-            && LightingPage.Visibility == Visibility.Visible)
+        if ((args.PropertyName == nameof(MainViewModel.IsLightingVisible)
+                && !ViewModel.IsLightingVisible
+                && LightingPage.Visibility == Visibility.Visible)
+            || (args.PropertyName == nameof(MainViewModel.DetectedFirmware)
+                && ThxAudioNavigationVisibility == Visibility.Collapsed
+                && ThxAudioPage.Visibility == Visibility.Visible))
         {
             void ReturnToDashboard() => MainNavigation.SelectedItem = HomeNavigationItem;
             if (dispatcherQueue.HasThreadAccess)
@@ -1185,7 +1289,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastNotifiedFirmwareSignature: notificationCoordinator.LastNotifiedFirmwareSignature,
                 TrayDashboard: trayDashboardPreference,
                 LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
-                Language: ViewModel.LanguagePreference));
+                Language: ViewModel.LanguagePreference,
+                ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled));
         }
         catch (ObjectDisposedException)
         {
@@ -3088,6 +3193,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         LaptopPage.Visibility = destination == "laptop"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        ThxAudioPage.Visibility = destination == "thx-audio"
+            && ThxAudioNavigationVisibility == Visibility.Visible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         LightingPage.Visibility = destination == "lighting"
             && (localizationSnapshotMode || ViewModel.IsLightingVisible)
             ? Visibility.Visible
@@ -3138,6 +3247,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             _ = RefreshDisplaySettingsAsync();
         }
+        else if (destination == "thx-audio" && !localizationSnapshotMode)
+        {
+            _ = RunHandlerAsync(
+                ThxViewModel.ConnectIfNeededAsync,
+                nameof(ApplyNavigationDestination));
+        }
 
         UpdateDisplayRefreshState();
     }
@@ -3149,6 +3264,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             "home" => HomeNavigationItem,
             "profiles" => ProfilesNavigationItem,
             "laptop" => LaptopNavigationItem,
+            "thx-audio" => ThxAudioNavigationItem,
             "lighting" => LightingNavigationItem,
             "display" => DisplayNavigationItem,
             "settings" => SettingsNavigationItem,
@@ -3310,6 +3426,134 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         trayObservationLoop.StartOrWake();
+    }
+
+    private async void OnThxIntegrationToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle || toggle.IsOn == ThxViewModel.IsEnabled
+            || !ThxViewModel.CanToggleIntegration)
+        {
+            return;
+        }
+        await RunHandlerAsync(() => ThxViewModel.SetEnabledAsync(toggle.IsOn), nameof(OnThxIntegrationToggled));
+        toggle.IsOn = ThxViewModel.IsEnabled;
+        QueuePreferenceSave();
+    }
+
+    private async void OnThxReadSettings(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.RefreshAsync, nameof(OnThxReadSettings));
+
+    private async void OnThxEndpointChanged(object sender, ResponsiveChoiceSelectionChangedEventArgs args)
+    {
+        if (sender is ResponsiveChoiceSelector selector && args.SelectedItem is ThxAudioEndpointOption option)
+        {
+            bool endpointChanged = ThxViewModel.Endpoint != option.Endpoint;
+            ThxViewModel.SelectEndpoint(option.Endpoint);
+            selector.SelectedItem = ThxViewModel.SelectedEndpoint;
+            if (endpointChanged)
+            {
+                await RunHandlerAsync(
+                    ThxViewModel.ConnectIfNeededAsync,
+                    nameof(OnThxEndpointChanged));
+            }
+        }
+    }
+
+    private async void OnThxSpatialToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle || !ThxViewModel.CanEdit
+            || toggle.IsOn == ThxViewModel.SpatialEnabled)
+        {
+            return;
+        }
+        await RunHandlerAsync(() => ThxViewModel.SetSpatialAsync(toggle.IsOn), nameof(OnThxSpatialToggled));
+        toggle.IsOn = ThxViewModel.SpatialEnabled;
+    }
+
+    private async void OnThxEqualizerToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle || !ThxViewModel.CanEdit
+            || toggle.IsOn == ThxViewModel.EqualizerEnabled)
+        {
+            return;
+        }
+        await RunHandlerAsync(() => ThxViewModel.SetEqualizerAsync(toggle.IsOn), nameof(OnThxEqualizerToggled));
+        toggle.IsOn = ThxViewModel.EqualizerEnabled;
+    }
+
+    private async void OnThxPresetChanged(object sender, ResponsiveChoiceSelectionChangedEventArgs args)
+    {
+        if (sender is not ResponsiveChoiceSelector selector || !ThxViewModel.CanEdit
+            || args.SelectedItem is not ThxAudioPreset preset
+            || preset.Id == ThxViewModel.SelectedPreset?.Id)
+        {
+            return;
+        }
+        await RunHandlerAsync(() => ThxViewModel.SelectPresetAsync(preset), nameof(OnThxPresetChanged));
+        selector.SelectedItem = ThxViewModel.SelectedPreset;
+    }
+
+    private async void OnThxApplyEqualizer(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.ApplyEqualizerAsync, nameof(OnThxApplyEqualizer));
+
+    private void OnThxDiscardEqualizer(object sender, RoutedEventArgs args) => ThxViewModel.DiscardEqualizerChanges();
+
+    private void OnThxResetEqualizer(object sender, RoutedEventArgs args) => ThxViewModel.ResetEqualizerToFactory();
+
+    private void OnThxFlattenEqualizer(object sender, RoutedEventArgs args) => ThxViewModel.FlattenEqualizer();
+
+    private async void OnThxNormalizationToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is ToggleSwitch toggle && ThxViewModel.CanEditSoundNormalization
+            && toggle.IsOn != ThxViewModel.SoundNormalizationEnabled)
+        {
+            await RunHandlerAsync(() => ThxViewModel.SetSoundNormalizationAsync(toggle.IsOn), nameof(OnThxNormalizationToggled));
+            toggle.IsOn = ThxViewModel.SoundNormalizationEnabled;
+        }
+    }
+
+    private async void OnThxVoiceClarityToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is ToggleSwitch toggle && ThxViewModel.CanEditVoiceClarity
+            && toggle.IsOn != ThxViewModel.VoiceClarityEnabled)
+        {
+            await RunHandlerAsync(() => ThxViewModel.SetVoiceClarityAsync(toggle.IsOn), nameof(OnThxVoiceClarityToggled));
+            toggle.IsOn = ThxViewModel.VoiceClarityEnabled;
+        }
+    }
+
+    private async void OnThxCaptureAudioProfile(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.CaptureAudioProfileAsync, nameof(OnThxCaptureAudioProfile));
+
+    private async void OnThxSaveAudioProfile(object sender, RoutedEventArgs args)
+    {
+        if (ViewModel.CanSaveThxAudioProfile && ThxViewModel.CanSaveAudioProfile
+            && ThxViewModel.CreateProfileDraft() is { } settings)
+        {
+            PowerSource source = ViewModel.ActivePowerSource;
+            await RunHandlerAsync(async () =>
+            {
+                _ = await ViewModel.SaveThxAudioProfileAsync(settings, source, CancellationToken.None);
+            }, nameof(OnThxSaveAudioProfile));
+        }
+    }
+
+    private void OnThxAddApplicationRule(object sender, RoutedEventArgs args) => ThxViewModel.AddApplicationRule();
+
+    private void OnThxRemoveApplicationRule(object sender, RoutedEventArgs args)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Button { Tag: ThxApplicationRuleOption rule })
+        {
+            ThxViewModel.RemoveApplicationRule(rule);
+        }
+    }
+
+    private void OnThxApplicationOutputChanged(object sender, ResponsiveChoiceSelectionChangedEventArgs args)
+    {
+        if (args.SelectedItem is ThxApplicationOutputOption output)
+        {
+            ThxViewModel.ApplicationOutput = output;
+        }
     }
 
     private async void OnDisplayRefreshRateChanged(
@@ -4611,6 +4855,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             PrimaryNavigationItemKind.Profiles => ProfilesNavigationItem,
             PrimaryNavigationItemKind.Laptop => LaptopNavigationItem,
+            PrimaryNavigationItemKind.ThxAudio => ThxAudioNavigationItem,
             PrimaryNavigationItemKind.Lighting => LightingNavigationItem,
             PrimaryNavigationItemKind.Display => DisplayNavigationItem,
             PrimaryNavigationItemKind.Settings => SettingsNavigationItem,
@@ -4622,6 +4867,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             PrimaryNavigationItemKind.Profiles => LocalizedResources.Get("Navigation_Profiles", "Profiles"),
             PrimaryNavigationItemKind.Laptop => LocalizedResources.Get("Navigation_Laptop", "Laptop"),
+            PrimaryNavigationItemKind.ThxAudio => LocalizedResources.Get("Navigation_ThxAudio", "THX Audio"),
             PrimaryNavigationItemKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
             PrimaryNavigationItemKind.Display => LocalizedResources.Get("Navigation_Display", "Display"),
             PrimaryNavigationItemKind.Settings => LocalizedResources.Get("Navigation_Settings", "Settings"),

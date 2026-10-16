@@ -46,11 +46,12 @@ public static class AppAccentColorPreferenceDefaults
 
 public enum PrimaryNavigationItemKind
 {
-    Profiles,
-    Laptop,
-    Lighting,
-    Display,
-    Settings,
+    Profiles = 0,
+    Laptop = 1,
+    Lighting = 2,
+    Display = 3,
+    Settings = 4,
+    ThxAudio = 5,
 }
 
 public sealed class PrimaryNavigationItemOption
@@ -77,11 +78,21 @@ public static class PrimaryNavigationPreferenceDefaults
         PrimaryNavigationItemKind.Settings,
     ];
 
+    private static IReadOnlyList<PrimaryNavigationItemKind> PreviousItems { get; } =
+    [
+        PrimaryNavigationItemKind.Profiles,
+        PrimaryNavigationItemKind.Display,
+        PrimaryNavigationItemKind.Laptop,
+        PrimaryNavigationItemKind.Lighting,
+        PrimaryNavigationItemKind.Settings,
+    ];
+
     public static IReadOnlyList<PrimaryNavigationItemKind> Items { get; } =
     [
         PrimaryNavigationItemKind.Profiles,
         PrimaryNavigationItemKind.Display,
         PrimaryNavigationItemKind.Laptop,
+        PrimaryNavigationItemKind.ThxAudio,
         PrimaryNavigationItemKind.Lighting,
         PrimaryNavigationItemKind.Settings,
     ];
@@ -94,9 +105,9 @@ public static class PrimaryNavigationPreferenceDefaults
             return Items;
         }
 
-        // Move installations that still use the former default without
+        // Move installations that still use previous defaults without
         // replacing a navigation order the user customized.
-        if (preferences.SequenceEqual(LegacyItems))
+        if (preferences.SequenceEqual(LegacyItems) || preferences.SequenceEqual(PreviousItems))
         {
             return Items;
         }

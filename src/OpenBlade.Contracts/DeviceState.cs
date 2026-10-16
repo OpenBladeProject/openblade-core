@@ -267,6 +267,8 @@ public sealed record DeviceCapabilities(
 
     public DeviceFeatureAccess? LampArrayLightingAccess { get; init; }
 
+    public ThxAudioCapabilities? ThxAudio { get; init; }
+
     public string? KeyboardLightingLayoutId { get; init; }
 
     public IReadOnlySet<LightingRefreshRate> SupportedLightingRefreshRates { get; init; } =
@@ -317,6 +319,7 @@ public sealed record DeviceCapabilities(
         && HasValidSpecialKeySlots()
         && (LampArrayLightingAccess is null
             || Enum.IsDefined(LampArrayLightingAccess.Value))
+        && (ThxAudio is null || ThxAudio.IsWellFormed)
         && (KeyboardLightingLayoutId is null
             ? !LightingEffects.Contains(LightingEffect.Sequence)
             : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)

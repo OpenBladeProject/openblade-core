@@ -507,6 +507,11 @@ public sealed record PowerProfile(
     // normalized and validated with an explicit value.
     public bool? BatteryProtectionEnabled { get; init; }
 
+    // Null leaves THX audio unmanaged. Configured profiles persist semantic
+    // presets and gain vectors only; native profile identifiers are resolved
+    // by the exact-model Session Agent backend.
+    public ThxAudioProfileSettings? ThxAudio { get; init; }
+
     // Retained only to deserialize profile schemas that stored Windows power
     // mode by power source. Current schemas clear this after migrating the
     // value into ProfileSet.WindowsPowerModes.

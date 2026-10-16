@@ -1051,6 +1051,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(HyperBoostDescription));
             NotifyHyperBoostAvailability();
             Notify(nameof(ActiveSavedDisplayProfile));
+            Notify(nameof(ActiveSavedThxAudioProfile));
+            Notify(nameof(CanSaveThxAudioProfile));
             Notify(nameof(SaveToActiveProfileLabel));
             NotifyGamingModeKeyPolicy();
             NotifyActiveFanSelectionBinding();
@@ -3689,6 +3691,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref profiles, value);
+            Notify(nameof(ActiveSavedThxAudioProfile));
             NotifyProfileSummaries();
             Notify(nameof(SelectedWindowsPowerModeOption));
             Notify(nameof(SelectedWindowsPowerModeDescription));
@@ -8240,6 +8243,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyCommands()
     {
+        NotifyComputed(nameof(CanSaveThxAudioProfile), CanSaveThxAudioProfile);
         foreach (AsyncRelayCommand command in commands)
         {
             command.NotifyCanExecuteChanged();

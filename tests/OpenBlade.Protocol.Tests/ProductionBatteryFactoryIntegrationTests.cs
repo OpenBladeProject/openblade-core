@@ -34,6 +34,40 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090581ThxCapability_RequiresExactModelEvidence()
+    {
+        ThxAudioCapabilities admitted = Assert.IsType<ThxAudioCapabilities>(
+            ProductionBatteryFactory.GetRz090581ThxAudioCapabilities(
+                ExactRz090581Identity("99.99", HostFirmwareCompatibility.ModelScoped)));
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, admitted.Access);
+        Assert.Equal(ThxAudioProductIds.Rznb12, admitted.ProductId);
+
+        Assert.Null(ProductionBatteryFactory.GetRz090581ThxAudioCapabilities(
+            new HostIdentityReadResult(
+                new HostIdentityEvidence(
+                    "Razer",
+                    "Blade 16 - RZ09-0528",
+                    "RZ09-05289EN4",
+                    "3.01"),
+                null,
+                HostFirmwareCompatibility.Tested)));
+        Assert.Null(ProductionBatteryFactory.GetRz090581ThxAudioCapabilities(
+            new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked)));
+    }
+
+    [Fact]
+    public void Rz090528ProductionCapability_ReportsWritableRznb11ThxAudio()
+    {
+        IProductionBatteryPortFactory factory =
+            BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+
+        ThxAudioCapabilities capability =
+            Assert.IsType<ThxAudioCapabilities>(factory.Capabilities.ThxAudio);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, capability.Access);
+        Assert.Equal(ThxAudioProductIds.Rznb11, capability.ProductId);
+    }
+
+    [Fact]
     public void Rz090581ProductionPolicies_DoNotRequireABiosVersionWhenModelScoped()
     {
         HostIdentityReadResult baseline = ExactRz090581Identity(

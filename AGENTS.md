@@ -197,6 +197,33 @@ hardware writes, installations, or unattended sleep/resume tests.
 - `captures`: submodule containing sanitized evidence and capture tooling.
 - `build`: publish, package, and deployment scripts.
 
+## Settings cell presentation
+
+Use the Custom performance CPU/GPU subcells in `MainWindow.xaml` as the
+reference for new settings subcells. Reuse the shared presentation rather than
+inventing a page-specific appearance:
+
+- Ordinary subcells use `SettingsNeutralSubcardStyle` or its last-row variant:
+  transparent at rest, with the shared pointer-over background only on hover.
+  Forms and multi-control editors use the hover-free `SettingsEditorSubcardStyle`
+  variants. Permanent shading is not a nesting indicator; use an emphasized
+  style only for an explicitly required visual role.
+- Single-line rows reuse `DashboardSingleLineRowPadding` (16,4),
+  `DashboardSingleLineRowContentMinHeight` (40), `CardTitleStyle`, centered label
+  alignment, and 20-DIP label/control spacing. Keep the shared wrapped-title
+  padding adjustment; do not fix row heights. Multi-line descriptions and
+  editors retain the standard shared padding.
+- Let shared styles own backgrounds, separators, corners, margins, and hover
+  behavior. Do not override them locally or copy their values into new styles.
+  Nested card expanders have zero content padding because their child rows
+  already own padding. Collapse empty optional children so stack spacing does
+  not leave a phantom row.
+- Extend semantic shared-style tests, not just style-use counts. For a new row,
+  compare its presentation with the reference and inspect a disconnected render
+  in the relevant empty, populated, wrapped-label, and hover states. Reuse
+  unchanged evidence; inspect only states affected by the change. A deliberate
+  exception needs a concrete design reason in the PR and its focused test.
+
 ## Architecture rules
 
 1. The service is the sole owner of the laptop control HID handle. It exposes
@@ -250,6 +277,21 @@ hardware writes, installations, or unattended sleep/resume tests.
    model or driver build. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
+   The optional experimental THX audio integration may use the already
+   installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
+   `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off
+   by default, uses current-user typed Audio IPC and an isolated native helper,
+   and never installs or bundles THX components. Component discovery and
+   shutdown must not change audio settings. Automatic changes, including
+   startup reconciliation, require both the per-user integration preference
+   and the active profile's explicit audio automation opt-in, a known
+   foreground executable, and the exact recognized active Realtek output.
+   Preserve explicit readback and stop mutations after ambiguous submission
+   until a successful explicit read. RZ09-0528 and RZ09-0530 remain
+   source-backed experimental support until their native behavior is physically
+   validated. This exception admits no other laptop or component build. Keep
+   standalone native/audio validation separate from simulated tests; see
+   [THX audio](docs/thx-audio.md).
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.

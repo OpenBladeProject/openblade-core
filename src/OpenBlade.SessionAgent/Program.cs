@@ -14,6 +14,32 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (ThxAudioHelperInvocation.HasCommandSwitch(args))
+        {
+            if (!ThxAudioHelperInvocation.TryParse(args, out ThxAudioHelperInvocation? invocation))
+            {
+                return 2;
+            }
+            try
+            {
+                return new ThxAudioHelperHost(
+                        new WindowsThxAudioHelperChannelConnector(),
+                        new WindowsThxAudioHelperParentVerifier(),
+                        static () => new ThxAudioNativeAdapter(),
+                        new WindowsThxAudioAdmissionSource(),
+                        WindowsThxActiveOutput.ReadSystemEffectsDisabled)
+                    .RunAsync(invocation!, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch
+            {
+                // The helper reports only bounded typed failures over
+                // its authenticated private pipe. It never writes native paths or device data to a log.
+                return 2;
+            }
+        }
+
         if (MicrophoneMuteStateProbeCommand.IsRequested(args))
         {
             try
@@ -74,6 +100,9 @@ internal static class Program
         SessionAgentPipeEndpoint gpuEndpoint = SessionAgentPipeEndpoint.CreateGpu(
             userSid,
             sessionId);
+        SessionAgentPipeEndpoint audioEndpoint = SessionAgentPipeEndpoint.CreateAudio(
+            userSid,
+            sessionId);
         SessionAgentEventEndpoint eventEndpoint =
             SessionAgentEventEndpoint.Create(userSid, sessionId);
         if (!TryAcquireStartupOwnership(
@@ -100,6 +129,16 @@ internal static class Program
             return 0;
         }
         await using SessionAgentPipeOwner acquiredGpuOwner = gpuOwner!;
+        if (!SessionAgentPipeOwner.TryAcquire(
+                audioEndpoint,
+                userSid,
+                out SessionAgentPipeOwner? audioOwner))
+        {
+            Trace.TraceInformation(
+                "The current user's audio session-agent pipe is already owned.");
+            return 0;
+        }
+        await using SessionAgentPipeOwner acquiredAudioOwner = audioOwner!;
         var applicationRestartRegistration =
             new WindowsApplicationRestartRegistration();
         _ = applicationRestartRegistration.TryRegister();
@@ -149,15 +188,30 @@ internal static class Program
                 await using var gpuServer = new SessionGpuPipeServer(
                     acquiredGpuOwner,
                     gpuDispatcher);
+                await using var audioWorker = new ThxAudioHelperProcessClient();
+                var audioDispatcher = new SessionAudioRequestDispatcher(
+                    new WindowsThxAudioAdmissionSource(),
+                    audioWorker);
+                await using var audioServer = new SessionAudioPipeServer(
+                    acquiredAudioOwner,
+                    audioDispatcher);
                 string preferencesPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "OpenBlade",
                     "preferences.json");
+                await using var audioAutomationCoordinator = new ThxAudioAutomationCoordinator(
+                    new SessionThxAudioAutomationController(audioDispatcher, preferencesPath));
+                audioDispatcher.ManualOperationStarting += audioAutomationCoordinator.PauseForManualOperation;
+                audioDispatcher.ExplicitReadSucceeded += _ => audioAutomationCoordinator.ResetAfterExplicitReadAsync();
+                audioDispatcher.ManualOperationSucceeded += _ => audioAutomationCoordinator.ResetAfterExplicitReadAsync();
+                audioDispatcher.ApplicationAutomationPausedProvider = () => audioAutomationCoordinator.IsPaused;
                 var specialKeyBindings = new SpecialKeyBindingSource(
                     preferencesPath,
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade shortcut preference refresh failed: {0}",
                         exception.Message));
+                specialKeyBindings.PreferencesObserved += preferences =>
+                    audioAutomationCoordinator.SetIntegrationEnabled(preferences?.ThxAudioIntegrationEnabled == true);
                 var specialKeyInput = new WindowsSpecialKeyInputSender();
                 await using var specialKeyServiceClient = new ServiceClient();
                 var specialKeyExecutor = new SpecialKeyActionExecutor(
@@ -179,6 +233,8 @@ internal static class Program
                 await using var statusServiceClient = new ServiceClient();
                 await using var statusFeed = new SharedServiceStatusFeed(
                     statusServiceClient);
+                var audioAutomation = new ServiceThxAudioAutomationLoop(
+                    statusFeed, new WindowsThxForegroundSource(), audioAutomationCoordinator);
                 var automation = new ServiceDisplayAutomationLoop(
                     statusFeed,
                     coordinator);
@@ -282,6 +338,8 @@ internal static class Program
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task gpuServerTask = gpuServer.RunAsync(lifetime.Token);
+                Task audioServerTask = audioServer.RunAsync(lifetime.Token);
+                Task audioAutomationTask = audioAutomation.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task powerModeAutomationTask = powerModeAutomation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
@@ -296,6 +354,8 @@ internal static class Program
                 [
                     serverTask,
                     gpuServerTask,
+                    audioServerTask,
+                    audioAutomationTask,
                     statusFeedTask,
                     specialKeyBindingsTask,
                     automationTask,
