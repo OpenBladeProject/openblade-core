@@ -64,8 +64,9 @@ automation with the Session Agent. Unresolved foreground identity preserves
 the current state. Hosted applications whose executable cannot be identified
 are not yet supported for automatic switching.
 
-Application routing is currently enabled only on RZ09-0581. It stays disabled
-on RZ09-0528 and RZ09-0530; their manual controls and saved EQ curves are available.
+Application routing is available on all three admitted models. The rznb11
+models use the same reviewed executable map and routing operations; their
+physical automation behavior remains unvalidated.
 
 Automatic changes target only the recognized Windows default Realtek output.
 An external, missing, or ambiguous default output leaves THX unchanged.

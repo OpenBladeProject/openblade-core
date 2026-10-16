@@ -454,8 +454,11 @@ public sealed class ThxAudioHelperCommandTests
         Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task ApplicationProfile_ResolvesPinnedMappingAndEnablesSpatialFirst()
+    [Theory]
+    [InlineData("RZ09-0581", "rznb12")]
+    [InlineData("RZ09-0528", "rznb11")]
+    [InlineData("RZ09-0530", "rznb11")]
+    public async Task ApplicationProfile_ResolvesPinnedMappingAndEnablesSpatialFirst(string model, string product)
     {
         var native = new FakeNative
         {
@@ -468,7 +471,11 @@ public sealed class ThxAudioHelperCommandTests
             {"operation":"applyApplicationProfile","version":1,"endpoint":1,"executableName":"r5apex.exe","mode":1}
             """;
 
-        int exitCode = await Command(native, input, output).RunAsync(CancellationToken.None);
+        var command = new ThxAudioHelperCommand(() => native,
+            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null)
+            { ProductId = product, ModelNumber = model, MutationAllowed = true }),
+            new StringReader(input), output);
+        int exitCode = await command.RunAsync(CancellationToken.None);
 
         Assert.Equal(0, exitCode);
         Assert.Collection(
@@ -481,6 +488,8 @@ public sealed class ThxAudioHelperCommandTests
             });
         Assert.Equal("ApexLegends_cmm", native.SelectedPreset);
         Assert.Equal(1, native.SelectPresetCalls);
+        Assert.Contains(product, native.LastDevice);
+        Assert.Contains("\"applicationProfiles\":0", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
     }
 

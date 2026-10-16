@@ -19,7 +19,7 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
                 .Select(frequency => new ThxAudioEqualizerBand(frequency, 0)).ToArray(),
             SoundNormalization = endpoint == ThxAudioEndpoint.Speakers ? new(false, 50) : null,
             VoiceClarity = new(false, 50),
-            ApplicationProfiles = usesRznb11 ? ThxAudioFeatureAccess.ObservedOnly : ThxAudioFeatureAccess.Available,
+            ApplicationProfiles = ThxAudioFeatureAccess.Available,
             ApplicationProfileCatalog = [new("game.exe", true, true)],
             FactoryPresetCurves = new[] { "game", "movie", "music", "voice", "custom" }
                 .Select(id => new ThxAudioPresetCurve(id, new double[endpoint == ThxAudioEndpoint.Speakers && !usesRznb11 ? 7 : 10])).ToArray(),

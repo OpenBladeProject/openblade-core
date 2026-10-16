@@ -37,6 +37,37 @@ public sealed class ThxAudioAutomationCoordinatorTests
         Assert.Single(controller.Targets);
     }
 
+    [Theory]
+    [InlineData("RZ09-0528", ThxAudioProductIds.Rznb11)]
+    [InlineData("RZ09-0530", ThxAudioProductIds.Rznb11)]
+    public async Task ExactRznb11ModelProductPairsRouteApplications(string modelNumber, string productId)
+    {
+        var controller = new Controller();
+        await using var coordinator = new ThxAudioAutomationCoordinator(controller);
+        coordinator.SetIntegrationEnabled(true);
+        coordinator.Observe(Status(Settings(), modelNumber, productId));
+        coordinator.ObserveForeground(new("game.exe", ThxAudioEndpoint.Speakers));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Single(controller.Targets);
+    }
+
+    [Theory]
+    [InlineData("RZ09-0581", ThxAudioProductIds.Rznb11)]
+    [InlineData("RZ09-0528", ThxAudioProductIds.Rznb12)]
+    [InlineData("RZ09-0530", ThxAudioProductIds.Rznb12)]
+    public async Task ModelProductMismatchDoesNotRouteApplications(string modelNumber, string productId)
+    {
+        var controller = new Controller();
+        await using var coordinator = new ThxAudioAutomationCoordinator(controller);
+        coordinator.SetIntegrationEnabled(true);
+        coordinator.Observe(Status(Settings(), modelNumber, productId));
+        coordinator.ObserveForeground(new("game.exe", ThxAudioEndpoint.Speakers));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Empty(controller.Targets);
+    }
+
     [Fact]
     public async Task KnownNoMatchRestoresGeneralAndDifferentExecutableReconciles()
     {
@@ -186,21 +217,27 @@ public sealed class ThxAudioAutomationCoordinatorTests
             normalization ? new(false, 50) : null);
     }
 
-    private static ServiceStatusSnapshot Status(ThxAudioProfileSettings settings)
+    private static ServiceStatusSnapshot Status(
+        ThxAudioProfileSettings settings,
+        string modelNumber = "RZ09-0581",
+        string productId = ThxAudioProductIds.Rznb12)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet profiles = defaults with { PluggedIn = defaults.PluggedIn with { ThxAudio = settings } };
         return new(1, true, false, [], null, [], "test",
             new DeviceCapabilities(new HashSet<PerformancePreset>(), new HashSet<FanMode>(),
                 new HashSet<LightingEffect>(), new HashSet<int>(), false, false)
-            { ThxAudio = new(DeviceFeatureAccess.ReadWrite, ThxAudioProductIds.Rznb12) },
+            { ThxAudio = new(DeviceFeatureAccess.ReadWrite, productId) },
             null, profiles,
             new DesiredDeviceState(
                 new(profiles.PluggedIn.Performance, SettingValueSource.PowerProfile),
                 new(profiles.PluggedIn.Fans, SettingValueSource.PowerProfile),
                 new(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                 new(profiles.BatteryPolicy, true, false)),
-            PowerSource.PluggedIn, null, null, null, null, false);
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            Firmware = new("test", "test", "test", "test", modelNumber),
+        };
     }
 
     private sealed class Controller : IThxAudioAutomationController

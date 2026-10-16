@@ -160,11 +160,7 @@ internal sealed class ThxAudioHelperCommand(
         {
             return Failed("The EQ vector does not match this model and endpoint.");
         }
-        if (request is ThxHelperApplyApplicationProfileRequest && current.ModelNumber != "RZ09-0581")
-        {
-            return Unavailable(ThxAudioAvailability.Available,
-                "Application routing is not enabled for this model.");
-        }
+
         using IThxAudioNativeAdapter native = createNative();
         string device = JsonSerializer.Serialize(
             new
@@ -321,7 +317,7 @@ internal sealed class ThxAudioHelperCommand(
             FactoryPresetCurves = mutationAllowed ? FactoryCurves(endpoint, modelNumber) : [],
             SoundNormalization = normalization,
             VoiceClarity = voiceClarity,
-            ApplicationProfiles = !mutationAllowed || modelNumber != "RZ09-0581" ? ThxAudioFeatureAccess.ObservedOnly : applicationProfiles.Count == 0
+            ApplicationProfiles = !mutationAllowed ? ThxAudioFeatureAccess.ObservedOnly : applicationProfiles.Count == 0
                 ? ThxAudioFeatureAccess.Unavailable
                 : ThxAudioFeatureAccess.Available,
             ApplicationProfileCatalog = applicationProfiles,

@@ -81,13 +81,20 @@ public sealed class ThxAudioAutomationCoordinator(IThxAudioAutomationController 
                 && status.ControlAccess == SessionControlAccess.Active
                 && status.PotentialControllers.Count == 0
                 && string.IsNullOrEmpty(status.ControllerDetectionWarning)
-                && status.Capabilities?.ThxAudio is { Access: DeviceFeatureAccess.ReadWrite, ProductId: ThxAudioProductIds.Rznb12 }
+                && IsAdmittedThxAudio(status)
                 && status.ActivePowerSource is (PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
                 ? status.Profiles.ForPowerSource(status.ActivePowerSource).ThxAudio
                 : null;
             ReconcileCore();
         }
     }
+
+    private static bool IsAdmittedThxAudio(ServiceStatusSnapshot status) =>
+        status.Capabilities?.ThxAudio is { Access: DeviceFeatureAccess.ReadWrite } capability
+        && (status.Firmware?.ModelNumber, capability.ProductId) is
+            ("RZ09-0581", ThxAudioProductIds.Rznb12)
+            or ("RZ09-0528", ThxAudioProductIds.Rznb11)
+            or ("RZ09-0530", ThxAudioProductIds.Rznb11);
 
     public void ObserveForeground(ThxForegroundObservation observation)
     {
