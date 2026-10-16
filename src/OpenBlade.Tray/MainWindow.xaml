@@ -3073,6 +3073,103 @@
                             </Border>
                         </StackPanel>
                         </StackPanel>
+                        <StackPanel x:Name="ThxAudioSection" Margin="0,18,0,0"
+                                    Visibility="{x:Bind ThxAudioSectionVisibility, Mode=OneWay}">
+                            <TextBlock x:Uid="MainWindow_ThxAudioHeading" Text="THX audio"
+                                       Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="4">
+                                                <TextBlock x:Uid="MainWindow_ThxAudioIntegrationTitle" Text="Use installed THX audio"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Uid="MainWindow_ThxAudioDescription"
+                                                           Text="Experimental. Requires the supported THX components already installed."
+                                                           Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ToggleSwitch x:Uid="MainWindow_ThxAudioIntegrationToggle" Grid.Column="1"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          IsOn="{x:Bind ThxViewModel.IsEnabled, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanToggleIntegration, Mode=OneWay}"
+                                                          AutomationProperties.Name="Use installed THX audio"
+                                                          Toggled="OnThxIntegrationToggled" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock x:Uid="MainWindow_ThxAudioOutputTitle" Text="Output"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <local:ResponsiveChoiceSelector x:Uid="MainWindow_ThxAudioOutput"
+                                                          ItemsSource="{x:Bind ThxViewModel.Endpoints, Mode=OneWay}"
+                                                          SelectedItem="{x:Bind ThxViewModel.SelectedEndpoint, Mode=OneWay}"
+                                                          DisplayMemberPath="Label" AccessibleName="THX audio output"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanRead, Mode=OneWay}"
+                                                          SelectionChanged="OnThxEndpointChanged" />
+                                                <Button x:Uid="MainWindow_ThxAudioReadSettings" Grid.Column="1" Content="Read settings"
+                                                        IsEnabled="{x:Bind ThxViewModel.CanRead, Mode=OneWay}"
+                                                        Click="OnThxReadSettings" />
+                                            </Grid>
+                                            <TextBlock Text="{x:Bind ThxViewModel.StatusMessage, Mode=OneWay}" TextWrapping="Wrap"
+                                                       Style="{StaticResource SecondaryTextStyle}" AutomationProperties.LiveSetting="Polite" />
+                                            <ProgressBar IsIndeterminate="True" Height="3"
+                                                         Visibility="{x:Bind ThxViewModel.IsBusy, Mode=OneWay}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_ThxAudioSpatialTitle" Text="Spatial audio"
+                                                       Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                            <ToggleSwitch x:Uid="MainWindow_ThxAudioSpatial" Grid.Column="1"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          IsOn="{x:Bind ThxViewModel.SpatialEnabled, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
+                                                          AutomationProperties.Name="THX Spatial Audio" Toggled="OnThxSpatialToggled" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_ThxAudioEqualizerTitle" Text="Equalizer"
+                                                       Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                            <ToggleSwitch x:Uid="MainWindow_ThxAudioEqualizer" Grid.Column="1"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          IsOn="{x:Bind ThxViewModel.EqualizerEnabled, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
+                                                          AutomationProperties.Name="THX equalizer" Toggled="OnThxEqualizerToggled" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock x:Uid="MainWindow_ThxAudioPresetTitle" Text="Equalizer preset"
+                                                       Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                            <local:ResponsiveChoiceSelector x:Uid="MainWindow_ThxAudioPreset"
+                                                      DisplayMemberPath="Name" AccessibleName="THX equalizer preset"
+                                                      ItemsSource="{x:Bind ThxViewModel.Presets, Mode=OneWay}"
+                                                      SelectedItem="{x:Bind ThxViewModel.SelectedPreset, Mode=OneWay}"
+                                                      IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
+                                                      SelectionChanged="OnThxPresetChanged" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 

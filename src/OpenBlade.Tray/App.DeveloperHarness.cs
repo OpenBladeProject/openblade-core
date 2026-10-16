@@ -593,6 +593,7 @@ public partial class App
                 "home",
                 "profiles",
                 "laptop",
+                "laptop-audio",
                 "lighting",
                 "display",
                 "settings",
@@ -648,10 +649,16 @@ public partial class App
                             StringComparison.Ordinal)
                             ? new Windows.Graphics.SizeInt32(1600, 900)
                             : new Windows.Graphics.SizeInt32(1120, 820);
+                if (destination == "laptop-audio")
+                {
+                    snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
+                }
                 snapshotMainWindow.AppWindow.Resize(snapshotSize);
                 await WaitForSnapshotLayoutAsync();
                 string navigationDestination = destination is "settings-appearance" or "settings-experimental"
                     ? "settings"
+                    : destination == "laptop-audio"
+                        ? "laptop"
                     : captureProfilesVariant
                         ? "profiles"
                         : destination;
@@ -663,6 +670,11 @@ public partial class App
                     StringComparison.Ordinal))
                 {
                     snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
+                    await WaitForSnapshotLayoutAsync();
+                }
+                if (destination == "laptop-audio")
+                {
+                    await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync();
                     await WaitForSnapshotLayoutAsync();
                 }
                 if (destination == "settings-experimental")

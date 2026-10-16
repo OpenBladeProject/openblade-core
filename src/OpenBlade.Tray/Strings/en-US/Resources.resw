@@ -2056,4 +2056,43 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Maximum fans</value>
   </data>
+  <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
+    <value>Experimental. Requires the supported THX components already installed.</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>THX equalizer</value>
+  </data>
+  <data name="MainWindow_ThxAudioHeading.Text" xml:space="preserve">
+    <value>THX audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationTitle.Text" xml:space="preserve">
+    <value>Use installed THX audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Use installed THX audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioReadSettings.Content" xml:space="preserve">
+    <value>Read settings</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatial.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>THX Spatial Audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizerTitle.Text" xml:space="preserve">
+    <value>Equalizer</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutput.AccessibleName" xml:space="preserve">
+    <value>THX audio output</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutputTitle.Text" xml:space="preserve">
+    <value>Output</value>
+  </data>
+  <data name="MainWindow_ThxAudioPreset.AccessibleName" xml:space="preserve">
+    <value>THX equalizer preset</value>
+  </data>
+  <data name="MainWindow_ThxAudioPresetTitle.Text" xml:space="preserve">
+    <value>Equalizer preset</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
+    <value>Spatial audio</value>
+  </data>
 </root>

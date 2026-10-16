@@ -2056,4 +2056,43 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Máxímúm fáns ~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
+    <value>[!! Éxpéríméntál. Réqúírés thé súppórtéd THX cómpónénts álréádý ínstálléd. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! THX éqúálízér ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioHeading.Text" xml:space="preserve">
+    <value>[!! THX áúdíó ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationTitle.Text" xml:space="preserve">
+    <value>[!! Úsé ínstálléd THX áúdíó ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Úsé ínstálléd THX áúdíó ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioReadSettings.Content" xml:space="preserve">
+    <value>[!! Réád séttíngs ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatial.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! THX Spátíál Áúdíó ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizerTitle.Text" xml:space="preserve">
+    <value>[!! Éqúálízér ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutput.AccessibleName" xml:space="preserve">
+    <value>[!! THX áúdíó óútpút ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutputTitle.Text" xml:space="preserve">
+    <value>[!! Óútpút ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioPreset.AccessibleName" xml:space="preserve">
+    <value>[!! THX éqúálízér prését ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioPresetTitle.Text" xml:space="preserve">
+    <value>[!! Éqúálízér prését ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
+    <value>[!! Spátíál áúdíó ~~~~~ !!]</value>
+  </data>
 </root>

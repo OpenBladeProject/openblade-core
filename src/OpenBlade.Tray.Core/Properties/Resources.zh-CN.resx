@@ -1473,4 +1473,40 @@
   <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
     <value>“风扇最高转速”正在控制风扇。关闭此选项后即可选择风扇模式。</value>
   </data>
+  <data name="THX audio integration is off." xml:space="preserve">
+    <value>THX 音频集成已关闭。</value>
+  </data>
+  <data name="Read the current THX settings to connect." xml:space="preserve">
+    <value>读取当前 THX 设置以连接。</value>
+  </data>
+  <data name="THX settings are up to date." xml:space="preserve">
+    <value>THX 设置已更新。</value>
+  </data>
+  <data name="THX components found. Read the current settings to connect." xml:space="preserve">
+    <value>已找到 THX 组件。读取当前设置以连接。</value>
+  </data>
+  <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
+    <value>无法确认 THX 设置。请重新读取后再进行更改。</value>
+  </data>
+  <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
+    <value>无法确认音频更改。请读取当前设置后再重试。</value>
+  </data>
+  <data name="THX audio controls are available only on RZ09-0581." xml:space="preserve">
+    <value>THX 音频控制仅适用于 RZ09-0581。</value>
+  </data>
+  <data name="The supported THX components are unavailable." xml:space="preserve">
+    <value>受支持的 THX 组件不可用。</value>
+  </data>
+  <data name="The Session Agent could not read THX settings." xml:space="preserve">
+    <value>Session Agent 无法读取 THX 设置。</value>
+  </data>
+  <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
+    <value>请关闭 Synapse 后再连接 THX 音频。</value>
+  </data>
+  <data name="Speakers" xml:space="preserve">
+    <value>扬声器</value>
+  </data>
+  <data name="Headphones" xml:space="preserve">
+    <value>耳机</value>
+  </data>
 </root>

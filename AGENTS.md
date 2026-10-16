@@ -225,6 +225,15 @@ physical-validation status.
    model or driver build. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
+   The optional THX audio integration may use the already installed, pinned
+   `rznb12` stack on exact RZ09-0581 (`02E0`). It is off by default, uses
+   current-user typed Audio IPC and an isolated native helper, and never
+   installs or bundles THX components. Startup, component discovery, and
+   shutdown must not change audio settings. Preserve explicit readback and
+   stop mutations after ambiguous submission until a successful explicit read.
+   This exception does not admit another laptop or component build. Keep
+   standalone native/audio validation separate from simulated tests; see
+   [THX audio](docs/thx-audio.md).
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.

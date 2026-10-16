@@ -5,6 +5,19 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class UiPreferenceStoreTests : IDisposable
 {
+    [Fact]
+    public async Task ThxOptInDefaultsOffForExistingPreferencesAndRoundTrips()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "thx-preferences.json");
+        await File.WriteAllTextAsync(path, "{\"theme\":\"FollowWindows\"}");
+        var store = new UiPreferenceStore(path);
+        UiPreferences original = await store.LoadAsync();
+        Assert.False(original.ThxAudioIntegrationEnabled);
+        await store.SaveAsync(original with { ThxAudioIntegrationEnabled = true });
+        Assert.True((await store.LoadAsync()).ThxAudioIntegrationEnabled);
+    }
+
     private readonly string directory = Path.Combine(
         Path.GetTempPath(),
         "OpenBlade.Tray.Tests",

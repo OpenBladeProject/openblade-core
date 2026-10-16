@@ -14,6 +14,31 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (ThxAudioHelperInvocation.HasCommandSwitch(args))
+        {
+            if (!ThxAudioHelperInvocation.TryParse(args, out ThxAudioHelperInvocation? invocation))
+            {
+                return 2;
+            }
+            try
+            {
+                return new ThxAudioHelperHost(
+                        new WindowsThxAudioHelperChannelConnector(),
+                        new WindowsThxAudioHelperParentVerifier(),
+                        static () => new ThxAudioNativeAdapter(),
+                        new WindowsThxAudioAdmissionSource())
+                    .RunAsync(invocation!, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch
+            {
+                // The one-shot helper reports only bounded typed failures over
+                // stdout. It never writes native paths or device data to a log.
+                return 2;
+            }
+        }
+
         if (MicrophoneMuteStateProbeCommand.IsRequested(args))
         {
             try
@@ -74,6 +99,9 @@ internal static class Program
         SessionAgentPipeEndpoint gpuEndpoint = SessionAgentPipeEndpoint.CreateGpu(
             userSid,
             sessionId);
+        SessionAgentPipeEndpoint audioEndpoint = SessionAgentPipeEndpoint.CreateAudio(
+            userSid,
+            sessionId);
         SessionAgentEventEndpoint eventEndpoint =
             SessionAgentEventEndpoint.Create(userSid, sessionId);
         if (!TryAcquireStartupOwnership(
@@ -100,6 +128,16 @@ internal static class Program
             return 0;
         }
         await using SessionAgentPipeOwner acquiredGpuOwner = gpuOwner!;
+        if (!SessionAgentPipeOwner.TryAcquire(
+                audioEndpoint,
+                userSid,
+                out SessionAgentPipeOwner? audioOwner))
+        {
+            Trace.TraceInformation(
+                "The current user's audio session-agent pipe is already owned.");
+            return 0;
+        }
+        await using SessionAgentPipeOwner acquiredAudioOwner = audioOwner!;
         var applicationRestartRegistration =
             new WindowsApplicationRestartRegistration();
         _ = applicationRestartRegistration.TryRegister();
@@ -149,6 +187,13 @@ internal static class Program
                 await using var gpuServer = new SessionGpuPipeServer(
                     acquiredGpuOwner,
                     gpuDispatcher);
+                await using var audioWorker = new ThxAudioHelperProcessClient();
+                var audioDispatcher = new SessionAudioRequestDispatcher(
+                    new WindowsThxAudioAdmissionSource(),
+                    audioWorker);
+                await using var audioServer = new SessionAudioPipeServer(
+                    acquiredAudioOwner,
+                    audioDispatcher);
                 string preferencesPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "OpenBlade",
@@ -282,6 +327,7 @@ internal static class Program
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task gpuServerTask = gpuServer.RunAsync(lifetime.Token);
+                Task audioServerTask = audioServer.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task powerModeAutomationTask = powerModeAutomation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
@@ -296,6 +342,7 @@ internal static class Program
                 [
                     serverTask,
                     gpuServerTask,
+                    audioServerTask,
                     statusFeedTask,
                     specialKeyBindingsTask,
                     automationTask,

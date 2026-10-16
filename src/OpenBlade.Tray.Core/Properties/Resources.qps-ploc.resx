@@ -1563,4 +1563,40 @@
   <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
     <value>[!! Máxímúm fáns ís cóntróllíng thé fáns. Túrn óff Máxímúm fáns tó chóósé á fán módé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="THX audio integration is off." xml:space="preserve">
+    <value>[!! THX áúdíó íntégrátíón ís óff. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Read the current THX settings to connect." xml:space="preserve">
+    <value>[!! Réád thé cúrrént THX séttíngs tó cónnéct. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX settings are up to date." xml:space="preserve">
+    <value>[!! THX séttíngs áré úp tó dáté. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX components found. Read the current settings to connect." xml:space="preserve">
+    <value>[!! THX cómpónénts fóúnd. Réád thé cúrrént séttíngs tó cónnéct. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
+    <value>[!! THX séttíngs cóúld nót bé cónfírméd. Réád thém ágáín béfóré mákíng chángés. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
+    <value>[!! Thé áúdíó chángé cóúld nót bé cónfírméd. Réád thé cúrrént séttíngs béfóré trýíng ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX audio controls are available only on RZ09-0581." xml:space="preserve">
+    <value>[!! THX áúdíó cóntróls áré áváíláblé ónlý ón RZ09-0581. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The supported THX components are unavailable." xml:space="preserve">
+    <value>[!! Thé súppórtéd THX cómpónénts áré únáváíláblé. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The Session Agent could not read THX settings." xml:space="preserve">
+    <value>[!! Thé Session Agent cóúld nót réád THX séttíngs. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
+    <value>[!! Clósé Sýnápsé béfóré cónnéctíng tó THX áúdíó. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Speakers" xml:space="preserve">
+    <value>[!! Spéákérs ~~~ !!]</value>
+  </data>
+  <data name="Headphones" xml:space="preserve">
+    <value>[!! Héádphónés ~~~~ !!]</value>
+  </data>
 </root>

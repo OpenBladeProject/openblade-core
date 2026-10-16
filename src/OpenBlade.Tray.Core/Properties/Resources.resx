@@ -1473,4 +1473,40 @@
   <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
     <value>Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode.</value>
   </data>
+  <data name="THX audio integration is off." xml:space="preserve">
+    <value>THX audio integration is off.</value>
+  </data>
+  <data name="Read the current THX settings to connect." xml:space="preserve">
+    <value>Read the current THX settings to connect.</value>
+  </data>
+  <data name="THX settings are up to date." xml:space="preserve">
+    <value>THX settings are up to date.</value>
+  </data>
+  <data name="THX components found. Read the current settings to connect." xml:space="preserve">
+    <value>THX components found. Read the current settings to connect.</value>
+  </data>
+  <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
+    <value>THX settings could not be confirmed. Read them again before making changes.</value>
+  </data>
+  <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
+    <value>The audio change could not be confirmed. Read the current settings before trying again.</value>
+  </data>
+  <data name="THX audio controls are available only on RZ09-0581." xml:space="preserve">
+    <value>THX audio controls are available only on RZ09-0581.</value>
+  </data>
+  <data name="The supported THX components are unavailable." xml:space="preserve">
+    <value>The supported THX components are unavailable.</value>
+  </data>
+  <data name="The Session Agent could not read THX settings." xml:space="preserve">
+    <value>The Session Agent could not read THX settings.</value>
+  </data>
+  <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
+    <value>Close Synapse before connecting to THX audio.</value>
+  </data>
+  <data name="Speakers" xml:space="preserve">
+    <value>Speakers</value>
+  </data>
+  <data name="Headphones" xml:space="preserve">
+    <value>Headphones</value>
+  </data>
 </root>

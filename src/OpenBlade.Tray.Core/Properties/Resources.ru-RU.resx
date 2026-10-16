@@ -1473,4 +1473,40 @@
   <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
     <value>Вентиляторами управляет режим «Максимальные обороты». Выключите его, чтобы выбрать режим вентиляторов.</value>
   </data>
+  <data name="THX audio integration is off." xml:space="preserve">
+    <value>Интеграция THX Audio выключена.</value>
+  </data>
+  <data name="Read the current THX settings to connect." xml:space="preserve">
+    <value>Прочитайте текущие настройки THX для подключения.</value>
+  </data>
+  <data name="THX settings are up to date." xml:space="preserve">
+    <value>Настройки THX актуальны.</value>
+  </data>
+  <data name="THX components found. Read the current settings to connect." xml:space="preserve">
+    <value>Компоненты THX найдены. Прочитайте текущие настройки для подключения.</value>
+  </data>
+  <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
+    <value>Не удалось подтвердить настройки THX. Прочитайте их снова перед изменением.</value>
+  </data>
+  <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
+    <value>Не удалось подтвердить изменение звука. Прочитайте текущие настройки перед повторной попыткой.</value>
+  </data>
+  <data name="THX audio controls are available only on RZ09-0581." xml:space="preserve">
+    <value>Управление THX Audio доступно только на RZ09-0581.</value>
+  </data>
+  <data name="The supported THX components are unavailable." xml:space="preserve">
+    <value>Поддерживаемые компоненты THX недоступны.</value>
+  </data>
+  <data name="The Session Agent could not read THX settings." xml:space="preserve">
+    <value>Session Agent не удалось прочитать настройки THX.</value>
+  </data>
+  <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
+    <value>Закройте Synapse перед подключением к THX Audio.</value>
+  </data>
+  <data name="Speakers" xml:space="preserve">
+    <value>Динамики</value>
+  </data>
+  <data name="Headphones" xml:space="preserve">
+    <value>Наушники</value>
+  </data>
 </root>
