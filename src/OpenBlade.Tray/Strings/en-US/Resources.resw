@@ -404,7 +404,7 @@ Reported failures:
     <value>Keep running</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
-    <value>More than {0} applications are using the NVIDIA GPU. OpenBlade cannot verify a safe close from a partial list. Close apps manually, then scan again.</value>
+    <value>More than {0} apps are using the NVIDIA GPU. Close apps manually, then scan again.</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
     <value>Too many GPU apps to verify</value>
@@ -545,7 +545,7 @@ Reported failures:
     <value>{0}% brightness</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>{0} uses the {1} effect at {2}. Importing applies it through OpenBlade and keeps it as an unsaved change for the active power profile.</value>
+    <value>{0} uses the {1} effect at {2}. Importing applies it as an unsaved change to the active power profile.</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>Import keyboard lighting?</value>
@@ -796,7 +796,7 @@ Reported failures:
     <value>Stop Razer services</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
-    <value>Windows did not grant administrator permission. OpenBlade did not retry the request.</value>
+    <value>Windows did not grant administrator permission.</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
     <value>Razer service stop canceled</value>
@@ -805,11 +805,11 @@ Reported failures:
     <value>Checking…</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>These known controller services are currently active:
+    <value>These Razer services are running:
 
 {0}
 
-After approval, OpenBlade will freshly check the same reviewed allowlist and stop any active matches. This does not uninstall Razer software or disable service startup. Razer software may start the services again, and features that depend on them may stop working until then.</value>
+OpenBlade will check this list again and stop services that are still running. Razer software may restart them. Features that use them may be unavailable until they restart.</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>Stop Razer services?</value>

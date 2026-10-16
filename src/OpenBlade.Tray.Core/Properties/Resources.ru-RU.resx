@@ -93,8 +93,14 @@
   <data name="{0} minutes" xml:space="preserve">
     <value>{0} мин</value>
   </data>
-  <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
-    <value>{0} Это уведомление о совместимости, а не аппаратная неисправность. Элементы управления остаются доступными, но поведение может отличаться.</value>
+  <data name="{0} Controls remain available, but behavior may differ from the tested configuration." xml:space="preserve">
+    <value>{0} Элементы управления доступны, но поведение может отличаться от проверенной конфигурации.</value>
+  </data>
+  <data name="{0} Controls are blocked. Enable the firmware override to request access." xml:space="preserve">
+    <value>{0} Управление заблокировано. Включите переопределение прошивки, чтобы запросить доступ.</value>
+  </data>
+  <data name="{0} The firmware override is enabled while OpenBlade checks control access." xml:space="preserve">
+    <value>{0} Переопределение прошивки включено, пока OpenBlade проверяет доступ к управлению.</value>
   </data>
   <data name="{0} unavailable" xml:space="preserve">
     <value>{0} недоступно</value>
@@ -174,8 +180,8 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>Цвета экрана, весь экран</value>
   </data>
-  <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
-    <value>Другое приложение Razer также может изменять эти параметры. OpenBlade будет показывать изменения, а не отменять их.</value>
+  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
+    <value>OpenBlade показывает изменения, внесённые другим приложением Razer, и не отменяет их.</value>
   </data>
   <data name="Another Razer app is running" xml:space="preserve">
     <value>Запущено другое приложение Razer</value>
@@ -1143,8 +1149,8 @@
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>Модуль сохранения диагностики вернул некорректный результат.</value>
   </data>
-  <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
-    <value>Проверенный драйвер Razer, точно соответствующий этой модели, позволяет Windows показывать системный индикатор яркости. При каждом нажатии клавиши OpenBlade заново проверяет точный путь к устройству. Если системное управление недоступно, OpenBlade показывает собственный индикатор.</value>
+  <data name="The matching Razer driver shows the Windows brightness flyout. OpenBlade uses its own flyout when the driver is unavailable." xml:space="preserve">
+    <value>Драйвер Razer для этой модели показывает системный индикатор яркости Windows. Если драйвер недоступен, OpenBlade показывает собственный индикатор.</value>
   </data>
   <data name="Tidal" xml:space="preserve">
     <value>Прилив</value>
@@ -1275,8 +1281,8 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows не подтвердила запрошенный параметр запуска при входе.</value>
   </data>
-  <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
-    <value>Подсветкой клавиатуры управляет функция «Динамическое освещение» Windows. OpenBlade не будет изменять яркость, эффекты и параметры отключения подсветки.</value>
+  <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
+    <value>Подсветкой клавиатуры управляет функция «Динамическое освещение» Windows.</value>
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>Режим питания Windows</value>
@@ -1434,8 +1440,8 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Войдите в интерактивный сеанс Windows, чтобы изменить настройки ноутбука.</value>
   </data>
-  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
-    <value>На этом ноутбуке экспериментальная поддержка включается автоматически. Экспортируйте диагностику в разделе «О программе», чтобы помочь с тестированием.</value>
+  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
+    <value>На этом ноутбуке доступны экспериментальные элементы управления. Экспортируйте диагностику в разделе «О программе», чтобы помочь с их тестированием.</value>
   </data>
   <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
     <value>Экспериментальная запись приостановлена, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите экспериментальное управление. OpenBlade не станет повторять предыдущее изменение.</value>

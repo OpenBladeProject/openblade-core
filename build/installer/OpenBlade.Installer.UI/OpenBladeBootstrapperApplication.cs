@@ -882,7 +882,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private void RejectMultipleRelatedBundles(int relatedBundleCount)
     {
         string message = InstallerStrings.Format(
-            "OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again.",
+            "Setup found {0} OpenBlade installer entries and stopped to avoid a conflict. Uninstall each OpenBlade entry when available. If duplicate entries remain, use Windows installer recovery, then try again.",
             relatedBundleCount);
         RejectRelatedBundleReplacement(
             SelectRelatedBundleConflictStatus(multipleRegistrations: true),
@@ -1270,7 +1270,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
                 ? InstallerStrings.Get(
                     "Its cached installer is unavailable, so setup cannot safely repair or remove it. Use Windows installer recovery before trying again.")
                 : InstallerStrings.Get(
-                    "Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first.");
+                    "Repair or remove the registered OpenBlade installation in Windows Installed apps, then try again.");
 
     internal static bool ShouldBlockMultipleRelatedBundles(
         LaunchAction action,

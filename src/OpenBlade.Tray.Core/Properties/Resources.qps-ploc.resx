@@ -93,8 +93,14 @@
   <data name="{0} minutes" xml:space="preserve">
     <value>[!! {0} mínútés ~~~ !!]</value>
   </data>
-  <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
-    <value>[!! {0} Thís ís á cómpátíbílítý nótícé, nót á hárdwáré fáílúré. Cóntróls rémáín áváíláblé, bút béhávíór máý díffér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="{0} Controls remain available, but behavior may differ from the tested configuration." xml:space="preserve">
+    <value>[!! {0} Cóntróls rémáín áváíláblé, bút béhávíór máý díffér fróm thé téstéd cónfígúrátíón. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="{0} Controls are blocked. Enable the firmware override to request access." xml:space="preserve">
+    <value>[!! {0} Cóntróls áré blóckéd. Énáblé thé fírmwáré óvérrídé tó réqúést áccéss. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="{0} The firmware override is enabled while OpenBlade checks control access." xml:space="preserve">
+    <value>[!! {0} Thé fírmwáré óvérrídé ís énábléd whílé OpenBlade chécks cóntról áccéss. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="{0} unavailable" xml:space="preserve">
     <value>[!! {0} únáváíláblé ~~~~ !!]</value>
@@ -174,8 +180,8 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>[!! Ámbíént Áwárénéss, fúll scréén ~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
-    <value>[!! Ánóthér Razer ápp cán álsó chángé thésé séttíngs. OpenBlade wíll shów chángés ínstéád óf chángíng thém báck. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
+    <value>[!! OpenBlade shóws chángés mádé bý ánóthér Razer ápp wíthóút chángíng thém báck. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Another Razer app is running" xml:space="preserve">
     <value>[!! Ánóthér Razer ápp ís rúnníng ~~~~~~~ !!]</value>
@@ -1143,8 +1149,8 @@
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>[!! Thé díágnóstíc sávér rétúrnéd án ínválíd résúlt. ~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
-    <value>[!! Thé éxáct ádmíttéd Razer drívér léts Windows shów íts nátívé bríghtnéss flýóút. OpenBlade réválídátés thé éxáct dévícé páth fór évérý kéý préss. Whén thé nátívé páth ís únáváíláblé, OpenBlade úsés íts ówn flýóút. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="The matching Razer driver shows the Windows brightness flyout. OpenBlade uses its own flyout when the driver is unavailable." xml:space="preserve">
+    <value>[!! Thé mátchíng Razer drívér shóws thé Windows bríghtnéss flýóút. OpenBlade úsés íts ówn flýóút whén thé drívér ís únáváíláblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Tidal" xml:space="preserve">
     <value>[!! Tídál ~~ !!]</value>
@@ -1275,8 +1281,8 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>[!! Windows díd nót cónfírm thé réqúéstéd stárt-át-sígn-ín séttíng. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
-    <value>[!! Windows Dynamic Lighting ówns thé kéýbóárd. OpenBlade wíll nót chángé kéýbóárd bríghtnéss, éffécts, ór líghtíng pówér pólícíés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
+    <value>[!! Windows Dynamic Lighting mánágés kéýbóárd líghtíng. ~~~~~~~~~ !!]</value>
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>[!! Windows pówér módé ~~~~ !!]</value>
@@ -1524,8 +1530,8 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>[!! Sígn ín tó án íntéráctívé Windows séssíón tó chángé láptóp séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
-    <value>[!! Thís láptóp hás éxpéríméntál súppórt énábléd áútómátícállý. Éxpórt díágnóstícs ín Ábóút tó hélp tést súppórt. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
+    <value>[!! Éxpéríméntál cóntróls áré áváíláblé ón thís láptóp. Éxpórt díágnóstícs ín Ábóút tó hélp tést thém. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
     <value>[!! Éxpéríméntál wrítés áré páúséd áftér OpenBlade cóúld nót cónfírm á chángé. Chéck thé cúrrént státé, thén résúmé éxpéríméntál cóntróls. OpenBlade wíll nót rétrý thé prévíóús chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>

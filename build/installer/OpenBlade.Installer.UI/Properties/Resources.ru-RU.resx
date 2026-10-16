@@ -153,8 +153,8 @@
   <data name="Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again." xml:space="preserve">
     <value>Установщик Windows не запланировал удаление этой записи. Возможно, от неё всё ещё зависит другой установщик. Удалите все зависимые записи установщика OpenBlade и повторите попытку.</value>
   </data>
-  <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
-    <value>Программа установки OpenBlade обнаружила {0} связанных записей установщика. Операция остановлена до внесения изменений: запуск одного устаревшего пакета может по цепочке запустить остальные. По возможности выберите «Удалить» для каждой зарегистрированной записи OpenBlade. Если дубликаты останутся, воспользуйтесь средством восстановления установщика Windows перед повторным запуском.</value>
+  <data name="Setup found {0} OpenBlade installer entries and stopped to avoid a conflict. Uninstall each OpenBlade entry when available. If duplicate entries remain, use Windows installer recovery, then try again." xml:space="preserve">
+    <value>Обнаружено записей установки OpenBlade: {0}. Установка остановлена во избежание конфликта. Удалите каждую запись OpenBlade, для которой доступно удаление. Если дубликаты останутся, воспользуйтесь восстановлением установщика Windows и повторите попытку.</value>
   </data>
   <data name="OpenBlade was installed, but it could not be launched: {0}" xml:space="preserve">
     <value>OpenBlade установлен, но его не удалось запустить: {0}</value>
@@ -162,8 +162,8 @@
   <data name="OpenBlade was removed" xml:space="preserve">
     <value>OpenBlade удалён</value>
   </data>
-  <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
-    <value>OpenBlade безопасно остановится, после чего будет восстановлено предыдущее состояние установки.</value>
+  <data name="Setup will stop and restore the previous installation state." xml:space="preserve">
+    <value>Установка будет остановлена, предыдущее состояние будет восстановлено.</value>
   </data>
   <data name="Preparing OpenBlade files…" xml:space="preserve">
     <value>Подготовка файлов OpenBlade…</value>
@@ -243,8 +243,8 @@
   <data name="Setup" xml:space="preserve">
     <value>Установка</value>
   </data>
-  <data name="Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first." xml:space="preserve">
-    <value>Не удаётся безопасно определить, какая зарегистрированная версия должна выполнять обслуживание. Сначала восстановите или удалите зарегистрированный пакет в разделе «Установленные приложения» Windows.</value>
+  <data name="Repair or remove the registered OpenBlade installation in Windows Installed apps, then try again." xml:space="preserve">
+    <value>Восстановите или удалите зарегистрированную установку OpenBlade в разделе «Установленные приложения» Windows, затем повторите попытку.</value>
   </data>
   <data name="Setup completed successfully." xml:space="preserve">
     <value>Установка успешно завершена.</value>

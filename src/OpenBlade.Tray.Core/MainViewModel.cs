@@ -1624,7 +1624,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string ExperimentalSupportNotice => ExperimentalWritesPaused
         ? TrayText.Get("Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.")
-        : TrayText.Get("This laptop has experimental support enabled automatically. Export diagnostics in About to help test support.");
+        : TrayText.Get("Experimental controls are available on this laptop. Export diagnostics in About to help test them.");
 
     public KeyboardLightingControlMode KeyboardLightingControlMode
     {
@@ -1953,7 +1953,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (HasControllerAdvisory)
             {
                 details.Add(TrayText.Get(
-                    "Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back."));
+                    "OpenBlade shows changes made by another Razer app without changing them back."));
             }
             if (HasControllerDetectionWarning)
             {
@@ -2046,7 +2046,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public string AboutDisplayBrightnessDriverToolTip =>
         TrayText.Get(
-            "The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout.");
+            "The matching Razer driver shows the Windows brightness flyout. OpenBlade uses its own flyout when the driver is unavailable.");
 
     public bool HasUntestedPlatformVersion =>
         CurrentTestedPlatformAssessment is
@@ -2093,8 +2093,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 : HasIncompatibleFirmware && latestStatus?.DeviceVerified != true
                     ? TrayText.Format(
                         AllowUntestedFirmware
-                            ? "{0} This is a compatibility notice, not a hardware failure. The firmware override is enabled, and OpenBlade is checking control access."
-                            : "{0} This is a compatibility notice, not a hardware failure. Controls remain blocked unless you explicitly enable the firmware override.",
+                            ? "{0} The firmware override is enabled while OpenBlade checks control access."
+                            : "{0} Controls are blocked. Enable the firmware override to request access.",
                         warning)
                     : latestStatus?.DeviceVerified != true
                         ? TrayText.Format(
@@ -2103,7 +2103,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             TrayText.Get(
                                 "Laptop controls are currently unavailable. Check Troubleshooting for details."))
                     : TrayText.Format(
-                        "{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ.",
+                        "{0} Controls remain available, but behavior may differ from the tested configuration.",
                         warning);
         }
     }
@@ -2352,7 +2352,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (UseWindowsDynamicLighting)
             {
-                return TrayText.Get("Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies.");
+                return TrayText.Get("Windows Dynamic Lighting manages keyboard lighting.");
             }
 
             if (!IsConnected)

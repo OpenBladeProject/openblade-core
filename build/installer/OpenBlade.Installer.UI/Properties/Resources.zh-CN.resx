@@ -153,8 +153,8 @@
   <data name="Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again." xml:space="preserve">
     <value>Windows 安装程序未计划移除此安装项。另一个安装包可能仍依赖此安装项。请先移除任何依赖它的 OpenBlade 安装项，然后重试。</value>
   </data>
-  <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
-    <value>发现 {0} 个与 OpenBlade 相关的安装项。运行其中一个旧版安装包时，其他安装包可能会相互启动，因此安装程序已在更改系统前停止。如有“卸载”选项，请逐一卸载这些 OpenBlade 安装项。如果仍有重复项，请先使用 Windows 安装程序恢复工具，然后再次运行此安装程序。</value>
+  <data name="Setup found {0} OpenBlade installer entries and stopped to avoid a conflict. Uninstall each OpenBlade entry when available. If duplicate entries remain, use Windows installer recovery, then try again." xml:space="preserve">
+    <value>安装程序发现 {0} 个 OpenBlade 安装项，已停止以避免冲突。请逐一卸载可卸载的 OpenBlade 安装项。如果仍有重复项，请使用 Windows 安装程序恢复功能，然后重试。</value>
   </data>
   <data name="OpenBlade was installed, but it could not be launched: {0}" xml:space="preserve">
     <value>OpenBlade 已安装，但无法启动：{0}</value>
@@ -162,8 +162,8 @@
   <data name="OpenBlade was removed" xml:space="preserve">
     <value>OpenBlade 已卸载</value>
   </data>
-  <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
-    <value>OpenBlade 安装程序会安全停止，并恢复之前的安装状态。</value>
+  <data name="Setup will stop and restore the previous installation state." xml:space="preserve">
+    <value>安装程序将停止并恢复之前的安装状态。</value>
   </data>
   <data name="Preparing OpenBlade files…" xml:space="preserve">
     <value>正在准备 OpenBlade 文件…</value>
@@ -243,8 +243,8 @@
   <data name="Setup" xml:space="preserve">
     <value>安装程序</value>
   </data>
-  <data name="Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first." xml:space="preserve">
-    <value>当前状态下无法安全确定由哪个安装程序执行维护。请先在 Windows“已安装的应用”中修复或卸载对应的 OpenBlade 安装项。</value>
+  <data name="Repair or remove the registered OpenBlade installation in Windows Installed apps, then try again." xml:space="preserve">
+    <value>请先在 Windows“已安装的应用”中修复或卸载已注册的 OpenBlade 安装项，然后重试。</value>
   </data>
   <data name="Setup completed successfully." xml:space="preserve">
     <value>操作已成功完成。</value>
