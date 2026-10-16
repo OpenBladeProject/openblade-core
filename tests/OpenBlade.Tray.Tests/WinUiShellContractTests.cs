@@ -1209,7 +1209,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnStopRazerServices\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Stop Razer services?", window, StringComparison.Ordinal);
-        Assert.Contains("Razer software may start the services again", window, StringComparison.Ordinal);
+        Assert.Contains("Razer software may restart them", window, StringComparison.Ordinal);
         Assert.Contains("PrimaryButtonStyle = (Style)Root.Resources[\"DestructiveButtonStyle\"]", window, StringComparison.Ordinal);
         Assert.Contains("RazerServiceStopOperation.ActiveServices", window, StringComparison.Ordinal);
         Assert.Contains("ElevatedServiceControlOutcome.Canceled", window, StringComparison.Ordinal);
