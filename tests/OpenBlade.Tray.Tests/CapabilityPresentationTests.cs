@@ -399,7 +399,7 @@ public sealed class CapabilityPresentationTests
         XElement status = NamedElement(document, "Grid", "ThxAudioStatusArea");
         XElement measure = Assert.Single(status.Elements(), element =>
             element.Name.LocalName == "TextBlock" && Attribute(element, "Opacity") == "0");
-        Assert.Equal("Raw", Attribute(measure, "AccessibilityView"));
+        Assert.Equal("Raw", Attribute(measure, "AutomationProperties.AccessibilityView"));
         Assert.Null(Attribute(measure, "Visibility"));
         Assert.Single(status.Elements(), element => element.Name.LocalName == "TextBlock"
             && Attribute(element, "Visibility") == "{x:Bind ThxViewModel.ShowStatusMessage, Mode=OneWay}");
