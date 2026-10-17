@@ -201,7 +201,7 @@ physical convergence to the requested speed.
 
 Pinned product-672 main defines Balanced's 2200–3800 RPM range and 3000 RPM
 default near byte 145859. The pinned policy's `getPerformanceFanSpeedProfile`
-near byte 1873223 supplies class 1 and divides RPM by 100; the active-mode
+near UTF-8 byte 1874219 supplies class 1 and divides RPM by 100; the active-mode
 handler maps the shared value across the device's fan IDs. Its battery branch
 retains the manual flag unless an exact product enables a distinct DC Balanced
 mode; product 672 does not enable that override. Limited external power selects
@@ -230,7 +230,7 @@ testing of this experimental backend.
 
 The logo sequence retains `03/02 [00,04,00]`, `03/00 [00,04,00]`, then
 `03/02 [00,04,00]`, `03/00 [00,04,01]`: Static, Off, and restored Static.
-The product-672 policy near byte 1546407 defaults the logo selector to 0 unless
+The product-672 policy near UTF-8 byte 1547104 defaults the logo selector to 0 unless
 the exact product enables persistent logo storage. Product 672 has no such
 override. Queries, setters, strict reply decoding, and restoration now use 0
 on RZ09-0484; the other experimental models retain selector 1. Breathing keeps
