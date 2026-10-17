@@ -5092,7 +5092,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         pageSectionPresentations[PageSectionKind.LaptopFans] = FansCard;
         pageSectionPresentations[PageSectionKind.LaptopBattery] = BatteryCard;
         pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =
-            KeyboardBehaviorCard;
+            KeyboardSection;
         pageSectionPresentations[PageSectionKind.LaptopStartupAnimation] =
             StartupAnimationCard;
         pageSectionPresentations[PageSectionKind.LaptopShortcutKeys] =

@@ -11,8 +11,34 @@ public sealed class WinUiShellContractTests
         XDocument document = XDocument.Parse(
             ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement card = NamedElement(document, "Border", "SnapTapCard");
+        XElement keyboardSection = NamedElement(document, "StackPanel", "KeyboardSection");
+        XElement keyboardHeader = NamedElement(document, "TextBlock", "KeyboardHeader");
+        XElement keyboardBehavior = NamedElement(document, "ContentControl", "KeyboardBehaviorCard");
+        XElement row = NamedElement(document, "Border", "SnapTapRow");
+        Assert.Contains(card.Ancestors(), element => element == keyboardSection);
         Assert.DoesNotContain(card.Ancestors(), element =>
-            Attribute(element, "Name") is "ShortcutKeysSection" or "LaptopCardsHost");
+            Attribute(element, "Name") == "ShortcutKeysSection");
+        Assert.Equal("SnapTap_KeyboardHeader", Attribute(keyboardHeader, "Uid"));
+        Assert.Null(Attribute(keyboardHeader, "Visibility"));
+        Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
+        Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(row, "Style"));
+        XElement rows = Assert.Single(card.Elements());
+        Assert.Equal("StackPanel", rows.Name.LocalName);
+        Assert.Equal([keyboardBehavior, row], rows.Elements().ToArray());
+        Assert.Equal([keyboardHeader, card], keyboardSection.Elements().ToArray());
+        Assert.Equal(
+            "{StaticResource KeyboardBehaviorRowsTemplate}",
+            Attribute(keyboardBehavior, "ContentTemplate"));
+        Assert.Equal(
+            "{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}",
+            Attribute(keyboardBehavior, "Visibility"));
+        XElement sharedRows = document.Descendants().Single(element =>
+            element.Name.LocalName == "DataTemplate"
+            && Attribute(element, "Key") == "KeyboardBehaviorRowsTemplate");
+        Assert.Contains(sharedRows.Descendants(), element =>
+            Attribute(element, "Name") == "FunctionKeyPrimarySelector");
+        Assert.Contains(sharedRows.Descendants(), element =>
+            Attribute(element, "Name") == "GamingModeToggle");
         XElement toggle = NamedElement(document, "ToggleSwitch", "SnapTapToggle");
         Assert.Equal("SnapTap (A/D)", Attribute(toggle, "AutomationProperties.Name"));
         Assert.Null(Attribute(toggle, "IsOn"));
@@ -20,13 +46,49 @@ public sealed class WinUiShellContractTests
         Assert.Equal("Polite", Attribute(status, "AutomationProperties.LiveSetting"));
         Assert.Equal("Wrap", Attribute(status, "TextWrapping"));
 
+        XElement laptopCards = NamedElement(document, "StackPanel", "LaptopCardsHost");
+        XElement[] laptopSections = laptopCards.Elements().ToArray();
+        Assert.True(
+            Array.IndexOf(laptopSections, keyboardSection)
+            < Array.FindIndex(laptopSections, element => Attribute(element, "Name") == "StartupAnimationCard"));
+
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs").ReplaceLineEndings("\n");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs")
+            .ReplaceLineEndings("\n");
+        Assert.Contains(
+            "pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =\n"
+                + "            KeyboardSection;",
+            window,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =\n"
+                + "            KeyboardBehaviorCard;",
+            window,
+            StringComparison.Ordinal);
         Assert.Contains(
             "localizationSnapshotMode\n"
                 + "            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch)\n"
                 + "            : SnapTapStatusStore.Read()",
             source,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "SnapTapRuntimeState.Off when !snapTapEnabled => string.Empty,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_ when snapTapEnabled => LocalizedResources.Get(\n"
+                + "                \"SnapTap_Status_Unavailable\", \"Waiting for the input helper…\"),\n"
+                + "            _ => string.Empty,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SnapTapStatusText.Visibility = string.IsNullOrEmpty(SnapTapStatusText.Text)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active => string.Empty,", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"SnapTap_Status_Off\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"SnapTap_Status_Unknown\"", source, StringComparison.Ordinal);
+        Assert.Contains("SnapTapRuntimeState.Failed => LocalizedResources.Get(", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -43,11 +105,11 @@ public sealed class WinUiShellContractTests
                 + "        {\n"
                 + "            localizationSnapshotSnapTapState = showFailure\n"
                 + "                ? SnapTapRuntimeState.Failed\n"
-                + "                : SnapTapRuntimeState.Off;",
+                + "                : showEnabled ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Off;",
             preview,
             StringComparison.Ordinal);
         Assert.Contains(
-            "snapTapEnabled = showFailure;\n"
+            "snapTapEnabled = showFailure || showEnabled;\n"
                 + "            SnapTapToggle.IsOn = snapTapEnabled;\n"
                 + "            RefreshSnapTapStatus();",
             preview,
@@ -64,7 +126,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("\"laptop-snap-tap-failed\"", harness, StringComparison.Ordinal);
         Assert.Contains("bool captureSnapTap = captureSnapTapFailure", harness, StringComparison.Ordinal);
         Assert.Contains(
-            "snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure);",
+            "snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled);",
             harness,
             StringComparison.Ordinal);
     }
@@ -925,6 +987,7 @@ public sealed class WinUiShellContractTests
     public void AboutPageOwnsSupportAndUsesBorderlessIconActions()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        XDocument document = XDocument.Parse(xaml);
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
 
@@ -1480,6 +1543,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Content = content", factory, StringComparison.Ordinal);
         Assert.DoesNotContain("Content = this", factory, StringComparison.Ordinal);
 
+        XDocument document = XDocument.Parse(xaml);
         foreach (string cardName in new[]
         {
             "PowerModeCard",
@@ -1490,16 +1554,12 @@ public sealed class WinUiShellContractTests
             "LightingCard",
         })
         {
-            Assert.Contains(
-                $"x:Name=\"{cardName}\"\n                                        Content=\"{{x:Bind ViewModel}}\"",
-                xaml.Replace("\r\n", "\n", StringComparison.Ordinal),
-                StringComparison.Ordinal);
+            XElement card = NamedElement(document, "ContentControl", cardName);
+            Assert.Equal("{x:Bind ViewModel}", Attribute(card, "Content"));
         }
 
-        Assert.Contains(
-            "x:Name=\"DisplayCard\"\n                                        Content=\"{x:Bind DisplayViewModel}\"",
-            xaml.Replace("\r\n", "\n", StringComparison.Ordinal),
-            StringComparison.Ordinal);
+        XElement displayCard = NamedElement(document, "ContentControl", "DisplayCard");
+        Assert.Equal("{x:Bind DisplayViewModel}", Attribute(displayCard, "Content"));
     }
 
     [Fact]

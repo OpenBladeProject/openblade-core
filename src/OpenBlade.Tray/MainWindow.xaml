@@ -1174,6 +1174,126 @@
                         </Border>
                         </StackPanel>
             </DataTemplate>
+            <DataTemplate x:Key="KeyboardBehaviorRowsTemplate" x:DataType="local:MainViewModel">
+                <StackPanel>
+                    <Border Style="{StaticResource SettingsRowStyle}"
+                            Padding="{StaticResource DashboardSingleLineRowPadding}"
+                            Visibility="{x:Bind SupportsFunctionKeyPrimary, Mode=OneWay}">
+                        <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                              ColumnSpacing="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                <TextBlock x:Uid="MainWindow_TextBlockFunctionKeyBehavior" Text="Function key behavior"
+                                           Style="{StaticResource CardTitleStyle}"
+                                           SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border x:Name="FunctionKeyFirmwareLoadingSlot"
+                                        Width="16"
+                                        Height="16"
+                                        VerticalAlignment="Center">
+                                    <ProgressRing x:Uid="MainWindow_ProgressRingReadingOrApplyingFunctionKeyBehavior" Style="{StaticResource FirmwareProgressRingStyle}"
+                                                  IsActive="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                  Visibility="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                  AutomationProperties.Name="Reading or applying function key behavior" />
+                                </Border>
+                                <local:ResponsiveChoiceSelector x:Uid="MainWindow_FunctionKeyPrimarySelectorText" x:Name="FunctionKeyPrimarySelector"
+                                                                CompactMinWidth="150"
+                                                                ExpandedMinWindowWidth="800"
+                                                                AccessibleName="Set function key behavior"
+                                                                IsEnabled="{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}"
+                                                                ItemsSource="{x:Bind AvailableFunctionKeyPrimaryOptions, Mode=OneWay}"
+                                                                DisplayMemberPath="Label"
+                                                                PlaceholderText="{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}"
+                                                                SelectedItem="{x:Bind SelectedFunctionKeyPrimaryOption, Mode=OneWay}"
+                                                                SelectionChanged="OnFunctionKeyPrimaryChanged" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource SettingsRowStyle}"
+                            Padding="{StaticResource DashboardSingleLineRowPadding}"
+                            Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
+                        <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                              ColumnSpacing="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                <TextBlock x:Uid="MainWindow_TextBlockGamingMode" Text="Gaming mode"
+                                           Style="{StaticResource CardTitleStyle}"
+                                           SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border x:Name="GamingModeFirmwareLoadingSlot"
+                                        Width="16"
+                                        Height="16"
+                                        VerticalAlignment="Center">
+                                    <ProgressRing x:Uid="MainWindow_ProgressRingReadingOrApplyingGamingMode" Style="{StaticResource FirmwareProgressRingStyle}"
+                                                  IsActive="{x:Bind IsGamingModeFieldLoading, Mode=OneWay}"
+                                                  Visibility="{x:Bind IsGamingModeFieldLoading, Mode=OneWay}"
+                                                  AutomationProperties.Name="Reading or applying Gaming mode" />
+                                </Border>
+                                <ToggleSwitch x:Uid="MainWindow_GamingModeToggleText" x:Name="GamingModeToggle"
+                                              Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                              IsEnabled="{x:Bind CanEditGamingMode, Mode=OneWay}"
+                                              AutomationProperties.Name="Gaming mode"
+                                              IsOn="{x:Bind GamingModeToggleIsOn, Mode=OneWay}"
+                                              Toggled="OnGamingModeToggled" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}"
+                            Padding="{StaticResource DashboardSingleLineRowPadding}"
+                            Visibility="Collapsed"
+                            local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
+                        <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                              ColumnSpacing="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                <TextBlock x:Uid="MainWindow_TextBlockBlockTheWindowsKey" Text="Block the Windows key"
+                                           Style="{StaticResource CardTitleStyle}"
+                                           SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                            </StackPanel>
+                            <ToggleSwitch x:Uid="MainWindow_ToggleSwitchBlockTheWindowsKeyInGamingMode" Grid.Column="1"
+                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                          IsEnabled="{x:Bind CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                          AutomationProperties.Name="Block the Windows key in Gaming mode"
+                                          IsOn="{x:Bind BlockWindowsKeyInGamingMode, Mode=OneWay}"
+                                          Toggled="OnBlockWindowsKeyInGamingModeToggled" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource SettingsLastEmphasizedSubcardStyle}"
+                            Padding="{StaticResource DashboardSingleLineRowPadding}"
+                            Visibility="Collapsed"
+                            local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
+                        <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                              ColumnSpacing="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                <TextBlock x:Uid="MainWindow_TextBlockBlockAltTab" Text="Block Alt+Tab"
+                                           Style="{StaticResource CardTitleStyle}"
+                                           SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                            </StackPanel>
+                            <ToggleSwitch x:Uid="MainWindow_ToggleSwitchBlockAltTabInGamingMode" Grid.Column="1"
+                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                          IsEnabled="{x:Bind CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                          AutomationProperties.Name="Block Alt+Tab in Gaming mode"
+                                          IsOn="{x:Bind BlockAltTabInGamingMode, Mode=OneWay}"
+                                          Toggled="OnBlockAltTabInGamingModeToggled" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </DataTemplate>
             <DataTemplate x:Key="DashboardKeyboardBehaviorCardTemplate" x:DataType="local:MainViewModel">
                         <StackPanel>
                         <TextBlock x:Uid="MainWindow_TextBlockKeyboard" Text="Keyboard"
@@ -1182,124 +1302,9 @@
                                    Visibility="{x:Bind HasKeyboardLaptopControls, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}"
                                 Visibility="{x:Bind HasKeyboardLaptopControls, Mode=OneWay}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}"
-                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
-                                        Visibility="{x:Bind SupportsFunctionKeyPrimary, Mode=OneWay}">
-                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
-                                          ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock x:Uid="MainWindow_TextBlockFunctionKeyBehavior" Text="Function key behavior"
-                                                       Style="{StaticResource CardTitleStyle}"
-                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <Border x:Name="FunctionKeyFirmwareLoadingSlot"
-                                                    Width="16"
-                                                    Height="16"
-                                                    VerticalAlignment="Center">
-                                                <ProgressRing x:Uid="MainWindow_ProgressRingReadingOrApplyingFunctionKeyBehavior" Style="{StaticResource FirmwareProgressRingStyle}"
-                                                              IsActive="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                              Visibility="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                              AutomationProperties.Name="Reading or applying function key behavior" />
-                                            </Border>
-                                            <local:ResponsiveChoiceSelector x:Uid="MainWindow_FunctionKeyPrimarySelectorText" x:Name="FunctionKeyPrimarySelector"
-                                                                            CompactMinWidth="150"
-                                                                            ExpandedMinWindowWidth="800"
-                                                                            AccessibleName="Set function key behavior"
-                                                                            IsEnabled="{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}"
-                                                                            ItemsSource="{x:Bind AvailableFunctionKeyPrimaryOptions, Mode=OneWay}"
-                                                                            DisplayMemberPath="Label"
-                                                                            PlaceholderText="{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}"
-                                                                            SelectedItem="{x:Bind SelectedFunctionKeyPrimaryOption, Mode=OneWay}"
-                                                                            SelectionChanged="OnFunctionKeyPrimaryChanged" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}"
-                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
-                                        Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
-                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
-                                          ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock x:Uid="MainWindow_TextBlockGamingMode" Text="Gaming mode"
-                                                       Style="{StaticResource CardTitleStyle}"
-                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <Border x:Name="GamingModeFirmwareLoadingSlot"
-                                                    Width="16"
-                                                    Height="16"
-                                                    VerticalAlignment="Center">
-                                                <ProgressRing x:Uid="MainWindow_ProgressRingReadingOrApplyingGamingMode" Style="{StaticResource FirmwareProgressRingStyle}"
-                                                              IsActive="{x:Bind IsGamingModeFieldLoading, Mode=OneWay}"
-                                                              Visibility="{x:Bind IsGamingModeFieldLoading, Mode=OneWay}"
-                                                              AutomationProperties.Name="Reading or applying Gaming mode" />
-                                            </Border>
-                                            <ToggleSwitch x:Uid="MainWindow_GamingModeToggleText" x:Name="GamingModeToggle"
-                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
-                                                          IsEnabled="{x:Bind CanEditGamingMode, Mode=OneWay}"
-                                                          AutomationProperties.Name="Gaming mode"
-                                                          IsOn="{x:Bind GamingModeToggleIsOn, Mode=OneWay}"
-                                                          Toggled="OnGamingModeToggled" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}"
-                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
-                                        Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
-                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
-                                          ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock x:Uid="MainWindow_TextBlockBlockTheWindowsKey" Text="Block the Windows key"
-                                                       Style="{StaticResource CardTitleStyle}"
-                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
-                                        </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchBlockTheWindowsKeyInGamingMode" Grid.Column="1"
-                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
-                                                      IsEnabled="{x:Bind CanEditGamingModeKeyPolicy, Mode=OneWay}"
-                                                      AutomationProperties.Name="Block the Windows key in Gaming mode"
-                                                      IsOn="{x:Bind BlockWindowsKeyInGamingMode, Mode=OneWay}"
-                                                      Toggled="OnBlockWindowsKeyInGamingModeToggled" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastEmphasizedSubcardStyle}"
-                                        Padding="{StaticResource DashboardSingleLineRowPadding}"
-                                        Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind GamingModeToggleIsOn, Mode=OneWay}">
-                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
-                                          ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock x:Uid="MainWindow_TextBlockBlockAltTab" Text="Block Alt+Tab"
-                                                       Style="{StaticResource CardTitleStyle}"
-                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
-                                        </StackPanel>
-                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchBlockAltTabInGamingMode" Grid.Column="1"
-                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
-                                                      IsEnabled="{x:Bind CanEditGamingModeKeyPolicy, Mode=OneWay}"
-                                                      AutomationProperties.Name="Block Alt+Tab in Gaming mode"
-                                                      IsOn="{x:Bind BlockAltTabInGamingMode, Mode=OneWay}"
-                                                      Toggled="OnBlockAltTabInGamingModeToggled" />
-                                    </Grid>
-                                </Border>
-                            </StackPanel>
+                            <ContentControl Content="{x:Bind}"
+                                            ContentTemplate="{StaticResource KeyboardBehaviorRowsTemplate}"
+                                            HorizontalContentAlignment="Stretch" />
                         </Border>
                         </StackPanel>
             </DataTemplate>
@@ -3014,10 +3019,33 @@
                         </local:ResponsivePageHeader>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
-                        <ContentControl x:Name="KeyboardBehaviorCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardKeyboardBehaviorCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
+                        <StackPanel x:Name="KeyboardSection">
+                            <TextBlock x:Name="KeyboardHeader" x:Uid="SnapTap_KeyboardHeader"
+                                       Text="Keyboard" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border x:Name="SnapTapCard" Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <ContentControl x:Name="KeyboardBehaviorCard"
+                                                    Content="{x:Bind ViewModel}"
+                                                    ContentTemplate="{StaticResource KeyboardBehaviorRowsTemplate}"
+                                                    HorizontalContentAlignment="Stretch"
+                                                    Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
+                                    <Border x:Name="SnapTapRow" Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="4">
+                                                <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Uid="SnapTap_Description" Text="Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                            </StackPanel>
+                                            <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
 
                         <ContentControl x:Name="StartupAnimationCard"
                                         Content="{x:Bind ViewModel}"
@@ -3089,22 +3117,6 @@
                             </Border>
                         </StackPanel>
                         </StackPanel>
-                        <Border x:Name="SnapTapCard" Style="{StaticResource SettingsGroupStyle}" Margin="0,18,0,0">
-                            <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="4">
-                                        <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock x:Uid="SnapTap_Description" Text="Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                        <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
-                                </Grid>
-                            </Border>
-                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 

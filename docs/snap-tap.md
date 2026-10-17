@@ -2,9 +2,9 @@
 
 SnapTap is an experimental A/D keyboard feature. When both keys are held, the last pressed key takes priority. Releasing it restores the other key if it is still held.
 
-Open **Laptop**, find **SnapTap (A/D)**, and turn it on. It is off by default. Release A and D before activating it. The status first shows that the helper is ready, then shows Active after it handles an A/D event.
+Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. It is off by default. Release A and D before activating it.
 
-Physical A/D presses keep their device identity for Reactive lighting. Restoring a still-held key is synthetic and does not trigger a new physical-key lighting pulse.
+Physical A/D presses keep their device identity for Reactive lighting. Restoring a still-held key is synthetic and does not trigger a new physical-key lighting pulse. In text fields, the restored key continues repeating until you release it.
 
 The feature applies across keyboards; it cannot select only the laptop keyboard. The pair is fixed to the A/D scan positions. Game compatibility has not been verified.
 
@@ -19,6 +19,8 @@ The Session Agent launches its own executable with a dedicated input-helper mode
 Input settings are read independently of unrelated UI fields, so an unknown navigation entry cannot silently disable input features. Malformed input settings retain the last confirmed bindings in the existing watcher and prevent helper startup.
 
 The parent reuses the current preference watcher, supervises one child, and never restarts a faulted helper until an explicit off/on transition. Status is versioned, atomically written per user/session, and checked against the reporting process lifetime. The hook thread only queues status changes; file I/O runs outside it. A confirmed owned key is released on normal cleanup only while the same foreground window remains current. Uncertain output, lost foreground ownership, and crashes cannot be treated as confirmed cleanup.
+
+Restored holds repeat at the Windows keyboard repeat-speed setting. They resume after one repeat interval because the physical key is already held, without restarting the initial keyboard delay. Hardware repeats take over when they resume; synthetic repeats stop on release, priority change, disable, focus loss, or uncertain output. Missed timer deadlines do not produce catch-up bursts.
 
 The fixed-pair core is tested against an independent press-order oracle across all 1,024 five-event A/D sequences. Focused tests also cover repeats, release order, disabled physical tracking, permanent output faults, cleanup once, child failure, cooperative shutdown, explicit restart, malformed preferences/status, command gates, and native ABI geometry. Existing function-row recovery rejects unmatched A/D packets without reinstalling its hook.
 

@@ -2071,26 +2071,14 @@ OpenBlade did not retry any stop request.</value>
   <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
     <value>Release A and D to activate.</value>
   </data>
-  <data name="SnapTap_Status_Active" xml:space="preserve">
-    <value>Active — the last pressed key takes priority.</value>
-  </data>
   <data name="SnapTap_Status_Paused" xml:space="preserve">
     <value>Paused — input handling is unavailable.</value>
   </data>
   <data name="SnapTap_Status_Failed" xml:space="preserve">
     <value>Paused after an input error. Release A and D, then turn SnapTap off and on.</value>
   </data>
-  <data name="SnapTap_Status_Off" xml:space="preserve">
-    <value>Off</value>
-  </data>
   <data name="SnapTap_Status_Unavailable" xml:space="preserve">
     <value>Waiting for the input helper…</value>
-  </data>
-  <data name="SnapTap_Status_Unknown" xml:space="preserve">
-    <value>Off requested — runtime status unavailable.</value>
-  </data>
-  <data name="SnapTap_Status_Armed" xml:space="preserve">
-    <value>Ready — press A or D to verify input.</value>
   </data>
   <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
     <value>Experimental. Requires the supported THX components already installed.</value>
@@ -2208,5 +2196,8 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
     <value>Enhancements</value>
+  </data>
+  <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
+    <value>Keyboard</value>
   </data>
 </root>
