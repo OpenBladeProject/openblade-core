@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Run SnapTap through the supported Razer laptop keyboard driver on RZ09-0581, with keyboard-specific admission, supervised recovery, and a short information popup. ([#809](https://github.com/OSSBlade/openblade-core/pull/809))
+
 ### Fixed
 
 - Show the specific THX detection failure and include a fresh THX detection report in exported diagnostics. ([#805](https://github.com/OSSBlade/openblade-core/pull/805))
