@@ -14,6 +14,8 @@ public enum SnapTapRuntimeState
     Paused,
     Failed,
     Armed,
+    Unavailable,
+    RecoveryRequired,
 }
 
 public sealed record SnapTapRuntimeStatus(
@@ -72,6 +74,7 @@ public static class SnapTapStatusStore
             // A surviving file is not proof that its helper still owns the input hook.
             // The process start time also rejects a PID reused since the last update.
             return status.State is SnapTapRuntimeState.Off or SnapTapRuntimeState.Failed
+                    or SnapTapRuntimeState.Unavailable or SnapTapRuntimeState.RecoveryRequired
                 || IsProcessCurrent(status)
                     ? status
                     : status with { State = SnapTapRuntimeState.Paused };

@@ -189,6 +189,26 @@ public sealed class SnapTapProcessCoordinatorTests
         Assert.Equal(0, launches);
     }
 
+    [Theory]
+    [InlineData(3, SnapTapRuntimeState.Unavailable)]
+    [InlineData(4, SnapTapRuntimeState.RecoveryRequired)]
+    public async Task DriverExitCondition_IsPublishedAndNeverAutomaticallyRetried(int code, SnapTapRuntimeState expected)
+    {
+        var source = new Preference(true);
+        var child = new Child();
+        int launches = 0;
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        using var cancel = new CancellationTokenSource();
+        Task run = new SnapTapProcessCoordinator(source, () => { launches++; return child; }, statuses.Enqueue).RunAsync(cancel.Token);
+        await WaitUntilAsync(() => launches == 1);
+        child.Exit(code);
+        await WaitUntilAsync(() => statuses.Last().State == expected);
+        source.Set(true);
+        cancel.Cancel();
+        await run;
+        Assert.Equal(1, launches);
+    }
+
     private sealed class Preference(bool initial = false) : ISnapTapPreferenceSource
     {
         public bool SnapTapEnabled { get; private set; } = initial;

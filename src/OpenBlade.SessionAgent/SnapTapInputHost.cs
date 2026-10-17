@@ -16,15 +16,12 @@ internal static class SnapTapInputHost
 {
     internal const string ModeArgument = "--snap-tap-input";
 
-    internal static (int HookData, int Message, int Input) NativeStructureSizes =>
-        (Marshal.SizeOf<Native.KeyboardHookData>(), Marshal.SizeOf<Native.Message>(), Marshal.SizeOf<Native.Input>());
-
     internal static bool IsRequested(IReadOnlyList<string> args) =>
-        args.Count > 0 && args[0] == ModeArgument;
+        args.Count > 0 && args[0] is ModeArgument or SnapTapDriverSupervisor.WorkerMode;
 
     internal static int Run(string[] args)
     {
-        if (args.Length != 2
+        if (!IsRequested(args) || args.Length != 2
             || !int.TryParse(args[1], NumberStyles.None, CultureInfo.InvariantCulture, out int parentId)
             || parentId <= 0 || parentId == Environment.ProcessId)
         {
@@ -50,6 +47,26 @@ internal static class SnapTapInputHost
                 false,
                 EventResetMode.ManualReset,
                 SessionAgentShutdownEndpoint.ForExecutablePath(Environment.ProcessPath!));
+            bool ShouldStop() => stop.WaitOne(0) || shutdown.WaitOne(0)
+                || Native.WaitForSingleObject(parent, 0) != 258;
+            if (args[0] == SnapTapDriverSupervisor.WorkerMode)
+            {
+                using EventWaitHandle startGate = EventWaitHandle.OpenExisting(SnapTapDriverSupervisor.StartGateName(parentId));
+                long startedAt = Environment.TickCount64;
+                while (!startGate.WaitOne(50))
+                {
+                    if (ShouldStop() || Environment.TickCount64 - startedAt > 10000)
+                    {
+                        return 1;
+                    }
+                }
+                if (ShouldStop())
+                {
+                    return 1;
+                }
+                return SnapTapDriverLoop.Run(parentId, () => ShouldStop()
+                    || !WindowsRazerSnapTapDriverDiscovery.HasActiveConsoleSession());
+            }
             using WindowsIdentity identity = WindowsIdentity.GetCurrent();
             string sid = identity.User!.Value;
             string userKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sid)))[..16];
@@ -71,7 +88,7 @@ internal static class SnapTapInputHost
             }
             try
             {
-                return new InputLoop(parent, stop, shutdown).Run();
+                return SnapTapDriverSupervisor.Run(ShouldStop);
             }
             finally
             {
@@ -112,320 +129,8 @@ internal static class SnapTapInputHost
         }
     }
 
-    private sealed class InputLoop
-    {
-        private const uint StopMessage = 0x8001;
-        private readonly SafeProcessHandle parent;
-        private readonly EventWaitHandle stop;
-        private readonly EventWaitHandle shutdown;
-        private readonly Native.HookProc callback;
-        private readonly Native.Input[] inputs = new Native.Input[2];
-        private readonly SnapTapPriorityCore core;
-        private readonly nuint tag = (nuint)(0x4F42535400000000UL | (uint)Environment.ProcessId);
-        private SnapTapStatusPublisher? publisher;
-        private nint hook;
-        private nint targetWindow;
-        private nint targetKeyboardLayout;
-        private nuint timer;
-        private uint threadId;
-        private bool stopRequested;
-        private bool failed;
-        private bool stopping;
-        private bool confirmedInput;
-
-        internal InputLoop(SafeProcessHandle parent, EventWaitHandle stop, EventWaitHandle shutdown)
-        {
-            this.parent = parent;
-            this.stop = stop;
-            this.shutdown = shutdown;
-            callback = OnKeyboard;
-            if (!Native.SystemParametersInfo(0x000A, 0, out uint speed, 0) || speed > 31)
-            {
-                throw new InvalidOperationException("The keyboard repeat speed is unavailable.");
-            }
-            core = new SnapTapPriorityCore(Send,
-                repeatInterval: TimeSpan.FromSeconds(1 / (2.5 + 27.5 * speed / 31)));
-        }
-
-        internal int Run()
-        {
-            using var statusPublisher = new SnapTapStatusPublisher();
-            publisher = statusPublisher;
-            publisher.Publish(SnapTapRuntimeState.WaitingForRelease);
-            threadId = Native.GetCurrentThreadId();
-            try
-            {
-                // Create the thread queue before any callback can request a stop.
-                Native.PeekMessage(out _, 0, 0, 0, 0);
-                hook = Native.SetWindowsHookEx(13, callback, Native.GetModuleHandle(null), 0);
-                if (hook == 0)
-                {
-                    failed = true;
-                    return 1;
-                }
-                timer = Native.SetTimer(0, 0, 10, 0);
-                if (timer == 0)
-                {
-                    failed = true;
-                    return 1;
-                }
-                int received;
-                while ((received = Native.GetMessage(out Native.Message message, 0, 0, 0)) > 0)
-                {
-                    if (message.Id == StopMessage || stopRequested || ShouldStop())
-                    {
-                        break;
-                    }
-                    ReconcileIdle();
-                    if (stopRequested)
-                    {
-                        break;
-                    }
-                    if (message.Id == 0x0113 && message.WParam == timer)
-                    {
-                        core.RepeatRestoredWinner();
-                        if (core.Faulted)
-                        {
-                            RequestFailure();
-                            break;
-                        }
-                    }
-                    Native.TranslateMessage(ref message);
-                    Native.DispatchMessage(ref message);
-                }
-                if (received < 0)
-                {
-                    failed = true;
-                    core.Poison();
-                }
-            }
-            catch (Exception exception) when (exception is System.ComponentModel.Win32Exception
-                or InvalidOperationException or ObjectDisposedException)
-            {
-                failed = true;
-                core.Poison();
-            }
-            finally
-            {
-                stopping = true;
-                // Only a confirmed owned key, in the original foreground, can be released.
-                if (!core.Faulted && (core.Winner == 0 || Native.GetForegroundWindow() == targetWindow))
-                {
-                    core.Disable();
-                }
-                else
-                {
-                    core.Poison();
-                }
-                if (hook != 0 && !Native.UnhookWindowsHookEx(hook))
-                {
-                    failed = true;
-                }
-                if (timer != 0 && !Native.KillTimer(0, timer))
-                {
-                    failed = true;
-                }
-                publisher.Publish(failed || core.Faulted
-                    ? SnapTapRuntimeState.Failed : SnapTapRuntimeState.Off);
-                GC.KeepAlive(callback);
-            }
-            return failed || core.Faulted || publisher.Failed ? 1 : 0;
-        }
-
-        private bool ShouldStop() => stop.WaitOne(0) || shutdown.WaitOne(0)
-            || Native.WaitForSingleObject(parent, 0) != 258;
-
-        private void ReconcileIdle()
-        {
-            if (publisher!.Failed)
-            {
-                RequestFailure();
-                return;
-            }
-            nint foreground = Native.GetForegroundWindow();
-            if (core.Winner != 0 && (foreground != targetWindow || KeyboardLayout(foreground) != targetKeyboardLayout))
-            {
-                core.Poison();
-                RequestFailure();
-                return;
-            }
-            if (foreground == 0)
-            {
-                core.Disable();
-                confirmedInput = false;
-                publisher.Publish(SnapTapRuntimeState.Paused);
-                return;
-            }
-            if (core.Winner == 0 && foreground != targetWindow)
-            {
-                confirmedInput = false;
-                targetWindow = foreground;
-                targetKeyboardLayout = KeyboardLayout(foreground);
-            }
-            if (!core.Enabled && foreground != 0 && core.ArePhysicallyReleased && Idle())
-            {
-                core.Enable();
-            }
-            publisher.Publish(core.Enabled ? (confirmedInput ? SnapTapRuntimeState.Active : SnapTapRuntimeState.Armed)
-                : foreground == 0 ? SnapTapRuntimeState.Paused : SnapTapRuntimeState.WaitingForRelease);
-        }
-
-        private static nint KeyboardLayout(nint foreground)
-        {
-            uint thread = Native.GetWindowThreadProcessId(foreground, out _);
-            return thread == 0 ? 0 : Native.GetKeyboardLayout(thread);
-        }
-
-        private static bool Idle()
-        {
-            nint layout = KeyboardLayout(Native.GetForegroundWindow());
-            return layout != 0 && SnapTapKeyReleaseAdmission.AreReleased(
-                scan => Native.MapVirtualKeyEx(scan, 3, layout), Native.GetAsyncKeyState);
-        }
-
-        private void RequestFailure()
-        {
-            failed = true;
-            stopRequested = true;
-            Native.PostThreadMessage(threadId, StopMessage, 0, 0);
-        }
-
-        private int Send(SnapTapOutputBatch batch)
-        {
-            // Parent loss does not authorize another press; final known release is allowed.
-            if (targetWindow == 0 || Native.GetForegroundWindow() != targetWindow || KeyboardLayout(targetWindow) != targetKeyboardLayout
-                || (!stopping && ShouldStop()))
-            {
-                return 0;
-            }
-            for (int i = 0; i < batch.Count; i++)
-            {
-                SnapTapKeyStroke key = i == 0 ? batch.First : batch.Second;
-                inputs[i] = new Native.Input
-                {
-                    Type = 1,
-                    Data = new Native.InputUnion
-                    {
-                        Keyboard = new Native.KeyboardInput
-                        {
-                            Scan = key.ScanCode,
-                            Flags = 8u | (key.IsDown ? 0u : 2u),
-                            Extra = tag,
-                        },
-                    },
-                };
-            }
-            return (int)Native.SendInput((uint)batch.Count, inputs, Marshal.SizeOf<Native.Input>());
-        }
-
-        private nint OnKeyboard(int code, nuint message, nint data)
-        {
-            if (code < 0 || data == 0 || stopping)
-            {
-                return Native.CallNextHookEx(hook, code, message, data);
-            }
-            try
-            {
-                Native.KeyboardHookData key = Marshal.PtrToStructure<Native.KeyboardHookData>(data);
-                if ((key.Flags & 0x10) != 0 && key.Extra == tag)
-                {
-                    return Native.CallNextHookEx(hook, code, message, data);
-                }
-                if (key.Scan is not (0x1E or 0x20) || (key.Flags & 1) != 0
-                    || message is not (0x100 or 0x101 or 0x104 or 0x105))
-                {
-                    return Native.CallNextHookEx(hook, code, message, data);
-                }
-                if (stopRequested || ShouldStop())
-                {
-                    stopRequested = true;
-                    return Native.CallNextHookEx(hook, code, message, data);
-                }
-                if ((key.Flags & 0x10) != 0)
-                {
-                    core.Poison();
-                    RequestFailure();
-                    return Native.CallNextHookEx(hook, code, message, data);
-                }
-                nint foreground = Native.GetForegroundWindow();
-                if (core.Winner != 0 && (foreground != targetWindow || KeyboardLayout(foreground) != targetKeyboardLayout))
-                {
-                    core.Poison();
-                    RequestFailure();
-                    return Native.CallNextHookEx(hook, code, message, data);
-                }
-                if (foreground == 0)
-                {
-                    core.Disable();
-                    return Native.CallNextHookEx(hook, code, message, data);
-                }
-                if (core.Winner == 0)
-                {
-                    targetWindow = foreground;
-                    targetKeyboardLayout = KeyboardLayout(foreground);
-                }
-                SnapTapInputResult result = core.Handle(new SnapTapKeyStroke(
-                    (ushort)key.Scan, message is 0x100 or 0x104));
-                if (result.Handled)
-                {
-                    confirmedInput = true;
-                    publisher!.Publish(SnapTapRuntimeState.Active);
-                }
-                if (core.Faulted)
-                {
-                    RequestFailure();
-                }
-                return result.Suppress ? 1 : Native.CallNextHookEx(hook, code, message, data);
-            }
-            catch (Exception exception) when (exception is InvalidOperationException
-                or System.ComponentModel.Win32Exception or ObjectDisposedException)
-            {
-                core.Poison();
-                RequestFailure();
-                return Native.CallNextHookEx(hook, code, message, data);
-            }
-        }
-    }
-
     private static class Native
     {
-        internal delegate nint HookProc(int code, nuint message, nint data);
-        [StructLayout(LayoutKind.Sequential)]
-        internal struct KeyboardHookData
-        {
-            internal uint Vk, Scan, Flags, Time;
-            internal nuint Extra;
-        }
-        [StructLayout(LayoutKind.Sequential)]
-        internal struct Message
-        {
-            internal nint Window;
-            internal uint Id;
-            internal nuint WParam;
-            internal nint LParam;
-            internal uint Time;
-            internal int X, Y;
-            internal uint Private;
-        }
-        [StructLayout(LayoutKind.Sequential)]
-        internal struct KeyboardInput
-        {
-            internal ushort Vk, Scan;
-            internal uint Flags, Time;
-            internal nuint Extra;
-        }
-        [StructLayout(LayoutKind.Explicit, Size = 32)]
-        internal struct InputUnion
-        {
-            [FieldOffset(0)] internal KeyboardInput Keyboard;
-        }
-        [StructLayout(LayoutKind.Sequential)]
-        internal struct Input
-        {
-            internal uint Type;
-            internal InputUnion Data;
-        }
-
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern SafeProcessHandle OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int id);
         [DllImport("kernel32.dll")]
@@ -439,49 +144,5 @@ internal static class SnapTapInputHost
         [DllImport("advapi32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool OpenProcessToken(SafeProcessHandle process, uint access, out SafeAccessTokenHandle token);
-        [DllImport("kernel32.dll")]
-        internal static extern uint GetCurrentThreadId();
-        [DllImport("kernel32.dll", EntryPoint = "GetModuleHandleW", CharSet = CharSet.Unicode, ExactSpelling = true)]
-        internal static extern nint GetModuleHandle(string? name);
-        [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", ExactSpelling = true, SetLastError = true)]
-        internal static extern nint SetWindowsHookEx(int id, HookProc callback, nint module, uint thread);
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool UnhookWindowsHookEx(nint hook);
-        [DllImport("user32.dll")]
-        internal static extern nint CallNextHookEx(nint hook, int code, nuint message, nint data);
-        [DllImport("user32.dll")]
-        internal static extern nint GetForegroundWindow();
-        [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", ExactSpelling = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool SystemParametersInfo(uint action, uint parameter, out uint value, uint flags);
-        [DllImport("user32.dll")]
-        internal static extern short GetAsyncKeyState(int key);
-        [DllImport("user32.dll")]
-        internal static extern uint GetWindowThreadProcessId(nint window, out uint process);
-        [DllImport("user32.dll")]
-        internal static extern nint GetKeyboardLayout(uint thread);
-        [DllImport("user32.dll", EntryPoint = "MapVirtualKeyExW", ExactSpelling = true)]
-        internal static extern uint MapVirtualKeyEx(uint code, uint mapType, nint layout);
-        [DllImport("user32.dll", EntryPoint = "GetMessageW", ExactSpelling = true, SetLastError = true)]
-        internal static extern int GetMessage(out Message message, nint window, uint first, uint last);
-        [DllImport("user32.dll", EntryPoint = "PeekMessageW", ExactSpelling = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool PeekMessage(out Message message, nint window, uint first, uint last, uint flags);
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool TranslateMessage(ref Message message);
-        [DllImport("user32.dll", EntryPoint = "DispatchMessageW", ExactSpelling = true)]
-        internal static extern nint DispatchMessage(ref Message message);
-        [DllImport("user32.dll", EntryPoint = "PostThreadMessageW", ExactSpelling = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool PostThreadMessage(uint thread, uint message, nuint wParam, nint lParam);
-        [DllImport("user32.dll")]
-        internal static extern nuint SetTimer(nint window, nuint id, uint milliseconds, nint callback);
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool KillTimer(nint window, nuint id);
-        [DllImport("user32.dll", SetLastError = true)]
-        internal static extern uint SendInput(uint count, [In] Input[] inputs, int size);
     }
 }
