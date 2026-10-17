@@ -1553,6 +1553,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Content = content", factory, StringComparison.Ordinal);
         Assert.DoesNotContain("Content = this", factory, StringComparison.Ordinal);
 
+        XDocument document = XDocument.Parse(xaml);
         foreach (string cardName in new[]
         {
             "PowerModeCard",
