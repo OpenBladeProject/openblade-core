@@ -139,7 +139,12 @@ internal static class SnapTapInputHost
             this.stop = stop;
             this.shutdown = shutdown;
             callback = OnKeyboard;
-            core = new SnapTapPriorityCore(Send);
+            if (!Native.SystemParametersInfo(0x000A, 0, out uint speed, 0) || speed > 31)
+            {
+                throw new InvalidOperationException("The keyboard repeat speed is unavailable.");
+            }
+            core = new SnapTapPriorityCore(Send,
+                repeatInterval: TimeSpan.FromSeconds(1 / (2.5 + 27.5 * speed / 31)));
         }
 
         internal int Run()
@@ -158,7 +163,7 @@ internal static class SnapTapInputHost
                     failed = true;
                     return 1;
                 }
-                timer = Native.SetTimer(0, 0, 50, 0);
+                timer = Native.SetTimer(0, 0, 10, 0);
                 if (timer == 0)
                 {
                     failed = true;
@@ -175,6 +180,15 @@ internal static class SnapTapInputHost
                     if (stopRequested)
                     {
                         break;
+                    }
+                    if (message.Id == 0x0113 && message.WParam == timer)
+                    {
+                        core.RepeatRestoredWinner();
+                        if (core.Faulted)
+                        {
+                            RequestFailure();
+                            break;
+                        }
                     }
                     Native.TranslateMessage(ref message);
                     Native.DispatchMessage(ref message);
@@ -438,6 +452,9 @@ internal static class SnapTapInputHost
         internal static extern nint CallNextHookEx(nint hook, int code, nuint message, nint data);
         [DllImport("user32.dll")]
         internal static extern nint GetForegroundWindow();
+        [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SystemParametersInfo(uint action, uint parameter, out uint value, uint flags);
         [DllImport("user32.dll")]
         internal static extern short GetAsyncKeyState(int key);
         [DllImport("user32.dll")]
