@@ -10,6 +10,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Add experimental Fire and Wheel lighting for Blade 18 (2023), using its recorded 6×16 frames. Record its default Fn shortcuts and the remaining input-decoding gap in diagnostics and documentation. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
 - Add the observed CPU Boost with GPU Low or High combinations and a shared 2200–3800 RPM fixed-fan control in Balanced on Blade 18 (2023). Keep richer Synapse lighting effects visible in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 
+### Changed
+
+- Run SnapTap through the supported Razer laptop keyboard driver on RZ09-0581, with keyboard-specific admission, supervised recovery, and a short information popup. ([#809](https://github.com/OSSBlade/openblade-core/pull/809))
+
 ### Fixed
 
 - Use the observed logo-lighting selector on Blade 18 (2023) for state queries, changes, and restoration. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))

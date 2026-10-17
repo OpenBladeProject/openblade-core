@@ -284,6 +284,13 @@ inventing a page-specific appearance:
    model or driver build. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
+   SnapTap may use the already installed, pinned RZ09-0581 (`02E0`) keyboard
+   driver stack through its typed A/D-only endpoint. Keep exact host, driver,
+   keyboard-collection and container admission, supervised subscription lifetime,
+   owned-hook restoration and uncertain-output recovery. It must not load the
+   Synapse mapping engine, acquire the service's HID handle, install or bundle
+   drivers, or fall back to a system-wide keyboard hook. Other models need
+   separately reviewed driver evidence; see [SnapTap](docs/snap-tap.md).
    The optional experimental THX audio integration may use the already
    installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
    `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off

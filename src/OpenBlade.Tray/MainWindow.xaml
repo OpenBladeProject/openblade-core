@@ -3036,8 +3036,29 @@
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Spacing="4">
-                                                <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" />
-                                                <TextBlock x:Uid="SnapTap_Description" Text="Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                                    <Button x:Name="SnapTapInfoButton" x:Uid="SnapTap_InfoButton"
+                                                            Width="20" Height="20" MinWidth="0" MinHeight="0"
+                                                            Padding="0" Background="Transparent" BorderThickness="0"
+                                                            VerticalAlignment="Center"
+                                                            AutomationProperties.Name="About SnapTap"
+                                                            ToolTipService.ToolTip="About SnapTap">
+                                                        <Button.Flyout>
+                                                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                                                <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
+                                                                    <StackPanel MaxWidth="320" Spacing="12">
+                                                                        <TextBlock x:Uid="SnapTap_InfoTitle" Text="About SnapTap" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                                        <TextBlock x:Uid="SnapTap_InfoInput" Text="SnapTap uses the Razer keyboard driver on the laptop keyboard. Requires the supported RZ09-0581 driver." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                                        <TextBlock x:Uid="SnapTap_InfoCompatibility" Text="Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                                    </StackPanel>
+                                                                </ScrollViewer>
+                                                            </Flyout>
+                                                        </Button.Flyout>
+                                                        <FontIcon Glyph="&#xE946;" FontSize="14" />
+                                                    </Button>
+                                                </StackPanel>
+                                                <TextBlock x:Uid="SnapTap_Description" Text="When A and D overlap, the last pressed key wins." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                 <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                                             </StackPanel>
                                             <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />

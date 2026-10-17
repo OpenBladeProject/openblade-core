@@ -2043,7 +2043,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>SnapTap（A/D）</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>实验性功能。同时按住 A 和 D 时，后按下的键优先。适用于所有键盘。尚未验证游戏兼容性。</value>
+    <value>同时按住 A 和 D 时，后按下的按键优先。</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap（A/D）</value>
@@ -2052,7 +2052,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>正在启动…</value>
   </data>
   <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
-    <value>松开 A 和 D 以激活。</value>
+    <value>松开按键和鼠标按钮以激活。</value>
   </data>
   <data name="SnapTap_Status_Paused" xml:space="preserve">
     <value>已暂停 — 输入处理不可用。</value>
@@ -2182,5 +2182,26 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
     <value>键盘</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>关于 SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>关于 SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
+    <value>关于 SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoInput.Text" xml:space="preserve">
+    <value>SnapTap 通过 Razer 键盘驱动控制笔记本内置键盘。需要受支持的 RZ09-0581 驱动。</value>
+  </data>
+  <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
+    <value>尚未验证游戏兼容性。</value>
+  </data>
+  <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
+    <value>受支持的 Razer 键盘驱动不可用。</value>
+  </data>
+  <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
+    <value>重新启用 SnapTap 前，请重启 Windows。</value>
   </data>
 </root>
