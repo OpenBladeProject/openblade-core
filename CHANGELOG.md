@@ -11,6 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Explain when SnapTap needs the Razer keyboard driver and link to its model-specific setup guide. ([#811](https://github.com/OpenBladeProject/openblade-core/pull/811))
 - Show the specific THX detection failure and include a fresh THX detection report in exported diagnostics. ([#805](https://github.com/OSSBlade/openblade-core/pull/805))
 
 ## [0.33.1-nightly.92] - 2026-10-17
