@@ -2060,7 +2060,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>SnapTap (A/D)</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>Экспериментальная функция. При одновременном нажатии A и D приоритет у последней нажатой клавиши. Работает со всеми клавиатурами. Совместимость с играми не проверена.</value>
+    <value>При одновременном нажатии A и D приоритет у последней нажатой клавиши. Работает со всеми клавиатурами.</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap (A/D)</value>
@@ -2199,5 +2199,20 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
     <value>Клавиатура</value>
+  </data>
+  <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
+    <value>О SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>О SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoInput.Text" xml:space="preserve">
+    <value>OpenBlade управляет приоритетом A/D через API ввода Windows. Изученная реализация Synapse для RZ09-0581 использует драйвер клавиатуры Razer.</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>О SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoRisk.Text" xml:space="preserve">
+    <value>Перед включением SnapTap проверьте правила игры и турнира.</value>
   </data>
 </root>

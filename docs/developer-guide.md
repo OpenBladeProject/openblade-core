@@ -448,4 +448,4 @@ pseudo-localization review workflow are in [localization.md](localization.md).
 
 ## SnapTap input helper
 
-The opt-in experimental A/D priority feature runs in a separate current-user input process. See [SnapTap](snap-tap.md) for its isolation boundary, input failure handling, and exact-build validation requirements. It does not add a hardware command or change the service's exclusive device ownership.
+The opt-in A/D priority feature runs in a separate current-user input process. See [SnapTap](snap-tap.md) for its user validation, compatibility limits, isolation boundary, and input failure handling. It does not add a hardware command or change the service's exclusive device ownership.

@@ -27,6 +27,17 @@ public sealed partial class MainWindow
         }
     }
 
+    internal UIElement ShowLocalizationSnapshotSnapTapInformation()
+    {
+        if (!localizationSnapshotMode || SnapTapInfoButton.Flyout is not Flyout flyout)
+        {
+            throw new InvalidOperationException("SnapTap information preview requires snapshot mode.");
+        }
+
+        flyout.ShowAt(SnapTapInfoButton);
+        return flyout.Content;
+    }
+
     private void OnSnapTapToggled(object sender, RoutedEventArgs args)
     {
         if (sender is not ToggleSwitch toggle

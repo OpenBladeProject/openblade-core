@@ -2043,7 +2043,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>SnapTap（A/D）</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>实验性功能。同时按住 A 和 D 时，后按下的键优先。适用于所有键盘。尚未验证游戏兼容性。</value>
+    <value>同时按住 A 和 D 时，后按下的键优先。适用于所有键盘。</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap（A/D）</value>
@@ -2182,5 +2182,20 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
     <value>键盘</value>
+  </data>
+  <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
+    <value>关于 SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>关于 SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoInput.Text" xml:space="preserve">
+    <value>OpenBlade 通过 Windows 输入 API 处理 A/D 优先级。已研究的 RZ09-0581 Synapse 实现使用 Razer 键盘驱动程序。</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>关于 SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoRisk.Text" xml:space="preserve">
+    <value>启用 SnapTap 前，请查看游戏及赛事规则。</value>
   </data>
 </root>

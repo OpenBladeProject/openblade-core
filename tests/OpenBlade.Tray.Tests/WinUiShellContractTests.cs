@@ -92,6 +92,35 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void SnapTapInformationIsAccessibleAndKeepsCompatibilityDetailsInFlyout()
+    {
+        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement button = NamedElement(document, "Button", "SnapTapInfoButton");
+        Assert.Equal("About SnapTap", Attribute(button, "AutomationProperties.Name"));
+        Assert.Equal("About SnapTap", Attribute(button, "ToolTipService.ToolTip"));
+        XElement reference = NamedElement(document, "Button", "LabFeaturesInfoButton");
+        foreach (string property in new[] { "Width", "Height", "Padding", "MinWidth", "MinHeight" })
+        {
+            Assert.Equal(Attribute(reference, property), Attribute(button, property));
+        }
+
+        XElement flyout = button.Descendants().Single(element => element.Name.LocalName == "Flyout");
+        XElement scroll = flyout.Descendants().Single(element => element.Name.LocalName == "ScrollViewer");
+        Assert.Equal("Auto", Attribute(scroll, "VerticalScrollBarVisibility"));
+        XElement description = document.Descendants().Single(element =>
+            Attribute(element, "Uid") == "SnapTap_Description");
+        Assert.Equal(
+            "When A and D overlap, the last pressed key wins. Applies to all keyboards.",
+            Attribute(description, "Text"));
+        XElement compatibility = flyout.Descendants().Single(element =>
+            Attribute(element, "Uid") == "SnapTap_InfoRisk");
+        Assert.Equal("Check game and tournament rules before enabling SnapTap.", Attribute(compatibility, "Text"));
+        Assert.All(flyout.Descendants().Where(element => element.Name.LocalName == "TextBlock"),
+            element => Assert.Equal("Wrap", Attribute(element, "TextWrapping")));
+        Assert.DoesNotContain(flyout.Descendants(), element => element.Name.LocalName == "HyperlinkButton");
+    }
+
+    [Fact]
     public void SnapTapFailureSnapshotIsIsolatedAndDoesNotSavePreferences()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs")

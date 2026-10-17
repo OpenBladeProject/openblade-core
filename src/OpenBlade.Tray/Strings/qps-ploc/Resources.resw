@@ -2060,7 +2060,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>[!! Éxpéríméntál. Whén Á ánd D óvérláp, thé lást présséd kéý wíns. Ápplíés tó áll kéýbóárds. Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Whén Á ánd D óvérláp, thé lást présséd kéý wíns. Ápplíés tó áll kéýbóárds. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
@@ -2199,5 +2199,20 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
     <value>[!! Kéýbóárd ~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoInput.Text" xml:space="preserve">
+    <value>[!! OpenBlade hándlés Á/D príórítý thróúgh Windows ínpút ÁPÍs. Thé Sýnápsé ímpléméntátíón révíéwéd fór RZ09-0581 úsés á Razer kéýbóárd drívér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoRisk.Text" xml:space="preserve">
+    <value>[!! Chéck gámé ánd tóúrnámént rúlés béfóré énáblíng SnápTáp. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
+    <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>
   </data>
 </root>

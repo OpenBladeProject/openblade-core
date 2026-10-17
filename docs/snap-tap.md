@@ -1,18 +1,18 @@
 # SnapTap
 
-SnapTap is an experimental A/D keyboard feature. When both keys are held, the last pressed key takes priority. Releasing it restores the other key if it is still held.
+When A and D are held together, SnapTap gives the last pressed key priority. Releasing it restores the other key if it is still held.
 
-Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. It is off by default. Release A and D before activating it.
+Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. It is off by default. Release A and D before activating it. The information button beside SnapTap explains the input method and reminds you to check game and tournament rules.
 
 Physical A/D presses keep their device identity for Reactive lighting. Restoring a still-held key is synthetic and does not trigger a new physical-key lighting pulse. In text fields, the restored key continues repeating until you release it.
 
-The feature applies across keyboards; it cannot select only the laptop keyboard. The pair is fixed to the A/D scan positions. Game compatibility has not been verified.
+The feature applies across keyboards; it cannot select only the laptop keyboard. The pair is fixed to the A/D scan positions. Check game and tournament rules before enabling SnapTap.
 
 SnapTap keeps running when you close the visible Tray. Turning it off or shutting down the Session Agent stops its input helper. If you change focus while a key is held, or Windows does not accept an output batch completely, the helper pauses instead of guessing or retrying input. Release A and D, then turn SnapTap off and on to retry.
 
-This feature uses Windows input APIs. It does not change keyboard firmware or install a driver. The current validation was performed with the existing Razer drivers still installed; operation after removing them has not been physically verified.
-
 ## Development and validation
+
+OpenBlade uses a Windows keyboard hook and synthetic key releases and restorations. The Synapse path reviewed for RZ09-0581 uses the Razer keyboard filter driver. The OpenBlade tests used the existing Razer drivers; operation after removing them remains untested.
 
 The Session Agent launches its own executable with a dedicated input-helper mode in a separate process. That mode does not initialize Raw Input, the normal Session Agent, device ownership, or any firmware backend. It verifies the parent image, user, and session, holds the parent process handle, observes the existing coordinated shutdown event, and uses a per-user/session ownership mutex.
 
@@ -28,6 +28,8 @@ Disposable native attended prototypes established ordinary-window remapping and 
 
 The later attended coexistence test on RZ09-0581 used commit `c1569838` alongside the unchanged installed Session Agent and THX helper. Physical initial A/D presses passed through with Rz09_0581 device attribution; priority releases and held-key restorations remained synthetic and Unsupported. Both overlap directions delivered the old-key release before the new physical down, with no delivered A+D overlap. The window and Raw Input streams matched, and the user confirmed Reactive flashes on initial A/D presses with SnapTap both enabled and disabled. This establishes the exercised sequence on that machine, not a universal scheduling guarantee. Ripple was not visually tested.
 
-The preceding coexistence run also confirmed the requested Fn+F2 combination delivering F2 and M1 delivering its default Page Up with SnapTap enabled and disabled. Custom special-key actions were not exercised. Cooperative stop, preference/status restoration, Raw Input registration removal, and unchanged installed process identities and protected hashes passed. Firmware lighting readback is unavailable; the latest post-test status still reported Reactive rather than the original Spectrum intent.
+The preceding coexistence run also confirmed the requested Fn+F2 combination delivering F2 and M1 delivering its default Page Up with SnapTap enabled and disabled. Custom special-key actions were not exercised. Cooperative stop, preference/status restoration, Raw Input registration removal, and unchanged installed process identities and protected hashes passed. Firmware lighting readback is unavailable. The later final-build lifecycle test confirmed reported Spectrum intent at 42%, logo Off before, during, and after the test.
 
-Before release, validate production startup, the final preference-watcher integration, output-failure presentation, and the rendered UI on the final build. Keep the implementing pull request draft until those checks are complete. No existing Synapse, THX, service, or driver configuration needs changing for the source implementation.
+Final-build production startup, preference-watcher integration, controlled helper-failure presentation, and English/expanded-text UI checks passed before [PR #794](https://github.com/OpenBladeProject/openblade-core/pull/794) merged. A native SendInput failure was not deliberately induced. The user subsequently confirmed that the installed restored-hold auto-repeat fix works; see [the report in #792](https://github.com/OpenBladeProject/openblade-core/issues/792#issuecomment-6230739629) and the merged [PR #803](https://github.com/OpenBladeProject/openblade-core/pull/803). This validation covers the reported behavior and does not establish game or anti-cheat compatibility.
+
+The Windows low-level keyboard hook has no source-device handle. Raw Input identifies keyboards but does not provide equivalent system-wide suppression. Correlating the two by timing would not reliably isolate one keyboard; laptop-keyboard-only filtering would require a separately reviewed input backend.

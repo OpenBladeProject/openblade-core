@@ -2060,7 +2060,7 @@ OpenBlade did not retry any stop request.</value>
     <value>SnapTap (A/D)</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified.</value>
+    <value>When A and D overlap, the last pressed key wins. Applies to all keyboards.</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap (A/D)</value>
@@ -2199,5 +2199,20 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
     <value>Keyboard</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>About SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>About SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoInput.Text" xml:space="preserve">
+    <value>OpenBlade handles A/D priority through Windows input APIs. The Synapse implementation reviewed for RZ09-0581 uses a Razer keyboard driver.</value>
+  </data>
+  <data name="SnapTap_InfoRisk.Text" xml:space="preserve">
+    <value>Check game and tournament rules before enabling SnapTap.</value>
+  </data>
+  <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
+    <value>About SnapTap</value>
   </data>
 </root>
