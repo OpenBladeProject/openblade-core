@@ -64,7 +64,8 @@ internal static class SnapTapInputHost
                 {
                     return 1;
                 }
-                return SnapTapDriverLoop.Run(parentId, ShouldStop);
+                return SnapTapDriverLoop.Run(parentId, () => ShouldStop()
+                    || !WindowsRazerSnapTapDriverDiscovery.HasActiveConsoleSession());
             }
             using WindowsIdentity identity = WindowsIdentity.GetCurrent();
             string sid = identity.User!.Value;

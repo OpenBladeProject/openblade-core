@@ -32,7 +32,8 @@ internal sealed record RazerSnapTapDriverSnapshot(
     IReadOnlyList<RazerSnapTapControlDevice> ControlDevices,
     IReadOnlyList<RazerSnapTapKeyboardDevice> KeyboardDevices,
     bool CompetingControllerDetected,
-    bool ControllerObservationComplete);
+    bool ControllerObservationComplete,
+    bool ActiveConsoleSession);
 
 /// <summary>
 /// Read-only admission for the one reviewed RZ09-0581 Razer keyboard-driver
@@ -103,6 +104,7 @@ internal sealed class RazerSnapTapDriverAdmission
             || !Exact(snapshot.SystemProductName, ExactProductName)
             || !ExactHash(snapshot.RzCommonSha256, RzCommonSha256)
             || !ExactHash(snapshot.RzDeviceSha256, RzDeviceSha256)
+            || !snapshot.ActiveConsoleSession
             || !snapshot.ControllerObservationComplete
             || snapshot.CompetingControllerDetected)
         {
@@ -205,8 +207,16 @@ internal static class WindowsRazerSnapTapDriverDiscovery
             ReadControls(),
             ReadKeyboards(),
             competing,
-            complete);
+            complete,
+            HasActiveConsoleSession());
     }
+
+    internal static bool HasActiveConsoleSession() =>
+        ProcessIdToSessionId((uint)Environment.ProcessId, out uint current)
+        && IsActiveConsoleSession(current, WTSGetActiveConsoleSessionId());
+
+    internal static bool IsActiveConsoleSession(uint current, uint active) =>
+        current != 0 && current != uint.MaxValue && current == active;
 
     private static string? ReadRegistryString(RegistryKey root, string path, string name)
     {
@@ -450,6 +460,11 @@ internal static class WindowsRazerSnapTapDriverDiscovery
         internal static DeviceInterfaceData Create() => new() { Size = (uint)Marshal.SizeOf<DeviceInterfaceData>() };
     }
 
+    [DllImport("kernel32.dll")]
+    private static extern uint WTSGetActiveConsoleSessionId();
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ProcessIdToSessionId(uint id, out uint session);
     [DllImport("setupapi.dll", EntryPoint = "SetupDiGetClassDevsW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint SetupDiGetClassDevs(ref Guid classGuid, string? enumerator, nint parent, uint flags);
     [DllImport("setupapi.dll", SetLastError = true)]

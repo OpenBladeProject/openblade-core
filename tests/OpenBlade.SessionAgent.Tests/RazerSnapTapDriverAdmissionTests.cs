@@ -119,6 +119,28 @@ public sealed class RazerSnapTapDriverAdmissionTests
         Assert.False(admission.IsCurrent(endpoint));
     }
 
+    [Theory]
+    [InlineData(1u, 1u, true)]
+    [InlineData(2u, 1u, false)]
+    [InlineData(0u, 0u, false)]
+    [InlineData(1u, uint.MaxValue, false)]
+    [InlineData(uint.MaxValue, uint.MaxValue, false)]
+    public void OnlyTheActivePhysicalConsoleSessionCanOwnTheDriver(uint current, uint active, bool admitted)
+    {
+        Assert.Equal(admitted, WindowsRazerSnapTapDriverDiscovery.IsActiveConsoleSession(current, active));
+    }
+
+    [Fact]
+    public void LosingConsoleOwnershipInvalidatesAnAdmittedEndpoint()
+    {
+        RazerSnapTapDriverSnapshot current = ExactSnapshot();
+        var admission = new RazerSnapTapDriverAdmission(() => current);
+        Assert.True(admission.TryGetEndpoint(out var endpoint));
+        current = current with { ActiveConsoleSession = false };
+        Assert.False(admission.IsCurrent(endpoint));
+        Assert.False(admission.TryGetEndpoint(out _));
+    }
+
     private static RazerSnapTapDriverSnapshot ExactSnapshot() => new(
         "Razer",
         "Blade 16 - RZ09-0581",
@@ -138,5 +160,6 @@ public sealed class RazerSnapTapDriverAdmissionTests
             LaptopContainer,
             [@"HID\VID_1532&PID_02E0&MI_01&COL01\laptop", @"USB\VID_1532&PID_02E0&MI_01\laptop"])],
         CompetingControllerDetected: false,
-        ControllerObservationComplete: true);
+        ControllerObservationComplete: true,
+        ActiveConsoleSession: true);
 }
