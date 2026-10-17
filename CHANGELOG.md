@@ -16,6 +16,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Recheck controller admission for every lighting frame row and pause after partial frame batches, including cancellation between rows. This also protects the existing validated-model frame transports. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
 - Use the observed logo-lighting selector on Blade 18 (2023) for state queries, changes, and restoration. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 - Fix Custom-state reads on Blade 16 (2023) and Blade 18 (2023) by supplying the bounded validator required by the Maximum Fans query, and use the vendor Custom query profile on Blade 18. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 

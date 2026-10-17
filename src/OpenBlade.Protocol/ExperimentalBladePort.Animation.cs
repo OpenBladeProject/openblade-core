@@ -146,10 +146,11 @@ internal sealed partial class ExperimentalBladePort
         {
             return;
         }
-        bool knownNotApplied = result.Diagnostic?.Phase == HidSessionFailurePhase.Guard
+        bool knownNotApplied = result.Diagnostic?.Phase != HidSessionFailurePhase.SetCompletion
+            && (result.Diagnostic?.Phase == HidSessionFailurePhase.Guard
             || result.Failure is HidSessionFailureKind.QueuedCanceled
                 or HidSessionFailureKind.Exhausted or HidSessionFailureKind.Disposed
-                or HidSessionFailureKind.Poisoned;
+                or HidSessionFailureKind.Poisoned);
         throw new BladeWriteException(knownNotApplied
             ? WriteSubmissionState.KnownNotApplied : WriteSubmissionState.Indeterminate,
             "The animation frame could not be submitted.")

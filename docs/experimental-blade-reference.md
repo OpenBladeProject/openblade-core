@@ -216,7 +216,7 @@ mode once on entry with `03/0A [05,00]`. Later frames have no GET or extra latch
 Playback is bounded to 20 frames per second, skips missed frames, and uses no
 physical key-name map or another model's layout. Serialized healthy live sessions
 cycle nonzero transaction IDs; the finite admission-run budget stays unchanged.
-Each frame retains fresh exact-device, controller, session, and ownership
+Every row retains fresh exact-device, controller, session, and ownership
 admission. An ambiguous or partial submission pauses further writes without
 replay. RGB remains applied intent, not confirmed firmware readback.
 
