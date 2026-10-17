@@ -10,7 +10,7 @@ public sealed partial class ExperimentalThermalExpansionTests
     [InlineData(0x029D, false, false, true)]
     [InlineData(0x02C5, false, false, false)]
     [InlineData(0x0255, false, false, false)]
-    [InlineData(0x02A0, false, true, false)]
+    [InlineData(0x02A0, false, true, true)]
     public void Capabilities_AdmitOnlyExactModelCommands(int pid, bool boost, bool maximum, bool fixedFans)
     {
         DeviceCapabilities caps = ExperimentalBladePort.CreateCapabilities(Model(pid), true);
@@ -475,6 +475,7 @@ public sealed partial class ExperimentalThermalExpansionTests
             get => (PowerModeControlFlags & 2) != 0;
             set => PowerModeControlFlags = (byte)((PowerModeControlFlags & ~2) | (value ? 2 : 0));
         }
+        internal byte? FanTargetClassOverride { get; init; }
         internal bool IgnoreFanTargets { get; init; }
         internal bool IgnoreMaximum { get; init; }
         internal bool ResetTargetsOnModeWrite { get; init; }
@@ -510,7 +511,7 @@ public sealed partial class ExperimentalThermalExpansionTests
                 case (0x07, 0x8C): payload = AdapterPowerPayload; break;
                 case (0x0D, 0x82): payload = [0, payload[1], Mode, Fan]; break;
                 case (0x0D, 0x87): payload = [0, payload[1], payload[1] == 1 ? Cpu : Gpu]; break;
-                case (0x0D, 0x81): payload = [0, payload[1], payload[1] == 1 ? FirstTarget : SecondTarget]; break;
+                case (0x0D, 0x81): payload = [FanTargetClassOverride ?? payload[0], payload[1], payload[1] == 1 ? FirstTarget : SecondTarget]; break;
                 case (0x07, 0x8F): payload = PowerModePayloadOverride ?? [PowerModeControlFlags]; break;
                 case (0x0D, 0x02):
                     if (++modeWrites == FailModeWrite)

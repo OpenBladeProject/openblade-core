@@ -348,15 +348,16 @@ internal sealed partial class ExperimentalBladePort
     private async Task<LogoLightingMode> ReadLogoAsync(CancellationToken token)
     {
         RequireLogoModel();
+        byte storage = LogoStorageSelector(model);
         ReadOnlyMemory<byte> state = await ExchangeAsync("LogoLighting", 0x03, 0x80,
-            [1, 4, 0], false, token).ConfigureAwait(false);
-        if (state.Span[0] != 1 || state.Span[1] != 4)
+            LogoLightingProtocol.QueryArguments(storage), false, token).ConfigureAwait(false);
+        if (state.Span[0] != storage || state.Span[1] != LogoLightingProtocol.LogoLedId)
         {
             session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
             RecordQuery("LogoLighting", "InconsistentState", failure: "LogoPowerSelector");
             throw new IOException("Experimental logo power returned an unexpected selector.");
         }
-        if (!LogoLightingProtocol.TryDecodeState(state.Span, out bool enabled))
+        if (!LogoLightingProtocol.TryDecodeState(state.Span, storage, out bool enabled))
         {
             session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
             RecordQuery("LogoLighting", "UnsupportedState", failure: "LogoPowerSelectorOrValue");
@@ -372,14 +373,18 @@ internal sealed partial class ExperimentalBladePort
         }
 
         ReadOnlyMemory<byte> effect = await ExchangeAsync("LogoLighting", 0x03, 0x82,
-            [1, 4, 0], false, token).ConfigureAwait(false);
-        if (effect.Span[0] != 1 || effect.Span[1] != 4)
+            LogoLightingProtocol.QueryArguments(storage), false, token).ConfigureAwait(false);
+        if (effect.Span[0] != storage || effect.Span[1] != LogoLightingProtocol.LogoLedId)
         {
             session.RetainQueryFailure(0x03, 0x82, FirmwareQueryOutcome.ContentRejected);
             RecordQuery("LogoLighting", "InconsistentState", failure: "LogoEffectSelector");
             throw new IOException("Experimental logo effect returned an unexpected selector.");
         }
-        if (!LogoLightingProtocol.TryDecodeMode(state.Span, effect.Span, out LogoLightingMode mode))
+        if (!LogoLightingProtocol.TryDecodeMode(
+            state.Span,
+            effect.Span,
+            storage,
+            out LogoLightingMode mode))
         {
             session.RetainQueryFailure(0x03, 0x80, FirmwareQueryOutcome.ContentRejected);
             session.RetainQueryFailure(0x03, 0x82, FirmwareQueryOutcome.ContentRejected);
@@ -712,17 +717,18 @@ internal sealed partial class ExperimentalBladePort
         CancellationToken cancellationToken,
         Action markSubmitted)
     {
+        byte storage = LogoStorageSelector(model);
         if (logo != LogoLightingMode.Off)
         {
             RequireWriteAdmission();
             await ExchangeAsync("LogoLighting", 0x03, 0x02,
-                LogoLightingProtocol.SetEffectArguments(logo), true, cancellationToken)
+                LogoLightingProtocol.SetEffectArguments(logo, storage), true, cancellationToken)
                 .ConfigureAwait(false);
             markSubmitted();
         }
         RequireWriteAdmission();
         await ExchangeAsync("LogoLighting", 0x03, 0x00,
-            LogoLightingProtocol.SetStateArguments(logo), true, cancellationToken)
+            LogoLightingProtocol.SetStateArguments(logo, storage), true, cancellationToken)
             .ConfigureAwait(false);
         markSubmitted();
         if (await ReadLogoAsync(cancellationToken).ConfigureAwait(false) != logo)
@@ -731,6 +737,12 @@ internal sealed partial class ExperimentalBladePort
                 "Independent logo readback did not confirm the requested mode.");
         }
     }
+
+    // Synapse product 672 defaults logo lighting to profile 0, and the exact
+    // RZ09-0484 capture observes selector 0 for setters. Queries follow that
+    // pinned register for independent readback. See docs/blade18-observer-evidence.md.
+    private static byte LogoStorageSelector(ExperimentalBladeModel model) =>
+        model.ProductId == 0x02A0 ? (byte)0 : LogoLightingProtocol.PersistentStorage;
 
     private static bool KeyboardSettingsMatch(
         LightingSettings confirmed,

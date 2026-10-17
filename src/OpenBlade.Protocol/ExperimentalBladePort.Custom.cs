@@ -74,10 +74,11 @@ internal sealed partial class ExperimentalBladePort
         {
             RequireWriteAdmission(thermal: true);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
-            // Only 029F/029D admit the independent fan flag and target registers
-            // (sqmagellan 9c66e705/librazer/src/command.rs). Preserve that flag
-            // through Custom entry; other models cannot establish a manual baseline.
-            if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic && GetExperimentalFanRange(model) is null
+            // 029F/029D admit fixed targets through Custom entry (sqmagellan
+            // 9c66e705/librazer/src/command.rs). 02A0 admits fixed targets only
+            // in Balanced, so it requires Automatic handback before Custom.
+            if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic
+                    && (GetExperimentalFanRange(model) is null || model.ProductId == 0x02A0)
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
                     or PerformancePreset.Performance or PerformancePreset.Custom))
             {

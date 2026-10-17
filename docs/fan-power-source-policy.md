@@ -72,10 +72,10 @@ the underlying fan command. The resulting scope is:
 | `Blade 14 - RZ09-0482` | `1532:029D` | `669` | Automatic only | Automatic, fixed, 2,200-5,000 RPM | Experimental exact-model fixed control is source-backed extrapolation. The battery path preserves the manual flag. The limited-external vendor path clears it before sending speed, so USB-C fixed remains blocked. Curves are unavailable. |
 | `Blade 14 - RZ09-0530` | `1532:02C5` | `709` | No adjustable fan control admitted | No adjustable fan control admitted | Battery performance modes are admitted, but there is no exact-model fixed-target evidence. |
 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | `597` | No fan control admitted | No fan control admitted | No exact-model fan evidence. |
-| `Blade 18 - RZ09-0484` | `1532:02A0` | `672` | No adjustable fixed target admitted | No adjustable fixed target admitted | Its separate Maximum Fans switch is owner-reported; requested RPM targets were ignored. It does not inherit fixed or curve control. |
+| `Blade 18 - RZ09-0484` | `1532:02A0` | `672` | Automatic only | Automatic, shared fixed target in Balanced, 2,200-3,800 RPM | Exact Balanced setters and a rising fan-1 RPM stream are observed. The pinned class-1 stored-target getter is source-backed and must succeed before writes. The earlier ignored-RPM report concerned HyperBoost. Curves and fixed targets in other presets remain unavailable. See [Observer evidence](blade18-observer-evidence.md#follow-up-bundle-2026-10-17). |
 
 The intended experimental policy admits Fixed on battery for RZ09-0483 and
-RZ09-0482 and keeps curves unavailable. Confirmed limited external power admits
+RZ09-0482, plus Balanced-only shared fixed targets on RZ09-0484, and keeps curves unavailable. Confirmed limited external power admits
 Automatic handback only for those models because their exact vendor bundles do
 not preserve the manual flag there. The normal exact-device, power, ownership,
 write, and recovery gates still apply.

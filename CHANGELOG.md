@@ -7,10 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add the observed CPU Boost with GPU Low or High combinations on Blade 18 (2023), and retain additional Synapse lighting effects and the unresolved fixed-fan limitation in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
+- Add the observed CPU Boost with GPU Low or High combinations and a shared 2200–3800 RPM fixed-fan control in Balanced on Blade 18 (2023). Keep richer Synapse lighting effects visible in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 
 ### Fixed
 
+- Use the observed logo-lighting selector on Blade 18 (2023) for state queries, changes, and restoration. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 - Fix Custom-state reads on Blade 16 (2023) and Blade 18 (2023) by supplying the bounded validator required by the Maximum Fans query, and use the vendor Custom query profile on Blade 18. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 
 - Show the specific THX detection failure and include a fresh THX detection report in exported diagnostics. ([#805](https://github.com/OSSBlade/openblade-core/pull/805))
