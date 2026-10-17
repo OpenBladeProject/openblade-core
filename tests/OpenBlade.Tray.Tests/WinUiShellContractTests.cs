@@ -12,10 +12,10 @@ public sealed class WinUiShellContractTests
             ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement card = NamedElement(document, "Border", "SnapTapCard");
         XElement keyboardSection = NamedElement(document, "StackPanel", "KeyboardSection");
-        XElement keyboardHeader = UidElement(
-            document,
-            "TextBlock",
-            "MainWindow_TextBlockKeyboard");
+        XElement keyboardHeader = document.Descendants().Single(element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Uid") == "MainWindow_TextBlockKeyboard"
+            && element.Ancestors().Any(parent => parent.Name.LocalName == "DataTemplate"));
         XElement fallbackHeader = NamedElement(
             document,
             "TextBlock",
