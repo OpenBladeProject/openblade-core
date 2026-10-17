@@ -39,6 +39,7 @@ path. The examined no-filter path and separate global-shortcut hook do not yet
 establish an alternative. Untraced indirect behavior has not been exhaustively
 excluded.
 
-OpenBlade has not added a Snap Tap backend or a kernel driver. Further work
-should resolve that suppression boundary before proposing a writable mapping
-integration.
+This investigation concerns the vendor mapping path. OpenBlade now provides a
+separate [user-validated SnapTap input helper](snap-tap.md) using Windows input
+APIs. It does not use that vendor path or add a kernel driver. Further work on
+a vendor mapping integration should resolve the suppression boundary first.

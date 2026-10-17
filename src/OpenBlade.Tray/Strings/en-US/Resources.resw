@@ -2060,7 +2060,7 @@ OpenBlade did not retry any stop request.</value>
     <value>SnapTap (A/D)</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified.</value>
+    <value>When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified. Check game rules before use.</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap (A/D)</value>

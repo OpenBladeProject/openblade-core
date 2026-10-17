@@ -2060,7 +2060,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>SnapTap (A/D)</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>Экспериментальная функция. При одновременном нажатии A и D приоритет у последней нажатой клавиши. Работает со всеми клавиатурами. Совместимость с играми не проверена.</value>
+    <value>При одновременном нажатии A и D приоритет у последней нажатой клавиши. Работает со всеми клавиатурами. Совместимость с играми не проверена. Перед использованием проверьте правила игры.</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap (A/D)</value>

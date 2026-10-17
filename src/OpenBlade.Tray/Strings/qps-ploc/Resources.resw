@@ -2060,7 +2060,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>[!! Éxpéríméntál. Whén Á ánd D óvérláp, thé lást présséd kéý wíns. Ápplíés tó áll kéýbóárds. Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Whén Á ánd D óvérláp, thé lást présséd kéý wíns. Ápplíés tó áll kéýbóárds. Gámé cómpátíbílítý hás nót béén vérífíéd. Chéck gámé rúlés béfóré úsé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>

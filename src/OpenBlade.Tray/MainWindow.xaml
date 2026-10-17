@@ -3037,7 +3037,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Spacing="4">
                                                 <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" />
-                                                <TextBlock x:Uid="SnapTap_Description" Text="Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                <TextBlock x:Uid="SnapTap_Description" Text="When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified. Check game rules before use." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                 <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                                             </StackPanel>
                                             <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />

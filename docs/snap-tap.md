@@ -1,12 +1,12 @@
 # SnapTap
 
-SnapTap is an experimental A/D keyboard feature. When both keys are held, the last pressed key takes priority. Releasing it restores the other key if it is still held.
+SnapTap is an A/D keyboard feature validated by a user on RZ09-0581. When both keys are held, the last pressed key takes priority. Releasing it restores the other key if it is still held.
 
 Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. It is off by default. Release A and D before activating it.
 
 Physical A/D presses keep their device identity for Reactive lighting. Restoring a still-held key is synthetic and does not trigger a new physical-key lighting pulse. In text fields, the restored key continues repeating until you release it.
 
-The feature applies across keyboards; it cannot select only the laptop keyboard. The pair is fixed to the A/D scan positions. Game compatibility has not been verified.
+The feature applies across keyboards; it cannot select only the laptop keyboard. The pair is fixed to the A/D scan positions. Game and anti-cheat compatibility have not been verified. Check the game and tournament rules before use. Valve requires Snap Tap to be disabled in CS2 matches and describes kicks for detected input automation on official servers; see [Side-stepping Skill](https://store.steampowered.com/news/app/730/view/6500469346429600836).
 
 SnapTap keeps running when you close the visible Tray. Turning it off or shutting down the Session Agent stops its input helper. If you change focus while a key is held, or Windows does not accept an output batch completely, the helper pauses instead of guessing or retrying input. Release A and D, then turn SnapTap off and on to retry.
 
@@ -28,6 +28,6 @@ Disposable native attended prototypes established ordinary-window remapping and 
 
 The later attended coexistence test on RZ09-0581 used commit `c1569838` alongside the unchanged installed Session Agent and THX helper. Physical initial A/D presses passed through with Rz09_0581 device attribution; priority releases and held-key restorations remained synthetic and Unsupported. Both overlap directions delivered the old-key release before the new physical down, with no delivered A+D overlap. The window and Raw Input streams matched, and the user confirmed Reactive flashes on initial A/D presses with SnapTap both enabled and disabled. This establishes the exercised sequence on that machine, not a universal scheduling guarantee. Ripple was not visually tested.
 
-The preceding coexistence run also confirmed the requested Fn+F2 combination delivering F2 and M1 delivering its default Page Up with SnapTap enabled and disabled. Custom special-key actions were not exercised. Cooperative stop, preference/status restoration, Raw Input registration removal, and unchanged installed process identities and protected hashes passed. Firmware lighting readback is unavailable; the latest post-test status still reported Reactive rather than the original Spectrum intent.
+The preceding coexistence run also confirmed the requested Fn+F2 combination delivering F2 and M1 delivering its default Page Up with SnapTap enabled and disabled. Custom special-key actions were not exercised. Cooperative stop, preference/status restoration, Raw Input registration removal, and unchanged installed process identities and protected hashes passed. Firmware lighting readback is unavailable. The later final-build lifecycle test confirmed reported Spectrum intent at 42%, logo Off before, during, and after the test.
 
-Before release, validate production startup, the final preference-watcher integration, output-failure presentation, and the rendered UI on the final build. Keep the implementing pull request draft until those checks are complete. No existing Synapse, THX, service, or driver configuration needs changing for the source implementation.
+Final-build production startup, preference-watcher integration, controlled helper-failure presentation, and English/expanded-text UI checks passed before [PR #794](https://github.com/OpenBladeProject/openblade-core/pull/794) merged. A native SendInput failure was not deliberately induced. The user subsequently confirmed that the installed restored-hold auto-repeat fix works; see [the report in #792](https://github.com/OpenBladeProject/openblade-core/issues/792#issuecomment-6230739629) and the merged [PR #803](https://github.com/OpenBladeProject/openblade-core/pull/803). This validation covers the reported behavior and does not establish game or anti-cheat compatibility.
