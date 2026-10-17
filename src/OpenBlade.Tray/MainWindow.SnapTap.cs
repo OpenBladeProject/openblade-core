@@ -8,6 +8,9 @@ public sealed partial class MainWindow
     private bool snapTapEnabled;
     private SnapTapRuntimeState localizationSnapshotSnapTapState = SnapTapRuntimeState.Off;
 
+    private Visibility SnapTapKeyboardFallbackVisibility(bool hasKeyboardLaptopControls) =>
+        hasKeyboardLaptopControls ? Visibility.Collapsed : Visibility.Visible;
+
     internal void ShowLocalizationSnapshotSnapTap(bool showFailure = false)
     {
         if (localizationSnapshotMode)

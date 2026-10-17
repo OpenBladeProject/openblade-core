@@ -16,12 +16,30 @@ public sealed class WinUiShellContractTests
             document,
             "TextBlock",
             "MainWindow_TextBlockKeyboard");
+        XElement fallbackHeader = NamedElement(
+            document,
+            "TextBlock",
+            "SnapTapKeyboardFallbackHeader");
+        XElement keyboardBehavior = NamedElement(
+            document,
+            "ContentControl",
+            "KeyboardBehaviorCard");
         Assert.Contains(card.Ancestors(), element => element == keyboardSection);
         Assert.DoesNotContain(card.Ancestors(), element =>
             Attribute(element, "Name") == "ShortcutKeysSection");
         Assert.Equal(
             "{x:Bind HasKeyboardLaptopControls, Mode=OneWay}",
             Attribute(keyboardHeader, "Visibility"));
+        Assert.Equal("MainWindow_TextBlockKeyboard", Attribute(fallbackHeader, "Uid"));
+        Assert.Equal(
+            "{x:Bind SnapTapKeyboardFallbackVisibility(ViewModel.HasKeyboardLaptopControls), Mode=OneWay}",
+            Attribute(fallbackHeader, "Visibility"));
+        Assert.Equal(
+            "{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}",
+            Attribute(keyboardBehavior, "Visibility"));
+        Assert.Equal(
+            [fallbackHeader, keyboardBehavior, card],
+            keyboardSection.Elements().ToArray());
         Assert.Equal(
             "{StaticResource SettingsLastRowStyle}",
             Attribute(
@@ -52,6 +70,11 @@ public sealed class WinUiShellContractTests
             "pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =\n"
                 + "            KeyboardBehaviorCard;",
             window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "private Visibility SnapTapKeyboardFallbackVisibility(bool hasKeyboardLaptopControls) =>\n"
+                + "        hasKeyboardLaptopControls ? Visibility.Collapsed : Visibility.Visible;",
+            source,
             StringComparison.Ordinal);
         Assert.Contains(
             "localizationSnapshotMode\n"
@@ -974,6 +997,7 @@ public sealed class WinUiShellContractTests
     public void AboutPageOwnsSupportAndUsesBorderlessIconActions()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        XDocument document = XDocument.Parse(xaml);
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
 
@@ -1539,16 +1563,12 @@ public sealed class WinUiShellContractTests
             "LightingCard",
         })
         {
-            Assert.Contains(
-                $"x:Name=\"{cardName}\"\n                                        Content=\"{{x:Bind ViewModel}}\"",
-                xaml.Replace("\r\n", "\n", StringComparison.Ordinal),
-                StringComparison.Ordinal);
+            XElement card = NamedElement(document, "ContentControl", cardName);
+            Assert.Equal("{x:Bind ViewModel}", Attribute(card, "Content"));
         }
 
-        Assert.Contains(
-            "x:Name=\"DisplayCard\"\n                                        Content=\"{x:Bind DisplayViewModel}\"",
-            xaml.Replace("\r\n", "\n", StringComparison.Ordinal),
-            StringComparison.Ordinal);
+        XElement displayCard = NamedElement(document, "ContentControl", "DisplayCard");
+        Assert.Equal("{x:Bind DisplayViewModel}", Attribute(displayCard, "Content"));
     }
 
     [Fact]

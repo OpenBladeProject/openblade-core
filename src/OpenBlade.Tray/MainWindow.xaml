@@ -3015,10 +3015,16 @@
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
                         <StackPanel x:Name="KeyboardSection" Spacing="10">
+                            <TextBlock x:Name="SnapTapKeyboardFallbackHeader"
+                                       x:Uid="MainWindow_TextBlockKeyboard"
+                                       Text="Keyboard"
+                                       Style="{StaticResource SectionHeaderStyle}"
+                                       Visibility="{x:Bind SnapTapKeyboardFallbackVisibility(ViewModel.HasKeyboardLaptopControls), Mode=OneWay}" />
                             <ContentControl x:Name="KeyboardBehaviorCard"
                                             Content="{x:Bind ViewModel}"
                                             ContentTemplate="{StaticResource DashboardKeyboardBehaviorCardTemplate}"
-                                            HorizontalContentAlignment="Stretch" />
+                                            HorizontalContentAlignment="Stretch"
+                                            Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
                             <Border x:Name="SnapTapCard" Style="{StaticResource SettingsGroupStyle}">
                                 <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
