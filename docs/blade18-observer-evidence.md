@@ -161,3 +161,84 @@ Gaming Mode activities remain pending; battery protection and temporary full
 charge were marked unavailable. These states do not establish hardware absence.
 The seven recorded actions need no blanket repeat. Independent typed readback,
 restoration, and relevant lifecycle checks remain separate OpenBlade validation.
+
+## Follow-up bundle: 2026-10-17
+
+The [third Observer bundle](https://github.com/user-attachments/files/33595838/blade-evidence-20261017-122040.zip)
+has SHA-256 `1485C6A5DFE829D2BFA0EE53BBAB60B49C19150F62487456C04DEF1F0DAB99CD`
+and collector `0.2.11+eb765c6fe47d995f12563baf172ab3d666644d74`.
+Identity remains RZ09-0484 / `1532:02A0`, BIOS 2.09. It contains 46,389
+observations, no rejected records, and complete Fire/Wheel, logo, and fan action
+windows. `Blade18ObserverControlsRequests.json` retains 69 reviewed numeric
+requests. Matrix RGB data, opaque prefixes, and response bodies are excluded.
+
+The owner's sequence was Custom CPU Boost / GPU High, Maximum Fans off;
+Balanced with the single fan slider at 3000 RPM; then Custom again before
+recording stopped. Session-relative times locate the actual commands:
+
+| Time | Request evidence |
+| --- | --- |
+| 328.850–328.862 s | Balanced Automatic: `0D/02 [01,zone,00,00]`, both zones |
+| 333.418–333.430 s | Balanced fixed: `0D/02 [01,zone,00,01]`, both zones |
+| 333.637–333.650 s | Stored slider value: `0D/01 [01,zone,26]`, 3800 RPM, both zones |
+| 336.080–336.095 s | New target: `0D/01 [01,zone,1E]`, 3000 RPM, both zones |
+| 374.490–374.502 s | Return to Custom Automatic: `0D/02 [01,zone,04,00]` |
+| 374.810–374.822 s | CPU Boost / GPU High: `0D/07 [01,01,03]` and `[01,02,02]` |
+
+The 42 semantic `0D/88` summaries query only fan 1. They report a gradual
+rise to 2600 RPM before returning to Custom. They do not reach 3000 RPM in this
+interval and do not report fan 2. Six thermal setter acknowledgements are not
+independent mode queries. There are no `0D/81` stored-target responses or final
+independent restoration queries. Full raw response bodies remain omitted.
+
+### Balanced fixed-fan implementation
+
+This resolves the earlier blanket conflict in the experimental implementation:
+the [older ignored-RPM report](https://github.com/sqmagellan/razer-ctl/issues/1)
+was made in HyperBoost. Its maintainer expected Balanced targets to work. The
+new recording supplies that distinct Balanced command path, without claiming
+physical convergence to the requested speed.
+
+Pinned product-672 main defines Balanced's 2200–3800 RPM range and 3000 RPM
+default near byte 145859. The pinned policy's `getPerformanceFanSpeedProfile`
+near byte 1873223 supplies class 1 and divides RPM by 100; the active-mode
+handler maps the shared value across the device's fan IDs. Its battery branch
+retains the manual flag unless an exact product enables a distinct DC Balanced
+mode; product 672 does not enable that override. Limited external power selects
+Automatic. The existing independent adapter/source checks remain in force.
+
+The pinned base source declares `0D/81` near byte 70810. Its getter and decoder
+near byte 60400 accept class and zone and return the stored byte at payload
+index 2. OpenBlade uses `[01,zone,00]` for this model to read the same class-1
+register used by the observed setters; this is source-backed extrapolation,
+not an observed query. Other models retain their separately admitted class 0.
+An unavailable or unrepresentable getter blocks all fan writes. Target changes
+confirm both stored registers after each zone; ambiguous submission/readback
+pauses writes before the next zone. Actual RPM is never substituted for targets.
+
+The control offers one value for both fans in Balanced, in 100 RPM steps.
+Independent targets, curves, and fixed fans in Silent, Performance, Custom, or
+HyperBoost remain unavailable. The existing transition coordinator enters
+Balanced for this backend; that model-specific scope follows the active source
+path and owner report. Returning to another preset requires Automatic handback.
+It does not change other models' direct transitions or saved profile intent.
+An exact-model OpenBlade target readback/restore round trip and fan convergence
+remain physical-validation work, not a prerequisite to source-backed community
+testing of this experimental backend.
+
+### Logo and Chroma
+
+The logo sequence retains `03/02 [00,04,00]`, `03/00 [00,04,00]`, then
+`03/02 [00,04,00]`, `03/00 [00,04,01]`: Static, Off, and restored Static.
+The product-672 policy near byte 1546407 defaults the logo selector to 0 unless
+the exact product enables persistent logo storage. Product 672 has no such
+override. Queries, setters, strict reply decoding, and restoration now use 0
+on RZ09-0484; the other experimental models retain selector 1. Breathing keeps
+its existing source-backed status; this recording does not exercise it.
+
+Fire/Wheel observations establish six rows of 16 RGB columns using
+`03/0B [FF,row,00,0F,...]` and `03/0A [05,00]`. They corroborate the existing
+uniform Static envelope, without establishing a physical key map or RGB
+readback. Rich spatial effects and experimental host-rendered frames gain no
+new admission. Fn and special-key event counts remain zero. No installed
+components, hardware state, or sleep/resume behavior were changed here.

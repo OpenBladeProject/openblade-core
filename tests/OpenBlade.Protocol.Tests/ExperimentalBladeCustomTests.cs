@@ -291,6 +291,7 @@ public sealed class ExperimentalBladeCustomTests
     [Theory]
     [InlineData("Blade18ObserverRequests.json", 12)]
     [InlineData("Blade18ObserverFollowupRequests.json", 180)]
+    [InlineData("Blade18ObserverControlsRequests.json", 69)]
     public void ObserverRequests_MatchTheProductionReportEncoderWithoutInventingReplies(string fileName, int expectedCount)
     {
         using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(
