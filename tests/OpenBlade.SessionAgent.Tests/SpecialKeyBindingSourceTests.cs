@@ -11,6 +11,90 @@ public sealed class SpecialKeyBindingSourceTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task RealInputPreferences_IgnoreUiEnumsAndRetainConfirmedStateOnMalformedInput()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        const string json = """
+            {"primaryNavigationItems":["ThxAudio"],"thxAudioIntegrationEnabled":true,
+             "specialKeyBindings":[{"slot":"M1","action":{"kind":"Disabled"}}],
+             "snapTapEnabled":true}
+            """;
+        await File.WriteAllTextAsync(path, json);
+        var errors = new List<Exception>();
+        var transitions = new List<bool>();
+        var source = new SpecialKeyBindingSource(path, errors.Add);
+        source.SnapTapEnabledChanged += transitions.Add;
+
+        Assert.True(await source.ReloadIfChangedAsync(force: true, CancellationToken.None));
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal(SpecialKeyActionKind.Disabled, source.GetAction(SpecialKeySlot.M1).Kind);
+
+        await File.WriteAllTextAsync(path, "{\"snapTapEnabled\":\"yes\"}");
+        Assert.False(await source.ReloadIfChangedAsync(force: true, CancellationToken.None));
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal(SpecialKeyActionKind.Disabled, source.GetAction(SpecialKeySlot.M1).Kind);
+        Assert.Single(errors);
+        Assert.Equal([true], transitions);
+
+        await File.WriteAllTextAsync(path, json.Replace("true}", "false}"));
+        Assert.True(await source.ReloadIfChangedAsync(force: true, CancellationToken.None));
+        Assert.False(source.SnapTapEnabled);
+        Assert.Equal([true, false], transitions);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RealInputPreferences_PreserveThxOptInForSharedWatcher(bool enabled)
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path,
+            "{\"primaryNavigationItems\":[\"FuturePage\"],\"snapTapEnabled\":true,"
+            + "\"thxAudioIntegrationEnabled\":" + (enabled ? "true" : "false") + "}");
+        var source = new SpecialKeyBindingSource(path);
+        UiPreferences? observed = null;
+        source.PreferencesObserved += preferences => observed = preferences;
+
+        Assert.True(await source.ReloadIfChangedAsync(force: true, CancellationToken.None));
+        Assert.True(source.SnapTapEnabled);
+        Assert.NotNull(observed);
+        Assert.Equal(enabled, observed.ThxAudioIntegrationEnabled);
+    }
+
+    [Fact]
+    public async Task SnapTapPreference_EmitsOnlyConfirmedTransitionsAndRetainsOnReadFailure()
+    {
+        bool enabled = true;
+        bool failRead = false;
+        var transitions = new List<bool>();
+        var source = new SpecialKeyBindingSource(
+            Path.Combine(directory, "preferences.json"),
+            _ => failRead
+                ? Task.FromException<UiPreferences>(new IOException("temporarily unavailable"))
+                : Task.FromResult(UiPreferences.Default with { SnapTapEnabled = enabled }));
+        source.SnapTapEnabledChanged += transitions.Add;
+        Assert.False(source.SnapTapEnabled);
+
+        await source.ReloadIfChangedAsync(force: true, CancellationToken.None);
+        await source.ReloadIfChangedAsync(force: true, CancellationToken.None);
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal([true], transitions);
+
+        failRead = true;
+        await source.ReloadIfChangedAsync(force: true, CancellationToken.None);
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal([true], transitions);
+
+        failRead = false;
+        enabled = false;
+        await source.ReloadIfChangedAsync(force: true, CancellationToken.None);
+        Assert.False(source.SnapTapEnabled);
+        Assert.Equal([true, false], transitions);
+    }
+
+    [Fact]
     public async Task ReloadIfChangedAsync_TransientReadFailureRetainsAndRetriesBindings()
     {
         Directory.CreateDirectory(directory);

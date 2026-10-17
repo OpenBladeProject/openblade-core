@@ -12,6 +12,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add an opt-in experimental A/D SnapTap feature with last-pressed-key priority across keyboards. ([#794](https://github.com/OpenBladeProject/openblade-core/pull/794))
 - Add experimental, opt-in controls on a dedicated THX Audio page for Blade 16 RZ09-0581 and RZ09-0528 and Blade 14 RZ09-0530, including custom EQ and audio enhancements, using each model's supported THX components already installed. All three models support saved application routing. Settings load automatically on the THX page, with a recovery-only read button, stable inline loading, grouped EQ actions, and native settings cells, native operations reuse a connection and use faster fresh device and service checks, and a warning explains when Windows audio enhancements bypass THX. The user confirmed audible spatial changes on RZ09-0581 speakers with Windows enhancements enabled; other outputs and models still need audible validation. ([#790](https://github.com/OSSBlade/openblade-core/pull/790))
 - Add experimental HyperBoost with or without the cooling pad for Blade 14 (2023), RZ09-0482, and Blade 16 (2023), RZ09-0483, using each model's reviewed Synapse command path. Padless behavior awaits community hardware testing. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 
