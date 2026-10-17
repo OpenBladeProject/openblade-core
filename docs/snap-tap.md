@@ -30,4 +30,8 @@ Attended validation on 2026-10-17 used version 0.34.0 at commit `53d044e6d67dc43
 
 Both laptop-keyboard press orders passed: hold A, press and release D, release A; then hold D, press and release A, release D. The window and independent Raw Input observer each recorded 129 events, including repeats, with matching priority transitions, no delivered A+D overlap and no held key at the end. Raw Input attributed every event to the laptop keyboard collection. Normal stop exited successfully and restored the empty hook table; a separate read-only query confirmed it. Installed binaries, preferences and saved status were unchanged after restoration.
 
-External-keyboard exclusion, Reactive lighting, input latency, forced-failure recovery and installed-agent startup remain untested on this driver build. Keep the PR draft while those checks remain open.
+The pinned driver keeps hooks per device instance. Its IOCTL wrapper at RVA `0x1A10` obtains the queue's WDF device and typed context, then passes it to dispatch at `0x2E6C`; dispatch and input matching use that context's hook table at `+0x570`. Together with the exact keyboard-filter and container checks, this establishes laptop-only scope from source. No external keyboard was physically exercised.
+
+Additional native checks confirmed that the production kill-on-close job terminates an idle child when its owner dies, and both real helper entrypoints exit cleanly with SnapTap off. These checks used no driver writes. Existing failure tests cover hook ownership, ambiguous submission, restart latching and the reboot-required recovery journal.
+
+The observed laptop Raw Input attribution reaches the unchanged Reactive/Ripple input path; rendered lighting was not separately inspected. Input latency remains unmeasured. The complete enabled installed-agent startup and a live held-output or pending-I/O crash were not exercised.
