@@ -12,6 +12,8 @@ public sealed class SnapTapInputModeTests
         Assert.False(SnapTapInputHost.IsRequested(["--attended-test"]));
         Assert.False(SnapTapInputHost.IsRequested(["--snap-tap-input-extra"]));
         Assert.True(SnapTapInputHost.IsRequested(["--snap-tap-input"]));
+        Assert.True(SnapTapInputHost.IsRequested(["--snap-tap-driver-worker"]));
+        Assert.False(SnapTapInputHost.IsRequested(["--snap-tap-driver-worker-extra"]));
     }
 
     [Theory]
@@ -32,12 +34,6 @@ public sealed class SnapTapInputModeTests
         Assert.Equal(2, SnapTapInputHost.Run(["--snap-tap-input"]));
         Assert.Equal(2, SnapTapInputHost.Run(["--snap-tap-input", "1", "extra"]));
         Assert.Equal(2, SnapTapInputHost.Run(["--snap-tap-input", Environment.ProcessId.ToString()]));
-    }
-
-    [Fact]
-    public void NativeLayouts_MatchX64WindowsAbi()
-    {
-        Assert.Equal((24, 48, 40), SnapTapInputHost.NativeStructureSizes);
     }
 
     [Fact]

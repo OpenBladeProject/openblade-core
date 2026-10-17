@@ -76,13 +76,16 @@ public sealed class SnapTapProcessCoordinator(
                         throw new InvalidOperationException("The helper exit observer ended before the process exited.");
                     }
                     bool successful = await ObserveExitAsync(child, exited).ConfigureAwait(false);
+                    bool unavailable = child.ExitCode == 3;
+                    bool recoveryRequired = child.ExitCode == 4;
                     DisposeChild(child);
                     child = null;
                     exited = null;
                     if (!successful || !stopping)
                     {
                         latched = true;
-                        latched |= !Publish(SnapTapRuntimeState.Failed);
+                        latched |= !Publish(recoveryRequired ? SnapTapRuntimeState.RecoveryRequired
+                            : unavailable ? SnapTapRuntimeState.Unavailable : SnapTapRuntimeState.Failed);
                     }
                     else
                     {

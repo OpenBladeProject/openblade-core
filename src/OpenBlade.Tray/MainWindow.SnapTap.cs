@@ -27,6 +27,17 @@ public sealed partial class MainWindow
         }
     }
 
+    internal UIElement ShowLocalizationSnapshotSnapTapInformation()
+    {
+        if (!localizationSnapshotMode || SnapTapInfoButton.Flyout is not Flyout flyout)
+        {
+            throw new InvalidOperationException("SnapTap information preview requires snapshot mode.");
+        }
+
+        flyout.ShowAt(SnapTapInfoButton);
+        return flyout.Content;
+    }
+
     private void OnSnapTapToggled(object sender, RoutedEventArgs args)
     {
         if (sender is not ToggleSwitch toggle
@@ -48,10 +59,14 @@ public sealed partial class MainWindow
             : SnapTapStatusStore.Read();
         SnapTapStatusText.Text = status?.State switch
         {
+            SnapTapRuntimeState.RecoveryRequired => LocalizedResources.Get(
+                "SnapTap_Status_RecoveryRequired", "Restart Windows before enabling SnapTap again."),
+            SnapTapRuntimeState.Unavailable => LocalizedResources.Get(
+                "SnapTap_Status_DriverUnavailable", "The supported Razer keyboard driver is unavailable."),
             SnapTapRuntimeState.Starting => LocalizedResources.Get(
                 "SnapTap_Status_Starting", "Starting…"),
             SnapTapRuntimeState.WaitingForRelease => LocalizedResources.Get(
-                "SnapTap_Status_WaitingForRelease", "Release A and D to activate."),
+                "SnapTap_Status_WaitingForRelease", "Release keys and mouse buttons to activate."),
             SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active => string.Empty,
             SnapTapRuntimeState.Paused => LocalizedResources.Get(
                 "SnapTap_Status_Paused", "Paused — input handling is unavailable."),

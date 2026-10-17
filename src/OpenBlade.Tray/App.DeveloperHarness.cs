@@ -619,7 +619,9 @@ public partial class App
                 requestedPage, "laptop-snap-tap-failed", StringComparison.Ordinal);
             bool captureSnapTapEnabled = string.Equals(
                 requestedPage, "laptop-snap-tap-on", StringComparison.Ordinal);
-            bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled
+            bool captureSnapTapInformation = string.Equals(
+                requestedPage, "laptop-snap-tap-info", StringComparison.Ordinal);
+            bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled || captureSnapTapInformation
                 || string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
@@ -698,6 +700,14 @@ public partial class App
                 {
                     snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled);
                     await WaitForSnapshotLayoutAsync();
+                }
+                if (captureSnapTapInformation)
+                {
+                    UIElement information = snapshotMainWindow.ShowLocalizationSnapshotSnapTapInformation();
+                    await WaitForSnapshotLayoutAsync();
+                    await SaveSnapshotAsync(
+                        information,
+                        Path.Combine(resolvedDirectory, "snap-tap-information.png"));
                 }
                 await SaveSnapshotAsync(
                     snapshotMainWindow.Content,

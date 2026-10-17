@@ -6,6 +6,25 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void SnapTapPopupExplainsLaptopDriverAndKeepsCompatibilityOutOfTheRow()
+    {
+        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement button = NamedElement(document, "Button", "SnapTapInfoButton");
+        Assert.Equal("About SnapTap", Attribute(button, "AutomationProperties.Name"));
+        Assert.Equal("About SnapTap", Attribute(button, "ToolTipService.ToolTip"));
+        XElement reference = NamedElement(document, "Button", "LabFeaturesInfoButton");
+        foreach (string property in new[] { "Width", "Height", "Padding", "MinWidth", "MinHeight" })
+        {
+            Assert.Equal(Attribute(reference, property), Attribute(button, property));
+        }
+        XElement description = document.Descendants().Single(element => Attribute(element, "Uid") == "SnapTap_Description");
+        Assert.Equal("When A and D overlap, the last pressed key wins.", Attribute(description, "Text"));
+        XElement[] details = button.Descendants().Where(element => element.Name.LocalName == "TextBlock").ToArray();
+        Assert.Contains(details, element => Attribute(element, "Text")?.Contains("laptop keyboard", StringComparison.Ordinal) == true);
+        Assert.Contains(details, element => Attribute(element, "Text") == "Game compatibility has not been verified.");
+    }
+
+    [Fact]
     public void SnapTapRemainsAvailableWithoutShortcutHardwareAndAnnouncesRuntimeState()
     {
         XDocument document = XDocument.Parse(

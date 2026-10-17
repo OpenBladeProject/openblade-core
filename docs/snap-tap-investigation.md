@@ -1,5 +1,7 @@
 # Snap Tap investigation
 
+The driver implementation is described in [SnapTap](snap-tap.md). The findings below record the earlier vendor investigation.
+
 The product-736 vendor code exposes a Snap Tap mapping path for RZ09-0581.
 Standalone enforcement without Razer's keyboard filter driver remains
 unproven. No Snap Tap mappings, driver settings, or HID reports were written
@@ -39,6 +41,6 @@ path. The examined no-filter path and separate global-shortcut hook do not yet
 establish an alternative. Untraced indirect behavior has not been exhaustively
 excluded.
 
-OpenBlade has not added a Snap Tap backend or a kernel driver. Further work
+At the time of this investigation, OpenBlade had not added a Snap Tap backend. Further work
 should resolve that suppression boundary before proposing a writable mapping
 integration.

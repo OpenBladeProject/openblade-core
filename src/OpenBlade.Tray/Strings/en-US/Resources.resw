@@ -2060,7 +2060,7 @@ OpenBlade did not retry any stop request.</value>
     <value>SnapTap (A/D)</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified.</value>
+    <value>When A and D overlap, the last pressed key wins.</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap (A/D)</value>
@@ -2069,7 +2069,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Starting…</value>
   </data>
   <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
-    <value>Release A and D to activate.</value>
+    <value>Release keys and mouse buttons to activate.</value>
   </data>
   <data name="SnapTap_Status_Paused" xml:space="preserve">
     <value>Paused — input handling is unavailable.</value>
@@ -2199,5 +2199,26 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
     <value>Keyboard</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>About SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>About SnapTap</value>
+  </data>
+  <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
+    <value>Game compatibility has not been verified.</value>
+  </data>
+  <data name="SnapTap_InfoInput.Text" xml:space="preserve">
+    <value>SnapTap uses the Razer keyboard driver on the laptop keyboard. Requires the supported RZ09-0581 driver.</value>
+  </data>
+  <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
+    <value>About SnapTap</value>
+  </data>
+  <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
+    <value>The supported Razer keyboard driver is unavailable.</value>
+  </data>
+  <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
+    <value>Restart Windows before enabling SnapTap again.</value>
   </data>
 </root>

@@ -5,6 +5,16 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class SnapTapRuntimeStatusTests : IDisposable
 {
+    [Theory]
+    [InlineData(SnapTapRuntimeState.Unavailable)]
+    [InlineData(SnapTapRuntimeState.RecoveryRequired)]
+    public void DriverTerminalConditionSurvivesHelperExit(SnapTapRuntimeState state)
+    {
+        var status = new SnapTapRuntimeStatus(state, DateTimeOffset.UtcNow);
+        SnapTapStatusStore.Write(status, StatusPath);
+        Assert.Equal(status, SnapTapStatusStore.Read(StatusPath));
+    }
+
     private readonly string directory = Path.Combine(
         Path.GetTempPath(), "OpenBlade.Tray.Tests", Guid.NewGuid().ToString("N"));
 

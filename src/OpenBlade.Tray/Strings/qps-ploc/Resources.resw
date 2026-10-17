@@ -2060,7 +2060,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
   </data>
   <data name="SnapTap_Description.Text" xml:space="preserve">
-    <value>[!! Éxpéríméntál. Whén Á ánd D óvérláp, thé lást présséd kéý wíns. Ápplíés tó áll kéýbóárds. Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Whén Á ánd D óvérláp, thé lást présséd kéý wíns. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
@@ -2069,7 +2069,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Stártíng… ~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
-    <value>[!! Réléásé Á ánd D tó áctíváté. ~~~~~~~~ !!]</value>
+    <value>[!! Réléásé kéýs ánd móúsé búttóns tó áctíváté. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Paused" xml:space="preserve">
     <value>[!! Páúséd — ínpút hándlíng ís únáváíláblé. ~~~~~~~~~~~~ !!]</value>
@@ -2199,5 +2199,26 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
     <value>[!! Kéýbóárd ~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
+    <value>[!! Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoInput.Text" xml:space="preserve">
+    <value>[!! SnápTáp úsés thé Razer kéýbóárd drívér ón thé láptóp kéýbóárd. Réqúírés thé súppórtéd RZ09-0581 drívér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
+    <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
+    <value>[!! Thé súppórtéd Razer kéýbóárd drívér ís únáváíláblé. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
+    <value>[!! Réstárt Windows béfóré énáblíng SnápTáp ágáín. ~~~~~~~~~~~~ !!]</value>
   </data>
 </root>
