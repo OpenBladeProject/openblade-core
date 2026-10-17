@@ -13,10 +13,7 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
         ReadAsync(endpoint, cancellationToken);
 
     public Task<SessionAudioResponse> ReadAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken) =>
-        detectionError is not null
-        ? Task.FromResult(new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
-            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, detectionError, null))
-        : Task.FromResult(Response(new ThxAudioState(endpoint, true, true, "music",
+        Task.FromResult(Response(new ThxAudioState(endpoint, true, true, "music",
             [new("game", "Game"), new("movie", "Movie"), new("music", "Music"), new("voice", "Voice"), new("custom", "Custom")])
         {
             SystemEffectsDisabled = systemEffectsDisabled ? true : null,
@@ -44,8 +41,11 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
     public Task<SessionAudioResponse> SetEnhancementAsync(ThxAudioEndpoint endpoint, ThxAudioEnhancementKind kind, bool enabled, int? levelPercent, CancellationToken cancellationToken) =>
         throw new InvalidOperationException("Audio mutations are disabled in the disconnected preview.");
 
-    private static SessionAudioResponse Response(ThxAudioState? state) =>
-        new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
+    private SessionAudioResponse Response(ThxAudioState? state) =>
+        detectionError is not null
+        ? new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, detectionError, null)
+        : new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
             ThxAudioAvailability.Available, null, state);
 }
 #endif
