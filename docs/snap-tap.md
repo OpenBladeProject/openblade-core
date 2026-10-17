@@ -26,4 +26,8 @@ The protocol is pinned to `mapping_engine.dll` 1.3.16.5, SHA-256 `6EABDFDEDF797E
 
 The codecs include literal known-answer packets, exact response sizes, ignored undefined padding, fixed-pair validation and bounded enumeration. Hook-session tests exercise ordering, ownership, failure latching and subscription closure. Priority tests compare all 1,024 five-event sequences with an independent press-order oracle.
 
-The earlier user validation applies to the Windows-input implementation. Driver output, external-keyboard exclusion, Reactive lighting attribution, latency, normal shutdown and independent recovery still require attended physical validation on the final build. Keep the driver implementation draft until that validation is complete.
+Attended validation on 2026-10-17 used version 0.34.0 at commit `53d044e6d67dc4308e5fbc0b3d9b4ffd16e09b51` on RZ09-0581. A normal-integrity validation launcher exercised the production driver loop and supervisor without installing a new build or changing the saved SnapTap preference. An initial A-hook configuration round trip matched readback and restored the empty hook table before input testing.
+
+Both laptop-keyboard press orders passed: hold A, press and release D, release A; then hold D, press and release A, release D. The window and independent Raw Input observer each recorded 129 events, including repeats, with matching priority transitions, no delivered A+D overlap and no held key at the end. Raw Input attributed every event to the laptop keyboard collection. Normal stop exited successfully and restored the empty hook table; a separate read-only query confirmed it. Installed binaries, preferences and saved status were unchanged after restoration.
+
+External-keyboard exclusion, Reactive lighting, input latency, forced-failure recovery and installed-agent startup remain untested on this driver build. Keep the PR draft while those checks remain open.
