@@ -31,6 +31,9 @@
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
     <Compile Include="..\OpenBlade.Testing\PublicApiSurface.cs" Link="PublicApiSurface.cs" />
     <None Include="PublicApiBaseline.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\Blade18ObserverRequests.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\Blade18ObserverFollowupRequests.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\Blade18ObserverControlsRequests.json" CopyToOutputDirectory="PreserveNewest" />
     <None
       Include="..\..\captures\annotations\2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json"
       Link="Evidence\2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json"

@@ -12,7 +12,7 @@ command limits, recovery behavior, and evidence. For setup and test reports, use
 | Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, Custom, fixed fan targets, keyboard and logo lighting, 50-100% charge limits |
 | Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, Battery Saver, Battery Balanced, Custom, keyboard and logo lighting, 50-100% charge limits |
 | Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced, Silent, Gaming, Custom, single-zone keyboard lighting |
-| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
+| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Balanced-only shared fixed targets, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
 
 Admission checks Razer and the exact product name in both Windows registry
 sources, then the exact USB identity and 91-byte HID feature-report geometry.
@@ -45,17 +45,19 @@ The thermal backend uses independent query and setter exchanges:
 
 - preset and fan mode: `0D/82 [0, cluster, 0, 0]` and
   `0D/02 [1, cluster, preset, fan flag]` for clusters 1 and 2;
-- Custom level: `0D/87 [0, cluster, 0]` and
+- Custom level: `0D/87 [profile, cluster, 0]` and
   `0D/07 [1, cluster, level]`;
-- fixed fan target: `0D/81 [0, zone, 0]` and
+- fixed fan target: `0D/81 [class, zone, 0]` (class 1 on Blade 18, 0 on the other admitted models) and
   `0D/01 [1, zone, RPM/100]`;
 - Maximum Fans: `07/8F [0]` and `07/0F [2]` to enable or `07/0F [0]` to
   disable.
 
 `0D/81` reports the stored fan target, not measured tachometer speed. Fixed
 targets are 2,000-5,000 RPM on the Blade 16 (2023) and 2,200-5,000 RPM on the
-Blade 14 (2023), in 100 RPM steps. Both zones must report the same admitted
-target. Fan curves remain unavailable because the backend has no admitted live
+Blade 14 (2023), in 100 RPM steps. Blade 18 (2023) admits one shared
+2,200-3,800 RPM target in Balanced, using its pinned class-1 target getter.
+Both zones must return representable stored targets before a change; each setter
+confirms both registers independently. Fan curves remain unavailable because the backend has no admitted live
 temperature source.
 
 Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and Blade
@@ -77,17 +79,24 @@ in ordinary presets and is not a substitute for adjustable fixed targets.
 Select Automatic before enabling it; a Fixed baseline is rejected before any
 setter is submitted.
 
+Blade 18 Custom getters use profile `1`, matching exact Synapse requests and
+pinned source. Other experimental profiles retain their admitted profile `0`.
+
 All five profiles admit Custom CPU/GPU levels Low, Medium, and High. The Blade
-16 (2023) also admits CPU Boost and the High/High combination. Other profiles
+16 (2023) also admits CPU Boost and the High/High combination. Blade 18 (2023)
+additionally admits CPU Boost with GPU Low or High; Boost/Medium and
+High/High remain unavailable on that model. See the [Observer evidence review](blade18-observer-evidence.md). Other profiles
 exclude High/High. Unrecognized raw levels remain diagnostic observations and
 cannot become a guessed baseline.
 
 Transitions go directly from the confirmed starting state to the requested
-state. The backend does not reset through Balanced or Automatic. Preset writes
-preserve readable fixed fans on the two models with fixed-target support;
-the other models require Automatic fans. When Maximum Fans
+state. Blade 16 (2023) and Blade 14 (2023) preserve readable fixed fans through
+preset changes. Blade 18 fixed fans are Balanced-only: the existing transition
+coordinator selects Balanced on entry and requires Automatic handback before
+another preset. This exact-model restriction follows Synapse's active path and
+the owner report; unused range declarations do not admit other presets. When Maximum Fans
 is active, the guarded cleanup above is required before leaving Custom. A
-fixed-target change preserves the confirmed ordinary preset or Custom mode and
+fixed-target change on Blade 16/14 preserves the confirmed ordinary preset or Custom mode and
 changes only the fan flag and targets. On a confirmed limited adapter, a direct
 Automatic handback preserves the confirmed mode; a separate Balanced request
 goes directly to Balanced. Fixed-target writes are also admitted on battery

@@ -30,6 +30,11 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.All(feature.Sources, source => Assert.StartsWith(
                         $"https://apps.razer.com/synapse/products/{(blade14 ? 669 : 671)}/mw/", source));
                 }
+                else if (feature.Basis.StartsWith("SynapseSource", StringComparison.Ordinal))
+                {
+                    Assert.Equal("RZ09-0484", model.ModelNumber);
+                    Assert.Contains(ExperimentalBladeModels.Blade18SynapseSource, feature.Sources);
+                }
                 else
                 {
                     Assert.All(feature.Sources, source => Assert.StartsWith("https://github.com/", source));

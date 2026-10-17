@@ -18,6 +18,13 @@ internal static class ExperimentalBladeModels
 
     public const string Blade18Source = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
 
+    internal const string Blade18SynapseSource = "https://apps.razer.com/synapse/products/672/mw/main.57245df0507455a5119e.js";
+    internal const string Blade18ObserverSource = "https://github.com/user-attachments/files/33499731/blade-evidence-20261015-1459.zip";
+
+    internal const string Blade18ObserverFollowupSource = "https://github.com/user-attachments/files/33530069/blade-evidence-20261016-063420.zip";
+
+    internal const string Blade18ObserverControlsSource = "https://github.com/user-attachments/files/33595838/blade-evidence-20261017-122040.zip";
+
     internal const string MaintainedRazerCtlSource = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
     internal const string OpenRazerSource = "https://github.com/openrazer/openrazer/tree/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d";
     internal const string ExpandedBladeControlSource = "https://github.com/jdsgnrinfo/blade-control/tree/92beedc82e6e378cb71dac276e5820c8ea84247d";
@@ -64,6 +71,23 @@ internal static class ExperimentalBladeModels
                 new("GamingAndCustom", "UpstreamOwnerReported", [ExpandedBladeControlSource]),
                 new("SingleZoneRgbLighting", "UpstreamOwnerTested", [ExpandedBladeControlSource])],
             0x02A0 => [
+                new("CustomCpuBoostGpuHigh", "SynapseSourceAndObservedRequestsWithoutIndependentReadback",
+                    [Blade18SynapseSource, Blade18ObserverSource,
+                     "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
+                     "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js"]),
+                new("CustomCpuBoostGpuLow", "SynapseSourceAndObservedRequestsWithoutIndependentReadback",
+                    [Blade18SynapseSource, Blade18ObserverFollowupSource,
+                     "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
+                     "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js"]),
+                new("ChargeLimits50And80", "SynapseObservedRequestsWithoutIndependentReadback", [Blade18ObserverFollowupSource]),
+                new("KeyboardBrightness25And100", "SynapseObservedRequestsWithoutIndependentReadback", [Blade18ObserverFollowupSource]),
+                new("AdditionalLightingEffects", "SynapseSourceObservedOnly", [Blade18SynapseSource]),
+                new("FixedFanTargets", "SynapseSourceAndObservedRequestsWithSourceBackedTargetReadback",
+                    [Blade18SynapseSource, Blade18ObserverFollowupSource, Blade18ObserverControlsSource,
+                     "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
+                     "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js"]),
+                new("LogoStaticAndOff", "SynapseSourceAndObservedRequestsWithoutIndependentReadback",
+                    [Blade18SynapseSource, Blade18ObserverControlsSource]),
                 new("MaximumFans", "UpstreamOwnerReported", [Blade18Source, "https://github.com/sqmagellan/razer-ctl/issues/1"]),
                 new("KeyboardAndLogoLighting", "UpstreamOwnerReported", [Blade18Source, "https://github.com/sqmagellan/razer-ctl/issues/1"]),
                 new("UniformStaticRgb", "SourceBackedExtrapolationWithoutRgbReadback", [OpenRazerSource, MaintainedRazerCtlSource]),

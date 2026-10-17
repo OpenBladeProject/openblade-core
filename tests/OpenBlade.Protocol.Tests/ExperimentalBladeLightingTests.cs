@@ -38,6 +38,12 @@ public sealed class ExperimentalBladeLightingTests
         Assert.Contains(LightingEffect.Static, blade18.LightingEffects);
         Assert.False(blade18.SupportsUniformLightingFrames);
         Assert.DoesNotContain(LightingEffect.AmbientAwareness, blade18.LightingEffects);
+        Assert.Contains(LightingEffect.AmbientAwareness, blade18.ObservedLightingEffects);
+        Assert.Contains(LightingEffect.Fire, blade18.ObservedLightingEffects);
+        Assert.DoesNotContain(LightingEffect.Sequence, blade18.ObservedLightingEffects);
+        Assert.Equal(13, blade18.ObservedLightingEffects.Count);
+        Assert.True(blade18.ObservedLightingEffects.SetEquals(
+            ExperimentalBladePort.CreateCapabilities(ModelFor(0x02A0), false).ObservedLightingEffects));
     }
 
     [Theory]
@@ -175,9 +181,10 @@ public sealed class ExperimentalBladeLightingTests
     }
 
     [Theory]
+    [InlineData(0x029F)]
     [InlineData(0x029D)]
     [InlineData(0x02C5)]
-    public async Task Blade14Profiles_UseIndependentLogoReadbackForRicherModes(int productId)
+    public async Task OtherExperimentalProfiles_KeepPersistentLogoStorage(int productId)
     {
         ExperimentalBladeModel model = ModelFor((ushort)productId);
         var session = new Session();
@@ -196,6 +203,9 @@ public sealed class ExperimentalBladeLightingTests
         Assert.Contains(session.Commands, command =>
             command.ClassId == 0x03 && command.CommandId == 0x02
             && command.Arguments.Span.SequenceEqual(new byte[] { 1, 4, 2 }));
+        Assert.All(
+            session.Commands.Where(IsLogoCommand),
+            command => Assert.Equal(LogoLightingProtocol.PersistentStorage, command.Arguments.Span[0]));
     }
 
     [Fact]
@@ -861,7 +871,7 @@ public sealed class ExperimentalBladeLightingTests
     [InlineData(LogoLightingMode.Off)]
     [InlineData(LogoLightingMode.Static)]
     [InlineData(LogoLightingMode.Breathing)]
-    public async Task Logo_UsesOnlyItsSourceBackedRegistersAndIndependentGet(LogoLightingMode mode)
+    public async Task Blade18Logo_UsesPinnedStorageSelectorAndIndependentGet(LogoLightingMode mode)
     {
         var session = new Session { LogoOn = mode == LogoLightingMode.Off, LogoEffect = 2 };
         await using var port = Create(session, Enabled());
@@ -870,8 +880,73 @@ public sealed class ExperimentalBladeLightingTests
         RazerCommandSpec[] setters = session.Commands.Where(command => command.CommandId < 0x80).ToArray();
         Assert.Equal(mode == LogoLightingMode.Off ? 1 : 2, setters.Length);
         Assert.All(setters, command => Assert.Equal(0x03, command.ClassId));
+        Assert.All(session.Commands.Where(IsLogoCommand),
+            command => Assert.Equal(0, command.Arguments.Span[0]));
         Assert.All(setters, command => Assert.Equal(4, command.Arguments.Span[1]));
         Assert.Equal(0x00, setters[^1].CommandId);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Blade18WrongLogoStorageReadback_IsRejectedBeforeAnySetter(
+        bool stateQuery)
+    {
+        var session = new Session
+        {
+            LogoOn = true,
+            LogoStateSelectorOverride = stateQuery ? (byte)1 : null,
+            LogoEffectSelectorOverride = stateQuery ? null : (byte)1,
+        };
+        await using var port = Create(session, Enabled());
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.SpectrumCycling(50) with
+                {
+                    LogoMode = LogoLightingMode.Static,
+                },
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+        Assert.Equal(
+            [(0x03, stateQuery ? 0x80 : 0x82, FirmwareQueryOutcome.ContentRejected)],
+            session.RetainedQueryFailures);
+    }
+
+    [Fact]
+    public async Task Blade18Logo_StaticOffStatic_RestoresObservedStateWithStorageZero()
+    {
+        var session = new Session { LogoOn = true, LogoEffect = 0 };
+        await using var port = Create(session, Enabled());
+
+        Assert.Equal(LogoLightingMode.Static,
+            await port.ReadLogoStateAsync(CancellationToken.None));
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50) with
+            {
+                LogoMode = LogoLightingMode.Off,
+            },
+            CancellationToken.None);
+        Assert.Equal(LogoLightingMode.Off,
+            await port.ReadLogoStateAsync(CancellationToken.None));
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50) with
+            {
+                LogoMode = LogoLightingMode.Static,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(LogoLightingMode.Static,
+            await port.ReadLogoStateAsync(CancellationToken.None));
+        RazerCommandSpec[] setters = session.Commands
+            .Where(command => command.CommandId < 0x80)
+            .ToArray();
+        Assert.Equal([0x00, 0x02, 0x00], setters.Select(command => command.CommandId));
+        Assert.Equal(
+            [new byte[] { 0, 4, 0 }, new byte[] { 0, 4, 0 }, new byte[] { 0, 4, 1 }],
+            setters.Select(command => command.Arguments.ToArray()));
     }
 
     [Fact]
@@ -881,7 +956,7 @@ public sealed class ExperimentalBladeLightingTests
         await using var port = Create(session, Enabled());
         Assert.Equal(LogoLightingMode.Breathing,
             await port.ReadLogoStateAsync(CancellationToken.None));
-        session.LogoStateSelector = 2;
+        session.LogoStateSelectorOverride = 2;
 
         await Assert.ThrowsAsync<IOException>(
             () => port.ReadLogoStateAsync(CancellationToken.None));
@@ -987,6 +1062,13 @@ public sealed class ExperimentalBladeLightingTests
         ExperimentalBladeModel? model = null) =>
         new(session, new(), model ?? Model, policy, () => true, () => PowerSource.PluggedIn);
 
+    private static bool IsLogoCommand(RazerCommandSpec command) =>
+        command.ClassId == LogoLightingProtocol.CommandClass
+        && command.CommandId is LogoLightingProtocol.SetStateCommandId
+            or LogoLightingProtocol.SetEffectCommandId
+            or LogoLightingProtocol.QueryStateCommandId
+            or LogoLightingProtocol.QueryEffectCommandId;
+
     private sealed class Session : IRazerCommandSession
     {
         internal byte Raw { get; set; } = 128;
@@ -996,7 +1078,8 @@ public sealed class ExperimentalBladeLightingTests
         internal bool UnknownTail { get; set; }
         internal bool LogoOn { get; set; }
         internal byte LogoEffect { get; set; }
-        internal byte LogoStateSelector { get; set; } = 1;
+        internal byte? LogoStateSelectorOverride { get; set; }
+        internal byte? LogoEffectSelectorOverride { get; set; }
         internal bool IgnoreEffect { get; set; }
         internal bool FailEffect { get; set; }
         internal bool IgnoreBrightness { get; set; }
@@ -1122,11 +1205,11 @@ public sealed class ExperimentalBladeLightingTests
             }
             else if (command.ClassId == 0x03 && command.CommandId == 0x80)
             {
-                response = [LogoStateSelector, 4, LogoOn ? (byte)1 : (byte)0];
+                response = [LogoStateSelectorOverride ?? args[0], 4, LogoOn ? (byte)1 : (byte)0];
             }
             else if (command.ClassId == 0x03 && command.CommandId == 0x82)
             {
-                response = [1, 4, LogoEffect];
+                response = [LogoEffectSelectorOverride ?? args[0], 4, LogoEffect];
             }
             else if (command.ClassId == 0x03 && command.CommandId == 0x02) { LogoEffect = args[2]; response = args; }
             else if (command.ClassId == 0x03 && command.CommandId == 0x00)

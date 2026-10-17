@@ -7,11 +7,14 @@ internal sealed partial class ExperimentalBladePort
     // 029F: Synapse captures tdakhran/razer-ctl 8e12e778/data/README.md,
     // measured 2000..5000 in sqmagellan/razer-ctl 9c66e705/descriptor.rs.
     // 029D: exact profile's 2200..5000 bounds are an experimental extrapolation.
-    // No 02A0 fixed targets: its owner report says requested RPM was ignored.
+    // 02A0: product 672 Balanced range and paired 3000/3800 requests; the
+    // ignored-target owner report concerns HyperBoost, not Balanced. See
+    // docs/blade18-observer-evidence.md. Other presets remain unadmitted.
     internal static FanSpeedRange? GetExperimentalFanRange(ExperimentalBladeModel model) => model.ProductId switch
     {
         0x029F => new(2000, 5000, 100),
         0x029D => new(2200, 5000, 100),
+        0x02A0 => new(2200, 3800, 100),
         _ => null,
     };
 
@@ -19,13 +22,18 @@ internal sealed partial class ExperimentalBladePort
     {
         FanSpeedRange range = GetExperimentalFanRange(model)
             ?? throw new CapabilityUnavailableException("The exact model has no admitted fixed fan range.");
+        // Product 672 uses class 1 for its target register; 0D/81 is the
+        // pinned base source's getter for the observed class-1 0D/01 setters.
+        // This query is source-backed, not present in the Observer recording.
+        byte profile = model.ProductId == 0x02A0 ? (byte)1 : (byte)0;
         ReadOnlyMemory<byte> first = await ExchangeAsync("FanTargets", 0x0D, 0x81,
-            [0, 1, 0], false, cancellationToken).ConfigureAwait(false);
+            [profile, 1, 0], false, cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> second = await ExchangeAsync("FanTargets", 0x0D, 0x81,
-            [0, 2, 0], false, cancellationToken).ConfigureAwait(false);
+            [profile, 2, 0], false, cancellationToken).ConfigureAwait(false);
         int firstRpm = first.Span[2] * 100;
         int secondRpm = second.Span[2] * 100;
-        if (first.Span[1] != 1 || second.Span[1] != 2
+        if (first.Span[0] != profile || second.Span[0] != profile
+            || first.Span[1] != 1 || second.Span[1] != 2
             || !range.Supports(firstRpm) || !range.Supports(secondRpm))
         {
             RecordQuery("FanTargets", "UnsupportedState", failure: "OutsideRepresentableTargets");
@@ -59,7 +67,8 @@ internal sealed partial class ExperimentalBladePort
     {
         FanSpeedRange? range = GetExperimentalFanRange(model);
         if (range is null || targets is { } requested
-            && (!range.Supports(requested.First) || !range.Supports(requested.Second)))
+            && (!range.Supports(requested.First) || !range.Supports(requested.Second)
+                || model.ProductId == 0x02A0 && requested.First != requested.Second))
         {
             throw new CapabilityUnavailableException("The fan request is outside this exact model's admitted range.");
         }
@@ -75,7 +84,16 @@ internal sealed partial class ExperimentalBladePort
                 or PerformancePreset.Performance or PerformancePreset.Silent or PerformancePreset.Custom))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    "Manual fan changes require an ordinary confirmed external-power preset.");
+                    "Fan changes require a supported, confirmed performance mode.");
+            }
+            // Product 672 exposes one Balanced-only slider and writes both zones.
+            // Do not extrapolate its unused Silent/Custom range declarations or
+            // preserve the manual flag when entering another performance preset.
+            if (model.ProductId == 0x02A0 && targets.HasValue
+                && baseline.Performance != PerformancePreset.Balanced)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "Fixed fan targets on this model require Balanced mode.");
             }
             // Preserve ordinary mode and Custom levels instead of resetting to
             // Balanced just because the original Synapse capture started there.

@@ -120,7 +120,10 @@ internal sealed partial class ExperimentalBladePort(
         {
             CustomPerformance = enabled && SupportsExperimentalCustom(model) ? CreateCustomCapabilities(model) : null,
             FanSpeedRange = enabled ? GetExperimentalFanRange(model) : null,
-            SupportsDirectManualFanTransitions = enabled && GetExperimentalFanRange(model) is not null,
+            // Product 672's fixed control is Balanced-only. The existing typed
+            // transition coordinator selects that preset before entering fixed mode.
+            SupportsDirectManualFanTransitions = enabled && model.ProductId != 0x02A0
+                && GetExperimentalFanRange(model) is not null,
             // 029F/029D use separate mode/fan bytes in 0D82 and independent
             // Custom getters, unlike validated backends' shared manual selector.
             // See sqmagellan 9c66e705/librazer/src/command.rs and descriptor.rs.
@@ -144,7 +147,7 @@ internal sealed partial class ExperimentalBladePort(
                     Custom = DeviceFeatureAccess.ReadWrite,
                     CoolingPadEntryBaseMode = model.ProductId == 0x029D ? PerformancePreset.Balanced : null,
                 } : null,
-            ObservedLightingEffects = CreateExperimentalLightingEffects(model, true),
+            ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),
             ThxAudio = model.ProductId == 0x02C5
                 ? new ThxAudioCapabilities(
                     DeviceFeatureAccess.ReadWrite,
@@ -306,9 +309,10 @@ internal sealed partial class ExperimentalBladePort(
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("Performance", "Baseline", "Confirmed", requested: value.ToString(),
                 confirmed: $"{(baseline.HyperBoostActive ? "HyperBoost" : baseline.Performance?.ToString())}/{baseline.Fans}");
-            // Models without a target getter/setter cannot retain a restorable
-            // manual baseline. Supported models decoded both targets above.
-            if (baseline.Fans != FanMode.Automatic && GetExperimentalFanRange(model) is null)
+            // Models without a target getter cannot preserve a manual baseline.
+            // 02A0 can read its targets, but only admits them in Balanced.
+            if (baseline.Fans != FanMode.Automatic
+                && (GetExperimentalFanRange(model) is null || model.ProductId == 0x02A0))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Experimental performance changes require confirmed Automatic fans.");

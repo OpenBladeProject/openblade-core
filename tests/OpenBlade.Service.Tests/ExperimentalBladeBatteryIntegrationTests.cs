@@ -60,6 +60,28 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             item => item.StartsWith("query:501:", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(0x02A0, 2)]
+    [InlineData(0x02A0, 0)]
+    [InlineData(0x029F, 2)]
+    public async Task CustomBoost_PreservesAllIndependentStateThroughProductionProvider(int productId, byte gpu)
+    {
+        var io = new Io { Mode = 4, Cpu = 3, Gpu = gpu, Raw = 0xD0 };
+        var native = new Native { ProductId = (ushort)productId };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io, native: native, productId: productId);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        ConfirmedDeviceState state = await device.ReadStateAsync(CancellationToken.None);
+        Assert.Equal(new CustomPerformanceSettings(CustomPerformanceLevel.Boost, (CustomPerformanceLevel)gpu), state.CustomPerformance);
+        Assert.NotEmpty(io.CustomReadProfiles);
+        Assert.All(io.CustomReadProfiles, profile => Assert.Equal(productId == 0x02A0 ? (byte)1 : (byte)0, profile));
+        Assert.Equal(PerformancePreset.Custom, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(80, state.Battery!.ChargeLimitPercent);
+        Assert.Equal(LightingEffect.Spectrum, state.Lighting!.Effect);
+        Assert.Equal(LogoLightingMode.Off, state.LogoLighting);
+        Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
+    }
+
     [Fact]
     public async Task Provider_AdmitsRangeChangesFromOffAndConfirmsExactLimit()
     {
@@ -273,12 +295,50 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         Assert.Empty(io.Commands);
     }
 
+    [Fact]
+    public async Task Blade18FixedFans_UseClassOneGettersThroughRealHidProviderAndRestore()
+    {
+        var io = new Io { Raw = 0xD0 };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io,
+            power: () => PowerSource.PluggedIn);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetFanControlAsync(new(FanMode.Fixed, 3000, ManualFanCurve.Default), CancellationToken.None);
+        ConfirmedDeviceState state = await device.ReadStateAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.Balanced, state.Performance);
+        Assert.Equal(FanMode.Fixed, state.Fans);
+        Assert.Equal(new (byte, byte)[] { (1, 30), (2, 30) }, io.FanTargetWrites);
+        Assert.NotEmpty(io.FanTargetReadClasses);
+        Assert.All(io.FanTargetReadClasses, value => Assert.Equal(1, value));
+
+        await device.SetFanControlAsync(new(FanMode.Fixed, 3800, ManualFanCurve.Default), CancellationToken.None);
+        await device.SetFanModeAsync(FanMode.Automatic, CancellationToken.None);
+        Assert.Equal(38, io.FirstTarget);
+        Assert.Equal(38, io.SecondTarget);
+        Assert.Equal(FanMode.Automatic, (await device.ReadStateAsync(CancellationToken.None)).Fans);
+        Assert.False(provider.IsExperimentalWritesPaused);
+    }
+
+    [Fact]
+    public async Task Blade18FixedFans_RealProviderPausesAfterIgnoredFirstTarget()
+    {
+        var io = new Io { Raw = 0xD0, Fan = 1, IgnoreFanTargets = true };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io,
+            power: () => PowerSource.PluggedIn);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            device.SetFanControlAsync(new(FanMode.Fixed, 3000, ManualFanCurve.Default), CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Single(io.FanTargetWrites);
+        Assert.True(provider.IsExperimentalWritesPaused);
+        await device.ReadStateAsync(CancellationToken.None);
+        Assert.Single(io.FanTargetWrites);
+    }
     private static WindowsVerifiedBladeDeviceProvider CreateProvider(Io io, Identity? identity = null, Guard? guard = null, Native? native = null,
-        int productId = 0x02A0)
+        int productId = 0x02A0, Func<PowerSource>? power = null)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
         var factory = new ExperimentalBladeFactory(model, identity ?? new Identity(model.ProductName), native ?? new Native(), guard ?? new Guard(), io,
-            () => PowerSource.ExternalUnknown);
+            power ?? (() => PowerSource.ExternalUnknown));
         return new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready, BatteryValidationFirmwareCompatibility.ModelScoped),
             factory, UnavailableFanRpmFactory(), factory.CreateLightingFactory());
@@ -358,15 +418,24 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         private byte[] request = [];
         internal byte Raw { get; set; }
         internal byte Mode { get; set; }
+        internal byte Fan { get; set; }
+        internal byte FirstTarget { get; set; } = 38;
+        internal byte SecondTarget { get; set; } = 38;
+        internal bool IgnoreFanTargets { get; init; }
+        internal List<byte> FanTargetReadClasses { get; } = [];
+        internal List<(byte Zone, byte Target)> FanTargetWrites { get; } = [];
         internal byte Effect { get; set; } = 3;
         internal bool DisagreeModes { get; set; }
         internal bool InvalidCustom { get; set; }
+        internal byte Cpu { get; set; }
+        internal byte Gpu { get; set; }
         internal List<string>? Events { get; set; }
         internal bool FailNextSetterResponse { get; set; }
         internal bool FailNextLightingSetterResponse { get; set; }
         internal Action? AfterLogoRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
         internal List<byte> Setters { get; } = [];
+        internal List<byte> CustomReadProfiles { get; } = [];
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint code,
             byte[] buffer, CancellationToken caller, CancellationToken deadline)
         {
@@ -374,6 +443,28 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             {
                 request = buffer.ToArray();
                 Commands.Add((request[7], request[8]));
+                if (request[7] == 0x0D && request[8] == 0x87)
+                {
+                    CustomReadProfiles.Add(request[9]);
+                }
+                if (request[7] == 0x0D && request[8] == 0x81)
+                {
+                    FanTargetReadClasses.Add(request[9]);
+                }
+                if (request[7] == 0x0D && request[8] == 0x02)
+                {
+                    Mode = request[11];
+                    Fan = request[12];
+                }
+                if (request[7] == 0x0D && request[8] == 0x01)
+                {
+                    FanTargetWrites.Add((request[10], request[11]));
+                    if (!IgnoreFanTargets)
+                    {
+                        if (request[10] == 1) { FirstTarget = request[11]; }
+                        else { SecondTarget = request[11]; }
+                    }
+                }
                 Events?.Add($"query:{handle.FileHandle.DangerousGetHandle().ToInt64()}:{request[7]:X2}/{request[8]:X2}");
                 if (request[7] == 0x07 && request[8] == 0x12)
                 {
@@ -403,10 +494,20 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                 else if (buffer[7] == 0x0D && buffer[8] == 0x82)
                 {
                     buffer[11] = DisagreeModes && buffer[10] == 2 ? (byte)5 : Mode;
+                    buffer[12] = Fan;
+                }
+                else if (buffer[7] == 0x0D && buffer[8] == 0x81)
+                {
+                    buffer[11] = buffer[10] == 1 ? FirstTarget : SecondTarget;
+                }
+                else if (buffer[7] == 0x07 && buffer[8] == 0x8C)
+                {
+                    buffer[9] = 0x11;
+                    buffer[10] = 0x11;
                 }
                 else if (buffer[7] == 0x0D && buffer[8] == 0x87)
                 {
-                    buffer[11] = InvalidCustom ? (byte)99 : (byte)0;
+                    buffer[11] = InvalidCustom ? (byte)99 : buffer[10] == 1 ? Cpu : Gpu;
                 }
                 else if (buffer[7] == 0x03 && buffer[8] == 0x83)
                 {
