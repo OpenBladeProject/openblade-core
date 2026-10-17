@@ -3014,10 +3014,28 @@
                         </local:ResponsivePageHeader>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
-                        <ContentControl x:Name="KeyboardBehaviorCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardKeyboardBehaviorCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
+                        <StackPanel x:Name="KeyboardSection" Spacing="10">
+                            <ContentControl x:Name="KeyboardBehaviorCard"
+                                            Content="{x:Bind ViewModel}"
+                                            ContentTemplate="{StaticResource DashboardKeyboardBehaviorCardTemplate}"
+                                            HorizontalContentAlignment="Stretch" />
+                            <Border x:Name="SnapTapCard" Style="{StaticResource SettingsGroupStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="4">
+                                            <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock x:Uid="SnapTap_Description" Text="Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
+                                    </Grid>
+                                </Border>
+                            </Border>
+                        </StackPanel>
 
                         <ContentControl x:Name="StartupAnimationCard"
                                         Content="{x:Bind ViewModel}"
@@ -3089,22 +3107,6 @@
                             </Border>
                         </StackPanel>
                         </StackPanel>
-                        <Border x:Name="SnapTapCard" Style="{StaticResource SettingsGroupStyle}" Margin="0,18,0,0">
-                            <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="4">
-                                        <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock x:Uid="SnapTap_Description" Text="Experimental. When A and D overlap, the last pressed key wins. Applies to all keyboards. Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                        <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
-                                </Grid>
-                            </Border>
-                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 

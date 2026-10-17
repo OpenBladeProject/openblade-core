@@ -60,12 +60,13 @@ public sealed partial class MainWindow
                 "SnapTap_Status_Paused", "Paused — input handling is unavailable."),
             SnapTapRuntimeState.Failed => LocalizedResources.Get(
                 "SnapTap_Status_Failed", "Paused after an input error. Release A and D, then turn SnapTap off and on."),
-            SnapTapRuntimeState.Off when !snapTapEnabled => LocalizedResources.Get(
-                "SnapTap_Status_Off", "Off"),
+            SnapTapRuntimeState.Off when !snapTapEnabled => string.Empty,
             _ when snapTapEnabled => LocalizedResources.Get(
                 "SnapTap_Status_Unavailable", "Waiting for the input helper…"),
-            _ => LocalizedResources.Get(
-                "SnapTap_Status_Unknown", "Off requested — runtime status unavailable."),
+            _ => string.Empty,
         };
+        SnapTapStatusText.Visibility = string.IsNullOrEmpty(SnapTapStatusText.Text)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
     }
 }

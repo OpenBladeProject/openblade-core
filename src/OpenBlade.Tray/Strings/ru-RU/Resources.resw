@@ -2080,14 +2080,8 @@ OpenBlade повторно проверит этот список и остан�
   <data name="SnapTap_Status_Failed" xml:space="preserve">
     <value>Приостановлено из-за ошибки ввода. Отпустите A и D, затем выключите и снова включите SnapTap.</value>
   </data>
-  <data name="SnapTap_Status_Off" xml:space="preserve">
-    <value>Выкл.</value>
-  </data>
   <data name="SnapTap_Status_Unavailable" xml:space="preserve">
     <value>Ожидание обработчика ввода…</value>
-  </data>
-  <data name="SnapTap_Status_Unknown" xml:space="preserve">
-    <value>Запрошено отключение — состояние выполнения недоступно.</value>
   </data>
   <data name="SnapTap_Status_Armed" xml:space="preserve">
     <value>Готово — нажмите A или D, чтобы проверить ввод.</value>

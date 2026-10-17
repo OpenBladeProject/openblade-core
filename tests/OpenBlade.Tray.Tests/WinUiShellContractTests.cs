@@ -11,8 +11,22 @@ public sealed class WinUiShellContractTests
         XDocument document = XDocument.Parse(
             ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement card = NamedElement(document, "Border", "SnapTapCard");
+        XElement keyboardSection = NamedElement(document, "StackPanel", "KeyboardSection");
+        XElement keyboardHeader = UidElement(
+            document,
+            "TextBlock",
+            "MainWindow_TextBlockKeyboard");
+        Assert.Contains(card.Ancestors(), element => element == keyboardSection);
         Assert.DoesNotContain(card.Ancestors(), element =>
-            Attribute(element, "Name") is "ShortcutKeysSection" or "LaptopCardsHost");
+            Attribute(element, "Name") == "ShortcutKeysSection");
+        Assert.Equal(
+            "{x:Bind HasKeyboardLaptopControls, Mode=OneWay}",
+            Attribute(keyboardHeader, "Visibility"));
+        Assert.Equal(
+            "{StaticResource SettingsLastRowStyle}",
+            Attribute(
+                Assert.Single(card.Elements(), element => element.Name.LocalName == "Border"),
+                "Style"));
         XElement toggle = NamedElement(document, "ToggleSwitch", "SnapTapToggle");
         Assert.Equal("SnapTap (A/D)", Attribute(toggle, "AutomationProperties.Name"));
         Assert.Null(Attribute(toggle, "IsOn"));
@@ -20,13 +34,48 @@ public sealed class WinUiShellContractTests
         Assert.Equal("Polite", Attribute(status, "AutomationProperties.LiveSetting"));
         Assert.Equal("Wrap", Attribute(status, "TextWrapping"));
 
+        XElement laptopCards = NamedElement(document, "StackPanel", "LaptopCardsHost");
+        XElement[] laptopSections = laptopCards.Elements().ToArray();
+        Assert.True(
+            Array.IndexOf(laptopSections, keyboardSection)
+            < Array.FindIndex(laptopSections, element => Attribute(element, "Name") == "StartupAnimationCard"));
+
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs").ReplaceLineEndings("\n");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs")
+            .ReplaceLineEndings("\n");
+        Assert.Contains(
+            "pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =\n"
+                + "            KeyboardSection;",
+            window,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =\n"
+                + "            KeyboardBehaviorCard;",
+            window,
+            StringComparison.Ordinal);
         Assert.Contains(
             "localizationSnapshotMode\n"
                 + "            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch)\n"
                 + "            : SnapTapStatusStore.Read()",
             source,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "SnapTapRuntimeState.Off when !snapTapEnabled => string.Empty,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_ when snapTapEnabled => LocalizedResources.Get(\n"
+                + "                \"SnapTap_Status_Unavailable\", \"Waiting for the input helper…\"),\n"
+                + "            _ => string.Empty,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SnapTapStatusText.Visibility = string.IsNullOrEmpty(SnapTapStatusText.Text)",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("\"SnapTap_Status_Off\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"SnapTap_Status_Unknown\"", source, StringComparison.Ordinal);
+        Assert.Contains("SnapTapRuntimeState.Failed => LocalizedResources.Get(", source, StringComparison.Ordinal);
     }
 
     [Fact]
