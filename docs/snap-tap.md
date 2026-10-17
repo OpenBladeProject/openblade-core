@@ -2,7 +2,7 @@
 
 When A and D are held together, SnapTap gives the last pressed key priority. Releasing it restores the other key if it is still held.
 
-Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. It is off by default. Release A and D before activating it. The information button beside SnapTap explains the input method and game and anti-cheat limits.
+Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. It is off by default. Release A and D before activating it. The information button beside SnapTap explains the input method and reminds you to check game and tournament rules.
 
 Physical A/D presses keep their device identity for Reactive lighting. Restoring a still-held key is synthetic and does not trigger a new physical-key lighting pulse. In text fields, the restored key continues repeating until you release it.
 
