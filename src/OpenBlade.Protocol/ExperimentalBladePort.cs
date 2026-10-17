@@ -13,7 +13,8 @@ internal sealed partial class ExperimentalBladePort(
     bool recordQueries = true,
     SemaphoreSlim? sharedOperationGate = null,
     ExperimentalLightingOwnershipState? sharedLightingOwnership = null,
-    ICoolingPadDiscoverySource? coolingPadDiscovery = null)
+    ICoolingPadDiscoverySource? coolingPadDiscovery = null,
+    TimeProvider? lightingTimeProvider = null)
     : IProductionBatteryPort, IProductionLightingPort
 {
     private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
@@ -22,6 +23,7 @@ internal sealed partial class ExperimentalBladePort(
         sharedLightingOwnership ?? new();
     private readonly Func<TimeSpan, CancellationToken, Task> delayConfirmation = confirmationDelay ?? Task.Delay;
     private bool disposed;
+    private int liveTransactionId;
     private bool queryRecordingEnabled = recordQueries;
 
     internal ExperimentalControlObservation? LastAdmissionFailure { get; private set; }
@@ -461,6 +463,22 @@ internal sealed partial class ExperimentalBladePort(
             exception.Message, exception);
     }
 
+    // Admission retains the finite validation-run budget. A live serialized
+    // session cycles IDs only after completed exchanges, like the production
+    // lighting ports; ambiguity poisons the session and cannot be replayed.
+    // Product 672's capture cycles 00..1F. Zero is reserved by the session API.
+    private TransactionIdAssignment AllocateTransaction()
+    {
+        if (!queryRecordingEnabled)
+        {
+            return context.TryAllocateTransaction(out byte id)
+                ? TransactionIdAssignment.Valid(id) : TransactionIdAssignment.Exhausted();
+        }
+        int maximum = model.ProductId == 0x02A0 ? 0x1F : byte.MaxValue;
+        liveTransactionId = liveTransactionId >= maximum ? 1 : liveTransactionId + 1;
+        return TransactionIdAssignment.Valid((byte)liveTransactionId);
+    }
+
     private async Task<ReadOnlyMemory<byte>> ExchangeAsync(string operation, byte commandClass,
         byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken,
         bool variableResponse = false, Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null,
@@ -522,8 +540,7 @@ internal sealed partial class ExperimentalBladePort(
         try
         {
             result = await session.ExecuteAsync(command,
-                () => context.TryAllocateTransaction(out byte transaction)
-                    ? TransactionIdAssignment.Valid(transaction) : TransactionIdAssignment.Exhausted(),
+                AllocateTransaction,
                 TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (write)
@@ -599,10 +616,12 @@ internal sealed partial class ExperimentalBladePort(
             RecordQuery("AdapterPower", "Unavailable", failure: "MissingVendorCommandEvidence");
             return AdapterPowerState.Unknown;
         }
-        if (!context.TryAllocateTransaction(out byte transaction))
+        TransactionIdAssignment assignment = AllocateTransaction();
+        if (assignment.Failure is not null)
         {
             throw new IOException("The experimental adapter query exhausted its transaction budget.");
         }
+        byte transaction = assignment.TransactionId;
         HidSessionResult<AdapterPowerState> result = await adapterPowerCommands.QueryAsync(
             transaction, cancellationToken).ConfigureAwait(false);
         if (result.Failure is { } failure)
@@ -680,6 +699,7 @@ internal sealed partial class ExperimentalBladePort(
         {
             if (!disposed)
             {
+                await StopAnimationCoreAsync().ConfigureAwait(false);
                 disposed = true;
                 await session.DisposeAsync().ConfigureAwait(false);
             }

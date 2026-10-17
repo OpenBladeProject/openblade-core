@@ -3,7 +3,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class ExperimentalBladeLightingTests
+public sealed partial class ExperimentalBladeLightingTests
 {
     private static ExperimentalBladeModel Model => ModelFor(0x02A0);
 
@@ -1069,7 +1069,7 @@ public sealed class ExperimentalBladeLightingTests
             or LogoLightingProtocol.QueryStateCommandId
             or LogoLightingProtocol.QueryEffectCommandId;
 
-    private sealed class Session : IRazerCommandSession
+    private sealed partial class Session : IRazerCommandSession
     {
         internal byte Raw { get; set; } = 128;
         internal byte Effect { get; set; } = 3;

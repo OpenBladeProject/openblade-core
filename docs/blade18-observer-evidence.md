@@ -43,7 +43,8 @@ restoration checks, or OpenBlade lifecycle tests in this bundle.
 
 ## Exact Synapse source review
 
-The following official product 672 files were read as data on 2026-10-15.
+The first four official product 672 files below were read as data on 2026-10-15.
+The hardware-event parser named by the pinned main bundle was read on 2026-10-17.
 No vendor JavaScript was executed. Hashes cover the complete downloaded files.
 
 | File | Bytes | SHA-256 |
@@ -52,6 +53,7 @@ No vendor JavaScript was executed. Hashes cover the complete downloaded files.
 | [rzDevice25.85ce8530211c29f3c304.js](https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js) | 272259 | `DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24` |
 | [6737.e50bb836b878190315d7.js](https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js) | 1957301 | `651F63DCC0EFC92B0FD7496EE70751707B5F650F20AF5C01C3255B61817C1997` |
 | [rzDevice25LedMatrixBlade.dced3c2efdc9705a346c.js](https://apps.razer.com/synapse/products/672/mw/rzDevice25LedMatrixBlade.dced3c2efdc9705a346c.js) | 13089 | `56B9309797CB177012726D2EAA1C2BFD43906E9ADED6AC39488487440E72036C` |
+| [rzHardwareEventsProtocol25Parser.b504c011548aa6f83172.js](https://apps.razer.com/synapse/products/672/mw/rzHardwareEventsProtocol25Parser.b504c011548aa6f83172.js) | 9001 | `A0F919C1D7A720CE815191CD0392A0B2DD98AB8268FBC3B3CDC778D60029DBFD` |
 
 Zero-based byte offsets in these pinned files locate the relevant definitions:
 
@@ -226,6 +228,47 @@ An exact-model OpenBlade target readback/restore round trip and fan convergence
 remain physical-validation work, not a prerequisite to source-backed community
 testing of this experimental backend.
 
+### Fn layer
+
+The follow-up bundle records the owner's selected state as `Function layer` and
+reports that Fn+P changes the performance mode. It contains no special-key
+observations or probes: both exported arrays are empty. The zero count therefore
+means that no input probe ran, not that Fn produced no Windows input.
+
+Pinned product-672 main defines the default HyperShift map near UTF-8 byte
+148300. Fn+T toggles the trackpad, Fn+P selects the next performance mode, and
+Fn+R selects the next refresh rate. Fn+F1 through F12 map to mute, volume down,
+volume up, projection settings, previous track, play, next track, display
+brightness down and up, keyboard brightness down and up, and Print Screen.
+Fn+Up, Left, Down, Right, and Delete map to Page Up, Home, Page Down, End, and
+Insert. These are Synapse's exact-model default assignments; they do not prove
+that every action works independently of Synapse.
+
+The same main file selects USB interface 2 near byte 145126 and labels input
+report 4 `razerKeyReportID` and report 5 `hardwareEventReportID` near byte
+153094. The collected descriptor inventory independently shows separate
+16-byte Generic Desktop input collections for reports 4 and 5. The pinned
+Protocol 25 parser converts report-5 hardware events near byte 1385. For its
+Razer-key record type 4, it exposes only the remaining bytes as `razerKeys`
+near byte 1742; it does not assign numeric key meanings.
+
+The report-4 Razer-key decoder remains inside Razer's native mapping engine.
+The inspected `mapping_engine.dll` version 1.3.16.5 has SHA-256
+`6EABDFDEDF797E042738B630D827C06F7A45DBE560EBAEC96C66698F88F3320A`.
+Its embedded names confirm `razerKeyReportID`, `keyIdToKeyInput`, and
+`MappingDataRazerKey`, but expose no report-byte positions or numeric Fn value.
+Product 672 also does not enable the shared function-key-primary, Gaming Mode,
+or persistent function-key feature gates.
+
+OpenBlade therefore records the Fn layer and Fn+P as observed-only evidence.
+Runtime input support remains unavailable until an exact RZ09-0484 probe
+establishes which of the 15 payload bytes after report ID `0x04` carry the Fn
+key ID and make/release state, their numeric values, and the correlated keyboard
+P edge. The Observer redacts unknown report values, retaining only session-local
+equality labels and changed-byte ranges, so this bundle cannot supply those
+bytes. The captured `0x0A` Fn value from other Blade models is not copied to
+`1532:02A0`.
+
 ### Logo and Chroma
 
 The logo sequence retains `03/02 [00,04,00]`, `03/00 [00,04,00]`, then
@@ -239,6 +282,25 @@ its existing source-backed status; this recording does not exercise it.
 Fire/Wheel observations establish six rows of 16 RGB columns using
 `03/0B [FF,row,00,0F,...]` and `03/0A [05,00]`. They corroborate the existing
 uniform Static envelope, without establishing a physical key map or RGB
-readback. Rich spatial effects and experimental host-rendered frames gain no
-new admission. Fn and special-key event counts remain zero. No installed
-components, hardware state, or sleep/resume behavior were changed here.
+readback. The reviewed, sanitized `Blade18FireWheelFrames.json` fixture has SHA-256
+`4AB4D50E9B7868D8F1E611000ABEF286532924A88B7BCDDCA69EB991582090C4`.
+It contains 21 clockwise Wheel states from operations 4435–4560, with the exact
+repeat endpoint at 4561, over 999.6615 ms. Fire contains 32 frames from
+operations 2725–2916, bounded by operation 2917, over 1450.5177 ms. Fire is a
+nonperiodic sample loop, not a discovered natural cycle. Counterclockwise Wheel
+is OpenBlade's reverse playback of the observed clockwise cycle and was not
+recorded separately.
+
+The complete-frame median interval is 46.343 ms; OpenBlade caps playback at
+20 frames per second and skips missed frames. Each frame writes six SET-only
+rows. The capture has no row GETs or RGB readback; custom-mode activation occurs
+on effect entry, not after each frame. The captured transaction IDs cycle
+`00`–`1F`; the serialized session uses `01`–`1F` because its API reserves zero.
+The exact-model 6×16 type never imports another model's holes, key map, or oracle.
+
+This admits experimental Fire and Wheel playback with saved built-in effect and
+raw-brightness restoration, fresh per-frame admission, and stop-on-ambiguity.
+It does not admit other spatial effects, a key-triggered renderer, or a physical
+key-name map. Appearance and restoration still need testing in OpenBlade on
+this laptop. No installed components, hardware state, or sleep/resume behavior
+were changed here.

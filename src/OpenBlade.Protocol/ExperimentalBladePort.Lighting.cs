@@ -53,6 +53,11 @@ internal sealed partial class ExperimentalBladePort
             effects.Add(LightingEffect.AmbientAwareness);
             effects.Add(LightingEffect.AudioMeter);
         }
+        if (SupportsBlade18Animation(model))
+        {
+            effects.Add(LightingEffect.Fire);
+            effects.Add(LightingEffect.Wheel);
+        }
         return effects;
     }
 
@@ -409,7 +414,15 @@ internal sealed partial class ExperimentalBladePort
                 "The requested lighting setting is not admitted for this experimental model.");
         }
 
+        bool animationRequest = SupportsBlade18Animation(model) && IsBlade18Animation(settings.Effect);
+        if (animationRequest && session is not IRazerSetFeatureCommandSession)
+        {
+            throw new CapabilityUnavailableException("This model has no admitted animation stream transport.");
+        }
+        Blade18LightingFrame? firstAnimationFrame = animationRequest
+            ? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        bool stoppedAnimation = animationCancellation is not null;
         bool submitted = false;
         bool frameWriteAttempted = false;
         bool frameActivationAttempted = false;
@@ -422,11 +435,12 @@ internal sealed partial class ExperimentalBladePort
         bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
         bool startingHostFrameFromFault = replacingFaultedFrame
             && settings.Effect is LightingEffect.AmbientAwareness
-                or LightingEffect.AudioMeter;
+                or LightingEffect.AudioMeter or LightingEffect.Fire or LightingEffect.Wheel;
         byte raw = checked((byte)((settings.Brightness * 255 + 50) / 100));
         string requested = $"{settings.Effect};Raw={raw};Logo={settings.LogoMode?.ToString() ?? "Unchanged"}";
         try
         {
+            await StopAnimationCoreAsync().ConfigureAwait(false);
             RequireWriteAdmission();
             LightingSettings baseline;
             byte baselineRaw;
@@ -479,7 +493,23 @@ internal sealed partial class ExperimentalBladePort
             }
 
             bool setOnlyFrame = false;
-            if (settings.Effect is LightingEffect.AmbientAwareness
+            if (animationRequest)
+            {
+                lightingOwnership.Baseline = replacingFaultedFrame
+                    ? new(baseline, originalBaselineRaw)
+                    : lightingOwnership.Baseline ?? new(baseline, originalBaselineRaw);
+                lightingOwnership.Intent = settings with { LogoMode = null };
+                SetLightingOwnership(settings.Effect == LightingEffect.Fire
+                    ? LightingRendererOwnershipState.Fire : LightingRendererOwnershipState.Wheel);
+                hostOwnershipAcquired = true;
+                frameWriteAttempted = true;
+                await SubmitBlade18FrameAsync(firstAnimationFrame!, activate: true,
+                    cancellationToken).ConfigureAwait(false);
+                submitted = true;
+                policy.RecordAnimationFrameApplied(settings.Effect);
+                setOnlyFrame = true;
+            }
+            else if (settings.Effect is LightingEffect.AmbientAwareness
                 or LightingEffect.AudioMeter)
             {
                 if (!SupportsExperimentalUniformFrames(model, enabled: true))
@@ -614,8 +644,12 @@ internal sealed partial class ExperimentalBladePort
 
             if (setOnlyFrame)
             {
+                if (animationRequest)
+                {
+                    StartAnimationCore(lightingOwnership.Intent!);
+                }
                 policy.Record("KeyboardLighting", "Readback", "Unavailable", submitted,
-                    requested, "OwnedStaticIntent", "FrameColorReadbackUnavailable");
+                    requested, "OwnedFrameIntent", "FrameColorReadbackUnavailable");
                 return;
             }
 
@@ -639,7 +673,9 @@ internal sealed partial class ExperimentalBladePort
         {
             bool indeterminate = exception is BladeWriteException
             { SubmissionState: WriteSubmissionState.Indeterminate };
-            if ((replacingOwnedFrame && submitted)
+            // A failed replacement cannot still claim an active renderer after
+            // its loop was drained. Do not restart it after lost admission.
+            if (stoppedAnimation || (replacingOwnedFrame && submitted)
                 || (hostOwnershipAcquired && (submitted || indeterminate))
                 || frameActivationAttempted
                 || frameWriteAttempted
@@ -761,7 +797,9 @@ internal sealed partial class ExperimentalBladePort
     private static bool IsOwnedFrameOwnership(LightingRendererOwnershipState value) =>
         value is LightingRendererOwnershipState.Static
             or LightingRendererOwnershipState.AmbientAwareness
-            or LightingRendererOwnershipState.AudioMeter;
+            or LightingRendererOwnershipState.AudioMeter
+            or LightingRendererOwnershipState.Fire
+            or LightingRendererOwnershipState.Wheel;
 
     private void ClearOwnedFrame()
     {
@@ -926,6 +964,7 @@ internal sealed partial class ExperimentalBladePort
         LightingRendererOwnershipState observed = OwnershipState;
         try
         {
+            await StopAnimationCoreAsync().ConfigureAwait(false);
             if (IsOwnedFrameOwnership(observed))
             {
                 RequireWriteAdmission();
@@ -960,6 +999,7 @@ internal sealed partial class ExperimentalBladePort
         Exception? failure = null;
         try
         {
+            await StopAnimationCoreAsync().ConfigureAwait(false);
             if (restoreFrame && IsOwnedFrameOwnership(observed))
             {
                 RequireWriteAdmission();

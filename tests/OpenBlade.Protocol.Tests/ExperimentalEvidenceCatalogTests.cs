@@ -30,6 +30,15 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.All(feature.Sources, source => Assert.StartsWith(
                         $"https://apps.razer.com/synapse/products/{(blade14 ? 669 : 671)}/mw/", source));
                 }
+                else if (feature.Feature == "FireAndWheel")
+                {
+                    Assert.Equal((ushort)0x02A0, model.ProductId);
+                    Assert.Equal("ObservedFrameTransportWithExperimentalPlaybackWithoutRgbReadback", feature.Basis);
+                    Assert.Equal(3, feature.Sources.Count);
+                    Assert.Contains(ExperimentalBladeModels.Blade18SynapseSource, feature.Sources);
+                    Assert.Contains(ExperimentalBladeModels.Blade18ObserverControlsSource, feature.Sources);
+                    Assert.Contains($"{Blade18LightingAnimation.ResourceName};SHA256={Blade18LightingAnimation.ApprovedSha256}", feature.Sources);
+                }
                 else if (feature.Basis.StartsWith("SynapseSource", StringComparison.Ordinal))
                 {
                     Assert.Equal("RZ09-0484", model.ModelNumber);
@@ -51,6 +60,22 @@ public sealed class ExperimentalEvidenceCatalogTests
         var evidence = Assert.Single(new ExperimentalFeaturesPolicy(model).Snapshot().FeatureEvidence,
             item => item.Feature == "UniformStaticRgb");
         Assert.Equal("SourceBackedExtrapolationWithoutRgbReadback", evidence.Basis);
+    }
+
+    [Fact]
+    public void Blade18FunctionLayer_PinsExactSourcesWithoutClaimingDecodedInput()
+    {
+        var model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+        var evidence = Assert.Single(new ExperimentalFeaturesPolicy(model).Snapshot().FeatureEvidence,
+            item => item.Feature == "FunctionLayerAndFnP");
+
+        Assert.Equal("SynapseSourceAndOwnerReportedWithoutDecodedInput", evidence.Basis);
+        Assert.Equal(
+        [
+            ExperimentalBladeModels.Blade18SynapseSource,
+            ExperimentalBladeModels.Blade18SynapseHardwareEventParserSource,
+            ExperimentalBladeModels.Blade18ObserverControlsSource,
+        ], evidence.Sources);
     }
 
     [Fact]

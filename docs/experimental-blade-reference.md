@@ -195,10 +195,37 @@ Ambient and Audio Meter continue to repaint while their renderer is active.
 
 The uniform frame is one color across the keyboard. It does not admit a key
 layout, per-key or spatial effects, or the `02E0` shared ambient-frame API.
-Blade 18 stays Static-only for this frame path. Blade 16 uses a separate
+Blade 18 also uses its own recorded frame templates for Fire and Wheel, described
+below. Blade 16 uses a separate
 typed uniform-frame path for Ambient Awareness and Audio Meter. The Session
 Agent samples a 1×1 screen color or audio-peak intensity and sends one color
 through the service. Neither path uses a physical key mask or RGB readback.
+
+### Blade 18 Fire and Wheel
+
+Exact RZ09-0484 (`1532:02A0`) uses the reviewed
+`Blade18FireWheelFrames.json` fixture: a 21-state clockwise Wheel cycle and a
+32-frame Fire sample. Wheel counterclockwise reverses the recorded cycle;
+Fire repeats the bounded sample. These are experimental OpenBlade playback,
+not firmware effects or physically validated OpenBlade results. See
+[Blade 18 evidence](blade18-observer-evidence.md#logo-and-chroma) for the source,
+hash, operation ranges, and timing.
+
+The service-owned port writes six SET-only `03/0B` rows and activates custom
+mode once on entry with `03/0A [05,00]`. Later frames have no GET or extra latch.
+Playback is bounded to 20 frames per second, skips missed frames, and uses no
+physical key-name map or another model's layout. Serialized healthy live sessions
+cycle nonzero transaction IDs; the finite admission-run budget stays unchanged.
+Each frame retains fresh exact-device, controller, session, and ownership
+admission. An ambiguous or partial submission pauses further writes without
+replay. RGB remains applied intent, not confirmed firmware readback.
+
+Changing effects or retiring the port drains the active frame and stops the
+loop before changing hardware state. The existing readable built-in effect and
+exact raw-brightness baseline is restored and independently checked when
+ownership is relinquished. A failed replacement reports faulted ownership rather
+than claiming that the stopped animation is still running. Low-power invalidation
+stops playback without adding restoration writes.
 
 ## Recovery
 

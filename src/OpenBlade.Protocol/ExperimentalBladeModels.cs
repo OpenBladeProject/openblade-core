@@ -19,6 +19,7 @@ internal static class ExperimentalBladeModels
     public const string Blade18Source = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
 
     internal const string Blade18SynapseSource = "https://apps.razer.com/synapse/products/672/mw/main.57245df0507455a5119e.js";
+    internal const string Blade18SynapseHardwareEventParserSource = "https://apps.razer.com/synapse/products/672/mw/rzHardwareEventsProtocol25Parser.b504c011548aa6f83172.js";
     internal const string Blade18ObserverSource = "https://github.com/user-attachments/files/33499731/blade-evidence-20261015-1459.zip";
 
     internal const string Blade18ObserverFollowupSource = "https://github.com/user-attachments/files/33530069/blade-evidence-20261016-063420.zip";
@@ -82,6 +83,12 @@ internal static class ExperimentalBladeModels
                 new("ChargeLimits50And80", "SynapseObservedRequestsWithoutIndependentReadback", [Blade18ObserverFollowupSource]),
                 new("KeyboardBrightness25And100", "SynapseObservedRequestsWithoutIndependentReadback", [Blade18ObserverFollowupSource]),
                 new("AdditionalLightingEffects", "SynapseSourceObservedOnly", [Blade18SynapseSource]),
+                new("FireAndWheel", "ObservedFrameTransportWithExperimentalPlaybackWithoutRgbReadback",
+                    [Blade18SynapseSource, Blade18ObserverControlsSource,
+                     "OpenBlade.Protocol.Fixtures.Blade18FireWheelFrames.json;SHA256=4AB4D50E9B7868D8F1E611000ABEF286532924A88B7BCDDCA69EB991582090C4"]),
+                new("FunctionLayerAndFnP", "SynapseSourceAndOwnerReportedWithoutDecodedInput",
+                    [Blade18SynapseSource, Blade18SynapseHardwareEventParserSource,
+                     Blade18ObserverControlsSource]),
                 new("FixedFanTargets", "SynapseSourceAndObservedRequestsWithSourceBackedTargetReadback",
                     [Blade18SynapseSource, Blade18ObserverFollowupSource, Blade18ObserverControlsSource,
                      "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
@@ -147,6 +154,8 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     private readonly Dictionary<string, (string Outcome, string? Confirmed, string? Failure)> lastQueries = new(StringComparer.Ordinal);
     private LinkedListNode<ExperimentalControlObservation>? uniformFrameSuccess;
     private long uniformFrameSuccessCount;
+    private LinkedListNode<ExperimentalControlObservation>? animationFrameSuccess;
+    private long animationFrameSuccessCount;
     private int recoveryRequired;
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
@@ -194,6 +203,22 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
                 true,
                 $"LastRGB={color.Red:X2}{color.Green:X2}{color.Blue:X2}",
                 $"AppliedWithoutColorReadback;Frames={uniformFrameSuccessCount}",
+                "FrameColorReadbackUnavailable"));
+        }
+    }
+
+    internal void RecordAnimationFrameApplied(LightingEffect effect)
+    {
+        lock (sync)
+        {
+            animationFrameSuccessCount++;
+            if (animationFrameSuccess?.List is not null)
+            {
+                observations.Remove(animationFrameSuccess);
+            }
+            animationFrameSuccess = Append(new(DateTimeOffset.UtcNow,
+                "KeyboardAnimationFrame", "Readback", "Unavailable", true,
+                effect.ToString(), $"AppliedWithoutColorReadback;Frames={animationFrameSuccessCount}",
                 "FrameColorReadbackUnavailable"));
         }
     }

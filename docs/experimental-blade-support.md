@@ -42,11 +42,14 @@ Battery Saver and Battery Balanced on battery power.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
   supported. The newer models offer brightness, built-in effects, and logo
   lighting. Static RGB on the Blade 16 (2023) and Blade 18 (2023) is one color
-  across the keyboard; per-key and spatial effects are not available.
+  across the keyboard; individual key colors are not yet supported.
   Firmware idle fade can restore the built-in effect; select Static again to repaint.
   The Blade 16 also offers whole-keyboard Ambient Awareness and Audio Meter.
   The Blade 15 offers random or single-color Breathing. Additional Synapse
-  effects observed for the Blade 18 are recorded in diagnostics but remain unavailable.
+  effects observed for the Blade 18 are recorded in diagnostics. Blade 18 also
+  offers experimental Fire and clockwise or counterclockwise Wheel. Fire repeats a short
+  recorded sample; Wheel plays a recorded cycle. Their appearance still needs
+  testing in OpenBlade on the laptop. Its other recorded effects are not yet supported.
 - Blade 14 (2023) and Blade 16 (2023) offer experimental HyperBoost on full-power
   AC, with or without the Razer Laptop Cooling Pad. They require MCU firmware
   1.1.1.3 or later on the Blade 14, and 1.5.0.0 or later on the Blade 16.

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
@@ -80,6 +81,122 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         Assert.Equal(LightingEffect.Spectrum, state.Lighting!.Effect);
         Assert.Equal(LogoLightingMode.Off, state.LogoLighting);
         Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
+    }
+
+    [Theory]
+    [InlineData(LightingEffect.Fire, LightingRotationDirection.Clockwise,
+        LightingRendererOwnershipState.Fire)]
+    [InlineData(LightingEffect.Wheel, LightingRotationDirection.Clockwise,
+        LightingRendererOwnershipState.Wheel)]
+    [InlineData(LightingEffect.Wheel, LightingRotationDirection.Counterclockwise,
+        LightingRendererOwnershipState.Wheel)]
+    public async Task Blade18AnimatedLighting_UsesExactSetOnlyRowsAndRetainsOwnership(
+        LightingEffect effect,
+        LightingRotationDirection direction,
+        LightingRendererOwnershipState expectedOwnership)
+    {
+        var io = new Io();
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        DeviceCapabilities capabilities =
+            await device.ReadCapabilitiesAsync(CancellationToken.None);
+        Assert.Contains(effect, capabilities.LightingEffects);
+
+        LightingSettings requested = effect == LightingEffect.Fire
+            ? LightingSettingsFactory.Fire(50)
+            : LightingSettingsFactory.Wheel(direction, 50);
+        await device.SetLightingAsync(requested, CancellationToken.None);
+
+        LightingTraffic[] firstFrame = io.LightingTraffic.ToArray()[..7];
+        Assert.Equal(6, firstFrame.Count(item => item is { Class: 0x03, Id: 0x0B }));
+        for (int row = 0; row < 6; row++)
+        {
+            LightingTraffic command = firstFrame[row];
+            Assert.Equal((byte)0x03, command.Class);
+            Assert.Equal((byte)0x0B, command.Id);
+            Assert.Equal(52, command.Payload.Length);
+            Assert.Equal(new byte[] { 0xFF, (byte)row, 0, 15 }, command.Payload[..4]);
+        }
+        Assert.Equal((byte)0x03, firstFrame[6].Class);
+        Assert.Equal((byte)0x0A, firstFrame[6].Id);
+        Assert.Equal(new byte[] { 5, 0 }, firstFrame[6].Payload);
+        Assert.Equal(0, io.LightingFrameGetRequests);
+        ConfirmedDeviceState state =
+            await device.ReadLightingStateAsync(CancellationToken.None);
+        Assert.Null(state.Lighting);
+        Assert.Equal(
+            expectedOwnership,
+            await device.ReadLightingRendererOwnershipAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Blade18Fire_SwitchToBuiltinWaitsForInFlightFrameAndStopsOwnership()
+    {
+        var io = new Io { BlockLightingRowAfter = 7 };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Fire(50),
+            CancellationToken.None);
+        await io.LightingRowBlocked.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Task change = device.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50),
+            CancellationToken.None);
+        try
+        {
+            Assert.False(change.IsCompleted);
+        }
+        finally
+        {
+            io.ReleaseLightingRow.TrySetResult();
+        }
+        await change.WaitAsync(TimeSpan.FromSeconds(2));
+
+        LightingTraffic[] traffic = io.LightingTraffic.ToArray();
+        Assert.Equal((byte)0x0F, traffic[^1].Class);
+        Assert.Equal((byte)0x02, traffic[^1].Id);
+        Assert.Equal(new byte[] { 1, 5, 3 }, traffic[^1].Payload);
+        Assert.Equal((byte)3, io.Effect);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            await device.ReadLightingRendererOwnershipAsync(CancellationToken.None));
+        Assert.Equal(0, io.LightingFrameGetRequests);
+    }
+
+    [Fact]
+    public async Task Blade18Wheel_RetirementWaitsForInFlightFrameAndRestoresBaseline()
+    {
+        var io = new Io { BlockLightingRowAfter = 7 };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Counterclockwise,
+                50),
+            CancellationToken.None);
+        await io.LightingRowBlocked.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Task<LightingRendererInvalidationResult> retirement =
+            provider.InvalidateLightingRendererAsync(CancellationToken.None);
+        try
+        {
+            Assert.False(retirement.IsCompleted);
+        }
+        finally
+        {
+            io.ReleaseLightingRow.TrySetResult();
+        }
+        LightingRendererInvalidationResult result =
+            await retirement.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(LightingRendererOwnershipState.Wheel, result.Ownership);
+        LightingTraffic[] traffic = io.LightingTraffic.ToArray();
+        Assert.Equal((byte)0x0F, traffic[^1].Class);
+        Assert.Equal((byte)0x02, traffic[^1].Id);
+        Assert.Equal(new byte[] { 1, 5, 3 }, traffic[^1].Payload);
+        Assert.Equal((byte)3, io.Effect);
+        Assert.Equal(0, io.LightingFrameGetRequests);
     }
 
     [Fact]
@@ -434,8 +551,16 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         internal bool FailNextLightingSetterResponse { get; set; }
         internal Action? AfterLogoRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
+        internal ConcurrentQueue<LightingTraffic> LightingTraffic { get; } = new();
+        internal int LightingFrameGetRequests { get; private set; }
+        internal int BlockLightingRowAfter { get; init; } = int.MaxValue;
+        internal TaskCompletionSource LightingRowBlocked { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseLightingRow { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<byte> Setters { get; } = [];
         internal List<byte> CustomReadProfiles { get; } = [];
+        private int lightingRows;
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint code,
             byte[] buffer, CancellationToken caller, CancellationToken deadline)
         {
@@ -465,6 +590,25 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                         else { SecondTarget = request[11]; }
                     }
                 }
+                if (IsAnimatedLightingSetCommand(request))
+                {
+                    byte[] payload = request.AsSpan(9, request[6]).ToArray();
+                    LightingTraffic.Enqueue(new(request[7], request[8], payload));
+                    if (request[8] == 0x0B
+                        && Interlocked.Increment(ref lightingRows) == BlockLightingRowAfter)
+                    {
+                        LightingRowBlocked.TrySetResult();
+                        return CompleteLightingRowAfterReleaseAsync(buffer);
+                    }
+                }
+                if (request[7] == 0x0F && request[8] == 0x02)
+                {
+                    Effect = request[11];
+                    LightingTraffic.Enqueue(new(
+                        request[7],
+                        request[8],
+                        request.AsSpan(9, request[6]).ToArray()));
+                }
                 Events?.Add($"query:{handle.FileHandle.DangerousGetHandle().ToInt64()}:{request[7]:X2}/{request[8]:X2}");
                 if (request[7] == 0x07 && request[8] == 0x12)
                 {
@@ -474,6 +618,14 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             }
             else
             {
+                if (buffer[7] == 0x03 && buffer[8] == 0x8B)
+                {
+                    LightingFrameGetRequests++;
+                    return Task.FromResult(new HidFeatureIoResult(
+                        new(false, 0, 31),
+                        false,
+                        HidFeatureTermination.Completed));
+                }
                 request.CopyTo(buffer, 0);
                 buffer[1] = 2;
                 if (buffer[7] == 0x07 && buffer[8] == 0x92)
@@ -530,5 +682,23 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             return Task.FromResult(new HidFeatureIoResult(new(true, buffer.Length, 0), true,
                 HidFeatureTermination.Completed));
         }
+
+        private async Task<HidFeatureIoResult> CompleteLightingRowAfterReleaseAsync(
+            byte[] buffer)
+        {
+            await ReleaseLightingRow.Task.ConfigureAwait(false);
+            return new HidFeatureIoResult(new(true, buffer.Length, 0), true,
+                HidFeatureTermination.Completed);
+        }
+
+        private static bool IsAnimatedLightingSetCommand(byte[] report) =>
+            report[7] == 0x03
+            && (report[8] == 0x0B
+                || report[8] == 0x0A
+                    && report[6] == 2
+                    && report[9] == 5
+                    && report[10] == 0);
     }
+
+    private sealed record LightingTraffic(byte Class, byte Id, byte[] Payload);
 }
