@@ -2205,7 +2205,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>获取 Razer 键盘驱动程序</value>
   </data>
   <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
-    <value>SnapTap 需要 Razer 键盘驱动程序。</value>
+    <value>安装 Razer 键盘驱动程序后，关闭再开启 SnapTap。</value>
   </data>
   <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
     <value>受支持的 Razer 键盘驱动不可用。</value>

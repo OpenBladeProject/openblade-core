@@ -2222,7 +2222,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Получить драйвер клавиатуры Razer</value>
   </data>
   <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
-    <value>Для SnapTap нужен драйвер клавиатуры Razer.</value>
+    <value>Установите драйвер клавиатуры Razer, затем выключите и включите SnapTap.</value>
   </data>
   <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
     <value>Поддерживаемый драйвер клавиатуры Razer недоступен.</value>

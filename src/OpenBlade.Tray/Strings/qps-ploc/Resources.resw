@@ -2228,6 +2228,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Gét thé Razer kéýbóárd drívér ~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
-    <value>[!! SnápTáp nééds thé Razer kéýbóárd drívér. ~~~~~~~~~~~ !!]</value>
+    <value>[!! Sét úp thé Razer kéýbóárd drívér, thén túrn SnápTáp óff ánd ón. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

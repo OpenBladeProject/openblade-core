@@ -61,7 +61,7 @@ public sealed partial class MainWindow
         SnapTapStatusText.Text = status?.State switch
         {
             SnapTapRuntimeState.DriverMissing => LocalizedResources.Get(
-                "SnapTap_Status_DriverMissing", "SnapTap needs the Razer keyboard driver."),
+                "SnapTap_Status_DriverMissing", "Set up the Razer keyboard driver, then turn SnapTap off and on."),
             SnapTapRuntimeState.RecoveryRequired => LocalizedResources.Get(
                 "SnapTap_Status_RecoveryRequired", "Restart Windows before enabling SnapTap again."),
             SnapTapRuntimeState.Unavailable => LocalizedResources.Get(

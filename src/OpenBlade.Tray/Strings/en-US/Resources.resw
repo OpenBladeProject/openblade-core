@@ -2228,6 +2228,6 @@ OpenBlade did not retry any stop request.</value>
     <value>Get the Razer keyboard driver</value>
   </data>
   <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
-    <value>SnapTap needs the Razer keyboard driver.</value>
+    <value>Set up the Razer keyboard driver, then turn SnapTap off and on.</value>
   </data>
 </root>
