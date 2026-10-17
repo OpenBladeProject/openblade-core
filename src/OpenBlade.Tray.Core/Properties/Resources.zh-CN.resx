@@ -1584,4 +1584,8 @@
   <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
     <value>应用规则列表已满。请先移除一条规则，再添加新规则。</value>
   </data>
+  <data name="{0}&#xA;Details: {1}" xml:space="preserve">
+    <value>{0}
+详细信息：{1}</value>
+  </data>
 </root>

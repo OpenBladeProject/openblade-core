@@ -95,6 +95,19 @@ be confirmed, use **Read settings** before trying another change. OpenBlade does
 components are unavailable, the audio controls remain disabled. Uninstalling
 Synapse may remove required components; their retention has not been tested.
 
+## Report a detection problem
+
+If THX cannot connect, the THX Audio page shows the detection failure below
+the status message. Component failures name the missing or incompatible native
+DLL, driver package, configuration file, or service.
+
+Choose **About > Export diagnostics** and share the saved ZIP when reporting
+the problem. Its `thx-audio.json` entry records a fresh detection result and
+failure detail, even when the integration is off or the THX page has not been
+opened. If the Session Agent cannot be reached, the entry records that query
+failure instead. Exporting checks installed components without loading the THX
+native client or changing audio settings.
+
 ## Component and process boundaries
 
 Admission pairs each exact model with its own product ID, signed-INF audio

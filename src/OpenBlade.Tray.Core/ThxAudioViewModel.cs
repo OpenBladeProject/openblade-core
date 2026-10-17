@@ -35,6 +35,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     private ThxAudioEndpoint endpoint;
     private ThxAudioAvailability availability = ThxAudioAvailability.Disabled;
     private string statusKey = "THX audio integration is off.";
+    private string? failureDetail;
     private bool enabled;
     private bool busy;
     private bool isReadSettingsVisible;
@@ -74,7 +75,9 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     public IReadOnlyList<ThxAudioPreset> Presets => state?.Presets.Select(preset =>
         preset with { Name = TrayText.Get(preset.Name) }).ToArray() ?? [];
     public ThxAudioPreset? SelectedPreset => Presets.FirstOrDefault(preset => preset.Id == state?.SelectedPresetId);
-    public string StatusMessage => TrayText.Get(statusKey);
+    public string StatusMessage => string.IsNullOrWhiteSpace(failureDetail)
+        ? TrayText.Get(statusKey)
+        : TrayText.Format("{0}\nDetails: {1}", TrayText.Get(statusKey), failureDetail);
     public IReadOnlyList<ThxEqualizerBandViewModel> EqualizerBands => equalizerBands;
     public bool HasEqualizerBands => equalizerBands.Count > 0;
     public bool CanEditEqualizerBands => CanEdit && HasEqualizerBands && HasEditableEqualizerPreset;
@@ -146,6 +149,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         automaticConnectionAttempted = false;
         ResetAdvancedDrafts();
         availability = value ? ThxAudioAvailability.ComponentsUnavailable : ThxAudioAvailability.Disabled;
+        failureDetail = null;
         statusKey = value ? "Read the current THX settings to connect." : "THX audio integration is off.";
         NotifyAll();
     }
@@ -181,6 +185,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         isReadSettingsVisible = false;
         automaticConnectionAttempted = false;
         ResetAdvancedDrafts();
+        failureDetail = null;
         statusKey = "Read the current THX settings to connect.";
         NotifyAll();
     }
@@ -405,6 +410,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         ThxAudioEnhancementKind? discardEnhancementDraft,
         long operationProfileRevision)
     {
+        failureDetail = null;
         try
         {
             // These awaits deliberately capture the UI context: confirmed
@@ -454,6 +460,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             {
                 state = null;
                 isReadSettingsVisible = true;
+                failureDetail = response.Error;
                 statusKey = response.Status == ThxAudioOperationStatus.Indeterminate
                     ? "The audio change could not be confirmed. Read the current settings before trying again."
                     : response.Availability == ThxAudioAvailability.ControllerActive

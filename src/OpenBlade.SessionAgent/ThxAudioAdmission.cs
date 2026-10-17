@@ -27,6 +27,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
 {
     internal const string NativeDllSha256 =
         "8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A";
+    internal const string NativeDllName = "ThxV4Native_v1.1.1.0.dll";
     private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
     private const string SystemInformationKey =
         @"SYSTEM\CurrentControlSet\Control\SystemInformation";
@@ -89,10 +90,23 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         "Apps",
         "Common",
         "thxv4common",
-        "ThxV4Native_v1.1.1.0.dll");
+        NativeDllName);
 
     internal static bool HasPinnedNativeDll() =>
         ThxAudioCompatibility.HasHash(GetNativeDllPath(), NativeDllSha256);
+
+    internal static bool HasPinnedNativeDll(string path, out string? error)
+    {
+        ThxAudioPinnedFileStatus status = ThxAudioCompatibility.GetPinnedFileStatus(path, NativeDllSha256);
+        error = status switch
+        {
+            ThxAudioPinnedFileStatus.Missing => $"The pinned THX native component {NativeDllName} is missing.",
+            ThxAudioPinnedFileStatus.IncompatibleOrUnreadable =>
+                $"The pinned THX native component {NativeDllName} is incompatible or unreadable.",
+            _ => null,
+        };
+        return status == ThxAudioPinnedFileStatus.Verified;
+    }
 
     private static ThxAudioCompatibilityProfile? GetExactHostProfile()
     {
@@ -110,32 +124,48 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
 
     private static bool HasPinnedComponents(ThxAudioCompatibilityProfile profile, out string? error)
     {
-        if (!HasPinnedNativeDll())
+        if (!HasPinnedNativeDll(GetNativeDllPath(), out error))
         {
-            error = "The pinned THX native component is unavailable or has changed.";
             return false;
         }
         string driverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "DriverStore", "FileRepository");
-        if (!ThxAudioCompatibility.TryResolveDriverStack(driverStore, profile.Stack, out string? serviceBinary))
+        if (!ThxAudioCompatibility.TryResolveDriverStack(
+            driverStore, profile.Stack, out string? serviceBinary, out error))
         {
-            error = "The pinned THX service and audio driver stack is unavailable, ambiguous, or has changed.";
             return false;
         }
         if (!ThxAudioCompatibility.HasPinnedActiveConfiguration(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), profile))
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), profile, out error))
         {
-            error = "The pinned active THX configuration is unavailable or has changed.";
             return false;
         }
-        if (!WindowsThxAdmissionQueries.HasRunningPinnedService(profile.Stack.ServiceName, serviceBinary!))
+        bool serviceAvailable;
+        try
         {
-            error = "The pinned THX Spatial Audio service is not installed and running.";
+            serviceAvailable = WindowsThxAdmissionQueries.HasRunningPinnedService(
+                profile.Stack.ServiceName, serviceBinary!);
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception
+            or IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            error = GetServiceVerificationFailure(profile.Stack);
+            return false;
+        }
+        if (!serviceAvailable)
+        {
+            error = GetServiceFailure(profile.Stack);
             return false;
         }
         error = null;
         return true;
     }
+
+    internal static string GetServiceFailure(ThxAudioDriverStack stack) =>
+        $"THX service {stack.ServiceName} is missing, stopped, or does not match {stack.ServiceExecutable}.";
+
+    internal static string GetServiceVerificationFailure(ThxAudioDriverStack stack) =>
+        $"THX service {stack.ServiceName} could not be verified against {stack.ServiceExecutable}.";
 
     private static bool IsCompetingControllerRunning() =>
         HasProcess("RazerAppEngine")

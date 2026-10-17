@@ -22,6 +22,13 @@ internal sealed record ThxAudioCompatibilityProfile(
     public string SurroundConfigSha256 { get; init; } = string.Empty;
 }
 
+internal enum ThxAudioPinnedFileStatus
+{
+    Verified,
+    Missing,
+    IncompatibleOrUnreadable,
+}
+
 internal static class ThxAudioCompatibility
 {
     private const int MaximumPackageCandidates = 64;
@@ -140,89 +147,196 @@ internal static class ThxAudioCompatibility
             string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)));
 
     internal static bool HasPinnedActiveConfiguration(string commonApplicationData,
-        ThxAudioCompatibilityProfile profile)
+        ThxAudioCompatibilityProfile profile) =>
+        HasPinnedActiveConfiguration(commonApplicationData, profile, out _);
+
+    internal static bool HasPinnedActiveConfiguration(string commonApplicationData,
+        ThxAudioCompatibilityProfile profile, out string? error)
     {
         if (profile.ProductId is not ("rznb11" or "rznb12")
             || profile.ActivePropertiesSha256.Length != 64 || profile.SurroundConfigSha256.Length != 64
             || !profile.ActivePropertiesSha256.All(char.IsAsciiHexDigit)
             || !profile.SurroundConfigSha256.All(char.IsAsciiHexDigit))
         {
+            error = "The pinned THX active configuration contract is invalid.";
             return false;
         }
         string productDirectory = Path.Combine(commonApplicationData, "thx", profile.ProductId);
         // These two immutable definitions are deployed by the reviewed vendor
         // updaters. Mutable properties.json and preset_selection are excluded.
-        return HasHash(Path.Combine(productDirectory, $"thx_{profile.ProductId}_props.dat"), profile.ActivePropertiesSha256)
-            && HasHash(Path.Combine(productDirectory, "surround_714_config.json"), profile.SurroundConfigSha256);
+        string propertiesName = $"thx_{profile.ProductId}_props.dat";
+        if (!HasPinnedFile(Path.Combine(productDirectory, propertiesName), profile.ActivePropertiesSha256,
+            "active configuration", propertiesName, out error))
+        {
+            return false;
+        }
+        const string surroundName = "surround_714_config.json";
+        return HasPinnedFile(Path.Combine(productDirectory, surroundName), profile.SurroundConfigSha256,
+            "active configuration", surroundName, out error);
     }
 
     internal static bool TryResolveDriverStack(string driverStore, ThxAudioDriverStack stack,
-        out string? serviceBinary)
+        out string? serviceBinary) =>
+        TryResolveDriverStack(driverStore, stack, out serviceBinary, out _);
+
+    internal static bool TryResolveDriverStack(string driverStore, ThxAudioDriverStack stack,
+        out string? serviceBinary, out string? error)
     {
         serviceBinary = null;
+        error = null;
+        string? packageName = null;
         try
         {
             string root = Path.GetFullPath(driverStore);
             foreach (ThxAudioDriverPackage package in stack.Packages)
             {
+                packageName = package.InfName;
                 string? matchedDirectory = null;
                 int candidates = 0;
+                var affectedFiles = new HashSet<string>(StringComparer.Ordinal);
+                var singleMissingFiles = new List<string>();
+                var singleIncompatibleFiles = new List<string>();
+                bool sawReadableDirectory = false;
                 foreach (string directory in Directory.EnumerateDirectories(root,
                     package.InfName + "_amd64_*", SearchOption.TopDirectoryOnly))
                 {
                     if (++candidates > MaximumPackageCandidates)
                     {
+                        serviceBinary = null;
+                        error = $"THX driver package {package.InfName} has too many installed copies.";
                         return false;
                     }
                     // DriverStore suffixes are installation details. Every file
                     // must still match the reviewed package in this one folder.
-                    if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0
-                        || !package.Files.All(file => HasHash(Path.Combine(directory, file.Name), file.Sha256)))
+                    if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
                     {
+                        continue;
+                    }
+                    sawReadableDirectory = true;
+                    var missingFiles = new List<string>();
+                    var incompatibleFiles = new List<string>();
+                    foreach (ThxAudioPinnedFile file in package.Files)
+                    {
+                        switch (GetPinnedFileStatus(Path.Combine(directory, file.Name), file.Sha256))
+                        {
+                            case ThxAudioPinnedFileStatus.Missing:
+                                missingFiles.Add(file.Name);
+                                affectedFiles.Add(file.Name);
+                                break;
+                            case ThxAudioPinnedFileStatus.IncompatibleOrUnreadable:
+                                incompatibleFiles.Add(file.Name);
+                                affectedFiles.Add(file.Name);
+                                break;
+                        }
+                    }
+                    if (missingFiles.Count != 0 || incompatibleFiles.Count != 0)
+                    {
+                        singleMissingFiles = missingFiles;
+                        singleIncompatibleFiles = incompatibleFiles;
                         continue;
                     }
                     if (matchedDirectory is not null)
                     {
+                        serviceBinary = null;
+                        error = $"THX driver package {package.InfName} has multiple complete matching copies.";
                         return false;
                     }
                     matchedDirectory = directory;
                 }
                 if (matchedDirectory is null)
                 {
+                    serviceBinary = null;
+                    if (candidates == 0)
+                    {
+                        error = $"THX driver package {package.InfName} is missing.";
+                    }
+                    else if (!sawReadableDirectory)
+                    {
+                        error = $"THX driver package {package.InfName} is incompatible or unreadable.";
+                    }
+                    else if (candidates == 1 && singleMissingFiles.Count != 0 && singleIncompatibleFiles.Count == 0)
+                    {
+                        error = $"THX driver package {package.InfName} has missing files: {JoinNames(singleMissingFiles)}.";
+                    }
+                    else if (candidates == 1 && singleMissingFiles.Count == 0)
+                    {
+                        error = $"THX driver package {package.InfName} has incompatible or unreadable files: {JoinNames(singleIncompatibleFiles)}.";
+                    }
+                    else
+                    {
+                        error = $"THX driver package {package.InfName} has no complete matching copy; affected files: "
+                            + $"{JoinNames(package.Files.Select(file => file.Name).Where(affectedFiles.Contains))}.";
+                    }
                     return false;
                 }
                 if (package.Files.Any(file => string.Equals(file.Name, stack.ServiceExecutable, StringComparison.Ordinal)))
                 {
                     if (serviceBinary is not null)
                     {
+                        serviceBinary = null;
+                        error = $"THX service executable {stack.ServiceExecutable} appears in multiple driver packages.";
                         return false;
                     }
                     serviceBinary = Path.Combine(matchedDirectory, stack.ServiceExecutable);
                 }
             }
-            return serviceBinary is not null;
+            if (serviceBinary is null)
+            {
+                error = $"THX driver stack does not contain service executable {stack.ServiceExecutable}.";
+                return false;
+            }
+            return true;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
             serviceBinary = null;
+            error = packageName is null
+                ? "The THX driver store is unreadable."
+                : $"THX driver package {packageName} is unreadable.";
             return false;
         }
     }
 
-    internal static bool HasHash(string path, string expected)
+    internal static bool HasHash(string path, string expected) =>
+        GetPinnedFileStatus(path, expected) == ThxAudioPinnedFileStatus.Verified;
+
+    internal static ThxAudioPinnedFileStatus GetPinnedFileStatus(string path, string expected)
     {
         try
         {
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
             {
-                return false;
+                return ThxAudioPinnedFileStatus.IncompatibleOrUnreadable;
             }
             using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return CryptographicOperations.FixedTimeEquals(Convert.FromHexString(expected), SHA256.HashData(stream));
+            return CryptographicOperations.FixedTimeEquals(Convert.FromHexString(expected), SHA256.HashData(stream))
+                ? ThxAudioPinnedFileStatus.Verified
+                : ThxAudioPinnedFileStatus.IncompatibleOrUnreadable;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException)
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
-            return false;
+            return ThxAudioPinnedFileStatus.Missing;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or CryptographicException or ArgumentException)
+        {
+            return ThxAudioPinnedFileStatus.IncompatibleOrUnreadable;
         }
     }
+
+    private static bool HasPinnedFile(string path, string expected, string component,
+        string safeName, out string? error)
+    {
+        ThxAudioPinnedFileStatus status = GetPinnedFileStatus(path, expected);
+        error = status switch
+        {
+            ThxAudioPinnedFileStatus.Missing => $"The pinned THX {component} file {safeName} is missing.",
+            ThxAudioPinnedFileStatus.IncompatibleOrUnreadable =>
+                $"The pinned THX {component} file {safeName} is incompatible or unreadable.",
+            _ => null,
+        };
+        return status == ThxAudioPinnedFileStatus.Verified;
+    }
+
+    private static string JoinNames(IEnumerable<string> names) => string.Join(", ", names);
 }

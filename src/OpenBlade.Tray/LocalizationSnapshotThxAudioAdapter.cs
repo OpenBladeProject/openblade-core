@@ -4,7 +4,7 @@ using OpenBlade.Session;
 namespace OpenBlade.Tray;
 
 /// <summary>Disconnected UI data; never contacts a pipe or native component.</summary>
-internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = false, bool systemEffectsDisabled = false) : IThxAudioAdapter
+internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = false, bool systemEffectsDisabled = false, string? detectionError = null) : IThxAudioAdapter
 {
     public Task<SessionAudioResponse> DiscoverAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Response(null));
@@ -13,7 +13,10 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
         ReadAsync(endpoint, cancellationToken);
 
     public Task<SessionAudioResponse> ReadAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken) =>
-        Task.FromResult(Response(new ThxAudioState(endpoint, true, true, "music",
+        detectionError is not null
+        ? Task.FromResult(new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, detectionError, null))
+        : Task.FromResult(Response(new ThxAudioState(endpoint, true, true, "music",
             [new("game", "Game"), new("movie", "Movie"), new("music", "Music"), new("voice", "Voice"), new("custom", "Custom")])
         {
             SystemEffectsDisabled = systemEffectsDisabled ? true : null,

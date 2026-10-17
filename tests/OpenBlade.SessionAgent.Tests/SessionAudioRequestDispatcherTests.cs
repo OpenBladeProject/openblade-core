@@ -5,6 +5,45 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class SessionAudioRequestDispatcherTests
 {
     [Fact]
+    public async Task FailedDiagnosticDiscoveryPreservesConfirmedStateAndUncertainWritePause()
+    {
+        var admission = new FixedAdmission(new ThxAudioAdmission(
+            ThxAudioAvailability.ComponentsUnavailable, "Native component is missing."));
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(admission, worker);
+        await ReadAsync(dispatcher);
+        int requests = worker.Requests.Count;
+
+        SessionAudioResponse discovery = await dispatcher.DispatchAsync(
+            new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid()),
+            CancellationToken.None);
+
+        Assert.Equal("Native component is missing.", discovery.Error);
+        Assert.Equal(requests, worker.Requests.Count);
+        worker.Next = new ThxAudioWorkerResult(ThxAudioOperationStatus.Succeeded,
+            ThxAudioAvailability.Available, null, State(spatial: true));
+        SessionAudioResponse changed = await dispatcher.DispatchAsync(new SetThxSpatialRequest(
+            SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers, true),
+            CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, changed.Status);
+        Assert.Equal(requests + 1, worker.Requests.Count);
+
+        worker.Exception = new IOException("Helper disconnected");
+        await dispatcher.DispatchAsync(new SetThxSpatialRequest(
+            SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers, true),
+            CancellationToken.None);
+        worker.Exception = null;
+        requests = worker.Requests.Count;
+        await dispatcher.DispatchAsync(
+            new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid()),
+            CancellationToken.None);
+        SessionAudioResponse connect = await dispatcher.DispatchAsync(new ConnectThxAudioRequest(
+            SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers),
+            CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, connect.Status);
+        Assert.Equal(requests, worker.Requests.Count);
+    }
+    [Fact]
     public async Task ObservedOnlyApplicationCatalogCannotAuthorizeAProfileMutation()
     {
         var worker = new RecordingWorker(State() with { ApplicationProfiles = ThxAudioFeatureAccess.ObservedOnly });
