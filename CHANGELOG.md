@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Show the specific THX detection failure and include a fresh THX detection report in exported diagnostics. ([#805](https://github.com/OSSBlade/openblade-core/pull/805))
+
 ## [0.33.1-nightly.92] - 2026-10-17
 
 ### Changed
