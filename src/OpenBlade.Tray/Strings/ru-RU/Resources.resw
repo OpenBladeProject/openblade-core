@@ -2203,4 +2203,7 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
     <value>Улучшения</value>
   </data>
+  <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
+    <value>Клавиатура</value>
+  </data>
 </root>

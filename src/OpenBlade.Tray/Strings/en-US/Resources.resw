@@ -2203,4 +2203,7 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
     <value>Enhancements</value>
   </data>
+  <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
+    <value>Keyboard</value>
+  </data>
 </root>

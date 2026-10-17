@@ -2203,4 +2203,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
     <value>[!! Énháncéménts ~~~~~ !!]</value>
   </data>
+  <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
+    <value>[!! Kéýbóárd ~~~ !!]</value>
+  </data>
 </root>

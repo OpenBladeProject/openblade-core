@@ -2186,4 +2186,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
     <value>音效增强</value>
   </data>
+  <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
+    <value>键盘</value>
+  </data>
 </root>

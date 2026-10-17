@@ -30,7 +30,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(
             "{x:Bind HasKeyboardLaptopControls, Mode=OneWay}",
             Attribute(keyboardHeader, "Visibility"));
-        Assert.Equal("MainWindow_TextBlockKeyboard", Attribute(fallbackHeader, "Uid"));
+        Assert.Equal("SnapTap_KeyboardHeader", Attribute(fallbackHeader, "Uid"));
         Assert.Equal(
             "{x:Bind SnapTapKeyboardFallbackVisibility(ViewModel.HasKeyboardLaptopControls), Mode=OneWay}",
             Attribute(fallbackHeader, "Visibility"));

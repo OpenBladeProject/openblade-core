@@ -3016,7 +3016,7 @@
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
                         <StackPanel x:Name="KeyboardSection" Spacing="10">
                             <TextBlock x:Name="SnapTapKeyboardFallbackHeader"
-                                       x:Uid="MainWindow_TextBlockKeyboard"
+                                       x:Uid="SnapTap_KeyboardHeader"
                                        Text="Keyboard"
                                        Style="{StaticResource SectionHeaderStyle}"
                                        Visibility="{x:Bind SnapTapKeyboardFallbackVisibility(ViewModel.HasKeyboardLaptopControls), Mode=OneWay}" />
