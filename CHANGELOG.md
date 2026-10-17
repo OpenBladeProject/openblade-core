@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Remove the experimental label from user-validated SnapTap and add an information popup explaining its input method and game compatibility limits. ([#806](https://github.com/OpenBladeProject/openblade-core/pull/806))
+
 ## [0.33.1-nightly.92] - 2026-10-17
 
 ### Changed
