@@ -2018,7 +2018,7 @@ public sealed class CapabilityPresentationTests
         XElement laptop = NamedElement(document, "ScrollViewer", "LaptopPage");
         XElement keyboardTemplate = NamedTemplate(
             document,
-            "DashboardKeyboardBehaviorCardTemplate");
+            "KeyboardBehaviorRowsTemplate");
         XElement startupTemplate = NamedTemplate(
             document,
             "DashboardStartupAnimationCardTemplate");

@@ -617,7 +617,9 @@ public partial class App
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
             bool captureSnapTapFailure = string.Equals(
                 requestedPage, "laptop-snap-tap-failed", StringComparison.Ordinal);
-            bool captureSnapTap = captureSnapTapFailure
+            bool captureSnapTapEnabled = string.Equals(
+                requestedPage, "laptop-snap-tap-on", StringComparison.Ordinal);
+            bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled
                 || string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
@@ -694,7 +696,7 @@ public partial class App
                 }
                 if (captureSnapTap)
                 {
-                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure);
+                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled);
                     await WaitForSnapshotLayoutAsync();
                 }
                 await SaveSnapshotAsync(
@@ -1234,16 +1236,17 @@ public partial class App
             return;
         }
         if (state is not ("read-failure" or "battery" or "unsupported"
-            or "direct-manual" or "battery-drift"))
+            or "direct-manual" or "battery-drift" or "keyboard"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
         }
 
         // Snapshot windows never start the service client. These states exercise
         // the real UI with synthetic observations and perform no device access.
+        bool keyboard = state == "keyboard";
         bool directManual = state == "direct-manual";
         bool driftedBattery = state == "battery-drift";
-        bool fullPower = directManual || driftedBattery;
+        bool fullPower = directManual || driftedBattery || keyboard;
         bool unsupported = state == "unsupported";
         bool blocked = state == "read-failure" || unsupported;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -1253,6 +1256,13 @@ public partial class App
                 ? DeviceCapabilities.Unavailable()
                 : DeviceCapabilities.SafeTargetDefaults() with
                 {
+                    OneShotLaptopControls = keyboard
+                        ? new HashSet<OneShotLaptopControl>
+                        {
+                            OneShotLaptopControl.FunctionKeyPrimary,
+                            OneShotLaptopControl.GamingMode,
+                        }
+                        : new HashSet<OneShotLaptopControl>(),
                     SupportsDirectManualFanTransitions = directManual,
                     ChargeLimits = driftedBattery
                         ? new HashSet<int> { 70, 80 }
@@ -1276,6 +1286,9 @@ public partial class App
             null, null, null, null, false)
         {
             UnsupportedLaptop = unsupported,
+            FunctionKeyPrimary = keyboard ? FunctionKeyPrimaryMode.FunctionKeys : null,
+            GamingModeEnabled = keyboard ? false : null,
+            KeyboardDriverModeActive = keyboard ? true : null,
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
             "ApplyStatus",

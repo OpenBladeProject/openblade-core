@@ -2071,9 +2071,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
     <value>[!! Réléásé Á ánd D tó áctíváté. ~~~~~~~~ !!]</value>
   </data>
-  <data name="SnapTap_Status_Active" xml:space="preserve">
-    <value>[!! Áctívé — thé lást présséd kéý tákés príórítý. ~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="SnapTap_Status_Paused" xml:space="preserve">
     <value>[!! Páúséd — ínpút hándlíng ís únáváíláblé. ~~~~~~~~~~~~ !!]</value>
   </data>
@@ -2082,9 +2079,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_Unavailable" xml:space="preserve">
     <value>[!! Wáítíng fór thé ínpút hélpér… ~~~~~~~~~ !!]</value>
-  </data>
-  <data name="SnapTap_Status_Armed" xml:space="preserve">
-    <value>[!! Réádý — préss Á ór D tó vérífý ínpút. ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
     <value>[!! Éxpéríméntál. Réqúírés thé súppórtéd THX cómpónénts álréádý ínstálléd. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>

@@ -2054,9 +2054,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
     <value>松开 A 和 D 以激活。</value>
   </data>
-  <data name="SnapTap_Status_Active" xml:space="preserve">
-    <value>已启用 — 后按下的键优先。</value>
-  </data>
   <data name="SnapTap_Status_Paused" xml:space="preserve">
     <value>已暂停 — 输入处理不可用。</value>
   </data>
@@ -2065,9 +2062,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="SnapTap_Status_Unavailable" xml:space="preserve">
     <value>正在等待输入辅助进程…</value>
-  </data>
-  <data name="SnapTap_Status_Armed" xml:space="preserve">
-    <value>已就绪 — 按 A 或 D 以验证输入。</value>
   </data>
   <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
     <value>实验性功能。需要已安装受支持的 THX 组件。</value>

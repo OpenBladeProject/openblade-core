@@ -12,39 +12,33 @@ public sealed class WinUiShellContractTests
             ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement card = NamedElement(document, "Border", "SnapTapCard");
         XElement keyboardSection = NamedElement(document, "StackPanel", "KeyboardSection");
-        XElement keyboardHeader = document.Descendants().Single(element =>
-            element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Uid") == "MainWindow_TextBlockKeyboard"
-            && element.Ancestors().Any(parent => parent.Name.LocalName == "DataTemplate"));
-        XElement fallbackHeader = NamedElement(
-            document,
-            "TextBlock",
-            "SnapTapKeyboardFallbackHeader");
-        XElement keyboardBehavior = NamedElement(
-            document,
-            "ContentControl",
-            "KeyboardBehaviorCard");
+        XElement keyboardHeader = NamedElement(document, "TextBlock", "KeyboardHeader");
+        XElement keyboardBehavior = NamedElement(document, "ContentControl", "KeyboardBehaviorCard");
+        XElement row = NamedElement(document, "Border", "SnapTapRow");
         Assert.Contains(card.Ancestors(), element => element == keyboardSection);
         Assert.DoesNotContain(card.Ancestors(), element =>
             Attribute(element, "Name") == "ShortcutKeysSection");
+        Assert.Equal("SnapTap_KeyboardHeader", Attribute(keyboardHeader, "Uid"));
+        Assert.Null(Attribute(keyboardHeader, "Visibility"));
+        Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
+        Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(row, "Style"));
+        XElement rows = Assert.Single(card.Elements());
+        Assert.Equal("StackPanel", rows.Name.LocalName);
+        Assert.Equal([keyboardBehavior, row], rows.Elements().ToArray());
+        Assert.Equal([keyboardHeader, card], keyboardSection.Elements().ToArray());
         Assert.Equal(
-            "{x:Bind HasKeyboardLaptopControls, Mode=OneWay}",
-            Attribute(keyboardHeader, "Visibility"));
-        Assert.Equal("SnapTap_KeyboardHeader", Attribute(fallbackHeader, "Uid"));
-        Assert.Equal(
-            "{x:Bind SnapTapKeyboardFallbackVisibility(ViewModel.HasKeyboardLaptopControls), Mode=OneWay}",
-            Attribute(fallbackHeader, "Visibility"));
+            "{StaticResource KeyboardBehaviorRowsTemplate}",
+            Attribute(keyboardBehavior, "ContentTemplate"));
         Assert.Equal(
             "{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}",
             Attribute(keyboardBehavior, "Visibility"));
-        Assert.Equal(
-            [fallbackHeader, keyboardBehavior, card],
-            keyboardSection.Elements().ToArray());
-        Assert.Equal(
-            "{StaticResource SettingsLastRowStyle}",
-            Attribute(
-                Assert.Single(card.Elements(), element => element.Name.LocalName == "Border"),
-                "Style"));
+        XElement sharedRows = document.Descendants().Single(element =>
+            element.Name.LocalName == "DataTemplate"
+            && Attribute(element, "Key") == "KeyboardBehaviorRowsTemplate");
+        Assert.Contains(sharedRows.Descendants(), element =>
+            Attribute(element, "Name") == "FunctionKeyPrimarySelector");
+        Assert.Contains(sharedRows.Descendants(), element =>
+            Attribute(element, "Name") == "GamingModeToggle");
         XElement toggle = NamedElement(document, "ToggleSwitch", "SnapTapToggle");
         Assert.Equal("SnapTap (A/D)", Attribute(toggle, "AutomationProperties.Name"));
         Assert.Null(Attribute(toggle, "IsOn"));
@@ -72,11 +66,6 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "private Visibility SnapTapKeyboardFallbackVisibility(bool hasKeyboardLaptopControls) =>\n"
-                + "        hasKeyboardLaptopControls ? Visibility.Collapsed : Visibility.Visible;",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains(
             "localizationSnapshotMode\n"
                 + "            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch)\n"
                 + "            : SnapTapStatusStore.Read()",
@@ -96,6 +85,7 @@ public sealed class WinUiShellContractTests
             "SnapTapStatusText.Visibility = string.IsNullOrEmpty(SnapTapStatusText.Text)",
             source,
             StringComparison.Ordinal);
+        Assert.Contains("SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active => string.Empty,", source, StringComparison.Ordinal);
         Assert.DoesNotContain("\"SnapTap_Status_Off\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("\"SnapTap_Status_Unknown\"", source, StringComparison.Ordinal);
         Assert.Contains("SnapTapRuntimeState.Failed => LocalizedResources.Get(", source, StringComparison.Ordinal);
@@ -115,11 +105,11 @@ public sealed class WinUiShellContractTests
                 + "        {\n"
                 + "            localizationSnapshotSnapTapState = showFailure\n"
                 + "                ? SnapTapRuntimeState.Failed\n"
-                + "                : SnapTapRuntimeState.Off;",
+                + "                : showEnabled ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Off;",
             preview,
             StringComparison.Ordinal);
         Assert.Contains(
-            "snapTapEnabled = showFailure;\n"
+            "snapTapEnabled = showFailure || showEnabled;\n"
                 + "            SnapTapToggle.IsOn = snapTapEnabled;\n"
                 + "            RefreshSnapTapStatus();",
             preview,
@@ -136,7 +126,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("\"laptop-snap-tap-failed\"", harness, StringComparison.Ordinal);
         Assert.Contains("bool captureSnapTap = captureSnapTapFailure", harness, StringComparison.Ordinal);
         Assert.Contains(
-            "snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure);",
+            "snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled);",
             harness,
             StringComparison.Ordinal);
     }

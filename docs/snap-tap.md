@@ -2,7 +2,7 @@
 
 SnapTap is an experimental A/D keyboard feature. When both keys are held, the last pressed key takes priority. Releasing it restores the other key if it is still held.
 
-Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. It is off by default. Release A and D before activating it. The status first shows that the helper is ready, then shows Active after it handles an A/D event.
+Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. It is off by default. Release A and D before activating it.
 
 Physical A/D presses keep their device identity for Reactive lighting. Restoring a still-held key is synthetic and does not trigger a new physical-key lighting pulse. In text fields, the restored key continues repeating until you release it.
 

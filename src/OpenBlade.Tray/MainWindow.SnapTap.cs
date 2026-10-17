@@ -8,21 +8,18 @@ public sealed partial class MainWindow
     private bool snapTapEnabled;
     private SnapTapRuntimeState localizationSnapshotSnapTapState = SnapTapRuntimeState.Off;
 
-    private Visibility SnapTapKeyboardFallbackVisibility(bool hasKeyboardLaptopControls) =>
-        hasKeyboardLaptopControls ? Visibility.Collapsed : Visibility.Visible;
-
-    internal void ShowLocalizationSnapshotSnapTap(bool showFailure = false)
+    internal void ShowLocalizationSnapshotSnapTap(bool showFailure = false, bool showEnabled = false)
     {
         if (localizationSnapshotMode)
         {
             localizationSnapshotSnapTapState = showFailure
                 ? SnapTapRuntimeState.Failed
-                : SnapTapRuntimeState.Off;
+                : showEnabled ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Off;
             // Set the backing state first so the preview toggle cannot queue a preference save.
-            snapTapEnabled = showFailure;
+            snapTapEnabled = showFailure || showEnabled;
             SnapTapToggle.IsOn = snapTapEnabled;
             RefreshSnapTapStatus();
-            SnapTapCard.StartBringIntoView(new BringIntoViewOptions
+            KeyboardSection.StartBringIntoView(new BringIntoViewOptions
             {
                 AnimationDesired = false,
                 VerticalAlignmentRatio = 0,
@@ -55,10 +52,7 @@ public sealed partial class MainWindow
                 "SnapTap_Status_Starting", "Starting…"),
             SnapTapRuntimeState.WaitingForRelease => LocalizedResources.Get(
                 "SnapTap_Status_WaitingForRelease", "Release A and D to activate."),
-            SnapTapRuntimeState.Armed => LocalizedResources.Get(
-                "SnapTap_Status_Armed", "Ready — press A or D to verify input."),
-            SnapTapRuntimeState.Active => LocalizedResources.Get(
-                "SnapTap_Status_Active", "Active — the last pressed key takes priority."),
+            SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active => string.Empty,
             SnapTapRuntimeState.Paused => LocalizedResources.Get(
                 "SnapTap_Status_Paused", "Paused — input handling is unavailable."),
             SnapTapRuntimeState.Failed => LocalizedResources.Get(
