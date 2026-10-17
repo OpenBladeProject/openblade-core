@@ -53,6 +53,94 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsSemanticThxSettings()
+    {
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        static ThxEqualizerCurves Curves(int count, double gain)
+        {
+            double[] values = Enumerable.Repeat(gain, count).ToArray();
+            return new(values, values, values, values, values);
+        }
+        ThxAudioProfileSettings expected = new(
+            ApplicationRoutingEnabled: true,
+            Speakers: new(
+                SpatialEnabled: true,
+                EqualizerEnabled: true,
+                SelectedPreset: ThxEqualizerPreset.Movie,
+                EqualizerCurves: Curves(7, 1.5),
+                VoiceClarity: new(true, 25),
+                SoundNormalization: new(true, 50)),
+            Headphones: new(
+                SpatialEnabled: true,
+                EqualizerEnabled: true,
+                SelectedPreset: ThxEqualizerPreset.Custom,
+                EqualizerCurves: Curves(10, -2),
+                VoiceClarity: new(true, 40),
+                SoundNormalization: null),
+            ApplicationRules:
+            [
+                new("GAME.EXE", ThxApplicationAudioOutput.Competitive),
+            ]);
+
+        await new ProfileStore(path).SaveAsync(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { ThxAudio = expected },
+        }, CancellationToken.None);
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(CancellationToken.None);
+
+        ThxAudioProfileSettings actual = Assert.IsType<ThxAudioProfileSettings>(
+            result.Profiles.PluggedIn.ThxAudio);
+        Assert.True(actual.ApplicationRoutingEnabled);
+        Assert.Equal(ThxEqualizerPreset.Movie, actual.Speakers.SelectedPreset);
+        Assert.Equal(expected.Speakers.EqualizerCurves.Game, actual.Speakers.EqualizerCurves.Game);
+        Assert.Equal("game.exe", Assert.Single(actual.ApplicationRules).ExecutableName);
+        Assert.Contains($"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            await File.ReadAllTextAsync(path), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Load_Schema20PreservesUnconfiguredThxAsNullAndRewritesSchema()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        await File.WriteAllBytesAsync(path, JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(20, ProfileDefaults.CreateSafeDefaults()),
+            ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(CancellationToken.None);
+
+        Assert.Null(result.Profiles.PluggedIn.ThxAudio);
+        Assert.Null(result.Profiles.Battery.ThxAudio);
+        Assert.Null(result.Profiles.UsbC.ThxAudio);
+        Assert.Contains($"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            await File.ReadAllTextAsync(path), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Load_InvalidThxExecutableNameQuarantinesOriginalDocument()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet configured = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { ThxAudio = CreateThxSettings() },
+        };
+        string invalidJson = JsonSerializer.Serialize(
+                new ProfileDocument(ProfileStore.CurrentSchemaVersion, configured),
+                ProfileStore.SerializerOptions)
+            .Replace("game.exe", "bad:name.exe", StringComparison.Ordinal);
+        await File.WriteAllTextAsync(path, invalidJson);
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(CancellationToken.None);
+
+        Assert.True(result.RecoveredFromInvalidFile);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, result.Disposition);
+        Assert.Equal(invalidJson, await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
     public async Task Load_Schema11MigratesWindowsPowerModeToLeaveUnchanged()
     {
         Directory.CreateDirectory(storeDirectory);
@@ -851,6 +939,26 @@ public sealed class ProfileStoreTests : IDisposable
             "\"windowsPowerMode\":",
             await File.ReadAllTextAsync(path),
             StringComparison.Ordinal);
+    }
+
+    private static ThxAudioProfileSettings CreateThxSettings()
+    {
+        static ThxEqualizerCurves Curves(int count)
+        {
+            double[] values = new double[count];
+            return new(values, values, values, values, values);
+        }
+
+        return new(
+            ApplicationRoutingEnabled: true,
+            Speakers: new(true, true, ThxEqualizerPreset.Game, Curves(7),
+                new(false, 0), new(false, 0)),
+            Headphones: new(true, true, ThxEqualizerPreset.Game, Curves(10),
+                new(false, 0), null),
+            ApplicationRules:
+            [
+                new("game.exe", ThxApplicationAudioOutput.Immersive),
+            ]);
     }
 
     public void Dispose()

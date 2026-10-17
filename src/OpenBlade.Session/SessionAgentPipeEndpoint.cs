@@ -14,6 +14,10 @@ public sealed record SessionAgentPipeEndpoint(string PipeName)
         SecurityIdentifier userSid,
         int sessionId) => Create(userSid, sessionId, SessionGpuIpc.PipeNamePrefix);
 
+    public static SessionAgentPipeEndpoint CreateAudio(
+        SecurityIdentifier userSid,
+        int sessionId) => Create(userSid, sessionId, SessionAudioIpc.PipeNamePrefix);
+
     private static SessionAgentPipeEndpoint Create(
         SecurityIdentifier userSid,
         int sessionId,

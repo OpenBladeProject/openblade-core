@@ -32,6 +32,14 @@ internal static class ExperimentalBladeModels
         IReadOnlyList<ExperimentalFeatureEvidence> features = model.ProductId switch
         {
             0x029F => [
+                new("HyperBoost", "SynapseSourceBacked", [
+                    "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js",
+                    "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
+                    "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js"]),
+                new("PadlessHyperBoost", "SourceBackedExtrapolation", [
+                    "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js",
+                    "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
+                    "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js"]),
                 new("PerformanceAndCustom", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("FixedFansAndMaximumFans", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("KeyboardAndLogoLighting", "UpstreamOwnerTested", [MaintainedRazerCtlSource]),
@@ -39,6 +47,14 @@ internal static class ExperimentalBladeModels
                 new("UniformAmbientAndAudio", "SourceBackedExtrapolationWithoutRgbReadback", [MaintainedRazerCtlSource, OpenRazerSource]),
                 new("ChargeLimits50To100", "UpstreamOwnerTested", [MaintainedRazerCtlSource])],
             0x029D => [
+                new("HyperBoost", "SynapseSourceBackedNotPubliclyListed", [
+                    "https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js",
+                    "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js",
+                    "https://apps.razer.com/synapse/products/669/mw/rzDevice25.1094c437ecd0242743f8.js"]),
+                new("PadlessHyperBoost", "SourceBackedExtrapolationNotPubliclyListed", [
+                    "https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js",
+                    "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js",
+                    "https://apps.razer.com/synapse/products/669/mw/rzDevice25.1094c437ecd0242743f8.js"]),
                 new("CustomAndFixedFans", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("KeyboardLightingAndLogoOnOff", "UpstreamOwnerReported", [OpenRazerSource, "https://github.com/openrazer/openrazer/pull/2237"]),
                 new("LogoStaticAndBreathing", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),

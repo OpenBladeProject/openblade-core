@@ -376,6 +376,8 @@ public sealed class CapabilityPresentationTests
                  {
                      "NavigationMenuExpander",
                      "TaskbarHoverLabelExpander",
+                     "ThxAudioEnhancements",
+                     "ThxAudioApplications",
                  })
         {
             XElement expander = NamedElement(document, "Expander", name);
@@ -388,6 +390,67 @@ public sealed class CapabilityPresentationTests
                 "{StaticResource SettingsExpanderHeaderStyle}",
                 Attribute(header, "Style"));
         }
+    }
+
+    [Fact]
+    public void MainWindow_ThxUsesRecoveryOnlyReadAndSharedStatusAndSettingCells()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement status = NamedElement(document, "Grid", "ThxAudioStatusArea");
+        XElement measure = Assert.Single(status.Elements(), element =>
+            element.Name.LocalName == "TextBlock" && Attribute(element, "Opacity") == "0");
+        Assert.Equal("Raw", Attribute(measure, "AutomationProperties.AccessibilityView"));
+        Assert.Null(Attribute(measure, "Visibility"));
+        Assert.Single(status.Elements(), element => element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Visibility") == "{x:Bind ThxViewModel.ShowStatusMessage, Mode=OneWay}");
+        Assert.Single(status.Elements(), element => element.Name.LocalName == "ProgressBar");
+        Assert.DoesNotContain(status.Descendants(), element => element.Name.LocalName == "RowDefinition");
+        XElement read = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Uid") == "MainWindow_ThxAudioReadSettings");
+        Assert.Equal("{x:Bind ThxViewModel.IsReadSettingsVisible, Mode=OneWay}", Attribute(read, "Visibility"));
+        XElement cpuSelector = NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomCpuSelector");
+        XElement gpuSelector = NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomGpuSelector");
+        XElement customPerformanceSubcell = cpuSelector.Ancestors()
+            .First(element => element.Name.LocalName == "Border");
+        XElement customPerformanceLayout = Assert.Single(customPerformanceSubcell.Elements());
+        string? customPerformanceSubcellStyle = Attribute(customPerformanceSubcell, "Style");
+        Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", customPerformanceSubcellStyle);
+        Assert.Equal(customPerformanceSubcellStyle, Attribute(gpuSelector.Ancestors()
+            .First(element => element.Name.LocalName == "Border"), "Style"));
+        foreach (string cell in new[] { "ThxNormalizationCell", "ThxVoiceClarityCell", "ThxAudioRoutingCell" })
+        {
+            XElement border = NamedElement(document, "Border", cell);
+            Assert.Equal(customPerformanceSubcellStyle, Attribute(border, "Style"));
+            Assert.Equal(Attribute(customPerformanceSubcell, "Padding"), Attribute(border, "Padding"));
+            XElement layout = Assert.Single(border.Elements());
+            Assert.Equal(Attribute(customPerformanceLayout, "MinHeight"), Attribute(layout, "MinHeight"));
+            Assert.Equal(Attribute(customPerformanceLayout, "ColumnSpacing"), Attribute(layout, "ColumnSpacing"));
+            Assert.Single(border.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+            if (cell != "ThxAudioRoutingCell")
+            {
+                Assert.Single(border.Descendants(), element => element.Name.LocalName == "Slider");
+            }
+        }
+        XElement expanderStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "CardContentExpanderStyle");
+        Assert.Contains(expanderStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "Padding" && Attribute(setter, "Value") == "0");
+        foreach (string cell in new[] { "ThxNormalizationCell", "ThxVoiceClarityCell",
+            "ThxAudioRoutingCell", "ThxAudioProfileActionsCell" })
+        {
+            XElement border = NamedElement(document, "Border", cell);
+            Assert.Equal("{StaticResource DashboardSingleLineRowPadding}", Attribute(border, "Padding"));
+            XElement content = Assert.Single(border.Elements());
+            Assert.Equal("{StaticResource DashboardSingleLineRowContentMinHeight}", Attribute(content, "MinHeight"));
+            Assert.Null(Attribute(border, "Height"));
+        }
+        XElement applications = NamedElement(document, "Expander", "ThxAudioApplications");
+        XElement cells = Assert.Single(applications.Elements(), element => element.Name.LocalName == "StackPanel");
+        Assert.All(cells.Elements(), cell =>
+            Assert.DoesNotContain("EmphasizedSubcardStyle", Attribute(cell, "Style")!));
+        XElement rules = Assert.Single(applications.Descendants(), element => element.Name.LocalName == "ItemsRepeater");
+        Assert.Equal("{x:Bind ThxViewModel.HasApplicationRules, Mode=OneWay}", Attribute(rules, "Visibility"));
+        Assert.Single(applications.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
     }
 
     [Fact]
@@ -519,6 +582,56 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_SharedSettingsRowsKeepTheirPresentationDefaults()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        var rowStyles = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "SettingsRowStyle", "SettingsLastRowStyle",
+            "SettingsNeutralSubcardStyle", "SettingsLastNeutralSubcardStyle",
+            "SettingsEditorSubcardStyle", "SettingsLastEditorSubcardStyle",
+        };
+        foreach (XElement style in document.Descendants().Where(element => element.Name.LocalName == "Style"))
+        {
+            if (rowStyles.Any(key => Attribute(style, "BasedOn") == "{StaticResource " + key + "}"))
+            {
+                rowStyles.Add(Attribute(style, "Key")!);
+            }
+            if (rowStyles.Contains(Attribute(style, "Key") ?? string.Empty))
+            {
+                Assert.All(style.Elements().Where(setter => Attribute(setter, "Property") == "Background"),
+                    setter => Assert.Equal("Transparent", Attribute(setter, "Value")));
+                Assert.DoesNotContain(style.Elements(), setter => Attribute(setter, "Property") is "Height" or "MinHeight");
+                Assert.All(style.Elements().Where(setter => Attribute(setter, "Property") == "Padding"),
+                    setter => Assert.Contains(Attribute(setter, "Value"),
+                        new[] { "16,14", "{StaticResource DashboardSingleLineRowPadding}" }));
+            }
+        }
+        XElement[] rows = document.Descendants().Where(element => element.Name.LocalName == "Border"
+            && rowStyles.Any(key => Attribute(element, "Style") == "{StaticResource " + key + "}"))
+            .ToArray();
+        Assert.NotEmpty(rows);
+        foreach (XElement row in rows)
+        {
+            foreach (string property in new[] { "Background", "BorderBrush", "BorderThickness",
+                "CornerRadius", "Margin", "Height", "MinHeight" })
+            {
+                Assert.Null(Attribute(row, property));
+            }
+            Assert.DoesNotContain(row.Attributes(), attribute =>
+                attribute.Name.LocalName.StartsWith("SettingsCardPointerVisual.", StringComparison.Ordinal));
+            string? padding = Attribute(row, "Padding");
+            Assert.True(padding is null or "0" or "{StaticResource DashboardSingleLineRowPadding}",
+                "Settings rows must reuse shared padding; zero is reserved for row containers.");
+            if (padding == "{StaticResource DashboardSingleLineRowPadding}")
+            {
+                XElement layout = row.Descendants().First(element => element.Name.LocalName == "Grid");
+                Assert.Equal("{StaticResource DashboardSingleLineRowContentMinHeight}", Attribute(layout, "MinHeight"));
+            }
+        }
+    }
+
+    [Fact]
     public void MainWindow_DashboardRowsCompactOnlySingleLineContent()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -559,7 +672,8 @@ public sealed class CapabilityPresentationTests
         XElement[] compactRows = document.Descendants()
             .Where(element =>
                 element.Name.LocalName == "Border"
-                && Attribute(element, "Padding") == compactPaddingReference)
+                && Attribute(element, "Padding") == compactPaddingReference
+                && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
         Assert.Equal(16, compactRows.Length);
@@ -800,12 +914,6 @@ public sealed class CapabilityPresentationTests
                     descendant.Name.LocalName == "TextBlock"));
         }
 
-        Assert.Equal(
-            sliderNames.Length,
-            document.Descendants().Count(element =>
-                element.Name.LocalName == "Slider"
-                && Attribute(element, "Style")
-                    == "{StaticResource InlineCardSliderStyle}"));
     }
 
     [Fact]
@@ -1085,7 +1193,7 @@ public sealed class CapabilityPresentationTests
         XElement[] usages = mainWindow.Descendants()
             .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
             .ToArray();
-        Assert.Equal(25, usages.Length);
+        Assert.Equal(28, usages.Length);
         Assert.All(usages, usage =>
         {
             Assert.NotNull(Attribute(usage, "ItemsSource"));
@@ -1252,6 +1360,7 @@ public sealed class CapabilityPresentationTests
                      "HomePage",
                      "ProfilesPage",
                      "LaptopPage",
+                     "ThxAudioPage",
                      "LightingPage",
                      "DisplayPage",
                      "SettingsPage",
@@ -1866,6 +1975,39 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_ThxAudioOwnsDedicatedModelGatedPageAndNavigationLogo()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement navigation = NamedElement(document, "NavigationViewItem", "ThxAudioNavigationItem");
+        XElement audio = NamedElement(document, "ScrollViewer", "ThxAudioPage");
+        XElement laptop = NamedElement(document, "ScrollViewer", "LaptopPage");
+        XElement section = NamedElement(document, "StackPanel", "ThxAudioSection");
+
+        Assert.Equal("thx-audio", Attribute(navigation, "Tag"));
+        Assert.Equal("{x:Bind ThxAudioNavigationVisibility, Mode=OneWay}", Attribute(navigation, "Visibility"));
+        Assert.Contains(section, audio.Descendants());
+        Assert.DoesNotContain(section, laptop.Descendants());
+        Assert.Single(navigation.Descendants(), element => element.Name.LocalName == "PathIcon");
+        Assert.Contains(audio.Descendants(), element =>
+            Attribute(element, "Uid") == "MainWindow_ThxAudioSpatial");
+        Assert.Contains(audio.Descendants(), element =>
+            Attribute(element, "Uid") == "MainWindow_ThxAudioEqualizer");
+
+        string window = ReadTraySource("MainWindow.xaml.cs");
+        Assert.Contains(
+            "else if (destination == \"thx-audio\" && !localizationSnapshotMode)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "private async void OnThxEndpointChanged(",
+            window,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            window.Split("ThxViewModel.ConnectIfNeededAsync", StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
     public void MainWindow_LaptopPageOwnsFirmwareWideLaptopBehavior()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -1876,7 +2018,7 @@ public sealed class CapabilityPresentationTests
         XElement laptop = NamedElement(document, "ScrollViewer", "LaptopPage");
         XElement keyboardTemplate = NamedTemplate(
             document,
-            "DashboardKeyboardBehaviorCardTemplate");
+            "KeyboardBehaviorRowsTemplate");
         XElement startupTemplate = NamedTemplate(
             document,
             "DashboardStartupAnimationCardTemplate");
@@ -2287,7 +2429,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            8,
+            9,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }

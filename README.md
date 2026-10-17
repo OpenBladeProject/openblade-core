@@ -50,8 +50,7 @@ to collect and submit evidence for your model.
 
 - Power modes, automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU
   clock offsets.
-- HyperBoost on full-power AC, with or without the Razer cooling pad. Start from
-  any supported AC mode and restore your starting settings when you turn it off.
+- HyperBoost on full-power AC, with or without the Razer cooling pad.
 - Charge limits, battery health, and separate settings for each
   power source.
 - Keyboard and lid-logo effects, reactive lighting, mute indicators,

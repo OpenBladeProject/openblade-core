@@ -404,7 +404,7 @@
     <value>Оставить запущенными</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
-    <value>Более {0} приложений используют GPU NVIDIA. OpenBlade не может проверить безопасное закрытие по неполному списку. Закройте приложения вручную и повторите сканирование.</value>
+    <value>Графический процессор NVIDIA используют более {0} приложений. Закройте приложения вручную и повторите поиск.</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
     <value>Слишком много приложений с активным GPU</value>
@@ -545,7 +545,7 @@
     <value>Яркость {0}%</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>В файле {0} задан эффект «{1}» ({2}). После импорта OpenBlade применит его и оставит как несохранённое изменение в активном профиле питания.</value>
+    <value>{0} использует эффект {1} с яркостью {2}. Импорт применит его как несохранённое изменение активного профиля питания.</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>Импортировать подсветку клавиатуры?</value>
@@ -796,7 +796,7 @@
     <value>Остановить службы Razer</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
-    <value>Windows не предоставила права администратора. Повторный запрос не отправлялся.</value>
+    <value>Windows не предоставила права администратора.</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
     <value>Остановка служб Razer отменена</value>
@@ -805,11 +805,11 @@
     <value>Проверка…</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>Сейчас работают следующие известные службы управления:
+    <value>Работают следующие службы Razer:
 
 {0}
 
-После подтверждения OpenBlade снова проверит тот же проверенный список разрешённых служб и остановит те из них, которые по-прежнему работают. Это не удаляет ПО Razer и не отключает запуск служб. ПО Razer может снова запустить службы, а зависящие от них функции до этого момента могут не работать.</value>
+OpenBlade повторно проверит этот список и остановит работающие службы. ПО Razer может запустить их снова. До перезапуска служб зависящие от них функции могут быть недоступны.</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>Остановить службы Razer?</value>
@@ -2055,5 +2055,149 @@
   </data>
   <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Максимальные обороты</value>
+  </data>
+  <data name="SnapTap_Title.Text" xml:space="preserve">
+    <value>SnapTap (A/D)</value>
+  </data>
+  <data name="SnapTap_Description.Text" xml:space="preserve">
+    <value>Экспериментальная функция. При одновременном нажатии A и D приоритет у последней нажатой клавиши. Работает со всеми клавиатурами. Совместимость с играми не проверена.</value>
+  </data>
+  <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>SnapTap (A/D)</value>
+  </data>
+  <data name="SnapTap_Status_Starting" xml:space="preserve">
+    <value>Запуск…</value>
+  </data>
+  <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
+    <value>Отпустите A и D для активации.</value>
+  </data>
+  <data name="SnapTap_Status_Paused" xml:space="preserve">
+    <value>Приостановлено — обработка ввода недоступна.</value>
+  </data>
+  <data name="SnapTap_Status_Failed" xml:space="preserve">
+    <value>Приостановлено из-за ошибки ввода. Отпустите A и D, затем выключите и снова включите SnapTap.</value>
+  </data>
+  <data name="SnapTap_Status_Unavailable" xml:space="preserve">
+    <value>Ожидание обработчика ввода…</value>
+  </data>
+  <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
+    <value>Экспериментальная функция. Требуется установка поддерживаемых компонентов THX.</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Эквалайзер THX</value>
+  </data>
+  <data name="MainWindow_ThxAudioHeading.Text" xml:space="preserve">
+    <value>Звук THX</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationTitle.Text" xml:space="preserve">
+    <value>Использовать установленный THX Audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Использовать установленный THX Audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioReadSettings.Content" xml:space="preserve">
+    <value>Прочитать настройки</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatial.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>THX Spatial Audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizerTitle.Text" xml:space="preserve">
+    <value>Эквалайзер</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutput.AccessibleName" xml:space="preserve">
+    <value>Аудиовыход THX</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutputTitle.Text" xml:space="preserve">
+    <value>Выход</value>
+  </data>
+  <data name="MainWindow_ThxAudioPreset.AccessibleName" xml:space="preserve">
+    <value>Пресет эквалайзера THX</value>
+  </data>
+  <data name="MainWindow_ThxAudioPresetTitle.Text" xml:space="preserve">
+    <value>Пресет эквалайзера</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
+    <value>Пространственный звук</value>
+  </data>
+  <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
+    <value>Отменить изменения</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Нормализация звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уровень нормализации звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationTitle.Text" xml:space="preserve">
+    <value>Нормализация звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarity.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Чёткость голоса</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уровень чёткости голоса</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityTitle.Text" xml:space="preserve">
+    <value>Чёткость голоса</value>
+  </data>
+  <data name="MainWindow_ThxAudioAddRule.Content" xml:space="preserve">
+    <value>Добавить правило приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.Header" xml:space="preserve">
+    <value>Исполняемый файл приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.PlaceholderText" xml:space="preserve">
+    <value>game.exe</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
+    <value>Режим звука приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
+    <value>Считать текущие настройки звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
+    <value>Настройки динамиков и наушников</value>
+  </data>
+  <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="MainWindow_ThxAudioRoutingEnabled.Content" xml:space="preserve">
+    <value>Автоматически применять сохранённый звук и правила приложений</value>
+  </data>
+  <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
+    <value>Сохранить в профиль питания</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
+    <value>Режим звука</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyEqualizer.Content" xml:space="preserve">
+    <value>Применить эквалайзер</value>
+  </data>
+  <data name="MainWindow_ThxAudioFlattenEqualizer.Content" xml:space="preserve">
+    <value>Выровнять</value>
+  </data>
+  <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
+    <value>Заводская кривая</value>
+  </data>
+  <data name="MainWindow_ThxAudioNavigationItemText.Content" xml:space="preserve">
+    <value>Звук THX</value>
+  </data>
+  <data name="Navigation_ThxAudio" xml:space="preserve">
+    <value>Звук THX</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Сохранённый звук и приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationsTitle.Text" xml:space="preserve">
+    <value>Сохранённый звук и приложения</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Улучшения</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
+    <value>Улучшения</value>
+  </data>
+  <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
+    <value>Клавиатура</value>
   </data>
 </root>

@@ -404,7 +404,7 @@ Répórtéd fáílúrés:
     <value>[!! Kéép rúnníng ~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
-    <value>[!! Móré thán {0} ápplícátíóns áré úsíng thé NVIDIA GPÚ. OpenBlade cánnót vérífý á sáfé clósé fróm á pártíál líst. Clósé ápps mánúállý, thén scán ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Móré thán {0} ápps áré úsíng thé NVIDIA GPÚ. Clósé ápps mánúállý, thén scán ágáín. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
     <value>[!! Tóó máný GPÚ ápps tó vérífý ~~~~~~~~ !!]</value>
@@ -545,7 +545,7 @@ Répórtéd fáílúrés:
     <value>[!! {0}% bríghtnéss ~~~~ !!]</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>[!! {0} úsés thé {1} éfféct át {2}. Ímpórtíng ápplíés ít thróúgh OpenBlade ánd kééps ít ás án únsávéd chángé fór thé áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! {0} úsés thé {1} éfféct át {2}. Ímpórtíng ápplíés ít ás án únsávéd chángé tó thé áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>[!! Ímpórt kéýbóárd líghtíng? ~~~~~~~~ !!]</value>
@@ -796,7 +796,7 @@ Répórtéd fáílúrés:
     <value>[!! Stóp Razer sérvícés ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
-    <value>[!! Windows díd nót gránt ádmínístrátór pérmíssíón. OpenBlade díd nót rétrý thé réqúést. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Windows díd nót gránt ádmínístrátór pérmíssíón. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
     <value>[!! Razer sérvícé stóp cáncéléd ~~~~~~~ !!]</value>
@@ -805,11 +805,11 @@ Répórtéd fáílúrés:
     <value>[!! Chéckíng… ~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>[!! Thésé knówn cóntróllér sérvícés áré cúrréntlý áctívé:
+    <value>[!! Thésé Razer sérvícés áré rúnníng:
 
 {0}
 
-Áftér áppróvál, OpenBlade wíll fréshlý chéck thé sámé révíéwéd állówlíst ánd stóp áný áctívé mátchés. Thís dóés nót únínstáll Razer sóftwáré ór dísáblé sérvícé stártúp. Razer sóftwáré máý stárt thé sérvícés ágáín, ánd féátúrés thát dépénd ón thém máý stóp wórkíng úntíl thén. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+OpenBlade wíll chéck thís líst ágáín ánd stóp sérvícés thát áré stíll rúnníng. Razer sóftwáré máý réstárt thém. Féátúrés thát úsé thém máý bé únáváíláblé úntíl théý réstárt. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>[!! Stóp Razer sérvícés? ~~~~~ !!]</value>
@@ -2055,5 +2055,149 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Máxímúm fáns ~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Title.Text" xml:space="preserve">
+    <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Description.Text" xml:space="preserve">
+    <value>[!! Éxpéríméntál. Whén Á ánd D óvérláp, thé lást présséd kéý wíns. Ápplíés tó áll kéýbóárds. Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_Starting" xml:space="preserve">
+    <value>[!! Stártíng… ~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
+    <value>[!! Réléásé Á ánd D tó áctíváté. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_Paused" xml:space="preserve">
+    <value>[!! Páúséd — ínpút hándlíng ís únáváíláblé. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_Failed" xml:space="preserve">
+    <value>[!! Páúséd áftér án ínpút érrór. Réléásé Á ánd D, thén túrn SnápTáp óff ánd ón. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_Unavailable" xml:space="preserve">
+    <value>[!! Wáítíng fór thé ínpút hélpér… ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
+    <value>[!! Éxpéríméntál. Réqúírés thé súppórtéd THX cómpónénts álréádý ínstálléd. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! THX éqúálízér ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioHeading.Text" xml:space="preserve">
+    <value>[!! THX Áúdíó ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationTitle.Text" xml:space="preserve">
+    <value>[!! Úsé ínstálléd THX áúdíó ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Úsé ínstálléd THX áúdíó ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioReadSettings.Content" xml:space="preserve">
+    <value>[!! Réád séttíngs ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatial.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! THX Spátíál Áúdíó ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizerTitle.Text" xml:space="preserve">
+    <value>[!! Éqúálízér ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutput.AccessibleName" xml:space="preserve">
+    <value>[!! THX áúdíó óútpút ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutputTitle.Text" xml:space="preserve">
+    <value>[!! Óútpút ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioPreset.AccessibleName" xml:space="preserve">
+    <value>[!! THX éqúálízér prését ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioPresetTitle.Text" xml:space="preserve">
+    <value>[!! Éqúálízér prését ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
+    <value>[!! Spátíál áúdíó ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
+    <value>[!! Díscárd chángés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Sóúnd nórmálízátíón ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Sóúnd nórmálízátíón lévél ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationTitle.Text" xml:space="preserve">
+    <value>[!! Sóúnd nórmálízátíón ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarity.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Vóícé clárítý ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Vóícé clárítý lévél ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityTitle.Text" xml:space="preserve">
+    <value>[!! Vóícé clárítý ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioAddRule.Content" xml:space="preserve">
+    <value>[!! Ádd ápplícátíón rúlé ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.Header" xml:space="preserve">
+    <value>[!! Ápplícátíón éxécútáblé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.PlaceholderText" xml:space="preserve">
+    <value>[!! gámé.éxé ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
+    <value>[!! Ápplícátíón áúdíó módé ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
+    <value>[!! Cáptúré cúrrént áúdíó séttíngs ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
+    <value>[!! Spéákér ánd héádphóné séttíngs ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
+    <value>[!! Rémóvé ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioRoutingEnabled.Content" xml:space="preserve">
+    <value>[!! Ápplý sávéd áúdíó ánd ápplícátíón rúlés áútómátícállý ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
+    <value>[!! Sávé tó pówér prófílé ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
+    <value>[!! Áúdíó módé ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyEqualizer.Content" xml:space="preserve">
+    <value>[!! Ápplý ÉQ ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioFlattenEqualizer.Content" xml:space="preserve">
+    <value>[!! Fláttén ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
+    <value>[!! Rését tó fáctórý ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioNavigationItemText.Content" xml:space="preserve">
+    <value>[!! THX Áúdíó ~~~ !!]</value>
+  </data>
+  <data name="Navigation_ThxAudio" xml:space="preserve">
+    <value>[!! THX Áúdíó ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Sávéd áúdíó ánd ápplícátíóns ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationsTitle.Text" xml:space="preserve">
+    <value>[!! Sávéd áúdíó ánd ápplícátíóns ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Énháncéménts ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
+    <value>[!! Énháncéménts ~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
+    <value>[!! Kéýbóárd ~~~ !!]</value>
   </data>
 </root>

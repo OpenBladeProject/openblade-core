@@ -67,6 +67,7 @@ public sealed class FunctionRowHookRecoveryTests
     [Theory]
     [InlineData(RazerBladeInputDeviceKind.Unsupported, 0x3B)]
     [InlineData(RazerBladeInputDeviceKind.Rz09_0581, 0x1E)]
+    [InlineData(RazerBladeInputDeviceKind.Rz09_0581, 0x20)]
     public void UnsupportedInput_DoesNotRequestRecovery(
         RazerBladeInputDeviceKind deviceKind,
         uint scanCode)

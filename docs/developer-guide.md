@@ -98,6 +98,10 @@ RZ09-0528 have separate, model-specific stacks. WMI remains the fallback. See
 the [Razer driver package notes](razer-brightness-driver-package.md) for the
 validation and redistribution limits.
 
+The [optional THX audio integration](thx-audio.md) uses the separately installed,
+pinned `rznb12` audio stack on RZ09-0581. It is off by default and does not use
+the laptop HID transport. Standalone native and audio validation is pending.
+
 ## Direct fan-entry validation
 
 The developer-only RZ09-0581 validator tests Performance/Automatic to fixed
@@ -238,6 +242,12 @@ Create the installer and production artifacts:
 ```powershell
 .\build\Publish.ps1
 ```
+
+The pinned Windows Desktop Runtime installer is cached under
+`%LOCALAPPDATA%\OpenBlade\BuildCache\Prerequisites` and reused across worktrees.
+Each build verifies its SHA-512 and Microsoft signature before staging it. An
+invalid cache entry is downloaded again; changing the runtime pin uses a new
+entry. `-DotNetRuntimePath` supplies an explicit installer instead of the cache.
 
 - Graphical installer: `artifacts\win-x64\OpenBlade-Setup.exe`
 - Normal installation: double-click the graphical installer; do not use
@@ -435,3 +445,7 @@ target.
 Commits follow Conventional Commits. Version and migration rules are in
 [VERSIONING.md](../VERSIONING.md). Resource keys, fallback behavior, and the
 pseudo-localization review workflow are in [localization.md](localization.md).
+
+## SnapTap input helper
+
+The opt-in experimental A/D priority feature runs in a separate current-user input process. See [SnapTap](snap-tap.md) for its isolation boundary, input failure handling, and exact-build validation requirements. It does not add a hardware command or change the service's exclusive device ownership.

@@ -7,6 +7,35 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class ExperimentalBladeFactoryTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Rz090530Capabilities_ReportWritableRznb11ThxAudio(bool enabled)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(
+            item => item.ProductId == 0x02C5);
+
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled);
+
+        ThxAudioCapabilities capability =
+            Assert.IsType<ThxAudioCapabilities>(capabilities.ThxAudio);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, capability.Access);
+        Assert.Equal(ThxAudioProductIds.Rznb11, capability.ProductId);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    [InlineData(0x0255)]
+    [InlineData(0x02A0)]
+    public void OtherExperimentalCapabilities_DoNotReportThxAudio(int productId)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(
+            item => item.ProductId == productId);
+
+        Assert.Null(ExperimentalBladePort.CreateCapabilities(model, true).ThxAudio);
+    }
+
     [Fact]
     public async Task Blade18LightingAdapter_AutomaticallyAdmitsControlsAndRetainsLowPowerAdmission()
     {

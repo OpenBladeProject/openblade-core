@@ -18,7 +18,7 @@ public interface ISpecialKeyBindingSource
 /// directory exists. Failed reads back off to a capped retry interval and
 /// report only the first failure until a read succeeds.
 /// </summary>
-public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
+public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTapPreferenceSource
 {
     internal static readonly TimeSpan FallbackRefreshInterval = TimeSpan.FromSeconds(1);
     internal static readonly TimeSpan ChangeSettleDelay = TimeSpan.FromMilliseconds(100);
@@ -37,6 +37,8 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
             SingleReader = true,
             SingleWriter = false,
         });
+    internal event Action<UiPreferences?>? PreferencesObserved;
+
     private FileSignature observedSignature;
     private bool signatureInitialized;
     private TimeSpan readRetryInterval;
@@ -48,9 +50,26 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         Action<Exception>? errorHandler = null)
         : this(
             preferencesPath,
-            new UiPreferenceStore(Path.GetFullPath(preferencesPath)).LoadAsync,
+            CreateInputPreferenceLoader(preferencesPath),
             errorHandler)
     {
+    }
+
+    private static Func<CancellationToken, Task<UiPreferences>> CreateInputPreferenceLoader(
+        string preferencesPath)
+    {
+        var store = new UiPreferenceStore(Path.GetFullPath(preferencesPath));
+        return async cancellationToken =>
+        {
+            UiInputPreferences input = await store.LoadInputPreferencesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return UiPreferences.Default with
+            {
+                SpecialKeyBindings = input.SpecialKeyBindings,
+                SnapTapEnabled = input.SnapTapEnabled,
+                ThxAudioIntegrationEnabled = input.ThxAudioIntegrationEnabled,
+            };
+        };
     }
 
     internal SpecialKeyBindingSource(
@@ -91,6 +110,12 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
                 && normalized.Kind == SpecialKeyActionKind.Default)
             || SpecialKeyBindingDefaults.OverridesDefaultBehavior(normalized);
     }
+
+    private int snapTapEnabled;
+
+    public bool SnapTapEnabled => Volatile.Read(ref snapTapEnabled) != 0;
+
+    public event Action<bool>? SnapTapEnabledChanged;
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -222,6 +247,12 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
             Volatile.Write(
                 ref current,
                 preferences.EffectiveSpecialKeyBindings.ToArray());
+            int enabled = preferences.SnapTapEnabled ? 1 : 0;
+            if (Interlocked.Exchange(ref snapTapEnabled, enabled) != enabled)
+            {
+                SnapTapEnabledChanged?.Invoke(enabled != 0);
+            }
+            PreferencesObserved?.Invoke(preferences);
             observedSignature = signature;
             signatureInitialized = true;
             readRetryInterval = TimeSpan.Zero;
@@ -233,6 +264,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         }
         catch (Exception exception)
         {
+            PreferencesObserved?.Invoke(null);
             if (readRetryInterval == TimeSpan.Zero)
             {
                 readRetryInterval = FallbackRefreshInterval;

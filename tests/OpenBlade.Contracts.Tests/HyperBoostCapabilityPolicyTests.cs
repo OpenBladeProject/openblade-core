@@ -55,6 +55,33 @@ public sealed class HyperBoostCapabilityPolicyTests
         Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0581, coolingPadPresent: true, PerformancePreset.Balanced));
     }
 
+    [Fact]
+    public void DeclaredBalancedCoolingPadEntry_RestoresOnlyWritableOrdinaryBases()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            HyperBoostAccess = RW,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(RW, RW, Observed)
+            {
+                Custom = RW,
+                CoolingPadEntryBaseMode = PerformancePreset.Balanced,
+            },
+        };
+
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(capabilities));
+        Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(
+            capabilities, coolingPadPresent: true, PerformancePreset.Balanced));
+        Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(
+            capabilities, coolingPadPresent: true, PerformancePreset.Silent));
+        Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(
+            capabilities, coolingPadPresent: true, PerformancePreset.Custom));
+        Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(
+            capabilities, coolingPadPresent: true, PerformancePreset.Performance));
+        Assert.Null(HyperBoostCapabilityPolicy.PadlessEntryBaseMode(capabilities));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(DeviceFeatureAccess.ObservedOnly)]

@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 66;
+    public const int ProtocolVersion = 68;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -499,6 +499,11 @@ public static class IpcMessageCodec
             throw InvalidStatus("legacy Windows power mode fields are not allowed");
         }
 
+        if (!ValidThxAudioProfiles(status.Profiles))
+        {
+            throw InvalidStatus("THX audio profiles are malformed");
+        }
+
         if (status.DesiredState is null)
         {
             throw InvalidStatus("desired state is missing");
@@ -935,7 +940,19 @@ public static class IpcMessageCodec
         : CustomPerformanceSettings.Default;
 
     private static PowerProfile ProjectProtocol51Profile(PowerProfile profile) =>
-        profile with { CustomPerformance = ProjectProtocol51CustomSettings(profile.CustomPerformance) };
+        profile with
+        {
+            CustomPerformance = ProjectProtocol51CustomSettings(profile.CustomPerformance),
+            ThxAudio = null,
+        };
+
+    private static bool ValidThxAudioProfiles(ProfileSet profiles) =>
+        (profiles.PluggedIn.ThxAudio is null
+            || ThxAudioProfileSettings.IsWellFormed(profiles.PluggedIn.ThxAudio))
+        && (profiles.Battery.ThxAudio is null
+            || ThxAudioProfileSettings.IsWellFormed(profiles.Battery.ThxAudio))
+        && (profiles.UsbC.ThxAudio is null
+            || ThxAudioProfileSettings.IsWellFormed(profiles.UsbC.ThxAudio));
 
     private static CustomPerformanceCapabilities? ProjectProtocol51CustomCapabilities(
         CustomPerformanceCapabilities? capabilities)
@@ -1074,6 +1091,17 @@ public static class IpcMessageCodec
                             "supportsUniformLightingFrames",
                             StringComparison.OrdinalIgnoreCase));
                 uniformLightingFrames.ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "thxAudio", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+            }
+
+            if (protocol51Projection
+                && typeInfo.Type == typeof(PowerProfile))
+            {
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "thxAudio", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
             }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)

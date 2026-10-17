@@ -13,6 +13,29 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Fix Custom-state reads on Blade 16 (2023) and Blade 18 (2023) by supplying the bounded validator required by the Maximum Fans query, and use the vendor Custom query profile on Blade 18. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 
+- Show the specific THX detection failure and include a fresh THX detection report in exported diagnostics. ([#805](https://github.com/OSSBlade/openblade-core/pull/805))
+
+## [0.33.1-nightly.92] - 2026-10-17
+
+### Changed
+
+- Cache the verified Windows Desktop Runtime installer across full builds and worktrees. ([#800](https://github.com/OpenBladeProject/openblade-core/pull/800))
+- Simplify app helper text and confirmation dialogs in English, Simplified Chinese, and Russian. ([#797](https://github.com/OpenBladeProject/openblade-core/pull/797))
+
+### Added
+
+- Add an opt-in experimental A/D SnapTap feature with last-pressed-key priority across keyboards. ([#794](https://github.com/OpenBladeProject/openblade-core/pull/794))
+- Add experimental, opt-in controls on a dedicated THX Audio page for Blade 16 RZ09-0581 and RZ09-0528 and Blade 14 RZ09-0530, including custom EQ and audio enhancements, using each model's supported THX components already installed. All three models support saved application routing. Settings load automatically on the THX page, with a recovery-only read button, stable inline loading, grouped EQ actions, and native settings cells, native operations reuse a connection and use faster fresh device and service checks, and a warning explains when Windows audio enhancements bypass THX. The user confirmed audible spatial changes on RZ09-0581 speakers with Windows enhancements enabled; other outputs and models still need audible validation. ([#790](https://github.com/OSSBlade/openblade-core/pull/790))
+- Add experimental HyperBoost with or without the cooling pad for Blade 14 (2023), RZ09-0482, and Blade 16 (2023), RZ09-0483, using each model's reviewed Synapse command path. Padless behavior awaits community hardware testing. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
+
+### Fixed
+
+- Resume text auto-repeat for restored SnapTap holds, and group SnapTap with the Keyboard controls without redundant normal-state labels. ([#803](https://github.com/OpenBladeProject/openblade-core/pull/803))
+- Avoid a Session Agent shutdown error when playback or microphone mute subscriptions finish after cancellation. ([#802](https://github.com/OpenBladeProject/openblade-core/pull/802))
+- Remove duplicate padding inside nested settings, match THX subcell spacing and hover states to Custom performance, hide empty application-rule spacing, and bound saved rules so service status stays available. ([#790](https://github.com/OpenBladeProject/openblade-core/pull/790))
+- Keep Blade 14 (2023) and Blade 16 (2023) battery fan changes in DC Balanced and reject power-source changes before submission. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
+- Allow read-only experimental recovery before an explicit saved HyperBoost restore, and match saved Custom levels during journal recovery. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
+
 ## [0.30.0] - 2026-10-16
 
 ### Changed
@@ -2090,7 +2113,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.33.1-nightly.92...HEAD
+[0.33.1-nightly.92]: https://github.com/OSSBlade/openblade-core/compare/v0.30.0...v0.33.1-nightly.92
 [0.30.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.29.0-nightly.91...v0.30.0
 [0.29.0-nightly.91]: https://github.com/OSSBlade/openblade-core/compare/v0.28.1-nightly.90...v0.29.0-nightly.91
 [0.28.1-nightly.90]: https://github.com/OSSBlade/openblade-core/compare/v0.27.5-nightly.89...v0.28.1-nightly.90

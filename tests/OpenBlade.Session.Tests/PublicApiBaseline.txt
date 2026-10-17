@@ -18,6 +18,28 @@ type sealed class OpenBlade.Session.ApplyDisplayProfileRequest
   method virtual System.Boolean Equals(OpenBlade.Session.ApplyDisplayProfileRequest other)
   property OpenBlade.Contracts.DisplayProfileSettings Settings { get; init; }
   property OpenBlade.Contracts.PowerSource ExpectedPowerSource { get; init; }
+type sealed class OpenBlade.Session.ApplyThxApplicationProfileRequest
+  base OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.ApplyThxApplicationProfileRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.ThxAudioEndpoint Endpoint, System.String ExecutableName, OpenBlade.Session.ThxAudioApplicationMode Mode)
+  method OpenBlade.Session.ThxAudioApplicationMode get_Mode()
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method System.String get_ExecutableName()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioEndpoint Endpoint, out System.String ExecutableName, out OpenBlade.Session.ThxAudioApplicationMode Mode)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method System.Void set_ExecutableName(System.String value)
+  method System.Void set_Mode(OpenBlade.Session.ThxAudioApplicationMode value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.ApplyThxApplicationProfileRequest left, OpenBlade.Session.ApplyThxApplicationProfileRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ApplyThxApplicationProfileRequest left, OpenBlade.Session.ApplyThxApplicationProfileRequest right)
+  method virtual OpenBlade.Session.ApplyThxApplicationProfileRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.ApplyThxApplicationProfileRequest other)
+  property OpenBlade.Session.ThxAudioApplicationMode Mode { get; init; }
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+  property System.String ExecutableName { get; init; }
 type sealed class OpenBlade.Session.CloseGpuAppsRequest
   base OpenBlade.Session.SessionGpuRequest
   interface System.IEquatable<OpenBlade.Session.CloseGpuAppsRequest>
@@ -37,6 +59,35 @@ type sealed class OpenBlade.Session.CloseGpuAppsRequest
   method virtual System.Boolean Equals(OpenBlade.Session.CloseGpuAppsRequest other)
   property System.Boolean Force { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.SessionGpuAppIdentity> Targets { get; init; }
+type sealed class OpenBlade.Session.ConnectThxAudioRequest
+  base OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.ConnectThxAudioRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.ThxAudioEndpoint Endpoint)
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioEndpoint Endpoint)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.ConnectThxAudioRequest left, OpenBlade.Session.ConnectThxAudioRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ConnectThxAudioRequest left, OpenBlade.Session.ConnectThxAudioRequest right)
+  method virtual OpenBlade.Session.ConnectThxAudioRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.ConnectThxAudioRequest other)
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+type sealed class OpenBlade.Session.DiscoverThxAudioRequest
+  base OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.DiscoverThxAudioRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.DiscoverThxAudioRequest left, OpenBlade.Session.DiscoverThxAudioRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.DiscoverThxAudioRequest left, OpenBlade.Session.DiscoverThxAudioRequest right)
+  method virtual OpenBlade.Session.DiscoverThxAudioRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.DiscoverThxAudioRequest other)
 type sealed class OpenBlade.Session.DisplayAutomationCheckpointStore
   ctor (System.String path)
   method System.Boolean Save(OpenBlade.Contracts.PowerSource source)
@@ -121,6 +172,10 @@ type interface OpenBlade.Session.IDisplayProfileApplier
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetColorProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String colorProfileKey, System.Threading.CancellationToken cancellationToken = null)
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetHdrAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Boolean enabled, System.Threading.CancellationToken cancellationToken = null)
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetRefreshRateAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String refreshRateKey, System.Threading.CancellationToken cancellationToken = null)
+type interface OpenBlade.Session.IThxAudioAutomationController
+  method abstract System.Threading.Tasks.Task<OpenBlade.Session.ThxAudioOperationStatus> ApplyAsync(OpenBlade.Session.ThxAudioAutomationTarget target, System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Session.IThxForegroundSource
+  method abstract System.Collections.Generic.IAsyncEnumerable<OpenBlade.Session.ThxForegroundObservation> WatchAsync(System.Threading.CancellationToken cancellationToken)
 type interface OpenBlade.Session.IWindowsPowerModeController
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.WindowsPowerModeApplyResult> ApplyAsync(OpenBlade.Contracts.PowerSource powerSource, OpenBlade.Contracts.WindowsPowerMode mode, System.Threading.CancellationToken cancellationToken = null)
 type enum OpenBlade.Session.PerformanceShortcutNotificationKind
@@ -171,6 +226,44 @@ type sealed class OpenBlade.Session.QueryGpuAppsRequest
   method static System.Boolean op_Inequality(OpenBlade.Session.QueryGpuAppsRequest left, OpenBlade.Session.QueryGpuAppsRequest right)
   method virtual OpenBlade.Session.QueryGpuAppsRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Session.QueryGpuAppsRequest other)
+type sealed class OpenBlade.Session.ReadThxAudioRequest
+  base OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.ReadThxAudioRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.ThxAudioEndpoint Endpoint)
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioEndpoint Endpoint)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.ReadThxAudioRequest left, OpenBlade.Session.ReadThxAudioRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ReadThxAudioRequest left, OpenBlade.Session.ReadThxAudioRequest right)
+  method virtual OpenBlade.Session.ReadThxAudioRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.ReadThxAudioRequest other)
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+type sealed class OpenBlade.Session.SelectThxPresetRequest
+  base OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.SelectThxPresetRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.ThxAudioEndpoint Endpoint, System.String PresetId, System.Collections.Generic.IReadOnlyList<System.Double> GainsDb)
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method System.Collections.Generic.IReadOnlyList<System.Double> get_GainsDb()
+  method System.String get_PresetId()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioEndpoint Endpoint, out System.String PresetId, out System.Collections.Generic.IReadOnlyList<System.Double> GainsDb)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method System.Void set_GainsDb(System.Collections.Generic.IReadOnlyList<System.Double> value)
+  method System.Void set_PresetId(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.SelectThxPresetRequest left, OpenBlade.Session.SelectThxPresetRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SelectThxPresetRequest left, OpenBlade.Session.SelectThxPresetRequest right)
+  method virtual OpenBlade.Session.SelectThxPresetRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.SelectThxPresetRequest other)
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+  property System.Collections.Generic.IReadOnlyList<System.Double> GainsDb { get; init; }
+  property System.String PresetId { get; init; }
 type sealed class OpenBlade.Session.SessionAgentEventEndpoint
   interface System.IEquatable<OpenBlade.Session.SessionAgentEventEndpoint>
   ctor (System.String DisplayBrightnessChangedMessageName, System.String PerformanceShortcutNotificationMessageName)
@@ -200,11 +293,68 @@ type sealed class OpenBlade.Session.SessionAgentPipeEndpoint
   method override System.Int32 GetHashCode()
   method override System.String ToString()
   method static OpenBlade.Session.SessionAgentPipeEndpoint Create(System.Security.Principal.SecurityIdentifier userSid, System.Int32 sessionId)
+  method static OpenBlade.Session.SessionAgentPipeEndpoint CreateAudio(System.Security.Principal.SecurityIdentifier userSid, System.Int32 sessionId)
   method static OpenBlade.Session.SessionAgentPipeEndpoint CreateGpu(System.Security.Principal.SecurityIdentifier userSid, System.Int32 sessionId)
   method static System.Boolean op_Equality(OpenBlade.Session.SessionAgentPipeEndpoint left, OpenBlade.Session.SessionAgentPipeEndpoint right)
   method static System.Boolean op_Inequality(OpenBlade.Session.SessionAgentPipeEndpoint left, OpenBlade.Session.SessionAgentPipeEndpoint right)
   method virtual System.Boolean Equals(OpenBlade.Session.SessionAgentPipeEndpoint other)
   property System.String PipeName { get; init; }
+type static class OpenBlade.Session.SessionAudioIpc
+  field const System.Int32 MaximumApplicationProfiles = 256
+  field const System.Int32 MaximumMessageBytes = 65536
+  field const System.Int32 MaximumPresets = 256
+  field const System.Int32 ProtocolVersion = 1
+  field const System.String PipeNamePrefix = "OpenBlade.Session.Audio.v1"
+type static class OpenBlade.Session.SessionAudioIpcCodec
+  method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Session.SessionAudioRequest request, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task WriteResponseAsync(System.IO.Stream stream, OpenBlade.Session.SessionAudioResponse response, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<OpenBlade.Session.SessionAudioRequest> ReadRequestAsync(System.IO.Stream stream, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<OpenBlade.Session.SessionAudioResponse> ReadResponseAsync(System.IO.Stream stream, System.Threading.CancellationToken cancellationToken = null)
+type abstract class OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.SessionAudioRequest>
+  method System.Guid get_RequestId()
+  method System.Int32 get_Version()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method System.Void set_RequestId(System.Guid value)
+  method System.Void set_Version(System.Int32 value)
+  method abstract OpenBlade.Session.SessionAudioRequest <Clone>$()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionAudioRequest left, OpenBlade.Session.SessionAudioRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionAudioRequest left, OpenBlade.Session.SessionAudioRequest right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  property System.Guid RequestId { get; init; }
+  property System.Int32 Version { get; init; }
+type sealed class OpenBlade.Session.SessionAudioResponse
+  interface System.IEquatable<OpenBlade.Session.SessionAudioResponse>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.ThxAudioOperationStatus Status, OpenBlade.Session.ThxAudioAvailability Availability, System.String Error, OpenBlade.Session.ThxAudioState State)
+  method OpenBlade.Session.SessionAudioResponse <Clone>$()
+  method OpenBlade.Session.ThxAudioAvailability get_Availability()
+  method OpenBlade.Session.ThxAudioOperationStatus get_Status()
+  method OpenBlade.Session.ThxAudioState get_State()
+  method System.Guid get_RequestId()
+  method System.Int32 get_Version()
+  method System.String get_Error()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioOperationStatus Status, out OpenBlade.Session.ThxAudioAvailability Availability, out System.String Error, out OpenBlade.Session.ThxAudioState State)
+  method System.Void set_Availability(OpenBlade.Session.ThxAudioAvailability value)
+  method System.Void set_Error(System.String value)
+  method System.Void set_RequestId(System.Guid value)
+  method System.Void set_State(OpenBlade.Session.ThxAudioState value)
+  method System.Void set_Status(OpenBlade.Session.ThxAudioOperationStatus value)
+  method System.Void set_Version(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionAudioResponse left, OpenBlade.Session.SessionAudioResponse right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionAudioResponse left, OpenBlade.Session.SessionAudioResponse right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionAudioResponse other)
+  property OpenBlade.Session.ThxAudioAvailability Availability { get; init; }
+  property OpenBlade.Session.ThxAudioOperationStatus Status { get; init; }
+  property OpenBlade.Session.ThxAudioState State { get; init; }
+  property System.Guid RequestId { get; init; }
+  property System.Int32 Version { get; init; }
+  property System.String Error { get; init; }
 type sealed class OpenBlade.Session.SessionDisplayExecutionResult
   interface System.IEquatable<OpenBlade.Session.SessionDisplayExecutionResult>
   ctor (OpenBlade.Session.SessionDisplayOperationStatus Status, System.String Error, OpenBlade.Display.DisplaySettingsSnapshot State)
@@ -472,6 +622,296 @@ type sealed class OpenBlade.Session.SetRefreshRateRequest
   method virtual System.Boolean Equals(OpenBlade.Session.SetRefreshRateRequest other)
   property OpenBlade.Contracts.PowerSource ExpectedPowerSource { get; init; }
   property System.String RefreshRateKey { get; init; }
+type sealed class OpenBlade.Session.SetThxEnhancementRequest
+  base OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.SetThxEnhancementRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.ThxAudioEndpoint Endpoint, OpenBlade.Session.ThxAudioEnhancementKind Kind, System.Boolean Enabled, System.Nullable<System.Int32> LevelPercent)
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method OpenBlade.Session.ThxAudioEnhancementKind get_Kind()
+  method System.Boolean get_Enabled()
+  method System.Nullable<System.Int32> get_LevelPercent()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioEndpoint Endpoint, out OpenBlade.Session.ThxAudioEnhancementKind Kind, out System.Boolean Enabled, out System.Nullable<System.Int32> LevelPercent)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method System.Void set_Kind(OpenBlade.Session.ThxAudioEnhancementKind value)
+  method System.Void set_LevelPercent(System.Nullable<System.Int32> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.SetThxEnhancementRequest left, OpenBlade.Session.SetThxEnhancementRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SetThxEnhancementRequest left, OpenBlade.Session.SetThxEnhancementRequest right)
+  method virtual OpenBlade.Session.SetThxEnhancementRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.SetThxEnhancementRequest other)
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+  property OpenBlade.Session.ThxAudioEnhancementKind Kind { get; init; }
+  property System.Boolean Enabled { get; init; }
+  property System.Nullable<System.Int32> LevelPercent { get; init; }
+type sealed class OpenBlade.Session.SetThxEqualizerRequest
+  base OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.SetThxEqualizerRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.ThxAudioEndpoint Endpoint, System.Boolean Enabled)
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioEndpoint Endpoint, out System.Boolean Enabled)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.SetThxEqualizerRequest left, OpenBlade.Session.SetThxEqualizerRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SetThxEqualizerRequest left, OpenBlade.Session.SetThxEqualizerRequest right)
+  method virtual OpenBlade.Session.SetThxEqualizerRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.SetThxEqualizerRequest other)
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+  property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Session.SetThxSpatialRequest
+  base OpenBlade.Session.SessionAudioRequest
+  interface System.IEquatable<OpenBlade.Session.SetThxSpatialRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.ThxAudioEndpoint Endpoint, System.Boolean Enabled)
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioEndpoint Endpoint, out System.Boolean Enabled)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionAudioRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.SetThxSpatialRequest left, OpenBlade.Session.SetThxSpatialRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SetThxSpatialRequest left, OpenBlade.Session.SetThxSpatialRequest right)
+  method virtual OpenBlade.Session.SetThxSpatialRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.SetThxSpatialRequest other)
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+  property System.Boolean Enabled { get; init; }
+type enum OpenBlade.Session.ThxAudioApplicationMode
+  field System.Int32 value__
+  field const OpenBlade.Session.ThxAudioApplicationMode Competitive = 1
+  field const OpenBlade.Session.ThxAudioApplicationMode Immersive = 0
+type sealed class OpenBlade.Session.ThxAudioApplicationProfile
+  interface System.IEquatable<OpenBlade.Session.ThxAudioApplicationProfile>
+  ctor (System.String ExecutableName, System.Boolean SupportsImmersive, System.Boolean SupportsCompetitive)
+  method OpenBlade.Session.ThxAudioApplicationProfile <Clone>$()
+  method System.Boolean get_SupportsCompetitive()
+  method System.Boolean get_SupportsImmersive()
+  method System.String get_ExecutableName()
+  method System.Void Deconstruct(out System.String ExecutableName, out System.Boolean SupportsImmersive, out System.Boolean SupportsCompetitive)
+  method System.Void set_ExecutableName(System.String value)
+  method System.Void set_SupportsCompetitive(System.Boolean value)
+  method System.Void set_SupportsImmersive(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxAudioApplicationProfile left, OpenBlade.Session.ThxAudioApplicationProfile right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxAudioApplicationProfile left, OpenBlade.Session.ThxAudioApplicationProfile right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxAudioApplicationProfile other)
+  property System.Boolean SupportsCompetitive { get; init; }
+  property System.Boolean SupportsImmersive { get; init; }
+  property System.String ExecutableName { get; init; }
+type sealed class OpenBlade.Session.ThxAudioAutomationCoordinator
+  interface System.IAsyncDisposable
+  ctor (OpenBlade.Session.IThxAudioAutomationController controller)
+  method System.Boolean get_IsPaused()
+  method System.Threading.Tasks.Task ResetAfterExplicitReadAsync()
+  method System.Threading.Tasks.Task WhenIdleAsync(System.Threading.CancellationToken cancellationToken = null)
+  method System.Void MarkUnavailable()
+  method System.Void Observe(OpenBlade.Contracts.ServiceStatusSnapshot status)
+  method System.Void ObserveForeground(OpenBlade.Session.ThxForegroundObservation observation)
+  method System.Void PauseForManualOperation()
+  method System.Void SetIntegrationEnabled(System.Boolean enabled)
+  method virtual System.Threading.Tasks.ValueTask DisposeAsync()
+  property System.Boolean IsPaused { get; }
+type sealed class OpenBlade.Session.ThxAudioAutomationTarget
+  interface System.IEquatable<OpenBlade.Session.ThxAudioAutomationTarget>
+  ctor (OpenBlade.Contracts.ThxAudioProfileSettings Settings, OpenBlade.Contracts.ThxApplicationAudioRule ApplicationRule, OpenBlade.Session.ThxAudioEndpoint Endpoint, System.String ExecutableName)
+  method OpenBlade.Contracts.ThxApplicationAudioRule get_ApplicationRule()
+  method OpenBlade.Contracts.ThxAudioProfileSettings get_Settings()
+  method OpenBlade.Session.ThxAudioAutomationTarget <Clone>$()
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method System.String get_ExecutableName()
+  method System.Void Deconstruct(out OpenBlade.Contracts.ThxAudioProfileSettings Settings, out OpenBlade.Contracts.ThxApplicationAudioRule ApplicationRule, out OpenBlade.Session.ThxAudioEndpoint Endpoint, out System.String ExecutableName)
+  method System.Void set_ApplicationRule(OpenBlade.Contracts.ThxApplicationAudioRule value)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method System.Void set_ExecutableName(System.String value)
+  method System.Void set_Settings(OpenBlade.Contracts.ThxAudioProfileSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxAudioAutomationTarget left, OpenBlade.Session.ThxAudioAutomationTarget right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxAudioAutomationTarget left, OpenBlade.Session.ThxAudioAutomationTarget right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxAudioAutomationTarget other)
+  property OpenBlade.Contracts.ThxApplicationAudioRule ApplicationRule { get; init; }
+  property OpenBlade.Contracts.ThxAudioProfileSettings Settings { get; init; }
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+  property System.String ExecutableName { get; init; }
+type enum OpenBlade.Session.ThxAudioAvailability
+  field System.Int32 value__
+  field const OpenBlade.Session.ThxAudioAvailability Available = 4
+  field const OpenBlade.Session.ThxAudioAvailability AvailableReadOnly = 5
+  field const OpenBlade.Session.ThxAudioAvailability ComponentsUnavailable = 2
+  field const OpenBlade.Session.ThxAudioAvailability ControllerActive = 3
+  field const OpenBlade.Session.ThxAudioAvailability Disabled = 0
+  field const OpenBlade.Session.ThxAudioAvailability UnsupportedModel = 1
+type enum OpenBlade.Session.ThxAudioEndpoint
+  field System.Int32 value__
+  field const OpenBlade.Session.ThxAudioEndpoint Headphones = 1
+  field const OpenBlade.Session.ThxAudioEndpoint Speakers = 0
+type sealed class OpenBlade.Session.ThxAudioEnhancement
+  interface System.IEquatable<OpenBlade.Session.ThxAudioEnhancement>
+  ctor (System.Boolean Enabled, System.Int32 LevelPercent)
+  method OpenBlade.Session.ThxAudioEnhancement <Clone>$()
+  method System.Boolean get_Enabled()
+  method System.Int32 get_LevelPercent()
+  method System.Void Deconstruct(out System.Boolean Enabled, out System.Int32 LevelPercent)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_LevelPercent(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxAudioEnhancement left, OpenBlade.Session.ThxAudioEnhancement right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxAudioEnhancement left, OpenBlade.Session.ThxAudioEnhancement right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxAudioEnhancement other)
+  property System.Boolean Enabled { get; init; }
+  property System.Int32 LevelPercent { get; init; }
+type enum OpenBlade.Session.ThxAudioEnhancementKind
+  field System.Int32 value__
+  field const OpenBlade.Session.ThxAudioEnhancementKind SoundNormalization = 0
+  field const OpenBlade.Session.ThxAudioEnhancementKind VoiceClarity = 1
+type sealed class OpenBlade.Session.ThxAudioEqualizerBand
+  interface System.IEquatable<OpenBlade.Session.ThxAudioEqualizerBand>
+  ctor (System.Int32 FrequencyHz, System.Double GainDb)
+  method OpenBlade.Session.ThxAudioEqualizerBand <Clone>$()
+  method System.Double get_GainDb()
+  method System.Int32 get_FrequencyHz()
+  method System.Void Deconstruct(out System.Int32 FrequencyHz, out System.Double GainDb)
+  method System.Void set_FrequencyHz(System.Int32 value)
+  method System.Void set_GainDb(System.Double value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxAudioEqualizerBand left, OpenBlade.Session.ThxAudioEqualizerBand right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxAudioEqualizerBand left, OpenBlade.Session.ThxAudioEqualizerBand right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxAudioEqualizerBand other)
+  property System.Double GainDb { get; init; }
+  property System.Int32 FrequencyHz { get; init; }
+type enum OpenBlade.Session.ThxAudioFeatureAccess
+  field System.Int32 value__
+  field const OpenBlade.Session.ThxAudioFeatureAccess Available = 0
+  field const OpenBlade.Session.ThxAudioFeatureAccess ObservedOnly = 1
+  field const OpenBlade.Session.ThxAudioFeatureAccess Unavailable = 2
+type enum OpenBlade.Session.ThxAudioOperationStatus
+  field System.Int32 value__
+  field const OpenBlade.Session.ThxAudioOperationStatus Failed = 2
+  field const OpenBlade.Session.ThxAudioOperationStatus Indeterminate = 3
+  field const OpenBlade.Session.ThxAudioOperationStatus Succeeded = 0
+  field const OpenBlade.Session.ThxAudioOperationStatus Unavailable = 1
+type sealed class OpenBlade.Session.ThxAudioPreset
+  interface System.IEquatable<OpenBlade.Session.ThxAudioPreset>
+  ctor (System.String Id, System.String Name)
+  method OpenBlade.Session.ThxAudioPreset <Clone>$()
+  method System.String get_Id()
+  method System.String get_Name()
+  method System.Void Deconstruct(out System.String Id, out System.String Name)
+  method System.Void set_Id(System.String value)
+  method System.Void set_Name(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxAudioPreset left, OpenBlade.Session.ThxAudioPreset right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxAudioPreset left, OpenBlade.Session.ThxAudioPreset right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxAudioPreset other)
+  property System.String Id { get; init; }
+  property System.String Name { get; init; }
+type sealed class OpenBlade.Session.ThxAudioPresetCurve
+  interface System.IEquatable<OpenBlade.Session.ThxAudioPresetCurve>
+  ctor (System.String PresetId, System.Collections.Generic.IReadOnlyList<System.Double> GainsDb)
+  method OpenBlade.Session.ThxAudioPresetCurve <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<System.Double> get_GainsDb()
+  method System.String get_PresetId()
+  method System.Void Deconstruct(out System.String PresetId, out System.Collections.Generic.IReadOnlyList<System.Double> GainsDb)
+  method System.Void set_GainsDb(System.Collections.Generic.IReadOnlyList<System.Double> value)
+  method System.Void set_PresetId(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxAudioPresetCurve left, OpenBlade.Session.ThxAudioPresetCurve right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxAudioPresetCurve left, OpenBlade.Session.ThxAudioPresetCurve right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxAudioPresetCurve other)
+  property System.Collections.Generic.IReadOnlyList<System.Double> GainsDb { get; init; }
+  property System.String PresetId { get; init; }
+type sealed class OpenBlade.Session.ThxAudioState
+  interface System.IEquatable<OpenBlade.Session.ThxAudioState>
+  ctor (OpenBlade.Session.ThxAudioEndpoint Endpoint, System.Boolean SpatialEnabled, System.Boolean EqualizerEnabled, System.String SelectedPresetId, System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPreset> Presets)
+  method OpenBlade.Session.ThxAudioEndpoint get_Endpoint()
+  method OpenBlade.Session.ThxAudioEnhancement get_SoundNormalization()
+  method OpenBlade.Session.ThxAudioEnhancement get_VoiceClarity()
+  method OpenBlade.Session.ThxAudioFeatureAccess get_ApplicationProfiles()
+  method OpenBlade.Session.ThxAudioState <Clone>$()
+  method System.Boolean get_ApplicationAutomationPaused()
+  method System.Boolean get_EqualizerEnabled()
+  method System.Boolean get_SpatialEnabled()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioApplicationProfile> get_ApplicationProfileCatalog()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioEqualizerBand> get_EqualizerBands()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPreset> get_Presets()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPresetCurve> get_FactoryPresetCurves()
+  method System.Nullable<System.Boolean> get_SystemEffectsDisabled()
+  method System.String get_SelectedNativeProfileId()
+  method System.String get_SelectedPresetId()
+  method System.Void Deconstruct(out OpenBlade.Session.ThxAudioEndpoint Endpoint, out System.Boolean SpatialEnabled, out System.Boolean EqualizerEnabled, out System.String SelectedPresetId, out System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPreset> Presets)
+  method System.Void set_ApplicationAutomationPaused(System.Boolean value)
+  method System.Void set_ApplicationProfileCatalog(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioApplicationProfile> value)
+  method System.Void set_ApplicationProfiles(OpenBlade.Session.ThxAudioFeatureAccess value)
+  method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method System.Void set_EqualizerBands(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioEqualizerBand> value)
+  method System.Void set_EqualizerEnabled(System.Boolean value)
+  method System.Void set_FactoryPresetCurves(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPresetCurve> value)
+  method System.Void set_Presets(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPreset> value)
+  method System.Void set_SelectedNativeProfileId(System.String value)
+  method System.Void set_SelectedPresetId(System.String value)
+  method System.Void set_SoundNormalization(OpenBlade.Session.ThxAudioEnhancement value)
+  method System.Void set_SpatialEnabled(System.Boolean value)
+  method System.Void set_SystemEffectsDisabled(System.Nullable<System.Boolean> value)
+  method System.Void set_VoiceClarity(OpenBlade.Session.ThxAudioEnhancement value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxAudioState left, OpenBlade.Session.ThxAudioState right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxAudioState left, OpenBlade.Session.ThxAudioState right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxAudioState other)
+  property OpenBlade.Session.ThxAudioEndpoint Endpoint { get; init; }
+  property OpenBlade.Session.ThxAudioEnhancement SoundNormalization { get; init; }
+  property OpenBlade.Session.ThxAudioEnhancement VoiceClarity { get; init; }
+  property OpenBlade.Session.ThxAudioFeatureAccess ApplicationProfiles { get; init; }
+  property System.Boolean ApplicationAutomationPaused { get; init; }
+  property System.Boolean EqualizerEnabled { get; init; }
+  property System.Boolean SpatialEnabled { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioApplicationProfile> ApplicationProfileCatalog { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioEqualizerBand> EqualizerBands { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPreset> Presets { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPresetCurve> FactoryPresetCurves { get; init; }
+  property System.Nullable<System.Boolean> SystemEffectsDisabled { get; init; }
+  property System.String SelectedNativeProfileId { get; init; }
+  property System.String SelectedPresetId { get; init; }
+type sealed class OpenBlade.Session.ThxForegroundObservation
+  interface System.IEquatable<OpenBlade.Session.ThxForegroundObservation>
+  ctor (System.String ExecutableName, System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint = null)
+  method OpenBlade.Session.ThxForegroundObservation <Clone>$()
+  method System.Nullable<OpenBlade.Session.ThxAudioEndpoint> get_Endpoint()
+  method System.String get_ExecutableName()
+  method System.Void Deconstruct(out System.String ExecutableName, out System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint)
+  method System.Void set_Endpoint(System.Nullable<OpenBlade.Session.ThxAudioEndpoint> value)
+  method System.Void set_ExecutableName(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Session.ThxForegroundObservation get_Unknown()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxForegroundObservation left, OpenBlade.Session.ThxForegroundObservation right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxForegroundObservation left, OpenBlade.Session.ThxForegroundObservation right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxForegroundObservation other)
+  property OpenBlade.Session.ThxForegroundObservation Unknown { get; }
+  property System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint { get; init; }
+  property System.String ExecutableName { get; init; }
 type sealed class OpenBlade.Session.WindowsPowerModeApplyResult
   interface System.IEquatable<OpenBlade.Session.WindowsPowerModeApplyResult>
   ctor (System.Boolean Succeeded, System.Boolean Changed, System.Nullable<OpenBlade.Contracts.WindowsPowerMode> ConfiguredMode, System.String Error)

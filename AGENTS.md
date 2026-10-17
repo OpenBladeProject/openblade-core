@@ -146,6 +146,31 @@ bounded capabilities, upstream provenance, write-pause recovery, and tester
 reports. These profiles do not inherit another model's backends, drivers, or
 physical-validation status.
 
+## Source-backed experimental admission
+
+Physical validation is the promotion gate for validated support, not a
+prerequisite for releasing a separately implemented experimental control for
+community testing. The maintainer need not own every experimental laptop.
+Review and pin the exact model's vendor or upstream command definitions, expose
+its experimental provenance in capabilities and diagnostics, and document what
+users still need to test. Do not claim another model's physical results.
+
+When an exact model's reviewed HyperBoost implementation uses the same typed
+thermal commands with or without a cooling pad, those commands may be offered
+on both paths experimentally. Record padless use as source-backed extrapolation
+until community validation is reviewed. Do not fabricate a pad connection or
+issue additional accessory-status writes to emulate one. Preserve any concrete
+firmware prerequisites established by the exact model's source.
+
+Keep fresh exact-device, controller, power, session and ownership admission,
+independent readback, durable restoration, and stop-on-ambiguity behavior on
+every experimental path. Software tests must cover failure and recovery before
+release. Physical-validation manifests belonging to the separately validated
+backends remain required for those backends; they do not automatically gate
+source-backed experimental backends. New or unknown commands still require
+separate exact-model source review. This policy authorizes no development-time
+hardware writes, installations, or unattended sleep/resume tests.
+
 ## Codebase map
 
 - `src/OpenBlade.Contracts`: shared service IPC, profiles, capabilities, and
@@ -171,6 +196,33 @@ physical-validation status.
 - `tests/*`: project-aligned tests plus `Build.Tests` release-payload checks.
 - `captures`: submodule containing sanitized evidence and capture tooling.
 - `build`: publish, package, and deployment scripts.
+
+## Settings cell presentation
+
+Use the Custom performance CPU/GPU subcells in `MainWindow.xaml` as the
+reference for new settings subcells. Reuse the shared presentation rather than
+inventing a page-specific appearance:
+
+- Ordinary subcells use `SettingsNeutralSubcardStyle` or its last-row variant:
+  transparent at rest, with the shared pointer-over background only on hover.
+  Forms and multi-control editors use the hover-free `SettingsEditorSubcardStyle`
+  variants. Permanent shading is not a nesting indicator; use an emphasized
+  style only for an explicitly required visual role.
+- Single-line rows reuse `DashboardSingleLineRowPadding` (16,4),
+  `DashboardSingleLineRowContentMinHeight` (40), `CardTitleStyle`, centered label
+  alignment, and 20-DIP label/control spacing. Keep the shared wrapped-title
+  padding adjustment; do not fix row heights. Multi-line descriptions and
+  editors retain the standard shared padding.
+- Let shared styles own backgrounds, separators, corners, margins, and hover
+  behavior. Do not override them locally or copy their values into new styles.
+  Nested card expanders have zero content padding because their child rows
+  already own padding. Collapse empty optional children so stack spacing does
+  not leave a phantom row.
+- Extend semantic shared-style tests, not just style-use counts. For a new row,
+  compare its presentation with the reference and inspect a disconnected render
+  in the relevant empty, populated, wrapped-label, and hover states. Reuse
+  unchanged evidence; inspect only states affected by the change. A deliberate
+  exception needs a concrete design reason in the PR and its focused test.
 
 ## Architecture rules
 
@@ -225,6 +277,21 @@ physical-validation status.
    model or driver build. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
+   The optional experimental THX audio integration may use the already
+   installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
+   `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off
+   by default, uses current-user typed Audio IPC and an isolated native helper,
+   and never installs or bundles THX components. Component discovery and
+   shutdown must not change audio settings. Automatic changes, including
+   startup reconciliation, require both the per-user integration preference
+   and the active profile's explicit audio automation opt-in, a known
+   foreground executable, and the exact recognized active Realtek output.
+   Preserve explicit readback and stop mutations after ambiguous submission
+   until a successful explicit read. RZ09-0528 and RZ09-0530 remain
+   source-backed experimental support until their native behavior is physically
+   validated. This exception admits no other laptop or component build. Keep
+   standalone native/audio validation separate from simulated tests; see
+   [THX audio](docs/thx-audio.md).
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.
@@ -418,11 +485,14 @@ unrelated worktrees and checkout changes.
     changes. If local modifications or divergence prevent a safe fast-forward,
     report the blocker rather than stashing, resetting, or discarding work.
 
-## README and documentation language
+## README, documentation, and UI language
 
 Use the concise [README](README.md), approved in
 [PR #558](https://github.com/OSSBlade/openblade-core/pull/558), as the writing
-reference for user-facing documentation.
+reference for user-facing documentation and app UI text. These rules cover
+labels, helper text, tooltips, status messages, notifications, and confirmation
+dialogs in the tray, graphical installer, and native setup, including their
+translations.
 
 - Write for laptop owners in plain, direct English. Prefer familiar words,
   concrete actions, and short sentences over implementation jargon.
@@ -443,9 +513,27 @@ reference for user-facing documentation.
   not do.
 - Write instructions positively and concretely, for example: "Start it
   normally; setup asks for administrator permission when needed."
-- Review documentation edits for factual accuracy, length, repetition, and
-  tone. Verify changed behavior claims against the implementation. Detailed
+- Review documentation and UI text edits for factual accuracy, length,
+  repetition, and tone. Verify changed behavior claims against the implementation. Detailed
   engineering guides should retain the precision their readers need.
+
+- Delete redundant disclaimers outright; do not replace a removed caveat with
+  another warning or reassurance. Include a limitation when it changes what the
+  reader can do, needs to check, or should expect.
+- State actions positively, for example, "Start HyperBoost manually." Avoid
+  stacking statements about what a feature never does. Routine entry and
+  restoration behavior belongs in usage or technical detail when needed, not
+  as a caveat attached to every feature description.
+- Preserve meaning while shortening: safety gates, model and firmware limits,
+  process exclusions, and benchmark sampling conditions must remain accurate.
+  Keep English, Russian, and Chinese versions aligned.
+- In UI text, state the current condition, consequence, and next action when
+  needed. Keep data-loss warnings, uncertain-write and recovery instructions,
+  and required safety or compatibility limits explicit. Remove internal
+  implementation detail that does not help the user decide or act.
+- Follow [the localization workflow](docs/localization.md) when changing UI
+  text: update source fallbacks and matching translations, preserve placeholders
+  and access keys, and regenerate the authoritative catalogs and pseudo locale.
 
 ## Versioning and commits
 

@@ -93,8 +93,14 @@
   <data name="{0} minutes" xml:space="preserve">
     <value>{0} мин</value>
   </data>
-  <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
-    <value>{0} Это уведомление о совместимости, а не аппаратная неисправность. Элементы управления остаются доступными, но поведение может отличаться.</value>
+  <data name="{0} Controls remain available, but behavior may differ from the tested configuration." xml:space="preserve">
+    <value>{0} Элементы управления доступны, но поведение может отличаться от проверенной конфигурации.</value>
+  </data>
+  <data name="{0} Controls are blocked. Enable the firmware override to request access." xml:space="preserve">
+    <value>{0} Управление заблокировано. Включите переопределение прошивки, чтобы запросить доступ.</value>
+  </data>
+  <data name="{0} The firmware override is enabled while OpenBlade checks control access." xml:space="preserve">
+    <value>{0} Переопределение прошивки включено, пока OpenBlade проверяет доступ к управлению.</value>
   </data>
   <data name="{0} unavailable" xml:space="preserve">
     <value>{0} недоступно</value>
@@ -174,8 +180,8 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>Цвета экрана, весь экран</value>
   </data>
-  <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
-    <value>Другое приложение Razer также может изменять эти параметры. OpenBlade будет показывать изменения, а не отменять их.</value>
+  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
+    <value>OpenBlade показывает изменения, внесённые другим приложением Razer, и не отменяет их.</value>
   </data>
   <data name="Another Razer app is running" xml:space="preserve">
     <value>Запущено другое приложение Razer</value>
@@ -1143,8 +1149,8 @@
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>Модуль сохранения диагностики вернул некорректный результат.</value>
   </data>
-  <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
-    <value>Проверенный драйвер Razer, точно соответствующий этой модели, позволяет Windows показывать системный индикатор яркости. При каждом нажатии клавиши OpenBlade заново проверяет точный путь к устройству. Если системное управление недоступно, OpenBlade показывает собственный индикатор.</value>
+  <data name="The matching Razer driver shows the Windows brightness flyout. OpenBlade uses its own flyout when the driver is unavailable." xml:space="preserve">
+    <value>Драйвер Razer для этой модели показывает системный индикатор яркости Windows. Если драйвер недоступен, OpenBlade показывает собственный индикатор.</value>
   </data>
   <data name="Tidal" xml:space="preserve">
     <value>Прилив</value>
@@ -1275,8 +1281,8 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows не подтвердила запрошенный параметр запуска при входе.</value>
   </data>
-  <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
-    <value>Подсветкой клавиатуры управляет функция «Динамическое освещение» Windows. OpenBlade не будет изменять яркость, эффекты и параметры отключения подсветки.</value>
+  <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
+    <value>Подсветкой клавиатуры управляет функция «Динамическое освещение» Windows.</value>
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>Режим питания Windows</value>
@@ -1434,8 +1440,8 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Войдите в интерактивный сеанс Windows, чтобы изменить настройки ноутбука.</value>
   </data>
-  <data name="This laptop has experimental support enabled automatically. Export diagnostics in About to help test support." xml:space="preserve">
-    <value>На этом ноутбуке экспериментальная поддержка включается автоматически. Экспортируйте диагностику в разделе «О программе», чтобы помочь с тестированием.</value>
+  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
+    <value>На этом ноутбуке доступны экспериментальные элементы управления. Экспортируйте диагностику в разделе «О программе», чтобы помочь с их тестированием.</value>
   </data>
   <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
     <value>Экспериментальная запись приостановлена, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите экспериментальное управление. OpenBlade не станет повторять предыдущее изменение.</value>
@@ -1472,5 +1478,114 @@
   </data>
   <data name="Maximum fans is controlling the fans. Turn off Maximum fans to choose a fan mode." xml:space="preserve">
     <value>Вентиляторами управляет режим «Максимальные обороты». Выключите его, чтобы выбрать режим вентиляторов.</value>
+  </data>
+  <data name="THX audio integration is off." xml:space="preserve">
+    <value>Интеграция THX Audio выключена.</value>
+  </data>
+  <data name="Read the current THX settings to connect." xml:space="preserve">
+    <value>Прочитайте текущие настройки THX для подключения.</value>
+  </data>
+  <data name="THX settings are up to date." xml:space="preserve">
+    <value>Настройки THX актуальны.</value>
+  </data>
+  <data name="THX components found. Read the current settings to connect." xml:space="preserve">
+    <value>Компоненты THX найдены. Прочитайте текущие настройки для подключения.</value>
+  </data>
+  <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
+    <value>Не удалось подтвердить настройки THX. Прочитайте их снова перед изменением.</value>
+  </data>
+  <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
+    <value>Не удалось подтвердить изменение звука. Прочитайте текущие настройки перед повторной попыткой.</value>
+  </data>
+  <data name="The supported THX components are unavailable." xml:space="preserve">
+    <value>Поддерживаемые компоненты THX недоступны.</value>
+  </data>
+  <data name="The Session Agent could not read THX settings." xml:space="preserve">
+    <value>Session Agent не удалось прочитать настройки THX.</value>
+  </data>
+  <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
+    <value>Закройте Synapse перед подключением к THX Audio.</value>
+  </data>
+  <data name="Speakers" xml:space="preserve">
+    <value>Динамики</value>
+  </data>
+  <data name="Headphones" xml:space="preserve">
+    <value>Наушники</value>
+  </data>
+  <data name="{0} kHz" xml:space="preserve">
+    <value>{0} кГц</value>
+  </data>
+  <data name="{0} Hz equalizer gain" xml:space="preserve">
+    <value>Усиление эквалайзера на {0} Гц</value>
+  </data>
+  <data name="{0} dB" xml:space="preserve">
+    <value>{0} дБ</value>
+  </data>
+  <data name="Active application profile: {0}" xml:space="preserve">
+    <value>Активный профиль приложения: {0}</value>
+  </data>
+  <data name="Game" xml:space="preserve">
+    <value>Игры</value>
+  </data>
+  <data name="Movie" xml:space="preserve">
+    <value>Кино</value>
+  </data>
+  <data name="Music" xml:space="preserve">
+    <value>Музыка</value>
+  </data>
+  <data name="Voice" xml:space="preserve">
+    <value>Голос</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>По умолчанию</value>
+  </data>
+  <data name="THX Immersive Mode" xml:space="preserve">
+    <value>Режим погружения THX</value>
+  </data>
+  <data name="THX Competitive Mode" xml:space="preserve">
+    <value>Соревновательный режим THX</value>
+  </data>
+  <data name="Choose EQ presets, then capture." xml:space="preserve">
+    <value>Выберите пресеты эквалайзера, затем считайте настройки.</value>
+  </data>
+  <data name="Saved audio settings are available for this power profile." xml:space="preserve">
+    <value>Для этого профиля питания сохранены настройки звука.</value>
+  </data>
+  <data name="Current audio settings captured. Save the profile to keep them." xml:space="preserve">
+    <value>Текущие настройки звука считаны. Сохраните их в профиль.</value>
+  </data>
+  <data name="Choose an EQ preset for both outputs before capturing audio settings." xml:space="preserve">
+    <value>Прежде чем считывать настройки звука, выберите пресет эквалайзера для обоих выходов.</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before connecting." xml:space="preserve">
+    <value>Перед подключением закройте Synapse и THX Spatial Audio.</value>
+  </data>
+  <data name="Audio automation is paused. Read the current THX settings to resume." xml:space="preserve">
+    <value>Автоматизация звука приостановлена. Считайте текущие настройки THX, чтобы продолжить.</value>
+  </data>
+  <data name="Adjust the selected preset, then apply your EQ changes." xml:space="preserve">
+    <value>Настройте выбранный пресет и примените изменения эквалайзера.</value>
+  </data>
+  <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
+    <value>Выберите Игры, Кино, Музыка, Голос или Свой, чтобы настроить эквалайзер.</value>
+  </data>
+  <data name="THX audio is unavailable for this model or audio device." xml:space="preserve">
+    <value>THX Audio недоступен для этой модели или аудиоустройства.</value>
+  </data>
+  <data name="THX is available for reading. Controls await validation for this model." xml:space="preserve">
+    <value>Доступно чтение настроек THX. Управление ожидает проверки на этой модели.</value>
+  </data>
+  <data name="Application routing is not yet enabled for this model." xml:space="preserve">
+    <value>Автоматическое переключение звука пока недоступно для этой модели.</value>
+  </data>
+  <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
+    <value>Для этого выхода отключены улучшения звука Windows. Чтобы услышать THX, включите «Эффекты устройства по умолчанию» в настройках звука Windows.</value>
+  </data>
+  <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
+    <value>Список правил приложений заполнен. Удалите правило, чтобы добавить новое.</value>
+  </data>
+  <data name="{0}&#xA;Details: {1}" xml:space="preserve">
+    <value>{0}
+Подробности: {1}</value>
   </data>
 </root>

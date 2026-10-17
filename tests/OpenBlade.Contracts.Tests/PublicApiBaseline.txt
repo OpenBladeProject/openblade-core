@@ -480,6 +480,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
   method OpenBlade.Contracts.HyperBoostBaseModeCapabilities get_HyperBoostBaseModes()
   method OpenBlade.Contracts.SpecialKeySlotSet get_WritableSpecialKeySlots()
+  method OpenBlade.Contracts.ThxAudioCapabilities get_ThxAudio()
   method System.Boolean SupportsBreathingMode(OpenBlade.Contracts.BreathingColorMode mode)
   method System.Boolean get_ReportsPerformanceWithManualFans()
   method System.Boolean get_SupportsBatteryProtectionOff()
@@ -538,6 +539,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_SupportsTemporaryFullCharge(System.Boolean value)
   method System.Void set_SupportsUniformLightingFrames(System.Boolean value)
   method System.Void set_SupportsWaveDirectionSelection(System.Boolean value)
+  method System.Void set_ThxAudio(OpenBlade.Contracts.ThxAudioCapabilities value)
   method System.Void set_WritableSpecialKeySlots(OpenBlade.Contracts.SpecialKeySlotSet value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -554,6 +556,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.GpuOverclockCapabilities GpuOverclock { get; init; }
   property OpenBlade.Contracts.HyperBoostBaseModeCapabilities HyperBoostBaseModes { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
+  property OpenBlade.Contracts.ThxAudioCapabilities ThxAudio { get; init; }
   property System.Boolean ReportsPerformanceWithManualFans { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
   property System.Boolean SupportsBreathingColorSelection { get; init; }
@@ -1065,8 +1068,10 @@ type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
   method OpenBlade.Contracts.HyperBoostBaseModeCapabilities <Clone>$()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> AccessFor(OpenBlade.Contracts.PerformancePreset preset)
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_Custom()
+  method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_CoolingPadEntryBaseMode()
   method System.Void Deconstruct(out OpenBlade.Contracts.DeviceFeatureAccess Silent, out OpenBlade.Contracts.DeviceFeatureAccess Balanced, out OpenBlade.Contracts.DeviceFeatureAccess Performance)
   method System.Void set_Balanced(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_CoolingPadEntryBaseMode(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
   method System.Void set_Custom(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_Performance(OpenBlade.Contracts.DeviceFeatureAccess value)
   method System.Void set_Silent(OpenBlade.Contracts.DeviceFeatureAccess value)
@@ -1080,6 +1085,7 @@ type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
   property OpenBlade.Contracts.DeviceFeatureAccess Performance { get; init; }
   property OpenBlade.Contracts.DeviceFeatureAccess Silent { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> Custom { get; init; }
+  property System.Nullable<OpenBlade.Contracts.PerformancePreset> CoolingPadEntryBaseMode { get; init; }
 type static class OpenBlade.Contracts.HyperBoostCapabilityPolicy
   method static System.Boolean IsDirectEntryBase(OpenBlade.Contracts.DeviceCapabilities capabilities, System.Boolean coolingPadPresent, OpenBlade.Contracts.PerformancePreset mode)
   method static System.Boolean IsWritable(OpenBlade.Contracts.DeviceCapabilities capabilities)
@@ -1428,7 +1434,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 66
+  field const System.Int32 ProtocolVersion = 68
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1523,6 +1529,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method OpenBlade.Contracts.LightingSettings get_Lighting()
   method OpenBlade.Contracts.PerformancePreset get_Performance()
   method OpenBlade.Contracts.PowerProfile <Clone>$()
+  method OpenBlade.Contracts.ThxAudioProfileSettings get_ThxAudio()
   method System.Boolean get_EffectiveBatteryProtectionEnabled()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_WindowsPowerMode()
   method System.Nullable<System.Boolean> get_BatteryProtectionEnabled()
@@ -1537,6 +1544,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
   method System.Void set_LightingPowerPolicy(OpenBlade.Contracts.LightingPowerPolicy value)
   method System.Void set_Performance(OpenBlade.Contracts.PerformancePreset value)
+  method System.Void set_ThxAudio(OpenBlade.Contracts.ThxAudioProfileSettings value)
   method System.Void set_WindowsPowerMode(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -1555,6 +1563,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   property OpenBlade.Contracts.LightingPowerPolicy LightingPowerPolicy { get; init; }
   property OpenBlade.Contracts.LightingSettings Lighting { get; init; }
   property OpenBlade.Contracts.PerformancePreset Performance { get; init; }
+  property OpenBlade.Contracts.ThxAudioProfileSettings ThxAudio { get; init; }
   property System.Boolean EffectiveBatteryProtectionEnabled { get; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> WindowsPowerMode { get; init; }
   property System.Nullable<System.Boolean> BatteryProtectionEnabled { get; init; }
@@ -2689,6 +2698,163 @@ type enum OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState
   field const OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState Acknowledged = 2
   field const OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState NotRequired = 0
   field const OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState UpgradeDisclosurePending = 1
+type enum OpenBlade.Contracts.ThxApplicationAudioOutput
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ThxApplicationAudioOutput Competitive = 6
+  field const OpenBlade.Contracts.ThxApplicationAudioOutput Custom = 4
+  field const OpenBlade.Contracts.ThxApplicationAudioOutput Game = 0
+  field const OpenBlade.Contracts.ThxApplicationAudioOutput Immersive = 5
+  field const OpenBlade.Contracts.ThxApplicationAudioOutput Movie = 1
+  field const OpenBlade.Contracts.ThxApplicationAudioOutput Music = 2
+  field const OpenBlade.Contracts.ThxApplicationAudioOutput Voice = 3
+type sealed class OpenBlade.Contracts.ThxApplicationAudioRule
+  interface System.IEquatable<OpenBlade.Contracts.ThxApplicationAudioRule>
+  ctor (System.String executableName, OpenBlade.Contracts.ThxApplicationAudioOutput output)
+  field const System.Int32 MaximumExecutableNameLength = 260
+  method OpenBlade.Contracts.ThxApplicationAudioOutput get_Output()
+  method OpenBlade.Contracts.ThxApplicationAudioRule <Clone>$()
+  method System.String get_ExecutableName()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ThxApplicationAudioRule left, OpenBlade.Contracts.ThxApplicationAudioRule right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ThxApplicationAudioRule left, OpenBlade.Contracts.ThxApplicationAudioRule right)
+  method static System.String NormalizeExecutableName(System.String executableName)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ThxApplicationAudioRule other)
+  property OpenBlade.Contracts.ThxApplicationAudioOutput Output { get; }
+  property System.String ExecutableName { get; }
+type sealed class OpenBlade.Contracts.ThxAudioCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.ThxAudioCapabilities>
+  ctor (OpenBlade.Contracts.DeviceFeatureAccess Access, System.String ProductId)
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
+  method OpenBlade.Contracts.ThxAudioCapabilities <Clone>$()
+  method System.String get_ProductId()
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceFeatureAccess Access, out System.String ProductId)
+  method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_ProductId(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ThxAudioCapabilities left, OpenBlade.Contracts.ThxAudioCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ThxAudioCapabilities left, OpenBlade.Contracts.ThxAudioCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ThxAudioCapabilities other)
+  property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
+  property System.String ProductId { get; init; }
+type sealed class OpenBlade.Contracts.ThxAudioEndpointSettings
+  interface System.IEquatable<OpenBlade.Contracts.ThxAudioEndpointSettings>
+  ctor (System.Boolean SpatialEnabled, System.Boolean EqualizerEnabled, OpenBlade.Contracts.ThxEqualizerPreset SelectedPreset, OpenBlade.Contracts.ThxEqualizerCurves EqualizerCurves, OpenBlade.Contracts.ThxAudioEnhancementSettings VoiceClarity, OpenBlade.Contracts.ThxAudioEnhancementSettings SoundNormalization)
+  method OpenBlade.Contracts.ThxAudioEndpointSettings <Clone>$()
+  method OpenBlade.Contracts.ThxAudioEnhancementSettings get_SoundNormalization()
+  method OpenBlade.Contracts.ThxAudioEnhancementSettings get_VoiceClarity()
+  method OpenBlade.Contracts.ThxEqualizerCurves get_EqualizerCurves()
+  method OpenBlade.Contracts.ThxEqualizerPreset get_SelectedPreset()
+  method System.Boolean get_EqualizerEnabled()
+  method System.Boolean get_SpatialEnabled()
+  method System.Void Deconstruct(out System.Boolean SpatialEnabled, out System.Boolean EqualizerEnabled, out OpenBlade.Contracts.ThxEqualizerPreset SelectedPreset, out OpenBlade.Contracts.ThxEqualizerCurves EqualizerCurves, out OpenBlade.Contracts.ThxAudioEnhancementSettings VoiceClarity, out OpenBlade.Contracts.ThxAudioEnhancementSettings SoundNormalization)
+  method System.Void set_EqualizerCurves(OpenBlade.Contracts.ThxEqualizerCurves value)
+  method System.Void set_EqualizerEnabled(System.Boolean value)
+  method System.Void set_SelectedPreset(OpenBlade.Contracts.ThxEqualizerPreset value)
+  method System.Void set_SoundNormalization(OpenBlade.Contracts.ThxAudioEnhancementSettings value)
+  method System.Void set_SpatialEnabled(System.Boolean value)
+  method System.Void set_VoiceClarity(OpenBlade.Contracts.ThxAudioEnhancementSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ThxAudioEndpointSettings left, OpenBlade.Contracts.ThxAudioEndpointSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ThxAudioEndpointSettings left, OpenBlade.Contracts.ThxAudioEndpointSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ThxAudioEndpointSettings other)
+  property OpenBlade.Contracts.ThxAudioEnhancementSettings SoundNormalization { get; init; }
+  property OpenBlade.Contracts.ThxAudioEnhancementSettings VoiceClarity { get; init; }
+  property OpenBlade.Contracts.ThxEqualizerCurves EqualizerCurves { get; init; }
+  property OpenBlade.Contracts.ThxEqualizerPreset SelectedPreset { get; init; }
+  property System.Boolean EqualizerEnabled { get; init; }
+  property System.Boolean SpatialEnabled { get; init; }
+type sealed class OpenBlade.Contracts.ThxAudioEnhancementSettings
+  interface System.IEquatable<OpenBlade.Contracts.ThxAudioEnhancementSettings>
+  ctor (System.Boolean Enabled, System.Int32 LevelPercent)
+  method OpenBlade.Contracts.ThxAudioEnhancementSettings <Clone>$()
+  method System.Boolean get_Enabled()
+  method System.Int32 get_LevelPercent()
+  method System.Void Deconstruct(out System.Boolean Enabled, out System.Int32 LevelPercent)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_LevelPercent(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ThxAudioEnhancementSettings left, OpenBlade.Contracts.ThxAudioEnhancementSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ThxAudioEnhancementSettings left, OpenBlade.Contracts.ThxAudioEnhancementSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ThxAudioEnhancementSettings other)
+  property System.Boolean Enabled { get; init; }
+  property System.Int32 LevelPercent { get; init; }
+type static class OpenBlade.Contracts.ThxAudioProductIds
+  field const System.String Rznb11 = "rznb11"
+  field const System.String Rznb12 = "rznb12"
+type sealed class OpenBlade.Contracts.ThxAudioProfileSettings
+  interface System.IEquatable<OpenBlade.Contracts.ThxAudioProfileSettings>
+  ctor (System.Boolean ApplicationRoutingEnabled, OpenBlade.Contracts.ThxAudioEndpointSettings Speakers, OpenBlade.Contracts.ThxAudioEndpointSettings Headphones, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThxApplicationAudioRule> ApplicationRules)
+  field const System.Double MaximumEqualizerGainDb = 12
+  field const System.Double MinimumEqualizerGainDb = -12
+  field const System.Int32 HeadphoneEqualizerBandCount = 10
+  field const System.Int32 MaximumApplicationRuleBytes = 4096
+  field const System.Int32 MaximumApplicationRules = 256
+  field const System.Int32 MaximumEnhancementLevelPercent = 100
+  field const System.Int32 MinimumEnhancementLevelPercent = 0
+  field const System.Int32 SpeakerEqualizerBandCount = 7
+  method OpenBlade.Contracts.ThxAudioEndpointSettings get_Headphones()
+  method OpenBlade.Contracts.ThxAudioEndpointSettings get_Speakers()
+  method OpenBlade.Contracts.ThxAudioProfileSettings <Clone>$()
+  method System.Boolean get_ApplicationRoutingEnabled()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThxApplicationAudioRule> get_ApplicationRules()
+  method System.Void Deconstruct(out System.Boolean ApplicationRoutingEnabled, out OpenBlade.Contracts.ThxAudioEndpointSettings Speakers, out OpenBlade.Contracts.ThxAudioEndpointSettings Headphones, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThxApplicationAudioRule> ApplicationRules)
+  method System.Void set_ApplicationRoutingEnabled(System.Boolean value)
+  method System.Void set_ApplicationRules(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThxApplicationAudioRule> value)
+  method System.Void set_Headphones(OpenBlade.Contracts.ThxAudioEndpointSettings value)
+  method System.Void set_Speakers(OpenBlade.Contracts.ThxAudioEndpointSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean ApplicationRulesFitWithinByteLimit(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThxApplicationAudioRule> rules)
+  method static System.Boolean IsWellFormed(OpenBlade.Contracts.ThxAudioProfileSettings value)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ThxAudioProfileSettings left, OpenBlade.Contracts.ThxAudioProfileSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ThxAudioProfileSettings left, OpenBlade.Contracts.ThxAudioProfileSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ThxAudioProfileSettings other)
+  property OpenBlade.Contracts.ThxAudioEndpointSettings Headphones { get; init; }
+  property OpenBlade.Contracts.ThxAudioEndpointSettings Speakers { get; init; }
+  property System.Boolean ApplicationRoutingEnabled { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThxApplicationAudioRule> ApplicationRules { get; init; }
+type sealed class OpenBlade.Contracts.ThxEqualizerCurves
+  interface System.IEquatable<OpenBlade.Contracts.ThxEqualizerCurves>
+  ctor (System.Collections.Generic.IReadOnlyList<System.Double> Game, System.Collections.Generic.IReadOnlyList<System.Double> Movie, System.Collections.Generic.IReadOnlyList<System.Double> Music, System.Collections.Generic.IReadOnlyList<System.Double> Voice, System.Collections.Generic.IReadOnlyList<System.Double> Custom)
+  method OpenBlade.Contracts.ThxEqualizerCurves <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<System.Double> get_Custom()
+  method System.Collections.Generic.IReadOnlyList<System.Double> get_Game()
+  method System.Collections.Generic.IReadOnlyList<System.Double> get_Movie()
+  method System.Collections.Generic.IReadOnlyList<System.Double> get_Music()
+  method System.Collections.Generic.IReadOnlyList<System.Double> get_Voice()
+  method System.Void Deconstruct(out System.Collections.Generic.IReadOnlyList<System.Double> Game, out System.Collections.Generic.IReadOnlyList<System.Double> Movie, out System.Collections.Generic.IReadOnlyList<System.Double> Music, out System.Collections.Generic.IReadOnlyList<System.Double> Voice, out System.Collections.Generic.IReadOnlyList<System.Double> Custom)
+  method System.Void set_Custom(System.Collections.Generic.IReadOnlyList<System.Double> value)
+  method System.Void set_Game(System.Collections.Generic.IReadOnlyList<System.Double> value)
+  method System.Void set_Movie(System.Collections.Generic.IReadOnlyList<System.Double> value)
+  method System.Void set_Music(System.Collections.Generic.IReadOnlyList<System.Double> value)
+  method System.Void set_Voice(System.Collections.Generic.IReadOnlyList<System.Double> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ThxEqualizerCurves left, OpenBlade.Contracts.ThxEqualizerCurves right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ThxEqualizerCurves left, OpenBlade.Contracts.ThxEqualizerCurves right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ThxEqualizerCurves other)
+  property System.Collections.Generic.IReadOnlyList<System.Double> Custom { get; init; }
+  property System.Collections.Generic.IReadOnlyList<System.Double> Game { get; init; }
+  property System.Collections.Generic.IReadOnlyList<System.Double> Movie { get; init; }
+  property System.Collections.Generic.IReadOnlyList<System.Double> Music { get; init; }
+  property System.Collections.Generic.IReadOnlyList<System.Double> Voice { get; init; }
+type enum OpenBlade.Contracts.ThxEqualizerPreset
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ThxEqualizerPreset Custom = 4
+  field const OpenBlade.Contracts.ThxEqualizerPreset Game = 0
+  field const OpenBlade.Contracts.ThxEqualizerPreset Movie = 1
+  field const OpenBlade.Contracts.ThxEqualizerPreset Music = 2
+  field const OpenBlade.Contracts.ThxEqualizerPreset Voice = 3
 type sealed class OpenBlade.Contracts.TidalLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.TidalLightingParameters>

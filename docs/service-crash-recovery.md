@@ -1,8 +1,7 @@
 # Unexpected service-exit recovery
 
-OpenBlade relies on Windows Service Control Manager (SCM) for process recovery.
-The installer configures three bounded restart attempts after 5 seconds, 15
-seconds, and 60 seconds. OpenBlade does not run a second watchdog.
+Windows Service Control Manager (SCM) handles OpenBlade process recovery.
+The installer configures three bounded restart attempts after 5, 15, and 60 seconds.
 
 ## Intentional stop and unexpected exit
 
@@ -14,9 +13,8 @@ but retains the marker. A forced termination cannot run cleanup or remove the
 marker. In both failure cases, the next same-boot service start enters
 unexpected-exit recovery.
 
-If intentional-stop cleanup cannot remove the marker, the next start also uses
-the recovery path. This fails safe: it can skip ordinary profile application,
-but it cannot mistake an uncertain stop for a normal startup.
+If intentional-stop cleanup cannot remove the marker, the next start uses
+recovery, which skips ordinary profile application.
 
 Unexpected-exit recovery performs these operations in order:
 
@@ -59,9 +57,8 @@ into unexpected-exit recovery.
 | Persistent overrides | Overrides remain visible as desired intent, but recovery does not use them to bypass external-change latches or perform ordinary profile writes. |
 | Session Agent renderers | Service reconnect notifications cancel the old Ambient Awareness or Audio Meter request and dispose its producer before a new confirmed ownership status starts another one. Reactive input and LampArray observation use the same reconnect status feed. |
 
-The service fan and lighting loops retain their existing bounded cadence and
-cancellation. A persistent renderer failure receives no unbounded retry loop.
-SCM remains the only process-level retry owner.
+The fan and lighting loops keep their bounded cadence and cancellation behavior.
+Persistent renderer failures do not start an unbounded retry loop.
 
 ## Automated coverage
 

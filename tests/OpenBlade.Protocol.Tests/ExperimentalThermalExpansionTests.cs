@@ -3,7 +3,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class ExperimentalThermalExpansionTests
+public sealed partial class ExperimentalThermalExpansionTests
 {
     [Theory]
     [InlineData(0x029F, true, true, true)]
@@ -186,7 +186,7 @@ public sealed class ExperimentalThermalExpansionTests
 
         await port.SetFanTargetsAsync(minimum, 5000, CancellationToken.None);
 
-        Assert.Equal(0, session.Mode);
+        Assert.Equal(6, session.Mode);
         Assert.Equal(1, session.Fan);
         Assert.Equal(minimum / 100, session.FirstTarget);
         Assert.Equal(50, session.SecondTarget);
@@ -468,7 +468,8 @@ public sealed class ExperimentalThermalExpansionTests
         internal byte SecondTarget { get; set; } = 25;
         internal byte PowerModeControlFlags { get; set; }
         internal byte[]? PowerModePayloadOverride { get; init; }
-        internal byte[] AdapterPowerPayload { get; init; } = [0x11, 0x11];
+        internal byte[] AdapterPowerPayload { get; set; } = [0x11, 0x11];
+        internal byte[] HyperBoostFirmware { get; init; } = [1, 5, 0, 0];
         internal bool MaximumFans
         {
             get => (PowerModeControlFlags & 2) != 0;
@@ -478,6 +479,9 @@ public sealed class ExperimentalThermalExpansionTests
         internal bool IgnoreMaximum { get; init; }
         internal bool ResetTargetsOnModeWrite { get; init; }
         internal Action<RazerCommandSpec>? BeforeSubmission { get; set; }
+        internal bool IgnoreHyperBoost { get; init; }
+        internal int? FailModeWrite { get; init; }
+        private int modeWrites;
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal IEnumerable<RazerCommandSpec> Writes => Commands.Where(item => item.CommandId < 0x80);
         internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
@@ -502,13 +506,18 @@ public sealed class ExperimentalThermalExpansionTests
             byte[] payload = command.Arguments.ToArray();
             switch ((command.ClassId, command.CommandId))
             {
+                case (0x00, 0x87): payload = HyperBoostFirmware; break;
                 case (0x07, 0x8C): payload = AdapterPowerPayload; break;
                 case (0x0D, 0x82): payload = [0, payload[1], Mode, Fan]; break;
                 case (0x0D, 0x87): payload = [0, payload[1], payload[1] == 1 ? Cpu : Gpu]; break;
                 case (0x0D, 0x81): payload = [0, payload[1], payload[1] == 1 ? FirstTarget : SecondTarget]; break;
                 case (0x07, 0x8F): payload = PowerModePayloadOverride ?? [PowerModeControlFlags]; break;
                 case (0x0D, 0x02):
-                    Mode = payload[2]; Fan = payload[3];
+                    if (++modeWrites == FailModeWrite)
+                    {
+                        return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout));
+                    }
+                    if (!IgnoreHyperBoost || payload[2] != 7) { Mode = payload[2]; Fan = payload[3]; }
                     if (ResetTargetsOnModeWrite) { FirstTarget = 30; }
                     break;
                 case (0x0D, 0x07):

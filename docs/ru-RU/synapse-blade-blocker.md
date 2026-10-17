@@ -1,7 +1,7 @@
 <a id="synapse-blade-blocker-coexistence"></a>
 # Совместное использование с Synapse Blade Blocker
 
-[Synapse Blade Blocker](https://github.com/OpenBladeProject/synapse-blade-blocker) — необязательное, отдельно устанавливаемое исправление, которое позволяет Synapse обслуживать периферийные устройства, исключая распознанные устройства Blade. Актуальные сведения о поддерживаемых моделях и инструкции по установке исправления находятся в его репозитории. OpenBlade не устанавливает это исправление и не зависит от него.
+[Synapse Blade Blocker](https://github.com/OpenBladeProject/synapse-blade-blocker) позволяет Synapse управлять периферийными устройствами, исключая распознанные ноутбуки Blade. Список поддерживаемых моделей и инструкции по установке находятся в его репозитории.
 
 [English](../synapse-blade-blocker.md) | [简体中文](../zh-CN/synapse-blade-blocker.md) | Русский
 

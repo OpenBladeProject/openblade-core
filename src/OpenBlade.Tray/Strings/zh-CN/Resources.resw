@@ -397,7 +397,7 @@
     <value>继续运行</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
-    <value>超过 {0} 个应用正在使用 NVIDIA GPU。OpenBlade 无法根据不完整的列表验证能否安全关闭。请手动关闭应用，然后重新扫描。</value>
+    <value>使用 NVIDIA GPU 的应用超过 {0} 个。请手动关闭应用，然后重新扫描。</value>
   </data>
   <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
     <value>使用 GPU 的应用过多</value>
@@ -534,7 +534,7 @@
     <value>{0}% 亮度</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>{0} 使用 {1} 效果，亮度为 {2}。导入后，OpenBlade 会立即应用这些设置，并将其保留为当前电源配置方案中尚未保存的更改。</value>
+    <value>{0} 使用 {1} 灯效，亮度为 {2}。导入后将应用到当前电源配置方案，但不会保存。</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>导入键盘灯光？</value>
@@ -785,7 +785,7 @@
     <value>停止 Razer 服务</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
-    <value>Windows 未授予管理员权限。OpenBlade 未重试该请求。</value>
+    <value>Windows 未授予管理员权限。</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
     <value>已取消停止 Razer 服务</value>
@@ -794,7 +794,11 @@
     <value>正在检查…</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>以下已知控制器服务正在运行：&#xA;&#xA;{0}&#xA;&#xA;获得管理员授权后，OpenBlade 会重新检查同一份经审核的允许列表，并停止所有仍在运行的匹配服务。这不会卸载 Razer 软件，也不会禁用这些服务自动启动。Razer 软件可能会再次启动它们；在此之前，依赖这些服务的功能可能无法使用。</value>
+    <value>以下 Razer 服务正在运行：
+
+{0}
+
+OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软件可能会重新启动这些服务。依赖它们的功能可能在服务重启前无法使用。</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>停止 Razer 服务？</value>
@@ -2034,5 +2038,149 @@
   </data>
   <data name="MainWindow_CustomMaximumFansToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>风扇最高转速</value>
+  </data>
+  <data name="SnapTap_Title.Text" xml:space="preserve">
+    <value>SnapTap（A/D）</value>
+  </data>
+  <data name="SnapTap_Description.Text" xml:space="preserve">
+    <value>实验性功能。同时按住 A 和 D 时，后按下的键优先。适用于所有键盘。尚未验证游戏兼容性。</value>
+  </data>
+  <data name="SnapTap_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>SnapTap（A/D）</value>
+  </data>
+  <data name="SnapTap_Status_Starting" xml:space="preserve">
+    <value>正在启动…</value>
+  </data>
+  <data name="SnapTap_Status_WaitingForRelease" xml:space="preserve">
+    <value>松开 A 和 D 以激活。</value>
+  </data>
+  <data name="SnapTap_Status_Paused" xml:space="preserve">
+    <value>已暂停 — 输入处理不可用。</value>
+  </data>
+  <data name="SnapTap_Status_Failed" xml:space="preserve">
+    <value>因输入错误而暂停。请松开 A 和 D，然后关闭并重新开启 SnapTap。</value>
+  </data>
+  <data name="SnapTap_Status_Unavailable" xml:space="preserve">
+    <value>正在等待输入辅助进程…</value>
+  </data>
+  <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
+    <value>实验性功能。需要已安装受支持的 THX 组件。</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>THX 均衡器</value>
+  </data>
+  <data name="MainWindow_ThxAudioHeading.Text" xml:space="preserve">
+    <value>THX 音频</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationTitle.Text" xml:space="preserve">
+    <value>使用已安装的 THX 音频</value>
+  </data>
+  <data name="MainWindow_ThxAudioIntegrationToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>使用已安装的 THX 音频</value>
+  </data>
+  <data name="MainWindow_ThxAudioReadSettings.Content" xml:space="preserve">
+    <value>读取设置</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatial.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>THX Spatial Audio</value>
+  </data>
+  <data name="MainWindow_ThxAudioEqualizerTitle.Text" xml:space="preserve">
+    <value>均衡器</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutput.AccessibleName" xml:space="preserve">
+    <value>THX 音频输出</value>
+  </data>
+  <data name="MainWindow_ThxAudioOutputTitle.Text" xml:space="preserve">
+    <value>输出</value>
+  </data>
+  <data name="MainWindow_ThxAudioPreset.AccessibleName" xml:space="preserve">
+    <value>THX 均衡器预设</value>
+  </data>
+  <data name="MainWindow_ThxAudioPresetTitle.Text" xml:space="preserve">
+    <value>均衡器预设</value>
+  </data>
+  <data name="MainWindow_ThxAudioSpatialTitle.Text" xml:space="preserve">
+    <value>空间音频</value>
+  </data>
+  <data name="MainWindow_ThxAudioDiscard.Content" xml:space="preserve">
+    <value>放弃更改</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>音量标准化</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>音量标准化级别</value>
+  </data>
+  <data name="MainWindow_ThxAudioNormalizationTitle.Text" xml:space="preserve">
+    <value>音量标准化</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarity.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>人声清晰度</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>人声清晰度级别</value>
+  </data>
+  <data name="MainWindow_ThxAudioVoiceClarityTitle.Text" xml:space="preserve">
+    <value>人声清晰度</value>
+  </data>
+  <data name="MainWindow_ThxAudioAddRule.Content" xml:space="preserve">
+    <value>添加应用规则</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.Header" xml:space="preserve">
+    <value>应用可执行文件</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationExecutable.PlaceholderText" xml:space="preserve">
+    <value>game.exe</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationOutput.AccessibleName" xml:space="preserve">
+    <value>应用音效模式</value>
+  </data>
+  <data name="MainWindow_ThxAudioCaptureProfile.Content" xml:space="preserve">
+    <value>读取当前音效设置</value>
+  </data>
+  <data name="MainWindow_ThxAudioProfileDescription.Text" xml:space="preserve">
+    <value>扬声器和耳机设置</value>
+  </data>
+  <data name="MainWindow_ThxAudioRemoveRule.Content" xml:space="preserve">
+    <value>移除</value>
+  </data>
+  <data name="MainWindow_ThxAudioRoutingEnabled.Content" xml:space="preserve">
+    <value>自动应用已保存音效和应用规则</value>
+  </data>
+  <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
+    <value>保存到电源配置</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationModeTitle.Text" xml:space="preserve">
+    <value>音效模式</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplyEqualizer.Content" xml:space="preserve">
+    <value>应用均衡器</value>
+  </data>
+  <data name="MainWindow_ThxAudioFlattenEqualizer.Content" xml:space="preserve">
+    <value>调平</value>
+  </data>
+  <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
+    <value>恢复出厂曲线</value>
+  </data>
+  <data name="MainWindow_ThxAudioNavigationItemText.Content" xml:space="preserve">
+    <value>THX 音效</value>
+  </data>
+  <data name="Navigation_ThxAudio" xml:space="preserve">
+    <value>THX 音效</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplications.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>已保存音效和应用</value>
+  </data>
+  <data name="MainWindow_ThxAudioApplicationsTitle.Text" xml:space="preserve">
+    <value>已保存音效和应用</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancements.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>音效增强</value>
+  </data>
+  <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
+    <value>音效增强</value>
+  </data>
+  <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
+    <value>键盘</value>
   </data>
 </root>
