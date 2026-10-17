@@ -166,7 +166,9 @@ internal sealed class RazerSnapTapDriverAdmission
 internal static class WindowsRazerSnapTapDriverDiscovery
 {
     internal static readonly Guid ControlInterfaceGuid = new("E3BE005D-D130-4910-88FF-09AE02F680E9");
-    private static readonly Guid HidClassGuid = new("745A17A0-74D3-11D0-B6FE-00A0C90F57DA");
+    // RzDevU_02e0_Kbd.inf installs MI_01/COL01 in Class=Keyboard.
+    // The generic HID setup class does not enumerate this keyboard collection.
+    private static readonly Guid KeyboardClassGuid = new("4D36E96B-E325-11CE-BFC1-08002BE10318");
     private static readonly DevicePropertyKey ContainerIdKey = new(
         new Guid("8C7ED206-3F8A-4827-B3AB-AE9E1FAEFC6C"), 2);
     private static readonly HashSet<string> CompetingControllerNames = new(StringComparer.OrdinalIgnoreCase)
@@ -299,7 +301,7 @@ internal static class WindowsRazerSnapTapDriverDiscovery
 
     private static IReadOnlyList<RazerSnapTapKeyboardDevice> ReadKeyboards()
     {
-        Guid classGuid = HidClassGuid;
+        Guid classGuid = KeyboardClassGuid;
         nint set = SetupDiGetClassDevs(ref classGuid, null, 0, DigcfPresent);
         if (set == InvalidHandle)
         {
