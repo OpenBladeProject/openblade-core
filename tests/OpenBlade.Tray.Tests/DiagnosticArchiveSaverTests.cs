@@ -1,5 +1,7 @@
 using System.IO.Compression;
+using System.Text.Json;
 using OpenBlade.Contracts;
+using OpenBlade.Session;
 using OpenBlade.Tray;
 
 namespace OpenBlade.Tray.Tests;
@@ -155,6 +157,82 @@ public sealed class DiagnosticArchiveSaverTests
     }
 
     [Fact]
+    public async Task SaveAsync_AppendsReadOnlyThxAdmissionDiagnostics()
+    {
+        string directory = CreateTemporaryDirectory();
+        string logs = Path.Combine(directory, "logs");
+        string path = Path.Combine(directory, "diagnostics.zip");
+        Directory.CreateDirectory(logs);
+        var diagnostics = new StubThxAudioDiagnosticProvider(new(
+            ThxAudioDiagnosticCaptureStatus.Succeeded,
+            ThxAudioOperationStatus.Unavailable,
+            ThxAudioAvailability.ComponentsUnavailable,
+            "The pinned THX component was not found."));
+        try
+        {
+            var saver = new DiagnosticArchiveSaver(
+                new StubDestination(path),
+                logs,
+                diagnostics);
+
+            await saver.SaveAsync(CreateValidArchive(), CancellationToken.None);
+
+            Assert.Equal(1, diagnostics.CaptureCount);
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            ZipArchiveEntry entry = Assert.Single(
+                archive.Entries,
+                value => value.FullName == "thx-audio.json");
+            using var document = await JsonDocument.ParseAsync(entry.Open());
+            JsonElement root = document.RootElement;
+            Assert.Equal("Succeeded", root.GetProperty("captureStatus").GetString());
+            Assert.Equal("Unavailable", root.GetProperty("operationStatus").GetString());
+            Assert.Equal("ComponentsUnavailable", root.GetProperty("availability").GetString());
+            Assert.Equal(
+                "The pinned THX component was not found.",
+                root.GetProperty("error").GetString());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SaveAsync_WhenThxDiagnosticProviderFails_ExportsBoundedFailure()
+    {
+        string directory = CreateTemporaryDirectory();
+        string logs = Path.Combine(directory, "logs");
+        string path = Path.Combine(directory, "diagnostics.zip");
+        Directory.CreateDirectory(logs);
+        try
+        {
+            var saver = new DiagnosticArchiveSaver(
+                new StubDestination(path),
+                logs,
+                new ThrowingThxAudioDiagnosticProvider());
+
+            await saver.SaveAsync(CreateValidArchive(), CancellationToken.None);
+
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            ZipArchiveEntry entry = Assert.Single(
+                archive.Entries,
+                value => value.FullName == "thx-audio.json");
+            using var document = await JsonDocument.ParseAsync(entry.Open());
+            JsonElement root = document.RootElement;
+            Assert.Equal("Failed", root.GetProperty("captureStatus").GetString());
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("operationStatus").ValueKind);
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("availability").ValueKind);
+            Assert.Equal(
+                "The Session Agent THX admission query failed: InvalidOperationException.",
+                root.GetProperty("error").GetString());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SaveExactAsync_WritesInputBytesWithoutAppendingUserModeLogs()
     {
         string directory = CreateTemporaryDirectory();
@@ -254,5 +332,24 @@ public sealed class DiagnosticArchiveSaverTests
             cancellation.Cancel();
             return Task.FromResult<string?>(path);
         }
+    }
+
+    private sealed class StubThxAudioDiagnosticProvider(ThxAudioDiagnosticReport report)
+        : IThxAudioDiagnosticProvider
+    {
+        public int CaptureCount { get; private set; }
+
+        public Task<ThxAudioDiagnosticReport> CaptureAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CaptureCount++;
+            return Task.FromResult(report);
+        }
+    }
+
+    private sealed class ThrowingThxAudioDiagnosticProvider : IThxAudioDiagnosticProvider
+    {
+        public Task<ThxAudioDiagnosticReport> CaptureAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("C:\\Users\\Private\\secret.txt");
     }
 }

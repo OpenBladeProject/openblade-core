@@ -94,7 +94,8 @@ public sealed class ThxAudioAdmissionTests : IDisposable
         Assert.True(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out string? binary));
         Assert.Equal(Path.Combine(package, "reviewed_svc.exe"), binary);
         File.WriteAllText(Path.Combine(package, "reviewed_svc.exe"), "changed");
-        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _));
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _, out string? error));
+        Assert.Equal("THX driver package reviewed_svc.inf has incompatible or unreadable files: reviewed_svc.exe.", error);
     }
 
     [Fact]
@@ -103,10 +104,26 @@ public sealed class ThxAudioAdmissionTests : IDisposable
         ThxAudioDriverStack stack = Stack();
         string first = WritePackage("reviewed_svc.inf_amd64_first", stack.Packages[0]);
         string second = WritePackage("reviewed_svc.inf_amd64_second", stack.Packages[0]);
-        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _));
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _, out string? duplicateError));
+        Assert.Equal("THX driver package reviewed_svc.inf has multiple complete matching copies.", duplicateError);
         File.WriteAllText(Path.Combine(first, "reviewed_svc.exe"), "changed");
         File.WriteAllText(Path.Combine(second, "reviewed_svc.inf"), "changed");
-        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _));
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _, out string? splitError));
+        Assert.Equal("THX driver package reviewed_svc.inf has no complete matching copy; affected files: reviewed_svc.inf, reviewed_svc.exe.", splitError);
+    }
+
+    [Fact]
+    public void MissingPackageAndFileIdentifyReviewedBasenames()
+    {
+        ThxAudioDriverStack stack = Stack();
+        Directory.CreateDirectory(directory);
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _, out string? packageError));
+        Assert.Equal("THX driver package reviewed_svc.inf is missing.", packageError);
+
+        WritePackage("reviewed_svc.inf_amd64_incomplete", stack.Packages[0]);
+        File.Delete(Path.Combine(directory, "reviewed_svc.inf_amd64_incomplete", "reviewed_svc.cat"));
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, stack, out _, out string? fileError));
+        Assert.Equal("THX driver package reviewed_svc.inf has missing files: reviewed_svc.cat.", fileError);
     }
 
     [Fact]
@@ -124,12 +141,15 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     }
 
     [Theory]
-    [InlineData("rznb11")]
-    [InlineData("rznb12")]
-    public void ActiveConfigurationPinsDefinitionsButIgnoresMutableUserSettings(string productId)
+    [InlineData("RZ09-0581")]
+    [InlineData("RZ09-0528")]
+    [InlineData("RZ09-0530")]
+    public void ActiveConfigurationPinsDefinitionsForEveryProfileButIgnoresMutableUserSettings(string modelNumber)
     {
-        ThxAudioCompatibilityProfile profile = WriteActiveConfiguration(productId);
-        Assert.True(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile));
+        ThxAudioCompatibilityProfile profile = WriteActiveConfiguration(modelNumber);
+        Assert.True(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile, out string? error));
+        Assert.Null(error);
+        string productId = profile.ProductId;
         string productDirectory = Path.Combine(directory, "thx", productId);
         File.WriteAllText(Path.Combine(productDirectory, "properties.json"), "changed EQ gains and enhancement levels");
         File.WriteAllText(Path.Combine(productDirectory, "preset_selection"), "changed selected preset");
@@ -147,21 +167,55 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     [InlineData("surround_714_config.json")]
     public void MissingOrChangedActiveDefinitionBlocksAdmission(string fileName)
     {
-        ThxAudioCompatibilityProfile profile = WriteActiveConfiguration("rznb11");
+        ThxAudioCompatibilityProfile profile = WriteActiveConfiguration("RZ09-0528");
         string file = Path.Combine(directory, "thx", "rznb11", fileName);
         File.WriteAllText(file, "unreviewed updater output");
-        Assert.False(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile));
+        Assert.False(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile, out string? changedError));
+        Assert.Equal($"The pinned THX active configuration file {fileName} is incompatible or unreadable.", changedError);
         File.Delete(file);
-        Assert.False(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile));
+        Assert.False(ThxAudioCompatibility.HasPinnedActiveConfiguration(directory, profile, out string? missingError));
+        Assert.Equal($"The pinned THX active configuration file {fileName} is missing.", missingError);
     }
 
-    private ThxAudioCompatibilityProfile WriteActiveConfiguration(string productId)
+    [Fact]
+    public void NativeComponentFailureIdentifiesOnlyItsImmutableBasename()
     {
-        ThxAudioCompatibilityProfile profile = ThxAudioCompatibility.Profiles.First(profile => profile.ProductId == productId) with
+        string native = Path.Combine(directory, WindowsThxAudioAdmissionSource.NativeDllName);
+        Assert.False(WindowsThxAudioAdmissionSource.HasPinnedNativeDll(native, out string? missingError));
+        Assert.Equal("The pinned THX native component ThxV4Native_v1.1.1.0.dll is missing.", missingError);
+
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(native, "unexpected native component");
+        Assert.False(WindowsThxAudioAdmissionSource.HasPinnedNativeDll(native, out string? changedError));
+        Assert.Equal("The pinned THX native component ThxV4Native_v1.1.1.0.dll is incompatible or unreadable.", changedError);
+        Assert.DoesNotContain(directory, changedError, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ServiceFailureNamesOnlyPinnedServiceTokensForEveryProfile()
+    {
+        foreach (ThxAudioCompatibilityProfile profile in ThxAudioCompatibility.Profiles)
+        {
+            string error = WindowsThxAudioAdmissionSource.GetServiceFailure(profile.Stack);
+            Assert.Equal($"THX service {profile.Stack.ServiceName} is missing, stopped, or does not match "
+                + $"{profile.Stack.ServiceExecutable}.", error);
+            Assert.Equal($"THX service {profile.Stack.ServiceName} could not be verified against "
+                + $"{profile.Stack.ServiceExecutable}.",
+                WindowsThxAudioAdmissionSource.GetServiceVerificationFailure(profile.Stack));
+            Assert.DoesNotContain('\\', error);
+            Assert.DoesNotContain(':', error);
+        }
+    }
+
+    private ThxAudioCompatibilityProfile WriteActiveConfiguration(string modelNumber)
+    {
+        ThxAudioCompatibilityProfile profile = ThxAudioCompatibility.Profiles.Single(
+            profile => profile.ModelNumber == modelNumber) with
         {
             ActivePropertiesSha256 = Convert.ToHexString(SHA256.HashData("reviewed properties archive"u8)),
             SurroundConfigSha256 = Convert.ToHexString(SHA256.HashData("reviewed surround configuration"u8)),
         };
+        string productId = profile.ProductId;
         string productDirectory = Path.Combine(directory, "thx", productId);
         Directory.CreateDirectory(productDirectory);
         File.WriteAllBytes(Path.Combine(productDirectory, $"thx_{productId}_props.dat"), "reviewed properties archive"u8.ToArray());

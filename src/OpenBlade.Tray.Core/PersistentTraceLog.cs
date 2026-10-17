@@ -42,7 +42,7 @@ public sealed class PersistentTraceLog : TraceListener
             Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
         logPath = Path.Combine(logDirectory, $"{safeComponentName}.log");
         previousLogPath = Path.Combine(logDirectory, $"{safeComponentName}.previous.log");
-        this.sensitiveTokens = (sensitiveTokens ?? CreateDefaultSensitiveTokens())
+        this.sensitiveTokens = (sensitiveTokens ?? UserModeDiagnosticTextRedactor.CreateDefaultSensitiveTokens())
             .Where(token => !string.IsNullOrWhiteSpace(token))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(token => token.Length)
@@ -190,27 +190,7 @@ public sealed class PersistentTraceLog : TraceListener
 
     private string Redact(string value)
     {
-        foreach (string token in sensitiveTokens)
-        {
-            value = value.Replace(
-                token,
-                "[REDACTED]",
-                StringComparison.OrdinalIgnoreCase);
-        }
-
-        return value;
-    }
-
-    private static IEnumerable<string> CreateDefaultSensitiveTokens()
-    {
-        yield return Environment.UserName;
-        yield return Environment.MachineName;
-        yield return Environment.CurrentDirectory;
-        yield return AppContext.BaseDirectory.TrimEnd(
-            Path.DirectorySeparatorChar,
-            Path.AltDirectorySeparatorChar);
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return UserModeDiagnosticTextRedactor.Redact(value, sensitiveTokens);
     }
 
     private sealed class Registration(PersistentTraceLog listener) : IDisposable
@@ -237,6 +217,43 @@ public sealed class PersistentTraceLog : TraceListener
         public void Dispose()
         {
         }
+    }
+}
+
+internal static class UserModeDiagnosticTextRedactor
+{
+    internal static string RedactDefault(string value) => Redact(
+        value,
+        CreateDefaultSensitiveTokens()
+            .Where(token => !string.IsNullOrWhiteSpace(token))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(token => token.Length));
+
+    internal static string Redact(string value, IEnumerable<string> sensitiveTokens)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        ArgumentNullException.ThrowIfNull(sensitiveTokens);
+        foreach (string token in sensitiveTokens)
+        {
+            value = value.Replace(
+                token,
+                "[REDACTED]",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        return value;
+    }
+
+    internal static IEnumerable<string> CreateDefaultSensitiveTokens()
+    {
+        yield return Environment.UserName;
+        yield return Environment.MachineName;
+        yield return Environment.CurrentDirectory;
+        yield return AppContext.BaseDirectory.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
+        yield return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
     }
 }
 

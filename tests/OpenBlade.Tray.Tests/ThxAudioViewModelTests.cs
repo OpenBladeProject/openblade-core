@@ -5,6 +5,66 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class ThxAudioViewModelTests
 {
+    [Theory]
+    [InlineData(ThxAudioAvailability.ComponentsUnavailable)]
+    [InlineData(ThxAudioAvailability.UnsupportedModel)]
+    [InlineData(ThxAudioAvailability.ControllerActive)]
+    public async Task FailedConnectionShowsActualDetectionFailureAndClearsItAfterRecovery(
+        ThxAudioAvailability availability)
+    {
+        const string error = "ThxV4Native_v1.1.1.0.dll is missing.";
+        var adapter = new FakeAdapter
+        {
+            ConnectResponse = Response(ThxAudioOperationStatus.Unavailable) with
+            { Availability = availability, Error = error },
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+
+        await viewModel.SetEnabledAsync(true);
+
+        Assert.Contains(error, viewModel.StatusMessage);
+        Assert.True(viewModel.IsReadSettingsVisible);
+        Assert.False(viewModel.CanEdit);
+        await viewModel.RefreshAsync();
+        Assert.DoesNotContain(error, viewModel.StatusMessage);
+        Assert.True(viewModel.CanEdit);
+        Assert.Equal(["connect:Speakers", "read:Speakers"], adapter.Calls);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task MissingFailureDetailKeepsTheAvailabilityFallback(string? error)
+    {
+        var adapter = new FakeAdapter
+        {
+            ConnectResponse = Response(ThxAudioOperationStatus.Unavailable) with
+            { Availability = ThxAudioAvailability.ComponentsUnavailable, Error = error },
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        await viewModel.SetEnabledAsync(true);
+        Assert.Equal("The supported THX components are unavailable.", viewModel.StatusMessage);
+        Assert.False(viewModel.CanEdit);
+    }
+
+    [Fact]
+    public async Task FailureDetailDoesNotReplaceUncertainWriteRecoveryInstructions()
+    {
+        const string error = "THX helper timed out.";
+        var adapter = new FakeAdapter
+        {
+            MutationResponse = Response(ThxAudioOperationStatus.Indeterminate) with { Error = error },
+        };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        await viewModel.SetEnabledAsync(true);
+        await viewModel.SetSpatialAsync(true);
+        Assert.Contains("Read the current settings before trying again.", viewModel.StatusMessage);
+        Assert.Contains(error, viewModel.StatusMessage);
+        Assert.False(viewModel.CanEdit);
+        await viewModel.SetEnabledAsync(false);
+        Assert.Equal("THX audio integration is off.", viewModel.StatusMessage);
+    }
     [Fact]
     public async Task ReadOnlyCompatibilityDisplaysNativeStateWithoutEnablingChanges()
     {

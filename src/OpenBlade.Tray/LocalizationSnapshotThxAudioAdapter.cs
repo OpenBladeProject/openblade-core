@@ -4,7 +4,7 @@ using OpenBlade.Session;
 namespace OpenBlade.Tray;
 
 /// <summary>Disconnected UI data; never contacts a pipe or native component.</summary>
-internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = false, bool systemEffectsDisabled = false) : IThxAudioAdapter
+internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = false, bool systemEffectsDisabled = false, string? detectionError = null) : IThxAudioAdapter
 {
     public Task<SessionAudioResponse> DiscoverAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Response(null));
@@ -41,8 +41,11 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
     public Task<SessionAudioResponse> SetEnhancementAsync(ThxAudioEndpoint endpoint, ThxAudioEnhancementKind kind, bool enabled, int? levelPercent, CancellationToken cancellationToken) =>
         throw new InvalidOperationException("Audio mutations are disabled in the disconnected preview.");
 
-    private static SessionAudioResponse Response(ThxAudioState? state) =>
-        new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
+    private SessionAudioResponse Response(ThxAudioState? state) =>
+        detectionError is not null
+        ? new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, detectionError, null)
+        : new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
             ThxAudioAvailability.Available, null, state);
 }
 #endif

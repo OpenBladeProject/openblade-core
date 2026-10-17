@@ -152,11 +152,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
         IServiceClient serviceClient = new ServiceClient();
+        IThxAudioAdapter thxAudioAdapter = CreateThxAudioAdapter(localizationSnapshotMode);
         string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);
         ViewModel = new MainViewModel(
             serviceClient,
             new WinUiDispatcher(dispatcherQueue),
-            new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
+            new DiagnosticArchiveSaver(
+                new WinUiDiagnosticArchiveDestination(AppWindow.Id),
+                new ThxAudioDiagnosticProvider(thxAudioAdapter)),
             startupRegistration,
             uiVersion: uiVersion,
             sessionAgentVersion: InstalledComponentVersion.ReadSibling(
@@ -180,7 +183,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             gpuAppAdapter.QueryAsync,
             gpuAppAdapter.CloseAsync,
             ViewModel.SetGpuAppCleanupVisibleAsync);
-        ThxViewModel = new ThxAudioViewModel(CreateThxAudioAdapter(localizationSnapshotMode));
+        ThxViewModel = new ThxAudioViewModel(thxAudioAdapter);
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
@@ -302,7 +305,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_STACK"),
                 "rznb11", StringComparison.Ordinal), systemEffectsDisabled: string.Equals(
                 Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_EFFECTS_DISABLED"),
-                "1", StringComparison.Ordinal));
+                "1", StringComparison.Ordinal), detectionError:
+                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_ERROR"));
         }
 #endif
         return new SessionThxAudioAdapter();

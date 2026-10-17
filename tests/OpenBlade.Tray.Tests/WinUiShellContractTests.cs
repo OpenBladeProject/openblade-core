@@ -4587,7 +4587,15 @@ public sealed class WinUiShellContractTests
 
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.Contains(
-            "new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id))",
+            "IThxAudioAdapter thxAudioAdapter = CreateThxAudioAdapter(localizationSnapshotMode);",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new ThxAudioDiagnosticProvider(thxAudioAdapter)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ThxViewModel = new ThxAudioViewModel(thxAudioAdapter);",
             window,
             StringComparison.Ordinal);
         Assert.Contains(

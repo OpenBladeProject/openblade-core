@@ -1584,4 +1584,8 @@
   <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
     <value>Список правил приложений заполнен. Удалите правило, чтобы добавить новое.</value>
   </data>
+  <data name="{0}&#xA;Details: {1}" xml:space="preserve">
+    <value>{0}
+Подробности: {1}</value>
+  </data>
 </root>

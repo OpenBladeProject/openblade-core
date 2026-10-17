@@ -105,7 +105,8 @@ public sealed class SessionAudioRequestDispatcher
                 ThxAudioAdmission current = admission.Check();
                 if (!current.IsAvailable)
                 {
-                    confirmed.Clear();
+                    // Discovery is observational, including diagnostic exports.
+                    // Native operations still perform fresh helper admission.
                     return Response(
                         request,
                         ThxAudioOperationStatus.Unavailable,

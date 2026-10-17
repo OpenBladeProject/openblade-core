@@ -1674,4 +1674,8 @@
   <data name="The application rule list is full. Remove a rule before adding another." xml:space="preserve">
     <value>[!! Thé ápplícátíón rúlé líst ís fúll. Rémóvé á rúlé béfóré áddíng ánóthér. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="{0}&#xA;Details: {1}" xml:space="preserve">
+    <value>[!! {0}
+Détáíls: {1} ~~~ !!]</value>
+  </data>
 </root>
