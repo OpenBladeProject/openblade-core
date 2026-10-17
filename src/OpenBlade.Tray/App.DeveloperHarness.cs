@@ -621,7 +621,9 @@ public partial class App
                 requestedPage, "laptop-snap-tap-on", StringComparison.Ordinal);
             bool captureSnapTapInformation = string.Equals(
                 requestedPage, "laptop-snap-tap-info", StringComparison.Ordinal);
-            bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled || captureSnapTapInformation
+            bool captureSnapTapDriverMissing = string.Equals(
+                requestedPage, "laptop-snap-tap-driver", StringComparison.Ordinal);
+            bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled || captureSnapTapInformation || captureSnapTapDriverMissing
                 || string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
@@ -698,7 +700,7 @@ public partial class App
                 }
                 if (captureSnapTap)
                 {
-                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled);
+                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing);
                     await WaitForSnapshotLayoutAsync();
                 }
                 if (captureSnapTapInformation)

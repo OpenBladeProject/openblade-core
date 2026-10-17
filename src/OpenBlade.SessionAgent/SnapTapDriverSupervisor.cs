@@ -15,9 +15,9 @@ internal static class SnapTapDriverSupervisor
     internal static int Run(Func<bool> shouldStop)
     {
         var admission = new RazerSnapTapDriverAdmission();
-        if (!admission.TryGetEndpoint(out var endpoint))
+        if (!admission.TryGetEndpoint(out var endpoint, out bool driverMissing))
         {
-            return 3;
+            return driverMissing ? 5 : 3;
         }
         // This independent CreateFile remains unsubscribed. Duplicating the
         // worker's handle would retain its subscription after worker death.

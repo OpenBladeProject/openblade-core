@@ -4,6 +4,8 @@ When A and D are held, the last pressed key takes priority. Releasing it restore
 
 Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. Release keys and mouse buttons to activate it. SnapTap is off by default and stays running when you close the visible Tray.
 
+If the driver is missing, choose **Get driver** to open the RZ09-0581 setup guide in the driver catalog.
+
 SnapTap uses the laptop keyboard through the supported Razer driver on RZ09-0581. The pair uses the A/D scan positions. The information button includes game compatibility details.
 
 ## Driver implementation

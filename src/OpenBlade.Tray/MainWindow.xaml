@@ -3060,6 +3060,10 @@
                                                 </StackPanel>
                                                 <TextBlock x:Uid="SnapTap_Description" Text="When A and D overlap, the last pressed key wins." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                 <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                                <HyperlinkButton x:Name="SnapTapDriverLink" x:Uid="SnapTap_DriverLink"
+                                                                 Content="Get driver" HorizontalAlignment="Left" Visibility="Collapsed"
+                                                                 NavigateUri="https://github.com/OpenBladeProject/blade-driver-catalog/blob/main/docs/installing-rz09-0581.md"
+                                                                 AutomationProperties.Name="Get the Razer keyboard driver" />
                                             </StackPanel>
                                             <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
                                         </Grid>

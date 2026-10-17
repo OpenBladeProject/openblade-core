@@ -2215,6 +2215,15 @@ OpenBlade повторно проверит этот список и остан�
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>Совместимость с играми не проверена.</value>
   </data>
+  <data name="SnapTap_DriverLink.Content" xml:space="preserve">
+    <value>Получить драйвер</value>
+  </data>
+  <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Получить драйвер клавиатуры Razer</value>
+  </data>
+  <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
+    <value>Для SnapTap нужен драйвер клавиатуры Razer.</value>
+  </data>
   <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
     <value>Поддерживаемый драйвер клавиатуры Razer недоступен.</value>
   </data>

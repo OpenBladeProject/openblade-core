@@ -8,15 +8,16 @@ public sealed partial class MainWindow
     private bool snapTapEnabled;
     private SnapTapRuntimeState localizationSnapshotSnapTapState = SnapTapRuntimeState.Off;
 
-    internal void ShowLocalizationSnapshotSnapTap(bool showFailure = false, bool showEnabled = false)
+    internal void ShowLocalizationSnapshotSnapTap(bool showFailure = false, bool showEnabled = false, bool showDriverMissing = false)
     {
         if (localizationSnapshotMode)
         {
-            localizationSnapshotSnapTapState = showFailure
-                ? SnapTapRuntimeState.Failed
+            localizationSnapshotSnapTapState = showDriverMissing
+                ? SnapTapRuntimeState.DriverMissing
+                : showFailure ? SnapTapRuntimeState.Failed
                 : showEnabled ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Off;
             // Set the backing state first so the preview toggle cannot queue a preference save.
-            snapTapEnabled = showFailure || showEnabled;
+            snapTapEnabled = showFailure || showEnabled || showDriverMissing;
             SnapTapToggle.IsOn = snapTapEnabled;
             RefreshSnapTapStatus();
             KeyboardSection.StartBringIntoView(new BringIntoViewOptions
@@ -59,6 +60,8 @@ public sealed partial class MainWindow
             : SnapTapStatusStore.Read();
         SnapTapStatusText.Text = status?.State switch
         {
+            SnapTapRuntimeState.DriverMissing => LocalizedResources.Get(
+                "SnapTap_Status_DriverMissing", "SnapTap needs the Razer keyboard driver."),
             SnapTapRuntimeState.RecoveryRequired => LocalizedResources.Get(
                 "SnapTap_Status_RecoveryRequired", "Restart Windows before enabling SnapTap again."),
             SnapTapRuntimeState.Unavailable => LocalizedResources.Get(
@@ -77,6 +80,9 @@ public sealed partial class MainWindow
                 "SnapTap_Status_Unavailable", "Waiting for the input helper…"),
             _ => string.Empty,
         };
+        SnapTapDriverLink.Visibility = snapTapEnabled && status?.State == SnapTapRuntimeState.DriverMissing
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         SnapTapStatusText.Visibility = string.IsNullOrEmpty(SnapTapStatusText.Text)
             ? Visibility.Collapsed
             : Visibility.Visible;

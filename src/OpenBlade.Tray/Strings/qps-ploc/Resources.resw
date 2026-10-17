@@ -2221,4 +2221,13 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
     <value>[!! Réstárt Windows béfóré énáblíng SnápTáp ágáín. ~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="SnapTap_DriverLink.Content" xml:space="preserve">
+    <value>[!! Gét drívér ~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Gét thé Razer kéýbóárd drívér ~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
+    <value>[!! SnápTáp nééds thé Razer kéýbóárd drívér. ~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

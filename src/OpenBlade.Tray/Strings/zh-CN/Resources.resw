@@ -2198,6 +2198,15 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>尚未验证游戏兼容性。</value>
   </data>
+  <data name="SnapTap_DriverLink.Content" xml:space="preserve">
+    <value>获取驱动程序</value>
+  </data>
+  <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>获取 Razer 键盘驱动程序</value>
+  </data>
+  <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
+    <value>SnapTap 需要 Razer 键盘驱动程序。</value>
+  </data>
   <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
     <value>受支持的 Razer 键盘驱动不可用。</value>
   </data>

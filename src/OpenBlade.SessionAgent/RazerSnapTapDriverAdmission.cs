@@ -69,17 +69,26 @@ internal sealed class RazerSnapTapDriverAdmission
     }
 
     internal bool TryGetEndpoint(out RazerSnapTapDriverEndpoint endpoint)
+        => TryGetEndpoint(out endpoint, out _);
+
+    internal bool TryGetEndpoint(
+        out RazerSnapTapDriverEndpoint endpoint,
+        out bool driverMissing)
     {
         endpoint = null!;
+        driverMissing = false;
         try
         {
-            return TryAdmit(capture(), out endpoint);
+            RazerSnapTapDriverSnapshot snapshot = capture();
+            driverMissing = IsDriverMissing(snapshot);
+            return TryAdmit(snapshot, out endpoint);
         }
         catch (Exception exception) when (exception is
             Win32Exception or InvalidOperationException or IOException
             or UnauthorizedAccessException or CryptographicException
             or OverflowException)
         {
+            driverMissing = false;
             return false;
         }
     }
@@ -158,6 +167,37 @@ internal sealed class RazerSnapTapDriverAdmission
         actual is not null
         && string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsDriverMissing(RazerSnapTapDriverSnapshot snapshot)
+    {
+        if (!Exact(snapshot.BiosManufacturer, ExactManufacturer)
+            || !Exact(snapshot.BiosProductName, ExactProductName)
+            || !Exact(snapshot.SystemManufacturer, ExactManufacturer)
+            || !Exact(snapshot.SystemProductName, ExactProductName)
+            || !snapshot.ActiveConsoleSession
+            || !snapshot.ControllerObservationComplete
+            || snapshot.CompetingControllerDetected)
+        {
+            return false;
+        }
+
+        bool commonMissing = snapshot.RzCommonSha256 is null;
+        bool deviceMissing = snapshot.RzDeviceSha256 is null;
+        if ((!commonMissing && !ExactHash(snapshot.RzCommonSha256, RzCommonSha256))
+            || (!deviceMissing && !ExactHash(snapshot.RzDeviceSha256, RzDeviceSha256))
+            || (!commonMissing && !deviceMissing))
+        {
+            return false;
+        }
+
+        RazerSnapTapKeyboardDevice[] keyboards = snapshot.KeyboardDevices
+            .Where(keyboard => keyboard.InstanceId.StartsWith(
+                KeyboardInstancePrefix, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return keyboards.Length == 1
+            && keyboards[0].ContainerId != Guid.Empty
+            && HasAncestor(keyboards[0].Ancestors, KeyboardAncestorPrefix);
+    }
+
     private static bool HasAncestor(IEnumerable<string> ancestors, string prefix) =>
         ancestors.Any(ancestor => ancestor.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
 
@@ -187,6 +227,7 @@ internal static class WindowsRazerSnapTapDriverDiscovery
     private const uint SpdrpService = 0x4;
     private const uint SpdrpUpperFilters = 0x11;
     private const uint DevpropTypeGuid = 0xD;
+    private const int ErrorInvalidData = 13;
     private const int ErrorInsufficientBuffer = 122;
     private const int ErrorNoMoreItems = 259;
     private const int CrSuccess = 0;
@@ -226,12 +267,15 @@ internal static class WindowsRazerSnapTapDriverDiscovery
 
     private static string? HashFile(string path)
     {
-        if (!File.Exists(path))
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            return Convert.ToHexString(SHA256.HashData(stream));
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return null;
         }
-        using FileStream stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream));
     }
 
     private static (bool Detected, bool Complete) ObserveControllers()
@@ -337,7 +381,7 @@ internal static class WindowsRazerSnapTapDriverDiscovery
                     continue;
                 }
                 result.Add(new RazerSnapTapKeyboardDevice(id,
-                    GetRegistryStrings(set, ref info, SpdrpUpperFilters),
+                    GetRegistryStrings(set, ref info, SpdrpUpperFilters, allowMissing: true),
                     GetContainerId(set, ref info), GetAncestors(info.DeviceInstance)));
             }
             return result;
@@ -380,12 +424,21 @@ internal static class WindowsRazerSnapTapDriverDiscovery
         return new string(buffer, 0, end < 0 ? buffer.Length : end);
     }
 
-    private static IReadOnlyList<string> GetRegistryStrings(nint set, ref DeviceInfoData info, uint property)
+    private static IReadOnlyList<string> GetRegistryStrings(
+        nint set,
+        ref DeviceInfoData info,
+        uint property,
+        bool allowMissing = false)
     {
         _ = SetupDiGetDeviceRegistryProperty(set, ref info, property, out _, null, 0, out uint required);
-        if (required == 0 || Marshal.GetLastWin32Error() != ErrorInsufficientBuffer)
+        int error = Marshal.GetLastWin32Error();
+        if (allowMissing && required == 0 && error == ErrorInvalidData)
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            return [];
+        }
+        if (required == 0 || error != ErrorInsufficientBuffer)
+        {
+            throw new Win32Exception(error);
         }
         byte[] buffer = new byte[required];
         if (!SetupDiGetDeviceRegistryProperty(set, ref info, property, out _, buffer, (uint)buffer.Length, out _))

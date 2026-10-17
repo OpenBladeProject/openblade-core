@@ -192,6 +192,7 @@ public sealed class SnapTapProcessCoordinatorTests
     [Theory]
     [InlineData(3, SnapTapRuntimeState.Unavailable)]
     [InlineData(4, SnapTapRuntimeState.RecoveryRequired)]
+    [InlineData(5, SnapTapRuntimeState.DriverMissing)]
     public async Task DriverExitCondition_IsPublishedAndNeverAutomaticallyRetried(int code, SnapTapRuntimeState expected)
     {
         var source = new Preference(true);
