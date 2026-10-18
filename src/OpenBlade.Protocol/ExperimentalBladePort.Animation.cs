@@ -7,12 +7,19 @@ internal sealed partial class ExperimentalBladePort
     private readonly TimeProvider animationTime = lightingTimeProvider ?? TimeProvider.System;
     private CancellationTokenSource? animationCancellation;
     private Task? animationTask;
+    private readonly object animationEffectSync = new();
+    private Blade18SpatialLightingEffect? spatialAnimation;
+    private long animationStartedTimestamp;
 
     private static bool SupportsBlade18Animation(ExperimentalBladeModel model) =>
         model.ProductId == 0x02A0;
 
     private static bool IsBlade18Animation(LightingEffect effect) =>
-        effect is LightingEffect.Fire or LightingEffect.Wheel or LightingEffect.Starlight;
+        effect is LightingEffect.Fire or LightingEffect.Wheel or LightingEffect.Starlight
+            or LightingEffect.Reactive or LightingEffect.Ripple or LightingEffect.Tidal;
+
+    private static bool IsBlade18SpatialEffect(LightingEffect effect) =>
+        effect is LightingEffect.Reactive or LightingEffect.Ripple or LightingEffect.Tidal;
 
     // Called with operationGate held. The loop uses cancellable waits for both
     // its timer and this gate, so it cannot be stranded behind the retiring caller.
@@ -25,6 +32,10 @@ internal sealed partial class ExperimentalBladePort
             return;
         }
         cancellation.Cancel();
+        lock (animationEffectSync)
+        {
+            spatialAnimation = null;
+        }
         if (animationTask is { } task)
         {
             await task.ConfigureAwait(false);
@@ -34,19 +45,49 @@ internal sealed partial class ExperimentalBladePort
         cancellation.Dispose();
     }
 
-    private void StartAnimationCore(LightingSettings settings)
+    private void StartAnimationCore(
+        LightingSettings settings, Blade18SpatialLightingEffect? spatialEffect)
     {
         var cancellation = new CancellationTokenSource();
         animationCancellation = cancellation;
-        animationTask = RunAnimationAsync(settings with { LogoMode = null }, cancellation);
+        long started = animationTime.GetTimestamp();
+        lock (animationEffectSync)
+        {
+            animationStartedTimestamp = started;
+            spatialAnimation = spatialEffect;
+        }
+        animationTask = RunAnimationAsync(settings with { LogoMode = null },
+            cancellation, started, spatialEffect);
+    }
+
+    public Task PulseReactiveKeyAsync(ReactiveKeyPulse pulse, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (animationEffectSync)
+        {
+            if (disposed || !policy.WritesAllowed || model.ProductId != 0x02A0
+                || spatialAnimation?.IsKeyTriggered != true
+                || OwnershipState is not (LightingRendererOwnershipState.Reactive
+                    or LightingRendererOwnershipState.Ripple)
+                || !Blade18KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot))
+            {
+                throw new CapabilityUnavailableException(
+                    "Key-triggered lighting input is not admitted for this slot and renderer.");
+            }
+            TimeSpan elapsed = animationTime.GetElapsedTime(animationStartedTimestamp);
+            spatialAnimation.Pulse(pulse.MatrixSlot, LightingKeyPulseTiming.ResolveElapsed(
+                pulse, animationStartedTimestamp, elapsed, animationTime));
+        }
+        return Task.CompletedTask;
     }
 
     private async Task RunAnimationAsync(
         LightingSettings settings,
-        CancellationTokenSource owner)
+        CancellationTokenSource owner,
+        long started,
+        Blade18SpatialLightingEffect? spatialEffect)
     {
         CancellationToken token = owner.Token;
-        long started = animationTime.GetTimestamp();
         TimeSpan deadline = Blade18LightingAnimation.FrameInterval;
         try
         {
@@ -71,8 +112,14 @@ internal sealed partial class ExperimentalBladePort
                         elapsed = animationTime.GetElapsedTime(started);
                         // Normal replacement never cancels an in-flight native frame.
                         // Admission is checked independently at every row submission.
+                        Blade18LightingFrame frame;
+                        lock (animationEffectSync)
+                        {
+                            frame = spatialEffect?.RenderFrame(elapsed)
+                                ?? Blade18LightingAnimation.Render(settings, elapsed);
+                        }
                         await SubmitBlade18FrameAsync(
-                            Blade18LightingAnimation.Render(settings, elapsed),
+                            frame,
                             activate: false,
                             CancellationToken.None).ConfigureAwait(false);
                         policy.RecordAnimationFrameApplied(settings.Effect);

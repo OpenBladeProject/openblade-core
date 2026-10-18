@@ -40,6 +40,9 @@ public sealed partial class ExperimentalBladeLightingTests
         Assert.Contains(LightingEffect.AmbientAwareness, blade18.LightingEffects);
         Assert.Contains(LightingEffect.AudioMeter, blade18.LightingEffects);
         Assert.Contains(LightingEffect.Starlight, blade18.LightingEffects);
+        Assert.Contains(LightingEffect.Reactive, blade18.LightingEffects);
+        Assert.Contains(LightingEffect.Ripple, blade18.LightingEffects);
+        Assert.Contains(LightingEffect.Tidal, blade18.LightingEffects);
         Assert.Contains(LightingEffect.AmbientAwareness, blade18.ObservedLightingEffects);
         Assert.Contains(LightingEffect.Fire, blade18.ObservedLightingEffects);
         Assert.DoesNotContain(LightingEffect.Sequence, blade18.ObservedLightingEffects);

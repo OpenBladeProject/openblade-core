@@ -162,6 +162,13 @@ type sealed class OpenBlade.Contracts.BatteryPolicy
   method static System.Boolean op_Inequality(OpenBlade.Contracts.BatteryPolicy left, OpenBlade.Contracts.BatteryPolicy right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.BatteryPolicy other)
   property System.Int32 ChargeLimitPercent { get; }
+type static class OpenBlade.Contracts.Blade18KeyboardLightingLayout
+  field const System.Int32 Columns = 16
+  field const System.Int32 Rows = 6
+  field const System.Int32 SlotCount = 96
+  method static System.Boolean IsKeySlot(System.Int32 slot)
+  method static System.Boolean TryGetKeyPosition(System.Int32 slot, out System.Double x, out System.Double y)
+  method static System.Boolean TryMapScanCode(System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
 type enum OpenBlade.Contracts.BreathingColorMode
   field System.Int32 value__
   field const OpenBlade.Contracts.BreathingColorMode Dual = 1

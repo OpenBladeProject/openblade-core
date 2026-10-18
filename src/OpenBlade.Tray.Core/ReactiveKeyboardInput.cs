@@ -295,6 +295,8 @@ public static class ReactiveRawKeyboardInput
                     isExtended,
                     out primary,
                     out secondary),
+            RazerBladeInputDeviceKind.Rz09_0484 =>
+                TryCreateBlade18Pulse(makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0528 =>
                 Rz09_0528ReactiveKeyMap.TryMap(
                     makeCode,
@@ -303,6 +305,20 @@ public static class ReactiveRawKeyboardInput
                     out secondary),
             _ => ReturnUnsupported(out primary, out secondary),
         };
+    }
+
+    private static bool TryCreateBlade18Pulse(
+        ushort makeCode, bool extended,
+        out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary)
+    {
+        secondary = null;
+        if (Blade18KeyboardLightingLayout.TryMapScanCode(makeCode, extended, out byte slot))
+        {
+            primary = new(slot);
+            return true;
+        }
+        primary = default;
+        return false;
     }
 
     private static bool ReturnUnsupported(

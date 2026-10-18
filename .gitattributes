@@ -8,3 +8,4 @@ src/OpenBlade.Contracts/AmbientLightingFrame.cs text eol=lf
 src/OpenBlade.Contracts/Profiles.cs text eol=lf
 src/OpenBlade.Contracts/ReactiveKeyPulse.cs text eol=lf
 build/Export-RazerBrightnessDriverPackage.ps1 text eol=lf
+src/OpenBlade.Contracts/Fixtures/Blade18KeyboardLightingLayout.json text eol=crlf

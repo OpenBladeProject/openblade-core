@@ -4,4 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Fixtures\Blade18KeyboardLightingLayout.json" />
+  </ItemGroup>
+
 </Project>

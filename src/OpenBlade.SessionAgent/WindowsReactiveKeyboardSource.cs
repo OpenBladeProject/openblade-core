@@ -768,6 +768,12 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         {
             publishSpecialKey(specialKey);
         }
+        // A pulse carries no model tag. Do not send another known laptop's
+        // slot numbers into the currently verified model's renderer.
+        if (deviceKind != readVerifiedInputDeviceKind())
+        {
+            return;
+        }
         if (!ReactiveRawKeyboardInput.TryCreatePulses(
             deviceKind,
             keyboard.MakeCode,

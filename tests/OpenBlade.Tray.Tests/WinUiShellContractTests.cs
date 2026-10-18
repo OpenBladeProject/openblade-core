@@ -1883,6 +1883,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("WindowMessageInputDeviceChange", source, StringComparison.Ordinal);
         Assert.Contains("TryResolveInputDevice", source, StringComparison.Ordinal);
         Assert.Contains("RazerBladeReactiveInputDevice", source, StringComparison.Ordinal);
+        Assert.Contains("deviceKind != readVerifiedInputDeviceKind()", source, StringComparison.Ordinal);
         Assert.Contains("GetRawInputHeader", source, StringComparison.Ordinal);
         Assert.Contains("EnsureRawInputBuffer", source, StringComparison.Ordinal);
         Assert.Contains("stackalloc byte[blade18 ? 16 : 3]", source, StringComparison.Ordinal);

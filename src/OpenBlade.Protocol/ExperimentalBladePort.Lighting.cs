@@ -59,6 +59,9 @@ internal sealed partial class ExperimentalBladePort
         {
             effects.Add(LightingEffect.Fire);
             effects.Add(LightingEffect.Starlight);
+            effects.Add(LightingEffect.Reactive);
+            effects.Add(LightingEffect.Ripple);
+            effects.Add(LightingEffect.Tidal);
             effects.Add(LightingEffect.Wheel);
         }
         return effects;
@@ -428,8 +431,12 @@ internal sealed partial class ExperimentalBladePort
         {
             throw new CapabilityUnavailableException("This model has no admitted uniform frame transport.");
         }
+        Blade18SpatialLightingEffect? spatialEffect = animationRequest
+            && IsBlade18SpatialEffect(settings.Effect)
+                ? new Blade18SpatialLightingEffect(settings) : null;
         Blade18LightingFrame? firstAnimationFrame = animationRequest
-            ? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
+            ? spatialEffect?.RenderFrame(TimeSpan.Zero)
+                ?? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool stoppedAnimation = animationCancellation is not null;
         bool submitted = false;
@@ -446,7 +453,8 @@ internal sealed partial class ExperimentalBladePort
         bool startingHostFrameFromFault = replacingFaultedFrame
             && settings.Effect is LightingEffect.AmbientAwareness
                 or LightingEffect.AudioMeter or LightingEffect.Fire
-                or LightingEffect.Starlight or LightingEffect.Wheel;
+                or LightingEffect.Starlight or LightingEffect.Wheel
+                or LightingEffect.Reactive or LightingEffect.Ripple or LightingEffect.Tidal;
         byte raw = checked((byte)((settings.Brightness * 255 + 50) / 100));
         string requested = $"{settings.Effect};Raw={raw};Logo={settings.LogoMode?.ToString() ?? "Unchanged"}";
         try
@@ -514,6 +522,9 @@ internal sealed partial class ExperimentalBladePort
                 {
                     LightingEffect.Fire => LightingRendererOwnershipState.Fire,
                     LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
+                    LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+                    LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
+                    LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
                     _ => LightingRendererOwnershipState.Wheel,
                 });
                 hostOwnershipAcquired = true;
@@ -665,7 +676,7 @@ internal sealed partial class ExperimentalBladePort
             {
                 if (animationRequest)
                 {
-                    StartAnimationCore(lightingOwnership.Intent!);
+                    StartAnimationCore(lightingOwnership.Intent!, spatialEffect);
                 }
                 policy.Record("KeyboardLighting", "Readback", "Unavailable", submitted,
                     requested, "OwnedFrameIntent", "FrameColorReadbackUnavailable");
@@ -823,6 +834,9 @@ internal sealed partial class ExperimentalBladePort
             or LightingRendererOwnershipState.AudioMeter
             or LightingRendererOwnershipState.Fire
             or LightingRendererOwnershipState.Starlight
+            or LightingRendererOwnershipState.Reactive
+            or LightingRendererOwnershipState.Ripple
+            or LightingRendererOwnershipState.Tidal
             or LightingRendererOwnershipState.Wheel;
 
     private void ClearOwnedFrame()
@@ -894,12 +908,6 @@ internal sealed partial class ExperimentalBladePort
         CancellationToken cancellationToken) =>
         Task.FromException<byte>(new CapabilityUnavailableException(
             "Firmware-native keyboard brightness stepping is not admitted for this experimental model."));
-
-    public Task PulseReactiveKeyAsync(
-        ReactiveKeyPulse pulse,
-        CancellationToken cancellationToken) =>
-        Task.FromException(new CapabilityUnavailableException(
-            "Key-triggered lighting is not admitted for this experimental model."));
 
     public Task PushAmbientLightingFrameAsync(
         AmbientLightingFrame frame,

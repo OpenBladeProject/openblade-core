@@ -9,8 +9,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private const int PendingKeyTriggeredPulseTrimTarget = 256;
     private const int PlaybackMuteKeyMatrixSlot = 2;
     private static readonly MatrixRgb PlaybackMuteIndicatorColor = new(0xFF, 0x00, 0x00);
-    private static readonly TimeSpan MaximumKeyPulsePreAge =
-        TimeSpan.FromMilliseconds(75);
     private static readonly IReadOnlySet<LightingEffect> AdmittedEffects =
         new HashSet<LightingEffect>(
         [
@@ -1619,47 +1617,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
     private TimeSpan KeyPulseElapsedOrFallback(
         ReactiveKeyPulse pulse,
-        TimeSpan fallbackElapsed)
-    {
-        if (pulse.ObservedTimestamp is not { } observedTimestamp)
-        {
-            return fallbackElapsed;
-        }
-
-        if (observedTimestamp <= effectStartedTimestamp)
-        {
-            return fallbackElapsed;
-        }
-
-        TimeSpan observedElapsed;
-        try
-        {
-            observedElapsed = timeProvider.GetElapsedTime(
-                effectStartedTimestamp,
-                observedTimestamp);
-        }
-        catch
-        {
-            return fallbackElapsed;
-        }
-
-        if (observedElapsed < TimeSpan.Zero)
-        {
-            return fallbackElapsed;
-        }
-
-        if (observedElapsed >= fallbackElapsed)
-        {
-            return fallbackElapsed;
-        }
-
-        TimeSpan earliestVisibleStart = fallbackElapsed > MaximumKeyPulsePreAge
-            ? fallbackElapsed - MaximumKeyPulsePreAge
-            : TimeSpan.Zero;
-        return observedElapsed < earliestVisibleStart
-            ? earliestVisibleStart
-            : observedElapsed;
-    }
+        TimeSpan fallbackElapsed) =>
+        LightingKeyPulseTiming.ResolveElapsed(pulse, effectStartedTimestamp,
+            fallbackElapsed, timeProvider);
 
     private void SignalStreamCore()
     {
