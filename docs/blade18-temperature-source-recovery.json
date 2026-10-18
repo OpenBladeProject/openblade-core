@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "productId": 672,
+  "model": "RZ09-0484",
+  "usbProductId": "02A0",
+  "retrievedOn": "2026-10-18",
+  "conclusion": "No vendor-free Windows CPU temperature provider or exact672 ACPI/PDH CPU-zone mapping was recovered. Shared Synapse CPU package monitoring depends on its native CPUID monitoring stack; exact672 does not enable that shared monitoring feature.",
+  "sources": [
+    {
+      "url": "https://apps.razer.com/synapse/products/672/mw/main.57245df0507455a5119e.js",
+      "sha256": "D523F5080784B07CB1888C39E636004626E073E2967B85999498030102F85FAE",
+      "module": 70400,
+      "evidence": "Exact672 deviceUI config identifies bladeSeries 9 and Intel CPU overclocking. Injection includes useMWManifest, deviceUI, runtimeCache, and device25LedMatrixBlade. No systemHelper or hasSystemMonitoringStatistics injection."
+    },
+    {
+      "url": "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js",
+      "sha256": "651F63DCC0EFC92B0FD7496EE70751707B5F650F20AF5C01C3255B61817C1997",
+      "offsets": [
+        {
+          "characterOffset": 1214678,
+          "evidence": "rzSystemMon starts only when hasSystemMonitoringStatistics is enabled."
+        },
+        {
+          "characterOffset": 1318692,
+          "module": 39740,
+          "evidence": "Requires systemHelper.config clientDllName/serverDllName/externalDllName; resolves RzDLLService and native resources, registers callback, starts APP server if absent."
+        },
+        {
+          "characterOffset": 1727422,
+          "module": 91058,
+          "evidence": "CPU Status enable selects Temperatures.Package cur/min/max. These are measured current/minimum/maximum values, not a throttle threshold."
+        },
+        {
+          "characterOffset": 1721673,
+          "evidence": "Shared OLED presentation treats measured CPU temperature as Celsius and converts Fahrenheit with 9*x/5+32."
+        },
+        {
+          "characterOffset": 1732580,
+          "evidence": "Series11 monitoring presentation includes fixed chart limit Temperature:100; this display scale is not a sensor reading."
+        }
+      ]
+    },
+    {
+      "url": "https://apps.razer.com/synapse/products/672/mw/manifests/manifest-1.0.1.json",
+      "sha256": "DDB1E55CDA72949AE77D38CBF65EF31BE813913026427D7FB2CEA6A3DA6E4FB2",
+      "evidence": "Exact672 native resource manifest pins BladeDLL and Intel overclocking resources."
+    }
+  ],
+  "exactManifestComponents": [
+    {
+      "url": "https://app-assets.razer.com/files/synapse/devices/common/blades/bladeNative_v1.0.15.1.dll",
+      "sha256": "3D774D1582156A6CA0A69BD65C950599139206C5B06CC7103AF4828B151D8BDA",
+      "evidence": "Export review: display/color management, GPU tuning, BIOS/EC version, serial number. No CPU temperature export or thermal-zone/PDH source recovered."
+    },
+    {
+      "url": "https://app-assets.razer.com/files/synapse/devices/common/blades/RzIntelOverClock_v1.0.21.0.dll",
+      "sha256": "AE2799059F4DAE73DAA2349BB9DFCCA0E535483663D9EF1B1F18A45FEA97C395",
+      "evidence": "Exports asynchronous tuning-control operations and APP-server transport. No standalone CPU temperature getter."
+    },
+    {
+      "url": "https://app-assets.razer.com/files/synapse/devices/common/blades/RzIntelOverClockDLL_v1.0.21.0.dll",
+      "sha256": "0BCFF6300613D8888610799E0A8F8B0C89014DF7623F9D88315E895D26780C28",
+      "evidence": "Tuning-control API; XTU3SERVICE string at file offset 0x49fd0/RVA0x4b9d0. Missing/not-running Intel XTU OC Service errors at file offsets 0x4bd30 and 0x4bd98. Not a vendor-free provider."
+    }
+  ],
+  "sharedInstalledComponents": [
+    {
+      "file": "RzSystemCommon_v1.0.29.0.dll",
+      "sha256": "CC8C6AEE3515F96F5BED7A11C4A4B3653B525EC2A09A87C2D062EC183AF4A76D",
+      "evidence": "GetCPUTemperature export RVA0x6f420; GetCPUAndGPUTemperatureAndClock RVA0x70d90. Temperature CPU Package string at file offset0xac700/RVA0xad700."
+    },
+    {
+      "file": "RzSystemService_v1.0.29.0.dll",
+      "sha256": "605EEA0C35225BAC06B8D9A6F93A7C57D8D4B7A3058A8E718FD032C39E77BBF3",
+      "evidence": "GetCPUTemperature export RVA0x43c80; RzHWMonitorCPUZ::InitRzHardwareMonitor at file offset0x587b0/RVA0x59fb0; cpuidsdk64.dll at offset0x56c08/RVA0x58408. Explicit CPUID initialization errors. Visible PDH paths are LogicalDisk(C:) Disk Read/Write Bytes/sec at offsets0x5a600/0x5a690, not CPU temperature."
+    },
+    {
+      "file": "cpuidsdk64_v1.3.2.6.dll",
+      "sha256": "8CB5704FFBF13BE739F8A78C95B4769B0AF807447100A4B51B2DE6062E2712B4",
+      "evidence": "CPUID SDK with CPU Package sensors, MSR-related classes, and embedded CPUZ152/159 driver images. Processor Information PDH path at file offset0x213120 is Processor Utility. No Thermal Zone Information, MSAcpi thermal-temperature, or TZRZ string found in bounded static inspection."
+    }
+  ],
+  "interpretation": [
+    "Native monitoring components are installed shared resources inspected only as architectural evidence; they are not pinned by the exact672 resource manifest and were not proven active for this model.",
+    "The presence of PDH APIs in CPUID SDK does not establish a CPU temperature PDH source; recovered named counters cover utilization and disk I/O.",
+    "No recovered evidence authorizes mapping every Windows thermal-zone counter to CPU package temperature. Generic enumeration may discover zones but their CPU meaning and exact-device availability remain unproven.",
+    "A missing CPU reading must remain unavailable; fixed display limits, Intel tuning controls, and throttling limits cannot substitute for measured temperature.",
+    "The recovered source does not justify adding runtime Synapse/XTU/CPUID dependencies, invoking drivers, or new firmware queries."
+  ],
+  "uncertainties": [
+    "No physical CPU temperature observation was performed.",
+    "No exact672 ACPI namespace or PDH zone-to-CPU mapping was recovered.",
+    "Static inspection does not prove that no other vendor temperature provider exists; the requested manifest and shared monitor chain were bounded endpoints.",
+    "Installed common monitoring component versions are local evidence, not a complete exact672 deployment manifest."
+  ],
+  "validationBoundary": "Read-only source inspection, HTTPS GET downloads, hashing, PE exports/strings, and static disassembly only. No vendor components executed, no DLLs loaded as code, no installations, no hardware calls, no new capture. Evidence collection made no repository edits."
+}

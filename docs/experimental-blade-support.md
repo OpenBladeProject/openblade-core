@@ -32,8 +32,9 @@ Battery Saver and Battery Balanced on battery power.
   2,200–5,000 RPM on the Blade 14 (2023). The Blade 18 (2023) offers one
   2,200–3,800 RPM control for both fans in Balanced, and 3,700–5,300 RPM in Silent.
   Fan curves run in Balanced and link both requests to the higher target. Missing
-  temperature readings hold the maximum target; temperature reporting on this
-  model still needs community validation.
+  temperature readings hold the maximum target. [Source recovery](blade18-source-feature-recovery.md#temperature-source-recovery)
+  has not established a standalone Blade 18 CPU-temperature provider; variable
+  curves remain unverified where neither known Windows counter works.
 - Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and
   Blade 18 (2023). Select Automatic fans before turning it on. Maximum Fans cannot
   change while another

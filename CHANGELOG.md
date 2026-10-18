@@ -14,6 +14,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Clarify Blade 18 temperature-source limits and name decoded temporary-full-charge, CPU Boost and local-dimming bit flags in existing experimental Power Mode Control diagnostics. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
+
 - Run SnapTap through the supported Razer laptop keyboard driver on RZ09-0581, with keyboard-specific admission, supervised recovery, and a short information popup. ([#809](https://github.com/OSSBlade/openblade-core/pull/809))
 
 ### Fixed

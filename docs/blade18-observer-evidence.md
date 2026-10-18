@@ -222,12 +222,14 @@ An unavailable or unrepresentable getter blocks all fan writes. Target changes
 confirm both stored registers after each zone; ambiguous submission/readback
 pauses writes before the next zone. Actual RPM is never substituted for targets.
 
-The control offers one value for both fans in Balanced, in 100 RPM steps.
-Independent targets, curves, and fixed fans in Silent, Performance, Custom, or
-HyperBoost remain unavailable. The existing transition coordinator enters
-Balanced for this backend; that model-specific scope follows the active source
-path and owner report. Returning to another preset requires Automatic handback.
-It does not change other models' direct transitions or saved profile intent.
+The recording establishes one value for both fans in Balanced, in 100 RPM steps.
+Later [exact-model source recovery](blade18-source-feature-recovery.md#fan-controls)
+also admits linked fixed fans in Silent at 3700–5300 RPM and the existing host
+curve backend in Balanced. Curves need a usable Windows CPU-temperature reading;
+otherwise both fans hold 3800 RPM. Independent targets and fixed fans in
+Performance, Custom or HyperBoost remain unadmitted. Preset-aware service
+admission preserves Silent fixed control without enabling broader direct manual
+transitions. These extensions do not change the recording's physical scope.
 An exact-model OpenBlade target readback/restore round trip and fan convergence
 remain physical-validation work, not a prerequisite to source-backed community
 testing of this experimental backend.

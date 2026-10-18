@@ -144,3 +144,64 @@ Temperature telemetry remains unverified on the physical Blade 18.
 The Custom 1700–4300 RPM declaration is unused without the absent
 customModeSupportsMoreThanAuto feature. It does not admit Custom manual fans,
 and no corresponding Performance manual range was recovered.
+
+## Temperature-source recovery
+
+OpenBlade's existing CPU reader uses Windows PDH High Precision Temperature
+counters for the Razer EC thermal zone named TZRZ. It tries both known ACPI
+paths on all admitted models, including Blade 18; the paths are not gated to
+the two laptops on which they were validated. NVIDIA temperature uses NVML
+only while the GPU is known to be active. Neither reader loads a Synapse DLL.
+
+The reviewed Product 672 sources did not supply another Windows CPU-temperature
+provider or an exact Blade 18 ACPI-to-CPU mapping. The existing Observer bundle
+reported an available root/wmi MSAcpi_ThermalZoneTemperature query with zero
+rows. That does not prove that PDH has no usable counter, but it supplies no
+missing path. Observer currently collects this WMI query, not the PDH counters
+OpenBlade reads. Its absent WMI result therefore leaves PDH availability unknown.
+A useful future Observer improvement is a bounded, read-only check of the known
+TZRZ counter paths, including success/failure, units and measured value. A local
+read-only temperature check can establish availability without a USB capture or
+fan write. Another capture of fan commands would not establish that path.
+
+Shared middleware monitoring selects measured Temperatures.Package current,
+minimum and maximum values. Its fixed Temperature:100 chart limit is not a
+reading. This monitoring path requires hasSystemMonitoringStatistics and
+systemHelper configuration; Product 672 supplies neither. The recovered native
+chain is RzSystemCommon to RzSystemService to CPUID SDK, whose binary contains
+CPUZ driver images. Those installed common components are architectural evidence,
+not proof of a provider enabled for Product 672. The exact product's BladeDLL
+has no recovered CPU-temperature export; its Intel overclocking stack requires
+XTU service and exposes tuning operations.
+
+The [sanitized recovery report](blade18-temperature-source-recovery.json) pins
+the official source URLs, hashes, offsets, component exports and uncertainties.
+All inspection was static. No vendor DLL, service or driver was run or added
+as a telemetry dependency. Unknown thermal zones, utilization counters and
+thermal limits must not be relabeled as CPU package readings.
+
+Consequently, this investigation does not establish working variable fan curves
+on Blade 18. The host curve backend remains available in Balanced and holds
+3800 RPM if CPU temperature is unavailable. A standalone, measured CPU source
+is still needed where neither known Windows counter works.
+
+## Meaning of the remaining restrictions
+
+These are current implementation and source-admission limits, not claims that
+the firmware or hardware cannot support the feature.
+
+- Temporary full charge: the shared bit definition exists, but no enabled
+  exact-product setter path was recovered. Existing Power Mode Control queries
+  now name bit 0x04 in diagnostics alongside CPU Boost and local dimming. This
+  adds no query, setter, capability or claim that charging behavior is confirmed.
+- Startup animation (startup lighting): inherited get/set definitions exist, but Product 672 omits
+  the firmware-version feature configuration that activates them in Synapse.
+- Function-key-primary mode: Synapse's host mapping behavior is established.
+  OpenBlade still needs per-device suppression before it can safely invert
+  this laptop's function row without swallowing an external keyboard's F keys.
+- Independent fan targets: separate zone registers exist, but the exact-model
+  active task sends one speed to both. Asymmetric operation is an extrapolation
+  that has not been established by that source.
+- Custom/Performance fixed fans: the absent Custom manual feature forces
+  Automatic; the declared Custom range alone does not activate it. Performance
+  has no recovered manual range. Balanced and Silent remain admitted.
