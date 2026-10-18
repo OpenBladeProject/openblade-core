@@ -78,6 +78,7 @@ public sealed class SnapTapProcessCoordinator(
                     bool successful = await ObserveExitAsync(child, exited).ConfigureAwait(false);
                     bool unavailable = child.ExitCode == 3;
                     bool recoveryRequired = child.ExitCode == 4;
+                    bool driverMissing = child.ExitCode == 5;
                     DisposeChild(child);
                     child = null;
                     exited = null;
@@ -85,6 +86,7 @@ public sealed class SnapTapProcessCoordinator(
                     {
                         latched = true;
                         latched |= !Publish(recoveryRequired ? SnapTapRuntimeState.RecoveryRequired
+                            : driverMissing ? SnapTapRuntimeState.DriverMissing
                             : unavailable ? SnapTapRuntimeState.Unavailable : SnapTapRuntimeState.Failed);
                     }
                     else

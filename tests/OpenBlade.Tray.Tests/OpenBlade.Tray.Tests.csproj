@@ -36,6 +36,7 @@
              Link="WindowsStartupRegistration.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ElevatedServiceControlLauncher.cs"
              Link="ElevatedServiceControlLauncher.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\RazerDriverInstallLauncher.cs" Link="RazerDriverInstallLauncher.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\GpuAppCleanupCoordinator.cs" Link="GpuAppCleanupCoordinator.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\GpuAppForceCloseOutcomeTracker.cs"
              Link="GpuAppForceCloseOutcomeTracker.cs" />

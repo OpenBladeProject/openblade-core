@@ -2198,10 +2198,46 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>尚未验证游戏兼容性。</value>
   </data>
+  <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>安装指南</value>
+  </data>
+  <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Razer 键盘驱动安装指南</value>
+  </data>
+  <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
+    <value>SnapTap 需要 Razer 键盘驱动。</value>
+  </data>
   <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
     <value>受支持的 Razer 键盘驱动不可用。</value>
   </data>
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
     <value>重新启用 SnapTap 前，请重启 Windows。</value>
+  </data>
+  <data name="SnapTap_InstallDriver.Content" xml:space="preserve">
+    <value>安装驱动</value>
+  </data>
+  <data name="SnapTap_InstallDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>安装 Razer 键盘驱动</value>
+  </data>
+  <data name="SnapTap_Driver_Installing" xml:space="preserve">
+    <value>正在安装驱动…</value>
+  </data>
+  <data name="SnapTap_Driver_Installed" xml:space="preserve">
+    <value>驱动已安装。请关闭并重新开启 SnapTap。</value>
+  </data>
+  <data name="SnapTap_Driver_Restart" xml:space="preserve">
+    <value>请重启 Windows，然后按照安装指南操作。</value>
+  </data>
+  <data name="SnapTap_Driver_Canceled" xml:space="preserve">
+    <value>已取消驱动安装。</value>
+  </data>
+  <data name="SnapTap_Driver_AcPower" xml:space="preserve">
+    <value>请连接电源适配器后安装驱动。</value>
+  </data>
+  <data name="SnapTap_Driver_CloseSynapse" xml:space="preserve">
+    <value>请关闭 Razer Synapse 后重试。</value>
+  </data>
+  <data name="SnapTap_Driver_Failed" xml:space="preserve">
+    <value>驱动安装未完成。请打开安装指南。</value>
   </data>
 </root>

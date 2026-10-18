@@ -8,6 +8,7 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
     [Theory]
     [InlineData(SnapTapRuntimeState.Unavailable)]
     [InlineData(SnapTapRuntimeState.RecoveryRequired)]
+    [InlineData(SnapTapRuntimeState.DriverMissing)]
     public void DriverTerminalConditionSurvivesHelperExit(SnapTapRuntimeState state)
     {
         var status = new SnapTapRuntimeStatus(state, DateTimeOffset.UtcNow);
