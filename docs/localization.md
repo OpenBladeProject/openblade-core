@@ -122,6 +122,16 @@ Agent, tray icon, or hardware integration. The installer snapshot test uses the
 same output variable and renders its states without planning or applying a Burn
 package:
 
+Tray visual smoke tests, installer UI tests, and the capture wrapper run their
+windows without displaying them on the user's screen. Rendering,
+localization, layout, and logical keyboard-focus checks still run. An isolation
+failure fails the test; it does not show a window on the user's desktop.
+Tray renderers use private Windows desktops. Installer snapshots are cloaked
+by Windows before they are shown; tests requiring real keyboard activation use
+a private desktop kept for the testhost lifetime. This preserves both screenshot
+rendering and real focus checks without affecting the user's desktop. The Tray
+harness omits Explorer switcher registration on desktops without a shell.
+
 Run the checked-in capture wrapper so every WPF state gets a fresh testhost and
 cannot inherit retained render state from the preceding image:
 

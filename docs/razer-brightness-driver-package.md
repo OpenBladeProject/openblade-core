@@ -207,6 +207,14 @@ RzCommon, VCon, mouse, keyboard, then DKM. Use
 `pnputil /delete-driver <journal-owned-oem.inf> /uninstall` and stop if Windows
 reports that a package is in use or a reboot is required.
 
+The SnapTap **Install driver** action implements these staging and binding steps
+in a separate elevated helper. It verifies the pinned catalog package and records
+operations in `%ProgramData%\OpenBlade.DriverInstallation\installation.jsonl`.
+A pending journal blocks another installation attempt, including after a restart.
+Preserve that journal and inspect the current bindings before manual recovery;
+do not delete it or repeat installation to bypass an uncertain operation.
+Offline tests do not replace the clean-install checks below.
+
 Before publishing a one-click installer, validate two clean RZ09-0581 installs,
 failure recovery after each package, reverse rollback with the integrated
 keyboard and touchpad restored, idempotent repair, reboot and sleep cycles, and

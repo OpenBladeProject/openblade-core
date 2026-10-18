@@ -9907,22 +9907,20 @@ public sealed partial class MainViewModelTests
                 HyperBoostRestoredPerformance = PerformancePreset.Silent,
             },
         };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
         {
+            Message = "HyperBoost active before power change",
             ConfirmedState = baseline.ConfirmedState! with
             {
                 Performance = PerformancePreset.Balanced,
                 HyperBoostActive = true,
             },
         };
-        client.Publish(active);
-        await WaitUntilAsync(() =>
-            viewModel.HyperBoostActive
-            && viewModel.AvailableLaptopPerformanceOptions.Any(
-                option => option.Value == PerformancePreset.Performance));
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, active);
         LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
             .Single(option => option.Value == PerformancePreset.Performance);
 
@@ -9933,6 +9931,7 @@ public sealed partial class MainViewModelTests
         ServiceStatusSnapshot battery = active with
         {
             Revision = active.Revision + 1,
+            Message = "Battery power during HyperBoost exit",
             ActivePowerSource = PowerSource.Battery,
             DesiredState = active.DesiredState with
             {
@@ -9946,8 +9945,9 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = false,
             },
         };
-        client.Publish(battery);
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+        // ActivePowerSource changes before ApplyStatus finishes its notifications.
+        // Wait for the whole dispatch before releasing the command continuation.
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, battery);
         client.CompleteMutation();
 
         await operation;

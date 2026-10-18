@@ -3062,6 +3062,23 @@
                                                 </StackPanel>
                                                 <TextBlock x:Uid="SnapTap_Description" Text="When A and D overlap, the last pressed key wins." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                 <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                                <StackPanel x:Name="SnapTapDriverActions" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                                                    <Button x:Name="SnapTapInstallDriverButton" x:Uid="SnapTap_InstallDriver"
+                                                            Content="Install driver" HorizontalAlignment="Left"
+                                                            Style="{StaticResource AccentButtonStyle}"
+                                                            Click="OnInstallSnapTapDriver"
+                                                            AutomationProperties.Name="Install the Razer keyboard driver" />
+                                                    <HyperlinkButton x:Name="SnapTapDriverLink" x:Uid="SnapTap_DriverLink"
+                                                                     Style="{StaticResource ExternalLinkButtonStyle}"
+                                                                     Width="32" Height="32" Padding="0"
+                                                                     HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                                     ToolTipService.ToolTip="Setup guide"
+                                                                     NavigateUri="https://github.com/OpenBladeProject/blade-driver-catalog/blob/main/docs/installing-rz09-0581.md"
+                                                                     AutomationProperties.Name="Razer keyboard driver setup guide">
+                                                        <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                                    </HyperlinkButton>
+                                                </StackPanel>
                                             </StackPanel>
                                             <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
                                         </Grid>

@@ -621,7 +621,18 @@ public partial class App
                 requestedPage, "laptop-snap-tap-on", StringComparison.Ordinal);
             bool captureSnapTapInformation = string.Equals(
                 requestedPage, "laptop-snap-tap-info", StringComparison.Ordinal);
-            bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled || captureSnapTapInformation
+            bool captureSnapTapDriverMissing = requestedPage is "laptop-snap-tap-driver"
+                or "laptop-snap-tap-driver-installing" or "laptop-snap-tap-driver-installed"
+                or "laptop-snap-tap-driver-restart" or "laptop-snap-tap-driver-failed";
+            string? driverSetupState = requestedPage switch
+            {
+                "laptop-snap-tap-driver-installing" => "installing",
+                "laptop-snap-tap-driver-installed" => "installed",
+                "laptop-snap-tap-driver-restart" => "restart",
+                "laptop-snap-tap-driver-failed" => "failed",
+                _ => null,
+            };
+            bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled || captureSnapTapInformation || captureSnapTapDriverMissing
                 || string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
@@ -698,7 +709,7 @@ public partial class App
                 }
                 if (captureSnapTap)
                 {
-                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled);
+                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
                     await WaitForSnapshotLayoutAsync();
                 }
                 if (captureSnapTapInformation)
@@ -787,10 +798,22 @@ public partial class App
         }
     }
 
+    internal static bool HasDesktopShell => GetShellWindow() != 0;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint GetShellWindow();
+
     private static void ShowNoninteractiveSnapshotWindow(Window window)
     {
         ((UIElement)window.Content).IsHitTestVisible = false;
-        window.AppWindow.IsShownInSwitchers = false;
+#if OPENBLADE_DEVELOPER_HARNESS
+        // Private test desktops have no Explorer shell; WinUI returns E_NOTIMPL
+        // for switcher registration there. Rendering and layout still run.
+        if (App.HasDesktopShell)
+#endif
+        {
+            window.AppWindow.IsShownInSwitchers = false;
+        }
         LocalizationSnapshotWindowInput.Apply(WindowNative.GetWindowHandle(window));
         // WinUI requires Activate to initialize x:Bind and templates. The native
         // no-activate style is already installed, so this does not take foreground.

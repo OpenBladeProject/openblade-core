@@ -19,11 +19,19 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
+  <!-- WPF text-services COM objects must not be unloaded with a secondary
+       xUnit AppDomain after their STA exits. Each test run has its own process. -->
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\..\tests\OpenBlade.Testing\WindowsVisualTestDesktop.cs"
+             Link="WindowsVisualTestDesktop.cs" />
     <Compile Include="..\..\..\src\OpenBlade.Tray\LocalizationSnapshotWindowInput.cs"
              Link="LocalizationSnapshotWindowInput.cs" />
     <Compile Include="..\..\..\src\OpenBlade.Tray\LocalizationSnapshotPixelCanonicalizer.cs"

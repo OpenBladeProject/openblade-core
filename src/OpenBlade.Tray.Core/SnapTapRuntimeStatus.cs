@@ -16,6 +16,7 @@ public enum SnapTapRuntimeState
     Armed,
     Unavailable,
     RecoveryRequired,
+    DriverMissing,
 }
 
 public sealed record SnapTapRuntimeStatus(
@@ -75,6 +76,7 @@ public static class SnapTapStatusStore
             // The process start time also rejects a PID reused since the last update.
             return status.State is SnapTapRuntimeState.Off or SnapTapRuntimeState.Failed
                     or SnapTapRuntimeState.Unavailable or SnapTapRuntimeState.RecoveryRequired
+                    or SnapTapRuntimeState.DriverMissing
                 || IsProcessCurrent(status)
                     ? status
                     : status with { State = SnapTapRuntimeState.Paused };

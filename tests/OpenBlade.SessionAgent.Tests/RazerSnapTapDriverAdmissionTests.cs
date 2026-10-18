@@ -47,6 +47,93 @@ public sealed class RazerSnapTapDriverAdmissionTests
         Assert.False(RazerSnapTapDriverAdmission.TryAdmit(snapshot, out _));
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void ExactHostWithAbsentDriverFilesReportsDriverMissing(
+        bool commonMissing,
+        bool deviceMissing)
+    {
+        RazerSnapTapDriverSnapshot exact = ExactSnapshot();
+        RazerSnapTapDriverSnapshot snapshot = exact with
+        {
+            RzCommonSha256 = commonMissing ? null : exact.RzCommonSha256,
+            RzDeviceSha256 = deviceMissing ? null : exact.RzDeviceSha256,
+            KeyboardDevices = [exact.KeyboardDevices[0] with { UpperFilters = [] }],
+        };
+        var admission = new RazerSnapTapDriverAdmission(() => snapshot);
+
+        Assert.False(admission.TryGetEndpoint(out _, out bool driverMissing));
+        Assert.True(driverMissing);
+        Assert.False(admission.TryGetEndpoint(out _));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void WrongRemainingDriverHashDoesNotReportDriverMissing(bool commonMissing)
+    {
+        RazerSnapTapDriverSnapshot exact = ExactSnapshot();
+        RazerSnapTapDriverSnapshot snapshot = exact with
+        {
+            RzCommonSha256 = commonMissing ? null : new string('0', 64),
+            RzDeviceSha256 = commonMissing ? new string('0', 64) : null,
+        };
+        var admission = new RazerSnapTapDriverAdmission(() => snapshot);
+
+        Assert.False(admission.TryGetEndpoint(out _, out bool driverMissing));
+        Assert.False(driverMissing);
+    }
+
+    [Fact]
+    public void MissingDriverRequiresTrustedHostControllerAndKeyboardObservation()
+    {
+        RazerSnapTapDriverSnapshot exact = ExactSnapshot();
+        RazerSnapTapDriverSnapshot missing = exact with
+        {
+            RzCommonSha256 = null,
+            RzDeviceSha256 = null,
+            KeyboardDevices = [exact.KeyboardDevices[0] with { UpperFilters = [] }],
+        };
+        RazerSnapTapKeyboardDevice keyboard = missing.KeyboardDevices[0];
+        RazerSnapTapDriverSnapshot[] untrusted =
+        [
+            missing with { BiosProductName = "Blade 16 - RZ09-0528" },
+            missing with { ActiveConsoleSession = false },
+            missing with { CompetingControllerDetected = true },
+            missing with { ControllerObservationComplete = false },
+            missing with { KeyboardDevices = [] },
+            missing with { KeyboardDevices = [keyboard, keyboard] },
+            missing with { KeyboardDevices = [keyboard with { ContainerId = Guid.Empty }] },
+            missing with { KeyboardDevices = [keyboard with { Ancestors = [] }] },
+        ];
+
+        foreach (RazerSnapTapDriverSnapshot snapshot in untrusted)
+        {
+            var admission = new RazerSnapTapDriverAdmission(() => snapshot);
+            Assert.False(admission.TryGetEndpoint(out _, out bool driverMissing));
+            Assert.False(driverMissing);
+        }
+    }
+
+    [Fact]
+    public void ObservationFailuresDoNotReportDriverMissing()
+    {
+        Func<RazerSnapTapDriverSnapshot>[] captures =
+        [
+            () => throw new IOException("Native discovery failed."),
+            () => throw new UnauthorizedAccessException("Driver hash could not be read."),
+        ];
+
+        foreach (Func<RazerSnapTapDriverSnapshot> capture in captures)
+        {
+            var admission = new RazerSnapTapDriverAdmission(capture);
+            Assert.False(admission.TryGetEndpoint(out _, out bool driverMissing));
+            Assert.False(driverMissing);
+        }
+    }
+
     [Fact]
     public void ExternalKeyboardWithDifferentContainerCannotSupplyLaptopKeyboardIdentity()
     {
