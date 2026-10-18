@@ -75,8 +75,7 @@ corroborates identity, matrix and input mapping, but contains conflicting
 entries. All 18 UI definitions agree that extended scan 0x53 (Delete) maps to
 output slot 15; the manifest aliases it to Insert. The coherent UI definitions
 are authoritative here. Their input and output matrices also resolve regional
-Enter/backslash and right-Fn differences. This map admits only the three spatial
-effects; Sequence and individual-key color editing remain unavailable.
+Enter/backslash and right-Fn differences. The same reviewed map now admits imported per-key colors and sequence playback.
 
 ## Effect behavior
 
@@ -126,10 +125,35 @@ write HID or acquire the firmware operation queue. Pulses from another known
 keyboard model are excluded before slot dispatch. Replacing or retiring an
 effect drains the active frame and stops its loop.
 
-The optional physical-region capability uses service IPC version 69; the Session
+The optional physical-region capability uses service IPC version 70; the Session
 Agent IPC is unchanged. Deployment requires the coordinated full installation.
 
 Offline tests cover fixture admission, scan-code mappings, regional selection and fallback,
 Reactive fading, Ripple geometry, Tidal timing and direction, deterministic
 random colors, memory-only pulses, ownership and restoration. This work adds
 no firmware commands, driver dependencies, installations or hardware writes.
+
+## Per-key colors and playback
+
+Import a classic Keyboard .chroma file through the existing lighting import
+control. One frame holds a per-key color arrangement; multiple frames play a
+sequence. Razer's [official named-key grid](https://github.com/razerofficial/HTML5ChromaSDK/blob/ec61d7a1924a6facc0e136a84a00b8b87f7ce4ba/ChromaSDKImpl.js)
+is projected through this model's regional scan-code map. Unmapped source cells
+are reported before import. The generic canvas cannot distinguish both model Fn
+keys, so it does not assign those cells by guessing.
+
+The bounded sequence container retains 102 slots for compatibility, with the
+Blade 18's 96-slot prefix and black padding. Layout-aware encoding validates this
+model's own union mask; playback additionally rejects colored slots absent from
+the detected region. Other models retain their existing masks. A single frame
+is submitted once. Non-looping playback holds its final frame and stops its
+timer. The stream stays within the existing 20 FPS budget and skips missed
+intermediate frames without skipping the final frame after a slow submission.
+
+Single-color and dual-color Breathing and leftward Wave use the same admitted
+frame transport. Their options are defined by Product 672's inherited vendor
+classes above. The four-second sinusoidal Breathing cycle and one-second rainbow
+Wave are explicit software patterns; the recovered source does not establish
+the firmware's exact timing or waveform. Random Breathing and rightward Wave
+retain the existing firmware path. Owned frame colors are requested state, not
+firmware RGB readback, and retiring them restores the saved built-in baseline.

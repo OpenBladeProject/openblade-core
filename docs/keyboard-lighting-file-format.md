@@ -115,7 +115,10 @@ other single color becomes `static` at 100% brightness. The conversion is
 lossless even when the source contains multiple identical frames.
 
 Classic `Keyboard` per-key files are accepted on the separately verified
-RZ09-0581 and RZ09-0528 layouts. The adapter starts with Razer's official
+RZ09-0581 and RZ09-0528 layouts, and experimentally on RZ09-0484.
+Blade 18 projects through its recovered regional key map into its own 6×16
+frame; a one-frame import holds per-key colors. See
+[Blade 18 lighting](blade18-spatial-lighting.md#per-key-colors-and-playback). The adapter starts with Razer's official
 [named-key grid](https://github.com/razerofficial/CChromaEditor/blob/6ce8b24db8e4e00ddafe027de7589b2a0b4dc618/CChromaEditorLibrary/RzChromaSDKTypes.h#L173-L300),
 then projects only those logical keys whose target slot is already admitted for
 that exact model. It does not compress the generic 22-column canvas into the

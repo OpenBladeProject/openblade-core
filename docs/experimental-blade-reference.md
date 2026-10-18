@@ -12,7 +12,7 @@ command limits, recovery behavior, and evidence. For setup and test reports, use
 | Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, Custom, fixed fan targets, keyboard and logo lighting, 50-100% charge limits |
 | Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, Battery Saver, Battery Balanced, Custom, keyboard and logo lighting, 50-100% charge limits |
 | Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced, Silent, Gaming, Custom, single-zone keyboard lighting |
-| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Balanced-only shared fixed targets, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
+| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Balanced/Silent linked fixed targets and Balanced curves, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
 
 Admission checks Razer and the exact product name in both Windows registry
 sources, then the exact USB identity and 91-byte HID feature-report geometry.
@@ -55,10 +55,12 @@ The thermal backend uses independent query and setter exchanges:
 `0D/81` reports the stored fan target, not measured tachometer speed. Fixed
 targets are 2,000-5,000 RPM on the Blade 16 (2023) and 2,200-5,000 RPM on the
 Blade 14 (2023), in 100 RPM steps. Blade 18 (2023) admits one shared
-2,200-3,800 RPM target in Balanced, using its pinned class-1 target getter.
-Both zones must return representable stored targets before a change; each setter
-confirms both registers independently. Fan curves remain unavailable because the backend has no admitted live
-temperature source.
+2,200-3,800 RPM target in Balanced and 3,700-5,300 RPM in Silent, using its
+pinned class-1 target getter. Both zones must return representable stored
+targets before a change; each setter confirms both registers independently.
+The existing host curve loop is admitted in Balanced, linking both requests at
+the higher target and holding the range maximum when temperature data is missing.
+Blade 18 temperature telemetry remains physically unverified.
 
 Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and Blade
 18 (2023). The shared Power Mode Control decoder accepts any one-byte subset of
@@ -93,10 +95,10 @@ cannot become a guessed baseline.
 
 Transitions go directly from the confirmed starting state to the requested
 state. Blade 16 (2023) and Blade 14 (2023) preserve readable fixed fans through
-preset changes. Blade 18 fixed fans are Balanced-only: the existing transition
-coordinator selects Balanced on entry and requires Automatic handback before
-another preset. This exact-model restriction follows Synapse's active path and
-the owner report; unused range declarations do not admit other presets. When Maximum Fans
+preset changes. Blade 18 fixed fans use preset-aware ranges in Balanced and Silent; curves
+remain Balanced-only. Shared capability, profile and service admission preserve
+that distinction. Custom manual fans remain unadmitted because the exact
+product lacks customModeSupportsMoreThanAuto. When Maximum Fans
 is active, the guarded cleanup above is required before leaving Custom. A
 fixed-target change on Blade 16/14 preserves the confirmed ordinary preset or Custom mode and
 changes only the fan flag and targets. On a confirmed limited adapter, a direct
@@ -224,8 +226,9 @@ This is software-pattern extrapolation, not a captured Blade 18 Starlight oracle
 Reactive, Ripple and Tidal use the [recovered product-672 map and algorithms](blade18-spatial-lighting.md):
 all nine regional layouts, their input bindings and spatial positions. An
 exact-model edition query selects the physical region. Unknown regions retain
-unambiguous input bindings and the existing union geometry. This admission does not enable
-Sequence or individual-key color editing.
+unambiguous input bindings and the existing union geometry.
+Sequence playback and per-key color imports now use that same map; see the
+spatial-lighting guide for the bounded layout-aware container and import rules.
 
 The service-owned port writes six SET-only `03/0B` rows and activates custom
 mode once on entry with `03/0A [05,00]`. Later frames have no GET or extra latch.
