@@ -139,13 +139,12 @@
       "reason": "FirmwareSmoke tests inspect the firmware-update script."
     },
     {
-      "patterns": ["captures"],
+      "patterns": ["evidence/legacy-captures/*"],
       "testProjects": [
         "tests/OpenBlade.Capture.Tests/OpenBlade.Capture.Tests.csproj",
         "tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj"
       ],
-      "requiresCaptures": true,
-      "reason": "Capture and Protocol tests consume the pinned capture evidence."
+      "reason": "Capture and Protocol tests consume the core-owned legacy evidence."
     }
   ],
   "contractRules": [
@@ -186,23 +185,12 @@
       "patterns": ["build/InstallerPrerequisites.ps1", "build/Publish.ps1", "build/installer/*", "Directory.Build.props", "tests/Build.Tests/InstallerPrerequisites.Tests.ps1"]
     },
     {
-      "test": "tests/Build.Tests/InteractiveUsbPcapCaptureRunner.Tests.ps1",
-      "patterns": ["captures"],
-      "requiresCaptures": true
+      "test": "tests/Build.Tests/LegacyEvidenceProvenance.Tests.ps1",
+      "patterns": [".gitattributes", "evidence/*", "tests/Build.Tests/LegacyEvidenceProvenance.Tests.ps1"]
     },
     {
       "test": "tests/Build.Tests/LightingOracleCheckoutPolicy.Tests.ps1",
       "patterns": [".gitattributes", "src/OpenBlade.Protocol/Fixtures/*TidalOracle.json", "src/OpenBlade.Protocol/Fixtures/*WaveWheelOracle.json"]
-    },
-    {
-      "test": "tests/Build.Tests/LightingSpectrumRandomCaptureWorkflow.Tests.ps1",
-      "patterns": ["captures"],
-      "requiresCaptures": true
-    },
-    {
-      "test": "tests/Build.Tests/LightingSpectrumRandomOracleAnalysis.Tests.ps1",
-      "patterns": ["captures"],
-      "requiresCaptures": true
     },
     {
       "test": "tests/Build.Tests/LocalizationResources.Tests.ps1",
@@ -261,11 +249,6 @@
     {
       "test": "tests/Build.Tests/LocalDevDeploymentReleaseBoundary.Tests.ps1",
       "patterns": ["build/Build-ThermalExternalDriftValidation.ps1", "build/Publish.ps1", "build/StoreSubmissionValidation.ps1", "build/installer/*", "build/development-deployment/*", "build/tools/OpenBlade.LocalDevDeployment.Tool/*", "src/OpenBlade.Deployment/*", "src/OpenBlade.DeploymentBroker/*", "src/OpenBlade.DeploymentClient/*", "src/OpenBlade.DevelopmentDeployment.Setup/*", "src/OpenBlade.Setup/LocalDevEnrollmentUser.cs", "src/OpenBlade.Setup/OpenBlade.Setup.csproj", "src/OpenBlade.Setup/Program.cs"]
-    },
-    {
-      "test": "tests/Build.Tests/UsbPcapCaptureControl.Tests.ps1",
-      "patterns": ["captures"],
-      "requiresCaptures": true
     },
     {
       "test": "tests/Build.Tests/WindowsAppRuntimeNotificationResource.Tests.ps1",

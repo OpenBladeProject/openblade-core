@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "ExactDeviceHyperBoostDeveloperValidation",
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "trackingIssue": "https://github.com/OpenBladeProject/openblade-core/issues/597",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "sku": "RZ09-05289EN4",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "provenance": {
+    "controller": "Exact-device OpenBlade developer validator",
+    "validatorAssemblySha256": "3D19A9C9EEF41773F689C6802D4B679325E5F7A304858E6755CFB00E7D13E93C",
+    "sourceRevision": "b0883c2138768c2549d795bfd370a849891012c1",
+    "completedAtUtc": "2026-09-27T21:35:50.4614056Z",
+    "installedProductValidation": false,
+    "protocolAssemblySha256": "FB9913E31A287D4E54AF01B5306C711876278E1BD5E1896EA725E4ABB89E0270",
+    "buildManifestSha256": "B3BA5F245A1BC6D2503FF0A52472D8C774A2F993781C7C1FCB3C51E7325B08B3"
+  },
+  "prerequisites": {
+    "adapter": "FullPower280W",
+    "coolingPad": {
+      "vendorIdHex": "1532",
+      "productIdHex": "0F43",
+      "revisionHex": "0200",
+      "interface": "MI_00",
+      "usagePageHex": "000C",
+      "usageHex": "0001",
+      "featureReportByteLength": 91
+    },
+    "attendedCoolingPadFanReadyAcknowledged": true
+  },
+  "validation": {
+    "Target": "HyperBoostFromPerformance",
+    "Baseline": {
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    },
+    "Candidate": {
+      "Thermal1Hex": "01010700",
+      "Thermal2Hex": "01020700"
+    },
+    "CandidateFanRpm": null,
+    "CandidateFanRpmSamples": [],
+    "Restoration": {
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    },
+    "ApplyAttempted": true,
+    "ApplyAcknowledged": true,
+    "CandidateConfirmed": true,
+    "RestoreAttempted": true,
+    "RestoreAcknowledged": true,
+    "Restored": true,
+    "IndeterminatePartialWrite": false,
+    "ManualRecoveryRequired": false,
+    "Failure": "None",
+    "Success": true
+  },
+  "wrapperOutcome": {
+    "validationExitCode": 0,
+    "developerRestorationConfirmed": true,
+    "initialOriginalOverrideRestorationExitCode": 2,
+    "subsequentExplicitRecoveryExitCode": 0,
+    "originalOverrideRestoreExitCode": 0,
+    "restorationPending": false,
+    "failure": null,
+    "errors": [],
+    "postThermalReadOnly": {
+      "performance": "Performance",
+      "fans": "Automatic"
+    },
+    "profileContentsExcluded": true
+  },
+  "priorAttempts": [
+    {
+      "completedAtUtc": "2026-09-27T21:15:58.0638023Z",
+      "result": "Isolation rejected because the OpenBlade service process remained active; developer validator did not run.",
+      "developerValidationExitCode": null,
+      "originalOverrideRestoreExitCode": 2,
+      "restorationConfirmedAtAttemptEnd": false,
+      "laterRecoveryConfirmed": true,
+      "laterRecoveryCompletedAtUtc": "2026-09-27T21:25:43.5464609Z",
+      "laterRecovery": "Separate performance-only recovery completed successfully; validation exit 0 and no service restoration failures."
+    },
+    {
+      "completedAtUtc": "2026-09-27T21:26:48.7786491Z",
+      "result": "WrongTarget before any apply attempt; later read-only metadata diagnosis found discovery rejected non-protocol collections.",
+      "developerValidationExitCode": 3,
+      "applyAttempted": false,
+      "restorationPendingAtAttemptEnd": true,
+      "laterRecoveryConfirmed": true,
+      "laterRecoveryObservedAtUtc": "2026-09-27T21:29:32Z",
+      "laterRecovery": "Separate no-HyperBoost-write recovery confirmed fresh inactive HyperBoost, restore exit 0, and no HyperBoost retry."
+    }
+  ],
+  "metadataDiscovery": {
+    "readOnly": true,
+    "featureReportsSent": false,
+    "before": {
+      "observedAtUtc": "2026-09-27T21:30:03.1809686Z",
+      "discovery": "ObservationFailed"
+    },
+    "after": {
+      "observedAtUtc": "2026-09-27T21:34:20.8758643Z",
+      "discovery": "PresentExact"
+    },
+    "descriptors": [
+      {
+        "Interface": "mi_00",
+        "Collection": "",
+        "Opened": true,
+        "Win32Error": null,
+        "VendorId": 5426,
+        "ProductId": 3907,
+        "UsagePage": 12,
+        "Usage": 1,
+        "FeatureReportByteLength": 91,
+        "VersionNumber": 512
+      },
+      {
+        "Interface": "mi_01",
+        "Collection": "col01",
+        "Opened": true,
+        "Win32Error": null,
+        "VendorId": 5426,
+        "ProductId": 3907,
+        "UsagePage": 12,
+        "Usage": 1,
+        "FeatureReportByteLength": 0,
+        "VersionNumber": 512
+      },
+      {
+        "Interface": "mi_01",
+        "Collection": "col02",
+        "Opened": true,
+        "Win32Error": null,
+        "VendorId": 5426,
+        "ProductId": 3907,
+        "UsagePage": 12,
+        "Usage": 1,
+        "FeatureReportByteLength": 0,
+        "VersionNumber": 512
+      },
+      {
+        "Interface": "mi_01",
+        "Collection": "col03",
+        "Opened": true,
+        "Win32Error": null,
+        "VendorId": 5426,
+        "ProductId": 3907,
+        "UsagePage": 1,
+        "Usage": 128,
+        "FeatureReportByteLength": 0,
+        "VersionNumber": 512
+      },
+      {
+        "Interface": "mi_01",
+        "Collection": "col04",
+        "Opened": true,
+        "Win32Error": null,
+        "VendorId": 5426,
+        "ProductId": 3907,
+        "UsagePage": 1,
+        "Usage": 0,
+        "FeatureReportByteLength": 0,
+        "VersionNumber": 512
+      },
+      {
+        "Interface": "mi_01",
+        "Collection": "col05",
+        "Opened": true,
+        "Win32Error": null,
+        "VendorId": 5426,
+        "ProductId": 3907,
+        "UsagePage": 1,
+        "Usage": 0,
+        "FeatureReportByteLength": 0,
+        "VersionNumber": 512
+      },
+      {
+        "Interface": "mi_00",
+        "Collection": "col03",
+        "Opened": true,
+        "Win32Error": null,
+        "VendorId": 5426,
+        "ProductId": 3907,
+        "UsagePage": 12,
+        "Usage": 1,
+        "FeatureReportByteLength": 0,
+        "VersionNumber": 257
+      },
+      {
+        "Interface": "mi_00",
+        "Collection": "col03",
+        "Opened": true,
+        "Win32Error": null,
+        "VendorId": 5426,
+        "ProductId": 3907,
+        "UsagePage": 1,
+        "Usage": 128,
+        "FeatureReportByteLength": 0,
+        "VersionNumber": 257
+      }
+    ],
+    "descriptorsChanged": false,
+    "controllersIsolatedDuringMetadataObservation": false,
+    "scope": "Metadata enumeration only. One exact 91-byte MI_00 protocol collection was distinguished from zero-feature collections; this does not validate pad fan commands or pad restoration."
+  },
+  "commandScope": {
+    "laptopSetterClassHex": "0D",
+    "laptopSetterCommandHex": "02",
+    "laptopGetterClassHex": "0D",
+    "laptopGetterCommandHex": "82",
+    "padFeatureWritesPerformed": false
+  },
+  "admission": {
+    "productionImportAllowed": false,
+    "installedServiceValidationPerformed": false,
+    "productionCoverageAdvanced": false,
+    "padlessActivationAdmitted": false,
+    "balancedOrSilentTransitionsValidated": false,
+    "lifecycleValidated": false
+  },
+  "limitations": [
+    "Developer Performance/Automatic mode 2 to HyperBoost mode 7 and back to mode 2 only.",
+    "No installed service or tray HyperBoost round trip was performed.",
+    "No cooling-pad feature write, independent fan RPM reading, or prior pad state restoration was validated.",
+    "No Balanced, Silent, pad-absent, device-removal, power-transition, sleep/resume, reboot, or sustained-load validation.",
+    "Thermal mode readback does not prove power-limit changes or performance improvement."
+  ],
+  "privacy": {
+    "rawOutputsCommitted": false,
+    "serialNumbersRetained": false,
+    "devicePathsRetained": false,
+    "localPathsRetained": false,
+    "profileContentsRetained": false
+  },
+  "decodedEvidence": "decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-developer-validation.json"
+}

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "decision": "SlimQ330WAdapterProductionAdmission",
+  "reviewedAtUtc": "2026-08-12T13:00:00Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "windowsSmbiosModel": "Blade 16 - RZ09-0581",
+    "sku": "RZ09-05819EN4",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "admittedBiosVersions": [
+      "3.01",
+      "4.00"
+    ]
+  },
+  "sourceEvidence": {
+    "annotation": "annotations/2026-08-12-rz09-0581-slimq-330w-readback.json",
+    "annotationSha256": "89D94E61BF913D7EFD1D89505A49791063FF3002DC55E3A79CCED182C786902A",
+    "responsePayloadHex": "1211",
+    "successfulQueryCount": 10,
+    "powerOnlineSampleCount": 4,
+    "validatedBiosVersion": "4.00"
+  },
+  "operatorDecision": {
+    "explicitProductionAdmissionApproved": true,
+    "reportedCharger": "SlimQ charger rated above 280 W with Razer three-prong converter",
+    "reportedEquivalentUse": "The exact laptop games and performs ordinary full-power workloads without practical difference from the OEM Razer adapter.",
+    "approvedMapping": "FullPower330W"
+  },
+  "productionAdmission": {
+    "adapterPowerResponse1211": "FullPower330W",
+    "adapterClassificationAdmitted": true,
+    "hyperBoostFullPowerPrerequisiteContributionAdmitted": true,
+    "notGeneralizedToOtherModels": true,
+    "implementation": "The exact PID 02E0 production battery factory admits response 1211 only for the RZ09-0581 on its current 3.01 and 4.00 host baseline. All other adapter responses, models, identity checks, controller checks, and feature-specific gates remain unchanged."
+  },
+  "limitations": [
+    "The retained hardware evidence is read-only and does not independently compare an OEM Razer 330 W adapter on the same machine.",
+    "This classification does not by itself admit HyperBoost, cooling-pad writes, pad-less operation, or any other feature; those operations retain their own identity, state, readback, restoration, and evidence gates.",
+    "The captured stability window was idle and short; the production classification is an explicit operator-approved compatibility decision made with those limitations retained."
+  ],
+  "privacy": {
+    "rawOutputsCommitted": false,
+    "processIdsRetained": false,
+    "serialNumbersRetained": false,
+    "devicePathsRetained": false,
+    "uniqueIdentifiersRetained": false
+  }
+}

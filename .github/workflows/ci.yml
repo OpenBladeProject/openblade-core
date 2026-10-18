@@ -33,7 +33,6 @@ jobs:
       run-contracts: ${{ steps.scope.outputs.run-contracts }}
       run-component-publish: ${{ steps.scope.outputs.run-component-publish }}
       run-installer: ${{ steps.scope.outputs.run-installer }}
-      checkout-captures: ${{ steps.scope.outputs.checkout-captures }}
     steps:
       - name: Check out source metadata
         uses: actions/checkout@v7
@@ -103,7 +102,6 @@ jobs:
             'run-contracts' = $runContracts.ToString().ToLowerInvariant()
             'run-component-publish' = $runComponentPublish.ToString().ToLowerInvariant()
             'run-installer' = $plan.RunInstaller.ToString().ToLowerInvariant()
-            'checkout-captures' = $plan.RequiresCaptures.ToString().ToLowerInvariant()
           }
           foreach ($output in $outputs.GetEnumerator()) {
             "$($output.Key)=$($output.Value)" |
@@ -123,7 +121,6 @@ jobs:
       run-contracts: ${{ needs.classify-changes.outputs.run-contracts == 'true' }}
       run-component-publish: ${{ needs.classify-changes.outputs.run-component-publish == 'true' }}
       run-installer: ${{ needs.classify-changes.outputs.run-installer == 'true' }}
-      checkout-captures: ${{ needs.classify-changes.outputs.checkout-captures == 'true' }}
     permissions:
       contents: read
 

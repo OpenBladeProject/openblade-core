@@ -1,5 +1,14 @@
 # RZ09-0528 support migration guide
 
+> Historical record: references to `openblade-captures`, USBPcap, private
+> brokers, and their commands below describe completed work and are not current
+> collection instructions. The sanitized artifacts still required by core are
+> stored under [`evidence/legacy-captures`](../evidence/legacy-captures), with
+> source paths, the pinned source revision, and SHA-256 hashes in the
+> [provenance map](../evidence/provenance.json). Use
+> [Synapse Observer](https://github.com/OpenBladeProject/synapse-observer) for
+> new observations.
+
 This guide is the handoff record for extending OpenBlade support to the Razer
 Blade 16 `RZ09-0528`, BIOS `2.02`, USB `1532:02C6`.
 

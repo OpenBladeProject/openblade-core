@@ -224,7 +224,7 @@ public sealed class Pid02E0MatrixReportTests
 
     private static JsonDocument LoadFixture() =>
         JsonDocument.Parse(File.ReadAllText(RepositoryFile(
-            "captures",
+            "evidence", "legacy-captures",
             "decoded",
             "rz09-0581-pid-02e0-bios-3.01-lighting-matrix-fixture.json")));
 

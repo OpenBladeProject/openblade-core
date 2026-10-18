@@ -97,7 +97,7 @@ OpenBlade 检查并确认补丁有效后，才允许两者同时运行。详见
 贡献规则见 [AGENTS.md](AGENTS.md) 和 [VERSIONING.md](VERSIONING.md)。
 
 相关仓库：[用户文档](https://github.com/OSSBlade/openblade-docs)、
-[协议采集](https://github.com/OSSBlade/openblade-captures)和
+[Synapse Observer](https://github.com/OpenBladeProject/synapse-observer) 和
 [品牌资源](https://github.com/OSSBlade/openblade-branding)。
 
 <a id="license"></a>

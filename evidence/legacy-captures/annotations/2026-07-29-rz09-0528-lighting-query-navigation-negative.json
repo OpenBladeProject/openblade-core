@@ -1,0 +1,72 @@
+{
+    "schemaVersion":  2,
+    "evidenceProvenance":  {
+                               "controller":  "Razer Synapse 4.0.698.98",
+                               "role":  "OracleCapture",
+                               "openBladeTypedApplyPerformed":  false,
+                               "openBladeReadbackConfirmed":  false
+                           },
+    "capturedAtUtc":  "2026-07-29T02:36:08.8766671+00:00",
+    "device":  {
+                   "modelNumber":  "RZ09-0528",
+                   "vendorIdHex":  "1532",
+                   "productIdHex":  "02C6",
+                   "bios":  "2.02",
+                   "ec":  null,
+                   "mcu":  null
+               },
+    "capture":  {
+                    "sha256":  "8521047904B9A122EE3B36F703F8352B7C0D714BC10F50B6C10527CFDF4D1F17",
+                    "byteLength":  1098627,
+                    "rawCaptureCommitted":  false,
+                    "captureMode":  "DeviceAddress",
+                    "stopMode":  "Graceful",
+                    "forcedShutdownDataLossDisclosed":  false,
+                    "decodable":  true
+                },
+    "action":  {
+                   "kind":  "ReadOnlyQuery",
+                   "subsystem":  "Keyboard lighting brightness query discovery",
+                   "name":  "Navigate once from the Synapse Battery page to the Lighting page",
+                   "value":  "No setting change; observe whether Synapse emits GET 03/83 arguments 010500",
+                   "operatorConfirmed":  true
+               },
+    "validation":  {
+                       "priorStateSaved":  true,
+                       "applyResult":  "One Battery-to-Lighting page navigation completed at 2026-07-29T02:36:27.952Z; no device setting write was requested",
+                       "readbackResult":  "No 03/83 request with arguments 010500 occurred anywhere in the decoded baseline or action trace; visual brightness 19 hydration is not firmware readback",
+                       "restorationResult":  "Returned to the Battery page at 2026-07-29T02:38:28.169Z; no device setting required restoration",
+                       "restorationReadbackResult":  "Battery page visually confirmed at 2026-07-29T02:38:29.107Z with Battery Health Optimizer still enabled at 80 percent and temporary full charge still unchecked"
+                   },
+    "sanitizedEvidence":  [
+                              {
+                                  "kind":  "OperatorCorrelatedNegativeQueryDiscovery",
+                                  "summary":  "The single Battery-to-Lighting navigation produced no 03/83 request with arguments 010500 anywhere in the decoded action trace. Visual hydration to brightness 19 is not firmware readback.",
+                                  "operatorInputAtUtc":  "2026-07-29T02:36:27.952Z",
+                                  "lightingPageVerifiedAtUtc":  "2026-07-29T02:36:32.827Z",
+                                  "actionCommandCounts":  {
+                                                              "03/0B":  5060,
+                                                              "03/0A":  844,
+                                                              "03/83 arguments 010500":  0
+                                                          },
+                                  "baselineCommandCounts":  {
+                                                                "03/0B":  99,
+                                                                "03/0A":  17,
+                                                                "03/83 arguments 010500":  0
+                                                            },
+                                  "baselineSha256":  "C7299EA66634CDB715B50508D776749492D29B0C57EA5F31526A816C01101E64",
+                                  "baselineByteLength":  22015
+                              }
+                          ],
+    "limitations":  [
+                        "This negative navigation trace does not establish that command 03/83 is supported on PID 02C6.",
+                        "The trace does not provide an independent brightness readback, a typed OpenBlade apply, or restoration readback through firmware.",
+                        "The observed 03/0B and 03/0A host-rendered Spectrum traffic does not by itself admit any lighting effect or matrix layout."
+                    ],
+    "notes":  [
+                  "The target device address was independently re-verified before the valid baseline and action captures.",
+                  "The action capture stopped gracefully through its nonzero owned process group; no forced fallback was used.",
+                  "Battery Health Optimizer remained enabled at 80 percent and temporary full charge remained unchecked after returning to the Battery page.",
+                  "Keyboard brightness remains Captured; brightnessQuery remains NotInvestigated and production admission remains false."
+              ]
+}

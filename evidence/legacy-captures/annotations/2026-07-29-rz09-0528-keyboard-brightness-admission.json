@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse 4.0.698.98 and OpenBlade.Capture",
+    "role": "ExactDeviceInteractiveValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true,
+    "productionAdmitted": true
+  },
+  "validatedAtUtc": "2026-07-29T03:26:13.4072232Z",
+  "device": {
+    "model": "Razer Blade 16",
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "power": {
+    "source": "AC",
+    "win32BatteryStatus": 2,
+    "estimatedChargeRemaining": 79
+  },
+  "capturedSetterEvidence": [
+    {
+      "transition": "50 to 60 percent",
+      "command": "03/03",
+      "argumentsHex": "010599",
+      "actionCaptureSha256": "5B567F3EE48D736891E0C53A8BE7021801DC9F8747E9FF416A6B0392934F0AC1"
+    },
+    {
+      "transition": "50 to 60 percent repeat",
+      "command": "03/03",
+      "argumentsHex": "010599",
+      "actionCaptureSha256": "9E37857F62F460A9BA4E34347200250682646D42F04634AF72D764E12E0D26F5"
+    },
+    {
+      "transition": "50 to 70 percent",
+      "command": "03/03",
+      "argumentsHex": "0105B3",
+      "actionCaptureSha256": "BEDCEA93DB010E8F95175DEDEA4B315EFC37BFA0E2109C31AB017017064E04F6"
+    }
+  ],
+  "typedQueryValidation": {
+    "command": "03/83",
+    "requestArgumentsHex": "010500",
+    "confirmedStates": [
+      {
+        "synapsePercent": 60,
+        "rawReadback": 153,
+        "decodedPercent": 60
+      },
+      {
+        "synapsePercent": 19,
+        "rawReadback": 49,
+        "decodedPercent": 19
+      }
+    ],
+    "repeatCountAtRaw49": 3,
+    "allRepeatedResultsIdentical": true
+  },
+  "openBladeValidation": {
+    "exactTargetConfirmation": "RZ09-0528:1532:02C6:2.02",
+    "directTargetRoundTrips": {
+      "repeatCount": 3,
+      "baselineRaw": 49,
+      "targetRaw": 153,
+      "appliedReadbackRaw": 153,
+      "restoredReadbackRaw": 49,
+      "allSucceeded": true
+    },
+    "productionStepRoundTrips": {
+      "direction": "Increase",
+      "repeatCount": 3,
+      "baselineRaw": 49,
+      "targetRaw": 74,
+      "appliedReadbackRaw": 74,
+      "restoredReadbackRaw": 49,
+      "allSucceeded": true,
+      "trialTimesUtc": [
+        "2026-07-29T03:26:12.4437726Z",
+        "2026-07-29T03:26:13.1570569Z",
+        "2026-07-29T03:26:13.4072232Z"
+      ]
+    },
+    "finalReadbackRaw": 49,
+    "finalReadbackPercent": 19,
+    "restorationConfirmed": true,
+    "manualRecoveryRequired": false,
+    "failure": "None"
+  },
+  "productionAdmission": {
+    "keyboardBrightness": true,
+    "lightingEffects": false,
+    "logoLighting": false,
+    "performance": false,
+    "fans": false,
+    "batteryWrites": false,
+    "identityScope": "RZ09-0528, BIOS 2.02, USB 1532:02C6, HID usage 0001:0002, 91-byte feature reports"
+  },
+  "negativeControls": [
+    {
+      "action": "Battery page to Lighting page navigation",
+      "result": "No 03/83 arguments 010500 request observed"
+    },
+    {
+      "action": "Lighting page reload",
+      "result": "No 03/83 arguments 010500 request observed",
+      "actionCaptureSha256": "DD86B00A23B52876DF11D310C3CA62564688C5E23FE6F4B9734603B9FF519D84"
+    },
+    {
+      "action": "Attempted USBPcap capture during typed query",
+      "result": "Capture and direct HID ownership conflicted; failed sessions were preserved and are not setter evidence"
+    }
+  ],
+  "limitations": [
+    "This evidence admits only keyboard brightness for the exact device identity.",
+    "No keyboard lighting effects, logo lighting, performance, fan, or battery-setting write is admitted.",
+    "Visual Synapse state alone was not treated as firmware readback.",
+    "Raw PCAPs and unique device identifiers remain private and uncommitted."
+  ]
+}

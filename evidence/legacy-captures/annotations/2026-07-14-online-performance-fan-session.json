@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vid": "1532",
+    "pid": "02E0",
+    "bios": "3.01"
+  },
+  "condition": {
+    "acOnline": true
+  },
+  "rawCapturesCommitted": false,
+  "captures": [
+    {
+      "action": "performance-silent",
+      "fileName": "opensynapse-perf-silent-online-20260714.pcap",
+      "sha256": "565FF0CE7B3C2D3F75D195DF3A92573178FE4F8A69F4F5224C0B8D8DE6D9602D",
+      "requestFrames": [271, 275],
+      "responseFrames": [274, 278],
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "performance-performance",
+      "fileName": "opensynapse-perf-performance-online-20260714.pcap",
+      "sha256": "6F8FB3A9E4B4396FD7F0C7580E183830B8CB18A8090F7751EE4DDC033E30D58F",
+      "requestFrames": [179, 183],
+      "responseFrames": [182, 186],
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "performance-balanced",
+      "fileName": "opensynapse-perf-balanced-online-20260714.pcap",
+      "sha256": "5EC21531D40DC1E96A7716E5E56E0DC224ABD5AFE0AD42FE7CCEEF0B0AB97201",
+      "requestFrames": [125, 129],
+      "responseFrames": [128, 134],
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "fan-maximum-5400",
+      "fileName": "opensynapse-fan-maximum-online-20260714.pcap",
+      "sha256": "99789A0D36A281CCA04E23F2D6F834A772DA0116E9150B0B3B9E8C1A6E643D07",
+      "modeRequestFrames": [379, 383],
+      "modeResponseFrames": [382, 387],
+      "targetRequestFrames": [395, 400],
+      "targetResponseFrames": [398, 404],
+      "visualConfirmation": "Fixed Fan Speed, 5400 RPM / HIGH"
+    },
+    {
+      "action": "fan-auto",
+      "fileName": "opensynapse-fan-auto-online-20260714.pcap",
+      "sha256": "A0A26EB5F8720F373A7B8C23377CCC0C445FC1665E203E5296620F31B9BA1169",
+      "unresolvedPreludeFrames": [73, 76],
+      "modeRequestFrames": [77, 83],
+      "modeResponseFrames": [82, 86],
+      "telemetryFrames": [87, 90, 91, 94],
+      "visuallyConfirmed": true
+    }
+  ],
+  "finalRestoration": {
+    "state": "Balanced + Auto",
+    "visuallyConfirmed": true
+  },
+  "notes": [
+    "Raw PCAP files remain outside the repository under C:\\tmp.",
+    "All recorded USB transfers succeeded and protocol replies returned status 02 with echoed request bodies and checksums.",
+    "ACK echoes are not independent readback.",
+    "The 07/8C prelude is a read-only adapter wattage-level query and is not a setter.",
+    "Continuous 0D/88 responses are live fan telemetry, not target setters or mode readback.",
+    "Interactive OpenBlade application, independent readback, and OpenBlade restoration remain pending."
+  ]
+}

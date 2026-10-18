@@ -252,13 +252,13 @@ public sealed class PerformanceFanRefreshEvidenceTests
         .ToArray();
 
     private static string EvidencePath() => RepositoryFile(
-        "captures", "decoded", "rz09-0581-pid-02e0-bios-3.01-evidence.json");
+        "evidence", "legacy-captures", "decoded", "rz09-0581-pid-02e0-bios-3.01-evidence.json");
 
     private static string AnnotationPath() => RepositoryFile(
-        "captures", "annotations", "2026-07-14-performance-fan-state-refresh-negative.json");
+        "evidence", "legacy-captures", "annotations", "2026-07-14-performance-fan-state-refresh-negative.json");
 
     private static string DirectQueryFixturePath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-performance-fan-discriminator-negative.json");
 

@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0528",
+    "vendorId": "1532",
+    "productId": "02C6",
+    "biosVersion": "2.02"
+  },
+  "transport": {
+    "usagePage": "0001",
+    "usage": "0002",
+    "windowsFeatureReportBytes": 91,
+    "usbEnvelopeBytes": 90,
+    "reportId": 0
+  },
+  "firmware": {
+    "ecVersion": "1.09",
+    "mcuVersion": "1.9.0.0",
+    "mcuQuery": "00/87 00000000"
+  },
+  "power": {
+    "fullAc": "ProductionAdmitted: 07/8C returned 1111 (FullPower280W)",
+    "usbC": "ProductionAdmitted: three identical exact-device 07/8C reads returned 0711 (UsbCPower100W) while Windows reported Online; production admission is scoped to PID 02C6.",
+    "battery": "ProductionAdmitted: three identical exact-device 07/8C reads returned 0011 while Windows reported Offline. Windows Offline remains the authoritative production battery classifier.",
+    "transitionReadback": "QueryValidated: the read-only matrix covered barrel AC to battery, battery to USB-C, and USB-C to restored barrel AC. Matching 0D/82 pairs decoded PerformanceAutomatic, BatterySaverAutomatic, BalancedAutomatic, and the restored PerformanceAutomatic state."
+  },
+  "display": {
+    "status": "ProductionAdmitted",
+    "resolution": "2560x1600",
+    "refreshModes": [
+      "fixed-60",
+      "fixed-240",
+      "dynamic-48-240"
+    ],
+    "hdrSupported": true,
+    "observedHdrEnabled": false,
+    "observedHdrStateSequence": [
+      false,
+      true,
+      false
+    ],
+    "hdrRoundTrip": {
+      "startedAtUtc": "2026-07-29T21:21:08.1366040Z",
+      "completedAtUtc": "2026-07-29T21:21:08.3525889Z",
+      "mutationPolicy": "SaveSetReadbackRestore",
+      "applied": true,
+      "readBack": true,
+      "restored": true,
+      "finalStateConfirmed": "HDR off, fixed-60, 2560x1600, five SDR profiles"
+    },
+    "sdrColorProfiles": [
+      "Native",
+      "DCI-P3",
+      "sRGB",
+      "Rec. 709",
+      "Adobe RGB"
+    ],
+    "hdrColorProfiles": "SoftwareOnlyValidatedUnavailable: OpenBlade disables SDR color-profile controls while Windows HDR is enabled; no color-profile write was attempted"
+  },
+  "failureHandling": {
+    "status": "SoftwareOnlyValidated",
+    "scope": "The exact PID 02C6 production factories use the shared 91-byte WindowsRazerHidSession actor.",
+    "validatedFailures": [
+      "malformed report ID or length",
+      "checksum mismatch",
+      "command-class mismatch",
+      "command-id mismatch",
+      "non-success device status",
+      "mid-transaction native I/O failure or cancellation"
+    ],
+    "invariants": [
+      "Every malformed or mismatched response fails closed.",
+      "An ambiguous submitted write is never retried.",
+      "A checksum, response, or get-completion failure poisons the actor before another command can issue.",
+      "No malformed report was injected into the physical laptop."
+    ]
+  },
+  "productionCoverage": {
+    "keyboardBrightness": {
+      "status": "ProductionAdmitted",
+      "query": "03/83 010500",
+      "setter": "03/03 0105xx"
+    },
+    "batteryChargeLimit70": {
+      "status": "ProductionAdmitted",
+      "query": "07/92 00",
+      "setter": "07/12 C6"
+    },
+    "batteryOtherChargeLimits": {
+      "status": "ProductionAdmitted",
+      "setter": "07/12 with 0x80 + percentage",
+      "capturedValues": "50, 55, 60, 65, 70, 75, 80",
+      "typedReadback": "Validated for 50, 55, 60, 65, 70, 75, and 80"
+    },
+    "batteryProtectionOff": {
+      "status": "ProductionAdmitted",
+      "setter": "07/12 50 while saved limit was 80",
+      "typedReadback": "ProtectionOff applied, read back, and restored to enabled at 80"
+    },
+    "temporaryFullCharge": {
+      "status": "ProductionAdmitted",
+      "query": "07/8F 00",
+      "setter": "07/0F 04 enable; 07/0F 00 cancel"
+    },
+    "performance": {
+      "status": "ProductionAdmitted",
+      "acPresets": "Balanced, Silent, Performance",
+      "customMode": "ProductionAdmitted",
+      "customCpuLevels": "ProductionAdmitted: Low 00, Medium 01, High 02",
+      "customGpuLevels": "ProductionAdmitted: Low 00, Medium 01, High 02",
+      "validCombinations": "RZ09-0528 CPU High permits GPU Low only; other observed CPU levels retain the normal GPU choices",
+      "productionRoundTrip": "Low/Low, High/Low, and Medium/High applied and independently read back; every run restored Balanced/Automatic. Timed Low/Low repeat 2026-07-29T19:38:18.338Z through 2026-07-29T19:38:20.138Z.",
+      "cpuPowerLimitWatts": "Captured UI capability: 45..95 W in 1 W steps; Synapse RzAMDOverClock/RzDLLService backend identified. A getter-only OpenBlade request returned 55 W but active Synapse immediately restored its persisted 60 W; after Synapse exited, its CPU server module and named pipe terminated and a later getter was rejected. Elevated live inventory verified the exact-hash client in a RazerAppEngine main/utility role and the exact-hash server DLL in RzDLLService. No lifecycle or readback is admitted.",
+      "cpuVoltageOptimizer": "Captured UI capability: visible range -30..-1, restored On at -1.000; Synapse RzAMDOverClock/RzDLLService backend identified, refresh can reapply values, and colliding 0D/07 writes are not optimizer protocol. Elevated live inventory verified exact client/server module ownership but did not invoke a getter or setter.",
+      "gpuOverclockPolicy": "Captured UI capability: core -1000..400 MHz, memory -1000..3000 MHz; offsets unchanged and toggle restored Off",
+      "readback": "0D/82 paired thermal channels; 0D/87 component levels"
+    },
+    "fans": {
+      "status": "ProductionAdmitted",
+      "automatic": "ProductionAdmitted",
+      "rpmQuery": "ProductionAdmitted: 0D/88 selectors 01 and 02",
+      "fixed": {
+        "status": "ProductionAdmitted",
+        "modeWrites": [
+          "0D/02 01010001",
+          "0D/02 01020001"
+        ],
+        "minimumRpm": 2000,
+        "maximumRpm": 5000,
+        "stepRpm": 100,
+        "targetFormula": "payload[2] = RPM / 100",
+        "independentReadback": "Typed manual/fixed state plus settled physical RPM at 2000, 3800, and 5000 targets",
+        "restored": "Balanced/Automatic"
+      },
+      "manualCurve": {
+        "status": "ProductionAdmittedHostRendered",
+        "deviceState": "Synapse selection captured the same paired manual-state writes used by fixed targets",
+        "implementation": "OpenBlade enters the validated manual state at the exact 5000 RPM ceiling, then renders the saved curve through validated fixed-target writes and fresh host temperature telemetry",
+        "readback": "Host intent only; the device reports the shared manual/fixed state and does not distinguish a persisted curve"
+      }
+    },
+    "lightingEffects": {
+      "status": "ProductionEffectBasesAdmitted",
+      "quickEffectTransitions": "Ambient Awareness, Audio Meter, Breathing, Fire, Reactive, Ripple, Spectrum Cycling, Starlight, Static, Tidal, Wave, Wheel",
+      "productionRepresentation": "Off and all twelve visible non-Off Synapse effect bases are writable. Effect-specific parameter combinations remain represented explicitly and retain their individual evidence status.",
+      "writableKeyboardEffects": "Off, Ambient Awareness, Audio Meter, Breathing, Fire, Reactive, Ripple, Spectrum Cycling, Starlight, Static, Tidal, Wave, Wheel",
+      "limitation": "No matrix or effect getter exists. Installed lifecycle validation is not reinterpreted as firmware readback, and parameter combinations remain Captured until their own installed round trips.",
+      "interfaceDiscovery": "The exact 91-byte PID 02C6 control interface accepts six 03/0B row writes plus 03/0A 0500 latch. The model still has no PID 02E0-style 375-byte feature collection; do not reuse PID 02E0 report envelopes.",
+      "restoration": "Installed build 0.1.0+5466d9cd641b6875ed618e46d364f223d419fc2f saved Static green 50 percent and Static logo back to the AC profile after the full effect lifecycle."
+    },
+    "logoLighting": {
+      "status": "ProductionAdmitted",
+      "setters": "Off: 03/02 000400 then 03/00 000400; Static: 03/02 000400 then 03/00 000401; Breathing: 03/02 000402 then 03/00 000401",
+      "readback": "03/80 000400 state plus 03/82 000400 effect; exact production round trip Static -> Breathing -> Off -> Static succeeded"
+    },
+    "keyboardBehavior": {
+      "status": "PartialProductionAdmission",
+      "startupAnimationGetter": "ProductionAdmitted: 0F/98 returned enabled",
+      "functionKeyPrimaryGetter": "ProductionAdmitted: 02/86 returned FunctionKeys",
+      "gamingModeGetter": "ProductionAdmitted: 00/88 returned disabled",
+      "deviceModeGetter": "ProductionAdmitted: 00/84 returned Driver",
+      "setters": "ProductionAdmitted: startup 0F/18 0000 on and 0001 off; function primary 02/06 0000 function and 0001 multimedia; Gaming mode 00/08 01000000 on and 00000000 off",
+      "exactDeviceDifference": "Function-primary setter omits PID 02E0's leading 01 selector"
+    }
+  },
+  "annotations": [
+    "2026-07-29-rz09-0528-keyboard-brightness-admission.json",
+    "2026-07-29-rz09-0528-windows-lighting-handoff-validation.json",
+    "2026-07-29-rz09-0528-lighting-query-navigation-negative.json",
+    "2026-07-29-rz09-0528-lighting-navigation-negative-repeat.json",
+    "2026-07-30-rz09-0528-openblade-matrix-lighting-validation.json",
+    "2026-07-30-rz09-0528-openblade-matrix-lighting-lifecycle.json",
+    "2026-07-30-rz09-0528-openblade-full-lighting-lifecycle.json",
+    "2026-07-29-rz09-0528-battery-limit-70-admission.json",
+    "2026-07-29-rz09-0528-battery-limit-matrix.json",
+    "2026-07-29-rz09-0528-temporary-full-charge-admission.json",
+    "2026-07-29-rz09-0528-ac-balanced-silent-admission.json",
+    "2026-07-29-rz09-0528-ac-performance-admission.json",
+    "2026-07-30-rz09-0528-ac-power-readback-recheck.json",
+    "2026-07-29-rz09-0528-ac-custom-partial.json",
+    "2026-07-29-rz09-0528-ac-custom-cpu-matrix.json",
+    "2026-07-30-rz09-0528-cpu-tuning-backend-static-analysis.json",
+    "2026-07-30-rz09-0528-cpu-tuning-preconnect-lifecycle-negative.json",
+    "2026-07-30-rz09-0528-cpu-tuning-module-ownership.json",
+    "2026-07-29-rz09-0528-ac-fixed-fan-validation.json",
+    "2026-07-29-rz09-0528-keyboard-behavior-setters.json",
+    "2026-07-29-rz09-0528-logo-lighting-setters.json",
+    "2026-07-29-rz09-0528-power-source-matrix.json",
+    "2026-07-30-rz09-0528-power-source-readback-admission.json"
+  ],
+  "safetyNotes": [
+    "Never infer firmware readback from visible Synapse state.",
+    "OpenBlade service startup can apply its saved OpenBlade-owned Off profile before Windows delegation is enabled. After delegation, reapply the desired external-controller state once and independently read it back; the validated Static 50 percent state survived an OpenBlade service restart.",
+    "The 0711 USB-C mapping is admitted only by the exact PID 02C6 production factory after three identical independent reads. Do not generalize it to another model without that model's own evidence.",
+    "Never run USBPcap and OpenBlade control concurrently.",
+    "Active Synapse host-rendered lighting can race the shared feature response.",
+    "An acknowledged isolated Spectrum transition is not installed lifecycle proof. Spectrum advanced only after the exact fixed build kept the installed UI and service healthy through a 12-second continuous-renderer hold and restored the saved Static profile.",
+    "Do not broaden PID 02E0 commands or geometry to PID 02C6 without exact-device evidence."
+  ]
+}

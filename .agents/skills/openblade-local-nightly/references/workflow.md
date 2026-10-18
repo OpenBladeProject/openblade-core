@@ -5,8 +5,11 @@ This procedure reproduces the release-significant parts of the hosted Nightly wo
 ## 1. Establish an unavailable hosted run
 
 1. Read `AGENTS.md`, `VERSIONING.md`, `.github/workflows/nightly.yml`, `.github/workflows/build.yml`, `build/Publish.ps1`, `build/PublishPayloadValidation.ps1`, and `build/NightlyChangelog.ps1` at the selected source commit.
-2. Record the landing checkout status without modifying, stashing, or cleaning user work. Require `gh repo view --json nameWithOwner` to return `OSSBlade/openblade-core`, verify that `origin` resolves to that repository rather than a fork, then refresh `origin/main` and tags. Pass `--repo OSSBlade/openblade-core` to every `gh` read and mutation in this workflow.
-3. Require a full 40-character source SHA equal to the selected `origin/main` commit. Record the pinned `captures` submodule SHA; only the detached release worktree created later must be clean.
+2. Record the landing checkout status without modifying, stashing, or cleaning user work. Require `gh repo view --json nameWithOwner` to return `OpenBladeProject/openblade-core`, verify that `origin` resolves to that repository rather than a fork, then refresh `origin/main` and tags. Pass `--repo OpenBladeProject/openblade-core` to every `gh` read and mutation in this workflow.
+3. Require a full 40-character source SHA equal to the selected `origin/main`
+   commit. Verify `evidence/provenance.json` with
+   `tests/Build.Tests/LegacyEvidenceProvenance.Tests.ps1`; only the detached
+   release worktree created later must be clean.
 4. Confirm the user authorized GitHub publication. Before dispatch, list Nightly runs and prove that none is queued, requested, waiting, pending, or in progress. Nightly preparation and finalization share a non-cancelling concurrency group; do not start competing local work outside that guard.
 5. Inspect an existing exact-SHA Nightly run or dispatch `.github/workflows/nightly.yml` on `main` to reserve the workflow run number. Do not dispatch on a different ref.
 6. Read the run back with `gh`. Require the `Nightly` workflow, `main` head branch, exact source SHA, positive run number from 1 through 65535, run ID, run attempt, URL, and an infrastructure-unavailable state. Record the billing, capacity, platform, or other GitHub annotation and the number of executed jobs and steps.
@@ -22,7 +25,9 @@ The reserved identity passed to the build is:
 ## 2. Build the exact source locally
 
 1. Create a fresh detached exact-commit worktree under `C:\tmp`, outside the OneDrive-linked checkout. Use a path that includes the Nightly revision and short SHA.
-2. Initialize the pinned `captures` submodule. Prove the parent worktree and submodule are clean, the parent `HEAD` equals `SourceRevision`, and the submodule `HEAD` equals the recorded gitlink.
+2. Prove the worktree is clean, `HEAD` equals `SourceRevision`, no `captures`
+   gitlink or `.gitmodules` file exists, and the core-owned evidence provenance
+   contract passes. A normal release checkout needs no private repository.
 3. Run the unchanged publisher through process-scoped execution-policy bypass:
 
    ```powershell
@@ -99,7 +104,7 @@ Reproduce the current `update-nightly-changelog` job before publication. Work in
 
 1. Re-fetch `origin/main` and tags, re-read all non-draft prereleases and the draft's canonical `createdAt`, and validate that Nightly metadata still matches the selected source SHA and build revision.
 2. Generate the updated repository `CHANGELOG.md` with `Write-OpenBladeNightlyChangelogSnapshot`, preserving post-release entries under `Unreleased`. Exit successfully without a branch update when content is already current.
-3. Run `git diff --check`, commit only `CHANGELOG.md` with the workflow's conventional subject, and inspect `refs/heads/docs/nightly-changelog-automation` on `OSSBlade/openblade-core`.
+3. Run `git diff --check`, commit only `CHANGELOG.md` with the workflow's conventional subject, and inspect `refs/heads/docs/nightly-changelog-automation` on `OpenBladeProject/openblade-core`.
 4. If the remote branch is absent, push the generated commit to it. If it exists, push only with `--force-with-lease=refs/heads/docs/nightly-changelog-automation:<observed-remote-sha>`. Never use an unguarded force push and never push to `main`.
 5. Create or update the one draft documentation pull request with the exact version title, version-impact fields, source and hosted-run evidence, generated marker, and `documentation` label used by `.github/workflows/nightly.yml`. Read back the PR number, draft state, branch, commit, title, body, and label.
 
@@ -126,4 +131,6 @@ Also record the merged changelog PR and the main commit verified by the gate, or
 
 Leave the exact build worktree, artifacts, temporary evidence, and any failed draft in place until the user accepts the readback or explicitly requests cleanup. Never delete a tag, release, asset, worktree, or artifact merely to make a retry look clean.
 
-For later cleanup, resolve and verify the exact `C:\tmp` worktree path, prove the parent and `captures` submodule are clean, deinitialize the submodule, remove only that registered worktree, and confirm the path is no longer registered. Keep cleanup separate from release acceptance.
+For later cleanup, resolve and verify the exact `C:\tmp` worktree path, prove
+the worktree is clean, remove only that registered worktree, and confirm the
+path is no longer registered. Keep cleanup separate from release acceptance.

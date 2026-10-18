@@ -116,22 +116,22 @@ public sealed class ExtendedControlsEvidenceTests
     }
 
     private static string EvidencePath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-extended-controls-oracle-summary.json");
 
     private static string SynapseStateOwnershipEvidencePath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-synapse-state-ownership.json");
 
     private static string FunctionKeyReadbackEvidencePath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-function-key-primary-readback.json");
 
     private static string GamingModeReadbackEvidencePath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-gaming-mode-readback.json");
 

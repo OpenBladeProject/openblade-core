@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse 4.0.698.98 and OpenBlade.Capture 0.1",
+    "role": "ExactDeviceInteractiveValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-07-29T04:25:33.899Z",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "102C4683170661DF9A250CA5D8505412A86366A38F2AC74F638D5F6CD06A8E63",
+    "byteLength": 2438,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Battery temporary full charge",
+    "name": "Enable Allow system to fully charge once",
+    "value": "Enabled",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Confirmed captured and acknowledged 07/0F 04 enable",
+    "readbackResult": "Confirmed 07/8F 00 independently distinguished inactive 00 and active 04",
+    "restorationResult": "Confirmed captured and acknowledged 07/0F 00 cancellation",
+    "restorationReadbackResult": "Confirmed inactive by typed firmware readback and unchecked Synapse state"
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "CapturedQuery",
+      "summary": "Synapse issued 07/8F with argument 00 at 7.847479 seconds immediately before enabling temporary full charge.",
+      "requestEnvelopeHex": "001000000001078F00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008900"
+    },
+    {
+      "kind": "CapturedSetter",
+      "summary": "The enable action issued 07/0F with argument 04 at 7.865825 seconds.",
+      "requestEnvelopeHex": "001100000001070F04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000D00"
+    },
+    {
+      "kind": "CapturedCancellation",
+      "summary": "A separate checked-to-unchecked capture issued 07/8F 00 followed by 07/0F 00 at 9.715326 and 9.736894 seconds.",
+      "sha256": "738E4F02FE1B14B0BBE4D39D51FA7B525E3C1FFCAD44C50D28611A0B84850D2D",
+      "byteLength": 2438,
+      "commandClassHex": "07",
+      "commandIdHex": "0F",
+      "argumentsHex": "00"
+    },
+    {
+      "kind": "BaselineCapture",
+      "summary": "The 20-second idle baseline stopped gracefully and contained no operator setting change.",
+      "sha256": "08AF8257FD336A0AFC042163225AE6AA68AB167186F00FBF0579334FC09EFF52",
+      "byteLength": 697
+    },
+    {
+      "kind": "TypedReadback",
+      "summary": "Exact-device 07/8F 00 reads returned inactive before setup, active after enable, and inactive after cancellation.",
+      "requestArgumentsHex": "00",
+      "inactiveRawHex": "00",
+      "activeRawHex": "04"
+    },
+    {
+      "kind": "OpenBladeReversibleValidation",
+      "summary": "With baseline Limit80 and temporary full charge false, OpenBlade enabled, read back true, cancelled, read back false, and confirmed Limit80 restoration."
+    },
+    {
+      "kind": "ProductionReadback",
+      "summary": "Three exact production-factory probes exposed limit 70 plus temporary full charge, opened successfully, and returned temporary full charge false."
+    }
+  ],
+  "productionAdmission": {
+    "chargeLimits": [
+      70
+    ],
+    "batteryProtectionOff": false,
+    "temporaryFullCharge": true,
+    "otherChargeLimits": false,
+    "identityScope": "RZ09-0528, BIOS 2.02, USB 1532:02C6, HID usage 0001:0002, 91-byte feature reports"
+  },
+  "limitations": [
+    "Battery protection off and uncaptured charge-limit setters remain unavailable.",
+    "Active Synapse feature traffic can race the shared feature response; OpenBlade rejects unrelated acknowledgements.",
+    "Keyboard lighting remains off at the operator's request.",
+    "Raw PCAPs and unique device identifiers remain private and uncommitted."
+  ],
+  "notes": [
+    "Final charge limit was 80 percent, temporary full charge was unchecked, and actual battery state remained on AC at 79 percent."
+  ]
+}

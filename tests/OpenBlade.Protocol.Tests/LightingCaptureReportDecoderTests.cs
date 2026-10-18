@@ -9,7 +9,7 @@ public sealed class LightingCaptureReportDecoderTests
     public void CapturedBrightnessFixture_DecodesExactIndependentReadback()
     {
         string fixturePath = RepositoryFile(
-            "captures",
+            "evidence", "legacy-captures",
             "decoded",
             "rz09-0581-pid-02e0-bios-3.01-lighting-brightness-query-fixture.json");
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(fixturePath));

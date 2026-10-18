@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade.Capture 0.17.0+0f56b0c1ef6049430848e191249cbaaae3d2ef14",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-19T05:38:14.0000000Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "9663E4CA10785F48039001C806993BBA1A751986DC6E2DF75359824DFB51B5EF",
+    "byteLength": 1189,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance",
+    "name": "Padless HyperBoost 60-second no-load dwell",
+    "value": "Paired HyperBoost mode 7 with thirty two-second safety samples, followed by exact Balanced restoration and fresh pad-absence observation",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once from the confirmed Balanced and Automatic baseline.",
+    "readbackResult": "Confirmed paired HyperBoost mode 7 throughout all thirty planned safety samples.",
+    "restorationResult": "Restored successfully once to the saved Balanced pair after the full dwell.",
+    "restorationReadbackResult": "Confirmed exact Balanced restoration and post-restoration cooling-pad absence."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ReviewedPlan",
+      "summary": "The run used the hash-pinned no-load plan with a 60-second duration, two-second cadence, CPU limit 85 C, GPU limit 80 C, and inactive-GPU allowance.",
+      "planId": "rz09-0581-bios-4.00-pad-absent-no-load-dwell-v1",
+      "planSha256": "2E4837EA0E9B81814FC551954031B5C5BF60A8E3CF593EEA9443684B62B09F33",
+      "plannedSampleCount": 30,
+      "completedSampleCount": 30,
+      "completedFullDuration": true
+    },
+    {
+      "kind": "ContinuousSafetyObservation",
+      "summary": "All samples retained physical pad absence, FullPower330W adapter eligibility, paired mode 7, required telemetry, and laptop fan readback. The discrete GPU was positively inactive during the no-load dwell.",
+      "continuousPadAbsenceConfirmed": true,
+      "fullPowerAdapterMaintained": true,
+      "hyperBoostStateMaintained": true,
+      "requiredSensorsMaintained": true,
+      "cpuMinimumCelsius": 45,
+      "cpuMaximumCelsius": 45,
+      "gpuPositivelyInactive": true,
+      "fan1MinimumRpm": 2300,
+      "fan1MaximumRpm": 3300,
+      "fan2MinimumRpm": 2100,
+      "fan2MaximumRpm": 3100
+    },
+    {
+      "kind": "RestorationAndAbsence",
+      "summary": "The validator restored the exact saved Balanced pair once and independently confirmed both restoration and post-restoration pad absence without retry.",
+      "balancedRestorationConfirmed": true,
+      "postRestorationPadAbsenceConfirmed": true,
+      "indeterminatePartialWrite": false,
+      "manualRecoveryRequired": false,
+      "failure": "none"
+    },
+    {
+      "kind": "ArtifactIntegrity",
+      "summary": "The private bounded semantic record binds the exact Capture executable, reviewed plan, and successful result.",
+      "captureProductVersion": "0.17.0+0f56b0c1ef6049430848e191249cbaaae3d2ef14",
+      "captureExecutableSha256": "2FBD66D2A1F8EC2089B6813D58B5B0018E1BC914582B372BA0CEE0FA34BE349D",
+      "validatorExitCode": 0,
+      "success": true
+    }
+  ],
+  "limitations": [
+    "This was a no-load dwell; it does not establish GPU-load thermal behavior or performance benefit.",
+    "The result is scoped to the exact machine, BIOS 4.00, Balanced and Automatic, FullPower330W, and continuous physical pad absence.",
+    "Installed-service low-power and unexpected-exit recovery remain unvalidated, so production padless HyperBoost remains disabled."
+  ],
+  "productionAdmission": {
+    "sustainedNoLoadExecutionValidated": true,
+    "postRestorationAbsenceValidated": true,
+    "padLessActivationAdmitted": false,
+    "reason": "The reviewed no-load dwell completed safely, but reviewed load, adapter transition, and installed-service lifecycle gates are independently required."
+  },
+  "notes": [
+    "USBPcap was not running.",
+    "The OpenBlade service and competing Razer applications remained inactive.",
+    "No Razer service was started, stopped, or restored by the validator."
+  ]
+}

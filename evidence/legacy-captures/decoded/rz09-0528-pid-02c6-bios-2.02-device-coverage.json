@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 2,
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "statusValues": [
+    "NotInvestigated",
+    "Absent",
+    "SoftwareOnly",
+    "Captured",
+    "QueryValidated",
+    "SetterValidated",
+    "ProductionAdmitted"
+  ],
+  "capabilities": {
+    "identityAndFirmware": {
+      "usbDescriptors": "ProductionAdmitted",
+      "modelNumber": "ProductionAdmitted",
+      "biosVersion": "ProductionAdmitted",
+      "ecVersion": "ProductionAdmitted",
+      "mcuVersion": "ProductionAdmitted",
+      "relevantInterfaces": "ProductionAdmitted"
+    },
+    "performance": {
+      "ac": {
+        "presets": "ProductionAdmitted",
+        "customCpuLevels": "ProductionAdmitted",
+        "customGpuLevels": "ProductionAdmitted",
+        "gpuClockOffsets": "ProductionAdmitted",
+        "gpuClockOffsetUiPolicy": "Captured",
+        "cpuPowerLimitWatts": "Captured",
+        "cpuVoltageOptimizer": "Captured",
+        "gpuOverclockToggle": "Captured",
+        "readback": "ProductionAdmitted"
+      },
+      "usbC": {
+        "powerClasses": "ProductionAdmitted",
+        "presetsByPowerClass": "Captured",
+        "customCpuLevels": "Absent",
+        "customGpuLevels": "Absent",
+        "readback": "QueryValidated"
+      },
+      "battery": {
+        "presets": "Captured",
+        "customCpuLevels": "NotInvestigated",
+        "customGpuLevels": "NotInvestigated",
+        "readback": "QueryValidated"
+      }
+    },
+    "fans": {
+      "automatic": "ProductionAdmitted",
+      "fixedMinimum": "ProductionAdmitted",
+      "fixedMaximum": "ProductionAdmitted",
+      "fixedStep": "ProductionAdmitted",
+      "maximum": "ProductionAdmitted",
+      "manualCurveWrites": "ProductionAdmitted",
+      "manualCurveReadback": "SoftwareOnly",
+      "rpmQuery": "ProductionAdmitted"
+    },
+    "sensors": {
+      "cpuTemperature": "ProductionAdmitted"
+    },
+    "battery": {
+      "protectionOff": "ProductionAdmitted",
+      "advertisedLimits": "ProductionAdmitted",
+      "limitQuery": "ProductionAdmitted",
+      "limit70": "ProductionAdmitted",
+      "limit75": "ProductionAdmitted",
+      "otherLimitSetters": "ProductionAdmitted",
+      "temporaryFullCharge": "ProductionAdmitted",
+      "temporaryFullChargeQuery": "ProductionAdmitted"
+    },
+    "keyboardLighting": {
+      "off": "ProductionAdmitted",
+      "brightnessRange": "ProductionAdmitted",
+      "brightnessQuery": "ProductionAdmitted",
+      "effects": {
+        "ambientAwareness": {
+          "base": "ProductionAdmitted",
+          "screenRegions": "Captured",
+          "matrixFormat": "Captured",
+          "frameCadence": "Captured"
+        },
+        "audioMeter": {
+          "base": "ProductionAdmitted",
+          "colorBoost": "Captured"
+        },
+        "breathing": {
+          "base": "ProductionAdmitted",
+          "singleColor": "Captured",
+          "dualColor": "Captured",
+          "randomColor": "Captured",
+          "durations": "Absent"
+        },
+        "customMatrix": {
+          "setupCommand": "NotInvestigated",
+          "matrixFormat": "NotInvestigated",
+          "frameCadence": "NotInvestigated"
+        },
+        "reactive": {
+          "base": "ProductionAdmitted",
+          "colors": "Captured",
+          "durations": "Captured",
+          "keyMap": "Captured"
+        },
+        "fire": {
+          "base": "ProductionAdmitted"
+        },
+        "ripple": {
+          "base": "ProductionAdmitted",
+          "colors": "Captured",
+          "durations": "Absent",
+          "keyMap": "Captured"
+        },
+      "spectrum": {
+        "base": "ProductionAdmitted",
+        "hostColorSequence": "Captured",
+        "frameCadence": "Captured"
+      },
+        "starlight": {
+          "base": "ProductionAdmitted",
+          "singleColor": "Captured",
+          "dualColor": "Captured",
+          "randomColor": "Captured",
+          "durations": "Captured"
+        },
+        "static": {
+          "base": "ProductionAdmitted",
+          "colors": "ProductionAdmitted"
+        },
+        "tidal": {
+          "base": "ProductionAdmitted",
+          "primaryColor": "Captured",
+          "secondaryColor": "Captured",
+          "randomColor": "Captured",
+          "inwardDirection": "Captured",
+          "outwardDirection": "Captured"
+        },
+        "wave": {
+          "base": "ProductionAdmitted",
+          "leftDirection": "Captured",
+          "rightDirection": "Captured"
+        },
+        "wheel": {
+          "base": "ProductionAdmitted",
+          "leftDirection": "Captured",
+          "rightDirection": "Captured"
+        }
+      },
+      "effectGetter": "NotInvestigated",
+      "matrixInterfaceDiscovery": "Absent",
+      "lampArrayInterfaceDiscovery": "QueryValidated"
+    },
+    "logoLighting": {
+      "off": "ProductionAdmitted",
+      "static": "ProductionAdmitted",
+      "breathing": "ProductionAdmitted",
+      "getter": "ProductionAdmitted"
+    },
+    "keyboardBehavior": {
+      "functionKeyPrimary": "ProductionAdmitted",
+      "functionKeyPrimaryGetter": "ProductionAdmitted",
+      "gamingMode": "ProductionAdmitted",
+      "gamingModeGetter": "ProductionAdmitted",
+      "startupAnimation": "ProductionAdmitted",
+      "startupAnimationGetter": "ProductionAdmitted",
+      "normalDeviceMode": "ProductionAdmitted",
+      "driverDeviceMode": "ProductionAdmitted",
+      "deviceModeGetter": "ProductionAdmitted"
+    },
+    "specialKeys": {
+      "functionLayerReports": "Captured",
+      "performanceKey": "ProductionAdmitted",
+      "m1PageUp": "Captured",
+      "m2PageDown": "Captured",
+      "m3GamingMode": "ProductionAdmitted",
+      "m4PerformanceMode": "ProductionAdmitted",
+      "m5MicrophoneMute": "ProductionAdmitted"
+    },
+    "display": {
+      "windowsVisibleModes": "ProductionAdmitted",
+      "dynamicRefreshRate": "ProductionAdmitted",
+      "variableRefreshRange": "ProductionAdmitted",
+      "hdr": "ProductionAdmitted",
+      "colorProfilesSdr": "ProductionAdmitted",
+      "colorProfilesHdr": "SoftwareOnly"
+    },
+    "lifecycle": {
+      "coldBoot": "NotInvestigated",
+      "signIn": "NotInvestigated",
+      "serviceRestart": "ProductionAdmitted",
+      "sleepResume": "NotInvestigated",
+      "deviceReconnect": "NotInvestigated"
+    },
+    "power": {
+      "fullAc": "ProductionAdmitted",
+      "usbCPowerClasses": "ProductionAdmitted",
+      "battery": "ProductionAdmitted",
+      "acToUsbC": "Captured",
+      "usbCToAc": "QueryValidated",
+      "acToBattery": "QueryValidated",
+      "batteryToAc": "Captured",
+      "usbCToBattery": "Captured",
+      "batteryToUsbC": "QueryValidated"
+    },
+    "conflicts": {
+      "vendorControllerPresent": "SetterValidated",
+      "windowsDynamicLightingDelegation": "ProductionAdmitted",
+      "externalChangeDetection": "SoftwareOnly",
+      "defaultZeroWritePolicy": "ProductionAdmitted",
+      "explicitReclaim": "SoftwareOnly"
+    },
+    "failures": {
+      "timeout": "Captured",
+      "malformedResponse": "SoftwareOnly",
+      "checksumMismatch": "SoftwareOnly",
+      "transactionMismatch": "QueryValidated",
+      "commandClassMismatch": "SoftwareOnly",
+      "commandIdMismatch": "SoftwareOnly",
+      "statusFailure": "SoftwareOnly",
+      "unsupportedPid": "ProductionAdmitted",
+      "unsupportedFirmware": "ProductionAdmitted",
+      "disconnectMidTransaction": "SoftwareOnly"
+    }
+  },
+  "notes": [
+    "September 27 installed 0.23.0+d60d1c16 validated exact RTX 5090 Laptop GPU offsets through typed service IPC: NVAPI and normalized NVML confirmed 0/0, +5/+5, disable-to-zero and restoration-to-zero; profiles were unchanged and services restored. Together with the developer four-mode AC matrix, gpuClockOffsets advances to ProductionAdmitted. Vendor toggle ownership, range endpoints and lifecycle do not advance. See the September 27 GPU step annotation.",
+    "September 27 installed Fn+P changed confirmed Balanced to Silent at 36.40 seconds, physically confirmed by the user. The return to Balanced at 58.91 seconds was explicitly a manual user action. The restorer refused after user fan intent changed, preserving user choices; final baseline passed 38 checks. performanceKey advances to ProductionAdmitted. M1/M2, ordinary-P discrimination and lifecycle do not advance. See the September 27 Fn+P annotation.",
+    "AC Balanced, Silent, Performance, Automatic fan state, paired setters, typed readback, and restoration are production-admitted.",
+    "AC Custom selection plus CPU and GPU Low, Medium, and High are production-admitted with exact raw values 00, 01, and 02. Exact production round trips validated Low/Low, High/Low, and Medium/High with independent readback and restoration to Balanced/Automatic.",
+    "RZ09-0528 CPU High permits only GPU Low in Synapse; this exact-model combination constraint must not be generalized to PID 02E0.",
+    "Disabling CPU Voltage Optimizer exposed a 45-95 W CPU Power Limit control with a visually validated one-watt step. Synapse routes it through RzAMDOverClock/RzDLLService rather than PID 02C6 HID, but the proprietary lifecycle remains unadmitted and visual confirmation is not claimed as device readback.",
+    "CPU Voltage Optimizer was restored On at visible -1.000 after range discovery (-30 through -1). RzAMDOverClock logs confirm getter/setter events and show Synapse turning a returned 0 into -1; captured 0D/07 writes collide with CPU preset commands and are not optimizer protocol.",
+    "A getter-only OpenBlade probe received a backend 55 W value while Synapse persisted 60 W; Synapse's active listener immediately restored 60 W successfully. The probe timed out on its own callback, the failed session is preserved, and the command now blocks whenever RazerAppEngine is active.",
+    "After all RazerAppEngine clients exited, the CPU server module and named pipe terminated even though the generic RzDLLService process remained. A Synapse-absent getter was rejected without a setting write; Synapse was relaunched and Plugged In/Balanced/Automatic/optimizer -1.000 was visually reconfirmed.",
+    "Read-only static inspection of the exact verified RzAMDOverClock backend found distinct asynchronous power-limit and curve-optimizer getters/setters, client registration/termination and server-close symbols, plus server-side optimizer enable/reset symbols. No function was invoked and no status advanced. The next bounded lifecycle experiment must preconnect an OpenBlade client before stopping Synapse so that client can keep the server module alive for getter-only validation.",
+    "The bounded preconnect-then-isolate lifecycle validator registered an exact-hash OpenBlade client while Synapse kept the backend live, stopped only preverified signed Synapse process IDs, and rechecked isolation before issuing the power-limit getter. The getter accepted the request but no callback arrived before timeout, so the optimizer getter was not reached and neither CPU status advanced. No setter was bound or invoked; Synapse was relaunched from the verified path, barrel AC re-read 1111, and keyboard brightness independently re-read raw 129.",
+    "Elevated Windows PowerShell 5.1 module inventory on the visible Synapse Performance page verified the exact-hash RzAMDOverClock client in a RazerAppEngine main/utility role and both the exact-hash RzAMDOverClock server DLL and service-host image in RzDLLService. This establishes live ownership only; it does not advance CPU Power Limit or CPU Voltage Optimizer beyond Captured/ObservedOnly.",
+    "Read-only static inspection traced the exact CPU backend through signed AMD Platform.dll and Device.dll to the demand-start AMDRyzenMasterDriverV31 kernel driver. Candidate IOCTLs and Strix-family symbols remain unmapped and were never invoked. OpenBlade cannot admit this path without violating its no-kernel-driver and no-Synapse-dependency architecture, so both CPU controls remain Captured/ObservedOnly.",
+    "Synapse exposes exact-model GPU offset policy ranges of core -1000..400 MHz and memory -1000..3000 MHz, narrower than the queried NVML driver ranges; GPU Overclock was restored Off without changing offsets.",
+    "Fan RPM selectors 1 and 2 were queried three times through the exact-device factory, then successfully read through the production service routing.",
+    "The exact Windows Razer EC thermal zone is \\_SB.PCI0.SBRG.EC0.TZRZ. A read-only high-precision sample of 3182 converted to 45 C, and installed service build 0.1.0+3449fc71 independently published CPU 45 C after upgrade; the unrelated \\_TZ.TZ01 zone is never used as a fallback.",
+    "Fixed Fan Speed selected the paired manual state, validated 2000/3800/5000 RPM targets with payload byte RPM/100, and restored Balanced/Automatic twice; the exact maximum is 5000 RPM, not PID 02E0's 5400 RPM.",
+    "Startup-animation getter 0F/98 returned enabled through both the exact discriminator and the exact production service port.",
+    "Exact read-only getters returned FunctionKeys (02/86 0100), GamingMode false (00/88 00000000), and Driver device mode (00/84 0300); all were reconfirmed through production ports.",
+    "Windows firmware metadata reported EC 1.09; exact 00/87 readback returned MCU 1.9.0.0 and was reconfirmed through the production battery port.",
+    "Exact 07/8C adapter-power readback returned 1111 (FullPower280W) and was reconfirmed through the production battery port.",
+    "Nine exact-device sessions captured the complete barrel AC, USB-C-only, and battery transition matrix. USB-C-only exposed Balanced/Auto with Performance and Custom unavailable and an inadequate-power warning; battery exposed Battery Saver/Auto with fixed fan unavailable.",
+    "Because Custom is visibly unavailable on USB-C-only power, source-specific Custom CPU and GPU levels are explicitly Absent there rather than uninvestigated. This does not establish their availability or absence on battery.",
+    "The first direct readback-matrix attempt exposed a Windows PowerShell 5.1 hashing defect before any state completed. The second completed full AC and one battery sample, then preserved a protocol failure caused by concurrent reads from the installed OpenBlade service. The corrected elevated wrapper isolated and restored only that exact service and rechecked each stable physical state after three seconds.",
+    "The corrected exact-device matrix obtained three identical read-only samples at every state: barrel AC 1111 with paired PerformanceAutomatic 0D/82 responses, battery 0011 with paired BatterySaverAutomatic responses, USB-C 0711 with paired BalancedAutomatic responses, and restored barrel AC matching the original 1111/PerformanceAutomatic baseline. USB-C adapter and battery-source readback are production-admitted only for PID 02C6; source-specific thermal readback is QueryValidated pending installed-service lifecycle validation.",
+    "The production display query reported 2560x1600, fixed 60/240 Hz, Dynamic 48-240 Hz, HDR support, and five SDR color profiles. A bounded Windows-API round trip enabled HDR, confirmed SDR profile controls unavailable, restored HDR off, and reconfirmed the original display state.",
+    "Malformed, checksum, command-class, command-id, status, and mid-transaction transport failures are deterministic software-only safety cases. The exact PID 02C6 production path uses the same tested 91-byte actor, poisons ambiguous sessions, and never retries an indeterminate write; no malformed report was injected into the physical laptop.",
+    "A read-only NVML query selected the NVIDIA GeForce RTX 5090 Laptop GPU, read zero current offsets, and reported core -1000..1000 MHz and memory -2000..6000 MHz ranges; production remains gated on exact Custom-mode admission.",
+    "A fully isolated exact-device GPU offset validator requested the adjacent pair core +1 MHz and memory +1 MHz from a zero baseline. NVIDIA did not confirm the requested pair, and the validator independently restored and re-read 0/0. This historical negative control left gpuClockOffsets QueryValidated and the GPU overclock write path ObservedOnly; the unowned Synapse GPU Overclock toggle is not assumed to be the cause.",
+    "Limits 50 through 80 in five-percent steps and protection-off completed exact-device typed apply/readback/restore validation and are production-admitted.",
+    "External-change detection and explicit scoped reclaim are SoftwareOnly service-runtime behaviors with deterministic drift, latch, readback, and reclaim tests. They do not claim a new physical Synapse action capture.",
+    "Temporary full charge enable, cancel, query, readback, and restoration are production-admitted.",
+    "Logo Off, Static, and Breathing completed exact selector-00 production apply/readback/restore validation; final logo state is Static.",
+    "Startup animation, function-key primary, and Gaming-mode setters were captured in both directions, independently read back, restored, and production-admitted; PID 02C6 function-key setter arguments are 0000/0001, not PID 02E0's 0100/0101.",
+    "An isolated OpenBlade round trip applied Normal device mode from a Driver baseline, independently read Normal, received operator confirmation of expected function-layer behavior, restored Driver, and independently read Driver. The exact-model Normal and Driver setters and getter are production-admitted behind typed acknowledgement, independent readback, owned restoration, and invalidated-session closure.",
+    "The earlier operator-requested Off/Static state is historical. Final state is Plugged In, keyboard brightness On at 50 percent, quick effect Static, and logo Static. Exact 03/83 readback returned raw 128 before and after an OpenBlade service restart while WindowsDynamicLighting delegation was enabled.",
+    "The exact WDL ownership sequence restarted only the OpenBlade Windows service, verified it returned Running/Automatic, independently re-read keyboard brightness raw 128, and preserved the externally owned Static 50 state. lifecycle.serviceRestart is production-admitted; cold boot, sign-in, sleep/resume, and device reconnect remain uninvestigated.",
+    "Three consecutive Windows PowerShell 5.1 exact-device power-source queries on barrel AC produced identical 822-byte outputs: 07/8C returned 1111 and the paired 0D/82 channels returned 01010200/01020200, independently reconfirming FullPower280W and the already admitted Performance/Automatic state. This AC-only recheck changed no setting and did not itself advance USB-C or battery evidence; the later corrected three-state matrix independently validated those states.",
+    "Exact PID 02C6 Static and Spectrum host rendering are production-admitted. The exact-build validator acknowledged every six-row 03/0B plus 03/0A latch transition, independently read raw brightness 128, received operator confirmation for Static green and smooth Spectrum, and restored Static green 50 percent. Matrix readback remains unavailable and is not inferred from visual confirmation.",
+    "The corrected address-3 Synapse Quick Effects oracle captured Ripple color selection; Starlight single, dual, random, and all three durations; Tidal fixed/random colors and both directions; Wave both directions; and Wheel both rotations. Sanitized exact-device Tidal and Wave/Wheel templates contain no PCAP hash or unique identifier. These parameter leaves remain Captured until OpenBlade completes guarded on-device lifecycle validation. Ripple key mapping remains NotInvestigated because synthetic key injection produced only idle keepalives; a physical normal-key capture is still required.",
+    "A later Computer Use correction scrolled to the actual top of the Quick Effects menu and confirmed that the earlier visible subset was incomplete. The full menu also contains Ambient Awareness with five screen-region choices, Audio Meter with Color Boost, Breathing with one/two/random colors and no duration control, Fire with no parameters, and Reactive with color plus Short/Medium/Long. These UI observations are Captured and must never be silently dropped merely because their transport oracle was not in the first address-3 run.",
+    "The clean upper-effect address-3 oracle in capture revision c5fa12d correlated all five Ambient Awareness regions, Audio Meter, Breathing single/dual/random, Fire, and a Reactive no-input control with 2,425 complete frames and zero checksum failures. Ambient Awareness used the same six-row 03/0B plus 03/0A 0500 matrix stream at roughly 42-46 ms, so its matrixFormat and frameCadence advance to Captured. Audio Meter Color Boost is exactly 1 through 4 in 0.25 steps with default 1. Breathing is a seven-second uniform cycle with approximately 2.0-second rise, 1.5-second full hold, 2.0-second fall, and 1.5-second off. The sanitized 171-frame Fire oracle is SHA-256 874C99039C8204950D233EA7ECE6560985CDC6325D576F82D9F12FA841B25128 and contains no raw hash or unique identifier. The Reactive window has no operator-confirmed key press and does not advance its keyMap.",
+    "The same exact oracle proves continuous PID 02C6 matrix traffic is SET-only after the initial transition: six 03/0B rows plus 03/0A latch, with no per-frame GET response, at an observed 42-45 ms cadence. This corrects the earlier acknowledged-every-row production assumption without changing the absence of a matrix effect getter.",
+    "A clean physical-key oracle reconstructed 816 complete PID 02C6 frames with zero checksum failures. Operator-correlated J presses placed Reactive and Ripple at matrix slot 59; Reactive Short, Medium, and Long remained active for approximately 404, 1403, and 1879 ms, and the J-origin Ripple traversed all 86 active slots. The operator separately reported that every effect looked visually correct and the final Static green 50 percent / Static logo state was restored. This visual observation is not treated as matrix readback. The exact read-only LampArray geometry independently projects 85 lamps into the six captured matrix rows and exposes Right Alt at slot 91 rather than PID 02E0 slot 94. Reactive and Ripple keyMap advance to Captured; Ripple durations is Absent because Synapse exposes no duration control.",
+    "Installed exact build 0.1.0+5466d9cd641b6875ed618e46d364f223d419fc2f applied Ambient Awareness, Audio Meter, Breathing, Fire, Reactive, Ripple, Spectrum Cycling, Starlight, Static, Tidal, Wave, and Wheel while Synapse was absent. The UI stayed responsive, the service remained Running with exactly one Session Agent and tray, Spectrum survived a 12-second regression hold beyond the earlier three-second failure window, and the operator confirmed physical J origin behavior for Reactive and Ripple. These effect bases advance to ProductionAdmitted. Parameter combinations, the rest of the key map, and the absent matrix/effect getter do not advance. Static green 50 percent and Static logo were saved back to the AC profile.",
+    "A read-only exact PID scan found ten HID collections, including the 91-byte control collection and a 51-byte usage 0059:0001 collection, but no 375-byte feature collection; PID 02E0's matrix writer cannot be reused.",
+    "Manual fan curves are production-admitted host rendering over the exact fixed-target primitive; persisted curve intent readback is SoftwareOnly, while physical fan RPM retains its separate production-admitted query.",
+    "Active Synapse Spectrum traffic can produce rejected TransactionMismatch failures.",
+    "The exact production port admits validated PID 02C6 07/8C responses 1111 (FullPower280W), 0711 (UsbCPower100W), and 0011 (Battery), each exact-model gated. The 0711 admission followed three identical direct USB-C samples in the corrected matrix and no longer relies on PID 02E0 evidence.",
+    "Two controller-isolated 60-second special-key retries received zero physical input, including one window with Synapse, both verified Razer controller services, and OpenBlade inactive. They are failed zero-input sessions and do not advance the captured M1, M2, Fn+P, or normal-layer leaves.",
+    "A clean exact-device production probe decoded Fn+Game, Fn+Performance, and Fn+MicrophoneMute as M3/M4/M5 with prefixes 040A0300/040AD300/040AD400, 12 target messages, and no identity failures. A separate discrimination retry proved M1, M2, and Fn+P expose only indistinguishable generic Fn reports while ordinary Page Up/Page Down pass through. At that checkpoint production admission was deliberately partial: M3-M5 only; M1/M2/Fn+P remained Captured.",
+    "A Synapse-present no-Fn retry of Game, Performance, and microphone mute produced zero target Raw Input messages. The result does not distinguish firmware ownership from vendor-stack ownership. Read-only post-probe production state was barrel AC, Performance/Automatic, Gaming Off, Driver mode, Static logo, keyboard brightness raw 129 (51 percent), and one default Windows Core Audio capture endpoint independently read Unmuted."
+  ]
+}

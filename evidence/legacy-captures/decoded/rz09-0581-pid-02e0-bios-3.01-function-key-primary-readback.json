@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "validatedAtUtc": "2026-07-20T01:06:49Z",
+  "device": {
+    "model": "Razer Blade 16 RZ09-0581",
+    "vid": "1532",
+    "pid": "02E0",
+    "bios": "3.01"
+  },
+  "operation": {
+    "name": "Function key primary state",
+    "command": "02/86",
+    "requestPayloadHex": "0100",
+    "expectedStatusHex": "02",
+    "responseLength": 2,
+    "semanticIntent": "Read current firmware value"
+  },
+  "observations": [
+    {
+      "sequence": 1,
+      "responsePayloadHex": "0100",
+      "stateBeforeControlledTransition": "FunctionKeys"
+    },
+    {
+      "sequence": 2,
+      "knownSetterAppliedImmediatelyBeforeQuery": "02/06 0101",
+      "stateSelectedInOpenBlade": "MultimediaKeys",
+      "responsePayloadHex": "0101"
+    }
+  ],
+  "mapping": {
+    "0100": "FunctionKeys",
+    "0101": "MultimediaKeys"
+  },
+  "isolation": {
+    "razerControllerProcessesStoppedDuringQueries": true,
+    "razerControllerServicesStoppedDuringQueries": true,
+    "openBladeServiceStoppedDuringQueries": true,
+    "oneExchangePerProbeProcess": true,
+    "retries": 0,
+    "openBladeServiceRestoredAfterEachQuery": true,
+    "razerControllerServicesRestoredAfterValidation": true
+  },
+  "restoration": {
+    "knownSetterApplied": "02/06 0100",
+    "requestedFinalState": "FunctionKeys",
+    "confirmedFinalState": "FunctionKeys",
+    "confirmationSource": "OpenBlade production readback after the setter"
+  },
+  "result": {
+    "transportValidated": true,
+    "stateDiscriminationValidated": true,
+    "semanticMappingConfirmed": true,
+    "productionReadbackAdmitted": true,
+    "gamingModeReadbackValidated": false
+  },
+  "rawProbeOutputCommitted": false,
+  "decision": "Admit 02/86 0100 as the exact-device Function key primary query. At the time of this run, 00/88 remained pending; the later Gaming Mode readback record supersedes that part of the decision."
+}

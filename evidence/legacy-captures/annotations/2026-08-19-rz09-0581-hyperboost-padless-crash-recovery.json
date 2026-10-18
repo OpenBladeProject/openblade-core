@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade installed Service 0.17.0+7e3884a79511de035ca93fc53f659b04d2998729 verified by OpenBlade.FirmwareSmoke 0.17.0+7e47ef6fcfdd2f43bae7cad595fb55ba7b013b10",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-19T10:44:23.8408502Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "8D9A54BBCD483783259AB898D0EF8A3C8D07B71B5256247F54D2C7221BA89214",
+    "byteLength": 925,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance lifecycle",
+    "name": "Installed-service padless HyperBoost unexpected-exit recovery validation",
+    "value": "Balanced and Automatic to service-owned HyperBoost, forced termination of only the exact OpenBlade Service instance, SCM restart, one owned recovery, and stable read-only restoration verification",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once through the exact installed validation Service while the cooling pad was physically absent.",
+    "readbackResult": "Confirmed service-owned HyperBoost and a durable ownership journal before the unexpected-exit boundary.",
+    "restorationResult": "Restored successfully once by the restarted installed Service to the saved Balanced base with Automatic laptop fans.",
+    "restorationReadbackResult": "Confirmed the exact restored pair twice, a retired ownership journal, a replaced Service instance, and exactly one recovery attempt and completion."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ExactInstalledPreflight",
+      "summary": "The validation build bound the exact RZ09-0581 BIOS 4.00 installation, Balanced and Automatic baseline, admitted full-power adapter, confirmed physical pad absence, and a one-time crash-validation manifest.",
+      "serviceProductVersion": "0.17.0+7e3884a79511de035ca93fc53f659b04d2998729",
+      "serviceExecutableSha256": "E2F7EEF9566311627CBA0476F533D3DA7916F9A7AE2D56AC9AA660AC00345C33",
+      "validationBuildManifestSha256": "524C13B76D9E2172567C811F12DF77015F774D46BB20B28B1C60F6A4CAF3F1EA",
+      "requiresCoolingPad": false
+    },
+    {
+      "kind": "OwnedLifecycleArm",
+      "summary": "The installed Service applied HyperBoost once, confirmed mode 7, finalized durable ownership, and created the private marker without cleanup or manual recovery.",
+      "armArtifactSha256": "5C17EA33B01E0A93AAC22EC3788D94CA1ABBFA9FDC80A6B7F9A440338D0E28D0",
+      "armArtifactByteLength": 963,
+      "hyperBoostConfirmed": true,
+      "durableOwnershipConfirmed": true,
+      "manualRecoveryRequired": false
+    },
+    {
+      "kind": "ExactUnexpectedExitBoundary",
+      "summary": "A bounded elevated helper verified and forcibly terminated only the marker-bound OpenBlade Service instance; SCM then started one replacement instance from the same exact validation executable.",
+      "boundaryArtifactSha256": "FC05C2D5EA5280537F4D9373124D3448298FE6A9E86040900F87D5D934FB0004",
+      "boundaryArtifactByteLength": 291,
+      "oldServiceExited": true,
+      "serviceInstanceReplaced": true,
+      "sameValidationExecutableConfirmed": true
+    },
+    {
+      "kind": "InstalledRecoveryVerification",
+      "summary": "Read-only FirmwareSmoke verification confirmed stable Balanced and Automatic state, a retired journal, the expected replacement boundary, and exactly one matching Service recovery attempt and completion.",
+      "exactInstalledGeneration": true,
+      "expectedServiceBoundary": true,
+      "exactBaseAndAutomaticConfirmed": true,
+      "journalRetired": true,
+      "recoveryAttemptsObserved": 1,
+      "recoveryCompletionsObserved": 1,
+      "stableSecondObservation": true,
+      "crashRecoveryValidated": true
+    },
+    {
+      "kind": "VerifierCorrection",
+      "summary": "The first read-only verifier rejected the otherwise complete result because expected post-recovery fan drift was treated as an installed-generation mismatch. Commit 7e47ef6f narrowed that exception to the sole Fans diagnostic; 82 focused tests passed and the same marker then verified without another hardware write.",
+      "correctedFirmwareSmokeProductVersion": "0.17.0+7e47ef6fcfdd2f43bae7cad595fb55ba7b013b10",
+      "correctedFirmwareSmokeExecutableSha256": "A76D9BE628763027FA3006939FABC425D905D325BC19459EF96EE8802F6A39CF",
+      "additionalHyperBoostWriteCount": 0,
+      "correctedValidatorExitCode": 0
+    },
+    {
+      "kind": "ArtifactIntegrity",
+      "summary": "The private arm, boundary, marker, diagnostics, and verification records remain uncommitted; this annotation retains only bounded hashes, lengths, semantic outcomes, and exact executable provenance.",
+      "verificationArtifactSha256": "8D9A54BBCD483783259AB898D0EF8A3C8D07B71B5256247F54D2C7221BA89214",
+      "verificationArtifactByteLength": 925,
+      "validatorExitCode": 0,
+      "success": true
+    }
+  ],
+  "limitations": [
+    "This run validates one installed-Service unexpected-exit recovery on the exact RZ09-0581 BIOS 4.00 generation, Balanced and Automatic, admitted full-power adapter, and confirmed physical pad absence.",
+    "It does not validate sleep/resume recovery; the separate low-power run failed and remains authoritative negative evidence.",
+    "Production padless HyperBoost remains disabled while any required lifecycle gate is false."
+  ],
+  "productionAdmission": {
+    "crashRecoveryValidated": true,
+    "lowPowerLifecycleValidated": false,
+    "padLessActivationAdmitted": false,
+    "reason": "Unexpected-exit recovery is validated, but the independent low-power lifecycle gate failed."
+  },
+  "notes": [
+    "FirmwareSmoke verification was read-only and issued no recovery write.",
+    "USBPcap was not running.",
+    "No Razer service was started, stopped, or restored.",
+    "Private lifecycle markers, diagnostics, local paths, and service instance identifiers are not committed."
+  ]
+}

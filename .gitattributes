@@ -9,3 +9,6 @@ src/OpenBlade.Contracts/Profiles.cs text eol=lf
 src/OpenBlade.Contracts/ReactiveKeyPulse.cs text eol=lf
 build/Export-RazerBrightnessDriverPackage.ps1 text eol=lf
 src/OpenBlade.Contracts/Fixtures/Blade18KeyboardLightingLayout.json text eol=crlf
+
+# Legacy sanitized evidence is hash-bound. Preserve the imported Git blob bytes.
+evidence/legacy-captures/**/*.json text eol=lf

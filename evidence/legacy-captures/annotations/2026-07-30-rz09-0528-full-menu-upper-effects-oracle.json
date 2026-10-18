@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "evidenceId": "RZ09-0528-SYNAPSE-FULL-MENU-UPPER-ORACLE-20260730",
+  "evidenceRole": "SanitizedExactDeviceSynapseEffectOracle",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "capture": {
+    "targetedController": "USBPcap2",
+    "verifiedTransientDeviceAddress": 3,
+    "status": "Completed",
+    "terminationReason": "StopSentinel",
+    "stopMode": "Graceful",
+    "rawArtifactsCommitted": false,
+    "rawHashesPersistedHere": false,
+    "uniqueIdentifiersIncluded": false,
+    "decodedTransactionCount": 17067
+  },
+  "protocol": {
+    "capturedFeatureReportCount": 17056,
+    "rowReportCount": 14550,
+    "latchReportCount": 2452,
+    "completeFrameCount": 2425,
+    "checksumFailureCount": 0,
+    "otherReportCount": 54,
+    "discardedIncompleteRowSets": 27,
+    "incompleteTailRowCount": 0,
+    "rowCommand": "03/0B",
+    "rowArguments": "FF <row:00-05> 00 10 <17 RGB slots>",
+    "latchCommand": "03/0A",
+    "latchArguments": "0500",
+    "rowsPerFrame": 6,
+    "slotsPerFrame": 102,
+    "activeSlots": 86,
+    "holeSlots": [
+      0,
+      17,
+      31,
+      34,
+      48,
+      51,
+      64,
+      65,
+      68,
+      70,
+      81,
+      82,
+      85,
+      89,
+      92,
+      93
+    ],
+    "continuousTrafficDirection": "SET-only",
+    "matrixGetterObserved": false
+  },
+  "operatorCorrelatedWindows": [
+    {
+      "effect": "Ambient Awareness",
+      "variant": "Full",
+      "durationSeconds": 5.08,
+      "completeFrames": 81,
+      "medianFrameIntervalMilliseconds": 44.93
+    },
+    {
+      "effect": "Ambient Awareness",
+      "variant": "Left",
+      "durationSeconds": 4.08,
+      "completeFrames": 82,
+      "medianFrameIntervalMilliseconds": 45.81
+    },
+    {
+      "effect": "Ambient Awareness",
+      "variant": "Top",
+      "durationSeconds": 4.08,
+      "completeFrames": 83,
+      "medianFrameIntervalMilliseconds": 42.56
+    },
+    {
+      "effect": "Ambient Awareness",
+      "variant": "Right",
+      "durationSeconds": 4.096,
+      "completeFrames": 78,
+      "medianFrameIntervalMilliseconds": 44.75
+    },
+    {
+      "effect": "Ambient Awareness",
+      "variant": "Bottom",
+      "durationSeconds": 4.086,
+      "completeFrames": 73,
+      "medianFrameIntervalMilliseconds": 44.27
+    },
+    {
+      "effect": "Audio Meter",
+      "variant": "Color Boost 1",
+      "durationSeconds": 5.09,
+      "completeFrames": 85,
+      "medianFrameIntervalMilliseconds": 42.02
+    },
+    {
+      "effect": "Breathing",
+      "variant": "Single green",
+      "durationSeconds": 8.586,
+      "completeFrames": 117,
+      "allFramesUniformAcrossActiveSlots": true
+    },
+    {
+      "effect": "Breathing",
+      "variant": "Dual green/purple",
+      "durationSeconds": 8.576,
+      "completeFrames": 159,
+      "allFramesUniformAcrossActiveSlots": true
+    },
+    {
+      "effect": "Breathing",
+      "variant": "Random",
+      "durationSeconds": 15.089,
+      "completeFrames": 268,
+      "allFramesUniformAcrossActiveSlots": true
+    },
+    {
+      "effect": "Fire",
+      "variant": "No parameters",
+      "durationSeconds": 12.078,
+      "completeFrames": 235,
+      "medianFrameIntervalMilliseconds": 45.5
+    },
+    {
+      "effect": "Reactive",
+      "variant": "Short, no operator-confirmed input",
+      "durationSeconds": 203.084,
+      "completeFrames": 41,
+      "medianFrameIntervalMilliseconds": 5000.26,
+      "evidenceRole": "NegativeControlOnly"
+    }
+  ],
+  "parameterFindings": {
+    "ambientAwarenessRegions": [
+      "Full",
+      "Left",
+      "Top",
+      "Right",
+      "Bottom"
+    ],
+    "audioMeterColorBoost": {
+      "minimum": 1,
+      "maximum": 4,
+      "step": 0.25,
+      "default": 1,
+      "source": "Visible Synapse numeric stepper and bound checks"
+    },
+    "breathing": {
+      "cycleMilliseconds": 7000,
+      "fadeInMilliseconds": 2000,
+      "fullMilliseconds": 1500,
+      "fadeOutMilliseconds": 2000,
+      "offMilliseconds": 1500,
+      "durationControlPresent": false
+    },
+    "fire": {
+      "parameterControlsPresent": false,
+      "startupFadeMilliseconds": 3500,
+      "settledOracleFrameIntervalMilliseconds": 50,
+      "settledOracleFrameCount": 171,
+      "settledOracleCycleMilliseconds": 8550,
+      "settledBlueChannelUsed": false,
+      "spatialProfile": "Bottom rows are hotter than top rows"
+    }
+  },
+  "sanitizedFixture": {
+    "path": "decoded/rz09-0528-pid-02c6-bios-2.02-fire-oracle.json",
+    "sha256": "874C99039C8204950D233EA7ECE6560985CDC6325D576F82D9F12FA841B25128",
+    "encoding": "deflate-base64-rgb24",
+    "uncompressedBytes": 52326,
+    "rawCaptureHashIncluded": false,
+    "uniqueIdentifiersIncluded": false
+  },
+  "restoration": {
+    "keyboardEffect": "Static",
+    "keyboardColor": "green",
+    "brightnessPercent": 50,
+    "logoMode": "Static",
+    "visuallyConfirmed": true
+  },
+  "admission": {
+    "ambientAwarenessMatrixFormat": "Captured",
+    "ambientAwarenessFrameCadence": "Captured",
+    "audioMeterColorBoost": "Captured",
+    "breathingTiming": "Captured",
+    "fireMatrixOracle": "Captured",
+    "reactiveKeyMap": "NotInvestigated",
+    "matrixGetter": "NotInvestigated",
+    "productionLifecycle": "NotValidated"
+  },
+  "boundaries": [
+    "The capture proves SET-only host rendering. It does not prove a matrix GET/readback command.",
+    "Audio Meter's visible Color Boost control does not prove a firmware parameter; the effect is host-rendered from session audio data.",
+    "The Reactive window contained no operator-confirmed physical key press and is retained only as a black keepalive negative control.",
+    "No PID 02E0 physical key map or renderer assumption is admitted for PID 02C6.",
+    "Raw PCAPs, raw hashes, serial numbers, device instance suffixes, and other unique identifiers are intentionally absent from this annotation."
+  ]
+}

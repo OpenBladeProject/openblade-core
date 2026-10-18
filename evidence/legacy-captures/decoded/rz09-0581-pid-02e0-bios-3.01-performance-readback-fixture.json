@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "evidenceKind": "performance-and-fan-mode-readback",
+  "observedUtcDate": "2026-07-17",
+  "readOnly": true,
+  "productionAdmitted": false,
+  "rendererSources": [
+    {
+      "cacheFileName": "38f9510dbef72388_0",
+      "url": "https://apps.razer.com/synapse/products/736/mw/rzDevice25.d7ded15ce6957bbe7b4b.js",
+      "sha256": "DCEE07D4ED576D05A197E82D8232C17AAF9269C76C90E2847D55F64B5EA5051D"
+    },
+    {
+      "cacheFileName": "5d246080dbc9932d_0",
+      "url": "https://apps.razer.com/synapse/products/736/mw/main.337c6ccad728c28d73c9.js",
+      "sha256": "DE416573BDFAC995DDFD7D4DCB1668FCEFC5F7AB9E586DE8FB67383A40AE36D9"
+    },
+    {
+      "cacheFileName": "b94e61f2d8f88bd4_0",
+      "url": "https://apps.razer.com/synapse/products/736/mw/6737.5aa168d31468934a9753.js",
+      "sha256": "03202C1CA853FDC2E5B39F782DE881671F4670D3068D57A26F67065C31CB1D25"
+    }
+  ],
+  "fixedReadOnlyOperations": [
+    {
+      "operation": "07/8F power control",
+      "classHex": "07",
+      "idHex": "8F",
+      "requestPayloadHex": "00",
+      "responseLength": 1
+    },
+    {
+      "operation": "0D/82 class1 thermal1",
+      "classHex": "0D",
+      "idHex": "82",
+      "requestPayloadHex": "01010000",
+      "responseLength": 4
+    },
+    {
+      "operation": "0D/82 class1 thermal2",
+      "classHex": "0D",
+      "idHex": "82",
+      "requestPayloadHex": "01020000",
+      "responseLength": 4
+    }
+  ],
+  "runs": [
+    {
+      "condition": "Balanced+Auto",
+      "probeId": "openblade-fan-probe-auto-20260716",
+      "samples": [
+        { "fileName": "sample-1.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+        { "fileName": "sample-2.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+        { "fileName": "sample-3.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" }
+      ]
+    },
+    {
+      "condition": "Silent+Auto",
+      "probeId": "openblade-fan-probe-silent-20260716",
+      "samples": [
+        { "fileName": "sample-1.json", "sha256": "EEF2C4B106465CBF90FB661AAB209580364DF731909405EBE0845FB6615FD3D8", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010500", "thermal2Hex": "01020500" },
+        { "fileName": "sample-2.json", "sha256": "EEF2C4B106465CBF90FB661AAB209580364DF731909405EBE0845FB6615FD3D8", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010500", "thermal2Hex": "01020500" },
+        { "fileName": "sample-3.json", "sha256": "EEF2C4B106465CBF90FB661AAB209580364DF731909405EBE0845FB6615FD3D8", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010500", "thermal2Hex": "01020500" }
+      ]
+    },
+    {
+      "condition": "Balanced+Auto restored",
+      "probeId": "openblade-fan-probe-restored-auto-20260716",
+      "samples": [
+        { "fileName": "sample-1.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+        { "fileName": "sample-2.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+        { "fileName": "sample-3.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" }
+      ]
+    },
+    {
+      "condition": "Performance+Auto",
+      "probeId": "openblade-fan-probe-performance-20260716",
+      "samples": [
+        { "fileName": "sample-1.json", "sha256": "80368FC220356C3CC7284758478835D8DBED12CD0D702F1FE5A281AE3025D2A3", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010200", "thermal2Hex": "01020200" },
+        { "fileName": "sample-2.json", "sha256": "80368FC220356C3CC7284758478835D8DBED12CD0D702F1FE5A281AE3025D2A3", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010200", "thermal2Hex": "01020200" },
+        { "fileName": "sample-3.json", "sha256": "80368FC220356C3CC7284758478835D8DBED12CD0D702F1FE5A281AE3025D2A3", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010200", "thermal2Hex": "01020200" }
+      ]
+    },
+    {
+      "condition": "Balanced+Auto final restoration",
+      "probeId": "openblade-fan-probe-final-restored-auto-20260716",
+      "samples": [
+        { "fileName": "sample-1.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+        { "fileName": "sample-2.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+        { "fileName": "sample-3.json", "sha256": "FF52EEF45F57A37A034D5FEE0B75F25EE23F9BDE853B1740757C4C2D9EB9B74B", "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000" }
+      ]
+    }
+  ],
+  "decodedSemantics": {
+    "performanceValues": {
+      "Balanced": "00",
+      "Performance": "02",
+      "Silent": "05"
+    },
+    "fanModeValues": {
+      "Auto": "00",
+      "Fixed": "01"
+    },
+    "fanModeLiveReadbackEstablished": ["Auto"],
+    "fixedFanModeLiveReadbackEstablished": false
+  },
+  "pid736Ui": {
+    "maximumFanModeSupported": false,
+    "maximumFanModeProductionAdmitted": false
+  },
+  "conclusion": {
+    "balancedSilentPerformanceReadbackEstablished": true,
+    "autoFanModeLiveReadbackEstablished": true,
+    "fixedFanModeLiveReadbackEstablished": false,
+    "performanceProductionAdmissionAllowedAfterTypedSettersSeparatelyValidated": true,
+    "performanceProductionAdmitted": false,
+    "fanModeProductionAdmitted": false,
+    "maximumFanModeProductionAdmitted": false,
+    "reason": "Three repeatable read-only samples per condition established Balanced, Silent, and Performance values and restored Balanced plus Auto twice. Production admission still requires separately validated typed setters; only Auto has live fan-mode readback evidence, and Maximum is unsupported by the PID 736 UI."
+  }
+}

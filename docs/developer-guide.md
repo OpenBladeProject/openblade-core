@@ -225,7 +225,6 @@ records model identities, command limits, and pinned source provenance.
 You need Windows 11 x64 and the .NET 10 SDK.
 
 ```powershell
-git submodule update --init --recursive
 dotnet restore OpenBlade.slnx -p:NuGetAudit=false
 dotnet build OpenBlade.slnx -p:NuGetAudit=false --no-restore
 dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
@@ -234,6 +233,13 @@ dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 The build treats warnings as errors and uses deterministic assemblies. Tests
 cover protocol encoding, device admission, IPC, service behavior, presentation
 policy, setup transactions, and release-payload boundaries.
+
+The sanitized legacy fixtures required by those tests are stored in
+`evidence/legacy-captures`, with their original paths, source revision, and
+SHA-256 hashes recorded in `evidence/provenance.json`. A normal clone needs no
+private repository access. Use
+[Synapse Observer](https://github.com/OpenBladeProject/synapse-observer) for new
+protocol observations.
 
 ## Publish and install
 
@@ -408,10 +414,12 @@ The installed-product firmware workflow starts with a read-only baseline:
 .\scripts\Test-FirmwareUpdate.ps1 -Phase Baseline
 ```
 
-Do not run USBPcap and OpenBlade control against the same interface at the same
-time. Do not commit raw PCAP files, serial numbers, user paths, or unsanitized
-payloads. Capture procedures and restoration requirements are documented in
-the separate capture and documentation repositories.
+Use [Synapse Observer](https://github.com/OpenBladeProject/synapse-observer)
+for new protocol observations. Keep raw recordings, serial numbers, user paths,
+and unsanitized payloads out of the repository. If a maintainer reproduces a
+historical private USBPcap workflow, never run it and OpenBlade control against
+the same interface at the same time. Preserve the saved state and verify its
+restoration after every authorized write.
 
 ## Keyboard lighting file format
 

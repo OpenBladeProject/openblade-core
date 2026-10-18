@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vid": "1532",
+    "pid": "02E0",
+    "bios": "3.01"
+  },
+  "condition": {
+    "acOnline": true
+  },
+  "rawCapturesCommitted": false,
+  "actionOrder": [
+    "Static",
+    "Spectrum",
+    "Breathing",
+    "Reactive",
+    "restore Ambient Awareness",
+    "Off",
+    "restore On",
+    "UI 49",
+    "UI 50",
+    "restore 100"
+  ],
+  "observations": [
+    { "action": "Static", "visualConfirmation": "Static green selected and rendered", "visuallyConfirmed": true },
+    { "action": "Spectrum", "visualConfirmation": "Spectrum hue cycling selected and rendered", "visuallyConfirmed": true },
+    { "action": "Breathing", "visualConfirmation": "Breathing green intensity ramp selected and rendered", "visuallyConfirmed": true },
+    { "action": "Reactive", "visualConfirmation": "Reactive selected and black idle state rendered", "visuallyConfirmed": true },
+    { "action": "restore Ambient Awareness", "visualConfirmation": "Ambient Awareness restored", "visuallyConfirmed": true },
+    { "action": "Off", "visualConfirmation": "Lighting switched off", "visuallyConfirmed": true },
+    { "action": "restore On", "visualConfirmation": "Lighting restored on", "visuallyConfirmed": true },
+    { "action": "UI 49", "visualConfirmation": "UI displayed 49", "visuallyConfirmed": true },
+    { "action": "UI 50", "visualConfirmation": "UI displayed exactly 50 with no emitted lighting change", "visuallyConfirmed": true },
+    { "action": "restore 100", "visualConfirmation": "Brightness 100 restored", "visuallyConfirmed": true }
+  ],
+  "captures": [
+    {
+      "action": "Static",
+      "fileName": "opensynapse-lighting-static-online-20260714.pcap",
+      "sha256": "76CA001583EC41F2ABE53872278686A8E5CA3419F6D0583BD6E3802CD2400B0A",
+      "visualConfirmation": "Static green selected and rendered",
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Spectrum",
+      "fileName": "opensynapse-lighting-spectrum-online-20260714.pcap",
+      "sha256": "00F3D449110411497DB894A07009BDF5B13B183A2931A129C8189BC7AE921171",
+      "visualConfirmation": "Spectrum hue cycling selected and rendered",
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Breathing",
+      "fileName": "opensynapse-lighting-breathing-online-20260714.pcap",
+      "sha256": "30B199AD90D675223E29D0B31E8DD9F786AB248282B1F9CA3FC23A283693FE31",
+      "visualConfirmation": "Breathing green intensity ramp selected and rendered",
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Reactive",
+      "fileName": "opensynapse-lighting-reactive-online-20260714.pcap",
+      "sha256": "84545D9F5214B1650EF931F9CAD8A0A9ED8B914CBA06567FDA4064967A3828B6",
+      "visualConfirmation": "Reactive selected and black idle state rendered",
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Off",
+      "fileName": "opensynapse-lighting-off-online-20260714.pcap",
+      "sha256": "BB4F15926F7D896586109EC45C6E56EAB18550226B4E65C302E6329E81CE8870",
+      "visualConfirmation": "Lighting switched off",
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "UI 49 then UI 50",
+      "fileName": "opensynapse-lighting-brightness-50-online-20260714.pcap",
+      "sha256": "4ED4F52BDDC14C72758405F867F8DE533F11E9F68346E00CD12A7DD0EC77CC8A",
+      "visualConfirmation": "UI showed 49 and then exactly 50; no lighting change was emitted",
+      "visuallyConfirmed": true
+    }
+  ],
+  "finalRestoration": {
+    "state": "Ambient Awareness + brightness 100",
+    "visuallyConfirmed": true
+  },
+  "notes": [
+    "Raw PCAP files remain outside the repository under C:\\tmp.",
+    "The normalized transition handshake is shared by Static, Spectrum, Breathing, and Reactive and does not identify an effect.",
+    "Quick Effects are host-rendered matrix streams and remain outside production command admission.",
+    "Off is a brightness-zero command, not a distinct effect-disable operation.",
+    "The UI 50 value implies byte 80 from the established scaling rule but was not directly emitted in this capture.",
+    "Status-05 selector-0018 reports are unsupported operations and are excluded as brightness writes.",
+    "Status-02 echoes are acknowledgements, not independent readback.",
+    "Typed OpenBlade application, independent readback, and OpenBlade restoration remain pending."
+  ]
+}

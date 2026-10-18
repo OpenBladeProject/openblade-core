@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "evidenceKind": "ExactDeviceHyperBoostDeveloperSemanticCheckpoint",
+  "annotation": "annotations/2026-09-27-rz09-0528-hyperboost-developer-validation.json",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "sku": "RZ09-05289EN4",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "validatorAssemblySha256": "3D19A9C9EEF41773F689C6802D4B679325E5F7A304858E6755CFB00E7D13E93C",
+  "validation": {
+    "Target": "HyperBoostFromPerformance",
+    "Baseline": {
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    },
+    "Candidate": {
+      "Thermal1Hex": "01010700",
+      "Thermal2Hex": "01020700"
+    },
+    "CandidateFanRpm": null,
+    "CandidateFanRpmSamples": [],
+    "Restoration": {
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    },
+    "ApplyAttempted": true,
+    "ApplyAcknowledged": true,
+    "CandidateConfirmed": true,
+    "RestoreAttempted": true,
+    "RestoreAcknowledged": true,
+    "Restored": true,
+    "IndeterminatePartialWrite": false,
+    "ManualRecoveryRequired": false,
+    "Failure": "None",
+    "Success": true
+  },
+  "commandScope": {
+    "laptopSetterClassHex": "0D",
+    "laptopSetterCommandHex": "02",
+    "laptopGetterClassHex": "0D",
+    "laptopGetterCommandHex": "82",
+    "padFeatureWritesPerformed": false
+  },
+  "admission": {
+    "productionImportAllowed": false,
+    "installedServiceValidationPerformed": false,
+    "productionCoverageAdvanced": false,
+    "padlessActivationAdmitted": false,
+    "balancedOrSilentTransitionsValidated": false,
+    "lifecycleValidated": false
+  },
+  "limitations": [
+    "Developer Performance/Automatic mode 2 to HyperBoost mode 7 and back to mode 2 only.",
+    "No installed service or tray HyperBoost round trip was performed.",
+    "No cooling-pad feature write, independent fan RPM reading, or prior pad state restoration was validated.",
+    "No Balanced, Silent, pad-absent, device-removal, power-transition, sleep/resume, reboot, or sustained-load validation.",
+    "Thermal mode readback does not prove power-limit changes or performance improvement."
+  ]
+}

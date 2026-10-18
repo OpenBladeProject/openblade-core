@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Installed OpenBlade service, Session Agent, and tray",
+    "role": "ProductionRegressionValidation",
+    "openBladeCommit": "d4b58cf6af0e0bf76282b83f45eb020565d210e7",
+    "mediaRowFixCommit": "029e7a65d9c819f76a5e3de5f169f69939fd66ef",
+    "installedProductVersion": "0.1.0+d4b58cf6af0e0bf76282b83f45eb020565d210e7",
+    "packetCapturePerformed": false,
+    "rawArtifactsCommitted": false,
+    "privateDeploymentReportRetained": true,
+    "privateInstalledBinaryHashesRetained": true
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "regression": {
+    "symptom": "Function-row media actions stopped responding while OpenBlade owned keyboard lighting in Driver mode.",
+    "functionKeyBehavior": "FunctionKeys",
+    "expectedMediaLayer": "Fn+F1 through Fn+F12",
+    "rootCause": "Both function-row translation consumers admitted only the RZ09-0581 device kind even though the RZ09-0528 exact HID path already supplied Fn state.",
+    "fixBoundary": "The shared function-row translator explicitly admits only RZ09-0581 and RZ09-0528. PID 02C6 keeps its exact special-key decoder and does not inherit PID 02E0 assumptions."
+  },
+  "physicalAcceptance": {
+    "operatorConfirmedMediaKeysResponsive": true,
+    "testedActions": [
+      {
+        "input": "Fn+F1",
+        "expectedAction": "Mute"
+      },
+      {
+        "input": "Fn+F2",
+        "expectedAction": "VolumeDown"
+      },
+      {
+        "input": "Fn+F3",
+        "expectedAction": "VolumeUp"
+      }
+    ],
+    "syntheticInputUsed": false,
+    "visualConfirmationReinterpretedAsHidReadback": false
+  },
+  "discardedProbe": {
+    "status": "FailedZeroInputNonInteractiveSession",
+    "attemptCount": 3,
+    "rawInputMessages": 0,
+    "targetInputMessages": 0,
+    "usedAsDeviceEvidence": false,
+    "privateOutputsCommitted": false
+  },
+  "isolation": {
+    "synapseProcessCount": 0,
+    "openBladeServiceState": "Running",
+    "sessionAgentProcessCount": 1,
+    "trayProcessCount": 1
+  },
+  "restoration": {
+    "settingsChangedForAcceptance": false,
+    "functionKeyBehavior": "FunctionKeys",
+    "keyboardEffect": "Static",
+    "brightnessPercent": 50,
+    "color": "47E10C",
+    "logoMode": "Static"
+  },
+  "privacy": {
+    "serialNumbersRetained": false,
+    "devicePathsRetained": false,
+    "uniqueUsbIdentifiersRetained": false,
+    "rawCapturesCommitted": false
+  }
+}

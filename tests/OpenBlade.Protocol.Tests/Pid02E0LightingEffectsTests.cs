@@ -180,7 +180,7 @@ public sealed class Pid02E0LightingEffectsTests
     public void SpectrumAndRandomBreathingFixture_PinsProductionOracleMeasurements()
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(RepositoryFile(
-            "captures",
+            "evidence", "legacy-captures",
             "decoded",
             "rz09-0581-pid-02e0-bios-3.01-lighting-spectrum-random-oracle-summary.json")));
         JsonElement root = document.RootElement;

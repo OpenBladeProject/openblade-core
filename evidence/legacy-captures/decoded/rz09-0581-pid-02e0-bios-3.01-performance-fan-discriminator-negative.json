@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "harness": {
+    "command": "OpenBlade.Capture query-performance-fan-discriminator",
+    "readOnly": true,
+    "productionAdmitted": false,
+    "observedUtcWindow": "2026-07-17T02:38:00Z/2026-07-17T03:20:56Z"
+  },
+  "runs": [
+    {
+      "condition": "Balanced+Auto",
+      "visuallyConfirmed": true,
+      "responses": [
+        { "operation": "0D/8E", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" },
+        { "operation": "0D/8F", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "01" },
+        { "operation": "0D/80", "requestPayloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "expectedStatusHex": "02", "responsePayloadHex": "0201020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "operation": "0D/89", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0202" },
+        { "operation": "0D/8B", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0201" },
+        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" },
+        { "operation": "0F/98", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" }
+      ]
+    },
+    {
+      "condition": "Silent+Auto",
+      "visuallyConfirmed": true,
+      "responses": [
+        { "operation": "0D/8E", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" },
+        { "operation": "0D/8F", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "01" },
+        { "operation": "0D/80", "requestPayloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "expectedStatusHex": "02", "responsePayloadHex": "0201020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "operation": "0D/89", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0202" },
+        { "operation": "0D/8B", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0201" },
+        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" },
+        { "operation": "0F/98", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" }
+      ]
+    },
+    {
+      "condition": "Performance+Auto",
+      "visuallyConfirmed": true,
+      "responses": [
+        { "operation": "0D/8E", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" },
+        { "operation": "0D/8F", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "01" },
+        { "operation": "0D/80", "requestPayloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "expectedStatusHex": "02", "responsePayloadHex": "0201020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "operation": "0D/89", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0202" },
+        { "operation": "0D/8B", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0201" },
+        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" },
+        { "operation": "0F/98", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" }
+      ]
+    },
+    {
+      "condition": "Balanced+Fixed5400",
+      "visuallyConfirmed": true,
+      "responses": [
+        { "operation": "0D/8E", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" },
+        { "operation": "0D/8F", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "01" },
+        { "operation": "0D/80", "requestPayloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "expectedStatusHex": "02", "responsePayloadHex": "0201020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "operation": "0D/89", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0202" },
+        { "operation": "0D/8B", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0201" },
+        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" },
+        { "operation": "0F/98", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" }
+      ]
+    }
+  ],
+  "conclusion": {
+    "allResponsesIdentical": true,
+    "performanceReadbackEstablished": false,
+    "fanModeReadbackEstablished": false,
+    "performanceFanProductionAdmissionAllowed": false,
+    "reason": "All seven fixed read-only candidates returned identical payloads across three performance presets and Auto versus Fixed 5400 fan mode."
+  }
+}

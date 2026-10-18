@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Installed OpenBlade service and tray",
+    "role": "ProductionLifecycleValidation",
+    "openBladeCommit": "a6e3b55cef07cff6139ccf338429aee9b690bb10",
+    "successfulDeploymentReportSha256": "6C7AC6991B52392D8F5781FD2E9260F55AA6428091D22ED6FE227B0EC0A3C11B",
+    "failedPreflightReportSha256": "92378CAB5D1D6FA7C1612240804C6CC3A78F81A5E90824A0C0561B75658147C6",
+    "packetCapturePerformed": false,
+    "rawArtifactsCommitted": false
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "staticLifecycle": {
+    "effect": "Static",
+    "brightnessPercent": 50,
+    "color": "47E10C",
+    "minimumHoldSeconds": 104,
+    "uiControlsAvailable": true,
+    "rendererOwnership": "Static",
+    "writesBlocked": false,
+    "driverModeReadback": true,
+    "firmwareCpuTemperatureAvailable": true,
+    "bothFirmwareFanReadbacksAvailable": true,
+    "snapshotSha256": "3E1430C0954AF303ADC796810D27488102DCD48DE391341C04C5F3F66EC6ED4C",
+    "reportSha256": "4F60F9C17DDA0775D2AE7F3D45DDF577C1598CBA0523A95590DF5E3EE2E03291",
+    "diagnosticsSha256": "566E7AA55F0C2BA9567553F55A1A9CAA8346897FFFC968DE445D47EA2CF8E733"
+  },
+  "spectrumLifecycle": {
+    "effect": "Spectrum",
+    "initialTransitionAccepted": true,
+    "brightnessPercent": 50,
+    "continuousRendererFaulted": true,
+    "failureObservedWithinSeconds": 3,
+    "uiControlsAvailableAfterFailure": false,
+    "rendererOwnershipAfterFailure": "None",
+    "writesBlockedAfterFailure": true,
+    "driverModeReadbackAfterFailure": null,
+    "snapshotSha256": "0B4FA2E7806BDE5619952DC14E06E147D7B9DB94970700271E04687266EEA0F5",
+    "reportSha256": "0CCC0AF8B0D439A503E0332F276A8CB6E46709125EF0748FEA6F232E576A4542",
+    "diagnosticsSha256": "B36E9CE66227EA253E545FDC06E36BE062FED337429EE057E997095B4F73E0B0",
+    "matrixReadbackAvailable": false,
+    "operatorVisualConfirmationClaimed": false
+  },
+  "restoration": {
+    "method": "Restart the exact installed OpenBlade service and let the persisted AC profile apply",
+    "serviceRestartReportSha256": "A0B04B39157A02BA2FD5FCC9E31D66849D579C2E8DB01B676A22612A38B5CFB4",
+    "effect": "Static",
+    "brightnessPercent": 50,
+    "color": "47E10C",
+    "rendererOwnership": "Static",
+    "writesBlocked": false,
+    "driverModeReadback": true,
+    "snapshotSha256": "A6A7D2DC57F521EFB7D610FBB72661B82455806AA115F9CD5EF3C8E700A1B998",
+    "reportSha256": "63A6FA62218E4297F5390D750C2C73B6AB5B303F954597245BD5949F0A82BF8B",
+    "diagnosticsSha256": "619704BA5EDD29A35E2BF61FB0CA4AF63B764E4185CEDC34E28F2A6522CADD69"
+  },
+  "admission": {
+    "productionEffects": ["Off", "Static"],
+    "setterValidatedButNotProductionAdmitted": ["Spectrum"],
+    "observedOnlyEffects": ["Spectrum", "Ripple", "Starlight", "Tidal", "Wave", "Wheel"],
+    "isolatedSpectrumValidatorRetained": true,
+    "windowsDynamicLightingDelegationRemainsZeroWrite": true
+  },
+  "limitations": [
+    "The isolated Spectrum transition proved one acknowledged frame and operator-visible animation, but did not exercise continuous rendering alongside installed-service observations.",
+    "The installed Spectrum failure does not identify the exact failing row, latch, cadence, or HID response; no matrix getter exists.",
+    "Static is admitted because its one-shot six-row frame plus latch remained healthy through installed service observation and restart.",
+    "The misleading diagnostic-history phrase about matrix lighting not being admitted came from unsupported reactive/playback hooks and is not used as the Spectrum root-cause claim."
+  ]
+}

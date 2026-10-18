@@ -97,7 +97,7 @@ builds, tests, and hardware tooling. Contribution rules are in
 [AGENTS.md](AGENTS.md) and [VERSIONING.md](VERSIONING.md).
 
 Related repositories: [user documentation](https://github.com/OSSBlade/openblade-docs),
-[protocol captures](https://github.com/OSSBlade/openblade-captures), and
+[Synapse Observer](https://github.com/OpenBladeProject/synapse-observer), and
 [branding](https://github.com/OSSBlade/openblade-branding).
 
 ## License

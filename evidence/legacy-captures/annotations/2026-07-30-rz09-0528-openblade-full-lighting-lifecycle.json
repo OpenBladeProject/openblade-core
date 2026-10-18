@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Installed OpenBlade service, Session Agent, and tray",
+    "role": "ProductionLifecycleValidation",
+    "openBladeCommit": "5466d9cd641b6875ed618e46d364f223d419fc2f",
+    "installedProductVersion": "0.1.0+5466d9cd641b6875ed618e46d364f223d419fc2f",
+    "packetCapturePerformed": false,
+    "rawArtifactsCommitted": false,
+    "privateDeploymentReportRetained": true,
+    "privateInstalledBinaryHashesRetained": true
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "isolation": {
+    "synapseProcessCount": 0,
+    "openBladeServiceState": "Running",
+    "sessionAgentProcessCount": 1,
+    "trayProcessCount": 1
+  },
+  "uiValidation": {
+    "windowSize": "828x714",
+    "horizontalCardOverflowObserved": false,
+    "windowsDynamicLightingDescription": "Use Windows for keyboard effects and brightness.",
+    "windowsDynamicLightingEnabled": false,
+    "logoDescriptionMentionsWindowsDynamicLighting": false,
+    "logoMode": "Static",
+    "effectMenu": [
+      "Off",
+      "Ambient Awareness",
+      "Audio Meter",
+      "Breathing",
+      "Fire",
+      "Reactive",
+      "Ripple",
+      "Spectrum Cycling",
+      "Starlight",
+      "Static",
+      "Tidal",
+      "Wave",
+      "Wheel"
+    ],
+    "m1ThroughM5FootnotePresent": false
+  },
+  "effectLifecycle": {
+    "appliedWithoutUiOrServiceFault": [
+      "Ambient Awareness",
+      "Audio Meter",
+      "Breathing",
+      "Fire",
+      "Reactive",
+      "Ripple",
+      "Spectrum Cycling",
+      "Starlight",
+      "Static",
+      "Tidal",
+      "Wave",
+      "Wheel"
+    ],
+    "offIntentionallyNotSelected": "The operator needs visible key legends. Off was already production-admitted and was not required to retest the new renderers.",
+    "spectrumRegressionHoldSeconds": 12,
+    "spectrumUiResponsiveAfterHold": true,
+    "spectrumServiceRunningAfterHold": true,
+    "reactive": {
+      "color": "47E10C",
+      "brightnessPercent": 50,
+      "duration": "Medium",
+      "physicalKey": "J",
+      "operatorConfirmedOnlyOriginKeyLit": true
+    },
+    "ripple": {
+      "color": "47E10C",
+      "brightnessPercent": 50,
+      "physicalKey": "J",
+      "operatorConfirmedWaveOriginAtKey": true
+    }
+  },
+  "restoration": {
+    "powerProfile": "AC",
+    "effect": "Static",
+    "brightnessPercent": 50,
+    "color": "47E10C",
+    "logoMode": "Static",
+    "savedToProfile": true,
+    "uiControlsAvailable": true,
+    "serviceState": "Running",
+    "sessionAgentProcessCount": 1,
+    "trayProcessCount": 1,
+    "synapseProcessCount": 0
+  },
+  "admission": {
+    "productionEffectBases": [
+      "Ambient Awareness",
+      "Audio Meter",
+      "Breathing",
+      "Fire",
+      "Reactive",
+      "Ripple",
+      "Spectrum Cycling",
+      "Starlight",
+      "Static",
+      "Tidal",
+      "Wave",
+      "Wheel"
+    ],
+    "parameterLeavesRemainCaptured": true,
+    "effectGetterRemainsNotInvestigated": true,
+    "matrixReadbackAvailable": false,
+    "windowsDynamicLightingDelegationRemainsZeroWrite": true
+  },
+  "limitations": [
+    "Computer Use validates the installed UI and renderer lifecycle; it is not a firmware matrix GET.",
+    "The physical Reactive and Ripple checks validate J delivery and spatial origin only. The remaining exact-model key map stays Captured.",
+    "Effect-specific parameter combinations stay Captured until each combination completes a proportionate installed round trip.",
+    "No visual confirmation is reinterpreted as an effect getter or independent firmware readback."
+  ]
+}

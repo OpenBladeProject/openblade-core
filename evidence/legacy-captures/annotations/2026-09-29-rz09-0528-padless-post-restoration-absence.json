@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "evidenceKind": "PostRestorationPadAbsence",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "bios": "2.02"
+  },
+  "check": {
+    "method": "Physical cooling-pad USB presence veto (VID 1532, PID 0F43, present devices only) run by the attended wrapper after the validator confirmed the Performance restoration and independent thermal and GPU-zero checks, immediately before the two-sample full-AC proof and installed-service restart",
+    "failClosed": "A present pad device throws before any service restart and leaves restoration pending",
+    "timingBasis": "The check runs before the first pre-restart firmware query; the recorded seconds are an upper bound measured to that query"
+  },
+  "runs": [
+    {
+      "annotation": "2026-09-28-rz09-0528-padless-hyperboost-battery-boundary.json",
+      "annotationSha256": "EC8A775C3040D90EF0FCD6AFF07FAC8B6231A65E7E05F99EA6A39725BCD51CE3",
+      "validatorRestorationConfirmed": true,
+      "restorationReadback": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "padUsbPresenceAbsentAfterRestoration": true,
+      "checkNoLaterThanSecondsAfterValidatorExit": 2.4,
+      "checkBeforeServiceRestart": true,
+      "preRestartFullAcSamples": 2
+    },
+    {
+      "annotation": "2026-09-28-rz09-0528-padless-hyperboost-usb-c-boundary.json",
+      "annotationSha256": "BADBF8D3E135ADD8F3EC4D8DAFEA75EBBAD8B87C7895B151B9F5D508C7224C7C",
+      "validatorRestorationConfirmed": true,
+      "restorationReadback": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "padUsbPresenceAbsentAfterRestoration": true,
+      "checkNoLaterThanSecondsAfterValidatorExit": 12.3,
+      "checkBeforeServiceRestart": true,
+      "preRestartFullAcSamples": 2
+    },
+    {
+      "annotation": "2026-09-29-rz09-0528-padless-hyperboost-no-load-sixty-second.json",
+      "annotationSha256": "8D079A96AEC545665B05D1564FCF5663311651B845A34F236DC98CC8DE0DF997",
+      "validatorRestorationConfirmed": true,
+      "restorationReadback": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "padUsbPresenceAbsentAfterRestoration": true,
+      "checkNoLaterThanSecondsAfterValidatorExit": 2.2,
+      "checkBeforeServiceRestart": true,
+      "preRestartFullAcSamples": 2
+    },
+    {
+      "annotation": "2026-09-29-rz09-0528-padless-hyperboost-stress-test-sixty-second.json",
+      "annotationSha256": "83A14BCBABF41DF1C961312D85D3DB3B1C8B5B3586E3576D3039423439473538",
+      "validatorRestorationConfirmed": true,
+      "restorationReadback": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "padUsbPresenceAbsentAfterRestoration": true,
+      "checkNoLaterThanSecondsAfterValidatorExit": 7.6,
+      "checkBeforeServiceRestart": true,
+      "preRestartFullAcSamples": 2
+    }
+  ],
+  "interpretation": {
+    "supports": "Post-restoration physical pad absence for four attended developer padless HyperBoost runs",
+    "productionPadlessAdmitted": false,
+    "lifecycleValidated": false,
+    "limits": "Derived from private wrapper traces of the listed runs; no new hardware operation. Presence is observed through Windows PnP, not a pad protocol query."
+  },
+  "sanitization": {
+    "rawOutputsExcluded": true,
+    "localPathsExcluded": true,
+    "deviceInstancePathsExcluded": true,
+    "serialNumbersExcluded": true,
+    "processIdentityExcluded": true,
+    "profileContentsExcluded": true
+  }
+}

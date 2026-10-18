@@ -1,0 +1,75 @@
+{
+    "schemaVersion":  1,
+    "evidenceKind":  "InstalledHyperBoostServiceRoundTrip",
+    "publicationStatus":  "UserApprovedSanitizedEvidence",
+    "device":  {
+                   "modelNumber":  "RZ09-0528",
+                   "sku":  "RZ09-05289EN4",
+                   "vendorIdHex":  "1532",
+                   "productIdHex":  "02C6",
+                   "bios":  "2.02",
+                   "ec":  "1.09",
+                   "mcu":  "1.9.0.0",
+                   "vbios":  "98.3.5c.40.15"
+               },
+    "gpu":  {
+                "model":  "NVIDIA GeForce RTX 5090 Laptop GPU",
+                "driverVersion":  "617.14",
+                "coreMegahertz":  0,
+                "memoryMegahertz":  0
+            },
+    "admission":  {
+                      "newProductionAdmission":  false,
+                      "padlessProductionAdmission":  false,
+                      "sustainedThermalStability":  false,
+                      "performanceImprovement":  false,
+                      "gpuRangeExpansion":  false
+                  },
+    "sanitization":  {
+                         "rawLogsExcluded":  true,
+                         "localPathsExcluded":  true,
+                         "deviceInstancePathsExcluded": true,
+    "serialNumbersExcluded": true,
+                         "profileContentsExcluded":  true
+                     },
+    "provenance":  {
+                       "installedProductValidation":  true,
+                       "installedVersion":  "0.23.0+6e10043f9a53192b9c6952c2b56f2e6f1ba68871",
+                       "sourceRevision":  "6e10043f9a53192b9c6952c2b56f2e6f1ba68871",
+                       "serviceExecutableSha256":  "D42A6A49C1B22C4BBB5A48713D3ED60B7650EDE6F1F38989D8A2203BA0EA23AA",
+                       "helperManifestSha256":  "0386AFCF2EB217D5BDA6302AF6B07A522D704BF2499C074AAE3A7A787B5246F6",
+                       "completedAtUtc":  "2026-09-27T22:22:10.2485446+00:00"
+                   },
+    "prerequisites":  {
+                          "exactHostAndInstalledBuild":  true,
+                          "fullPowerAc":  true,
+                          "automaticFans":  true,
+                          "gpuZeroIndependentlyCheckedByNvmlAndNvapi":  true,
+                          "padInitially":  "PresentExact",
+                          "noConflictingControllers":  true,
+                          "noUnconfirmedWrites":  true,
+                          "openBladeServiceRemainedRunning":  true
+                      },
+    "typedResults":  {
+                         "baseline":  "Balanced/Automatic",
+                         "prepared":  "Performance/Automatic",
+                         "enableAcknowledged":  true,
+                         "hyperBoostActiveConfirmed":  true,
+                         "journalSchemaVersion":  7,
+                         "journalState":  "OwnedConfirmed",
+                         "journalTransitionMatchesEnableRequest":  true,
+                         "journalRequiresCoolingPad":  true,
+                         "exitConfirmed":  "Performance/Automatic",
+                         "final":  "Balanced/Automatic",
+                         "finalHyperBoostActive":  false,
+                         "finalJournalAbsent":  true,
+                         "finalUnconfirmedWriteCount":  0,
+                         "restorationPending":  false,
+                         "originalProfilesAndOverridesRestored":  true,
+                         "allPriorServiceStatesRestored":  true,
+                         "explicitDisableAcknowledged":  true,
+                         "finalPadState":  "PresentExact"
+                     },
+    "operatorAction":  "Typed installed-service enable then disable with pad connected",
+    "evidenceBoundary":  "Installed pad-required HyperBoost round trip at zero GPU offsets. No padless, sustained-load, thermal-limit or performance claim."
+}

@@ -1,0 +1,454 @@
+{
+    "schemaVersion":  1,
+    "device":  {
+                   "model":  "RZ09-0581",
+                   "vendorId":  "1532",
+                   "productId":  "02E0",
+                   "biosVersion":  "3.01"
+               },
+    "source":  {
+                   "fileName":  "openblade-battery-limits-validation-20260716.pcap",
+                   "sha256":  "78021A61ED560F82F5C6C20D53799A1689AF28B8C4867728BB9D90ED379F422A",
+                   "bytes":  24968
+               },
+    "action":  "battery-limits-reversible-validation",
+    "productionWired":  true,
+    "validation":  {
+                       "candidateOrder":  [
+                                              "Limit75",
+                                              "Limit70",
+                                              "Limit65",
+                                              "Limit60",
+                                              "Limit55",
+                                              "Limit50"
+                                          ],
+                       "requestCount":  30,
+                       "responseCount":  30,
+                       "protectionQueryCount":  18,
+                       "batterySetterCount":  12,
+                       "unexpected90ByteCommandCount":  0,
+                       "minimumSetCompletionToQueryMilliseconds":  21.689,
+                       "allEnvelopeLengths90":  true,
+                       "allTransactionsMatched":  true,
+                       "allStatusesSuccessful":  true,
+                       "allChecksumsValid":  true,
+                       "baselineBeforeEveryCandidate":  "Limit80",
+                       "restorationAfterEveryCandidate":  "Limit80"
+                   },
+    "cycles":  [
+                   {
+                       "candidate":  "Limit75",
+                       "candidatePercent":  75,
+                       "baseline":  "Limit80",
+                       "readBack":  "Limit75",
+                       "restoredTo":  "Limit80",
+                       "applied":  true,
+                       "restored":  true,
+                       "primaryFailure":  "None",
+                       "restorationFailure":  "None",
+                       "success":  true,
+                       "exchanges":  [
+                                         {
+                                             "phase":  "baseline-protection-query",
+                                             "requestFrame":  29,
+                                             "responseFrame":  32,
+                                             "transactionIdHex":  "01",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000100000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0201000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         },
+                                         {
+                                             "phase":  "apply-limit-75",
+                                             "requestFrame":  49,
+                                             "responseFrame":  58,
+                                             "transactionIdHex":  "02",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0002000000010712CB00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000DF00",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "CB",
+                                             "responseEnvelopeHex":  "0202000000010712CB00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000DF00"
+                                         },
+                                         {
+                                             "phase":  "candidate-protection-query",
+                                             "requestFrame":  59,
+                                             "responseFrame":  62,
+                                             "transactionIdHex":  "03",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000300000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "CB",
+                                             "responseEnvelopeHex":  "0203000100010792CB000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005E00"
+                                         },
+                                         {
+                                             "phase":  "restore-limit-80",
+                                             "requestFrame":  63,
+                                             "responseFrame":  66,
+                                             "transactionIdHex":  "04",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0004000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0204000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400"
+                                         },
+                                         {
+                                             "phase":  "restoration-protection-query",
+                                             "requestFrame":  67,
+                                             "responseFrame":  70,
+                                             "transactionIdHex":  "05",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000500000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0205000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         }
+                                     ]
+                   },
+                   {
+                       "candidate":  "Limit70",
+                       "candidatePercent":  70,
+                       "baseline":  "Limit80",
+                       "readBack":  "Limit70",
+                       "restoredTo":  "Limit80",
+                       "applied":  true,
+                       "restored":  true,
+                       "primaryFailure":  "None",
+                       "restorationFailure":  "None",
+                       "success":  true,
+                       "exchanges":  [
+                                         {
+                                             "phase":  "baseline-protection-query",
+                                             "requestFrame":  93,
+                                             "responseFrame":  96,
+                                             "transactionIdHex":  "01",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000100000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0201000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         },
+                                         {
+                                             "phase":  "apply-limit-70",
+                                             "requestFrame":  107,
+                                             "responseFrame":  122,
+                                             "transactionIdHex":  "02",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0002000000010712C600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000D200",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "C6",
+                                             "responseEnvelopeHex":  "0202000000010712C600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000D200"
+                                         },
+                                         {
+                                             "phase":  "candidate-protection-query",
+                                             "requestFrame":  123,
+                                             "responseFrame":  126,
+                                             "transactionIdHex":  "03",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000300000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "C6",
+                                             "responseEnvelopeHex":  "0203000100010792C6000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005300"
+                                         },
+                                         {
+                                             "phase":  "restore-limit-80",
+                                             "requestFrame":  127,
+                                             "responseFrame":  130,
+                                             "transactionIdHex":  "04",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0004000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0204000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400"
+                                         },
+                                         {
+                                             "phase":  "restoration-protection-query",
+                                             "requestFrame":  131,
+                                             "responseFrame":  134,
+                                             "transactionIdHex":  "05",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000500000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0205000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         }
+                                     ]
+                   },
+                   {
+                       "candidate":  "Limit65",
+                       "candidatePercent":  65,
+                       "baseline":  "Limit80",
+                       "readBack":  "Limit65",
+                       "restoredTo":  "Limit80",
+                       "applied":  true,
+                       "restored":  true,
+                       "primaryFailure":  "None",
+                       "restorationFailure":  "None",
+                       "success":  true,
+                       "exchanges":  [
+                                         {
+                                             "phase":  "baseline-protection-query",
+                                             "requestFrame":  157,
+                                             "responseFrame":  160,
+                                             "transactionIdHex":  "01",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000100000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0201000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         },
+                                         {
+                                             "phase":  "apply-limit-65",
+                                             "requestFrame":  177,
+                                             "responseFrame":  186,
+                                             "transactionIdHex":  "02",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0002000000010712C100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000D500",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "C1",
+                                             "responseEnvelopeHex":  "0202000000010712C100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000D500"
+                                         },
+                                         {
+                                             "phase":  "candidate-protection-query",
+                                             "requestFrame":  187,
+                                             "responseFrame":  190,
+                                             "transactionIdHex":  "03",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000300000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "C1",
+                                             "responseEnvelopeHex":  "0203000100010792C1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005400"
+                                         },
+                                         {
+                                             "phase":  "restore-limit-80",
+                                             "requestFrame":  191,
+                                             "responseFrame":  194,
+                                             "transactionIdHex":  "04",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0004000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0204000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400"
+                                         },
+                                         {
+                                             "phase":  "restoration-protection-query",
+                                             "requestFrame":  195,
+                                             "responseFrame":  198,
+                                             "transactionIdHex":  "05",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000500000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0205000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         }
+                                     ]
+                   },
+                   {
+                       "candidate":  "Limit60",
+                       "candidatePercent":  60,
+                       "baseline":  "Limit80",
+                       "readBack":  "Limit60",
+                       "restoredTo":  "Limit80",
+                       "applied":  true,
+                       "restored":  true,
+                       "primaryFailure":  "None",
+                       "restorationFailure":  "None",
+                       "success":  true,
+                       "exchanges":  [
+                                         {
+                                             "phase":  "baseline-protection-query",
+                                             "requestFrame":  221,
+                                             "responseFrame":  224,
+                                             "transactionIdHex":  "01",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000100000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0201000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         },
+                                         {
+                                             "phase":  "apply-limit-60",
+                                             "requestFrame":  242,
+                                             "responseFrame":  250,
+                                             "transactionIdHex":  "02",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0002000000010712BC00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A800",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "BC",
+                                             "responseEnvelopeHex":  "0202000000010712BC00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A800"
+                                         },
+                                         {
+                                             "phase":  "candidate-protection-query",
+                                             "requestFrame":  251,
+                                             "responseFrame":  254,
+                                             "transactionIdHex":  "03",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000300000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "BC",
+                                             "responseEnvelopeHex":  "0203000100010792BC000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002900"
+                                         },
+                                         {
+                                             "phase":  "restore-limit-80",
+                                             "requestFrame":  255,
+                                             "responseFrame":  258,
+                                             "transactionIdHex":  "04",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0004000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0204000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400"
+                                         },
+                                         {
+                                             "phase":  "restoration-protection-query",
+                                             "requestFrame":  259,
+                                             "responseFrame":  262,
+                                             "transactionIdHex":  "05",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000500000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0205000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         }
+                                     ]
+                   },
+                   {
+                       "candidate":  "Limit55",
+                       "candidatePercent":  55,
+                       "baseline":  "Limit80",
+                       "readBack":  "Limit55",
+                       "restoredTo":  "Limit80",
+                       "applied":  true,
+                       "restored":  true,
+                       "primaryFailure":  "None",
+                       "restorationFailure":  "None",
+                       "success":  true,
+                       "exchanges":  [
+                                         {
+                                             "phase":  "baseline-protection-query",
+                                             "requestFrame":  285,
+                                             "responseFrame":  288,
+                                             "transactionIdHex":  "01",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000100000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0201000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         },
+                                         {
+                                             "phase":  "apply-limit-55",
+                                             "requestFrame":  300,
+                                             "responseFrame":  314,
+                                             "transactionIdHex":  "02",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0002000000010712B700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A300",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "B7",
+                                             "responseEnvelopeHex":  "0202000000010712B700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A300"
+                                         },
+                                         {
+                                             "phase":  "candidate-protection-query",
+                                             "requestFrame":  315,
+                                             "responseFrame":  318,
+                                             "transactionIdHex":  "03",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000300000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "B7",
+                                             "responseEnvelopeHex":  "0203000100010792B7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002200"
+                                         },
+                                         {
+                                             "phase":  "restore-limit-80",
+                                             "requestFrame":  319,
+                                             "responseFrame":  322,
+                                             "transactionIdHex":  "04",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0004000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0204000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400"
+                                         },
+                                         {
+                                             "phase":  "restoration-protection-query",
+                                             "requestFrame":  323,
+                                             "responseFrame":  326,
+                                             "transactionIdHex":  "05",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000500000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0205000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         }
+                                     ]
+                   },
+                   {
+                       "candidate":  "Limit50",
+                       "candidatePercent":  50,
+                       "baseline":  "Limit80",
+                       "readBack":  "Limit50",
+                       "restoredTo":  "Limit80",
+                       "applied":  true,
+                       "restored":  true,
+                       "primaryFailure":  "None",
+                       "restorationFailure":  "None",
+                       "success":  true,
+                       "exchanges":  [
+                                         {
+                                             "phase":  "baseline-protection-query",
+                                             "requestFrame":  349,
+                                             "responseFrame":  352,
+                                             "transactionIdHex":  "01",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000100000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0201000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         },
+                                         {
+                                             "phase":  "apply-limit-50",
+                                             "requestFrame":  374,
+                                             "responseFrame":  378,
+                                             "transactionIdHex":  "02",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0002000000010712B200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A600",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "B2",
+                                             "responseEnvelopeHex":  "0202000000010712B200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A600"
+                                         },
+                                         {
+                                             "phase":  "candidate-protection-query",
+                                             "requestFrame":  379,
+                                             "responseFrame":  382,
+                                             "transactionIdHex":  "03",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000300000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "B2",
+                                             "responseEnvelopeHex":  "0203000100010792B2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002700"
+                                         },
+                                         {
+                                             "phase":  "restore-limit-80",
+                                             "requestFrame":  383,
+                                             "responseFrame":  386,
+                                             "transactionIdHex":  "04",
+                                             "command":  "07/12",
+                                             "requestEnvelopeHex":  "0004000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0204000000010712D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000C400"
+                                         },
+                                         {
+                                             "phase":  "restoration-protection-query",
+                                             "requestFrame":  387,
+                                             "responseFrame":  390,
+                                             "transactionIdHex":  "05",
+                                             "command":  "07/92",
+                                             "requestEnvelopeHex":  "000500000001079200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009400",
+                                             "expectedStatusHex":  "02",
+                                             "expectedResponsePayloadHex":  "D0",
+                                             "responseEnvelopeHex":  "0205000100010792D0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004500"
+                                         }
+                                     ]
+                   }
+               ]
+}

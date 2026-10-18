@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "source": {
+    "api": "Windows.Devices.Lights.LampArray",
+    "readOnly": true,
+    "uniqueIdentifiersIncluded": false,
+    "rawHidReportsIncluded": false
+  },
+  "lampArray": {
+    "enumeratedDeviceCount": 1,
+    "kind": "Keyboard",
+    "lampCount": 85,
+    "connected": true,
+    "enabled": true,
+    "availableToUnpackagedBackgroundProbe": false,
+    "supportsVirtualKeys": true,
+    "brightnessLevelObserved": 1.0,
+    "minimumUpdateIntervalMicroseconds": 33333,
+    "boundingBoxMeters": [0.308, 0.11, 0.015],
+    "geometryAndVirtualKeysSha256": "C82E71D69DCAADDCB8530C0744B7B3240CC2E9C8FEF6CDAF1AB16B76F7A6A450",
+    "mappedVirtualKeyCount": 72,
+    "unmappedLampIndices": [15, 59, 72, 74, 78, 84],
+    "matrixSlotProjectionByRow": [
+      {
+        "lampIndices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        "matrixSlots": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+      },
+      {
+        "lampIndices": [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+        "matrixSlots": [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33]
+      },
+      {
+        "lampIndices": [31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45],
+        "matrixSlots": [35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 49, 50]
+      },
+      {
+        "lampIndices": [46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59],
+        "matrixSlots": [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 66, 67]
+      },
+      {
+        "lampIndices": [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72],
+        "matrixSlots": [69, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 83, 84]
+      },
+      {
+        "lampIndices": [73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+        "matrixSlots": [86, 87, 88, 90, 91, 94, 96, 97, 98, 100, 99, 101]
+      }
+    ],
+    "selectedVirtualKeyLampIndices": {
+      "escape": 0,
+      "f1ThroughF12": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "insert": 13,
+      "delete": 14,
+      "number0Through9": [26, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+      "backspace": 29,
+      "pageUp": 30,
+      "tab": 31,
+      "qwertyRow": [32, 33, 34, 35, 36, 37, 38, 39, 40, 41],
+      "pageDown": 45,
+      "capsLock": 46,
+      "asdfRow": [47, 48, 49, 50, 51, 52, 53, 54, 55],
+      "enter": 58,
+      "leftShift": 60,
+      "zxcvRow": [61, 62, 63, 64, 65, 66, 67],
+      "rightShift": 71,
+      "leftControl": 73,
+      "leftWindows": 75,
+      "leftAlt": 76,
+      "rightAlt": 77,
+      "rightControl": 79,
+      "leftArrow": 80,
+      "upArrow": 81,
+      "downArrow": 82,
+      "rightArrow": 83
+    },
+    "physicalOracleCrossCheck": {
+      "key": "J",
+      "lampIndex": 53,
+      "matrixSlot": 59,
+      "reactiveAndRippleConfirmed": true
+    }
+  },
+  "admission": {
+    "status": "QueryValidated",
+    "productionControlAdmitted": false,
+    "reason": "Read-only enumeration proves an exact OS-native 85-lamp interface. Background availability, application identity, priority behavior, writes, and restoration are not yet validated."
+  },
+  "boundaries": [
+    "The OS LampArray brightness value is not the firmware 03/83 keyboard-brightness readback and must not be used as a substitute.",
+    "The absent PID 02E0-style 375-byte raw matrix interface remains absent on PID 02C6.",
+    "The matrix projection aligns the exact 85-lamp geometry with the independently captured six-row PID 02C6 stream; it does not reuse PID 02E0 slot ownership.",
+    "Right Alt projects to PID 02C6 slot 91. Slot 94 is one of six lamps without virtual-key ownership and must not inherit the PID 02E0 Right Alt mapping.",
+    "No color, brightness, effect, or priority mutation was performed."
+  ]
+}

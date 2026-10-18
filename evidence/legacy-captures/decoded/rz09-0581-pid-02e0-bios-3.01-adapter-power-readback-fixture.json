@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "readOnly": true,
+  "productionWired": true,
+  "query": {
+    "commandClass": "07",
+    "commandId": "8C",
+    "requestPayloadHex": "0000",
+    "expectedResponsePayloadLength": 2
+  },
+  "mappings": [
+    {
+      "responsePayloadHex": "0711",
+      "adapterWattageLevel": 100,
+      "classification": "UsbCPower100W",
+      "rawCapture": "opensynapse-synapse-session.pcap",
+      "responseFrames": [3242, 3268, 3848, 5350]
+    },
+    {
+      "responsePayloadHex": "1111",
+      "adapterWattageLevel": 280,
+      "classification": "FullPower280W",
+      "rawCapture": "opensynapse-performance-full-power.pcap",
+      "responseFrames": [732]
+    }
+  ],
+  "synapseCorroboration": {
+    "observedAtLocal": "2026-07-17T16:05:53.296-07:00",
+    "currentAdapterWattageLevel": 100,
+    "recommendedAdapterWattageLevel": 280,
+    "lowPower": true,
+    "thermalFanMode": "BALANCED_MODE_AC",
+    "visiblePerformance": "Balanced",
+    "disabledPerformanceOptions": ["Silent", "Performance", "Custom"],
+    "visibleFanMode": "Auto (Default)",
+    "warning": "The system is not receiving adequate power to perform optimally and battery may discharge at a faster rate or may not charge at all. Please use the accompanying power supply for full performance."
+  },
+  "unknownPayloadPolicy": "Return Unknown and do not classify the source as full power.",
+  "rawCapturesCommitted": false
+}

@@ -61,7 +61,7 @@ I/O serialization dependency is
 The 2025 factory retains its own paired `0D/02` manual-state commands and
 `0D/01` target commands. Its captured mode-7 pair is pinned in
 `Fixtures/Rz09_0528_02c6_2_02_HyperBoostProduction.json`; the
-[exact vendor round trip](https://github.com/OpenBladeProject/openblade-captures/blob/4f2bf1565c7557439760db7e45104bb1e8b62bfd/annotations/2026-09-27-rz09-0528-hyperboost-vendor-round-trip.json)
+[exact vendor round trip](../evidence/legacy-captures/annotations/2026-09-27-rz09-0528-hyperboost-vendor-round-trip.json)
 records that pair and Performance restoration with the cooling pad connected.
 The shared implementation changes ordering, without introducing a command or
 transferring another model's fan range or physical-validation results.

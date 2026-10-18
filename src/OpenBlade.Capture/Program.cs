@@ -2299,5 +2299,5 @@ Console.WriteLine("  OpenBlade.Capture validate-temporary-full-charge");
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0528-02c6-temporary-full-charge" +
     " RZ09-0528:1532:02C6:2.02");
-Console.WriteLine("See captures/README.md for the gated USBPcap workflow.");
+Console.WriteLine("Use https://github.com/OpenBladeProject/synapse-observer for new evidence collection.");
 return args.Length == 0 ? 0 : 1;

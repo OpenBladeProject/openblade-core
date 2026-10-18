@@ -1,0 +1,118 @@
+{
+    "schemaVersion":  1,
+    "evidenceKind":  "DeveloperPadlessHyperBoostImmediateRoundTrip",
+    "publicationStatus":  "UserApprovedSanitizedEvidence",
+    "device":  {
+                   "modelNumber":  "RZ09-0528",
+                   "sku":  "RZ09-05289EN4",
+                   "vendorIdHex":  "1532",
+                   "productIdHex":  "02C6",
+                   "bios":  "2.02",
+                   "ec":  "1.09",
+                   "mcu":  "1.9.0.0",
+                   "vbios":  "98.3.5c.40.15"
+               },
+    "gpu":  {
+                "model":  "NVIDIA GeForce RTX 5090 Laptop GPU",
+                "driverVersion":  "617.14",
+                "coreMegahertz":  0,
+                "memoryMegahertz":  0
+            },
+    "admission":  {
+                      "newProductionAdmission":  false,
+                      "padlessProductionAdmission":  false,
+                      "sustainedThermalStability":  false,
+                      "performanceImprovement":  false,
+                      "gpuRangeExpansion":  false
+                  },
+    "sanitization":  {
+                         "rawLogsExcluded":  true,
+                         "localPathsExcluded":  true,
+                         "deviceInstancePathsExcluded": true,
+    "serialNumbersExcluded": true,
+                         "profileContentsExcluded":  true
+                     },
+    "provenance":  {
+                       "installedProductValidation":  false,
+                       "sourceRevision":  "ffd0a01e19c3c89d92b00eb5c28d13b52174be88",
+                       "buildManifestSha256":  "5C1336CD2E0E87B939BBF663788C7DE83503BFB5363D6D8D806ECECF5D13C74C",
+                       "validatorAssemblySha256":  "17AABA9B94ADFC8DCC6B27048E73A4B33BD14EF3D5629540BC52D8834698454A",
+                       "protocolAssemblySha256":  "4DC6011EBC7B647A20F6EF19987B18BE8DD6F7AAF331BD02980996D085499EB5",
+                       "planSha256":  "53436C5DE5B19301FFDDA9EB3670DA62F6440B9CA5168A81878FE58386DB8CD1",
+                       "startedAtUtc":  "2026-09-27T22:33:49.5653885+00:00",
+                       "completedAtUtc":  "2026-09-27T22:33:55.2345941+00:00"
+                   },
+    "prerequisites":  {
+                          "padUsbAndPowerDisconnectedAcknowledged":  true,
+                          "firstRobustAbsenceConfirmed":  true,
+                          "secondRobustAbsenceConfirmed":  true,
+                          "minimumAbsenceIntervalMilliseconds": 500,
+    "actualAbsenceIntervalMilliseconds": 504.9322,
+                          "adapter":  "FullPower280W",
+                          "gpuZeroThroughout":  true,
+                          "openBladeAndVendorControllersStopped":  true,
+                          "baselinePairedReadbacks":  2
+                      },
+    "typedResult":  {
+                        "Target":  "HyperBoostFromPerformance",
+                        "Baseline":  {
+                                         "Thermal1Hex":  "01010200",
+                                         "Thermal2Hex":  "01020200"
+                                     },
+                        "Candidate":  {
+                                          "Thermal1Hex":  "01010700",
+                                          "Thermal2Hex":  "01020700"
+                                      },
+                        "CandidateFanRpm":  null,
+                        "CandidateFanRpmSamples":  [
+
+                                                   ],
+                        "Restoration":  {
+                                            "Thermal1Hex":  "01010200",
+                                            "Thermal2Hex":  "01020200"
+                                        },
+                        "ApplyAttempted":  true,
+                        "ApplyAcknowledged":  true,
+                        "CandidateConfirmed":  true,
+                        "RestoreAttempted":  true,
+                        "RestoreAcknowledged":  true,
+                        "Restored":  true,
+                        "IndeterminatePartialWrite":  false,
+                        "ManualRecoveryRequired":  false,
+                        "Failure":  "None",
+                        "Success":  true
+                    },
+    "telemetry":  {
+                      "before":  {
+                                     "CpuCelsius":  45,
+                                     "GpuCelsius":  null,
+                                     "GpuInactive":  true
+                                 },
+                      "second":  {
+                                     "CpuCelsius":  45,
+                                     "GpuCelsius":  null,
+                                     "GpuInactive":  true
+                                 },
+                      "after":  {
+                                    "CpuCelsius":  45,
+                                    "GpuCelsius":  null,
+                                    "GpuInactive":  true
+                                },
+                      "uncertain":  false,
+                      "thermalSafetyEstablished":  false,
+                      "thermalLimitEstablished":  false
+                  },
+    "restoration":  {
+                        "independentPostThermal":  "Performance/Automatic",
+                        "independentNvmlAndNvapiGpuZero":  true,
+                        "originalProfilesAndOverridesRestored":  true,
+                        "originalRestoreSubmitted":  false,
+                        "final":  "Balanced/Automatic",
+                        "allPriorServiceStatesRestored":  true,
+                        "restorationPending":  false
+                    },
+    "evidenceBoundary":  "Immediate developer-only Performance -\u003e HyperBoost -\u003e Performance transition with pad USB and power disconnected. No deliberate dwell or load, no GPU/pad feature writes, no installed padless validation, no lifecycle/power-boundary/thermal stability/performance admission.",
+    "noDwellOrLoadPerformed":  true,
+    "gpuWritesPerformed":  false,
+    "coolingPadFeatureWritesPerformed":  false
+}

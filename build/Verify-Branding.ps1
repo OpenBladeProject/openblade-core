@@ -44,8 +44,8 @@ foreach ($relativePath in $tracked) {
         }
 
         $isCaptureEvidence =
-            $normalizedPath.StartsWith('captures/annotations/', [StringComparison]::Ordinal) -or
-            $normalizedPath.StartsWith('captures/decoded/', [StringComparison]::Ordinal)
+            $normalizedPath.StartsWith('evidence/legacy-captures/annotations/', [StringComparison]::Ordinal) -or
+            $normalizedPath.StartsWith('evidence/legacy-captures/decoded/', [StringComparison]::Ordinal)
         $isHistoricalPcap = $line -cmatch ('^\s*"(?:fileName|rawCapture|captureFileName)"\s*:\s*"open' + 'synapse-[^"]+\.pcap"\s*,?\s*$')
         if ($isCaptureEvidence -and $isHistoricalPcap) {
             continue

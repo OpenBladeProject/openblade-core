@@ -35,43 +35,43 @@
     <None Update="Fixtures\Blade18ObserverFollowupRequests.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\Blade18ObserverControlsRequests.json" CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json"
       Link="Evidence\2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-immediate.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-immediate.json"
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-immediate.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json"
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json"
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json"
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json"
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json"
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json"
       Link="Evidence\2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json"
       Link="Evidence\2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\..\captures\annotations\2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json"
+      Include="..\..\evidence\legacy-captures\annotations\2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json"
       Link="Evidence\2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json"
       CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

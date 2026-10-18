@@ -1,0 +1,516 @@
+{
+    "schemaVersion":  1,
+    "evidenceKind":  "DeveloperPadlessHyperBoostBoundedNoLoadObservation",
+    "publicationStatus":  "UserApprovedSanitizedEvidence",
+    "device":  {
+                   "modelNumber":  "RZ09-0528",
+                   "sku":  "RZ09-05289EN4",
+                   "vendorIdHex":  "1532",
+                   "productIdHex":  "02C6",
+                   "bios":  "2.02",
+                   "ec":  "1.09",
+                   "mcu":  "1.9.0.0",
+                   "vbios":  "98.3.5c.40.15"
+               },
+    "gpu":  {
+                "model":  "NVIDIA GeForce RTX 5090 Laptop GPU",
+                "driverVersion":  "617.14",
+                "coreMegahertz":  0,
+                "memoryMegahertz":  0
+            },
+    "admission":  {
+                      "newProductionAdmission":  false,
+                      "padlessProductionAdmission":  false,
+                      "sustainedThermalStability":  false,
+                      "performanceImprovement":  false,
+                      "gpuRangeExpansion":  false
+                  },
+    "sanitization":  {
+                         "rawLogsExcluded":  true,
+                         "localPathsExcluded":  true,
+                         "deviceInstancePathsExcluded":  true,
+                         "serialNumbersExcluded":  true,
+                         "profileContentsExcluded":  true
+                     },
+    "provenance":  {
+                       "installedProductValidation":  false,
+                       "sourceRevision":  "9715098e94688e6d57b26a959ab3ca85738794b6",
+                       "buildManifestSha256":  "AF988774897A978EA6E6011424434F7831F9A29E606D6C7AFB29C1D3520496CB",
+                       "validatorAssemblySha256":  "7DA86072F5A569B2A073D3F96E447A60A6EB76CA11281238F45F7D0739F3CBDA",
+                       "protocolAssemblySha256":  "8BACD93B456ADED7087954FA33357B9092FD1FAEF5F65BAF0BF48E164C897E2D",
+                       "planSha256":  "3B7BD9F935A1E095FE41222E0581A59AC85C17F9BC33C9B2D5D2281056C79578",
+                       "startedAtUtc":  "2026-09-27T22:50:49.2640263+00:00",
+                       "completedAtUtc":  "2026-09-27T22:52:01.0862785+00:00",
+                       "wrapperSha256":  "A7FE0273D4E409759F6C09FFBFBFDCF8AC4DBE4A528D00EE7DB0E7DA353E5DCB"
+                   },
+    "prerequisites":  {
+                          "padUsbAndPowerDisconnectedAcknowledged":  true,
+                          "firstRobustAbsenceConfirmed":  true,
+                          "secondRobustAbsenceConfirmed":  true,
+                          "minimumAbsenceIntervalMilliseconds":  500,
+                          "actualAbsenceIntervalMilliseconds":  509.7781,
+                          "adapter":  "FullPower280W",
+                          "gpuZeroThroughout":  true,
+                          "openBladeAndVendorControllersStopped":  true,
+                          "baselinePairedReadbacks":  2
+                      },
+    "typedResult":  {
+                        "Target":  "HyperBoostFromPerformance",
+                        "Baseline":  {
+                                         "Thermal1Hex":  "01010200",
+                                         "Thermal2Hex":  "01020200"
+                                     },
+                        "Candidate":  {
+                                          "Thermal1Hex":  "01010700",
+                                          "Thermal2Hex":  "01020700"
+                                      },
+                        "CandidateFanRpm":  null,
+                        "CandidateFanRpmSamples":  [
+
+                                                   ],
+                        "Restoration":  {
+                                            "Thermal1Hex":  "01010200",
+                                            "Thermal2Hex":  "01020200"
+                                        },
+                        "ApplyAttempted":  true,
+                        "ApplyAcknowledged":  true,
+                        "CandidateConfirmed":  true,
+                        "RestoreAttempted":  true,
+                        "RestoreAcknowledged":  true,
+                        "Restored":  true,
+                        "IndeterminatePartialWrite":  false,
+                        "ManualRecoveryRequired":  false,
+                        "Failure":  "None",
+                        "Success":  true
+                    },
+    "restoration":  {
+                        "independentPostThermal":  "Performance/Automatic",
+                        "independentNvmlAndNvapiGpuZero":  true,
+                        "originalProfilesAndOverridesRestored":  true,
+                        "originalRestoreSubmitted":  false,
+                        "final":  "Balanced/Automatic",
+                        "allPriorServiceStatesRestored":  true,
+                        "restorationPending":  false
+                    },
+    "evidenceBoundary":  "Developer-only pad-USB-and-power-disconnected observation for approximately 60 seconds without an applied workload, followed by confirmed Performance and original Balanced restoration. Three baseline samples and thirty observation samples establish this bounded no-load result only. The frozen 55 C CPU tripwire is an experimental abort threshold, not a hardware thermal limit. No installed padless validation, load capacity, performance gain, long-duration stability or lifecycle admission.",
+    "gpuWritesPerformed":  false,
+    "coolingPadFeatureWritesPerformed":  false,
+    "noLoadObservation":  {
+                              "Completed":  true,
+                              "Failure":  null,
+                              "PermitKnownStateRestore":  true,
+                              "CpuAbortCelsius":  55,
+                              "GpuAbortCelsius":  null,
+                              "Baseline":  [
+                                               {
+                                                   "ObservedAtUtc":  "2026-09-27T22:50:52.9307253+00:00",
+                                                   "ElapsedMilliseconds":  852.4961,
+                                                   "CpuCelsius":  45,
+                                                   "GpuCelsius":  null,
+                                                   "GpuInactive":  true,
+                                                   "Fans":  {
+                                                                "Selector1Rpm":  500,
+                                                                "Selector2Rpm":  500,
+                                                                "MaxRpm":  500
+                                                            }
+                                               },
+                                               {
+                                                   "ObservedAtUtc":  "2026-09-27T22:50:55.5474585+00:00",
+                                                   "ElapsedMilliseconds":  3469.2286,
+                                                   "CpuCelsius":  45,
+                                                   "GpuCelsius":  null,
+                                                   "GpuInactive":  true,
+                                                   "Fans":  {
+                                                                "Selector1Rpm":  0,
+                                                                "Selector2Rpm":  0,
+                                                                "MaxRpm":  0
+                                                            }
+                                               },
+                                               {
+                                                   "ObservedAtUtc":  "2026-09-27T22:50:57.5668786+00:00",
+                                                   "ElapsedMilliseconds":  5488.6488,
+                                                   "CpuCelsius":  45,
+                                                   "GpuCelsius":  null,
+                                                   "GpuInactive":  true,
+                                                   "Fans":  {
+                                                                "Selector1Rpm":  0,
+                                                                "Selector2Rpm":  0,
+                                                                "MaxRpm":  0
+                                                            }
+                                               }
+                                           ],
+                              "Samples":  [
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:50:59.8169262+00:00",
+                                                  "ElapsedMilliseconds":  871.8656,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  0,
+                                                               "Selector2Rpm":  0,
+                                                               "MaxRpm":  0
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:02.4981875+00:00",
+                                                  "ElapsedMilliseconds":  3553.1271,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  0,
+                                                               "Selector2Rpm":  0,
+                                                               "MaxRpm":  0
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:04.4478891+00:00",
+                                                  "ElapsedMilliseconds":  5502.8286,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  1300,
+                                                               "Selector2Rpm":  1500,
+                                                               "MaxRpm":  1500
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:06.4535133+00:00",
+                                                  "ElapsedMilliseconds":  7508.4538,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  1700,
+                                                               "Selector2Rpm":  1800,
+                                                               "MaxRpm":  1800
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:08.5117817+00:00",
+                                                  "ElapsedMilliseconds":  9566.7226,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  1800,
+                                                               "Selector2Rpm":  1800,
+                                                               "MaxRpm":  1800
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:10.4769695+00:00",
+                                                  "ElapsedMilliseconds":  11531.9096,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  1900,
+                                                               "Selector2Rpm":  1900,
+                                                               "MaxRpm":  1900
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:12.4138139+00:00",
+                                                  "ElapsedMilliseconds":  13468.7522,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  1900,
+                                                               "Selector2Rpm":  2000,
+                                                               "MaxRpm":  2000
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:14.4436339+00:00",
+                                                  "ElapsedMilliseconds":  15498.5725,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2000,
+                                                               "Selector2Rpm":  2100,
+                                                               "MaxRpm":  2100
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:16.4486600+00:00",
+                                                  "ElapsedMilliseconds":  17503.5985,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2100,
+                                                               "Selector2Rpm":  2200,
+                                                               "MaxRpm":  2200
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:18.4497318+00:00",
+                                                  "ElapsedMilliseconds":  19504.6701,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2300,
+                                                               "Selector2Rpm":  2300,
+                                                               "MaxRpm":  2300
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:20.4475028+00:00",
+                                                  "ElapsedMilliseconds":  21502.4414,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2400,
+                                                               "Selector2Rpm":  2200,
+                                                               "MaxRpm":  2400
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:22.4520444+00:00",
+                                                  "ElapsedMilliseconds":  23506.9829,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2500,
+                                                               "Selector2Rpm":  2200,
+                                                               "MaxRpm":  2500
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:24.4890896+00:00",
+                                                  "ElapsedMilliseconds":  25544.0282,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2500,
+                                                               "Selector2Rpm":  2200,
+                                                               "MaxRpm":  2500
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:26.4555264+00:00",
+                                                  "ElapsedMilliseconds":  27510.4647,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2400,
+                                                               "Selector2Rpm":  2200,
+                                                               "MaxRpm":  2400
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:28.4785975+00:00",
+                                                  "ElapsedMilliseconds":  29533.536,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2300,
+                                                               "Selector2Rpm":  2200,
+                                                               "MaxRpm":  2300
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:30.4699261+00:00",
+                                                  "ElapsedMilliseconds":  31524.8646,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2300,
+                                                               "Selector2Rpm":  2200,
+                                                               "MaxRpm":  2300
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:32.4668381+00:00",
+                                                  "ElapsedMilliseconds":  33521.7768,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2400,
+                                                               "Selector2Rpm":  2300,
+                                                               "MaxRpm":  2400
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:34.6901747+00:00",
+                                                  "ElapsedMilliseconds":  35745.1134,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2500,
+                                                               "Selector2Rpm":  2400,
+                                                               "MaxRpm":  2500
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:36.4933792+00:00",
+                                                  "ElapsedMilliseconds":  37548.3179,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2600,
+                                                               "Selector2Rpm":  2500,
+                                                               "MaxRpm":  2600
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:38.4360070+00:00",
+                                                  "ElapsedMilliseconds":  39490.9453,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2700,
+                                                               "Selector2Rpm":  2700,
+                                                               "MaxRpm":  2700
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:40.4562394+00:00",
+                                                  "ElapsedMilliseconds":  41511.1783,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2700,
+                                                               "Selector2Rpm":  2600,
+                                                               "MaxRpm":  2700
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:42.4734299+00:00",
+                                                  "ElapsedMilliseconds":  43528.3692,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2700,
+                                                               "Selector2Rpm":  2500,
+                                                               "MaxRpm":  2700
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:44.3970548+00:00",
+                                                  "ElapsedMilliseconds":  45451.9936,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2600,
+                                                               "Selector2Rpm":  2400,
+                                                               "MaxRpm":  2600
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:46.5825189+00:00",
+                                                  "ElapsedMilliseconds":  47637.4577,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2500,
+                                                               "Selector2Rpm":  2300,
+                                                               "MaxRpm":  2500
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:48.4523360+00:00",
+                                                  "ElapsedMilliseconds":  49507.2747,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2500,
+                                                               "Selector2Rpm":  2300,
+                                                               "MaxRpm":  2500
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:50.4218319+00:00",
+                                                  "ElapsedMilliseconds":  51476.7711,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2600,
+                                                               "Selector2Rpm":  2400,
+                                                               "MaxRpm":  2600
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:52.5174916+00:00",
+                                                  "ElapsedMilliseconds":  53572.4298,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2700,
+                                                               "Selector2Rpm":  2500,
+                                                               "MaxRpm":  2700
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:54.4802080+00:00",
+                                                  "ElapsedMilliseconds":  55535.1471,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2700,
+                                                               "Selector2Rpm":  2600,
+                                                               "MaxRpm":  2700
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:56.4730917+00:00",
+                                                  "ElapsedMilliseconds":  57528.0307,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2800,
+                                                               "Selector2Rpm":  2700,
+                                                               "MaxRpm":  2800
+                                                           }
+                                              },
+                                              {
+                                                  "ObservedAtUtc":  "2026-09-27T22:51:58.4655084+00:00",
+                                                  "ElapsedMilliseconds":  59520.447,
+                                                  "CpuCelsius":  45,
+                                                  "GpuCelsius":  null,
+                                                  "GpuInactive":  true,
+                                                  "Fans":  {
+                                                               "Selector1Rpm":  2900,
+                                                               "Selector2Rpm":  2700,
+                                                               "MaxRpm":  2900
+                                                           }
+                                              }
+                                          ],
+                              "ElapsedMilliseconds":  60012.0734
+                          },
+    "noLoadPerformed":  true,
+    "maximumPlannedObservationMilliseconds":  60000,
+    "experimentalCpuTripwireIsNotThermalLimit":  true,
+    "thermalSafetyEstablished":  false,
+    "fanReadbackInterpretation":  "Typed RPM observations, including valid zero values; no claim that fans were stationary throughout or that fan speed was commanded.",
+    "postInstalledBaseline":  {
+                                  "passed":  38,
+                                  "warnings":  1,
+                                  "failed":  0
+                              }
+}
