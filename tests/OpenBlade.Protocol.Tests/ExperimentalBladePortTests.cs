@@ -378,7 +378,7 @@ public sealed class ExperimentalBladePortTests
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
             () => PowerSource.ExternalUnknown);
         await port.SetChargeLimitAsync(80, CancellationToken.None);
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(item => item.CommandId));
+        Assert.Equal(new byte[] { 0x92, 0x8F, 0x12, 0x92 }, session.Commands.Select(item => item.CommandId));
     }
 
     private static ExperimentalFeaturesPolicy Enabled() => new(ExperimentalBladeModels.All[0]);

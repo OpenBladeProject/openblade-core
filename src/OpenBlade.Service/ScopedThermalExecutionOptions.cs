@@ -63,9 +63,7 @@ internal sealed class ScopedThermalExecutionOptions
     {
         bool valid = subsystem switch
         {
-            DeviceSubsystem.Performance =>
-                components.Count == 1
-                && components[0] == DeviceSubsystem.Performance,
+            DeviceSubsystem.Performance => components.Contains(DeviceSubsystem.Performance),
             DeviceSubsystem.Fans => components.Contains(DeviceSubsystem.Fans),
             _ => false,
         };

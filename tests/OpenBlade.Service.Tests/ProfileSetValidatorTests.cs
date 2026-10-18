@@ -536,6 +536,80 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Fact]
+    public void Validate_PresetFanRangesAcceptSilentFixedMaximum()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+                Fans = FanMode.Fixed,
+                FanControl = new(FanMode.Fixed, 5300, ManualFanCurve.Default),
+            },
+        };
+
+        CreateValidator(
+            combinations: Blade18FanCombinations(),
+            fanSpeedRange: new FanSpeedRange(2200, 3800, 100),
+            fanSpeedRangesByPerformancePreset: Blade18FanRanges()).Validate(profiles);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve)]
+    public void Validate_PresetFanRangesRejectUnsupportedManualPair(
+        PerformancePreset performance,
+        FanMode mode)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var boundedCurve = new ManualFanCurve(
+            [new(40, 2200), new(90, 3800)],
+            [new(35, 2200), new(85, 3800)],
+            useHigherTemperatureForBoth: true);
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = performance,
+                Fans = mode,
+                FanControl = new(mode, 3800, boundedCurve),
+                CustomPerformance = performance == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.Default
+                    : null,
+            },
+        };
+
+        Assert.Throws<InvalidDataException>(() => CreateValidator(
+            combinations: Blade18FanCombinations(),
+            fanSpeedRange: new FanSpeedRange(2200, 3800, 100),
+            fanSpeedRangesByPerformancePreset: Blade18FanRanges()).Validate(profiles));
+    }
+
+    [Fact]
+    public void Validate_PresetFanRangesKeepBalancedManualCurve()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var boundedCurve = new ManualFanCurve(
+            [new(40, 2200), new(90, 3800)],
+            [new(35, 2200), new(85, 3800)],
+            useHigherTemperatureForBoth: true);
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.ManualCurve,
+                FanControl = new(FanMode.ManualCurve, 3800, boundedCurve),
+            },
+        };
+
+        CreateValidator(
+            combinations: Blade18FanCombinations(),
+            fanSpeedRange: new FanSpeedRange(2200, 3800, 100),
+            fanSpeedRangesByPerformancePreset: Blade18FanRanges()).Validate(profiles);
+    }
+
+    [Fact]
     public void Validate_AcceptsMaximumFanModeWithDeviceSpecificFixedRange()
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
@@ -764,7 +838,9 @@ public sealed class ProfileSetValidatorTests
         IReadOnlySet<LightingEffect>? lightingEffects = null,
         CustomPerformanceCapabilities? customPerformance = null,
         FanSpeedRange? fanSpeedRange = null,
-        string? keyboardLightingLayoutId = null) => new(new ProfileValidationPolicy(
+        string? keyboardLightingLayoutId = null,
+        IReadOnlyDictionary<PerformancePreset, FanSpeedRange>?
+            fanSpeedRangesByPerformancePreset = null) => new(new ProfileValidationPolicy(
             combinations ?? new HashSet<PerformanceFanCombination>
             {
                 new(PerformancePreset.Balanced, FanMode.Automatic),
@@ -777,5 +853,28 @@ public sealed class ProfileSetValidatorTests
             lightingEffects ?? new HashSet<LightingEffect> { LightingEffect.Off },
             customPerformance,
             fanSpeedRange,
-            keyboardLightingLayoutId));
+            keyboardLightingLayoutId,
+            fanSpeedRangesByPerformancePreset: fanSpeedRangesByPerformancePreset));
+
+    private static IReadOnlyDictionary<PerformancePreset, FanSpeedRange> Blade18FanRanges() =>
+        new Dictionary<PerformancePreset, FanSpeedRange>
+        {
+            [PerformancePreset.Balanced] = new(2200, 3800, 100),
+            [PerformancePreset.Silent] = new(3700, 5300, 100),
+        };
+
+    private static IReadOnlySet<PerformanceFanCombination> Blade18FanCombinations() =>
+        new HashSet<PerformanceFanCombination>
+        {
+            new(PerformancePreset.Balanced, FanMode.Automatic),
+            new(PerformancePreset.Balanced, FanMode.Fixed),
+            new(PerformancePreset.Balanced, FanMode.ManualCurve),
+            new(PerformancePreset.Silent, FanMode.Automatic),
+            new(PerformancePreset.Silent, FanMode.Fixed),
+            new(PerformancePreset.Silent, FanMode.ManualCurve),
+            new(PerformancePreset.Custom, FanMode.Automatic),
+            new(PerformancePreset.Custom, FanMode.Fixed),
+            new(PerformancePreset.BatterySaver, FanMode.Automatic),
+            new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
+        };
 }

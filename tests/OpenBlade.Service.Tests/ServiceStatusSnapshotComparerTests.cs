@@ -109,6 +109,7 @@ public sealed class ServiceStatusSnapshotComparerTests
             },
             baseline with { Capabilities = baseline.Capabilities! with { SupportsBreathingColorSelection = false } },
             baseline with { Capabilities = baseline.Capabilities! with { SupportsWaveDirectionSelection = false } },
+            baseline with { Capabilities = baseline.Capabilities! with { Blade18KeyboardLayoutId = 12 } },
             baseline with { ThermalConvergence = baseline.ThermalConvergence! with { ExplicitReapplyRequired = true } },
         ];
 

@@ -779,7 +779,6 @@ internal sealed class WindowsRazerHidSession :
             new CancellationTokenSource(item.ExchangeTimeout, timeProvider);
         byte[] setBuffer = new byte[FeatureReportLength];
         setBuffer[0] = featureReportId;
-        bool guardChecked = false;
         for (int index = 0; index < commands.Length; index++)
         {
             TransactionIdAssignment assignment;
@@ -789,6 +788,10 @@ internal sealed class WindowsRazerHidSession :
             }
             catch
             {
+                if (index > 0)
+                {
+                    return PartialSetBatchFailure(HidSessionFailureKind.NativeIoFailure);
+                }
                 Poison();
                 return Failure(HidSessionFailureKind.ProtocolFailure);
             }
@@ -798,11 +801,19 @@ internal sealed class WindowsRazerHidSession :
                     0,
                     HidSessionFailureKind.Exhausted))
             {
+                if (index > 0)
+                {
+                    return PartialSetBatchFailure(HidSessionFailureKind.NativeIoFailure);
+                }
                 return Failure(HidSessionFailureKind.Exhausted);
             }
 
             if (assignment.TransactionId == 0 || assignment.Failure is not null)
             {
+                if (index > 0)
+                {
+                    return PartialSetBatchFailure(HidSessionFailureKind.NativeIoFailure);
+                }
                 Poison();
                 return Failure(HidSessionFailureKind.ProtocolFailure);
             }
@@ -812,19 +823,22 @@ internal sealed class WindowsRazerHidSession :
                 deadline.Token);
             if (cancellation is not null)
             {
+                if (index > 0)
+                {
+                    return PartialSetBatchFailure(cancellation.Value);
+                }
                 return Failure(cancellation.Value);
             }
 
-            if (!guardChecked)
+            HidSessionResult<ReadOnlyMemory<byte>>? blocked =
+                CheckStrictExclusivity();
+            if (blocked is not null)
             {
-                HidSessionResult<ReadOnlyMemory<byte>>? blocked =
-                    CheckStrictExclusivity();
-                if (blocked is not null)
+                if (index > 0)
                 {
-                    return blocked.Value;
+                    return PartialSetBatchFailure(HidSessionFailureKind.NativeIoFailure);
                 }
-
-                guardChecked = true;
+                return blocked.Value;
             }
 
             cancellation = ClassifyCancellation(
@@ -832,6 +846,10 @@ internal sealed class WindowsRazerHidSession :
                 deadline.Token);
             if (cancellation is not null)
             {
+                if (index > 0)
+                {
+                    return PartialSetBatchFailure(cancellation.Value);
+                }
                 return Failure(cancellation.Value);
             }
 
@@ -865,18 +883,35 @@ internal sealed class WindowsRazerHidSession :
             }
             catch (Exception exception)
             {
+                HidSessionResult<ReadOnlyMemory<byte>> failure =
+                    IoExceptionFailure(isSet: true, exception);
+                if (index > 0)
+                {
+                    return PartialSetBatchFailure(
+                        failure.Failure ?? HidSessionFailureKind.NativeIoFailure,
+                        failure.Diagnostic,
+                        failure.NativeRetirement);
+                }
                 Poison();
-                return IoExceptionFailure(isSet: true, exception);
+                return failure;
             }
 
             if (setResult.Termination == HidFeatureTermination.Completed
                 && setResult.Completion is not { Succeeded: true })
             {
-                Poison();
-                return DiagnosticFailure(
+                HidSessionResult<ReadOnlyMemory<byte>> failure = DiagnosticFailure(
                     HidSessionFailureKind.NativeIoFailure,
                     IoPhase(isSet: true, result: setResult),
                     setResult.Completion, nativeRetirement: setResult.NativeRetirement);
+                if (index > 0)
+                {
+                    return PartialSetBatchFailure(
+                        HidSessionFailureKind.NativeIoFailure,
+                        failure.Diagnostic,
+                        failure.NativeRetirement);
+                }
+                Poison();
+                return failure;
             }
 
             cancellation = ClassifyIoCancellation(
@@ -885,26 +920,36 @@ internal sealed class WindowsRazerHidSession :
                 deadline.Token);
             if (cancellation is not null)
             {
-                if (setResult.WasSubmitted)
+                if (setResult.WasSubmitted || index > 0)
                 {
-                    Poison();
+                    return PartialSetBatchFailure(
+                        cancellation.Value,
+                        new HidSessionFailureDiagnostic(
+                            HidSessionFailurePhase.SetCompletion,
+                            cancellation.Value,
+                            setResult.Completion?.ErrorCode,
+                            setResult.Completion?.BytesTransferred),
+                        setResult.NativeRetirement);
                 }
 
-                return setResult.WasSubmitted
-                    ? DiagnosticFailure(
-                        cancellation.Value,
-                        HidSessionFailurePhase.SetCompletion,
-                        setResult.Completion, nativeRetirement: setResult.NativeRetirement)
-                    : Failure(cancellation.Value);
+                return Failure(cancellation.Value);
             }
 
             if (setResult.Termination != HidFeatureTermination.Completed)
             {
-                Poison();
-                return DiagnosticFailure(
+                HidSessionResult<ReadOnlyMemory<byte>> failure = DiagnosticFailure(
                     HidSessionFailureKind.NativeIoFailure,
                     IoPhase(isSet: true, result: setResult),
                     setResult.Completion, nativeRetirement: setResult.NativeRetirement);
+                if (index > 0)
+                {
+                    return PartialSetBatchFailure(
+                        HidSessionFailureKind.NativeIoFailure,
+                        failure.Diagnostic,
+                        failure.NativeRetirement);
+                }
+                Poison();
+                return failure;
             }
 
             cancellation = ClassifyCancellation(
@@ -912,12 +957,35 @@ internal sealed class WindowsRazerHidSession :
                 deadline.Token);
             if (cancellation is not null)
             {
-                Poison();
-                return Failure(cancellation.Value);
+                return PartialSetBatchFailure(cancellation.Value);
             }
         }
 
         return new(ReadOnlyMemory<byte>.Empty, null);
+    }
+
+    private HidSessionResult<ReadOnlyMemory<byte>> PartialSetBatchFailure(
+        HidSessionFailureKind failure,
+        HidSessionFailureDiagnostic? diagnostic = null,
+        Task? nativeRetirement = null)
+    {
+        Poison();
+        HidSessionFailureDiagnostic classified = diagnostic is { } existing
+            ? existing with
+            {
+                Phase = HidSessionFailurePhase.SetCompletion,
+                Failure = failure,
+            }
+            : new(
+                HidSessionFailurePhase.SetCompletion,
+                failure,
+                NativeWin32Error: null,
+                TransferredByteCount: null);
+        return new(default, failure)
+        {
+            Diagnostic = classified,
+            NativeRetirement = nativeRetirement,
+        };
     }
 
     private HidSessionResult<ReadOnlyMemory<byte>>? CheckStrictExclusivity()

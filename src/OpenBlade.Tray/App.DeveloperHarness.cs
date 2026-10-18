@@ -1471,7 +1471,7 @@ public partial class App
 
     private static void ApplyExperimentalLightingSnapshotState(MainWindow window, bool wave)
     {
-        // Synthetic, disconnected status exercises the restricted pickers without opening hardware.
+        // Synthetic, disconnected status exercises the source-backed pickers without opening hardware.
         LightingSettings lighting = (wave
             ? LightingSettingsFactory.Wave(LightingDirection.Rightward, 77)
             : LightingSettingsFactory.BreathingRandom(77)) with
@@ -1484,8 +1484,10 @@ public partial class App
             LightingEffects = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum, LightingEffect.Breathing, LightingEffect.Wave },
             SupportsKeyboardBrightness = true,
             LogoLightingModes = new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>()),
-            SupportsBreathingColorSelection = false,
-            SupportsWaveDirectionSelection = false,
+            SupportsBreathingColorSelection = true,
+            SupportedBreathingColorModes = new HashSet<BreathingColorMode>(Enum.GetValues<BreathingColorMode>()),
+            SupportsWaveDirectionSelection = true,
+            HostManagedLaptopControls = new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode },
         };
         ServiceStatusSnapshot status = new(
             1, true, false, [], null, [], "Experimental Blade 18 lighting preview",

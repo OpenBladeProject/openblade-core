@@ -25,9 +25,9 @@ public sealed class ExperimentalBladeBatteryRangeTests
         {
             await port.SetChargeLimitAsync(percent, CancellationToken.None);
         }
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(new byte[] { 0x92, 0x8F, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
         byte expected = percent == 100 ? (byte)0x50 : (byte)(0x80 | percent);
-        Assert.Equal(new byte[] { expected }, session.Commands[1].Arguments.ToArray());
+        Assert.Equal(new byte[] { expected }, Assert.Single(session.Commands, command => command.CommandId == 0x12).Arguments.ToArray());
         Assert.Equal(expected, session.Raw);
         string effective = percent == 100 ? "Off" : percent.ToString();
         Assert.Contains(policy.Snapshot().Observations, item => item.Stage == "Readback" && item.ConfirmedValue == effective);
@@ -125,7 +125,7 @@ public sealed class ExperimentalBladeBatteryRangeTests
         await using var port = Create(session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.Single(session.Commands);
+        Assert.Equal(new byte[] { 0x92, 0x8F }, session.Commands.Select(command => command.CommandId));
     }
 
     [Fact]
@@ -191,6 +191,10 @@ public sealed class ExperimentalBladeBatteryRangeTests
             if (command.CommandId == 0x92)
             {
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { Raw }, null));
+            }
+            if (command.CommandId == 0x8F)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0 }, null));
             }
             Assert.Equal(0x12, command.CommandId);
             byte value = command.Arguments.Span[0];

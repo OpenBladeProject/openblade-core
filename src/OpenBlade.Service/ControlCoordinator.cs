@@ -200,6 +200,224 @@ public sealed class ControlCoordinator
             desired);
     }
 
+    internal async Task<ScopedApplyOutcome> ApplyPerformanceTransitionOutcomeAsync(
+        DesiredDeviceState desired,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(desired);
+        IBladeDevice capabilityDevice = thermalStepRunner?.CurrentDevice ?? device;
+        DeviceCapabilities capabilities;
+        try
+        {
+            capabilities = await capabilityDevice.ReadCapabilitiesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return new ScopedApplyOutcome(
+                ReadFailure("Performance", exception),
+                Readback: null,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: true,
+                EffectiveDesired: desired);
+        }
+
+        ConfirmedDeviceState? initial = null;
+        bool restorePresetRangedFans = false;
+        if (SupportsPresetRangedFixedFans(desired, capabilities))
+        {
+            try
+            {
+                initial = await capabilityDevice.ReadPerformanceFanStateAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                restorePresetRangedFans = RequiresPresetRangedFanRestore(
+                    desired,
+                    capabilities,
+                    initial);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                return new ScopedApplyOutcome(
+                    ReadFailure("Performance", exception),
+                    Readback: null,
+                    WriteAttempted: false,
+                    ReadbackMatched: false,
+                    Capabilities: capabilities,
+                    DeviceAccessFailed: true,
+                    EffectiveDesired: desired);
+            }
+        }
+
+        if (!RequiresAutomaticFansForCustom(desired, capabilities)
+            && !restorePresetRangedFans)
+        {
+            return await RunThermalStepAsync(
+                    DeviceSubsystem.Performance,
+                    ThermalTransitionStepPurpose.Requested,
+                    (coordinator, token) => coordinator.ApplyPerformanceOutcomeAsync(
+                        desired,
+                        token),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (restorePresetRangedFans)
+        {
+            var restoredCoupledWrites = new HashSet<DeviceSubsystem>();
+            ScopedApplyOutcome restoredPerformance = await RunThermalStepAsync(
+                    DeviceSubsystem.Performance,
+                    ThermalTransitionStepPurpose.Requested,
+                    (coordinator, token) => coordinator.ApplyPerformanceOutcomeAsync(
+                        desired,
+                        token),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            RecordConfirmedCoupledWrite(
+                restoredCoupledWrites,
+                DeviceSubsystem.Performance,
+                restoredPerformance);
+            if (restoredPerformance.Result.Status is not (
+                    ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+                || !restoredPerformance.ReadbackMatched)
+            {
+                return restoredPerformance with
+                {
+                    ConfirmedCoupledWrites = restoredCoupledWrites,
+                    EffectiveDesired = desired,
+                };
+            }
+
+            FanControlSettings requestedFans = desired.FanControl
+                ?? FanControlSettings.FromLegacy(desired.Fans.Value);
+            ScopedApplyOutcome fans = await RunThermalStepAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.Restoration,
+                    (coordinator, token) => coordinator.ApplyFanControlOutcomeAsync(
+                        requestedFans,
+                        token),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            RecordConfirmedCoupledWrite(
+                restoredCoupledWrites,
+                DeviceSubsystem.Fans,
+                fans);
+            return fans with
+            {
+                Readback = fans.Readback ?? restoredPerformance.Readback,
+                WriteAttempted = fans.WriteAttempted || restoredPerformance.WriteAttempted,
+                ReadbackMatched = fans.ReadbackMatched && restoredPerformance.ReadbackMatched,
+                Capabilities = fans.Capabilities ?? restoredPerformance.Capabilities,
+                DeviceAccessFailed = fans.DeviceAccessFailed
+                    || restoredPerformance.DeviceAccessFailed,
+                ConfirmedCoupledWrites = restoredCoupledWrites,
+                ConfirmationUnavailable = fans.ConfirmationUnavailable
+                    || restoredPerformance.ConfirmationUnavailable,
+                PreWriteState = initial ?? restoredPerformance.PreWriteState,
+                EffectiveDesired = desired,
+            };
+        }
+
+        var confirmedCoupledWrites = new HashSet<DeviceSubsystem>();
+        ScopedApplyOutcome automatic = await RunThermalStepAsync(
+                DeviceSubsystem.Fans,
+                ThermalTransitionStepPurpose.AutomaticBridge,
+                (coordinator, token) => coordinator.ApplyFanControlOutcomeAsync(
+                    FanControlSettings.Default,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
+        RecordConfirmedCoupledWrite(
+            confirmedCoupledWrites,
+            DeviceSubsystem.Fans,
+            automatic);
+        if (automatic.Result.Status is not (
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+            || !automatic.ReadbackMatched)
+        {
+            return automatic with
+            {
+                Result = automatic.Result with
+                {
+                    Message = $"Custom performance requires confirmed Automatic fans. {automatic.Result.Message}",
+                },
+                ConfirmedCoupledWrites = confirmedCoupledWrites,
+                EffectiveDesired = desired,
+            };
+        }
+
+        ScopedApplyOutcome performance = await RunThermalStepAsync(
+                DeviceSubsystem.Performance,
+                ThermalTransitionStepPurpose.Requested,
+                (coordinator, token) => coordinator.ApplyPerformanceOutcomeAsync(
+                    desired,
+                    token),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return performance with
+        {
+            Readback = performance.Readback ?? automatic.Readback,
+            WriteAttempted = performance.WriteAttempted || automatic.WriteAttempted,
+            Capabilities = performance.Capabilities ?? automatic.Capabilities,
+            DeviceAccessFailed = performance.DeviceAccessFailed
+                || automatic.DeviceAccessFailed,
+            ConfirmedCoupledWrites = confirmedCoupledWrites,
+            ConfirmationUnavailable = performance.ConfirmationUnavailable
+                || automatic.ConfirmationUnavailable,
+            PreWriteState = automatic.PreWriteState ?? performance.PreWriteState,
+            EffectiveDesired = desired,
+        };
+    }
+
+    // Product 672's reviewed Synapse policy enters Custom only after returning
+    // its preset-ranged manual fans to Automatic. Express that relationship
+    // through existing capabilities so unrelated experimental models retain
+    // their admitted Custom/manual behavior.
+    internal static bool RequiresAutomaticFansForCustom(
+        DesiredDeviceState desired,
+        DeviceCapabilities capabilities) =>
+        desired.Performance.Value == PerformancePreset.Custom
+        && UsesAutomaticCustomFanPolicy(capabilities)
+        && capabilities.CustomPerformance?.Supports(desired.CustomPerformance) == true;
+
+    internal static bool RequiresPresetRangedFanRestore(
+        DesiredDeviceState desired,
+        DeviceCapabilities capabilities,
+        ConfirmedDeviceState? confirmed) =>
+        UsesAutomaticCustomFanPolicy(capabilities)
+        && SupportsPresetRangedFixedFans(desired, capabilities)
+        && confirmed is
+        {
+            Performance: PerformancePreset.Custom,
+            Fans: FanMode.Automatic,
+        };
+
+    private static bool UsesAutomaticCustomFanPolicy(
+        DeviceCapabilities capabilities) =>
+        capabilities.PerformancePresets.Contains(PerformancePreset.Custom)
+        && capabilities.CustomPerformance is not null
+        && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+        && capabilities.GetFanSpeedRange(PerformancePreset.Custom) is null;
+
+    internal static bool SupportsPresetRangedFixedFans(
+        DesiredDeviceState desired,
+        DeviceCapabilities capabilities) =>
+        desired.Fans.Value == FanMode.Fixed
+        && capabilities.GetFanSpeedRange(desired.Performance.Value)?.Supports(
+            (desired.FanControl ?? FanControlSettings.FromLegacy(FanMode.Fixed))
+                .FixedSpeedRpm) == true;
+
     private async Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
         PerformancePreset value,
         CustomPerformanceSettings? customPerformance,
@@ -335,17 +553,28 @@ public sealed class ControlCoordinator
     {
         ArgumentNullException.ThrowIfNull(value);
         bool supportsDirectManualFanTransitions = false;
+        DeviceCapabilities? admittedCapabilities = null;
         bool FansSupported(DeviceCapabilities capabilities)
         {
+            admittedCapabilities = capabilities;
             supportsDirectManualFanTransitions =
                 capabilities.SupportsDirectManualFanTransitions;
             return capabilities.FanModes.Contains(value.Mode)
                 && (value.Mode != FanMode.Fixed
-                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true);
+                    || capabilities.SupportsFanSpeedInAnyPerformancePreset(
+                        value.FixedSpeedRpm));
         }
         Func<ConfirmedDeviceState, string?>? manualEntryBlockReason =
             DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                ? state => (supportsDirectManualFanTransitions
+                ? state => value.Mode == FanMode.Fixed
+                        && state.Performance is { } performance
+                        && admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0
+                        ? admittedCapabilities.GetFanSpeedRange(performance)
+                                ?.Supports(value.FixedSpeedRpm) == true
+                            && IsConfirmedDirectManualFanWriteBaseline(state)
+                                ? null
+                                : "Fixed fan control requires a supported speed for the refreshed, confirmed performance preset with HyperBoost off."
+                    : (supportsDirectManualFanTransitions
                         ? IsConfirmedDirectManualFanWriteBaseline(state)
                         : IsConfirmedManualFanWriteBaseline(state))
                     ? null
@@ -1255,7 +1484,7 @@ public sealed class ControlCoordinator
             && IsVerifiedThermalCombination(
                 desired.Performance.Value,
                 desired.Fans.Value,
-                capabilities.SupportsDirectManualFanTransitions);
+                capabilities);
         // A direct fan transition alone does not imply hidden performance.
         // Experimental backends with independent getters must apply and confirm
         // Custom changes while retaining manual fans; legacy selector handling stays.
@@ -2653,8 +2882,11 @@ public sealed class ControlCoordinator
     private static bool IsVerifiedThermalCombination(
         PerformancePreset performance,
         FanMode fans,
-        bool supportsDirectManualFanTransitions) =>
-        (supportsDirectManualFanTransitions
+        DeviceCapabilities capabilities) =>
+        (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+            && fans == FanMode.Fixed
+            && capabilities.GetFanSpeedRange(performance) is not null)
+        || (capabilities.SupportsDirectManualFanTransitions
             && IsAutomaticPerformancePreset(performance)
             && DeviceSubsystemOrder.IsManualFanMode(fans)
             && (performance is not (PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)

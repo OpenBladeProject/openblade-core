@@ -1908,9 +1908,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains("WindowMessageInputDeviceChange", source, StringComparison.Ordinal);
         Assert.Contains("TryResolveInputDevice", source, StringComparison.Ordinal);
         Assert.Contains("RazerBladeReactiveInputDevice", source, StringComparison.Ordinal);
+        Assert.Contains("deviceKind != readVerifiedInputDeviceKind()", source, StringComparison.Ordinal);
+        Assert.Contains("readBlade18KeyboardLayoutId()", source, StringComparison.Ordinal);
         Assert.Contains("GetRawInputHeader", source, StringComparison.Ordinal);
         Assert.Contains("EnsureRawInputBuffer", source, StringComparison.Ordinal);
-        Assert.Contains("stackalloc byte[3]", source, StringComparison.Ordinal);
+        Assert.Contains("stackalloc byte[blade18 ? 16 : 3]", source, StringComparison.Ordinal);
+        Assert.Contains("blade18 && reportSize != 16", source, StringComparison.Ordinal);
+        Assert.Contains("blade18Correlation.TryConsume(", source, StringComparison.Ordinal);
+        Assert.Contains("ConfirmBlade18Input(confirmed, extended)", source, StringComparison.Ordinal);
         Assert.Contains("readSpecialKeyInputAdmitted", source, StringComparison.Ordinal);
         Assert.Contains(
             "readSpecialKeyInputAdmitted(specialKey)",

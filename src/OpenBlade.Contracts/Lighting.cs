@@ -534,7 +534,8 @@ public static class LightingSettingsValidation
             (LightingEffect.Sequence, SequenceLightingParameters parameters) =>
                 settings.Color == default
                 && KeyboardLightingLayoutIds.IsKnown(parameters.LayoutId)
-                && KeyboardLightingSequenceCodec.IsWellFormed(parameters.TimelineBase64),
+                && KeyboardLightingSequenceCodec.IsWellFormedForLayout(
+                    parameters.TimelineBase64, parameters.LayoutId),
             _ => false,
         };
 

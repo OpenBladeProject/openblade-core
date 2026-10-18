@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
@@ -58,6 +59,144 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         Assert.Contains("open:502", native.Events);
         Assert.DoesNotContain(native.Events.Skip(native.Events.IndexOf("close:501") + 1),
             item => item.StartsWith("query:501:", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0x02A0, 2)]
+    [InlineData(0x02A0, 0)]
+    [InlineData(0x029F, 2)]
+    public async Task CustomBoost_PreservesAllIndependentStateThroughProductionProvider(int productId, byte gpu)
+    {
+        var io = new Io { Mode = 4, Cpu = 3, Gpu = gpu, Raw = 0xD0 };
+        var native = new Native { ProductId = (ushort)productId };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io, native: native, productId: productId);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        ConfirmedDeviceState state = await device.ReadStateAsync(CancellationToken.None);
+        Assert.Equal(new CustomPerformanceSettings(CustomPerformanceLevel.Boost, (CustomPerformanceLevel)gpu), state.CustomPerformance);
+        Assert.NotEmpty(io.CustomReadProfiles);
+        Assert.All(io.CustomReadProfiles, profile => Assert.Equal(productId == 0x02A0 ? (byte)1 : (byte)0, profile));
+        Assert.Equal(PerformancePreset.Custom, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(80, state.Battery!.ChargeLimitPercent);
+        Assert.Equal(LightingEffect.Spectrum, state.Lighting!.Effect);
+        Assert.Equal(LogoLightingMode.Off, state.LogoLighting);
+        Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
+    }
+
+    [Theory]
+    [InlineData(LightingEffect.Fire, LightingRotationDirection.Clockwise,
+        LightingRendererOwnershipState.Fire)]
+    [InlineData(LightingEffect.Wheel, LightingRotationDirection.Clockwise,
+        LightingRendererOwnershipState.Wheel)]
+    [InlineData(LightingEffect.Wheel, LightingRotationDirection.Counterclockwise,
+        LightingRendererOwnershipState.Wheel)]
+    public async Task Blade18AnimatedLighting_UsesExactSetOnlyRowsAndRetainsOwnership(
+        LightingEffect effect,
+        LightingRotationDirection direction,
+        LightingRendererOwnershipState expectedOwnership)
+    {
+        var io = new Io();
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        DeviceCapabilities capabilities =
+            await device.ReadCapabilitiesAsync(CancellationToken.None);
+        Assert.Contains(effect, capabilities.LightingEffects);
+
+        LightingSettings requested = effect == LightingEffect.Fire
+            ? LightingSettingsFactory.Fire(50)
+            : LightingSettingsFactory.Wheel(direction, 50);
+        await device.SetLightingAsync(requested, CancellationToken.None);
+
+        LightingTraffic[] firstFrame = io.LightingTraffic.ToArray()[..7];
+        Assert.Equal(6, firstFrame.Count(item => item is { Class: 0x03, Id: 0x0B }));
+        for (int row = 0; row < 6; row++)
+        {
+            LightingTraffic command = firstFrame[row];
+            Assert.Equal((byte)0x03, command.Class);
+            Assert.Equal((byte)0x0B, command.Id);
+            Assert.Equal(52, command.Payload.Length);
+            Assert.Equal(new byte[] { 0xFF, (byte)row, 0, 15 }, command.Payload[..4]);
+        }
+        Assert.Equal((byte)0x03, firstFrame[6].Class);
+        Assert.Equal((byte)0x0A, firstFrame[6].Id);
+        Assert.Equal(new byte[] { 5, 0 }, firstFrame[6].Payload);
+        Assert.Equal(0, io.LightingFrameGetRequests);
+        ConfirmedDeviceState state =
+            await device.ReadLightingStateAsync(CancellationToken.None);
+        Assert.Null(state.Lighting);
+        Assert.Equal(
+            expectedOwnership,
+            await device.ReadLightingRendererOwnershipAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Blade18Fire_SwitchToBuiltinWaitsForInFlightFrameAndStopsOwnership()
+    {
+        var io = new Io { BlockLightingRowAfter = 7 };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Fire(50),
+            CancellationToken.None);
+        await io.LightingRowBlocked.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Task change = device.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50),
+            CancellationToken.None);
+        try
+        {
+            Assert.False(change.IsCompleted);
+        }
+        finally
+        {
+            io.ReleaseLightingRow.TrySetResult();
+        }
+        await change.WaitAsync(TimeSpan.FromSeconds(2));
+
+        LightingTraffic[] traffic = io.LightingTraffic.ToArray();
+        Assert.Equal((byte)0x0F, traffic[^1].Class);
+        Assert.Equal((byte)0x02, traffic[^1].Id);
+        Assert.Equal(new byte[] { 1, 5, 3 }, traffic[^1].Payload);
+        Assert.Equal((byte)3, io.Effect);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            await device.ReadLightingRendererOwnershipAsync(CancellationToken.None));
+        Assert.Equal(0, io.LightingFrameGetRequests);
+    }
+
+    [Fact]
+    public async Task Blade18Wheel_RetirementWaitsForInFlightFrameAndRestoresBaseline()
+    {
+        var io = new Io { BlockLightingRowAfter = 7 };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Counterclockwise,
+                50),
+            CancellationToken.None);
+        await io.LightingRowBlocked.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Task<LightingRendererInvalidationResult> retirement =
+            provider.InvalidateLightingRendererAsync(CancellationToken.None);
+        try
+        {
+            Assert.False(retirement.IsCompleted);
+        }
+        finally
+        {
+            io.ReleaseLightingRow.TrySetResult();
+        }
+        LightingRendererInvalidationResult result =
+            await retirement.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(LightingRendererOwnershipState.Wheel, result.Ownership);
+        LightingTraffic[] traffic = io.LightingTraffic.ToArray();
+        Assert.Equal((byte)0x0F, traffic[^1].Class);
+        Assert.Equal((byte)0x02, traffic[^1].Id);
+        Assert.Equal(new byte[] { 1, 5, 3 }, traffic[^1].Payload);
+        Assert.Equal((byte)3, io.Effect);
+        Assert.Equal(0, io.LightingFrameGetRequests);
     }
 
     [Fact]
@@ -273,12 +412,50 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         Assert.Empty(io.Commands);
     }
 
+    [Fact]
+    public async Task Blade18FixedFans_UseClassOneGettersThroughRealHidProviderAndRestore()
+    {
+        var io = new Io { Raw = 0xD0 };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io,
+            power: () => PowerSource.PluggedIn);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetFanControlAsync(new(FanMode.Fixed, 3000, ManualFanCurve.Default), CancellationToken.None);
+        ConfirmedDeviceState state = await device.ReadStateAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.Balanced, state.Performance);
+        Assert.Equal(FanMode.Fixed, state.Fans);
+        Assert.Equal(new (byte, byte)[] { (1, 30), (2, 30) }, io.FanTargetWrites);
+        Assert.NotEmpty(io.FanTargetReadClasses);
+        Assert.All(io.FanTargetReadClasses, value => Assert.Equal(1, value));
+
+        await device.SetFanControlAsync(new(FanMode.Fixed, 3800, ManualFanCurve.Default), CancellationToken.None);
+        await device.SetFanModeAsync(FanMode.Automatic, CancellationToken.None);
+        Assert.Equal(38, io.FirstTarget);
+        Assert.Equal(38, io.SecondTarget);
+        Assert.Equal(FanMode.Automatic, (await device.ReadStateAsync(CancellationToken.None)).Fans);
+        Assert.False(provider.IsExperimentalWritesPaused);
+    }
+
+    [Fact]
+    public async Task Blade18FixedFans_RealProviderPausesAfterIgnoredFirstTarget()
+    {
+        var io = new Io { Raw = 0xD0, Fan = 1, IgnoreFanTargets = true };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io,
+            power: () => PowerSource.PluggedIn);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            device.SetFanControlAsync(new(FanMode.Fixed, 3000, ManualFanCurve.Default), CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Single(io.FanTargetWrites);
+        Assert.True(provider.IsExperimentalWritesPaused);
+        await device.ReadStateAsync(CancellationToken.None);
+        Assert.Single(io.FanTargetWrites);
+    }
     private static WindowsVerifiedBladeDeviceProvider CreateProvider(Io io, Identity? identity = null, Guard? guard = null, Native? native = null,
-        int productId = 0x02A0)
+        int productId = 0x02A0, Func<PowerSource>? power = null)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
         var factory = new ExperimentalBladeFactory(model, identity ?? new Identity(model.ProductName), native ?? new Native(), guard ?? new Guard(), io,
-            () => PowerSource.ExternalUnknown);
+            power ?? (() => PowerSource.ExternalUnknown));
         return new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready, BatteryValidationFirmwareCompatibility.ModelScoped),
             factory, UnavailableFanRpmFactory(), factory.CreateLightingFactory());
@@ -358,15 +535,32 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         private byte[] request = [];
         internal byte Raw { get; set; }
         internal byte Mode { get; set; }
+        internal byte Fan { get; set; }
+        internal byte FirstTarget { get; set; } = 38;
+        internal byte SecondTarget { get; set; } = 38;
+        internal bool IgnoreFanTargets { get; init; }
+        internal List<byte> FanTargetReadClasses { get; } = [];
+        internal List<(byte Zone, byte Target)> FanTargetWrites { get; } = [];
         internal byte Effect { get; set; } = 3;
         internal bool DisagreeModes { get; set; }
         internal bool InvalidCustom { get; set; }
+        internal byte Cpu { get; set; }
+        internal byte Gpu { get; set; }
         internal List<string>? Events { get; set; }
         internal bool FailNextSetterResponse { get; set; }
         internal bool FailNextLightingSetterResponse { get; set; }
         internal Action? AfterLogoRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
+        internal ConcurrentQueue<LightingTraffic> LightingTraffic { get; } = new();
+        internal int LightingFrameGetRequests { get; private set; }
+        internal int BlockLightingRowAfter { get; init; } = int.MaxValue;
+        internal TaskCompletionSource LightingRowBlocked { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseLightingRow { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<byte> Setters { get; } = [];
+        internal List<byte> CustomReadProfiles { get; } = [];
+        private int lightingRows;
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint code,
             byte[] buffer, CancellationToken caller, CancellationToken deadline)
         {
@@ -374,6 +568,47 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             {
                 request = buffer.ToArray();
                 Commands.Add((request[7], request[8]));
+                if (request[7] == 0x0D && request[8] == 0x87)
+                {
+                    CustomReadProfiles.Add(request[9]);
+                }
+                if (request[7] == 0x0D && request[8] == 0x81)
+                {
+                    FanTargetReadClasses.Add(request[9]);
+                }
+                if (request[7] == 0x0D && request[8] == 0x02)
+                {
+                    Mode = request[11];
+                    Fan = request[12];
+                }
+                if (request[7] == 0x0D && request[8] == 0x01)
+                {
+                    FanTargetWrites.Add((request[10], request[11]));
+                    if (!IgnoreFanTargets)
+                    {
+                        if (request[10] == 1) { FirstTarget = request[11]; }
+                        else { SecondTarget = request[11]; }
+                    }
+                }
+                if (IsAnimatedLightingSetCommand(request))
+                {
+                    byte[] payload = request.AsSpan(9, request[6]).ToArray();
+                    LightingTraffic.Enqueue(new(request[7], request[8], payload));
+                    if (request[8] == 0x0B
+                        && Interlocked.Increment(ref lightingRows) == BlockLightingRowAfter)
+                    {
+                        LightingRowBlocked.TrySetResult();
+                        return CompleteLightingRowAfterReleaseAsync(buffer);
+                    }
+                }
+                if (request[7] == 0x0F && request[8] == 0x02)
+                {
+                    Effect = request[11];
+                    LightingTraffic.Enqueue(new(
+                        request[7],
+                        request[8],
+                        request.AsSpan(9, request[6]).ToArray()));
+                }
                 Events?.Add($"query:{handle.FileHandle.DangerousGetHandle().ToInt64()}:{request[7]:X2}/{request[8]:X2}");
                 if (request[7] == 0x07 && request[8] == 0x12)
                 {
@@ -383,6 +618,14 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             }
             else
             {
+                if (buffer[7] == 0x03 && buffer[8] == 0x8B)
+                {
+                    LightingFrameGetRequests++;
+                    return Task.FromResult(new HidFeatureIoResult(
+                        new(false, 0, 31),
+                        false,
+                        HidFeatureTermination.Completed));
+                }
                 request.CopyTo(buffer, 0);
                 buffer[1] = 2;
                 if (buffer[7] == 0x07 && buffer[8] == 0x92)
@@ -403,10 +646,20 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                 else if (buffer[7] == 0x0D && buffer[8] == 0x82)
                 {
                     buffer[11] = DisagreeModes && buffer[10] == 2 ? (byte)5 : Mode;
+                    buffer[12] = Fan;
+                }
+                else if (buffer[7] == 0x0D && buffer[8] == 0x81)
+                {
+                    buffer[11] = buffer[10] == 1 ? FirstTarget : SecondTarget;
+                }
+                else if (buffer[7] == 0x07 && buffer[8] == 0x8C)
+                {
+                    buffer[9] = 0x11;
+                    buffer[10] = 0x11;
                 }
                 else if (buffer[7] == 0x0D && buffer[8] == 0x87)
                 {
-                    buffer[11] = InvalidCustom ? (byte)99 : (byte)0;
+                    buffer[11] = InvalidCustom ? (byte)99 : buffer[10] == 1 ? Cpu : Gpu;
                 }
                 else if (buffer[7] == 0x03 && buffer[8] == 0x83)
                 {
@@ -429,5 +682,23 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
             return Task.FromResult(new HidFeatureIoResult(new(true, buffer.Length, 0), true,
                 HidFeatureTermination.Completed));
         }
+
+        private async Task<HidFeatureIoResult> CompleteLightingRowAfterReleaseAsync(
+            byte[] buffer)
+        {
+            await ReleaseLightingRow.Task.ConfigureAwait(false);
+            return new HidFeatureIoResult(new(true, buffer.Length, 0), true,
+                HidFeatureTermination.Completed);
+        }
+
+        private static bool IsAnimatedLightingSetCommand(byte[] report) =>
+            report[7] == 0x03
+            && (report[8] == 0x0B
+                || report[8] == 0x0A
+                    && report[6] == 2
+                    && report[9] == 5
+                    && report[10] == 0);
     }
+
+    private sealed record LightingTraffic(byte Class, byte Id, byte[] Payload);
 }

@@ -38,6 +38,17 @@ public sealed class RazerBladeModelCatalogTests
         Assert.Equal("Razer Blade 16 (2025)", model.DisplayName);
     }
 
+    [Fact]
+    public void Find_RecognizesBlade18Identity()
+    {
+        RazerBladeModelInfo model = Assert.IsType<RazerBladeModelInfo>(
+            RazerBladeModelCatalog.Find("RZ09-0484"));
+        Assert.Equal("Razer Blade 18", model.ProductName);
+        Assert.Equal(2023, model.ModelYear);
+        Assert.Equal("1532", model.UsbVendorId);
+        Assert.Equal("02A0", model.UsbProductId);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

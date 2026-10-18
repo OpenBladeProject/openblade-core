@@ -1828,7 +1828,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             DeviceSubsystem.Performance,
             cancellationToken => SetPerformanceOverrideCoreAsync(value, cancellationToken),
             (coordinator, desired, cancellationToken) =>
-                coordinator.ApplyPerformanceOutcomeAsync(
+                coordinator.ApplyPerformanceTransitionOutcomeAsync(
                     desired,
                     cancellationToken),
             token,
@@ -1836,7 +1836,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? "Performance override was cleared."
                 : "Performance override intent was stored.",
             deferHardwareApply: DeferredPerformanceIntentMessage,
-            stillControlsSession: stillControlsSession);
+            stillControlsSession: stillControlsSession,
+            thermalComponentResolver: desired =>
+            {
+                ServiceStatusSnapshot status = GetStatus();
+                DeviceCapabilities capabilities = status.Capabilities
+                    ?? DeviceCapabilities.Unavailable();
+                return ControlCoordinator.RequiresAutomaticFansForCustom(
+                        desired,
+                        capabilities)
+                    || ControlCoordinator.RequiresPresetRangedFanRestore(
+                        desired,
+                        capabilities,
+                        status.ConfirmedState)
+                    ? [DeviceSubsystem.Fans, DeviceSubsystem.Performance]
+                    : [DeviceSubsystem.Performance];
+            });
 
     public async Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
@@ -7131,7 +7146,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         return intent.FanControl.Mode != FanMode.Fixed
-            || capabilities.FanSpeedRange?.Supports(
+            || capabilities.GetFanSpeedRange(intent.Performance)?.Supports(
                 intent.FanControl.FixedSpeedRpm) == true;
     }
 
@@ -13459,9 +13474,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 GpuClockTuningOnly: gpuClockTuningOnly));
         }
 
-        if (outcome.Result.Status is
-                ControlResultStatus.Applied or ControlResultStatus.Unchanged
-            && outcome.ConfirmedCoupledWrites is not null)
+        if (outcome.ConfirmedCoupledWrites is not null)
         {
             foreach (DeviceSubsystem coupled in outcome.ConfirmedCoupledWrites)
             {
@@ -13525,7 +13538,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         try
         {
-            if (subsystem == DeviceSubsystem.Performance)
+            if (subsystem == DeviceSubsystem.Performance
+                && thermalExecutionOptions?.Components.Count == 1)
             {
                 ScopedThermalExecutionOptions options = thermalExecutionOptions
                     ?? throw new InvalidOperationException(
@@ -13554,6 +13568,55 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                     cancellationToken)
                                 .ConfigureAwait(false);
                         },
+                        (_, cancellationToken) =>
+                            RevalidateScopedThermalRetryWithPolicyAsync(
+                                powerSource,
+                                desired,
+                                stageDesired,
+                                stillControlsSession,
+                                options,
+                                ThermalPreWriteRetryDelay,
+                                cancellationToken),
+                        token).ConfigureAwait(false);
+                return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
+            }
+
+            if (subsystem == DeviceSubsystem.Performance
+                && thermalExecutionOptions is not null)
+            {
+                ScopedThermalExecutionOptions options = thermalExecutionOptions;
+                ThermalTransitionExecution thermal = await ThermalTransitionExecutor
+                    .ExecuteAsync(
+                        options.Components,
+                        device,
+                        (attemptDevice, runner) => new ControlCoordinator(
+                            attemptDevice,
+                            attemptDevice.ReadPerformanceFanStateAsync,
+                            resolveIndeterminatePerformanceWrites: true,
+                            resolveIndeterminateAutomaticFanWrites: true,
+                            singleAttemptPerformanceWrites: true,
+                            singleAttemptFanWrites: true,
+                            thermalStepRunner: runner,
+                            performanceWriteBlockReason: () =>
+                                ScopedThermalWriteBlockReason(
+                                    desired,
+                                    stageDesired,
+                                    stillControlsSession,
+                                    options.Components,
+                                    options.AdditionalWriteBlockReason,
+                                    options.AuthorityPurpose),
+                            fanWriteBlockReason: () =>
+                                ScopedThermalWriteBlockReason(
+                                    desired,
+                                    stageDesired,
+                                    stillControlsSession,
+                                    options.Components,
+                                    options.AdditionalWriteBlockReason,
+                                    options.AuthorityPurpose)),
+                        (runner, cancellationToken) => apply(
+                            runner.CreateRecipeCoordinator(),
+                            desired,
+                            cancellationToken),
                         (_, cancellationToken) =>
                             RevalidateScopedThermalRetryWithPolicyAsync(
                                 powerSource,
@@ -15418,6 +15481,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ICollection<string> failures,
         CancellationToken token)
     {
+        // Host-managed preferences are consumed by the Session Agent from the
+        // durable profile. They must never become firmware writes or readback.
+        if (capabilities?.HostManagedLaptopControls.Contains(requested.Control) is true)
+        {
+            return;
+        }
+
         string label = requested.Control switch
         {
             OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",
@@ -17598,6 +17668,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
             ResolveAutomationDesired(confirmed), confirmed);
+        DeviceCapabilities? capabilities = GetStatus().Capabilities;
         // Custom maximum fans is a separate firmware override, not a fixed RPM
         // target. During a performance override, keep saved manual-fan intent but
         // reach the necessary Automatic fan state directly. Profiles reject the
@@ -17611,7 +17682,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FanControl = FanControlSettings.Default,
             };
         }
-        DeviceCapabilities? capabilities = GetStatus().Capabilities;
+        else if (capabilities is not null
+            && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
+            && ControlCoordinator.RequiresAutomaticFansForCustom(
+                desired,
+                capabilities))
+        {
+            // Synapse makes Automatic a Custom-entry policy for this capability
+            // shape. Normalize only the hardware target; the saved manual intent
+            // remains available when the user leaves Custom.
+            desired = desired with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.Automatic,
+                    desired.Performance.Source),
+                FanControl = FanControlSettings.Default,
+            };
+        }
         // Normalize only admitted manual controls. Unsupported retained intent
         // must not turn the user's supported performance choice into Balanced.
         if (Automation.PowerSource == PowerSource.PluggedIn
@@ -17620,7 +17707,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && capabilities.PerformancePresets.Count > 0
             && capabilities.FanModes.Count > 0
             && capabilities.FanModes.Contains(desired.Fans.Value)
-            && !capabilities.SupportsDirectManualFanTransitions)
+            && !capabilities.SupportsDirectManualFanTransitions
+            && !ControlCoordinator.SupportsPresetRangedFixedFans(
+                desired,
+                capabilities))
         {
             desired = desired with
             {

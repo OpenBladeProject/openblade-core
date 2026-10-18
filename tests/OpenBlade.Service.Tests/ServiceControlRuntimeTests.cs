@@ -10726,6 +10726,47 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PowerTransition_HostGamingModeDoesNotWriteOrClaimFirmwareReadback()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HostManagedLaptopControls = new HashSet<OneShotLaptopControl>
+            {
+                OneShotLaptopControl.GamingMode,
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.GamingModeEnabled = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            Battery = profiles.Battery with
+            {
+                LaptopBehavior = new LaptopBehaviorProfileSettings(null, null, true)
+                {
+                    GamingModeKeyPolicy = new GamingModeKeyPolicy(true, true),
+                },
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.OneShotSetCalls);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Null(status.GamingModeEnabled);
+        Assert.True(status.Profiles.Battery.EffectiveLaptopBehavior.GamingModeEnabled);
+        Assert.DoesNotContain("Gaming mode is unsupported", status.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PayloadValidationObservationFailure_RetriesOneReadAndRecovers()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -30334,6 +30375,163 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
+    [InlineData(PerformancePreset.Balanced, 3700)]
+    [InlineData(PerformancePreset.Silent, 5300)]
+    public async Task SourceAutomaticCustomPolicy_HandsBackFixedFansBeforeCustom(
+        PerformancePreset initialPerformance,
+        int fixedSpeedRpm)
+    {
+        (TestContext context, FanControlSettings manual) =
+            await CreateSourceAutomaticCustomContextAsync(
+                initialPerformance,
+                fixedSpeedRpm);
+        var order = new List<DeviceSubsystem>();
+        context.Device.AfterSetter = order.Add;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Custom,
+                    OverrideLifetime.UntilPowerSourceChange,
+                    CustomPerformanceSettings.Default),
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            [DeviceSubsystem.Fans, DeviceSubsystem.Performance],
+            order);
+        Assert.Equal([FanMode.Automatic], context.Device.FanWrites);
+        Assert.Equal([PerformancePreset.Custom], context.Device.PerformanceWrites);
+        Assert.DoesNotContain(PerformancePreset.Balanced, context.Device.PerformanceWrites);
+        Assert.Equal(PerformancePreset.Custom, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(manual, context.Runtime.GetStatus().DesiredState.FanControl);
+    }
+
+    [Fact]
+    public async Task SourceAutomaticCustomPolicy_UnconfirmedAutomaticStopsBeforeCustom()
+    {
+        (TestContext context, _) = await CreateSourceAutomaticCustomContextAsync(
+            PerformancePreset.Balanced,
+            fixedSpeedRpm: 3700);
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Fans;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Custom,
+                    OverrideLifetime.UntilPowerSourceChange,
+                    CustomPerformanceSettings.Default),
+                CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal([FanMode.Automatic], context.Device.FanWrites);
+        Assert.Empty(context.Device.PerformanceWrites);
+    }
+
+    [Fact]
+    public async Task SourceAutomaticCustomPolicy_IndeterminateAutomaticIsNotReplayed()
+    {
+        (TestContext context, _) = await CreateSourceAutomaticCustomContextAsync(
+            PerformancePreset.Balanced,
+            fixedSpeedRpm: 3700);
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "Injected ambiguous Automatic handback."));
+        bool automaticSubmissionAmbiguous = false;
+        context.Device.BeforeQueuedFanFailure = () =>
+            automaticSubmissionAmbiguous = true;
+        context.Device.BeforePerformanceFanStateReadResult = _ =>
+        {
+            if (automaticSubmissionAmbiguous)
+            {
+                throw new IOException("Injected ambiguous Automatic confirmation failure.");
+            }
+        };
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Custom,
+                    OverrideLifetime.UntilPowerSourceChange,
+                    CustomPerformanceSettings.Default),
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task SourceAutomaticCustomPolicy_LeavingCustomRestoresStoredSilentFixedFans()
+    {
+        (TestContext context, FanControlSettings manual) =
+            await CreateSourceAutomaticCustomContextAsync(
+                PerformancePreset.Silent,
+                fixedSpeedRpm: 5300);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Custom,
+                    OverrideLifetime.UntilPowerSourceChange,
+                    CustomPerformanceSettings.Default),
+                CancellationToken.None)).Status);
+        context.Device.PerformanceWrites.Clear();
+        context.Device.FanWrites.Clear();
+        context.Device.FanControlWrites.Clear();
+        var order = new List<DeviceSubsystem>();
+        context.Device.AfterSetter = order.Add;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Silent,
+                    OverrideLifetime.UntilPowerSourceChange),
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            order);
+        Assert.Equal([PerformancePreset.Silent], context.Device.PerformanceWrites);
+        Assert.Equal([manual], context.Device.FanControlWrites);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Equal(manual, context.Runtime.GetStatus().DesiredState.FanControl);
+    }
+
+    [Fact]
+    public async Task SourceAutomaticCustomPolicy_UnrelatedDirectManualModelDoesNotBridge()
+    {
+        (TestContext context, _) = await CreateSourceAutomaticCustomContextAsync(
+            PerformancePreset.Balanced,
+            fixedSpeedRpm: 3700);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+            FanSpeedRangesByPerformancePreset =
+                new Dictionary<PerformancePreset, FanSpeedRange>(),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.FanWrites.Clear();
+        context.Device.FanControlWrites.Clear();
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Custom,
+                    OverrideLifetime.UntilPowerSourceChange,
+                    CustomPerformanceSettings.Default),
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Empty(context.Device.FanWrites);
+        Assert.Equal([PerformancePreset.Custom], context.Device.PerformanceWrites);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task DirectManualFanTransitionIgnoresUnrelatedPerformanceIntentChange(
@@ -30448,6 +30646,75 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(PerformancePreset.Performance,
             context.Runtime.GetStatus().DesiredState.Performance.Value);
         return (context, journal, manual);
+    }
+
+    private async Task<(TestContext Context, FanControlSettings Manual)>
+        CreateSourceAutomaticCustomContextAsync(
+            PerformancePreset performance,
+            int fixedSpeedRpm)
+    {
+        TestContext context = CreateWritableContext();
+        CustomPerformanceSettings custom = CustomPerformanceSettings.Default;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            PerformancePresets = new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Balanced,
+                PerformancePreset.Silent,
+                PerformancePreset.Custom,
+            },
+            FanModes = new HashSet<FanMode>
+            {
+                FanMode.Automatic,
+                FanMode.Fixed,
+            },
+            CustomPerformance = new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination>
+                {
+                    new(custom.Cpu, custom.Gpu),
+                }),
+            FanSpeedRange = new FanSpeedRange(2200, 5300, 100),
+            FanSpeedRangesByPerformancePreset =
+                new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [PerformancePreset.Balanced] = new(2200, 3800, 100),
+                    [PerformancePreset.Silent] = new(3700, 5300, 100),
+                },
+            SupportsDirectManualFanTransitions = false,
+            ReportsPerformanceWithManualFans = true,
+        };
+        var manual = new FanControlSettings(
+            FanMode.Fixed,
+            fixedSpeedRpm,
+            ManualFanCurve.Default);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = performance,
+            CustomPerformance = null,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        context.Device.UseScopedPerformanceFanRead = true;
+        System.Reflection.FieldInfo automationField = typeof(ServiceControlRuntime)
+            .GetField(
+                "automation",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!;
+        var automation = Assert.IsType<ProfileAutomationState>(
+            automationField.GetValue(context.Runtime));
+        automation.SetPerformanceOverride(new PerformanceOverride(
+            performance,
+            OverrideLifetime.UntilPowerSourceChange));
+        automation.SetFanOverride(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            manual);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.PerformanceWrites.Clear();
+        context.Device.FanWrites.Clear();
+        context.Device.FanControlWrites.Clear();
+        return (context, manual);
     }
 
     private async Task<(TestContext Context, RecordingHyperBoostOwnershipJournalStore Journal)>

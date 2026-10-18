@@ -670,6 +670,157 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
+    public async Task SubmitBatchAsync_FirstGuardFailureSubmitsNothingAndKeepsSessionHealthy()
+    {
+        var io = new ScriptedIo(SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            new ScriptedGuard(GuardKind.Conflict));
+
+        HidSessionResult<ReadOnlyMemory<byte>> result =
+            await ((IRazerSetFeatureCommandSession)actor).SubmitBatchAsync(
+                [
+                    new(0x03, 0x0B, [0xFF, 0x00], 2),
+                    new(0x03, 0x0A, [0x05, 0x00], 2),
+                ],
+                () => TransactionIdAssignment.Valid(1),
+                Timeout,
+                default);
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, result.Failure);
+        Assert.Equal(HidSessionFailurePhase.Guard, result.Diagnostic?.Phase);
+        Assert.Empty(io.Calls);
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+    }
+
+    [Fact]
+    public async Task SubmitBatchAsync_GuardFailureAfterFirstWritePoisonsAndDrainsQueue()
+    {
+        var firstCompletion =
+            new TaskCompletionSource<HidFeatureIoResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(
+            (_, _, _, _, _) => firstCompletion.Task,
+            SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            new ScriptedGuard(GuardKind.Success, GuardKind.Conflict));
+        int transaction = 0;
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> batch =
+            ((IRazerSetFeatureCommandSession)actor).SubmitBatchAsync(
+                [
+                    new(0x03, 0x0B, [0xFF, 0x00], 2),
+                    new(0x03, 0x0A, [0x05, 0x00], 2),
+                ],
+                () => TransactionIdAssignment.Valid(
+                    checked((byte)Interlocked.Increment(ref transaction))),
+                Timeout,
+                default);
+        await io.WaitForCallsAsync(1);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.SubmitAsync(
+            new(0x03, 0x0B, [0xFF, 0x01], 2),
+            () => TransactionIdAssignment.Valid(3),
+            Timeout,
+            default);
+
+        firstCompletion.SetResult(SetSuccessResult());
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await batch;
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, result.Failure);
+        Assert.Equal(HidSessionFailurePhase.SetCompletion, result.Diagnostic?.Phase);
+        Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
+        Assert.Single(io.Calls);
+    }
+
+    [Fact]
+    public async Task SubmitBatchAsync_ExhaustionAfterFirstWritePoisonsAndDrainsQueue()
+    {
+        var firstCompletion =
+            new TaskCompletionSource<HidFeatureIoResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(
+            (_, _, _, _, _) => firstCompletion.Task,
+            SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        int assignments = 0;
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> batch =
+            ((IRazerSetFeatureCommandSession)actor).SubmitBatchAsync(
+                [
+                    new(0x03, 0x0B, [0xFF, 0x00], 2),
+                    new(0x03, 0x0A, [0x05, 0x00], 2),
+                ],
+                () => Interlocked.Increment(ref assignments) == 1
+                    ? TransactionIdAssignment.Valid(1)
+                    : TransactionIdAssignment.Exhausted(),
+                Timeout,
+                default);
+        await io.WaitForCallsAsync(1);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.SubmitAsync(
+            new(0x03, 0x0B, [0xFF, 0x01], 2),
+            () => TransactionIdAssignment.Valid(3),
+            Timeout,
+            default);
+
+        firstCompletion.SetResult(SetSuccessResult());
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await batch;
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, result.Failure);
+        Assert.Equal(HidSessionFailurePhase.SetCompletion, result.Diagnostic?.Phase);
+        Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
+        Assert.Equal(2, assignments);
+        Assert.Single(io.Calls);
+    }
+
+    [Fact]
+    public async Task SubmitBatchAsync_CancellationAtLaterPrecheckPoisonsAndDrainsQueue()
+    {
+        using var caller = new CancellationTokenSource();
+        var firstCompletion =
+            new TaskCompletionSource<HidFeatureIoResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(
+            (_, _, _, _, _) => firstCompletion.Task,
+            SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        int assignments = 0;
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> batch =
+            ((IRazerSetFeatureCommandSession)actor).SubmitBatchAsync(
+                [
+                    new(0x03, 0x0B, [0xFF, 0x00], 2),
+                    new(0x03, 0x0A, [0x05, 0x00], 2),
+                ],
+                () =>
+                {
+                    int assignment = Interlocked.Increment(ref assignments);
+                    if (assignment == 2)
+                    {
+                        caller.Cancel();
+                    }
+                    return TransactionIdAssignment.Valid(checked((byte)assignment));
+                },
+                Timeout,
+                caller.Token);
+        await io.WaitForCallsAsync(1);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.SubmitAsync(
+            new(0x03, 0x0B, [0xFF, 0x01], 2),
+            () => TransactionIdAssignment.Valid(3),
+            Timeout,
+            default);
+
+        firstCompletion.SetResult(SetSuccessResult());
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await batch;
+        Assert.Equal(HidSessionFailureKind.Canceled, result.Failure);
+        Assert.Equal(HidSessionFailurePhase.SetCompletion, result.Diagnostic?.Phase);
+        Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
+        Assert.Equal(2, assignments);
+        Assert.Single(io.Calls);
+    }
+
+    [Fact]
     public async Task SubmitBatchAsync_AdmissionAllocatesLessThanSevenSingles()
     {
         _ = await MeasureSetAdmissionAllocationsAsync(batch: false);

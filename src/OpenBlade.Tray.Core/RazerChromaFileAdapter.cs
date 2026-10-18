@@ -3,7 +3,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
-public static class RazerChromaFileAdapter
+public static partial class RazerChromaFileAdapter
 {
     public const int SupportedVersion = 1;
     public const int MaximumFileSizeBytes = 5 * 1024 * 1024;
@@ -17,7 +17,11 @@ public static class RazerChromaFileAdapter
     public static KeyboardLightingPreset Deserialize(
         ReadOnlySpan<byte> content,
         string? presetName = null,
-        string? keyboardLayoutId = null)
+        string? keyboardLayoutId = null) =>
+        Deserialize(content, presetName, keyboardLayoutId, null);
+
+    public static KeyboardLightingPreset Deserialize(
+        ReadOnlySpan<byte> content, string? presetName, string? keyboardLayoutId, byte? blade18Region)
     {
         if (content.Length == 0)
         {
@@ -138,7 +142,7 @@ public static class RazerChromaFileAdapter
         }
 
         IReadOnlyDictionary<int, byte> map = CreateLogicalKeyProjection(
-            keyboardLayoutId);
+            keyboardLayoutId, blade18Region);
         var unmappedColoredCells = new HashSet<int>();
         var projected = new List<KeyboardLightingSequenceFrame>(sourceFrames.Count);
         foreach (SourceFrame source in sourceFrames)
@@ -164,7 +168,7 @@ public static class RazerChromaFileAdapter
         try
         {
             timeline = KeyboardLightingSequenceCodec.Encode(
-                projected);
+                projected, keyboardLayoutId!);
         }
         catch (InvalidDataException exception)
         {
@@ -190,8 +194,12 @@ public static class RazerChromaFileAdapter
     }
 
     private static IReadOnlyDictionary<int, byte> CreateLogicalKeyProjection(
-        string? layoutId)
+        string? layoutId, byte? blade18Region)
     {
+        if (layoutId == KeyboardLightingLayoutIds.Rz09_0484)
+        {
+            return CreateBlade18Projection(blade18Region);
+        }
         if (layoutId is not (
             KeyboardLightingLayoutIds.Rz09_0581 or
             KeyboardLightingLayoutIds.Rz09_0528))

@@ -6,7 +6,7 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent.Tests;
 
-public sealed class ServiceReactiveLightingLoopTests
+public sealed partial class ServiceReactiveLightingLoopTests
 {
     [Theory]
     [InlineData(ControlOperationStatus.Applied, false)]
@@ -883,6 +883,38 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task Blade18PhysicalRegionTracksVerifiedStatusAndClearsOnModelOrAdmissionLoss()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        Assert.Null(factory.Last!.ReadBlade18KeyboardLayoutId());
+        ServiceStatusSnapshot japanese = Status(LightingRendererOwnershipState.Reactive) with
+        {
+            Firmware = new FirmwareVersions("2.09", "1", "Unavailable", "Unavailable", "RZ09-0484"),
+            Capabilities = DeviceCapabilities.Unavailable() with { Blade18KeyboardLayoutId = 12 },
+        };
+        client.Publish(japanese);
+        await WaitUntilAsync(() => factory.Last.ReadBlade18KeyboardLayoutId() == 12);
+        client.Publish(japanese with { Revision = 2, Capabilities = japanese.Capabilities! with { Blade18KeyboardLayoutId = 3 } });
+        await WaitUntilAsync(() => factory.Last.ReadBlade18KeyboardLayoutId() == 3);
+        client.Publish(japanese with { Revision = 3, DeviceVerified = false });
+        await WaitUntilAsync(() => factory.Last.ReadBlade18KeyboardLayoutId() is null);
+        client.Publish(japanese with
+        {
+            Revision = 4,
+            Firmware = japanese.Firmware! with { ModelNumber = "RZ09-0528" },
+        });
+        await WaitUntilAsync(() => factory.Last.ReadVerifiedInputDeviceKind() == RazerBladeInputDeviceKind.Rz09_0528);
+        Assert.Null(factory.Last.ReadBlade18KeyboardLayoutId());
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
     public async Task UnknownVerifiedReadbackPreservesPreferenceButDisablesInterception()
     {
         var client = new WatchClient();
@@ -1103,7 +1135,11 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
         private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
+        private readonly Func<byte?> readBlade18KeyboardLayoutId;
         private readonly Func<SpecialKeySlot, bool> isSpecialKeyInputAdmitted;
+        private readonly Action<Blade18FnShortcut> publishBlade18FnShortcut;
+        private readonly Func<bool> isBlade18FnInputAdmitted;
+        private readonly Action resetFunctionRowInput;
 
         public RecordingSource(ReactiveKeyboardSourceOptions options)
         {
@@ -1117,7 +1153,11 @@ public sealed class ServiceReactiveLightingLoopTests
             readDriverModeObservation = options.ReadDriverModeObservation;
             readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy;
             readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind;
+            readBlade18KeyboardLayoutId = options.ReadBlade18KeyboardLayoutId;
             isSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted;
+            publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
+            isBlade18FnInputAdmitted = options.IsBlade18FnInputAdmitted;
+            resetFunctionRowInput = options.ResetFunctionRowInput;
         }
 
         public bool Disposed { get; private set; }
@@ -1159,8 +1199,17 @@ public sealed class ServiceReactiveLightingLoopTests
         public RazerBladeInputDeviceKind ReadVerifiedInputDeviceKind() =>
             readVerifiedInputDeviceKind();
 
+        public byte? ReadBlade18KeyboardLayoutId() => readBlade18KeyboardLayoutId();
+
         public bool IsSpecialKeyInputAdmitted(SpecialKeySlot slot) =>
             isSpecialKeyInputAdmitted(slot);
+
+        public void PublishBlade18FnShortcut(Blade18FnShortcut shortcut) =>
+            publishBlade18FnShortcut(shortcut);
+
+        public bool IsBlade18FnInputAdmitted() => isBlade18FnInputAdmitted();
+
+        public void ResetFunctionRowInput() => resetFunctionRowInput();
 
         public void Fail(Exception exception) => completion.TrySetException(exception);
 

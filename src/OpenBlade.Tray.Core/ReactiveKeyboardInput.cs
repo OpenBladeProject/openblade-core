@@ -276,6 +276,15 @@ public static class ReactiveRawKeyboardInput
         ushort flags,
         out ReactiveKeyPulse primary,
         out ReactiveKeyPulse? secondary)
+        => TryCreatePulses(deviceKind, null, makeCode, flags, out primary, out secondary);
+
+    public static bool TryCreatePulses(
+        RazerBladeInputDeviceKind deviceKind,
+        byte? blade18KeyboardLayoutId,
+        ushort makeCode,
+        ushort flags,
+        out ReactiveKeyPulse primary,
+        out ReactiveKeyPulse? secondary)
     {
         if (makeCode == 0
             || (flags & KeyBreakFlag) != 0
@@ -295,6 +304,8 @@ public static class ReactiveRawKeyboardInput
                     isExtended,
                     out primary,
                     out secondary),
+            RazerBladeInputDeviceKind.Rz09_0484 =>
+                TryCreateBlade18Pulse(blade18KeyboardLayoutId, makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0528 =>
                 Rz09_0528ReactiveKeyMap.TryMap(
                     makeCode,
@@ -303,6 +314,20 @@ public static class ReactiveRawKeyboardInput
                     out secondary),
             _ => ReturnUnsupported(out primary, out secondary),
         };
+    }
+
+    private static bool TryCreateBlade18Pulse(
+        byte? layoutId, ushort makeCode, bool extended,
+        out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary)
+    {
+        secondary = null;
+        if (Blade18KeyboardLightingLayout.TryMapScanCode(layoutId, makeCode, extended, out byte slot))
+        {
+            primary = new(slot);
+            return true;
+        }
+        primary = default;
+        return false;
     }
 
     private static bool ReturnUnsupported(
@@ -462,12 +487,18 @@ public enum RazerBladeInputDeviceKind
     Unsupported,
     Rz09_0581,
     Rz09_0528,
+    Rz09_0484,
 }
 
 public static class RazerBladeReactiveInputDevice
 {
     public static RazerBladeInputDeviceKind ClassifyPath(string? path)
     {
+        // Product 672's SYSTEM report geometry does not inherit MI_01.
+        if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02A0"))
+        {
+            return RazerBladeInputDeviceKind.Rz09_0484;
+        }
         if (string.IsNullOrWhiteSpace(path)
             || !path.Contains("&MI_01", StringComparison.OrdinalIgnoreCase))
         {
@@ -491,6 +522,8 @@ public static class RazerBladeReactiveInputDevice
                 RazerBladeInputDeviceKind.Rz09_0581,
             RazerBladeModelCatalog.Rz090528ModelNumber =>
                 RazerBladeInputDeviceKind.Rz09_0528,
+            RazerBladeModelCatalog.Rz090484ModelNumber =>
+                RazerBladeInputDeviceKind.Rz09_0484,
             _ => RazerBladeInputDeviceKind.Unsupported,
         };
 

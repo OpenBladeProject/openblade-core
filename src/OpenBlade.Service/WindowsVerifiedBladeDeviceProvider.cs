@@ -605,6 +605,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
                         KeyboardLightingLayoutId =
                             lighting.Capabilities.KeyboardLightingLayoutId,
+                        Blade18KeyboardLayoutId = lighting.Capabilities.Blade18KeyboardLayoutId,
                         SupportedLightingRefreshRates =
                             lighting.Capabilities.SupportedLightingRefreshRates,
                     };
@@ -920,9 +921,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     // Without the protection baseline the battery subsystem is
                     // already unknown, so the dependent override is not queried.
                     IProductionBatteryPort port = await lease.GetAsync().ConfigureAwait(false);
-                    // Experimental profiles have no temporary override: the BHO
-                    // register is their complete admitted protection state.
-                    bool? temporary = batteryFactory is ExperimentalBladeFactory ? false : null;
+                    // Models without an admitted override query use the protection
+                    // register alone. An admitted query must establish its real flag.
+                    bool? temporary = batteryFactory is ExperimentalBladeFactory
+                        && !port.SupportsTemporaryFullChargeQuery ? false : null;
                     if (port.SupportsTemporaryFullChargeQuery)
                     {
                         (_, temporary) = await ReadIsolatedStateQueryAsync(
@@ -1360,9 +1362,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                // These queries have no implementation in the experimental port.
-                // Returning unavailable avoids opening and probing HID for a known no-op.
-                if (batteryFactory is ExperimentalBladeFactory)
+                // Probe only exact experimental models with a reviewed source query.
+                // Actual mutation capability still requires a valid getter.
+                if (batteryFactory is ExperimentalBladeFactory experimental
+                    && !experimental.PotentialCapabilities.OneShotLaptopControls.Contains(
+                        OneShotLaptopControl.StartupAnimation))
                 {
                     return null;
                 }
@@ -2127,7 +2131,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             return capabilities.FanModes.Contains(value.Mode)
                 && (value.Mode != FanMode.Fixed
-                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true)
+                    || capabilities.SupportsFanSpeedInAnyPerformancePreset(
+                        value.FixedSpeedRpm))
                 ? ExecuteProductionWriteAsync(
                     port => port.SetFanControlAsync(value, cancellationToken),
                     cancellationToken,
@@ -2178,8 +2183,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             bool targetsAdmitted = isManualEntryContinuation
                 ? capabilities.FanModes.Any(
                     mode => DeviceSubsystemOrder.IsManualFanMode(mode))
-                    && capabilities.FanSpeedRange?.Supports(fan1Rpm) == true
-                    && capabilities.FanSpeedRange.Supports(fan2Rpm)
+                    && capabilities.SupportsFanSpeedInAnyPerformancePreset(fan1Rpm)
+                    && capabilities.SupportsFanSpeedInAnyPerformancePreset(fan2Rpm)
                 : capabilities.FanModes.Contains(FanMode.ManualCurve);
             return targetsAdmitted
                 ? ExecuteProductionWriteAsync(

@@ -75,7 +75,7 @@ internal sealed class ImportedSequenceTimeline
 
     internal ImportedSequenceTimeline(SequenceLightingParameters parameters)
     {
-        sequence = KeyboardLightingSequenceCodec.Decode(parameters.TimelineBase64);
+        sequence = KeyboardLightingSequenceCodec.Decode(parameters.TimelineBase64, parameters.LayoutId);
         loop = parameters.Loop;
         totalMilliseconds = sequence.Frames.Sum(
             frame => (long)frame.DurationMilliseconds);

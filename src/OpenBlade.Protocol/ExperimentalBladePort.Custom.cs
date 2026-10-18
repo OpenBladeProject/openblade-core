@@ -12,7 +12,8 @@ internal sealed partial class ExperimentalBladePort
          from gpu in Enum.GetValues<CustomPerformanceLevel>()
          let combination = new CustomPerformanceCombination(cpu, gpu)
          where SupportsExperimentalCustom(model) && combination.IsWellFormed
-             && (model.ProductId == 0x029F || cpu != CustomPerformanceLevel.Boost
+             && (model.ProductId is 0x029F or 0x02A0
+                 || cpu != CustomPerformanceLevel.Boost
                  && (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High))
          select combination).ToHashSet())
     {
@@ -20,15 +21,23 @@ internal sealed partial class ExperimentalBladePort
     };
 
     // 029F High/High and CPU Boost are explicit Synapse captures in tdakhran
-    // 8e12e778/data/README.md. Other exact profiles retain bounded Low..High
-    // extrapolation; raw level 4 never acquires a meaning or write capability.
+    // 8e12e778/data/README.md. Product 672 sets CPU and GPU levels independently
+    // in pinned 6737.e50bb836b878190315d7.js at UTF-8 bytes 1560351/1560392, with no
+    // pair restriction. All twelve 02A0 pairs are source-backed experimental;
+    // Observer additionally corroborates Boost/Low and Boost/High. See
+    // docs/blade18-observer-evidence.md. Other models retain their bounds;
+    // raw level 4 is not a normal Custom level.
     private async Task<CustomPerformanceSettings?> ReadCustomPerformanceAsync(
         CancellationToken cancellationToken, bool includeMaximumFans = true)
     {
+        // Product 672 defaults Custom GETs to profile 1; the exact CPU request
+        // is retained in the 2026-10-16 Observer fixture. Other profiles keep
+        // their separately admitted upstream query shape; this does not prove 0 fails.
+        byte profile = model.ProductId == 0x02A0 ? (byte)1 : (byte)0;
         ReadOnlyMemory<byte> cpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
-            [0, 1, 0], false, cancellationToken).ConfigureAwait(false);
+            [profile, 1, 0], false, cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> gpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
-            [0, 2, 0], false, cancellationToken).ConfigureAwait(false);
+            [profile, 2, 0], false, cancellationToken).ConfigureAwait(false);
         string reported = $"CpuSelector={cpu.Span[1]};CpuLevel={cpu.Span[2]};GpuSelector={gpu.Span[1]};GpuLevel={gpu.Span[2]}";
         if (cpu.Span[1] != 1 || gpu.Span[1] != 2)
         {
@@ -66,10 +75,11 @@ internal sealed partial class ExperimentalBladePort
         {
             RequireWriteAdmission(thermal: true);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
-            // Only 029F/029D admit the independent fan flag and target registers
-            // (sqmagellan 9c66e705/librazer/src/command.rs). Preserve that flag
-            // through Custom entry; other models cannot establish a manual baseline.
-            if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic && GetExperimentalFanRange(model) is null
+            // 029F/029D admit fixed targets through Custom entry (sqmagellan
+            // 9c66e705/librazer/src/command.rs). 02A0 admits fixed targets only
+            // in Balanced, so it requires Automatic handback before Custom.
+            if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic
+                    && (GetExperimentalFanRange(model) is null || model.ProductId == 0x02A0)
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
                     or PerformancePreset.Performance or PerformancePreset.Custom))
             {
@@ -132,13 +142,14 @@ internal sealed partial class ExperimentalBladePort
                 }
                 currentLevels = entered.CustomPerformance;
             }
-            // Lower the currently High domain before raising the other one. Every
-            // intermediate state must satisfy the same contract as the final state.
-            byte[] clusters = currentLevels.Gpu == CustomPerformanceLevel.High && value.Cpu == CustomPerformanceLevel.High
-                ? [2, 1] : [1, 2];
-            foreach (byte cluster in clusters)
+            // Each setter changes one cluster. Use the fewest admitted intermediate
+            // combinations; only models with concrete pair restrictions need a bridge.
+            CustomPerformanceCombination[] path = PlanCustomLevelChanges(
+                CreateCustomCapabilities(model), currentLevels, value);
+            foreach (CustomPerformanceCombination next in path)
             {
-                CustomPerformanceLevel level = cluster == 1 ? value.Cpu : value.Gpu;
+                byte cluster = next.Cpu != currentLevels.Cpu ? (byte)1 : (byte)2;
+                CustomPerformanceLevel level = cluster == 1 ? next.Cpu : next.Gpu;
                 CustomPerformanceLevel current = cluster == 1 ? currentLevels.Cpu : currentLevels.Gpu;
                 if (current == level)
                 {
@@ -199,6 +210,47 @@ internal sealed partial class ExperimentalBladePort
         }
     }
 
+    private static CustomPerformanceCombination[] PlanCustomLevelChanges(
+        CustomPerformanceCapabilities capabilities,
+        CustomPerformanceSettings baseline,
+        CustomPerformanceSettings requested)
+    {
+        var start = new CustomPerformanceCombination(baseline.Cpu, baseline.Gpu);
+        var target = new CustomPerformanceCombination(requested.Cpu, requested.Gpu);
+        if (start == target)
+        {
+            return [];
+        }
+        // At most twelve combinations exist. Breadth-first search preserves direct
+        // transitions and adds a bridge only when both direct orderings are blocked.
+        var visited = new HashSet<CustomPerformanceCombination> { start };
+        var queue = new Queue<(CustomPerformanceCombination State, CustomPerformanceCombination[] Path)>();
+        queue.Enqueue((start, []));
+        CustomPerformanceCombination[] candidates = capabilities.AllowedCombinations
+            .OrderByDescending(item => item.Cpu == target.Cpu)
+            .ThenByDescending(item => item.Gpu == target.Gpu)
+            .ThenBy(item => Math.Abs((int)item.Cpu - (int)CustomPerformanceLevel.Medium))
+            .ToArray();
+        while (queue.TryDequeue(out var current))
+        {
+            foreach (CustomPerformanceCombination next in candidates)
+            {
+                if ((next.Cpu == current.State.Cpu) == (next.Gpu == current.State.Gpu)
+                    || !visited.Add(next))
+                {
+                    continue;
+                }
+                CustomPerformanceCombination[] path = [.. current.Path, next];
+                if (next == target)
+                {
+                    return path;
+                }
+                queue.Enqueue((next, path));
+            }
+        }
+        throw new IOException("No admitted transition connects these custom performance combinations.");
+    }
+
     private async Task<bool> ReadMaximumFansAsync(CancellationToken cancellationToken) =>
         (await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false)
             & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0;
@@ -206,7 +258,8 @@ internal sealed partial class ExperimentalBladePort
     private async Task<byte> ReadPowerModeControlAsync(CancellationToken cancellationToken)
     {
         ReadOnlyMemory<byte> payload = await ExchangeAsync("MaximumFans", 0x07, 0x8F,
-            [0], false, cancellationToken, variableResponse: true).ConfigureAwait(false);
+            [0], false, cancellationToken, variableResponse: true,
+            payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength).ConfigureAwait(false);
         if (!TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out _))
         {
             RecordQuery("MaximumFans", "UnsupportedState",
@@ -216,7 +269,10 @@ internal sealed partial class ExperimentalBladePort
         }
         RecordQuery("MaximumFans", "Confirmed",
             $"PowerModeControl=0x{payload.Span[0]:X2};MaximumFans={(payload.Span[0] & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0};"
-                + $"OtherSettings=0x{payload.Span[0] & ~TemporaryFullChargeProtocol.MaximumFanSpeedBit:X2}");
+                + $"OtherSettings=0x{payload.Span[0] & ~TemporaryFullChargeProtocol.MaximumFanSpeedBit:X2};"
+                + $"TemporaryFullChargeBit={(payload.Span[0] & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0};"
+                + $"CpuBoostBit={(payload.Span[0] & TemporaryFullChargeProtocol.CpuBoostBit) != 0};"
+                + $"LocalDimmingBit={(payload.Span[0] & TemporaryFullChargeProtocol.LocalDimmingBit) != 0}");
         return payload.Span[0];
     }
 

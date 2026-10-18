@@ -162,6 +162,16 @@ type sealed class OpenBlade.Contracts.BatteryPolicy
   method static System.Boolean op_Inequality(OpenBlade.Contracts.BatteryPolicy left, OpenBlade.Contracts.BatteryPolicy right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.BatteryPolicy other)
   property System.Int32 ChargeLimitPercent { get; }
+type static class OpenBlade.Contracts.Blade18KeyboardLightingLayout
+  field const System.Int32 Columns = 16
+  field const System.Int32 Rows = 6
+  field const System.Int32 SlotCount = 96
+  method static System.Boolean IsKeySlot(System.Int32 slot)
+  method static System.Boolean IsKnownLayout(System.Byte layoutId)
+  method static System.Boolean TryGetKeyPosition(System.Int32 slot, out System.Double x, out System.Double y)
+  method static System.Boolean TryGetKeyPosition(System.Nullable<System.Byte> layoutId, System.Int32 slot, out System.Double x, out System.Double y)
+  method static System.Boolean TryMapScanCode(System.Nullable<System.Byte> layoutId, System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
+  method static System.Boolean TryMapScanCode(System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
 type enum OpenBlade.Contracts.BreathingColorMode
   field System.Int32 value__
   field const OpenBlade.Contracts.BreathingColorMode Dual = 1
@@ -476,12 +486,14 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.CpuVoltageOptimizerCapabilities get_CpuVoltageOptimizer()
   method OpenBlade.Contracts.CustomPerformanceCapabilities get_CustomPerformance()
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
+  method OpenBlade.Contracts.FanSpeedRange GetFanSpeedRange(OpenBlade.Contracts.PerformancePreset performance)
   method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
   method OpenBlade.Contracts.HyperBoostBaseModeCapabilities get_HyperBoostBaseModes()
   method OpenBlade.Contracts.SpecialKeySlotSet get_WritableSpecialKeySlots()
   method OpenBlade.Contracts.ThxAudioCapabilities get_ThxAudio()
   method System.Boolean SupportsBreathingMode(OpenBlade.Contracts.BreathingColorMode mode)
+  method System.Boolean SupportsFanSpeedInAnyPerformancePreset(System.Int32 speedRpm)
   method System.Boolean get_ReportsPerformanceWithManualFans()
   method System.Boolean get_SupportsBatteryProtectionOff()
   method System.Boolean get_SupportsBreathingColorSelection()
@@ -492,6 +504,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Boolean get_SupportsTemporaryFullCharge()
   method System.Boolean get_SupportsUniformLightingFrames()
   method System.Boolean get_SupportsWaveDirectionSelection()
+  method System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> get_FanSpeedRangesByPerformancePreset()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> get_ObservedPowerSourceBehaviors()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> get_SupportedBreathingColorModes()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> get_FanModes()
@@ -499,6 +512,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> get_ObservedLightingEffects()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingRefreshRate> get_SupportedLightingRefreshRates()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> get_LogoLightingModes()
+  method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> get_HostManagedLaptopControls()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> get_OneShotLaptopControls()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> get_PerformancePresets()
   method System.Collections.Generic.IReadOnlySet<System.Int32> get_ChargeLimits()
@@ -506,15 +520,19 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_HyperBoostWithoutCoolingPadAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_LampArrayLightingAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_SpecialKeyBindingsAccess()
+  method System.Nullable<System.Byte> get_Blade18KeyboardLayoutId()
   method System.String get_KeyboardLightingLayoutId()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, out System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, out System.Boolean SupportsBatteryProtectionOff, out System.Boolean SupportsTemporaryFullCharge)
+  method System.Void set_Blade18KeyboardLayoutId(System.Nullable<System.Byte> value)
   method System.Void set_ChargeLimits(System.Collections.Generic.IReadOnlySet<System.Int32> value)
   method System.Void set_CpuPowerLimit(OpenBlade.Contracts.CpuPowerLimitCapabilities value)
   method System.Void set_CpuVoltageOptimizer(OpenBlade.Contracts.CpuVoltageOptimizerCapabilities value)
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceCapabilities value)
   method System.Void set_FanModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
+  method System.Void set_FanSpeedRangesByPerformancePreset(System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> value)
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
+  method System.Void set_HostManagedLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
   method System.Void set_HyperBoostAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_HyperBoostBaseModes(OpenBlade.Contracts.HyperBoostBaseModeCapabilities value)
   method System.Void set_HyperBoostWithoutCoolingPadAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
@@ -567,6 +585,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
   property System.Boolean SupportsUniformLightingFrames { get; init; }
   property System.Boolean SupportsWaveDirectionSelection { get; init; }
+  property System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> FanSpeedRangesByPerformancePreset { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> SupportedBreathingColorModes { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes { get; init; }
@@ -574,6 +593,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> ObservedLightingEffects { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingRefreshRate> SupportedLightingRefreshRates { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> LogoLightingModes { get; init; }
+  property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> HostManagedLaptopControls { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> OneShotLaptopControls { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets { get; init; }
   property System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits { get; init; }
@@ -581,6 +601,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> HyperBoostWithoutCoolingPadAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> LampArrayLightingAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> SpecialKeyBindingsAccess { get; init; }
+  property System.Nullable<System.Byte> Blade18KeyboardLayoutId { get; init; }
   property System.String KeyboardLightingLayoutId { get; init; }
 type enum OpenBlade.Contracts.DeviceFeatureAccess
   field System.Int32 value__
@@ -1116,6 +1137,7 @@ type enum OpenBlade.Contracts.KeyboardLightingControlMode
   field const OpenBlade.Contracts.KeyboardLightingControlMode OpenBlade = 0
   field const OpenBlade.Contracts.KeyboardLightingControlMode WindowsDynamicLighting = 1
 type static class OpenBlade.Contracts.KeyboardLightingLayoutIds
+  field const System.String Rz09_0484 = "openblade.razer.rz09-0484.keyboard.6x16.v1"
   field const System.String Rz09_0528 = "openblade.razer.rz09-0528.keyboard.6x17.v1"
   field const System.String Rz09_0581 = "openblade.razer.rz09-0581.keyboard.6x17.v1"
   method static System.Boolean IsKnown(System.String layoutId)
@@ -1141,9 +1163,11 @@ type static class OpenBlade.Contracts.KeyboardLightingSequenceCodec
   field const System.Int32 MaximumTotalDurationMilliseconds = 600000
   field const System.Int32 MinimumFrameDurationMilliseconds = 1
   method static OpenBlade.Contracts.KeyboardLightingSequence Decode(System.String timelineBase64)
+  method static OpenBlade.Contracts.KeyboardLightingSequence Decode(System.String timelineBase64, System.String layoutId)
   method static System.Boolean IsWellFormed(OpenBlade.Contracts.KeyboardLightingSequence sequence)
   method static System.Boolean IsWellFormed(System.String timelineBase64)
   method static System.String Encode(System.Collections.Generic.IEnumerable<OpenBlade.Contracts.KeyboardLightingSequenceFrame> frames)
+  method static System.String Encode(System.Collections.Generic.IEnumerable<OpenBlade.Contracts.KeyboardLightingSequenceFrame> frames, System.String layoutId)
 type sealed class OpenBlade.Contracts.KeyboardLightingSequenceFrame
   interface System.IEquatable<OpenBlade.Contracts.KeyboardLightingSequenceFrame>
   ctor (System.Int32 DurationMilliseconds, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RgbColor> Slots)
@@ -1434,7 +1458,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 68
+  field const System.Int32 ProtocolVersion = 70
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1692,6 +1716,7 @@ type sealed class OpenBlade.Contracts.PushUniformLightingFrameRequest
   property OpenBlade.Contracts.UniformLightingFrame Frame { get; init; }
 type static class OpenBlade.Contracts.RazerBladeModelCatalog
   field const System.String OpenBladeTargetModelNumber = "RZ09-0581"
+  field const System.String Rz090484ModelNumber = "RZ09-0484"
   field const System.String Rz090528ModelNumber = "RZ09-0528"
   method static OpenBlade.Contracts.RazerBladeModelInfo Find(System.String modelNumber)
 type sealed class OpenBlade.Contracts.RazerBladeModelInfo

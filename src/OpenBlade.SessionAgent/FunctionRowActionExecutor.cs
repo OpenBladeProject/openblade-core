@@ -140,6 +140,13 @@ public sealed class FunctionRowActionExecutor
             case FunctionRowAction.PrintScreen:
                 input.SendKeyboardShortcut("PrintScreen");
                 return;
+            case FunctionRowAction.PageUp:
+            case FunctionRowAction.Home:
+            case FunctionRowAction.PageDown:
+            case FunctionRowAction.End:
+            case FunctionRowAction.Insert:
+                input.SendKeyboardShortcut(inputEvent.Action.ToString());
+                return;
             default:
                 throw new InvalidOperationException("The function-row action was not recognized.");
         }

@@ -2257,4 +2257,7 @@ OpenBlade повторно проверит этот список и остан�
   <data name="SnapTap_Driver_Failed" xml:space="preserve">
     <value>Не удалось завершить установку драйвера. Откройте инструкцию.</value>
   </data>
+  <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
+    <value>Блокировка клавиш действует на всех клавиатурах, пока работает OpenBlade.</value>
+  </data>
 </root>

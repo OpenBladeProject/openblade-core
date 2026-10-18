@@ -2257,4 +2257,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
     <value>[!! Sétúp gúídé ~~~~ !!]</value>
   </data>
+  <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
+    <value>[!! Kéý blóckíng ápplíés tó áll kéýbóárds whílé OpenBlade ís rúnníng. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

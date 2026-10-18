@@ -676,7 +676,7 @@ public sealed class CapabilityPresentationTests
                 && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
-        Assert.Equal(16, compactRows.Length);
+        Assert.Equal(15, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -727,7 +727,6 @@ public sealed class CapabilityPresentationTests
                 "Charge limit",
                 "Temporary full charge",
                 "Function key behavior",
-                "Gaming mode",
                 "Block the Windows key",
                 "Block Alt+Tab",
                 "Startup animation",
@@ -736,6 +735,19 @@ public sealed class CapabilityPresentationTests
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Style") == "{StaticResource CardTitleStyle}")
                 .Attribute("Text")?.Value));
+
+        XElement gamingScope = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Uid") == "MainWindow_GamingModeKeyBlockingScope");
+        Assert.Equal("{StaticResource SecondaryTextStyle}", Attribute(gamingScope, "Style"));
+        Assert.Equal("Wrap", Attribute(gamingScope, "TextWrapping"));
+        XElement gamingRow = gamingScope.Ancestors().First(element =>
+            element.Name.LocalName == "Border");
+        Assert.Equal("{StaticResource SettingsRowStyle}", Attribute(gamingRow, "Style"));
+        Assert.Null(Attribute(gamingRow, "Padding"));
+        Assert.Null(Attribute(gamingRow, "Height"));
+        XElement gamingTitle = gamingRow.Descendants().First(element =>
+            Attribute(element, "Uid") == "MainWindow_TextBlockGamingMode");
+        Assert.Null(Attribute(gamingTitle, "SizeChanged"));
 
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)

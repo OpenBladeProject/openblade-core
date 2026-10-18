@@ -12,7 +12,7 @@ command limits, recovery behavior, and evidence. For setup and test reports, use
 | Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, Custom, fixed fan targets, keyboard and logo lighting, 50-100% charge limits |
 | Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, Battery Saver, Battery Balanced, Custom, keyboard and logo lighting, 50-100% charge limits |
 | Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced, Silent, Gaming, Custom, single-zone keyboard lighting |
-| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
+| Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Balanced/Silent linked fixed targets and Balanced curves, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
 
 Admission checks Razer and the exact product name in both Windows registry
 sources, then the exact USB identity and 91-byte HID feature-report geometry.
@@ -45,18 +45,24 @@ The thermal backend uses independent query and setter exchanges:
 
 - preset and fan mode: `0D/82 [0, cluster, 0, 0]` and
   `0D/02 [1, cluster, preset, fan flag]` for clusters 1 and 2;
-- Custom level: `0D/87 [0, cluster, 0]` and
+- Custom level: `0D/87 [profile, cluster, 0]` and
   `0D/07 [1, cluster, level]`;
-- fixed fan target: `0D/81 [0, zone, 0]` and
+- fixed fan target: `0D/81 [class, zone, 0]` (class 1 on Blade 18, 0 on the other admitted models) and
   `0D/01 [1, zone, RPM/100]`;
 - Maximum Fans: `07/8F [0]` and `07/0F [2]` to enable or `07/0F [0]` to
   disable.
 
 `0D/81` reports the stored fan target, not measured tachometer speed. Fixed
 targets are 2,000-5,000 RPM on the Blade 16 (2023) and 2,200-5,000 RPM on the
-Blade 14 (2023), in 100 RPM steps. Both zones must report the same admitted
-target. Fan curves remain unavailable because the backend has no admitted live
-temperature source.
+Blade 14 (2023), in 100 RPM steps. Blade 18 (2023) admits one shared
+2,200-3,800 RPM target in Balanced and 3,700-5,300 RPM in Silent, using its
+pinned class-1 target getter. Both zones must return representable stored
+targets before a change; each setter confirms both registers independently.
+The existing host curve loop is admitted in Balanced, preserving separate zone
+targets and holding the range maximum when temperature data is missing.
+The setters/getters address each target register independently; independent
+physical RPM remains unverified.
+Blade 18 temperature telemetry remains physically unverified.
 
 Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and Blade
 18 (2023). The shared Power Mode Control decoder accepts any one-byte subset of
@@ -77,17 +83,28 @@ in ordinary presets and is not a substitute for adjustable fixed targets.
 Select Automatic before enabling it; a Fixed baseline is rejected before any
 setter is submitted.
 
+Blade 18 Custom getters use profile `1`, matching exact Synapse requests and
+pinned source. Other experimental profiles retain their admitted profile `0`.
+
 All five profiles admit Custom CPU/GPU levels Low, Medium, and High. The Blade
-16 (2023) also admits CPU Boost and the High/High combination. Other profiles
+16 (2023) also admits CPU Boost and the High/High combination. Blade 18 (2023)
+admits all twelve valid CPU/GPU level pairs. Its pinned Synapse policy sets the
+clusters independently; limiting pairs to recorded selections was unnecessary.
+Boost/Medium and High/High are source-backed extrapolations. See the
+[Observer evidence review](blade18-observer-evidence.md). Other profiles
 exclude High/High. Unrecognized raw levels remain diagnostic observations and
 cannot become a guessed baseline.
 
 Transitions go directly from the confirmed starting state to the requested
-state. The backend does not reset through Balanced or Automatic. Preset writes
-preserve readable fixed fans on the two models with fixed-target support;
-the other models require Automatic fans. When Maximum Fans
+state. Blade 16 (2023) and Blade 14 (2023) preserve readable fixed fans through
+preset changes. Blade 18 fixed fans use preset-aware ranges in Balanced and Silent; curves
+remain Balanced-only. Shared capability, profile and service admission preserve
+that distinction. Custom manual fans remain unadmitted because the exact
+product lacks customModeSupportsMoreThanAuto. The service confirms Automatic
+fans before Custom entry, retaining saved manual intent for return to an admitted
+preset. When Maximum Fans
 is active, the guarded cleanup above is required before leaving Custom. A
-fixed-target change preserves the confirmed ordinary preset or Custom mode and
+fixed-target change on Blade 16/14 preserves the confirmed ordinary preset or Custom mode and
 changes only the fan flag and targets. On a confirmed limited adapter, a direct
 Automatic handback preserves the confirmed mode; a separate Balanced request
 goes directly to Balanced. Fixed-target writes are also admitted on battery
@@ -127,7 +144,8 @@ The Blade 16 (2023), both Blade 14 profiles, and Blade 18 (2023) admit every
 whole charge limit from 50% through 100%. Limits from 50% through 99% enable
 protection; 100% writes the firmware's protection-off value. The Blade 15 is
 excluded because upstream reports that its firmware echoes the battery command
-without applying it. Temporary full charge is unavailable.
+without applying it. Blade 18 also admits experimental temporary full charge
+after valid flag readback; the other experimental models do not.
 
 Battery protection uses `07/92 [0]` for GET and `07/12 [encoded limit]` for SET.
 Each operation first decodes and saves the raw protection flag and threshold,
@@ -147,6 +165,13 @@ The complete range on `029F` is directly owner-tested. The same range on
 `029D`, `02C5`, and `02A0` is explicitly classified as source-backed
 extrapolation from the shared encoding and each model's upstream 80%/off support.
 
+Temporary full charge uses exact-model inherited 07/8F and 07/0F definitions.
+Each change requires readable charge policy, an admitted enabled limit for
+enablement, and all other Power Mode Control bits clear. It writes only 04/00,
+then independently confirms the flag and unchanged charge policy. A possibly
+submitted operation pauses writes; recovery rereads both fields. See the
+[pinned source contract](blade18-source-feature-recovery.md#temporary-full-charge-command-contract).
+
 ## Lighting controls
 
 | USB PID | Keyboard contract | Logo contract | Evidence boundary |
@@ -155,7 +180,7 @@ extrapolation from the shared encoding and each model's upstream 80%/off support
 | `029D` | Brightness; Off, Spectrum, random Breathing, Rightward Wave | Off, Static, Breathing | Keyboard and logo on/off are owner-reported; richer logo modes are explicit extrapolation |
 | `02C5` | Brightness; Off, Spectrum, random Breathing, Rightward Wave | Off, Static, Breathing | Keyboard and logo on/off are owner-reported; richer logo modes are explicit extrapolation |
 | `0255` | Brightness; Off, Spectrum, random or single-color Breathing; single-zone Static | None | Single-zone color and its RGB getter are exact-model tested; Wave is excluded |
-| `02A0` | Brightness; Off, Spectrum, random Breathing, Rightward Wave; uniform Static | Off, Static, Breathing | Uniform Static is extrapolated from the same command family and has no color getter |
+| `02A0` | Brightness; Off, Spectrum, random Breathing, Rightward Wave; uniform Static, Ambient Awareness, Audio Meter; Fire, Wheel, Starlight | Off, Static, Breathing | Uniform Static is extrapolated from the same command family and has no color getter |
 
 Built-in keyboard effects use `0F/02` with independent `0F/82` readback.
 Brightness uses `03/03` and `03/83`. Logo state and effect use `03/00`,
@@ -186,10 +211,57 @@ Ambient and Audio Meter continue to repaint while their renderer is active.
 
 The uniform frame is one color across the keyboard. It does not admit a key
 layout, per-key or spatial effects, or the `02E0` shared ambient-frame API.
-Blade 18 stays Static-only for this frame path. Blade 16 uses a separate
-typed uniform-frame path for Ambient Awareness and Audio Meter. The Session
-Agent samples a 1×1 screen color or audio-peak intensity and sends one color
-through the service. Neither path uses a physical key mask or RGB readback.
+Blade 18 also uses its own recorded frame templates for Fire and Wheel, described
+below, and the shared Starlight software pattern over its 96 RGB addresses.
+Blade 16 and Blade 18 use the typed uniform-frame path for Ambient Awareness and
+Audio Meter. The Session Agent samples a 1×1 screen color or audio-peak intensity
+and sends one color through the service. Blade 18 submits its six SET-only rows,
+activating custom mode only on the first frame of a new effect. The transport
+keeps a 20 FPS budget even when uniform sampling requests a higher rate. The retained
+baseline, ownership, cancellation and fault handling are shared with its existing
+frame transport. These paths use no other model's physical key mask or RGB readback.
+
+Blade 18 also admits experimental startup animation after a valid 0F/98 getter.
+Its 0F/18 setter uses [0,disable], followed by independent readback. See the
+[source contract](blade18-source-feature-recovery.md#startup-animation-command-contract).
+
+### Blade 18 animated effects
+
+Exact RZ09-0484 (`1532:02A0`) uses the reviewed
+`Blade18FireWheelFrames.json` fixture: a 21-state clockwise Wheel cycle and a
+32-frame Fire sample. Wheel counterclockwise reverses the recorded cycle;
+Fire repeats the bounded sample. These are experimental OpenBlade playback,
+not firmware effects or physically validated OpenBlade results. See
+[Blade 18 evidence](blade18-observer-evidence.md#logo-and-chroma) for the source,
+hash, operation ranges, and timing.
+
+Starlight shares the existing pure twinkle algorithm and color choices, with
+Short/Medium/Long timing and Single/Dual/Random colors. The original model keeps
+its own hole mask; Blade 18 renders all 96 addresses in its admitted envelope.
+This is software-pattern extrapolation, not a captured Blade 18 Starlight oracle.
+Reactive, Ripple and Tidal use the [recovered product-672 map and algorithms](blade18-spatial-lighting.md):
+all nine regional layouts, their input bindings and spatial positions. An
+exact-model edition query selects the physical region. Unknown regions retain
+unambiguous input bindings and the existing union geometry.
+Sequence playback and per-key color imports now use that same map; see the
+spatial-lighting guide for the bounded layout-aware container and import rules.
+
+The service-owned port writes six SET-only `03/0B` rows and activates custom
+mode once on entry with `03/0A [05,00]`. Later frames have no GET or extra latch.
+Playback is bounded to 20 frames per second, skips missed frames, and uses no
+another model's layout. Spatial effects use only the recovered Blade 18 map.
+Serialized healthy live sessions
+cycle nonzero transaction IDs; the finite admission-run budget stays unchanged.
+Every row retains fresh exact-device, controller, session, and ownership
+admission. An ambiguous or partial submission pauses further writes without
+replay. RGB remains applied intent, not confirmed firmware readback.
+
+Changing effects or retiring the port drains the active frame and stops the
+loop before changing hardware state. The existing readable built-in effect and
+exact raw-brightness baseline is restored and independently checked when
+ownership is relinquished. A failed replacement reports faulted ownership rather
+than claiming that the stopped animation is still running. Low-power invalidation
+stops playback without adding restoration writes.
 
 ## Recovery
 

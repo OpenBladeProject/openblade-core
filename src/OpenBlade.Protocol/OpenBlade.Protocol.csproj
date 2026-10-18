@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Fixtures\Blade18FireWheelFrames.json" LogicalName="OpenBlade.Protocol.Fixtures.Blade18FireWheelFrames.json" />
     <EmbeddedResource
       Include="Fixtures\Rz09_0528_02c6_2_02_PadlessHyperBoostNoLoadPlan.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessHyperBoostNoLoadPlan.json" />

@@ -2257,4 +2257,7 @@ OpenBlade did not retry any stop request.</value>
   <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
     <value>Setup guide</value>
   </data>
+  <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
+    <value>Key blocking applies to all keyboards while OpenBlade is running.</value>
+  </data>
 </root>

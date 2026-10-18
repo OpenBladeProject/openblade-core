@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 namespace OpenBlade.Contracts;
 
 /// <summary>
-/// A transient request to illuminate one proven PID 02E0 keyboard-matrix slot.
+/// A transient request to illuminate one exact-model keyboard-matrix slot.
+/// The admitted backend validates its own slot range and key layout.
 /// The originating key, character, and application are intentionally absent.
 /// </summary>
 public readonly record struct ReactiveKeyPulse

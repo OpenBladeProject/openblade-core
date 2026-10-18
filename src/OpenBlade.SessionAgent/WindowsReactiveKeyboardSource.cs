@@ -50,6 +50,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const uint WindowMessageSystemKeyUp = 0x0105;
     private const ushort RawKeyboardBreakFlag = 0x0001;
     private const int MaximumRawInputBytes = 64 * 1024;
+    private const uint MaximumRawInputDevices = 128;
     private const ushort GenericDesktopUsagePage = 0x0001;
     private const ushort ConsumerUsagePage = 0x000C;
     private const ushort PageOnlyUsage = 0x0000;
@@ -71,7 +72,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
     private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
+    private readonly Func<byte?> readBlade18KeyboardLayoutId;
     private readonly Func<SpecialKeySlot, bool> readSpecialKeyInputAdmitted;
+    private readonly Action<Blade18FnShortcut>? publishBlade18FnShortcut;
+    private readonly Func<bool> isBlade18FnInputAdmitted;
+    private readonly Rz090484FnInputState blade18Fn = new();
+    private readonly Blade18DefaultFnInputState blade18Keyboard = new();
+    private readonly Blade18FnHookCorrelation blade18Correlation = new();
+    private readonly HashSet<(uint ScanCode, bool Extended)> blade18ConfirmedPresses = [];
+    private readonly Action resetFunctionRowInput;
+    private int blade18ResetRequested;
     private readonly RazerBladeFunctionRowInputState functionRowInput = new();
     private readonly SpecialKeyKeyboardSuppressionState specialKeyKeyboardInput = new();
     private readonly GamingModeKeyBlockState gamingModeKeyBlockState = new();
@@ -119,10 +129,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ?? throw new ArgumentNullException(nameof(options.ReadDriverModeObservation));
         readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy
             ?? throw new ArgumentNullException(nameof(options.ReadGamingModeKeyPolicy));
+        readBlade18KeyboardLayoutId = options.ReadBlade18KeyboardLayoutId;
         readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind
             ?? throw new ArgumentNullException(nameof(options.ReadVerifiedInputDeviceKind));
         readSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted
             ?? throw new ArgumentNullException(nameof(options.IsSpecialKeyInputAdmitted));
+        resetFunctionRowInput = options.ResetFunctionRowInput;
+        publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
+        isBlade18FnInputAdmitted = options.IsBlade18FnInputAdmitted ?? (() => false);
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -142,7 +156,103 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     public Task Completion => completion.Task;
 
-    public void ResetFunctionPInput() => rz090528FunctionPInput.RequestReset();
+    public void ResetFunctionPInput()
+    {
+        rz090528FunctionPInput.RequestReset();
+        Interlocked.Exchange(ref blade18ResetRequested, 1);
+    }
+
+    private bool ReadBlade18Admission()
+    {
+        if (Interlocked.Exchange(ref blade18ResetRequested, 0) != 0)
+        {
+            blade18Fn.Reset();
+            CancelBlade18Input();
+        }
+        bool admitted = readVerifiedInputDeviceKind() == RazerBladeInputDeviceKind.Rz09_0484
+            && isBlade18FnInputAdmitted();
+        if (!admitted)
+        {
+            blade18Fn.Invalidate();
+            CancelBlade18Input();
+        }
+        return admitted;
+    }
+
+    private void CancelBlade18Input()
+    {
+        blade18Keyboard.Cancel();
+        blade18Correlation.Clear();
+        if (blade18ConfirmedPresses.Count > 0)
+        {
+            blade18ConfirmedPresses.Clear();
+            resetFunctionRowInput();
+        }
+    }
+
+    private void ConfirmBlade18Input(Blade18DefaultFnInputEvent input, bool extended)
+    {
+        var key = (input.ScanCode, extended);
+        if (input.Phase == FunctionRowInputPhase.Down)
+        {
+            blade18ConfirmedPresses.Add(key);
+        }
+        else if (input.Phase == FunctionRowInputPhase.Up)
+        {
+            if (!blade18ConfirmedPresses.Remove(key))
+            {
+                return;
+            }
+        }
+        else if (!blade18ConfirmedPresses.Contains(key))
+        {
+            return;
+        }
+        PublishBlade18Input(input);
+    }
+
+    private void PublishBlade18Input(Blade18DefaultFnInputEvent input)
+    {
+        if (input.Action is Blade18DefaultFnAction.Performance
+            or Blade18DefaultFnAction.RefreshRate or Blade18DefaultFnAction.Touchpad)
+        {
+            if (input.Phase == FunctionRowInputPhase.Up)
+            {
+                if (input.Action == Blade18DefaultFnAction.Performance)
+                {
+                    publishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+                }
+                else
+                {
+                    publishBlade18FnShortcut?.Invoke(input.Action == Blade18DefaultFnAction.RefreshRate
+                        ? Blade18FnShortcut.RefreshRate : Blade18FnShortcut.Touchpad);
+                }
+            }
+            return;
+        }
+        FunctionRowAction action = input.Action switch
+        {
+            Blade18DefaultFnAction.VolumeMute => FunctionRowAction.VolumeMute,
+            Blade18DefaultFnAction.VolumeDown => FunctionRowAction.VolumeDown,
+            Blade18DefaultFnAction.VolumeUp => FunctionRowAction.VolumeUp,
+            Blade18DefaultFnAction.Project => FunctionRowAction.Project,
+            Blade18DefaultFnAction.PreviousTrack => FunctionRowAction.PreviousTrack,
+            Blade18DefaultFnAction.PlayPause => FunctionRowAction.PlayPause,
+            Blade18DefaultFnAction.NextTrack => FunctionRowAction.NextTrack,
+            Blade18DefaultFnAction.DisplayBrightnessDown => FunctionRowAction.DisplayBrightnessDown,
+            Blade18DefaultFnAction.DisplayBrightnessUp => FunctionRowAction.DisplayBrightnessUp,
+            Blade18DefaultFnAction.KeyboardBrightnessDown => FunctionRowAction.KeyboardBrightnessDown,
+            Blade18DefaultFnAction.KeyboardBrightnessUp => FunctionRowAction.KeyboardBrightnessUp,
+            Blade18DefaultFnAction.PrintScreen => FunctionRowAction.PrintScreen,
+            Blade18DefaultFnAction.PageUp => FunctionRowAction.PageUp,
+            Blade18DefaultFnAction.Home => FunctionRowAction.Home,
+            Blade18DefaultFnAction.PageDown => FunctionRowAction.PageDown,
+            Blade18DefaultFnAction.End => FunctionRowAction.End,
+            Blade18DefaultFnAction.Insert => FunctionRowAction.Insert,
+            _ => throw new InvalidOperationException("Unknown Blade 18 Fn action."),
+        };
+        publishFunctionRowInput(new(input.ScanCode, action, input.Phase));
+    }
 
     public void Dispose()
     {
@@ -325,6 +435,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             catch (Exception exception)
             {
                 source.rz090528FunctionPInput.Reset();
+                source.ResetFunctionPInput();
                 Trace.TraceError(
                     "Reactive keyboard packet processing failed: {0}",
                     exception.GetType().Name);
@@ -338,6 +449,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             // handle after Windows reports either arrival or removal.
             changedSource.inputDevices.TryRemove(messageParameter, out _);
             changedSource.rz090528FunctionPInput.Reset();
+            changedSource.ResetFunctionPInput();
+            changedSource.CancelBlade18InputForTopology();
         }
         else if (message == WindowMessageClose)
         {
@@ -404,6 +517,27 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 // whose earlier release was never observed.
                 bool keyWasAlreadyDown = keyDown
                     && (GetAsyncKeyState(checked((int)input.VirtualKey)) & 0x8000) != 0;
+                bool blade18Admitted = owner.ReadBlade18Admission();
+                if (ProcessBlade18KeyboardInput(
+                    owner.blade18Keyboard,
+                    input.ScanCode,
+                    extended: (input.Flags & 0x01) != 0,
+                    keyDown,
+                    keyWasAlreadyDown,
+                    owner.blade18Fn.FunctionHeld,
+                    blade18Admitted,
+                    HasExclusiveBlade18Keyboard,
+                    owner.CancelBlade18InputForTopology,
+                    out Blade18DefaultFnInputEvent? blade18Event))
+                {
+                    if (!owner.blade18Correlation.Record(
+                        input.ScanCode, (input.Flags & 0x01) != 0,
+                        keyDown, input.Time, blade18Event))
+                    {
+                        owner.CancelBlade18Input();
+                    }
+                    return 1;
+                }
                 bool suppressFunctionRow = FunctionRowKeyboardHookProcessor.Process(
                     owner.functionRowInput,
                     owner.readVerifiedInputDeviceKind(),
@@ -422,6 +556,123 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
 
         return CallNextHookEx(0, code, windowParameter, messageParameter);
+    }
+
+    internal static bool ProcessBlade18KeyboardInput(
+        Blade18DefaultFnInputState state,
+        uint scanCode,
+        bool extended,
+        bool keyDown,
+        bool keyWasAlreadyDown,
+        bool functionHeld,
+        bool admitted,
+        Func<bool> hasExclusiveKeyboard,
+        Action cancelForTopology,
+        out Blade18DefaultFnInputEvent? inputEvent)
+    {
+        // This backend lacks a verified per-device suppression or Driver-mode
+        // path. Check fresh topology before swallowing any global hook edge,
+        // including repeats/releases latched while topology was still valid.
+        if (state.MaySuppress(scanCode, extended, keyDown, keyWasAlreadyDown, functionHeld, admitted)
+            && !hasExclusiveKeyboard())
+        {
+            state.PassThroughAllPresses();
+            cancelForTopology();
+            admitted = false;
+        }
+        return state.Process(scanCode, extended, keyDown, keyWasAlreadyDown,
+            functionHeld, admitted, out inputEvent);
+    }
+
+    private void CancelBlade18InputForTopology()
+    {
+        blade18Fn.Invalidate();
+        blade18Keyboard.PassThroughAllPresses();
+        CancelBlade18Input();
+    }
+
+    private static bool HasExclusiveBlade18Keyboard() => HasExclusiveBlade18Keyboard(
+        IsLocalInputSession(), GetRawInputDeviceList, TryResolveInputDevice,
+        static reason => Trace.TraceInformation("Blade 18 Fn interception paused: {0}", reason));
+
+    internal static bool HasExclusiveBlade18Keyboard(
+        bool localSession,
+        RawInputDeviceListReader readDevices,
+        Func<nint, RazerBladeInputDeviceKind?> resolveDevice,
+        Action<string>? reportUnavailable = null)
+    {
+        // RDP devices are omitted from GetRawInputDeviceList, so a confirmed
+        // local session is necessary even when the list contains only the laptop.
+        if (!localSession)
+        {
+            reportUnavailable?.Invoke("The input session is remote or could not be verified as local.");
+            return false;
+        }
+        uint count = 0;
+        uint entrySize = checked((uint)Marshal.SizeOf<RawInputDeviceListEntry>());
+        if (readDevices(null, ref count, entrySize) != 0
+            || count == 0 || count > MaximumRawInputDevices)
+        {
+            reportUnavailable?.Invoke("The Raw Input device count failed or was outside the supported bounds.");
+            return false;
+        }
+        var devices = new RawInputDeviceListEntry[count];
+        uint returned = readDevices(devices, ref count, entrySize);
+        // Success returns the number written; count can remain the original
+        // capacity when a device disappears between the two calls.
+        if (returned == 0 || returned > devices.Length)
+        {
+            reportUnavailable?.Invoke("The Raw Input device list failed or changed during enumeration.");
+            return false;
+        }
+        bool foundKeyboard = false;
+        for (int index = 0; index < returned; index++)
+        {
+            RawInputDeviceListEntry device = devices[index];
+            if (device.Type != RawInputTypeKeyboard)
+            {
+                continue;
+            }
+            if (device.Device == 0
+                || resolveDevice(device.Device) != RazerBladeInputDeviceKind.Rz09_0484)
+            {
+                reportUnavailable?.Invoke("Another keyboard is present or a keyboard identity could not be verified.");
+                return false;
+            }
+            foundKeyboard = true;
+        }
+        if (!foundKeyboard)
+        {
+            reportUnavailable?.Invoke("No Blade 18 keyboard was found in the Raw Input device list.");
+        }
+        return foundKeyboard;
+    }
+
+    private static bool IsLocalInputSession()
+    {
+        const int currentSession = -1;
+        const int clientProtocolType = 16;
+        nint buffer = 0;
+        try
+        {
+            return WTSQuerySessionInformation(0, currentSession, clientProtocolType,
+                    out buffer, out uint bytes)
+                && buffer != 0 && bytes == sizeof(ushort)
+                && Marshal.ReadInt16(buffer) == 0;
+        }
+        finally
+        {
+            if (buffer != 0)
+            {
+                WTSFreeMemory(buffer);
+            }
+        }
+    }
+
+    private void InvalidateBlade18Packet()
+    {
+        blade18Fn.Invalidate();
+        CancelBlade18Input();
     }
 
     private void ProcessRawInput(nint rawInputHandle, uint messageTime)
@@ -444,6 +695,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             || header.Size < headerSize
             || header.Size > MaximumRawInputBytes)
         {
+            InvalidateBlade18Packet();
             return;
         }
 
@@ -473,6 +725,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
         if (result < headerSize || receivedSize < headerSize)
         {
+            InvalidateBlade18Packet();
             return;
         }
 
@@ -481,6 +734,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             || receivedHeader.Size > receivedSize
             || receivedHeader.Device != header.Device)
         {
+            InvalidateBlade18Packet();
             return;
         }
 
@@ -491,7 +745,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         else if (receivedHeader.Type == RawInputTypeHid
             && deviceKind != RazerBladeInputDeviceKind.Unsupported)
         {
-            ProcessHid(buffer, headerSize, receivedSize, deviceKind);
+            ProcessHid(buffer, headerSize, receivedSize, deviceKind, receivedHeader.Device);
         }
     }
 
@@ -530,6 +784,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         int keyboardSize = Marshal.SizeOf<RawKeyboard>();
         if (receivedSize < headerSize + keyboardSize)
         {
+            if (deviceKind == RazerBladeInputDeviceKind.Rz09_0484)
+            {
+                InvalidateBlade18Packet();
+            }
             return;
         }
 
@@ -551,6 +809,47 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             keyboard.MakeCode,
             keyDown,
             messageTime);
+        bool extended = (keyboard.Flags & 0x02) != 0;
+        bool blade18Admitted = ReadBlade18Admission();
+        bool correlated = blade18Correlation.TryConsume(
+            keyboard.MakeCode, extended, keyDown, messageTime,
+            out Blade18DefaultFnInputEvent? blade18Event);
+        if (correlated && !HasExclusiveBlade18Keyboard())
+        {
+            CancelBlade18InputForTopology();
+            blade18Admitted = false;
+        }
+        if (correlated)
+        {
+            if (deviceKind == RazerBladeInputDeviceKind.Rz09_0484 && blade18Admitted)
+            {
+                if (blade18Event is { } confirmed)
+                {
+                    ConfirmBlade18Input(confirmed, extended);
+                }
+            }
+            else
+            {
+                // A hook has no keyboard identity. Never execute its tentative
+                // action until the matching Raw Input packet confirms it.
+                CancelBlade18Input();
+            }
+        }
+        else if (!observedByHook
+            && deviceKind == RazerBladeInputDeviceKind.Rz09_0484
+            && blade18Keyboard.ReconcilePassedThroughEdge(
+                keyboard.MakeCode, extended, keyDown, out Blade18DefaultFnInputEvent? release))
+        {
+            if (blade18Admitted && release is { } released)
+            {
+                ConfirmBlade18Input(released, extended);
+            }
+            if (keyDown && blade18ConfirmedPresses.Remove((keyboard.MakeCode, extended)))
+            {
+                resetFunctionRowInput();
+            }
+            ReinstallKeyboardHook();
+        }
         FunctionRowHookRecoveryResult recovery =
             FunctionRowHookRecovery.EvaluateTargetPacket(
                 functionRowInput,
@@ -592,8 +891,15 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         {
             publishSpecialKey(specialKey);
         }
+        // A pulse carries no model tag. Do not send another known laptop's
+        // slot numbers into the currently verified model's renderer.
+        if (deviceKind != readVerifiedInputDeviceKind())
+        {
+            return;
+        }
         if (!ReactiveRawKeyboardInput.TryCreatePulses(
             deviceKind,
+            readBlade18KeyboardLayoutId(),
             keyboard.MakeCode,
             keyboard.Flags,
             out ReactiveKeyPulse primary,
@@ -614,11 +920,21 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         nint buffer,
         uint headerSize,
         uint receivedSize,
-        RazerBladeInputDeviceKind deviceKind)
+        RazerBladeInputDeviceKind deviceKind,
+        nint collection)
     {
+        // Malformed target packets cancel held shortcuts before any action.
+        bool blade18 = deviceKind == RazerBladeInputDeviceKind.Rz09_0484;
+        bool blade18Admitted = ReadBlade18Admission();
+        bool boundBlade18Collection = blade18 && blade18Fn.IsBoundCollection(collection);
         const int rawHidHeaderSize = sizeof(uint) * 2;
         if (receivedSize < headerSize + rawHidHeaderSize)
         {
+            if (boundBlade18Collection)
+            {
+                blade18Fn.Invalidate();
+                CancelBlade18Input();
+            }
             return;
         }
 
@@ -627,6 +943,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         uint reportCount = unchecked((uint)Marshal.ReadInt32(hid, sizeof(uint)));
         if (reportSize == 0 || reportCount == 0)
         {
+            if (boundBlade18Collection)
+            {
+                blade18Fn.Invalidate();
+                CancelBlade18Input();
+            }
             return;
         }
 
@@ -634,11 +955,25 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         ulong requiredBytes = (ulong)headerSize + rawHidHeaderSize + rawBytes;
         if (rawBytes > MaximumRawInputBytes || requiredBytes > receivedSize)
         {
+            if (boundBlade18Collection)
+            {
+                blade18Fn.Invalidate();
+                CancelBlade18Input();
+            }
             return;
         }
 
         nint reports = nint.Add(hid, rawHidHeaderSize);
-        Span<byte> report = stackalloc byte[3];
+        if (blade18 && reportSize != 16)
+        {
+            if (boundBlade18Collection)
+            {
+                blade18Fn.Invalidate();
+                CancelBlade18Input();
+            }
+            return;
+        }
+        Span<byte> report = stackalloc byte[blade18 ? 16 : 3];
         report.Clear();
         int inspectedBytes = Math.Min(report.Length, checked((int)reportSize));
         for (uint index = 0; index < reportCount; index++)
@@ -649,6 +984,15 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             for (int offset = 0; offset < inspectedBytes; offset++)
             {
                 report[offset] = Marshal.ReadByte(reportAddress, offset);
+            }
+            if (blade18)
+            {
+                blade18Fn.ObserveHid(deviceKind, collection, report, blade18Admitted);
+                if (blade18Fn.IsAmbiguous)
+                {
+                    CancelBlade18Input();
+                }
+                continue;
             }
             rz090528FunctionPInput.ObserveHid(
                 deviceKind,
@@ -736,6 +1080,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         nint previous = Interlocked.Exchange(ref keyboardHook, replacement);
         hookHealth.Clear();
+        blade18Correlation.Clear();
         if (previous != 0 && !UnhookWindowsHookEx(previous))
         {
             Trace.TraceWarning(
@@ -845,6 +1190,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         internal ushort Usage;
         internal uint Flags;
         internal nint Target;
+    }
+
+    internal delegate uint RawInputDeviceListReader(
+        RawInputDeviceListEntry[]? devices, ref uint count, uint structureSize);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RawInputDeviceListEntry
+    {
+        internal nint Device;
+        internal uint Type;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1020,6 +1375,18 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         [In] RawInputDevice[] rawInputDevices,
         uint deviceCount,
         uint structureSize);
+
+    [DllImport("wtsapi32.dll", EntryPoint = "WTSQuerySessionInformationW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSQuerySessionInformation(
+        nint server, int sessionId, int informationClass, out nint buffer, out uint bytes);
+
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(nint buffer);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetRawInputDeviceList(
+        [Out] RawInputDeviceListEntry[]? devices, ref uint count, uint structureSize);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetRawInputData(

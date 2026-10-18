@@ -246,8 +246,15 @@ inventing a page-specific appearance:
    the reviewed semantic admission manifest. The manifest compares the actual
    device identity, command contracts, report geometry, layout mask, supported
    values, and a known-answer encoded report; unrelated source edits do not
-   require re-approval. Experimental lighting uses its own reviewed model-specific
-   backend; it does not admit host-rendered frames. A machine-local
+   require re-approval. Experimental lighting may render host frames through its
+   own reviewed exact-model backend. Pin the model's transport, report geometry,
+   address bounds, activation, ownership, and restoration behavior; preserve fresh
+   admission and stop after ambiguous submission. Grid effects such as Fire and
+   Wheel do not require a physical key-name map when the addressed matrix bounds
+   are established. Key-triggered or per-key controls additionally require their
+   exact input-to-light mapping. Keep RGB intent separate from firmware readback,
+   and never inherit another model's frame mask, commands, or validation status.
+   A machine-local
    exact-build validation artifact is developer evidence only and must never
    independently enable production writes.
 2. The Session Agent owns current-user APIs and input observation. The visible

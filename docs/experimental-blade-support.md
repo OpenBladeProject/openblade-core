@@ -13,7 +13,7 @@ in progress.
 | Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, battery modes, Custom levels, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, HyperBoost with or without the cooling pad, fixed and maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed fans, keyboard and logo lighting, 50–100% charge limits |
-| Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, maximum fans, keyboard and logo lighting, 50–100% charge limits |
+| Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including every CPU Boost/GPU level combination and High/High, linked fixed fans in Balanced/Silent, fan curves in Balanced and maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 15 Base (Early 2020) | `RZ09-0328` | Gaming and Custom levels, single-zone keyboard lighting |
 
 Close Synapse before using these controls, or use
@@ -22,28 +22,58 @@ and applying the patch. OpenBlade checks the adapter's reported wattage before
 external-power performance or fan changes. A confirmed limited adapter allows
 Balanced and returning fans to Automatic; other external-power thermal changes
 wait for confirmed full power. Models with fixed-speed control also offer
-Automatic and fixed fans on battery. Fixed speed on a limited adapter is not
+Automatic and fixed fans on battery. Blade 18 also offers linked fixed fans
+in Silent on full power. Fixed speed on a limited adapter is not
 yet supported for these experimental models. If wattage cannot be confirmed,
 the change is blocked. The Blade 14 (2025) also offers
 Battery Saver and Battery Balanced on battery power.
 
 - Fixed fan targets cover 2,000–5,000 RPM on the Blade 16 (2023), and
-  2,200–5,000 RPM on the Blade 14 (2023). Automatic hands control back to firmware.
-  Fan curves are not yet supported.
+  2,200–5,000 RPM on the Blade 14 (2023). The Blade 18 (2023) offers one
+  2,200–3,800 RPM control for both fans in Balanced, and 3,700–5,300 RPM in Silent.
+  Fan curves run in Balanced and preserve the separate fan target requests. Missing
+  temperature readings hold the maximum target. [Source recovery](blade18-source-feature-recovery.md#temperature-source-recovery)
+  has not established a standalone Blade 18 CPU-temperature provider; variable
+  curves remain unverified where neither known Windows counter works.
 - Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and
-  Blade 18 (2023). Select Automatic fans before turning it on. The Blade 18 does
-  not offer adjustable fixed fan targets. Maximum Fans cannot change while another
+  Blade 18 (2023). Select Automatic fans before turning it on. Maximum Fans cannot
+  change while another
   Power Mode Control option is on, such as local dimming or temporary full charge.
   OpenBlade turns Maximum Fans off before leaving Custom.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
-  offers CPU Boost and High/High. Other models exclude High/High.
+  offers CPU Boost and High/High. Blade 18 (2023) offers all twelve CPU/GPU
+  combinations, including Boost/Medium and High/High, using Synapse's independent
+  level controls. Entering Custom returns fans to Automatic; the saved fan
+  setting remains available when returning to an admitted preset.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
   supported. The newer models offer brightness, built-in effects, and logo
   lighting. Static RGB on the Blade 16 (2023) and Blade 18 (2023) is one color
-  across the keyboard; per-key and spatial effects are not available.
+  across the keyboard. Blade 18 also accepts per-key colors and sequence playback
+  from classic Keyboard .chroma imports.
   Firmware idle fade can restore the built-in effect; select Static again to repaint.
-  The Blade 16 also offers whole-keyboard Ambient Awareness and Audio Meter.
-  The Blade 15 offers random or single-color Breathing.
+  Blade 16 (2023) and Blade 18 (2023) also offer whole-keyboard Ambient Awareness
+  and Audio Meter.
+  The Blade 15 offers random or single-color Breathing. Additional Synapse
+  effects observed for the Blade 18 are recorded in diagnostics. Blade 18 also
+  offers experimental Fire, clockwise or counterclockwise Wheel, and Starlight.
+  Fire repeats a short recorded sample; Wheel plays a recorded cycle. Starlight
+  uses the shared twinkle pattern over this model's RGB cells. Reactive, Ripple
+  and Tidal use [recovered Synapse definitions](blade18-spatial-lighting.md).
+  Blade 18 also offers single- and dual-color Breathing and leftward Wave as
+  host-rendered patterns. See the same guide for timing and import limits.
+  The physical keyboard region selects the matching Synapse map, including
+  regional Enter, backslash, Alt, ISO and Japanese keys. If the region cannot be
+  read, keys with conflicting regional bindings do not trigger these effects.
+- Blade 18 startup animation is available experimentally after its state can be
+  read. Each change is checked by a fresh readback.
+- Blade 18 Gaming Mode can block the Windows key and Alt+Tab while
+  OpenBlade is running. Blocking applies to all keyboards. See the
+  [source recovery notes](blade18-source-feature-recovery.md) for remaining gaps.
+- Blade 18 (2023) offers the [default Synapse Fn shortcuts](blade18-fn-decoder.md#default-shortcuts):
+  performance, refresh rate, touchpad, F1–F12, arrows and Delete. The decoder and
+  actions are source-backed; behavior on the laptop still needs testing.
+  OpenBlade handles these shortcuts only while the built-in keyboard is the only
+  keyboard connected.
 - Blade 14 (2023) and Blade 16 (2023) offer experimental HyperBoost on full-power
   AC, with or without the Razer Laptop Cooling Pad. They require MCU firmware
   1.1.1.3 or later on the Blade 14, and 1.5.0.0 or later on the Blade 16.
@@ -53,7 +83,9 @@ Battery Saver and Battery Balanced on battery power.
   Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
   changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not
-  support charge limits. Temporary full charge is not yet supported.
+  support charge limits. Blade 18 also offers experimental temporary full charge
+  after valid state readback. Enabling it requires an active charge limit; other
+  Power Mode Control options must be off.
 
 ## Send a useful test report
 
@@ -67,7 +99,8 @@ Battery Saver and Battery Balanced on battery power.
    [experimental support issue](https://github.com/OpenBladeProject/openblade-core/issues/741).
 
 Stay with the laptop during sleep/resume testing so you can resume it and check
-the result. Reports stay local until you share them.
+the result. Reports stay local until you share them. You do not need to test every setting
+or combination; report a specific problem if one appears.
 
 ## If controls pause
 

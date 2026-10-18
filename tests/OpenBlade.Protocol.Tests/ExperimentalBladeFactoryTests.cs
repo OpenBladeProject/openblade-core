@@ -48,16 +48,22 @@ public sealed class ExperimentalBladeFactoryTests
         Assert.Contains(LightingEffect.Spectrum, lighting.Capabilities.LightingEffects);
         Assert.Contains(LightingEffect.Spectrum, factory.PotentialCapabilities.LightingEffects);
         Assert.True(lighting.Capabilities.SupportsKeyboardBrightness);
+        Assert.DoesNotContain(OneShotLaptopControl.StartupAnimation, factory.Capabilities.OneShotLaptopControls);
+        Assert.False(factory.Capabilities.SupportsTemporaryFullCharge);
+        Assert.True(factory.PotentialCapabilities.SupportsTemporaryFullCharge);
         bool active = true;
         HidSessionResult<IProductionLightingPort> opened = await lighting.OpenAsync(() => active, CancellationToken.None);
         Assert.Null(opened.Failure);
         await using IProductionLightingPort port = Assert.IsType<ExperimentalBladePort>(opened.Value);
-        Assert.Equal(new byte[] { 0x82, 0x82 }, io.Commands);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x86, 0x98, 0x8F }, io.Commands);
+        Assert.Equal((byte)12, port.Capabilities.Blade18KeyboardLayoutId);
+        Assert.Contains(OneShotLaptopControl.StartupAnimation, factory.Capabilities.OneShotLaptopControls);
+        Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);
         active = false;
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(77), CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.Equal(2, io.Commands.Count);
+        Assert.Equal(5, io.Commands.Count);
         Assert.Contains(LightingEffect.Spectrum, port.Capabilities.LightingEffects);
         Assert.True(port.Capabilities.SupportsKeyboardBrightness);
     }
@@ -340,6 +346,11 @@ public sealed class ExperimentalBladeFactoryTests
                 }
                 lastRequest.CopyTo(buffer, 0);
                 buffer[1] = 0x02;
+                if (lastRequest[8] == 0x86)
+                {
+                    buffer[9] = 12;
+                    buffer[89] ^= 12;
+                }
                 buffer[11] = PerformanceMode;
                 buffer[89] ^= PerformanceMode;
                 if (WrongSelector)

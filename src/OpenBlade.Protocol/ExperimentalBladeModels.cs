@@ -18,6 +18,16 @@ internal static class ExperimentalBladeModels
 
     public const string Blade18Source = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
 
+    internal const string Blade18SynapseSource = "https://apps.razer.com/synapse/products/672/mw/main.57245df0507455a5119e.js";
+    internal const string Blade18MappingSdkSource = "https://apps.razer.com/synapse/products/672/mw/7795.8e8d6b06ca4c3fe23fe1.js";
+    internal const string Blade18MappingEngineSource = "mapping_engine.dll@1.3.16.5;SHA256=6EABDFDEDF797E042738B630D827C06F7A45DBE560EBAEC96C66698F88F3320A";
+    internal const string Blade18SynapseHardwareEventParserSource = "https://apps.razer.com/synapse/products/672/mw/rzHardwareEventsProtocol25Parser.b504c011548aa6f83172.js";
+    internal const string Blade18ObserverSource = "https://github.com/user-attachments/files/33499731/blade-evidence-20261015-1459.zip";
+
+    internal const string Blade18ObserverFollowupSource = "https://github.com/user-attachments/files/33530069/blade-evidence-20261016-063420.zip";
+
+    internal const string Blade18ObserverControlsSource = "https://github.com/user-attachments/files/33595838/blade-evidence-20261017-122040.zip";
+
     internal const string MaintainedRazerCtlSource = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
     internal const string OpenRazerSource = "https://github.com/openrazer/openrazer/tree/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d";
     internal const string ExpandedBladeControlSource = "https://github.com/jdsgnrinfo/blade-control/tree/92beedc82e6e378cb71dac276e5820c8ea84247d";
@@ -64,6 +74,48 @@ internal static class ExperimentalBladeModels
                 new("GamingAndCustom", "UpstreamOwnerReported", [ExpandedBladeControlSource]),
                 new("SingleZoneRgbLighting", "UpstreamOwnerTested", [ExpandedBladeControlSource])],
             0x02A0 => [
+                new("CustomAllLevelCombinations", "SynapseSourceIndependentClusterLevelsExtrapolation",
+                    [Blade18SynapseSource,
+                     "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js"]),
+                new("UniformAmbientAndAudio", "SharedSoftwareOnObservedFrameTransportWithoutRgbReadback",
+                    [Blade18SynapseSource, Blade18ObserverControlsSource]),
+                new("RegionalKeyboardLayout", "SynapseSourceBackedEditionGetterWithoutPhysicalValidation",
+                    [Blade18SynapseSource,
+                     "https://apps.razer.com/synapse/products/672/mw/rzDevice25LedMatrix.21f461fce761cff01be3.js;SHA256=8F8C464818EF7E7AD75F9B18594E74A47D911F5F869C91DF3923AC2880F7F7F6",
+                     "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js;SHA256=DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24"]),
+                new("SpatialLighting", "SynapseSourceBackedKeyMapAndEffectAlgorithmsWithoutPhysicalValidation",
+                    [Blade18SynapseSource,
+                     "https://apps.razer.com/synapse/products/672/ui/static/js/main.0d842862.js",
+                     "https://apps.razer.com/synapse/lighting-engine/static/js/main.a383ea9e.js",
+                     "Blade18KeyboardLightingLayout.json SHA256 B5C03C722EBA0F57C09D211E4C162F35B7E37A68F0B089E43625C526AD43A1D8",
+                     "RzLightingEngineApi_v4.0.55.0.dll SHA256 CD9FC2A61FF920B9B73E1F5E27632020E2F8586F443E426A875AD3B042B714FA"]),
+                new("Starlight", "SharedSoftwarePatternOnObservedFrameTransportWithoutRgbReadback",
+                    [Blade18SynapseSource, Blade18ObserverControlsSource]),
+                new("CustomCpuBoostGpuHigh", "SynapseSourceAndObservedRequestsWithoutIndependentReadback",
+                    [Blade18SynapseSource, Blade18ObserverSource,
+                     "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
+                     "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js"]),
+                new("CustomCpuBoostGpuLow", "SynapseSourceAndObservedRequestsWithoutIndependentReadback",
+                    [Blade18SynapseSource, Blade18ObserverFollowupSource,
+                     "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
+                     "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js"]),
+                new("ChargeLimits50And80", "SynapseObservedRequestsWithoutIndependentReadback", [Blade18ObserverFollowupSource]),
+                new("KeyboardBrightness25And100", "SynapseObservedRequestsWithoutIndependentReadback", [Blade18ObserverFollowupSource]),
+                new("AdditionalLightingEffects", "SynapseSourceObservedOnly", [Blade18SynapseSource]),
+                new("FireAndWheel", "ObservedFrameTransportWithExperimentalPlaybackWithoutRgbReadback",
+                    [Blade18SynapseSource, Blade18ObserverControlsSource,
+                     "OpenBlade.Protocol.Fixtures.Blade18FireWheelFrames.json;SHA256=4AB4D50E9B7868D8F1E611000ABEF286532924A88B7BCDDCA69EB991582090C4"]),
+                new("FunctionLayerAndFnP", "SynapseSourceBackedDefaultShortcutsWithoutPhysicalInputValidation",
+                    [Blade18SynapseSource, Blade18MappingSdkSource, Blade18MappingEngineSource,
+                     Blade18SynapseHardwareEventParserSource, Blade18ObserverControlsSource,
+                     "SysUtilsNative.dll;SHA256=01223BFABF0355F42705836974E343A1F16F837D692999020D218B2615B8E318",
+                     "https://learn.microsoft.com/en-us/windows-hardware/design/component-guidelines/touchpad-enable-or-disable-toggle-button"]),
+                new("FixedFanTargets", "SynapseSourceAndObservedRequestsWithSourceBackedTargetReadback",
+                    [Blade18SynapseSource, Blade18ObserverFollowupSource, Blade18ObserverControlsSource,
+                     "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
+                     "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js"]),
+                new("LogoStaticAndOff", "SynapseSourceAndObservedRequestsWithoutIndependentReadback",
+                    [Blade18SynapseSource, Blade18ObserverControlsSource]),
                 new("MaximumFans", "UpstreamOwnerReported", [Blade18Source, "https://github.com/sqmagellan/razer-ctl/issues/1"]),
                 new("KeyboardAndLogoLighting", "UpstreamOwnerReported", [Blade18Source, "https://github.com/sqmagellan/razer-ctl/issues/1"]),
                 new("UniformStaticRgb", "SourceBackedExtrapolationWithoutRgbReadback", [OpenRazerSource, MaintainedRazerCtlSource]),
@@ -123,6 +175,8 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     private readonly Dictionary<string, (string Outcome, string? Confirmed, string? Failure)> lastQueries = new(StringComparer.Ordinal);
     private LinkedListNode<ExperimentalControlObservation>? uniformFrameSuccess;
     private long uniformFrameSuccessCount;
+    private LinkedListNode<ExperimentalControlObservation>? animationFrameSuccess;
+    private long animationFrameSuccessCount;
     private int recoveryRequired;
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
@@ -170,6 +224,22 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
                 true,
                 $"LastRGB={color.Red:X2}{color.Green:X2}{color.Blue:X2}",
                 $"AppliedWithoutColorReadback;Frames={uniformFrameSuccessCount}",
+                "FrameColorReadbackUnavailable"));
+        }
+    }
+
+    internal void RecordAnimationFrameApplied(LightingEffect effect)
+    {
+        lock (sync)
+        {
+            animationFrameSuccessCount++;
+            if (animationFrameSuccess?.List is not null)
+            {
+                observations.Remove(animationFrameSuccess);
+            }
+            animationFrameSuccess = Append(new(DateTimeOffset.UtcNow,
+                "KeyboardAnimationFrame", "Readback", "Unavailable", true,
+                effect.ToString(), $"AppliedWithoutColorReadback;Frames={animationFrameSuccessCount}",
                 "FrameColorReadbackUnavailable"));
         }
     }

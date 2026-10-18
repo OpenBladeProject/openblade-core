@@ -1111,6 +1111,87 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(["Capabilities", "State"], device.Calls);
     }
 
+    [Fact]
+    public async Task PresetRangedFixedFans_KeepSilentAndAcceptItsMaximum()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            FanSpeedRange = new FanSpeedRange(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = Blade18FanRanges(),
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlOutcomeAsync(
+            new FanControlSettings(FanMode.Fixed, 5300, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal(PerformancePreset.Silent, device.State.Performance);
+        Assert.Equal([FanMode.Fixed], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve)]
+    public async Task PresetRangedFans_RejectUnadmittedPerformanceModePair(
+        PerformancePreset performance,
+        FanMode mode)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            FanSpeedRange = new FanSpeedRange(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = Blade18FanRanges(),
+        };
+        device.State = device.State with
+        {
+            Performance = performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlOutcomeAsync(
+            new FanControlSettings(mode, 3800, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Empty(device.FanControlWrites);
+    }
+
+    [Fact]
+    public async Task PresetRangedFans_KeepBalancedManualCurveAdmission()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            FanSpeedRange = new FanSpeedRange(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = Blade18FanRanges(),
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlOutcomeAsync(
+            new FanControlSettings(FanMode.ManualCurve, 3800, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal([FanMode.ManualCurve], device.FanControlWrites);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -2824,6 +2905,13 @@ public sealed class ControlCoordinatorTests
                         new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery },
                         RejectedTemporaryFullChargeMessage),
                 ]),
+        };
+
+    private static IReadOnlyDictionary<PerformancePreset, FanSpeedRange> Blade18FanRanges() =>
+        new Dictionary<PerformancePreset, FanSpeedRange>
+        {
+            [PerformancePreset.Balanced] = new(2200, 3800, 100),
+            [PerformancePreset.Silent] = new(3700, 5300, 100),
         };
 
     private static RecordingBladeDevice CreateMismatchedDevice() => new()
