@@ -798,10 +798,22 @@ public partial class App
         }
     }
 
+    internal static bool HasDesktopShell => GetShellWindow() != 0;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint GetShellWindow();
+
     private static void ShowNoninteractiveSnapshotWindow(Window window)
     {
         ((UIElement)window.Content).IsHitTestVisible = false;
-        window.AppWindow.IsShownInSwitchers = false;
+#if OPENBLADE_DEVELOPER_HARNESS
+        // Private test desktops have no Explorer shell; WinUI returns E_NOTIMPL
+        // for switcher registration there. Rendering and layout still run.
+        if (App.HasDesktopShell)
+#endif
+        {
+            window.AppWindow.IsShownInSwitchers = false;
+        }
         LocalizationSnapshotWindowInput.Apply(WindowNative.GetWindowHandle(window));
         // WinUI requires Activate to initialize x:Bind and templates. The native
         // no-activate style is already installed, so this does not take foreground.

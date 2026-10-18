@@ -316,6 +316,7 @@ public sealed class InstallerWindowTests
                 {
                     PrepareLocalizationSnapshotWindow(window);
                     window.Show();
+                    AssertVisualTestWindowIsHidden(window);
                     InstallerTheme.Apply(window, dark: false);
                     showState(window);
                     PumpDispatcher(window.Dispatcher);
@@ -365,12 +366,39 @@ public sealed class InstallerWindowTests
         }
     }
 
-    private static void PrepareLocalizationSnapshotWindow(InstallerWindow window)
+    private static void HideVisualTestWindow(Window window)
     {
         window.ShowActivated = false;
+        window.ShowInTaskbar = false;
+        IntPtr handle = new WindowInteropHelper(window).EnsureHandle();
+        OpenBlade.Tray.LocalizationSnapshotWindowInput.Apply(handle);
+        int cloak = 1;
+        System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(
+            DwmSetWindowAttribute(handle, 13, ref cloak, sizeof(int)));
+        AssertVisualTestWindowIsHidden(window);
+    }
+
+    private static void AssertVisualTestWindowIsHidden(Window window)
+    {
+        IntPtr handle = new WindowInteropHelper(window).Handle;
+        System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(
+            DwmGetWindowAttribute(handle, 14, out int cloaked, sizeof(int)));
+        Assert.NotEqual(0, cloaked & 1); // Require the application cloak, including after Show.
+        Assert.False(window.ShowActivated);
+        Assert.False(window.ShowInTaskbar);
+        Assert.NotEqual(0L, GetWindowLongPtr(handle, -20).ToInt64() & 0x08000000);
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
+
+    private static void PrepareLocalizationSnapshotWindow(InstallerWindow window)
+    {
+        HideVisualTestWindow(window);
         ((UIElement)window.Content).IsHitTestVisible = false;
-        OpenBlade.Tray.LocalizationSnapshotWindowInput.Apply(
-            new WindowInteropHelper(window).EnsureHandle());
     }
 
     [Fact]
@@ -389,6 +417,7 @@ public sealed class InstallerWindowTests
                 PrepareLocalizationSnapshotWindow(window);
                 IntPtr handle = new WindowInteropHelper(window).Handle;
                 window.Show();
+                AssertVisualTestWindowIsHidden(window);
                 PumpDispatcher(window.Dispatcher);
                 Assert.NotEqual(handle, GetForegroundWindow());
                 Assert.False(window.IsActive);
@@ -622,8 +651,11 @@ public sealed class InstallerWindowTests
                 Top = -10000,
                 ShowInTaskbar = false,
             };
+            HideVisualTestWindow(window);
             window.Show();
             _ = window.Activate();
+            AssertVisualTestWindowIsHidden(window);
+            Assert.NotEqual(new WindowInteropHelper(window).Handle, GetForegroundWindow());
 
             window.ShowReady(installed: false);
             DrainFocus(window);

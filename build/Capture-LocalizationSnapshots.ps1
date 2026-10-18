@@ -65,6 +65,11 @@ dotnet build (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') 
     -c $Configuration -p:NuGetAudit=false -p:OpenBladeLocalizationPreview=true --no-restore
 if ($LASTEXITCODE -ne 0) { throw 'The tray snapshot build failed.' }
 
+if (-not ('OpenBlade.Testing.WindowsVisualTestDesktop' -as [type])) {
+    Add-Type -Path (Join-Path $repository 'tests\OpenBlade.Testing\WindowsVisualTestDesktop.cs')
+}
+$desktop = New-Object OpenBlade.Testing.WindowsVisualTestDesktop
+
 $previousSnapshotDirectory = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR
 $previousPseudo = $env:OPENBLADE_PSEUDO_LOCALIZATION
 $previousLanguage = $env:OPENBLADE_LOCALIZATION_LANGUAGE
@@ -124,20 +129,29 @@ try {
             'about',
             'tray-dashboard')) {
         $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage
-        $process = Start-Process -FilePath $trayExecutable `
-            -WorkingDirectory ([IO.Path]::GetDirectoryName($trayExecutable)) `
-            -WindowStyle Hidden `
-            -PassThru
-        if (-not $process.WaitForExit(60000)) {
-            $process.Kill()
-            throw "The tray '$trayPage' snapshot render timed out."
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = $trayExecutable
+        $startInfo.WorkingDirectory = [IO.Path]::GetDirectoryName($trayExecutable)
+        $startInfo.UseShellExecute = $false
+        $process = $desktop.Start($startInfo)
+        try {
+            if (-not $process.WaitForExit(60000)) {
+                $process.Kill()
+                if (-not $process.WaitForExit(5000)) {
+                    throw "The tray '$trayPage' snapshot process did not exit after termination."
+                }
+                throw "The tray '$trayPage' snapshot render timed out."
+            }
+            if ($process.ExitCode -ne 0) {
+                $report = Join-Path $trayOutput 'snapshot-report.txt'
+                $diagnostic = if (Test-Path -LiteralPath $report) {
+                    [IO.File]::ReadAllText($report)
+                } else { 'No snapshot report was written.' }
+                throw "The tray '$trayPage' snapshot render failed with $($process.ExitCode): $diagnostic"
+            }
         }
-        if ($process.ExitCode -ne 0) {
-            $report = Join-Path $trayOutput 'snapshot-report.txt'
-            $diagnostic = if (Test-Path -LiteralPath $report) {
-                [IO.File]::ReadAllText($report)
-            } else { 'No snapshot report was written.' }
-            throw "The tray '$trayPage' snapshot render failed with $($process.ExitCode): $diagnostic"
+        finally {
+            $process.Dispose()
         }
     }
 }
@@ -158,6 +172,7 @@ finally {
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
     $env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $previousFailureEvidenceDirectory
     $env:__COMPAT_LAYER = $previousCompatibilityLayer
+    $desktop.Dispose()
 }
 
 $images = @(Get-ChildItem -LiteralPath $resolvedOutput -Filter '*.png' -File -Recurse |

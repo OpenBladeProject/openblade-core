@@ -40,6 +40,11 @@
   ],
   "testInputRules": [
     {
+      "patterns": ["tests/OpenBlade.Testing/WindowsVisualTestDesktop.cs"],
+      "testProjects": ["tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj"],
+      "reason": "Tray visual tests and the snapshot wrapper share private desktop launch infrastructure."
+    },
+    {
       "patterns": ["build/localization/LocalizationSnapshotFailureEvidence.cs"],
       "testProjects": ["tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj", "build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj"],
       "reason": "Both disconnected renderer test projects link the snapshot failure evidence writer."

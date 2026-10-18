@@ -101,6 +101,7 @@ public sealed class TrayXamlStartupSmokeTests
         string? isolatedPreferencePath = isolatedPreferenceDirectory is null
             ? null
             : Path.Combine(isolatedPreferenceDirectory, "preferences.json");
+        using var desktop = new OpenBlade.Testing.WindowsVisualTestDesktop();
         Process? process = null;
         try
         {
@@ -147,7 +148,7 @@ public sealed class TrayXamlStartupSmokeTests
                     isolatedPreferencePath;
             }
 
-            process = Process.Start(startInfo);
+            process = desktop.Start(startInfo);
             Assert.NotNull(process);
             TimeSpan processTimeout = isolatePreferences
                 ? TimeSpan.FromSeconds(45)

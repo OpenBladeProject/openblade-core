@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\OpenBlade.Testing\WindowsVisualTestDesktop.cs" Link="WindowsVisualTestDesktop.cs" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="System.ServiceProcess.ServiceController" />
