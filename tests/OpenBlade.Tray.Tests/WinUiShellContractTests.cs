@@ -96,8 +96,8 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "_ when snapTapEnabled => LocalizedResources.Get(\n"
-                + "                \"SnapTap_Status_Unavailable\", \"Waiting for the input helper…\"),\n"
-                + "            _ => string.Empty,",
+                + "                    \"SnapTap_Status_Unavailable\", \"Waiting for the input helper…\"),\n"
+                + "                _ => string.Empty,",
             source,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -115,9 +115,12 @@ public sealed class WinUiShellContractTests
     {
         XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement link = NamedElement(document, "HyperlinkButton", "SnapTapDriverLink");
-        Assert.Equal("Get driver", Attribute(link, "Content"));
-        Assert.Equal("Get the Razer keyboard driver", Attribute(link, "AutomationProperties.Name"));
-        Assert.Equal("Collapsed", Attribute(link, "Visibility"));
+        Assert.Equal("Setup guide", Attribute(link, "Content"));
+        Assert.Equal("Razer keyboard driver setup guide", Attribute(link, "AutomationProperties.Name"));
+        Assert.Equal("Collapsed", Attribute(NamedElement(document, "StackPanel", "SnapTapDriverActions"), "Visibility"));
+        XElement install = NamedElement(document, "Button", "SnapTapInstallDriverButton");
+        Assert.Equal("Install driver", Attribute(install, "Content"));
+        Assert.Equal("OnInstallSnapTapDriver", Attribute(install, "Click"));
         Assert.Equal("Left", Attribute(link, "HorizontalAlignment"));
         Assert.Equal(
             "https://github.com/OpenBladeProject/blade-driver-catalog/blob/main/docs/installing-rz09-0581.md",
@@ -162,7 +165,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("\"laptop-snap-tap-failed\"", harness, StringComparison.Ordinal);
         Assert.Contains("bool captureSnapTap = captureSnapTapFailure", harness, StringComparison.Ordinal);
         Assert.Contains(
-            "snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing);",
+            "snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);",
             harness,
             StringComparison.Ordinal);
     }

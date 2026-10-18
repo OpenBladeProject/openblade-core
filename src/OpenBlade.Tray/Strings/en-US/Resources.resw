@@ -2222,12 +2222,39 @@ OpenBlade did not retry any stop request.</value>
     <value>Restart Windows before enabling SnapTap again.</value>
   </data>
   <data name="SnapTap_DriverLink.Content" xml:space="preserve">
-    <value>Get driver</value>
+    <value>Setup guide</value>
   </data>
   <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Get the Razer keyboard driver</value>
+    <value>Razer keyboard driver setup guide</value>
   </data>
   <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
-    <value>Set up the Razer keyboard driver, then turn SnapTap off and on.</value>
+    <value>SnapTap needs the Razer keyboard driver.</value>
+  </data>
+  <data name="SnapTap_Driver_AcPower" xml:space="preserve">
+    <value>Connect AC power to install the driver.</value>
+  </data>
+  <data name="SnapTap_Driver_Canceled" xml:space="preserve">
+    <value>Driver setup canceled.</value>
+  </data>
+  <data name="SnapTap_Driver_CloseSynapse" xml:space="preserve">
+    <value>Close Razer Synapse, then try again.</value>
+  </data>
+  <data name="SnapTap_Driver_Failed" xml:space="preserve">
+    <value>Driver setup couldn't finish. Open the setup guide.</value>
+  </data>
+  <data name="SnapTap_Driver_Installed" xml:space="preserve">
+    <value>Driver installed. Turn SnapTap off and on.</value>
+  </data>
+  <data name="SnapTap_Driver_Installing" xml:space="preserve">
+    <value>Installing driver…</value>
+  </data>
+  <data name="SnapTap_Driver_Restart" xml:space="preserve">
+    <value>Restart Windows, then follow the setup guide.</value>
+  </data>
+  <data name="SnapTap_InstallDriver.Content" xml:space="preserve">
+    <value>Install driver</value>
+  </data>
+  <data name="SnapTap_InstallDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Install the Razer keyboard driver</value>
   </data>
 </root>

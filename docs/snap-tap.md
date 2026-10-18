@@ -4,7 +4,7 @@ When A and D are held, the last pressed key takes priority. Releasing it restore
 
 Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. Release keys and mouse buttons to activate it. SnapTap is off by default and stays running when you close the visible Tray.
 
-If the driver is missing, choose **Get driver** to open the RZ09-0581 setup guide in the driver catalog. After setup, turn SnapTap off and on.
+If the driver is missing, choose **Install driver** and approve the Windows prompt. OpenBlade downloads and verifies the RZ09-0581 package from the driver catalog. If a restart is requested, restart Windows and follow the setup guide to complete any remaining steps. After a successful installation, turn SnapTap off and on. **Setup guide** opens the catalog instructions.
 
 SnapTap uses the laptop keyboard through the supported Razer driver on RZ09-0581. The pair uses the A/D scan positions. The information button includes game compatibility details.
 
@@ -37,3 +37,13 @@ The pinned driver keeps hooks per device instance. Its IOCTL wrapper at RVA `0x1
 Additional native checks confirmed that the production kill-on-close job terminates an idle child when its owner dies, and both real helper entrypoints exit cleanly with SnapTap off. These checks used no driver writes. Existing failure tests cover hook ownership, ambiguous submission, restart latching and the reboot-required recovery journal.
 
 The observed laptop Raw Input attribution reaches the unchanged Reactive/Ripple input path; rendered lighting was not separately inspected. Input latency remains unmeasured. The complete enabled installed-agent startup and a live held-output or pending-I/O crash were not exercised.
+
+## Driver installation
+
+A separate elevated helper runs from the installed OpenBlade directory. It accepts one fixed action, with no package path or URL arguments. The input worker never installs drivers.
+
+The helper requires the exact RZ09-0581 host and keyboard topology, AC power, and no competing Razer controller. It checks pinned archive and file hashes, Windows catalog signatures, and INF/SYS membership. It stages and binds the model-specific packages in catalog order, with fresh admission and independent readback.
+
+An administrator-only journal records intent before each driver operation. Interrupted or uncertain operations block automatic replay, including after a restart; recovery follows the manual catalog procedure. The helper never forces removal or restarts Windows. See the [driver package procedure](razer-brightness-driver-package.md) for recovery and release validation.
+
+Read-only checks verified the catalog archive and native signatures. Simulated tests cover installer failure handling. Clean installation, reboot and recovery on a recoverable laptop remain pending. This validation made no driver changes.

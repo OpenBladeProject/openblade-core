@@ -2216,18 +2216,45 @@ OpenBlade повторно проверит этот список и остан�
     <value>Совместимость с играми не проверена.</value>
   </data>
   <data name="SnapTap_DriverLink.Content" xml:space="preserve">
-    <value>Получить драйвер</value>
+    <value>Инструкция по установке</value>
   </data>
   <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Получить драйвер клавиатуры Razer</value>
+    <value>Инструкция по установке драйвера клавиатуры Razer</value>
   </data>
   <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
-    <value>Установите драйвер клавиатуры Razer, затем выключите и включите SnapTap.</value>
+    <value>Для SnapTap нужен драйвер клавиатуры Razer.</value>
   </data>
   <data name="SnapTap_Status_DriverUnavailable" xml:space="preserve">
     <value>Поддерживаемый драйвер клавиатуры Razer недоступен.</value>
   </data>
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
     <value>Перезапустите Windows перед повторным включением SnapTap.</value>
+  </data>
+  <data name="SnapTap_InstallDriver.Content" xml:space="preserve">
+    <value>Установить драйвер</value>
+  </data>
+  <data name="SnapTap_InstallDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Установить драйвер клавиатуры Razer</value>
+  </data>
+  <data name="SnapTap_Driver_Installing" xml:space="preserve">
+    <value>Установка драйвера…</value>
+  </data>
+  <data name="SnapTap_Driver_Installed" xml:space="preserve">
+    <value>Драйвер установлен. Выключите и включите SnapTap.</value>
+  </data>
+  <data name="SnapTap_Driver_Restart" xml:space="preserve">
+    <value>Перезапустите Windows и следуйте инструкции по установке.</value>
+  </data>
+  <data name="SnapTap_Driver_Canceled" xml:space="preserve">
+    <value>Установка драйвера отменена.</value>
+  </data>
+  <data name="SnapTap_Driver_AcPower" xml:space="preserve">
+    <value>Подключите питание от сети для установки драйвера.</value>
+  </data>
+  <data name="SnapTap_Driver_CloseSynapse" xml:space="preserve">
+    <value>Закройте Razer Synapse и повторите попытку.</value>
+  </data>
+  <data name="SnapTap_Driver_Failed" xml:space="preserve">
+    <value>Не удалось завершить установку драйвера. Откройте инструкцию.</value>
   </data>
 </root>

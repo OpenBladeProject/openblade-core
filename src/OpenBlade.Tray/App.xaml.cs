@@ -63,6 +63,17 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             return;
         }
+        RazerDriverHelperParseResult driverHelper = RazerDriverInstallLauncher.Parse(commandLineArguments);
+        if (driverHelper != RazerDriverHelperParseResult.None)
+        {
+            if (driverHelper == RazerDriverHelperParseResult.Invalid)
+            {
+                Environment.Exit(2);
+                return;
+            }
+            _ = RunRazerDriverInstallHelperAsync();
+            return;
+        }
         ElevatedServiceHelperParseResult helperParseResult =
             ElevatedServiceControlLauncher.ParseHelperAction(
             commandLineArguments,
@@ -883,6 +894,24 @@ public partial class App : Microsoft.UI.Xaml.Application
             executablePath,
             ElevatedServiceControlAction.StopRazerServices,
             CancellationToken.None);
+    }
+
+    private async Task RunRazerDriverInstallHelperAsync()
+    {
+        RazerDriverInstallOutcome outcome = RazerDriverInstallOutcome.Unavailable;
+        try
+        {
+            if (RazerDriverInstallLauncher.IsInstalledExecutable(Environment.ProcessPath))
+            {
+                outcome = await Task.Run(() => new RazerKeyboardDriverInstaller().InstallAsync(CancellationToken.None));
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("Razer driver setup failed: {0}", exception.GetType().Name);
+            outcome = RazerDriverInstallOutcome.RecoveryRequired;
+        }
+        Environment.Exit((int)outcome);
     }
 
     private async Task RunElevatedServiceControlHelperAsync(

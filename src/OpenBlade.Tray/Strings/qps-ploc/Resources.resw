@@ -2222,12 +2222,39 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Réstárt Windows béfóré énáblíng SnápTáp ágáín. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_DriverLink.Content" xml:space="preserve">
-    <value>[!! Gét drívér ~~~~ !!]</value>
+    <value>[!! Sétúp gúídé ~~~~ !!]</value>
   </data>
   <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Gét thé Razer kéýbóárd drívér ~~~~~~~ !!]</value>
+    <value>[!! Razer kéýbóárd drívér sétúp gúídé ~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_Status_DriverMissing" xml:space="preserve">
-    <value>[!! Sét úp thé Razer kéýbóárd drívér, thén túrn SnápTáp óff ánd ón. ~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! SnápTáp nééds thé Razer kéýbóárd drívér. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_AcPower" xml:space="preserve">
+    <value>[!! Cónnéct ÁC pówér tó ínstáll thé drívér. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_Canceled" xml:space="preserve">
+    <value>[!! Drívér sétúp cáncéléd. ~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_CloseSynapse" xml:space="preserve">
+    <value>[!! Clósé Razer Sýnápsé, thén trý ágáín. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_Failed" xml:space="preserve">
+    <value>[!! Drívér sétúp cóúldn't fínísh. Ópén thé sétúp gúídé. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_Installed" xml:space="preserve">
+    <value>[!! Drívér ínstálléd. Túrn SnápTáp óff ánd ón. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_Installing" xml:space="preserve">
+    <value>[!! Ínstállíng drívér… ~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_Restart" xml:space="preserve">
+    <value>[!! Réstárt Windows, thén fóllów thé sétúp gúídé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InstallDriver.Content" xml:space="preserve">
+    <value>[!! Ínstáll drívér ~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_InstallDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Ínstáll thé Razer kéýbóárd drívér ~~~~~~~~~ !!]</value>
   </data>
 </root>

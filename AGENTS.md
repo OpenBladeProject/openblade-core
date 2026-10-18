@@ -282,7 +282,11 @@ inventing a page-specific appearance:
    keyboard-collection and container admission, supervised subscription lifetime,
    owned-hook restoration and uncertain-output recovery. It must not load the
    Synapse mapping engine, acquire the service's HID handle, install or bundle
-   drivers, or fall back to a system-wide keyboard hook. Other models need
+   drivers, or fall back to a system-wide keyboard hook. A separate, explicitly
+   user-initiated elevated helper may install the pinned RZ09-0581 catalog stack
+   after exact host, topology, package hash and Windows catalog verification.
+   Keep its durable journal, independent readback and stop-on-ambiguity behavior;
+   never install from the input worker or bundle vendor binaries. Other models need
    separately reviewed driver evidence; see [SnapTap](docs/snap-tap.md).
    The optional experimental THX audio integration may use the already
    installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
