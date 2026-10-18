@@ -115,18 +115,23 @@ public sealed class WinUiShellContractTests
     {
         XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement link = NamedElement(document, "HyperlinkButton", "SnapTapDriverLink");
-        Assert.Equal("Setup guide", Attribute(link, "Content"));
+        Assert.Equal("Setup guide", Attribute(link, "ToolTipService.ToolTip"));
+        Assert.Equal("32", Attribute(link, "Width"));
+        Assert.Equal("{StaticResource ExternalLinkButtonStyle}", Attribute(link, "Style"));
         Assert.Equal("Razer keyboard driver setup guide", Attribute(link, "AutomationProperties.Name"));
         Assert.Equal("Collapsed", Attribute(NamedElement(document, "StackPanel", "SnapTapDriverActions"), "Visibility"));
         XElement install = NamedElement(document, "Button", "SnapTapInstallDriverButton");
         Assert.Equal("Install driver", Attribute(install, "Content"));
         Assert.Equal("OnInstallSnapTapDriver", Attribute(install, "Click"));
+        Assert.Equal("Horizontal", Attribute(NamedElement(document, "StackPanel", "SnapTapDriverActions"), "Orientation"));
+        Assert.Equal("{StaticResource AccentButtonStyle}", Attribute(install, "Style"));
         Assert.Equal("Left", Attribute(link, "HorizontalAlignment"));
         Assert.Equal(
             "https://github.com/OpenBladeProject/blade-driver-catalog/blob/main/docs/installing-rz09-0581.md",
             Attribute(link, "NavigateUri"));
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs");
         Assert.Contains("snapTapEnabled && status?.State == SnapTapRuntimeState.DriverMissing", source, StringComparison.Ordinal);
+        Assert.Contains("&& snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed", source, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -123,6 +123,7 @@ public sealed partial class MainWindow
                 _ => string.Empty,
             };
         SnapTapDriverActions.Visibility = snapTapEnabled && status?.State == SnapTapRuntimeState.DriverMissing
+            && snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed
             ? Visibility.Visible
             : Visibility.Collapsed;
         SnapTapToggle.IsEnabled = !snapTapDriverInstalling;

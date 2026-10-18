@@ -2221,9 +2221,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
     <value>Restart Windows before enabling SnapTap again.</value>
   </data>
-  <data name="SnapTap_DriverLink.Content" xml:space="preserve">
-    <value>Setup guide</value>
-  </data>
   <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Razer keyboard driver setup guide</value>
   </data>
@@ -2256,5 +2253,8 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="SnapTap_InstallDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Install the Razer keyboard driver</value>
+  </data>
+  <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Setup guide</value>
   </data>
 </root>

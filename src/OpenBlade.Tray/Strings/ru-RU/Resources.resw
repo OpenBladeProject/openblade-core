@@ -2215,7 +2215,7 @@ OpenBlade повторно проверит этот список и остан�
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>Совместимость с играми не проверена.</value>
   </data>
-  <data name="SnapTap_DriverLink.Content" xml:space="preserve">
+  <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
     <value>Инструкция по установке</value>
   </data>
   <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
