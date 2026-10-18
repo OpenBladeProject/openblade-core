@@ -314,7 +314,8 @@ This admits experimental Fire and Wheel playback with saved built-in effect and
 raw-brightness restoration, fresh per-frame admission, and stop-on-ambiguity.
 The same transport also admits uniform Ambient Awareness and Audio Meter, and
 shared-pattern Starlight. The first uniform frame activates custom mode; later
-frames submit six rows only. It does not admit a key-triggered renderer or a
-physical key-name map. Appearance and restoration still need testing in OpenBlade on
+frames submit six rows only. A separate [Synapse source recovery](blade18-spatial-lighting.md)
+admits the exact-model key map and Reactive, Ripple and Tidal; the recording
+itself does not establish those semantics. Appearance and restoration still need testing in OpenBlade on
 this laptop. No installed components, hardware state, or sleep/resume behavior
 were changed here.

@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add experimental Fire, Wheel, Starlight, whole-keyboard Ambient Awareness and Audio Meter lighting for Blade 18 (2023), using its admitted 6×16 frame transport. Add its default Synapse Fn shortcuts for performance, refresh rate, touchpad, F1–F12, arrows and Delete. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
+- Add experimental Reactive, Ripple, Tidal, Fire, Wheel, Starlight, whole-keyboard Ambient Awareness and Audio Meter lighting for Blade 18 (2023), using its admitted 6×16 frame transport. Add its default Synapse Fn shortcuts for performance, refresh rate, touchpad, F1–F12, arrows and Delete. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
 - Add all Custom CPU/GPU level combinations, including CPU Boost with GPU Medium and High/High, and a shared 2200–3800 RPM fixed-fan control in Balanced on Blade 18 (2023). Keep richer Synapse lighting effects visible in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 
 ### Changed

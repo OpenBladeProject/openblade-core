@@ -52,7 +52,9 @@ Battery Saver and Battery Balanced on battery power.
   offers experimental Fire, clockwise or counterclockwise Wheel, and Starlight.
   Fire repeats a short recorded sample; Wheel plays a recorded cycle. Starlight
   uses the shared twinkle pattern over this model's RGB cells. Reactive, Ripple
-  and Tidal are not yet supported.
+  and Tidal use [recovered Synapse definitions](blade18-spatial-lighting.md).
+  Key-triggered effects recognize 77 bindings shared across regional keyboards;
+  a few region-dependent keys do not trigger them yet.
 - Blade 18 (2023) offers the [default Synapse Fn shortcuts](blade18-fn-decoder.md#default-shortcuts):
   performance, refresh rate, touchpad, F1–F12, arrows and Delete. The decoder and
   actions are source-backed; behavior on the laptop still needs testing.

@@ -221,12 +221,16 @@ Starlight shares the existing pure twinkle algorithm and color choices, with
 Short/Medium/Long timing and Single/Dual/Random colors. The original model keeps
 its own hole mask; Blade 18 renders all 96 addresses in its admitted envelope.
 This is software-pattern extrapolation, not a captured Blade 18 Starlight oracle.
-Reactive, Ripple and Tidal remain unavailable; no physical key-name map is admitted.
+Reactive, Ripple and Tidal use the [recovered product-672 map and algorithms](blade18-spatial-lighting.md):
+87 renderable slots and 77 scan-code bindings common to all nine regional layouts.
+Regional input differences remain unmapped. This admission does not enable
+Sequence or individual-key color editing.
 
 The service-owned port writes six SET-only `03/0B` rows and activates custom
 mode once on entry with `03/0A [05,00]`. Later frames have no GET or extra latch.
 Playback is bounded to 20 frames per second, skips missed frames, and uses no
-physical key-name map or another model's layout. Serialized healthy live sessions
+another model's layout. Spatial effects use only the recovered Blade 18 map.
+Serialized healthy live sessions
 cycle nonzero transaction IDs; the finite admission-run budget stays unchanged.
 Every row retains fresh exact-device, controller, session, and ownership
 admission. An ambiguous or partial submission pauses further writes without
