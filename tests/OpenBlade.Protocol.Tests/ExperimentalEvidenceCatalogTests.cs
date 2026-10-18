@@ -39,6 +39,13 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Contains(ExperimentalBladeModels.Blade18ObserverControlsSource, feature.Sources);
                     Assert.Contains($"{Blade18LightingAnimation.ResourceName};SHA256={Blade18LightingAnimation.ApprovedSha256}", feature.Sources);
                 }
+                else if (feature.Basis.StartsWith("SharedSoftware", StringComparison.Ordinal))
+                {
+                    Assert.Equal((ushort)0x02A0, model.ProductId);
+                    Assert.Contains("WithoutRgbReadback", feature.Basis, StringComparison.Ordinal);
+                    Assert.Contains(ExperimentalBladeModels.Blade18SynapseSource, feature.Sources);
+                    Assert.Contains(ExperimentalBladeModels.Blade18ObserverControlsSource, feature.Sources);
+                }
                 else if (feature.Basis.StartsWith("SynapseSource", StringComparison.Ordinal))
                 {
                     Assert.Equal("RZ09-0484", model.ModelNumber);

@@ -74,6 +74,13 @@ internal static class ExperimentalBladeModels
                 new("GamingAndCustom", "UpstreamOwnerReported", [ExpandedBladeControlSource]),
                 new("SingleZoneRgbLighting", "UpstreamOwnerTested", [ExpandedBladeControlSource])],
             0x02A0 => [
+                new("CustomAllLevelCombinations", "SynapseSourceIndependentClusterLevelsExtrapolation",
+                    [Blade18SynapseSource,
+                     "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js"]),
+                new("UniformAmbientAndAudio", "SharedSoftwareOnObservedFrameTransportWithoutRgbReadback",
+                    [Blade18SynapseSource, Blade18ObserverControlsSource]),
+                new("Starlight", "SharedSoftwarePatternOnObservedFrameTransportWithoutRgbReadback",
+                    [Blade18SynapseSource, Blade18ObserverControlsSource]),
                 new("CustomCpuBoostGpuHigh", "SynapseSourceAndObservedRequestsWithoutIndependentReadback",
                     [Blade18SynapseSource, Blade18ObserverSource,
                      "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",

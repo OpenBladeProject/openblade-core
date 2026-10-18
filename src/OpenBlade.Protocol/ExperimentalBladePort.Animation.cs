@@ -12,7 +12,7 @@ internal sealed partial class ExperimentalBladePort
         model.ProductId == 0x02A0;
 
     private static bool IsBlade18Animation(LightingEffect effect) =>
-        effect is LightingEffect.Fire or LightingEffect.Wheel;
+        effect is LightingEffect.Fire or LightingEffect.Wheel or LightingEffect.Starlight;
 
     // Called with operationGate held. The loop uses cancellable waits for both
     // its timer and this gate, so it cannot be stranded behind the retiring caller.

@@ -12,9 +12,7 @@ internal sealed partial class ExperimentalBladePort
          from gpu in Enum.GetValues<CustomPerformanceLevel>()
          let combination = new CustomPerformanceCombination(cpu, gpu)
          where SupportsExperimentalCustom(model) && combination.IsWellFormed
-             && (model.ProductId == 0x029F
-                 || model.ProductId == 0x02A0 && cpu == CustomPerformanceLevel.Boost
-                     && gpu is CustomPerformanceLevel.Low or CustomPerformanceLevel.High
+             && (model.ProductId is 0x029F or 0x02A0
                  || cpu != CustomPerformanceLevel.Boost
                  && (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High))
          select combination).ToHashSet())
@@ -23,9 +21,12 @@ internal sealed partial class ExperimentalBladePort
     };
 
     // 029F High/High and CPU Boost are explicit Synapse captures in tdakhran
-    // 8e12e778/data/README.md. 02A0 Boost/Low and Boost/High are corroborated by exact
-    // Synapse Observer requests in docs/blade18-observer-evidence.md. Other
-    // combinations retain their bounds; raw level 4 is not a normal Custom level.
+    // 8e12e778/data/README.md. Product 672 sets CPU and GPU levels independently
+    // in pinned 6737.e50bb836b878190315d7.js at UTF-8 bytes 1560351/1560392, with no
+    // pair restriction. All twelve 02A0 pairs are source-backed experimental;
+    // Observer additionally corroborates Boost/Low and Boost/High. See
+    // docs/blade18-observer-evidence.md. Other models retain their bounds;
+    // raw level 4 is not a normal Custom level.
     private async Task<CustomPerformanceSettings?> ReadCustomPerformanceAsync(
         CancellationToken cancellationToken, bool includeMaximumFans = true)
     {
@@ -142,8 +143,7 @@ internal sealed partial class ExperimentalBladePort
                 currentLevels = entered.CustomPerformance;
             }
             // Each setter changes one cluster. Use the fewest admitted intermediate
-            // combinations; 02A0 High/Medium <-> Boost/High needs a bridge because
-            // neither High/High nor Boost/Medium is in its reviewed contract.
+            // combinations; only models with concrete pair restrictions need a bridge.
             CustomPerformanceCombination[] path = PlanCustomLevelChanges(
                 CreateCustomCapabilities(model), currentLevels, value);
             foreach (CustomPerformanceCombination next in path)

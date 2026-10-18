@@ -36,8 +36,10 @@ public sealed partial class ExperimentalBladeLightingTests
 
         DeviceCapabilities blade18 = ExperimentalBladePort.CreateCapabilities(ModelFor(0x02A0), true);
         Assert.Contains(LightingEffect.Static, blade18.LightingEffects);
-        Assert.False(blade18.SupportsUniformLightingFrames);
-        Assert.DoesNotContain(LightingEffect.AmbientAwareness, blade18.LightingEffects);
+        Assert.True(blade18.SupportsUniformLightingFrames);
+        Assert.Contains(LightingEffect.AmbientAwareness, blade18.LightingEffects);
+        Assert.Contains(LightingEffect.AudioMeter, blade18.LightingEffects);
+        Assert.Contains(LightingEffect.Starlight, blade18.LightingEffects);
         Assert.Contains(LightingEffect.AmbientAwareness, blade18.ObservedLightingEffects);
         Assert.Contains(LightingEffect.Fire, blade18.ObservedLightingEffects);
         Assert.DoesNotContain(LightingEffect.Sequence, blade18.ObservedLightingEffects);

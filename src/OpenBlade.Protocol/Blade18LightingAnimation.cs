@@ -6,9 +6,9 @@ using OpenBlade.Contracts;
 namespace OpenBlade.Protocol;
 
 /// <summary>
-/// Exact-model observed colors. Fire repeats a bounded non-periodic sample;
-/// counterclockwise Wheel reverses the observed clockwise cycle. Neither is a
-/// claim of firmware RGB readback or another model's physical validation.
+/// Fire/Wheel use exact-model observed colors. Starlight shares a software
+/// twinkle pattern over this model's 96 RGB addresses, without a borrowed key
+/// mask. These are experimental renderers without firmware RGB readback.
 /// </summary>
 internal static class Blade18LightingAnimation
 {
@@ -25,9 +25,13 @@ internal static class Blade18LightingAnimation
             throw new ArgumentOutOfRangeException(nameof(elapsed));
         }
         if (!LightingSettingsValidation.IsWellFormed(settings)
-            || settings.Effect is not (LightingEffect.Fire or LightingEffect.Wheel))
+            || settings.Effect is not (LightingEffect.Fire or LightingEffect.Wheel or LightingEffect.Starlight))
         {
-            throw new ArgumentException("Only typed Fire and Wheel animations are supported.", nameof(settings));
+            throw new ArgumentException("Only typed Fire, Wheel and Starlight animations are supported.", nameof(settings));
+        }
+        if (settings.Parameters is StarlightLightingParameters starlight)
+        {
+            return RenderStarlight(starlight, elapsed);
         }
         Template template = settings.Effect == LightingEffect.Fire
             ? Templates.Value.Fire : Templates.Value.Wheel;
@@ -43,6 +47,23 @@ internal static class Blade18LightingAnimation
             index--;
         }
         return new Blade18LightingFrame(template.Frames[index].Colors);
+    }
+
+    private static Blade18LightingFrame RenderStarlight(
+        StarlightLightingParameters parameters, TimeSpan elapsed)
+    {
+        static MatrixRgb Color(RgbColor? value) => value is { } color
+            ? new(color.Red, color.Green, color.Blue) : default;
+        var pattern = new StarlightPattern(parameters.ColorMode,
+            Color(parameters.PrimaryColor), Color(parameters.SecondaryColor),
+            ProductionLightingPort.StarlightDuration(parameters.Duration));
+        var colors = new RgbColor[Blade18LightingFrame.SlotCount];
+        for (int slot = 0; slot < colors.Length; slot++)
+        {
+            MatrixRgb color = pattern.RenderSlot(slot, elapsed);
+            colors[slot] = new(color.Red, color.Green, color.Blue);
+        }
+        return new(colors);
     }
 
     private static (Template Wheel, Template Fire) ReadTemplates()

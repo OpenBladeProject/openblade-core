@@ -11,6 +11,8 @@ internal sealed class ExperimentalLightingOwnershipState
     internal int Ownership;
     internal ExperimentalLightingBaseline? Baseline;
     internal LightingSettings? Intent;
+    internal int UniformFrameActivated;
+    internal long UniformFrameTimestamp;
 }
 
 internal sealed partial class ExperimentalBladePort
@@ -48,7 +50,7 @@ internal sealed partial class ExperimentalBladePort
         {
             effects.Add(LightingEffect.Static);
         }
-        if (model.ProductId == 0x029F)
+        if (model.ProductId is 0x029F or 0x02A0)
         {
             effects.Add(LightingEffect.AmbientAwareness);
             effects.Add(LightingEffect.AudioMeter);
@@ -56,6 +58,7 @@ internal sealed partial class ExperimentalBladePort
         if (SupportsBlade18Animation(model))
         {
             effects.Add(LightingEffect.Fire);
+            effects.Add(LightingEffect.Starlight);
             effects.Add(LightingEffect.Wheel);
         }
         return effects;
@@ -91,7 +94,7 @@ internal sealed partial class ExperimentalBladePort
 
     internal static bool SupportsExperimentalUniformFrames(
         ExperimentalBladeModel model,
-        bool enabled) => enabled && model.ProductId == 0x029F;
+        bool enabled) => enabled && model.ProductId is 0x029F or 0x02A0;
 
     internal static IReadOnlySet<BreathingColorMode> CreateExperimentalBreathingColorModes(
         ExperimentalBladeModel model,
@@ -419,6 +422,12 @@ internal sealed partial class ExperimentalBladePort
         {
             throw new CapabilityUnavailableException("This model has no admitted animation stream transport.");
         }
+        bool blade18UniformRequest = model.ProductId == 0x02A0
+            && settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter;
+        if (blade18UniformRequest && session is not IRazerSetFeatureCommandSession)
+        {
+            throw new CapabilityUnavailableException("This model has no admitted uniform frame transport.");
+        }
         Blade18LightingFrame? firstAnimationFrame = animationRequest
             ? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -430,12 +439,14 @@ internal sealed partial class ExperimentalBladePort
         LightingRendererOwnershipState priorOwnership = OwnershipState;
         ExperimentalLightingBaseline? priorBaseline = lightingOwnership.Baseline;
         LightingSettings? priorIntent = lightingOwnership.Intent;
+        int priorUniformFrameActivated = lightingOwnership.UniformFrameActivated;
         bool hostOwnershipAcquired = false;
         bool replacingOwnedFrame = IsOwnedFrameOwnership(priorOwnership);
         bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
         bool startingHostFrameFromFault = replacingFaultedFrame
             && settings.Effect is LightingEffect.AmbientAwareness
-                or LightingEffect.AudioMeter or LightingEffect.Fire or LightingEffect.Wheel;
+                or LightingEffect.AudioMeter or LightingEffect.Fire
+                or LightingEffect.Starlight or LightingEffect.Wheel;
         byte raw = checked((byte)((settings.Brightness * 255 + 50) / 100));
         string requested = $"{settings.Effect};Raw={raw};Logo={settings.LogoMode?.ToString() ?? "Unchanged"}";
         try
@@ -499,8 +510,12 @@ internal sealed partial class ExperimentalBladePort
                     ? new(baseline, originalBaselineRaw)
                     : lightingOwnership.Baseline ?? new(baseline, originalBaselineRaw);
                 lightingOwnership.Intent = settings with { LogoMode = null };
-                SetLightingOwnership(settings.Effect == LightingEffect.Fire
-                    ? LightingRendererOwnershipState.Fire : LightingRendererOwnershipState.Wheel);
+                SetLightingOwnership(settings.Effect switch
+                {
+                    LightingEffect.Fire => LightingRendererOwnershipState.Fire,
+                    LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
+                    _ => LightingRendererOwnershipState.Wheel,
+                });
                 hostOwnershipAcquired = true;
                 frameWriteAttempted = true;
                 await SubmitBlade18FrameAsync(firstAnimationFrame!, activate: true,
@@ -535,6 +550,10 @@ internal sealed partial class ExperimentalBladePort
                 SetLightingOwnership(settings.Effect == LightingEffect.AmbientAwareness
                     ? LightingRendererOwnershipState.AmbientAwareness
                     : LightingRendererOwnershipState.AudioMeter);
+                if (blade18UniformRequest)
+                {
+                    lightingOwnership.UniformFrameActivated = 0;
+                }
                 hostOwnershipAcquired = true;
                 setOnlyFrame = true;
             }
@@ -687,6 +706,7 @@ internal sealed partial class ExperimentalBladePort
             {
                 lightingOwnership.Baseline = priorBaseline;
                 lightingOwnership.Intent = priorIntent;
+                lightingOwnership.UniformFrameActivated = priorUniformFrameActivated;
                 SetLightingOwnership(priorOwnership);
             }
             else if (capturedBaselineForFrameAttempt)
@@ -791,20 +811,25 @@ internal sealed partial class ExperimentalBladePort
     private void SetLightingOwnership(LightingRendererOwnershipState value) =>
         Volatile.Write(ref lightingOwnership.Ownership, (int)value);
 
-    private void SetLightingFaulted() =>
+    private void SetLightingFaulted()
+    {
+        lightingOwnership.UniformFrameActivated = 0;
         SetLightingOwnership(LightingRendererOwnershipState.Faulted);
+    }
 
     private static bool IsOwnedFrameOwnership(LightingRendererOwnershipState value) =>
         value is LightingRendererOwnershipState.Static
             or LightingRendererOwnershipState.AmbientAwareness
             or LightingRendererOwnershipState.AudioMeter
             or LightingRendererOwnershipState.Fire
+            or LightingRendererOwnershipState.Starlight
             or LightingRendererOwnershipState.Wheel;
 
     private void ClearOwnedFrame()
     {
         lightingOwnership.Baseline = null;
         lightingOwnership.Intent = null;
+        lightingOwnership.UniformFrameActivated = 0;
         SetLightingOwnership(LightingRendererOwnershipState.None);
     }
 
@@ -904,6 +929,35 @@ internal sealed partial class ExperimentalBladePort
             {
                 throw new CapabilityUnavailableException(
                     "A uniform host-rendered lighting effect does not own the keyboard.");
+            }
+
+            if (model.ProductId == 0x02A0)
+            {
+                var colors = new RgbColor[Blade18LightingFrame.SlotCount];
+                Array.Fill(colors, frame.Color);
+                bool activate = lightingOwnership.UniformFrameActivated == 0;
+                if (!activate)
+                {
+                    // Uniform sampling may request 30/60 Hz. Keep this model's
+                    // established 20 FPS transport budget without queuing frames.
+                    TimeSpan remaining = Blade18LightingAnimation.FrameInterval
+                        - animationTime.GetElapsedTime(lightingOwnership.UniformFrameTimestamp);
+                    if (remaining > TimeSpan.Zero)
+                    {
+                        await Task.Delay(remaining, animationTime, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                }
+                long submittedAt = animationTime.GetTimestamp();
+                await SubmitBlade18FrameAsync(
+                    new Blade18LightingFrame(colors),
+                    activate,
+                    cancellationToken).ConfigureAwait(false);
+                submitted = true;
+                lightingOwnership.UniformFrameActivated = 1;
+                lightingOwnership.UniformFrameTimestamp = submittedAt;
+                policy.RecordUniformFrameApplied(frame.Color);
+                return;
             }
 
             for (int row = 0; row < ExperimentalBladeLightingFrame.RowCount; row++)

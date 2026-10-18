@@ -10,13 +10,13 @@ public sealed partial class ExperimentalThermalExpansionTests
     [InlineData(0x029D, false, false, true)]
     [InlineData(0x02C5, false, false, false)]
     [InlineData(0x0255, false, false, false)]
-    [InlineData(0x02A0, false, true, true)]
+    [InlineData(0x02A0, true, true, true)]
     public void Capabilities_AdmitOnlyExactModelCommands(int pid, bool boost, bool maximum, bool fixedFans)
     {
         DeviceCapabilities caps = ExperimentalBladePort.CreateCapabilities(Model(pid), true);
         Assert.True(caps.CustomPerformance!.IsWellFormed);
         Assert.Contains(PerformancePreset.Custom, caps.PerformancePresets);
-        Assert.Equal(boost || pid == 0x02A0, caps.CustomPerformance!.Supports(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)));
+        Assert.Equal(boost, caps.CustomPerformance!.Supports(new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)));
         Assert.Equal(boost, caps.CustomPerformance.Supports(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High)));
         Assert.Equal(maximum, caps.CustomPerformance.SupportsMaximumFans);
         Assert.Equal(fixedFans, caps.FanModes.Contains(FanMode.Fixed));
