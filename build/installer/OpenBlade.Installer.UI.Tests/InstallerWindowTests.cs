@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.ExceptionServices;
+using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
@@ -21,6 +22,14 @@ namespace OpenBlade.Installer.UI.Tests;
 
 public sealed class InstallerWindowTests
 {
+    // Real-focus tests need activation on a private desktop. WPF retains
+    // text-services workers after their STA exits, so keep one for this testhost;
+    // Windows releases it at process exit. Noninteractive snapshots use cloaking
+    // because closing their progress window on a private desktop can hang.
+    // Do not close it between tests while those workers still use it.
+    private static readonly Lazy<OpenBlade.Testing.WindowsVisualTestDesktop> VisualDesktop =
+        new(() => new OpenBlade.Testing.WindowsVisualTestDesktop());
+
     [Fact]
     public void MissingCultureFallsBackToAuthoritativeEnglishResources()
     {
@@ -316,6 +325,7 @@ public sealed class InstallerWindowTests
                 {
                     PrepareLocalizationSnapshotWindow(window);
                     window.Show();
+                    AssertVisualTestWindowIsHidden(window);
                     InstallerTheme.Apply(window, dark: false);
                     showState(window);
                     PumpDispatcher(window.Dispatcher);
@@ -365,12 +375,39 @@ public sealed class InstallerWindowTests
         }
     }
 
-    private static void PrepareLocalizationSnapshotWindow(InstallerWindow window)
+    private static void HideVisualTestWindow(Window window)
     {
         window.ShowActivated = false;
+        window.ShowInTaskbar = false;
+        IntPtr handle = new WindowInteropHelper(window).EnsureHandle();
+        OpenBlade.Tray.LocalizationSnapshotWindowInput.Apply(handle);
+        int cloak = 1;
+        System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(
+            DwmSetWindowAttribute(handle, 13, ref cloak, sizeof(int)));
+        AssertVisualTestWindowIsHidden(window);
+    }
+
+    private static void AssertVisualTestWindowIsHidden(Window window)
+    {
+        IntPtr handle = new WindowInteropHelper(window).Handle;
+        System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(
+            DwmGetWindowAttribute(handle, 14, out int cloaked, sizeof(int)));
+        Assert.NotEqual(0, cloaked & 1); // Require the application cloak, including after Show.
+        Assert.False(window.ShowActivated);
+        Assert.False(window.ShowInTaskbar);
+        Assert.NotEqual(0L, GetWindowLongPtr(handle, -20).ToInt64() & 0x08000000);
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
+
+    private static void PrepareLocalizationSnapshotWindow(InstallerWindow window)
+    {
+        HideVisualTestWindow(window);
         ((UIElement)window.Content).IsHitTestVisible = false;
-        OpenBlade.Tray.LocalizationSnapshotWindowInput.Apply(
-            new WindowInteropHelper(window).EnsureHandle());
     }
 
     [Fact]
@@ -389,6 +426,7 @@ public sealed class InstallerWindowTests
                 PrepareLocalizationSnapshotWindow(window);
                 IntPtr handle = new WindowInteropHelper(window).Handle;
                 window.Show();
+                AssertVisualTestWindowIsHidden(window);
                 PumpDispatcher(window.Dispatcher);
                 Assert.NotEqual(handle, GetForegroundWindow());
                 Assert.False(window.IsActive);
@@ -645,7 +683,7 @@ public sealed class InstallerWindowTests
             DrainFocus(window);
             Assert.Same(window.LaunchButton, FocusManager.GetFocusedElement(window));
             window.Close();
-        });
+        }, isolatedDesktop: true);
     }
 
     [Fact]
@@ -1698,13 +1736,52 @@ public sealed class InstallerWindowTests
         });
     }
 
-    private static void RunInSta(Action action)
+    [Fact]
+    public void VisualTestWindowBelongsToThePrivateTesthostDesktop()
     {
+        RunInSta(() =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+            try
+            {
+                IntPtr handle = new WindowInteropHelper(window).EnsureHandle();
+                uint threadId = GetWindowThreadProcessId(handle, out _);
+                Assert.NotEqual(0U, threadId);
+                var name = new StringBuilder(256);
+                Assert.True(GetUserObjectInformationW(
+                    GetThreadDesktop(threadId), 2, name, name.Capacity * sizeof(char), out _));
+                Assert.Equal(VisualDesktop.Value.Name, name.ToString());
+            }
+            finally
+            {
+                window.Close();
+            }
+        }, isolatedDesktop: true);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetThreadDesktop(uint threadId);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetUserObjectInformationW(
+        IntPtr handle, int index, StringBuilder information, int length, out int needed);
+
+    private static void RunInSta(Action action, bool isolatedDesktop = false)
+    {
+        // Resolve the desktop before starting the STA: constructor thread joins
+        // can initialize apartment windows, after which SetThreadDesktop fails.
+        OpenBlade.Testing.WindowsVisualTestDesktop? desktop =
+            isolatedDesktop ? VisualDesktop.Value : null;
         ExceptionDispatchInfo? failure = null;
         Thread thread = new(() =>
         {
             try
             {
+                desktop?.AttachCurrentThread();
                 action();
             }
             catch (Exception exception)

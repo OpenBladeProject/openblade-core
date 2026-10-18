@@ -118,7 +118,14 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         Activated += OnActivated;
         AppWindow.Closing += OnClosing;
-        AppWindow.IsShownInSwitchers = false;
+#if OPENBLADE_DEVELOPER_HARNESS
+        // Private test desktops have no Explorer shell; WinUI returns E_NOTIMPL
+        // for switcher registration there. Rendering and layout still run.
+        if (App.HasDesktopShell)
+#endif
+        {
+            AppWindow.IsShownInSwitchers = false;
+        }
         try
         {
             OverlappedPresenter presenter = OverlappedPresenter.CreateForToolWindow();
