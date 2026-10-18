@@ -32,14 +32,43 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Fact]
-    public void Blade18FixedFans_ExposeOneBalancedRangeWithoutCurvesOrDirectCustomTransitions()
+    public void Blade18FixedFans_ExposePresetRangesAndBalancedCurveWithoutDirectTransitions()
     {
         DeviceCapabilities caps = ExperimentalBladePort.CreateCapabilities(Model(0x02A0), true);
         Assert.Equal(new FanSpeedRange(2200, 3800, 100), caps.FanSpeedRange);
-        Assert.True(caps.FanModes.SetEquals([FanMode.Automatic, FanMode.Fixed]));
+        Assert.Equal(new FanSpeedRange(2200, 3800, 100),
+            caps.GetFanSpeedRange(PerformancePreset.Balanced));
+        Assert.Equal(new FanSpeedRange(3700, 5300, 100),
+            caps.GetFanSpeedRange(PerformancePreset.Silent));
+        Assert.Null(caps.GetFanSpeedRange(PerformancePreset.Performance));
+        Assert.True(caps.FanModes.SetEquals(
+            [FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve]));
         Assert.False(caps.SupportsDirectManualFanTransitions);
         Assert.True(caps.ReportsPerformanceWithManualFans);
         Assert.Null(ExperimentalBladePort.CreateCapabilities(Model(0x02A0), false).FanSpeedRange);
+    }
+
+    [Fact]
+    public async Task Blade18SilentFixedFans_UseModeFiveAndSilentRange()
+    {
+        var session = new Session
+        {
+            Mode = 5,
+            FirstTarget = 30,
+            SecondTarget = 30,
+        };
+        await using var port = Create(0x02A0, session);
+
+        await port.SetFanControlAsync(
+            new FanControlSettings(FanMode.Fixed, 5300, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(5, session.Mode);
+        Assert.Equal(1, session.Fan);
+        Assert.Equal(53, session.FirstTarget);
+        Assert.Equal(53, session.SecondTarget);
+        Assert.All(session.Writes.Where(command => command.CommandId == 2),
+            command => Assert.Equal(new byte[] { 5, 1 }, command.Arguments.ToArray()[2..]));
     }
 
     [Fact]
@@ -70,7 +99,6 @@ public sealed partial class ExperimentalThermalExpansionTests
 
     [Theory]
     [InlineData(4)]
-    [InlineData(5)]
     [InlineData(2)]
     [InlineData(7)]
     public async Task Blade18FixedFans_RejectOtherPresetsWithoutChangingThem(byte mode)
@@ -86,8 +114,7 @@ public sealed partial class ExperimentalThermalExpansionTests
 
     [Theory]
     [InlineData(2100, 2100)]
-    [InlineData(3900, 3900)]
-    [InlineData(3000, 3100)]
+    [InlineData(5400, 5400)]
     public async Task Blade18FixedFans_RejectUnsupportedTargetsBeforeTraffic(int first, int second)
     {
         var session = new Session();

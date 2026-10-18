@@ -110,6 +110,43 @@ public sealed class ProfileAdmissionPolicyTests
     }
 
     [Theory]
+    [InlineData(PerformancePreset.Silent, FanMode.Fixed, true)]
+    [InlineData(PerformancePreset.Custom, FanMode.Fixed, false)]
+    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve, false)]
+    [InlineData(PerformancePreset.Balanced, FanMode.ManualCurve, true)]
+    public void PresetFanRangesAdmitOnlySourceBackedPairs(
+        PerformancePreset performance,
+        FanMode fans,
+        bool expected)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Performance = performance,
+                Fans = fans,
+                CustomPerformance = performance == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.Default
+                    : null,
+            },
+        };
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            FanSpeedRange = new FanSpeedRange(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 3800, 100),
+                [PerformancePreset.Silent] = new(3700, 5300, 100),
+            },
+        };
+
+        Assert.Equal(
+            expected,
+            ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+    }
+
+    [Theory]
     [InlineData(PowerSource.Battery, FanMode.Fixed, true)]
     [InlineData(PowerSource.Battery, FanMode.ManualCurve, false)]
     [InlineData(PowerSource.UsbC, FanMode.Fixed, true)]

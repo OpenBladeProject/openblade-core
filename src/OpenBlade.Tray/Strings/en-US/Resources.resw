@@ -2221,4 +2221,7 @@ OpenBlade did not retry any stop request.</value>
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
     <value>Restart Windows before enabling SnapTap again.</value>
   </data>
+  <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
+    <value>Key blocking applies to all keyboards while OpenBlade is running.</value>
+  </data>
 </root>

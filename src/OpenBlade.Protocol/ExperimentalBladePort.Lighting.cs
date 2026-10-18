@@ -62,6 +62,7 @@ internal sealed partial class ExperimentalBladePort
             effects.Add(LightingEffect.Reactive);
             effects.Add(LightingEffect.Ripple);
             effects.Add(LightingEffect.Tidal);
+            effects.Add(LightingEffect.Sequence);
             effects.Add(LightingEffect.Wheel);
         }
         return effects;
@@ -71,6 +72,7 @@ internal sealed partial class ExperimentalBladePort
         ExperimentalBladeModel model)
     {
         var effects = new HashSet<LightingEffect>(CreateExperimentalLightingEffects(model, enabled: true));
+        effects.Remove(LightingEffect.Sequence);
         if (model.ProductId == 0x02A0)
         {
             // Product 672's pinned quick-effect catalog is discovery evidence,
@@ -90,10 +92,10 @@ internal sealed partial class ExperimentalBladePort
             : new HashSet<LogoLightingMode>();
 
     internal static bool SupportsExperimentalBreathingColorSelection(
-        ExperimentalBladeModel model) => false;
+        ExperimentalBladeModel model) => model.ProductId == 0x02A0;
 
     internal static bool SupportsExperimentalWaveDirectionSelection(
-        ExperimentalBladeModel model) => false;
+        ExperimentalBladeModel model) => model.ProductId == 0x02A0;
 
     internal static bool SupportsExperimentalUniformFrames(
         ExperimentalBladeModel model,
@@ -103,7 +105,9 @@ internal sealed partial class ExperimentalBladePort
         ExperimentalBladeModel model,
         bool enabled) => !enabled
             ? new HashSet<BreathingColorMode>()
-            : model.ProductId == 0x0255
+            : model.ProductId == 0x02A0
+                ? new HashSet<BreathingColorMode>(Enum.GetValues<BreathingColorMode>())
+                : model.ProductId == 0x0255
                 ? new HashSet<BreathingColorMode>
             {
                 BreathingColorMode.Random,
@@ -420,7 +424,7 @@ internal sealed partial class ExperimentalBladePort
                 "The requested lighting setting is not admitted for this experimental model.");
         }
 
-        bool animationRequest = SupportsBlade18Animation(model) && IsBlade18Animation(settings.Effect);
+        bool animationRequest = SupportsBlade18Animation(model) && IsBlade18Animation(settings);
         if (animationRequest && session is not IRazerSetFeatureCommandSession)
         {
             throw new CapabilityUnavailableException("This model has no admitted animation stream transport.");
@@ -434,8 +438,15 @@ internal sealed partial class ExperimentalBladePort
         Blade18SpatialLightingEffect? spatialEffect = animationRequest
             && IsBlade18SpatialEffect(settings.Effect)
                 ? new Blade18SpatialLightingEffect(settings, blade18KeyboardLayoutId) : null;
+        Blade18ImportedSequenceEffect? sequenceEffect = settings.Parameters is SequenceLightingParameters sequence
+            && model.ProductId == 0x02A0 ? new(sequence, blade18KeyboardLayoutId) : null;
+        Blade18StandardLightingEffect? standardEffect = animationRequest
+            && settings.Effect is LightingEffect.Breathing or LightingEffect.Wave
+                ? new(settings, blade18KeyboardLayoutId) : null;
         Blade18LightingFrame? firstAnimationFrame = animationRequest
             ? spatialEffect?.RenderFrame(TimeSpan.Zero)
+                ?? sequenceEffect?.RenderFrame(TimeSpan.Zero)
+                ?? standardEffect?.RenderFrame(TimeSpan.Zero)
                 ?? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool stoppedAnimation = animationCancellation is not null;
@@ -451,10 +462,8 @@ internal sealed partial class ExperimentalBladePort
         bool replacingOwnedFrame = IsOwnedFrameOwnership(priorOwnership);
         bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
         bool startingHostFrameFromFault = replacingFaultedFrame
-            && settings.Effect is LightingEffect.AmbientAwareness
-                or LightingEffect.AudioMeter or LightingEffect.Fire
-                or LightingEffect.Starlight or LightingEffect.Wheel
-                or LightingEffect.Reactive or LightingEffect.Ripple or LightingEffect.Tidal;
+            && (animationRequest || settings.Effect is LightingEffect.AmbientAwareness
+                or LightingEffect.AudioMeter);
         byte raw = checked((byte)((settings.Brightness * 255 + 50) / 100));
         string requested = $"{settings.Effect};Raw={raw};Logo={settings.LogoMode?.ToString() ?? "Unchanged"}";
         try
@@ -525,6 +534,9 @@ internal sealed partial class ExperimentalBladePort
                     LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
                     LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
                     LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
+                    LightingEffect.Sequence => LightingRendererOwnershipState.Sequence,
+                    LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
+                    LightingEffect.Wave => LightingRendererOwnershipState.Wave,
                     _ => LightingRendererOwnershipState.Wheel,
                 });
                 hostOwnershipAcquired = true;
@@ -676,7 +688,7 @@ internal sealed partial class ExperimentalBladePort
             {
                 if (animationRequest)
                 {
-                    StartAnimationCore(lightingOwnership.Intent!, spatialEffect);
+                    StartAnimationCore(lightingOwnership.Intent!, spatialEffect, sequenceEffect, standardEffect);
                 }
                 policy.Record("KeyboardLighting", "Readback", "Unavailable", submitted,
                     requested, "OwnedFrameIntent", "FrameColorReadbackUnavailable");
@@ -749,7 +761,11 @@ internal sealed partial class ExperimentalBladePort
                 && CreateExperimentalBreathingColorModes(model, enabled: true)
                     .Contains(parameters.ColorMode),
             LightingEffect.Wave => settings.Parameters is
-                WaveLightingParameters { Direction: LightingDirection.Rightward },
+                WaveLightingParameters { Direction: LightingDirection.Rightward }
+                || model.ProductId == 0x02A0 && settings.Parameters is WaveLightingParameters,
+            LightingEffect.Sequence => settings.Parameters is SequenceLightingParameters sequence
+                && model.ProductId == 0x02A0
+                && sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0484,
             LightingEffect.Static => settings.Parameters is StaticLightingParameters,
             LightingEffect.AmbientAwareness => settings.Parameters is
                 AmbientAwarenessLightingParameters,
@@ -837,6 +853,9 @@ internal sealed partial class ExperimentalBladePort
             or LightingRendererOwnershipState.Reactive
             or LightingRendererOwnershipState.Ripple
             or LightingRendererOwnershipState.Tidal
+            or LightingRendererOwnershipState.Sequence
+            or LightingRendererOwnershipState.Breathing
+            or LightingRendererOwnershipState.Wave
             or LightingRendererOwnershipState.Wheel;
 
     private void ClearOwnedFrame()

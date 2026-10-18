@@ -2128,7 +2128,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             return capabilities.FanModes.Contains(value.Mode)
                 && (value.Mode != FanMode.Fixed
-                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true)
+                    || capabilities.SupportsFanSpeedInAnyPerformancePreset(
+                        value.FixedSpeedRpm))
                 ? ExecuteProductionWriteAsync(
                     port => port.SetFanControlAsync(value, cancellationToken),
                     cancellationToken,
@@ -2179,8 +2180,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             bool targetsAdmitted = isManualEntryContinuation
                 ? capabilities.FanModes.Any(
                     mode => DeviceSubsystemOrder.IsManualFanMode(mode))
-                    && capabilities.FanSpeedRange?.Supports(fan1Rpm) == true
-                    && capabilities.FanSpeedRange.Supports(fan2Rpm)
+                    && capabilities.SupportsFanSpeedInAnyPerformancePreset(fan1Rpm)
+                    && capabilities.SupportsFanSpeedInAnyPerformancePreset(fan2Rpm)
                 : capabilities.FanModes.Contains(FanMode.ManualCurve);
             return targetsAdmitted
                 ? ExecuteProductionWriteAsync(

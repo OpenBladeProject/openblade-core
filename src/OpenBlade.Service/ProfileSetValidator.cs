@@ -16,7 +16,9 @@ public sealed class ProfileValidationPolicy
         string? keyboardLightingLayoutId = null,
         bool supportsBreathingColorSelection = true,
         bool supportsWaveDirectionSelection = true,
-        IReadOnlySet<BreathingColorMode>? supportedBreathingColorModes = null)
+        IReadOnlySet<BreathingColorMode>? supportedBreathingColorModes = null,
+        IReadOnlyDictionary<PerformancePreset, FanSpeedRange>?
+            fanSpeedRangesByPerformancePreset = null)
     {
         ArgumentNullException.ThrowIfNull(supportedPerformanceFanCombinations);
         ArgumentNullException.ThrowIfNull(supportedLightingEffects);
@@ -32,6 +34,10 @@ public sealed class ProfileValidationPolicy
                 SupportsMaximumFans = customPerformance.SupportsMaximumFans,
             };
         FanSpeedRange = fanSpeedRange;
+        FanSpeedRangesByPerformancePreset = fanSpeedRangesByPerformancePreset is null
+            ? new Dictionary<PerformancePreset, FanSpeedRange>()
+            : new Dictionary<PerformancePreset, FanSpeedRange>(
+                fanSpeedRangesByPerformancePreset);
         KeyboardLightingLayoutId = keyboardLightingLayoutId;
         SupportsBreathingColorSelection = supportsBreathingColorSelection;
         SupportedBreathingColorModes = supportedBreathingColorModes is null
@@ -49,6 +55,19 @@ public sealed class ProfileValidationPolicy
     public CustomPerformanceCapabilities? CustomPerformance { get; }
 
     public FanSpeedRange? FanSpeedRange { get; }
+
+    public IReadOnlyDictionary<PerformancePreset, FanSpeedRange>
+        FanSpeedRangesByPerformancePreset
+    { get; }
+
+    public FanSpeedRange? GetFanSpeedRange(PerformancePreset performance) =>
+        FanSpeedRangesByPerformancePreset.Count == 0
+            ? FanSpeedRange
+            : FanSpeedRangesByPerformancePreset.TryGetValue(
+                performance,
+                out FanSpeedRange? range)
+                ? range
+                : null;
 
     public string? KeyboardLightingLayoutId { get; }
 
@@ -117,7 +136,8 @@ public sealed class ProfileValidationPolicy
             lightingCapabilities.KeyboardLightingLayoutId,
             lightingCapabilities.SupportsBreathingColorSelection,
             lightingCapabilities.SupportsWaveDirectionSelection,
-            lightingCapabilities.SupportedBreathingColorModes);
+            lightingCapabilities.SupportedBreathingColorModes,
+            batteryCapabilities.FanSpeedRangesByPerformancePreset);
     }
 }
 
@@ -378,8 +398,25 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} fan settings do not match the selected fan mode.");
         }
 
-        if (validationPolicy.FanSpeedRange is not { } range)
+        if (validationPolicy.FanSpeedRangesByPerformancePreset.Count > 0
+            && settings.Mode == FanMode.ManualCurve
+            && profile.Performance != PerformancePreset.Balanced)
         {
+            throw Invalid(
+                $"The {name} performance preset does not support a manual fan curve.");
+        }
+
+        FanSpeedRange? selectedRange = settings.Mode == FanMode.ManualCurve
+            ? validationPolicy.FanSpeedRange
+            : validationPolicy.GetFanSpeedRange(profile.Performance);
+        if (selectedRange is not { } range)
+        {
+            if (validationPolicy.FanSpeedRangesByPerformancePreset.Count > 0
+                && settings.Mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
+            {
+                throw Invalid(
+                    $"The {name} performance preset does not support manual fan control.");
+            }
             return;
         }
 

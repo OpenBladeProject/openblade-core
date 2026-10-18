@@ -2221,4 +2221,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
     <value>[!! Réstárt Windows béfóré énáblíng SnápTáp ágáín. ~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
+    <value>[!! Kéý blóckíng ápplíés tó áll kéýbóárds whílé OpenBlade ís rúnníng. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

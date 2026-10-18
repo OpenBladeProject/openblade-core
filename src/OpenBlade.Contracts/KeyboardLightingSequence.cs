@@ -5,11 +5,13 @@ namespace OpenBlade.Contracts;
 public static class KeyboardLightingLayoutIds
 {
     public const string Rz09_0581 = "openblade.razer.rz09-0581.keyboard.6x17.v1";
+    public const string Rz09_0484 = "openblade.razer.rz09-0484.keyboard.6x16.v1";
     public const string Rz09_0528 = "openblade.razer.rz09-0528.keyboard.6x17.v1";
 
     public static bool IsKnown(string? layoutId) =>
         string.Equals(layoutId, Rz09_0581, StringComparison.Ordinal)
-        || string.Equals(layoutId, Rz09_0528, StringComparison.Ordinal);
+        || string.Equals(layoutId, Rz09_0528, StringComparison.Ordinal)
+        || string.Equals(layoutId, Rz09_0484, StringComparison.Ordinal);
 }
 
 public sealed record KeyboardLightingSequenceFrame(
@@ -36,7 +38,15 @@ public static class KeyboardLightingSequenceCodec
     private const int MaximumBase64CharacterCount =
         ((MaximumDecodedByteCount + 2) / 3) * 4;
 
-    public static string Encode(IEnumerable<KeyboardLightingSequenceFrame> frames)
+    public static string Encode(IEnumerable<KeyboardLightingSequenceFrame> frames) => EncodeCore(frames, null);
+
+    public static string Encode(IEnumerable<KeyboardLightingSequenceFrame> frames, string layoutId)
+    {
+        RequireKnownLayout(layoutId);
+        return EncodeCore(frames, layoutId);
+    }
+
+    private static string EncodeCore(IEnumerable<KeyboardLightingSequenceFrame> frames, string? layoutId)
     {
         ArgumentNullException.ThrowIfNull(frames);
 
@@ -66,7 +76,7 @@ public static class KeyboardLightingSequenceCodec
 
         foreach (KeyboardLightingSequenceFrame frame in materialized)
         {
-            ValidateFrame(frame, ref totalDurationMilliseconds);
+            ValidateFrame(frame, ref totalDurationMilliseconds, layoutId);
             EnsureCapacity(offset, 3);
             BinaryPrimitives.WriteUInt16LittleEndian(
                 encoded.AsSpan(offset),
@@ -104,6 +114,12 @@ public static class KeyboardLightingSequenceCodec
     public static KeyboardLightingSequence Decode(string timelineBase64) =>
         DecodeCore(timelineBase64, materialize: true)!;
 
+    public static KeyboardLightingSequence Decode(string timelineBase64, string layoutId)
+    {
+        RequireKnownLayout(layoutId);
+        return DecodeCore(timelineBase64, materialize: true, layoutId)!;
+    }
+
     public static bool IsWellFormed(string? timelineBase64)
     {
         try
@@ -117,9 +133,35 @@ public static class KeyboardLightingSequenceCodec
         }
     }
 
+    internal static bool IsWellFormedForLayout(string timelineBase64, string layoutId)
+    {
+        try
+        {
+            RequireKnownLayout(layoutId);
+            _ = DecodeCore(timelineBase64, materialize: false, layoutId);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private static void RequireKnownLayout(string layoutId)
+    {
+        if (!KeyboardLightingLayoutIds.IsKnown(layoutId))
+        {
+            throw new InvalidDataException("The sequence keyboard layout is unknown.");
+        }
+    }
+
+    private static bool IsHole(int slot, string? layoutId) =>
+        layoutId == KeyboardLightingLayoutIds.Rz09_0484
+            ? !Blade18KeyboardLightingLayout.IsKeySlot(slot) : AmbientLightingFrame.IsHole(slot);
+
     private static KeyboardLightingSequence? DecodeCore(
         string? timelineBase64,
-        bool materialize)
+        bool materialize, string? layoutId = null)
     {
         if (string.IsNullOrEmpty(timelineBase64)
             || timelineBase64.Length > MaximumBase64CharacterCount)
@@ -191,7 +233,7 @@ public static class KeyboardLightingSequenceCodec
                     encoded[offset++],
                     encoded[offset++]);
                 if (slot >= AmbientLightingFrame.SlotCount
-                    || AmbientLightingFrame.IsHole(slot)
+                    || IsHole(slot, layoutId)
                     || slot <= previousDeltaSlot
                     || color == previous[slot])
                 {
@@ -249,7 +291,7 @@ public static class KeyboardLightingSequenceCodec
 
     private static void ValidateFrame(
         KeyboardLightingSequenceFrame? frame,
-        ref int totalDurationMilliseconds)
+        ref int totalDurationMilliseconds, string? layoutId = null)
     {
         if (frame?.Slots is null
             || frame.Slots.Count != AmbientLightingFrame.SlotCount)
@@ -260,7 +302,7 @@ public static class KeyboardLightingSequenceCodec
         ValidateDuration(frame.DurationMilliseconds, ref totalDurationMilliseconds);
         for (int slot = 0; slot < AmbientLightingFrame.SlotCount; slot++)
         {
-            if (AmbientLightingFrame.IsHole(slot) && frame.Slots[slot] != default)
+            if (IsHole(slot, layoutId) && frame.Slots[slot] != default)
             {
                 throw new InvalidDataException("Keyboard layout holes must remain black.");
             }

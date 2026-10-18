@@ -14,9 +14,13 @@ internal sealed partial class ExperimentalBladePort
     private static bool SupportsBlade18Animation(ExperimentalBladeModel model) =>
         model.ProductId == 0x02A0;
 
-    private static bool IsBlade18Animation(LightingEffect effect) =>
-        effect is LightingEffect.Fire or LightingEffect.Wheel or LightingEffect.Starlight
-            or LightingEffect.Reactive or LightingEffect.Ripple or LightingEffect.Tidal;
+    private static bool IsBlade18Animation(LightingSettings settings) =>
+        settings.Parameters is BreathingLightingParameters
+        { ColorMode: BreathingColorMode.Single or BreathingColorMode.Dual }
+            or WaveLightingParameters { Direction: LightingDirection.Leftward }
+        || settings.Effect is LightingEffect.Fire or LightingEffect.Wheel or LightingEffect.Starlight
+            or LightingEffect.Reactive or LightingEffect.Ripple or LightingEffect.Tidal
+            or LightingEffect.Sequence;
 
     private static bool IsBlade18SpatialEffect(LightingEffect effect) =>
         effect is LightingEffect.Reactive or LightingEffect.Ripple or LightingEffect.Tidal;
@@ -46,7 +50,9 @@ internal sealed partial class ExperimentalBladePort
     }
 
     private void StartAnimationCore(
-        LightingSettings settings, Blade18SpatialLightingEffect? spatialEffect)
+        LightingSettings settings, Blade18SpatialLightingEffect? spatialEffect,
+        Blade18ImportedSequenceEffect? sequenceEffect,
+        Blade18StandardLightingEffect? standardEffect)
     {
         var cancellation = new CancellationTokenSource();
         animationCancellation = cancellation;
@@ -57,7 +63,7 @@ internal sealed partial class ExperimentalBladePort
             spatialAnimation = spatialEffect;
         }
         animationTask = RunAnimationAsync(settings with { LogoMode = null },
-            cancellation, started, spatialEffect);
+            cancellation, started, spatialEffect, sequenceEffect, standardEffect);
     }
 
     public Task PulseReactiveKeyAsync(ReactiveKeyPulse pulse, CancellationToken cancellationToken)
@@ -86,15 +92,24 @@ internal sealed partial class ExperimentalBladePort
         LightingSettings settings,
         CancellationTokenSource owner,
         long started,
-        Blade18SpatialLightingEffect? spatialEffect)
+        Blade18SpatialLightingEffect? spatialEffect,
+        Blade18ImportedSequenceEffect? sequenceEffect,
+        Blade18StandardLightingEffect? standardEffect)
     {
         CancellationToken token = owner.Token;
-        TimeSpan deadline = Blade18LightingAnimation.FrameInterval;
+        TimeSpan? firstChange = sequenceEffect?.GetNextFrameDelay(TimeSpan.Zero);
+        if (sequenceEffect is not null && firstChange is null)
+        {
+            return;
+        }
+        TimeSpan deadline = firstChange > Blade18LightingAnimation.FrameInterval
+            ? firstChange.Value : Blade18LightingAnimation.FrameInterval;
         try
         {
             while (true)
             {
                 TimeSpan elapsed = animationTime.GetElapsedTime(started);
+                TimeSpan renderedAt = elapsed;
                 if (deadline > elapsed)
                 {
                     await Task.Delay(deadline - elapsed, animationTime, token).ConfigureAwait(false);
@@ -111,12 +126,15 @@ internal sealed partial class ExperimentalBladePort
                     try
                     {
                         elapsed = animationTime.GetElapsedTime(started);
+                        renderedAt = elapsed;
                         // Normal replacement never cancels an in-flight native frame.
                         // Admission is checked independently at every row submission.
                         Blade18LightingFrame frame;
                         lock (animationEffectSync)
                         {
                             frame = spatialEffect?.RenderFrame(elapsed)
+                                ?? sequenceEffect?.RenderFrame(elapsed)
+                                ?? standardEffect?.RenderFrame(elapsed)
                                 ?? Blade18LightingAnimation.Render(settings, elapsed);
                         }
                         await SubmitBlade18FrameAsync(
@@ -138,8 +156,22 @@ internal sealed partial class ExperimentalBladePort
                 }
                 elapsed = animationTime.GetElapsedTime(started);
                 // Skip missed frames instead of building a queue or catch-up burst.
-                long interval = Blade18LightingAnimation.FrameInterval.Ticks;
-                deadline = TimeSpan.FromTicks((elapsed.Ticks / interval + 1) * interval);
+                if (sequenceEffect is not null)
+                {
+                    TimeSpan? next = sequenceEffect.GetNextFrameDelay(renderedAt);
+                    if (next is null)
+                    {
+                        return;
+                    }
+                    TimeSpan desired = renderedAt + next.Value;
+                    TimeSpan earliest = elapsed + Blade18LightingAnimation.FrameInterval;
+                    deadline = desired > earliest ? desired : earliest;
+                }
+                else
+                {
+                    long interval = Blade18LightingAnimation.FrameInterval.Ticks;
+                    deadline = TimeSpan.FromTicks((elapsed.Ticks / interval + 1) * interval);
+                }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)

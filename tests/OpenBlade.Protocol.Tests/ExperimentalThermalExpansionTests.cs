@@ -22,7 +22,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Equal(fixedFans, caps.FanModes.Contains(FanMode.Fixed));
         Assert.Equal(fixedFans, caps.ReportsPerformanceWithManualFans);
         Assert.False(caps.SupportsManualFansOnLimitedPower);
-        Assert.DoesNotContain(FanMode.ManualCurve, caps.FanModes);
+        Assert.Equal(pid == 0x02A0, caps.FanModes.Contains(FanMode.ManualCurve));
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).PerformancePresets.Any());
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).ReportsPerformanceWithManualFans);
     }

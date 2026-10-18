@@ -74,6 +74,9 @@ internal static class ProfileAdmissionPolicy
         FanMode fans,
         DeviceCapabilities capabilities) =>
         fans == FanMode.Automatic
+        || (fans == FanMode.Fixed
+            && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+            && capabilities.GetFanSpeedRange(performance) is not null)
         || ((capabilities.SupportsDirectManualFanTransitions
                 || performance is PerformancePreset.Balanced
                     or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)

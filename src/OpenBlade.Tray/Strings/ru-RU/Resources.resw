@@ -2221,4 +2221,7 @@ OpenBlade повторно проверит этот список и остан�
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
     <value>Перезапустите Windows перед повторным включением SnapTap.</value>
   </data>
+  <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
+    <value>Блокировка клавиш действует на всех клавиатурах, пока работает OpenBlade.</value>
+  </data>
 </root>

@@ -103,6 +103,13 @@ public sealed partial class MainViewModel
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
+            && left.FanSpeedRangesByPerformancePreset.Count
+                == right.FanSpeedRangesByPerformancePreset.Count
+            && left.FanSpeedRangesByPerformancePreset.All(entry =>
+                right.FanSpeedRangesByPerformancePreset.TryGetValue(
+                    entry.Key,
+                    out FanSpeedRange? rightRange)
+                && entry.Value == rightRange)
             && left.SupportsDirectManualFanTransitions
                 == right.SupportsDirectManualFanTransitions
             && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
@@ -113,6 +120,7 @@ public sealed partial class MainViewModel
                 right.SupportedLightingRefreshRates)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
+            && left.HostManagedLaptopControls.SetEquals(right.HostManagedLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
             && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection

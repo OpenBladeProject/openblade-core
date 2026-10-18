@@ -6,6 +6,42 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class KeyboardLightingSequenceCodecTests
 {
     [Fact]
+    public void Blade18Layout_RoundTripsKeysThatAreHolesInTheBlade16Layout()
+    {
+        int blade18Key = Enumerable.Range(0, Blade18KeyboardLightingLayout.SlotCount)
+            .First(slot => Blade18KeyboardLightingLayout.IsKeySlot(slot)
+                && AmbientLightingFrame.IsHole(slot));
+        RgbColor[] colors = CreateBlackSlots();
+        colors[blade18Key] = new RgbColor(12, 34, 56);
+        var frame = new KeyboardLightingSequenceFrame(100, colors);
+
+        string encoded = KeyboardLightingSequenceCodec.Encode([frame], KeyboardLightingLayoutIds.Rz09_0484);
+        KeyboardLightingSequence decoded = KeyboardLightingSequenceCodec.Decode(
+            encoded, KeyboardLightingLayoutIds.Rz09_0484);
+
+        Assert.Equal(colors, Assert.Single(decoded.Frames).Slots);
+        Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Encode([frame]));
+        Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Decode(encoded));
+    }
+
+    [Fact]
+    public void Blade18Layout_RejectsColoredTailSlotsAndUnknownLayout()
+    {
+        RgbColor[] colors = CreateBlackSlots();
+        colors[Blade18KeyboardLightingLayout.SlotCount] = new RgbColor(12, 34, 56);
+        var frame = new KeyboardLightingSequenceFrame(100, colors);
+        Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Encode(
+            [frame], KeyboardLightingLayoutIds.Rz09_0484));
+
+        string valid = KeyboardLightingSequenceCodec.Encode(
+            [new KeyboardLightingSequenceFrame(100, CreateBlackSlots())],
+            KeyboardLightingLayoutIds.Rz09_0484);
+        Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Decode(valid, "unknown"));
+        Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Encode(
+            [new KeyboardLightingSequenceFrame(100, CreateBlackSlots())], "unknown"));
+    }
+
+    [Fact]
     public void EncodeDecode_RoundTripsCanonicalDeltaTimeline()
     {
         RgbColor[] first = CreateBlackSlots();

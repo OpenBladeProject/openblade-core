@@ -656,6 +656,15 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.FanSpeedRange?.MaximumRpm),
             ["capability.fanSpeedStepRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.StepRpm),
+            ["capability.fanSpeedRangesByPerformancePreset"] =
+                capabilities.FanSpeedRangesByPerformancePreset.Count == 0
+                    ? "Unavailable"
+                    : string.Join(
+                        ", ",
+                        capabilities.FanSpeedRangesByPerformancePreset
+                            .OrderBy(entry => entry.Key)
+                            .Select(entry =>
+                                $"{entry.Key}:{entry.Value.MinimumRpm}-{entry.Value.MaximumRpm}/{entry.Value.StepRpm}")),
             ["capability.rz09-0581.skuHardwareConfigurationRaw"] =
                 HexByteOrUnavailable(
                     capabilityDiagnostics?.SkuHardwareConfigurationRaw),

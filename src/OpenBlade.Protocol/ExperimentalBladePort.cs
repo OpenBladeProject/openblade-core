@@ -118,15 +118,21 @@ internal sealed partial class ExperimentalBladePort(
     internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
         new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),
             enabled && GetExperimentalFanRange(model) is not null
-                ? new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed } : [],
+                ? model.ProductId == 0x02A0
+                    ? new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }
+                    : new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed } : [],
             CreateExperimentalLightingEffects(model, enabled),
             enabled ? GetExperimentalChargeLimits(model) : new HashSet<int>(),
             enabled && GetExperimentalChargeLimits(model).Count > 0, false)
         {
             CustomPerformance = enabled && SupportsExperimentalCustom(model) ? CreateCustomCapabilities(model) : null,
             FanSpeedRange = enabled ? GetExperimentalFanRange(model) : null,
-            // Product 672's fixed control is Balanced-only. The existing typed
-            // transition coordinator selects that preset before entering fixed mode.
+            FanSpeedRangesByPerformancePreset = enabled
+                ? GetExperimentalFanRangesByPerformancePreset(model)
+                : new Dictionary<PerformancePreset, FanSpeedRange>(),
+            // Product 672 permits linked fixed targets in Balanced/Silent.
+            // Curves remain Balanced-only; preset-aware service admission handles
+            // fixed targets without enabling broader direct manual transitions.
             SupportsDirectManualFanTransitions = enabled && model.ProductId != 0x02A0
                 && GetExperimentalFanRange(model) is not null,
             // 029F/029D use separate mode/fan bytes in 0D82 and independent
@@ -152,6 +158,10 @@ internal sealed partial class ExperimentalBladePort(
                     Custom = DeviceFeatureAccess.ReadWrite,
                     CoolingPadEntryBaseMode = model.ProductId == 0x029D ? PerformancePreset.Balanced : null,
                 } : null,
+            HostManagedLaptopControls = enabled && model.ProductId == 0x02A0
+                ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode } : [],
+            KeyboardLightingLayoutId = enabled && model.ProductId == 0x02A0
+                ? KeyboardLightingLayoutIds.Rz09_0484 : null,
             ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),
             ThxAudio = model.ProductId == 0x02C5
                 ? new ThxAudioCapabilities(
@@ -230,7 +240,9 @@ internal sealed partial class ExperimentalBladePort(
         return (first, second);
     }
 
-    private async Task<ProductionPerformanceFanState> ReadPerformanceAsync(CancellationToken cancellationToken)
+    private async Task<ProductionPerformanceFanState> ReadPerformanceAsync(
+        CancellationToken cancellationToken,
+        bool allowTransitionalFanTargets = false)
     {
         (ReadOnlyMemory<byte> first, ReadOnlyMemory<byte> second) =
             await ReadPerformanceSelectorsAsync(cancellationToken).ConfigureAwait(false);
@@ -264,7 +276,24 @@ internal sealed partial class ExperimentalBladePort(
             ? await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false) : null;
         if (fans == FanMode.Fixed && GetExperimentalFanRange(model) is not null)
         {
-            await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false);
+            FanSpeedRange? activeRange = performance is { } activePerformance
+                ? GetExperimentalFanRange(model, activePerformance)
+                : null;
+            if (model.ProductId == 0x02A0 && activeRange is null)
+            {
+                RecordQuery(
+                    "FanTargets",
+                    "UnsupportedState",
+                    failure: "ManualPresetHasNoAdmittedRange");
+                throw ContentRejected(
+                    "Product 672 reported manual fans in a performance preset without an admitted range.",
+                    DeviceStateQuery.PerformanceAndFans,
+                    first.Span,
+                    second.Span);
+            }
+            await ReadFanTargetsAsync(
+                cancellationToken,
+                allowTransitionalFanTargets ? null : activeRange).ConfigureAwait(false);
         }
         // Custom without model-specific levels cannot establish a restorable
         // thermal baseline. Reject it like any other unrepresentable state.
@@ -658,7 +687,7 @@ internal sealed partial class ExperimentalBladePort(
         FanMode mode) => source switch
         {
             PowerSource.PluggedIn or PowerSource.Battery =>
-                mode is FanMode.Automatic or FanMode.Fixed,
+                mode is FanMode.Automatic or FanMode.Fixed or FanMode.ManualCurve,
             // The exact 029F/029D low-power vendor path admits Automatic
             // handback, but does not set the separate manual fan flag.
             PowerSource.UsbC => mode == FanMode.Automatic,

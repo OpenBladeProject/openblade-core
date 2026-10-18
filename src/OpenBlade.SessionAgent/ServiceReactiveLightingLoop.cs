@@ -91,6 +91,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private int driverModeKnowledge;
     private long driverModeLastConfirmedTimestamp;
     private int gamingModeKeyPolicyBits;
+    private int hostManagedGamingMode;
     private int verifiedInputDeviceKind;
     private int writableSpecialKeySlots;
     private int blade18FnInputAdmitted;
@@ -174,6 +175,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                                 // it down here creates a visible dead zone on every
                                 // short pipe reconnect.
                                 InvalidateBlade18FnInput();
+                                InvalidateHostGamingMode();
                                 SetDriverModeUnknown(
                                     "The service status connection is reconnecting.",
                                     resetInput: false);
@@ -198,6 +200,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     // replaces them; otherwise every retry creates a one-second
                     // interval in which physical key presses are lost.
                     InvalidateBlade18FnInput();
+                    InvalidateHostGamingMode();
                     SetDriverModeUnknown(
                         "The service status connection failed.",
                         resetInput: false);
@@ -209,6 +212,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         finally
         {
             InvalidateBlade18FnInput();
+            InvalidateHostGamingMode();
             SetDriverModeUnknown(
                 "Reactive input observation is stopping.",
                 warning: false,
@@ -400,6 +404,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void ApplyAuthoritativeStatus(ServiceStatusSnapshot status)
     {
+        bool hostGaming = status.Capabilities?.HostManagedLaptopControls.Contains(
+            OneShotLaptopControl.GamingMode) is true;
+        Interlocked.Exchange(ref hostManagedGamingMode, hostGaming ? 1 : 0);
         bool blade18Admitted = IsBlade18FnInputAdmitted(status);
         bool resetBlade18Input = previousControlAccess != status.ControlAccess
             || previousPowerSource != status.ActivePowerSource
@@ -492,8 +499,14 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                         .ForPowerSource(status.ActivePowerSource)
                         .EffectiveLaptopBehavior
                     : LaptopBehaviorProfileSettings.Unconfigured();
-            bool gamingModeActive =
-                status.GamingModeEnabled ?? behavior.GamingModeEnabled is true;
+            bool gamingModeActive = hostGaming
+                ? status.ControlAccess == SessionControlAccess.Active
+                    && !status.WritesBlocked
+                    && behavior.GamingModeEnabled is true
+                : status.GamingModeEnabled
+                    ?? (status.Capabilities?.OneShotLaptopControls.Contains(
+                            OneShotLaptopControl.GamingMode) is true
+                        && behavior.GamingModeEnabled is true);
             GamingModeKeyPolicy policy = gamingModeActive
                 ? behavior.EffectiveGamingModeKeyPolicy
                 : GamingModeKeyPolicy.Disabled;
@@ -712,6 +725,14 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         return new GamingModeKeyPolicy(
             BlockWindowsKey: (bits & 1) != 0,
             BlockAltTab: (bits & 2) != 0);
+    }
+
+    private void InvalidateHostGamingMode()
+    {
+        if (Volatile.Read(ref hostManagedGamingMode) != 0)
+        {
+            Interlocked.Exchange(ref gamingModeKeyPolicyBits, 0);
+        }
     }
 
     private RazerBladeInputDeviceKind ReadVerifiedInputDeviceKind() =>

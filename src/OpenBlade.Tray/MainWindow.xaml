@@ -1214,7 +1214,6 @@
                         </Grid>
                     </Border>
                     <Border Style="{StaticResource SettingsRowStyle}"
-                            Padding="{StaticResource DashboardSingleLineRowPadding}"
                             Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
                         <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
                               ColumnSpacing="20">
@@ -1224,8 +1223,11 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Spacing="3" VerticalAlignment="Center">
                                 <TextBlock x:Uid="MainWindow_TextBlockGamingMode" Text="Gaming mode"
-                                           Style="{StaticResource CardTitleStyle}"
-                                           SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                           Style="{StaticResource CardTitleStyle}" />
+                                <TextBlock x:Uid="MainWindow_GamingModeKeyBlockingScope"
+                                           Text="Key blocking applies to all keyboards while OpenBlade is running."
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           TextWrapping="Wrap" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                 <Border x:Name="GamingModeFirmwareLoadingSlot"

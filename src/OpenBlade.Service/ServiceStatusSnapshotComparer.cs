@@ -108,6 +108,13 @@ internal static class ServiceStatusSnapshotComparer
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
+            && left.FanSpeedRangesByPerformancePreset.Count
+                == right.FanSpeedRangesByPerformancePreset.Count
+            && left.FanSpeedRangesByPerformancePreset.All(entry =>
+                right.FanSpeedRangesByPerformancePreset.TryGetValue(
+                    entry.Key,
+                    out FanSpeedRange? rightRange)
+                && entry.Value == rightRange)
             && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
             && left.SupportsManualFansOnLimitedPower == right.SupportsManualFansOnLimitedPower
             && left.LightingEffects.SetEquals(right.LightingEffects)
@@ -116,6 +123,7 @@ internal static class ServiceStatusSnapshotComparer
                 right.SupportedLightingRefreshRates)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
+            && left.HostManagedLaptopControls.SetEquals(right.HostManagedLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
             && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection

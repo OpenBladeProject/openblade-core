@@ -9,6 +9,132 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class IpcMessageCodecTests
 {
     [Fact]
+    public async Task PresetFanRanges_RoundTripAndRemainAbsentFromOldPeerProjection()
+    {
+        var balanced = new FanSpeedRange(3000, 5400, 100);
+        var silent = new FanSpeedRange(3000, 4000, 100);
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Balanced, PerformancePreset.Silent,
+                },
+                FanSpeedRange = balanced,
+                FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [PerformancePreset.Balanced] = balanced,
+                    [PerformancePreset.Silent] = silent,
+                },
+            },
+        };
+
+        DeviceCapabilities decoded = (await RoundTripStatusAsync(status)).Capabilities!;
+        Assert.Equal(balanced, decoded.GetFanSpeedRange(PerformancePreset.Balanced));
+        Assert.Equal(silent, decoded.GetFanSpeedRange(PerformancePreset.Silent));
+        Assert.Null(decoded.GetFanSpeedRange(PerformancePreset.Custom));
+        Assert.True(decoded.SupportsFanSpeedInAnyPerformancePreset(5400));
+        Assert.False(decoded.GetFanSpeedRange(PerformancePreset.Silent)!.Supports(5400));
+        Assert.False(decoded.SupportsFanSpeedInAnyPerformancePreset(5500));
+        Assert.Equal(FanSpeedRange.Standard,
+            DeviceCapabilities.SafeTargetDefaults().GetFanSpeedRange(PerformancePreset.Balanced));
+
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
+        JsonObject projected = FramedJsonObject(stream)["status"]!.AsObject();
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("fanSpeedRangesByPerformancePreset"));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, 5401)]
+    [InlineData(PerformancePreset.Silent, 4000)]
+    [InlineData((PerformancePreset)999, 4000)]
+    public async Task PresetFanRanges_RejectMalformedOrUnadmittedRanges(
+        PerformancePreset preset, int maximumRpm)
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [preset] = new FanSpeedRange(3000, maximumRpm, 100),
+                },
+            },
+        });
+    }
+
+    [Fact]
+    public async Task HostManagedControls_RoundTripWithoutFirmwareConfirmation()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HostManagedLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.GamingMode,
+                },
+            },
+            GamingModeEnabled = null,
+        };
+
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(status);
+        Assert.True(decoded.Capabilities!.HostManagedLaptopControls.SetEquals(
+            [OneShotLaptopControl.GamingMode]));
+        Assert.DoesNotContain(OneShotLaptopControl.GamingMode,
+            decoded.Capabilities.OneShotLaptopControls);
+        Assert.Null(decoded.GamingModeEnabled);
+
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
+        JsonObject projected = FramedJsonObject(stream)["status"]!.AsObject();
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("hostManagedLaptopControls"));
+        Assert.True(projected["writesBlocked"]!.GetValue<bool>());
+    }
+
+    [Theory]
+    [InlineData(OneShotLaptopControl.StartupAnimation)]
+    [InlineData(OneShotLaptopControl.MicrophoneMuteIndicator)]
+    [InlineData((OneShotLaptopControl)999)]
+    public async Task HostManagedControls_RejectUnsupportedHostOperations(OneShotLaptopControl control)
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        await AssertStatusWriteRejectedAsync(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HostManagedLaptopControls = new HashSet<OneShotLaptopControl> { control },
+            },
+        });
+    }
+
+    [Fact]
+    public async Task HostManagedControls_CannotAlsoClaimFirmwareOwnership()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        await AssertStatusWriteRejectedAsync(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HostManagedLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.GamingMode,
+                },
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.GamingMode,
+                },
+            },
+        });
+    }
+
+    [Fact]
     public async Task AmbientLightingFrameRequest_RoundTripsOnlyKeyboardSizedRgbData()
     {
         RgbColor[] colors = new RgbColor[AmbientLightingFrame.SlotCount];
@@ -573,7 +699,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(69, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(70, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -617,7 +743,7 @@ public sealed class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(69, json["version"]!.GetValue<int>());
+        Assert.Equal(70, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -652,7 +778,7 @@ public sealed class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(69, json["version"]!.GetValue<int>());
+        Assert.Equal(70, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1227,7 +1353,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(69, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(70, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1893,6 +2019,7 @@ public sealed class IpcMessageCodecTests
     [InlineData(63)]
     [InlineData(65)]
     [InlineData(68)]
+    [InlineData(69)]
     public async Task WriteRequestAsync_RejectsPriorProtocols(int previousProtocolVersion)
     {
         using MemoryStream stream = new();
@@ -1905,7 +2032,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(69, exception.ExpectedVersion);
+        Assert.Equal(70, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1914,6 +2041,7 @@ public sealed class IpcMessageCodecTests
     [InlineData(63)]
     [InlineData(65)]
     [InlineData(68)]
+    [InlineData(69)]
     public async Task ReadRequestAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         using MemoryStream stream = FrameJson(
@@ -1924,7 +2052,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(69, exception.ExpectedVersion);
+        Assert.Equal(70, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -1933,6 +2061,7 @@ public sealed class IpcMessageCodecTests
     [InlineData(63)]
     [InlineData(65)]
     [InlineData(68)]
+    [InlineData(69)]
     public async Task ReadServerFrameAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         Guid requestId = Guid.NewGuid();
@@ -1955,7 +2084,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(69, exception.ExpectedVersion);
+        Assert.Equal(70, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 

@@ -335,17 +335,28 @@ public sealed class ControlCoordinator
     {
         ArgumentNullException.ThrowIfNull(value);
         bool supportsDirectManualFanTransitions = false;
+        DeviceCapabilities? admittedCapabilities = null;
         bool FansSupported(DeviceCapabilities capabilities)
         {
+            admittedCapabilities = capabilities;
             supportsDirectManualFanTransitions =
                 capabilities.SupportsDirectManualFanTransitions;
             return capabilities.FanModes.Contains(value.Mode)
                 && (value.Mode != FanMode.Fixed
-                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true);
+                    || capabilities.SupportsFanSpeedInAnyPerformancePreset(
+                        value.FixedSpeedRpm));
         }
         Func<ConfirmedDeviceState, string?>? manualEntryBlockReason =
             DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                ? state => (supportsDirectManualFanTransitions
+                ? state => value.Mode == FanMode.Fixed
+                        && state.Performance is { } performance
+                        && admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0
+                        ? admittedCapabilities.GetFanSpeedRange(performance)
+                                ?.Supports(value.FixedSpeedRpm) == true
+                            && IsConfirmedDirectManualFanWriteBaseline(state)
+                                ? null
+                                : "Fixed fan control requires a supported speed for the refreshed, confirmed performance preset with HyperBoost off."
+                    : (supportsDirectManualFanTransitions
                         ? IsConfirmedDirectManualFanWriteBaseline(state)
                         : IsConfirmedManualFanWriteBaseline(state))
                     ? null
@@ -1255,7 +1266,7 @@ public sealed class ControlCoordinator
             && IsVerifiedThermalCombination(
                 desired.Performance.Value,
                 desired.Fans.Value,
-                capabilities.SupportsDirectManualFanTransitions);
+                capabilities);
         // A direct fan transition alone does not imply hidden performance.
         // Experimental backends with independent getters must apply and confirm
         // Custom changes while retaining manual fans; legacy selector handling stays.
@@ -2653,8 +2664,11 @@ public sealed class ControlCoordinator
     private static bool IsVerifiedThermalCombination(
         PerformancePreset performance,
         FanMode fans,
-        bool supportsDirectManualFanTransitions) =>
-        (supportsDirectManualFanTransitions
+        DeviceCapabilities capabilities) =>
+        (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+            && fans == FanMode.Fixed
+            && capabilities.GetFanSpeedRange(performance) is not null)
+        || (capabilities.SupportsDirectManualFanTransitions
             && IsAutomaticPerformancePreset(performance)
             && DeviceSubsystemOrder.IsManualFanMode(fans)
             && (performance is not (PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)

@@ -133,6 +133,7 @@ public sealed partial class ExperimentalBladeLightingTests
     private sealed partial class Session : IRazerSetFeatureCommandSession
     {
         internal int AnimationBatches;
+        internal Action<int>? AfterAnimationBatch;
         internal int FailAnimationBatch;
         internal bool RejectNextAnimationBatch;
         internal List<byte> AnimationTransactions { get; } = [];
@@ -181,6 +182,7 @@ public sealed partial class ExperimentalBladeLightingTests
                     });
                 }
             }
+            AfterAnimationBatch?.Invoke(AnimationBatches);
             return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, null));
         }
     }

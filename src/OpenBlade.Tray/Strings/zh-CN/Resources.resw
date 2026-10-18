@@ -2204,4 +2204,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
     <value>重新启用 SnapTap 前，请重启 Windows。</value>
   </data>
+  <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
+    <value>按键屏蔽在 OpenBlade 运行期间对所有键盘生效。</value>
+  </data>
 </root>

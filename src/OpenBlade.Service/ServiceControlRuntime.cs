@@ -7131,7 +7131,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         return intent.FanControl.Mode != FanMode.Fixed
-            || capabilities.FanSpeedRange?.Supports(
+            || capabilities.GetFanSpeedRange(intent.Performance)?.Supports(
                 intent.FanControl.FixedSpeedRpm) == true;
     }
 
@@ -15418,6 +15418,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ICollection<string> failures,
         CancellationToken token)
     {
+        // Host-managed preferences are consumed by the Session Agent from the
+        // durable profile. They must never become firmware writes or readback.
+        if (capabilities?.HostManagedLaptopControls.Contains(requested.Control) is true)
+        {
+            return;
+        }
+
         string label = requested.Control switch
         {
             OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",

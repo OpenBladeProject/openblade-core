@@ -5284,7 +5284,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 ? RazerChromaFileAdapter.Deserialize(
                     content,
                     Path.GetFileNameWithoutExtension(result.Path),
-                    ViewModel.Capabilities.KeyboardLightingLayoutId)
+                    ViewModel.Capabilities.KeyboardLightingLayoutId,
+                    ViewModel.Capabilities.Blade18KeyboardLayoutId)
                 : KeyboardLightingFileSerializer.Deserialize(content);
             if (!ViewModel.CanImportKeyboardLighting(preset))
             {

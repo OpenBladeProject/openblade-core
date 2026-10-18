@@ -31,6 +31,82 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
     }
 
+    [Fact]
+    public async Task FanControlEditor_UsesPresetRangeAndKeepsCurveBalancedOnly()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        DeviceCapabilities capabilities = status.Capabilities! with
+        {
+            FanSpeedRange = new FanSpeedRange(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 3800, 100),
+                [PerformancePreset.Silent] = new(3700, 5300, 100),
+            },
+        };
+        status = status with
+        {
+            Capabilities = capabilities,
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Silent,
+                CustomPerformance = null,
+            },
+            DesiredState = status.DesiredState with
+            {
+                Performance = new(PerformancePreset.Silent, SettingValueSource.PowerProfile),
+            },
+        };
+
+        await PushAsync(client, dispatcher, status);
+
+        Assert.Equal(3700, viewModel.FixedFanSpeedMinimumRpm);
+        Assert.Equal(5300, viewModel.FixedFanSpeedMaximumRpm);
+        Assert.True(viewModel.SetFanControlCommand.CanExecute(
+            new FanControlSettings(FanMode.Fixed, 5300, ManualFanCurve.Default)));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
+
+        await PushAsync(client, dispatcher, status with
+        {
+            Revision = status.Revision + 1,
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+            },
+            DesiredState = status.DesiredState with
+            {
+                Performance = new(PerformancePreset.Custom, SettingValueSource.PowerProfile),
+                CustomPerformance = CustomPerformanceSettings.Default,
+            },
+        });
+
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+
+        await PushAsync(client, dispatcher, status with
+        {
+            Revision = status.Revision + 2,
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                CustomPerformance = null,
+            },
+            DesiredState = status.DesiredState with
+            {
+                Performance = new(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                CustomPerformance = null,
+            },
+        });
+
+        Assert.Equal(2200, viewModel.FixedFanSpeedMinimumRpm);
+        Assert.Equal(3800, viewModel.FixedFanSpeedMaximumRpm);
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery, FanMode.Fixed)]
     [InlineData(PowerSource.UsbC, FanMode.Fixed)]

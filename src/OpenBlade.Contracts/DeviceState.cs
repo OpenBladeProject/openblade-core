@@ -247,6 +247,24 @@ public sealed record DeviceCapabilities(
 
     public FanSpeedRange? FanSpeedRange { get; init; }
 
+    /// <summary>Exact fixed-fan ranges that differ by performance preset.</summary>
+    public IReadOnlyDictionary<PerformancePreset, FanSpeedRange> FanSpeedRangesByPerformancePreset
+    {
+        get;
+        init;
+    } = new Dictionary<PerformancePreset, FanSpeedRange>();
+
+    public FanSpeedRange? GetFanSpeedRange(PerformancePreset performance) =>
+        FanSpeedRangesByPerformancePreset.Count == 0
+            ? FanSpeedRange
+            : FanSpeedRangesByPerformancePreset.TryGetValue(performance, out FanSpeedRange? range)
+                ? range
+                : null;
+
+    public bool SupportsFanSpeedInAnyPerformancePreset(int speedRpm) =>
+        FanSpeedRange?.Supports(speedRpm) == true
+        || FanSpeedRangesByPerformancePreset.Values.Any(range => range.Supports(speedRpm));
+
     public CustomPerformanceCapabilities? CustomPerformance { get; init; }
 
     public CpuPowerLimitCapabilities? CpuPowerLimit { get; init; }
@@ -289,6 +307,10 @@ public sealed record DeviceCapabilities(
     public IReadOnlySet<LogoLightingMode> LogoLightingModes { get; init; } =
         new HashSet<LogoLightingMode>();
 
+    /// <summary>Controls applied to saved host mappings, without firmware setters or readback.</summary>
+    public IReadOnlySet<OneShotLaptopControl> HostManagedLaptopControls { get; init; } =
+        new HashSet<OneShotLaptopControl>();
+
     public IReadOnlySet<OneShotLaptopControl> OneShotLaptopControls { get; init; } =
         new HashSet<OneShotLaptopControl>();
 
@@ -299,6 +321,12 @@ public sealed record DeviceCapabilities(
         && AreChargeLimitsWellFormed(ChargeLimits)
         && (SupportedBreathingColorModes is null || IsValidEnumSet(SupportedBreathingColorModes))
         && (FanSpeedRange is null || FanSpeedRange.IsWellFormed)
+        && FanSpeedRangesByPerformancePreset is not null
+        && FanSpeedRangesByPerformancePreset.Count <= Enum.GetValues<PerformancePreset>().Length
+        && FanSpeedRangesByPerformancePreset.All(entry =>
+            Enum.IsDefined(entry.Key)
+            && PerformancePresets.Contains(entry.Key)
+            && entry.Value is { IsWellFormed: true })
         && (!FanModes.Any(IsManualFanMode) || FanSpeedRange is not null)
         && (CustomPerformance is null || CustomPerformance.IsWellFormed)
         && (CpuPowerLimit is null || CpuPowerLimit.IsWellFormed)
@@ -333,6 +361,10 @@ public sealed record DeviceCapabilities(
         && IsValidEnumSet(SupportedLightingRefreshRates)
         && IsValidEnumSet(ObservedLightingEffects)
         && IsValidEnumSet(LogoLightingModes)
+        && IsValidEnumSet(HostManagedLaptopControls)
+        && HostManagedLaptopControls.All(control => control is
+            OneShotLaptopControl.FunctionKeyPrimary or OneShotLaptopControl.GamingMode)
+        && !HostManagedLaptopControls.Overlaps(OneShotLaptopControls)
         && IsValidEnumSet(OneShotLaptopControls)
         && ObservedPowerSourceBehaviors is not null
         && ObservedPowerSourceBehaviors.All(

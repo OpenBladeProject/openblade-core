@@ -10726,6 +10726,47 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PowerTransition_HostGamingModeDoesNotWriteOrClaimFirmwareReadback()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HostManagedLaptopControls = new HashSet<OneShotLaptopControl>
+            {
+                OneShotLaptopControl.GamingMode,
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.GamingModeEnabled = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            Battery = profiles.Battery with
+            {
+                LaptopBehavior = new LaptopBehaviorProfileSettings(null, null, true)
+                {
+                    GamingModeKeyPolicy = new GamingModeKeyPolicy(true, true),
+                },
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.OneShotSetCalls);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Null(status.GamingModeEnabled);
+        Assert.True(status.Profiles.Battery.EffectiveLaptopBehavior.GamingModeEnabled);
+        Assert.DoesNotContain("Gaming mode is unsupported", status.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PayloadValidationObservationFailure_RetriesOneReadAndRecovers()
     {
         TestContext context = CreateContext(providerAvailable: true);
