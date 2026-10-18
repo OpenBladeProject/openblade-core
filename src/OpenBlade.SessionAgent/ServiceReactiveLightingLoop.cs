@@ -22,7 +22,14 @@ public sealed record ReactiveKeyboardSourceOptions(
     Func<KeyboardDriverModeObservation> ReadDriverModeObservation,
     Func<GamingModeKeyPolicy> ReadGamingModeKeyPolicy,
     Func<RazerBladeInputDeviceKind> ReadVerifiedInputDeviceKind,
-    Func<SpecialKeySlot, bool> IsSpecialKeyInputAdmitted);
+    Func<SpecialKeySlot, bool> IsSpecialKeyInputAdmitted)
+{
+    public Action<Blade18FnShortcut> PublishBlade18FnShortcut { get; init; } = _ => { };
+
+    public Func<bool> IsBlade18FnInputAdmitted { get; init; } = () => false;
+
+    public Action ResetFunctionRowInput { get; init; } = () => { };
+}
 
 public interface IReactiveKeyboardSourceFactory
 {
@@ -38,7 +45,8 @@ public sealed record ServiceReactiveLightingLoopOptions(
     Func<SpecialKeySlot, CancellationToken, Task>? ExecuteDefaultLaptopKeyAsync = null,
     Func<FunctionRowInputEvent, CancellationToken, Task>? ExecuteFunctionRowInputAsync = null,
     Func<CancellationToken, Task>? ResetFunctionRowInputAsync = null,
-    TimeSpan? PerformanceShortcutQuietPeriod = null);
+    TimeSpan? PerformanceShortcutQuietPeriod = null,
+    Func<Blade18FnShortcut, CancellationToken, Task>? ExecuteBlade18FnShortcutAsync = null);
 
 /// <summary>
 /// Owns the one session-local Raw Input registration used by key-triggered
@@ -56,6 +64,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly PerformanceShortcutTriggerPump shortcutPump;
     private readonly BoundedEnumActionPump<SpecialKeySlot>? specialKeyPump;
     private readonly BoundedEnumActionPump<SpecialKeySlot>? defaultLaptopKeyPump;
+    private readonly BoundedEnumActionPump<Blade18FnShortcut>? blade18FnShortcutPump;
+    private readonly Func<Blade18FnShortcut, CancellationToken, Task>?
+        executeBlade18FnShortcutAsync;
+    private readonly object blade18FnActionSync = new();
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
@@ -64,8 +76,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly SemaphoreSlim performanceShortcutPreviewGate = new(1, 1);
     private readonly Guid performanceShortcutSessionId = Guid.NewGuid();
     private IReactiveKeyboardSource? source;
+    private CancellationTokenSource? blade18FnActionGeneration = new();
     private ServiceStatusSnapshot? latestStatus;
     private SessionControlAccess? previousControlAccess;
+    private PowerSource? previousPowerSource;
     private PerformancePreset? optimisticPerformancePreset;
     private long performanceShortcutGeneration;
     private bool performanceShortcutInFlight;
@@ -77,6 +91,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private int gamingModeKeyPolicyBits;
     private int verifiedInputDeviceKind;
     private int writableSpecialKeySlots;
+    private int blade18FnInputAdmitted;
     private int disposed;
 
     public ServiceReactiveLightingLoop(
@@ -116,6 +131,13 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 options.ExecuteDefaultLaptopKeyAsync,
                 errorHandler: ReportFailure);
         }
+        if (options.ExecuteBlade18FnShortcutAsync is not null)
+        {
+            executeBlade18FnShortcutAsync = options.ExecuteBlade18FnShortcutAsync;
+            blade18FnShortcutPump = new BoundedEnumActionPump<Blade18FnShortcut>(
+                ExecuteBlade18FnShortcutAsync,
+                errorHandler: ReportFailure);
+        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -149,8 +171,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                                 // service publishes a replacement status; tearing
                                 // it down here creates a visible dead zone on every
                                 // short pipe reconnect.
+                                InvalidateBlade18FnInput();
                                 SetDriverModeUnknown(
-                                    "The service status connection is reconnecting.");
+                                    "The service status connection is reconnecting.",
+                                    resetInput: false);
                                 break;
                         }
                     }
@@ -171,8 +195,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     // renderer stopped. Keep both until an authoritative status
                     // replaces them; otherwise every retry creates a one-second
                     // interval in which physical key presses are lost.
+                    InvalidateBlade18FnInput();
                     SetDriverModeUnknown(
-                        "The service status connection failed.");
+                        "The service status connection failed.",
+                        resetInput: false);
                     ReportFailure(exception);
                     await Task.Delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                 }
@@ -180,9 +206,11 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
         finally
         {
+            InvalidateBlade18FnInput();
             SetDriverModeUnknown(
                 "Reactive input observation is stopping.",
-                warning: false);
+                warning: false,
+                resetInput: false);
             SetInputState(connected: false, keyTriggered: false);
         }
     }
@@ -205,6 +233,18 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             await defaultLaptopKeyPump.DisposeAsync().ConfigureAwait(false);
         }
+        if (blade18FnShortcutPump is not null)
+        {
+            await blade18FnShortcutPump.DisposeAsync().ConfigureAwait(false);
+        }
+        CancellationTokenSource? blade18FnActionCancellation;
+        lock (blade18FnActionSync)
+        {
+            blade18FnActionCancellation = blade18FnActionGeneration;
+            blade18FnActionGeneration = null;
+        }
+        blade18FnActionCancellation?.Cancel();
+        blade18FnActionCancellation?.Dispose();
         if (functionRowInputPump is not null)
         {
             await functionRowInputPump.DisposeAsync().ConfigureAwait(false);
@@ -228,6 +268,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             CancelPendingPerformanceShortcut();
             specialKeyPump?.ClearPending();
             defaultLaptopKeyPump?.ClearPending();
+            CancelBlade18FnActions();
+            blade18FnShortcutPump?.ClearPending();
             functionRowInputPump?.Reset();
             return;
         }
@@ -283,7 +325,24 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     ReadDriverModeObservation: ReadDriverModeObservation,
                     ReadGamingModeKeyPolicy: ReadGamingModeKeyPolicy,
                     ReadVerifiedInputDeviceKind: ReadVerifiedInputDeviceKind,
-                    IsSpecialKeyInputAdmitted: IsSpecialKeyInputAdmitted));
+                    IsSpecialKeyInputAdmitted: IsSpecialKeyInputAdmitted)
+                {
+                    PublishBlade18FnShortcut = shortcut =>
+                    {
+                        if (shortcut == Blade18FnShortcut.Performance
+                            || !IsBlade18FnInputAdmitted())
+                        {
+                            return;
+                        }
+                        if (!blade18FnShortcutPump!.TryEnqueue(shortcut))
+                        {
+                            ReportFailure(new InvalidOperationException(
+                                "Blade 18 Fn shortcut input could not keep up and skipped a key press."));
+                        }
+                    },
+                    IsBlade18FnInputAdmitted = IsBlade18FnInputAdmitted,
+                    ResetFunctionRowInput = () => functionRowInputPump?.Reset(),
+                });
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
             {
@@ -338,11 +397,24 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void ApplyAuthoritativeStatus(ServiceStatusSnapshot status)
     {
-        if (previousControlAccess != status.ControlAccess)
+        bool blade18Admitted = IsBlade18FnInputAdmitted(status);
+        bool resetBlade18Input = previousControlAccess != status.ControlAccess
+            || previousPowerSource != status.ActivePowerSource
+            || blade18Admitted != (Volatile.Read(ref blade18FnInputAdmitted) != 0);
+        if (!blade18Admitted)
+        {
+            Interlocked.Exchange(ref blade18FnInputAdmitted, 0);
+        }
+        if (resetBlade18Input)
         {
             ResetFunctionPInput();
         }
         previousControlAccess = status.ControlAccess;
+        previousPowerSource = status.ActivePowerSource;
+        if (blade18Admitted)
+        {
+            Interlocked.Exchange(ref blade18FnInputAdmitted, 1);
+        }
         lock (performanceShortcutStateSync)
         {
             latestStatus = status;
@@ -390,10 +462,11 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 Interlocked.Exchange(ref functionKeyPrimaryMode, (int)primaryMode);
             }
 
+            bool blade18Input = IsBlade18Model(status);
             if (status.KeyboardDriverModeActive is { } active)
             {
-                SetDriverModeConfirmed(active);
-                if (!active)
+                SetDriverModeConfirmed(active, resetInput: !blade18Input);
+                if (!active && !blade18Input)
                 {
                     functionRowInputPump?.Reset();
                 }
@@ -401,8 +474,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             else
             {
                 SetDriverModeUnknown(
-                    "The service could not confirm keyboard Driver mode.");
-                functionRowInputPump?.Reset();
+                    "The service could not confirm keyboard Driver mode.",
+                    resetInput: !blade18Input);
+                if (!blade18Input)
+                {
+                    functionRowInputPump?.Reset();
+                }
             }
 
             LaptopBehaviorProfileSettings behavior =
@@ -457,9 +534,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         (KeyboardDriverModeKnowledge)Volatile.Read(ref driverModeKnowledge),
         Interlocked.Read(ref driverModeLastConfirmedTimestamp));
 
-    private void SetDriverModeConfirmed(bool active)
+    private void SetDriverModeConfirmed(bool active, bool resetInput = true)
     {
-        if (!active)
+        if (!active && resetInput)
         {
             ResetFunctionPInput();
         }
@@ -478,9 +555,15 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
     }
 
-    private void SetDriverModeUnknown(string reason, bool warning = true)
+    private void SetDriverModeUnknown(
+        string reason,
+        bool warning = true,
+        bool resetInput = true)
     {
-        ResetFunctionPInput();
+        if (resetInput)
+        {
+            ResetFunctionPInput();
+        }
         int previous = Interlocked.Exchange(
             ref driverModeKnowledge,
             (int)KeyboardDriverModeKnowledge.Unknown);
@@ -506,7 +589,96 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
     }
 
-    internal void ResetFunctionPInput() => Volatile.Read(ref source)?.ResetFunctionPInput();
+    internal void ResetFunctionPInput()
+    {
+        bool resetBlade18Performance = ReadVerifiedInputDeviceKind()
+            == RazerBladeInputDeviceKind.Rz09_0484;
+        Interlocked.Exchange(ref blade18FnInputAdmitted, 0);
+        Volatile.Read(ref source)?.ResetFunctionPInput();
+        CancelBlade18FnActions();
+        blade18FnShortcutPump?.ClearPending();
+        functionRowInputPump?.Reset();
+        if (resetBlade18Performance)
+        {
+            CancelPendingPerformanceShortcut();
+        }
+    }
+
+    private bool IsBlade18FnInputAdmitted() =>
+        blade18FnShortcutPump is not null
+        && Volatile.Read(ref blade18FnInputAdmitted) != 0;
+
+    private static bool IsBlade18FnInputAdmitted(ServiceStatusSnapshot status) =>
+        status.DeviceVerified
+        && !status.WritesBlocked
+        && status.ControlAccess == SessionControlAccess.Active
+        && status.ActivePowerSource is
+            PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+        && string.Equals(
+            status.Firmware?.ModelNumber,
+            "RZ09-0484",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsBlade18Model(ServiceStatusSnapshot status) =>
+        string.Equals(
+            status.Firmware?.ModelNumber,
+            "RZ09-0484",
+            StringComparison.OrdinalIgnoreCase);
+
+    private void InvalidateBlade18FnInput()
+    {
+        ResetFunctionPInput();
+    }
+
+    private async Task ExecuteBlade18FnShortcutAsync(
+        Blade18FnShortcut shortcut,
+        CancellationToken cancellationToken)
+    {
+        CancellationTokenSource linkedCancellation;
+        lock (blade18FnActionSync)
+        {
+            if (blade18FnActionGeneration is null)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                blade18FnActionGeneration.Token);
+        }
+        using (linkedCancellation)
+        {
+            if (!IsBlade18FnInputAdmitted())
+            {
+                return;
+            }
+            try
+            {
+                await executeBlade18FnShortcutAsync!(shortcut, linkedCancellation.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+                when (linkedCancellation.IsCancellationRequested
+                    && !cancellationToken.IsCancellationRequested)
+            {
+            }
+        }
+    }
+
+    private void CancelBlade18FnActions()
+    {
+        CancellationTokenSource? previous;
+        lock (blade18FnActionSync)
+        {
+            previous = blade18FnActionGeneration;
+            if (previous is null)
+            {
+                return;
+            }
+            blade18FnActionGeneration = new();
+        }
+        previous.Cancel();
+        previous.Dispose();
+    }
 
     private static FunctionKeyPrimaryMode? FunctionKeyPrimaryFromActiveProfile(
         ServiceStatusSnapshot status)
@@ -577,6 +749,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void QueuePerformanceShortcut(PerformanceShortcutSource source)
     {
+        if (source == PerformanceShortcutSource.FunctionP
+            && ReadVerifiedInputDeviceKind() == RazerBladeInputDeviceKind.Rz09_0484
+            && !IsBlade18FnInputAdmitted())
+        {
+            return;
+        }
         PerformanceShortcutIntent intent = BeginPerformanceShortcut(source);
         if (intent.Target is { } selected)
         {

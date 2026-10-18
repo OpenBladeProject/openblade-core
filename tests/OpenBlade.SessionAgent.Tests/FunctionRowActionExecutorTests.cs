@@ -27,6 +27,11 @@ public sealed class FunctionRowActionExecutorTests
     [Theory]
     [InlineData(FunctionRowAction.Project, "Win+P")]
     [InlineData(FunctionRowAction.PrintScreen, "PrintScreen")]
+    [InlineData(FunctionRowAction.PageUp, "PageUp")]
+    [InlineData(FunctionRowAction.Home, "Home")]
+    [InlineData(FunctionRowAction.PageDown, "PageDown")]
+    [InlineData(FunctionRowAction.End, "End")]
+    [InlineData(FunctionRowAction.Insert, "Insert")]
     public async Task ExecuteAsync_KeyboardActionsUseInjectedShortcuts(
         FunctionRowAction action,
         string expected)

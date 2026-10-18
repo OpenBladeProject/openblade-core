@@ -273,6 +273,10 @@ internal static class Program
                         "OpenBlade input observation failed: {0}",
                         exception.Message);
                 await using var reactiveServiceClient = new ServiceClient();
+                var blade18FnActions = new Blade18FnActionExecutor(
+                    reactiveServiceClient,
+                    applier,
+                    new WindowsBladeTouchpadController(specialKeyInput));
                 await using var reactive = new ServiceReactiveLightingLoop(
                     reactiveServiceClient,
                     WindowsReactiveKeyboardSourceFactory.Instance,
@@ -284,7 +288,8 @@ internal static class Program
                         specialKeyExecutor.ExecuteAsync,
                         specialKeyExecutor.ExecuteDefaultAsync,
                         ExecuteFunctionRowInputAsync: functionRowActions.ExecuteAsync,
-                        ResetFunctionRowInputAsync: functionRowActions.ResetAsync));
+                        ResetFunctionRowInputAsync: functionRowActions.ResetAsync,
+                        ExecuteBlade18FnShortcutAsync: blade18FnActions.ExecuteAsync));
                 using var powerTransitionRegistration =
                     WindowsSessionPowerNotificationRegistration.TryCreate(
                         powerTransitionRelay,

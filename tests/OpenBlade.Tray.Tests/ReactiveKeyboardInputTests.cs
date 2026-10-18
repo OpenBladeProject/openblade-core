@@ -443,6 +443,10 @@ public sealed class ReactiveKeyboardInputTests
     [InlineData(
         "\\\\?\\HID#VID_1532&PID_02C60&MI_01&COL04#unrelated",
         RazerBladeInputDeviceKind.Unsupported)]
+    [InlineData("HID#VID_1532&PID_02A0&MI_00&COL01#input", RazerBladeInputDeviceKind.Rz09_0484)]
+    [InlineData("HID#VID_1532&PID_02A0&MI_01&COL02#input", RazerBladeInputDeviceKind.Rz09_0484)]
+    [InlineData("HID#VID_1532&PID_02A00&MI_01#input", RazerBladeInputDeviceKind.Unsupported)]
+    [InlineData("HID#VID_1533&PID_02A0&MI_01#input", RazerBladeInputDeviceKind.Unsupported)]
     public void InputDevice_ClassificationPreservesExactPidAndCollection(
         string path,
         RazerBladeInputDeviceKind expected)
@@ -453,6 +457,8 @@ public sealed class ReactiveKeyboardInputTests
     [Theory]
     [InlineData("RZ09-0581", RazerBladeInputDeviceKind.Rz09_0581)]
     [InlineData("RZ09-0528", RazerBladeInputDeviceKind.Rz09_0528)]
+    [InlineData("RZ09-0484", RazerBladeInputDeviceKind.Rz09_0484)]
+    [InlineData("RZ09-04840", RazerBladeInputDeviceKind.Unsupported)]
     [InlineData("RZ09-9999", RazerBladeInputDeviceKind.Unsupported)]
     [InlineData(null, RazerBladeInputDeviceKind.Unsupported)]
     public void InputDevice_ModelClassificationFailsClosed(

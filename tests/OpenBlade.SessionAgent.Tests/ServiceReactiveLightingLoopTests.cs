@@ -6,7 +6,7 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent.Tests;
 
-public sealed class ServiceReactiveLightingLoopTests
+public sealed partial class ServiceReactiveLightingLoopTests
 {
     [Theory]
     [InlineData(ControlOperationStatus.Applied, false)]
@@ -1104,6 +1104,9 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
         private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
         private readonly Func<SpecialKeySlot, bool> isSpecialKeyInputAdmitted;
+        private readonly Action<Blade18FnShortcut> publishBlade18FnShortcut;
+        private readonly Func<bool> isBlade18FnInputAdmitted;
+        private readonly Action resetFunctionRowInput;
 
         public RecordingSource(ReactiveKeyboardSourceOptions options)
         {
@@ -1118,6 +1121,9 @@ public sealed class ServiceReactiveLightingLoopTests
             readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy;
             readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind;
             isSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted;
+            publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
+            isBlade18FnInputAdmitted = options.IsBlade18FnInputAdmitted;
+            resetFunctionRowInput = options.ResetFunctionRowInput;
         }
 
         public bool Disposed { get; private set; }
@@ -1161,6 +1167,13 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public bool IsSpecialKeyInputAdmitted(SpecialKeySlot slot) =>
             isSpecialKeyInputAdmitted(slot);
+
+        public void PublishBlade18FnShortcut(Blade18FnShortcut shortcut) =>
+            publishBlade18FnShortcut(shortcut);
+
+        public bool IsBlade18FnInputAdmitted() => isBlade18FnInputAdmitted();
+
+        public void ResetFunctionRowInput() => resetFunctionRowInput();
 
         public void Fail(Exception exception) => completion.TrySetException(exception);
 

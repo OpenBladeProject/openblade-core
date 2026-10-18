@@ -69,7 +69,7 @@ public sealed class ExperimentalEvidenceCatalogTests
         var evidence = Assert.Single(new ExperimentalFeaturesPolicy(model).Snapshot().FeatureEvidence,
             item => item.Feature == "FunctionLayerAndFnP");
 
-        Assert.Equal("SynapseSourceAndStaticDecoderWithoutPhysicalInputValidation", evidence.Basis);
+        Assert.Equal("SynapseSourceBackedDefaultShortcutsWithoutPhysicalInputValidation", evidence.Basis);
         Assert.Equal(
         [
             ExperimentalBladeModels.Blade18SynapseSource,
@@ -77,6 +77,8 @@ public sealed class ExperimentalEvidenceCatalogTests
             ExperimentalBladeModels.Blade18MappingEngineSource,
             ExperimentalBladeModels.Blade18SynapseHardwareEventParserSource,
             ExperimentalBladeModels.Blade18ObserverControlsSource,
+            "SysUtilsNative.dll;SHA256=01223BFABF0355F42705836974E343A1F16F837D692999020D218B2615B8E318",
+            "https://learn.microsoft.com/en-us/windows-hardware/design/component-guidelines/touchpad-enable-or-disable-toggle-button",
         ], evidence.Sources);
     }
 

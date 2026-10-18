@@ -462,12 +462,18 @@ public enum RazerBladeInputDeviceKind
     Unsupported,
     Rz09_0581,
     Rz09_0528,
+    Rz09_0484,
 }
 
 public static class RazerBladeReactiveInputDevice
 {
     public static RazerBladeInputDeviceKind ClassifyPath(string? path)
     {
+        // Product 672's SYSTEM report geometry does not inherit MI_01.
+        if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02A0"))
+        {
+            return RazerBladeInputDeviceKind.Rz09_0484;
+        }
         if (string.IsNullOrWhiteSpace(path)
             || !path.Contains("&MI_01", StringComparison.OrdinalIgnoreCase))
         {
@@ -491,6 +497,8 @@ public static class RazerBladeReactiveInputDevice
                 RazerBladeInputDeviceKind.Rz09_0581,
             RazerBladeModelCatalog.Rz090528ModelNumber =>
                 RazerBladeInputDeviceKind.Rz09_0528,
+            RazerBladeModelCatalog.Rz090484ModelNumber =>
+                RazerBladeInputDeviceKind.Rz09_0484,
             _ => RazerBladeInputDeviceKind.Unsupported,
         };
 

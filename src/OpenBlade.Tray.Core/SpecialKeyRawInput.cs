@@ -16,6 +16,11 @@ public enum FunctionRowAction
     KeyboardBrightnessDown,
     KeyboardBrightnessUp,
     PrintScreen,
+    PageUp,
+    Home,
+    PageDown,
+    End,
+    Insert,
 }
 
 public enum FunctionRowInputPhase

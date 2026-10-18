@@ -1692,6 +1692,7 @@ type sealed class OpenBlade.Contracts.PushUniformLightingFrameRequest
   property OpenBlade.Contracts.UniformLightingFrame Frame { get; init; }
 type static class OpenBlade.Contracts.RazerBladeModelCatalog
   field const System.String OpenBladeTargetModelNumber = "RZ09-0581"
+  field const System.String Rz090484ModelNumber = "RZ09-0484"
   field const System.String Rz090528ModelNumber = "RZ09-0528"
   method static OpenBlade.Contracts.RazerBladeModelInfo Find(System.String modelNumber)
 type sealed class OpenBlade.Contracts.RazerBladeModelInfo
