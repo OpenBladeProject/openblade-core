@@ -63,16 +63,18 @@ public sealed class ExperimentalEvidenceCatalogTests
     }
 
     [Fact]
-    public void Blade18FunctionLayer_PinsExactSourcesWithoutClaimingDecodedInput()
+    public void Blade18FunctionLayer_PinsRecoveredDecoderSourcesWithoutClaimingPhysicalValidation()
     {
         var model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
         var evidence = Assert.Single(new ExperimentalFeaturesPolicy(model).Snapshot().FeatureEvidence,
             item => item.Feature == "FunctionLayerAndFnP");
 
-        Assert.Equal("SynapseSourceAndOwnerReportedWithoutDecodedInput", evidence.Basis);
+        Assert.Equal("SynapseSourceAndStaticDecoderWithoutPhysicalInputValidation", evidence.Basis);
         Assert.Equal(
         [
             ExperimentalBladeModels.Blade18SynapseSource,
+            ExperimentalBladeModels.Blade18MappingSdkSource,
+            ExperimentalBladeModels.Blade18MappingEngineSource,
             ExperimentalBladeModels.Blade18SynapseHardwareEventParserSource,
             ExperimentalBladeModels.Blade18ObserverControlsSource,
         ], evidence.Sources);

@@ -247,7 +247,8 @@ that every action works independently of Synapse.
 The same main file selects USB interface 2 near byte 145126 and labels input
 report 4 `razerKeyReportID` and report 5 `hardwareEventReportID` near byte
 153094. The collected descriptor inventory independently shows separate
-16-byte Generic Desktop input collections for reports 4 and 5. The pinned
+16-byte Generic Desktop input collections; its exported geometry does not retain
+their report IDs. The pinned
 Protocol 25 parser converts report-5 hardware events near byte 1385. For its
 Razer-key record type 4, it exposes only the remaining bytes as `razerKeys`
 near byte 1742; it does not assign numeric key meanings.
@@ -260,14 +261,19 @@ Its embedded names confirm `razerKeyReportID`, `keyIdToKeyInput`, and
 Product 672 also does not enable the shared function-key-primary, Gaming Mode,
 or persistent function-key feature gates.
 
-OpenBlade therefore records the Fn layer and Fn+P as observed-only evidence.
-Runtime input support remains unavailable until an exact RZ09-0484 probe
-establishes which of the 15 payload bytes after report ID `0x04` carry the Fn
-key ID and make/release state, their numeric values, and the correlated keyboard
-P edge. The Observer redacts unknown report values, retaining only session-local
-equality labels and changed-byte ranges, so this bundle cannot supply those
-bytes. The captured `0x0A` Fn value from other Blade models is not copied to
-`1532:02A0`.
+Further static review on 2026-10-18 recovered the native report decoder and the
+missing SDK default mapping. Exact product 672 is category SYSTEM; its pinned
+SDK maps Razer-key IDs 10 and 11 (`0x0A`, `0x0B`) to Fn/Hypershift. Report 4 has
+15 concurrent key-ID slots after its report-ID byte, with zero padding. Fn is
+held when either ID is present; make/release follows snapshot set differences,
+not a flag byte. The sources do not label which ID the physical key emits.
+
+The [decoder recovery](blade18-fn-decoder.md) pins the additional SDK hash,
+native RVAs, exact-model dispatch chain, and offline verification. Another
+capture is not required to establish the decoder. Diagnostics record its static
+provenance; runtime input support and live Fn+P behavior remain unvalidated.
+The ordinary P-key edge must be correlated separately. This recovery adds no
+input hook, key binding, or firmware write capability.
 
 ### Logo and Chroma
 

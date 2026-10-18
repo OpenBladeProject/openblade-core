@@ -19,6 +19,8 @@ internal static class ExperimentalBladeModels
     public const string Blade18Source = "https://github.com/sqmagellan/razer-ctl/tree/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a";
 
     internal const string Blade18SynapseSource = "https://apps.razer.com/synapse/products/672/mw/main.57245df0507455a5119e.js";
+    internal const string Blade18MappingSdkSource = "https://apps.razer.com/synapse/products/672/mw/7795.8e8d6b06ca4c3fe23fe1.js";
+    internal const string Blade18MappingEngineSource = "mapping_engine.dll@1.3.16.5;SHA256=6EABDFDEDF797E042738B630D827C06F7A45DBE560EBAEC96C66698F88F3320A";
     internal const string Blade18SynapseHardwareEventParserSource = "https://apps.razer.com/synapse/products/672/mw/rzHardwareEventsProtocol25Parser.b504c011548aa6f83172.js";
     internal const string Blade18ObserverSource = "https://github.com/user-attachments/files/33499731/blade-evidence-20261015-1459.zip";
 
@@ -86,9 +88,9 @@ internal static class ExperimentalBladeModels
                 new("FireAndWheel", "ObservedFrameTransportWithExperimentalPlaybackWithoutRgbReadback",
                     [Blade18SynapseSource, Blade18ObserverControlsSource,
                      "OpenBlade.Protocol.Fixtures.Blade18FireWheelFrames.json;SHA256=4AB4D50E9B7868D8F1E611000ABEF286532924A88B7BCDDCA69EB991582090C4"]),
-                new("FunctionLayerAndFnP", "SynapseSourceAndOwnerReportedWithoutDecodedInput",
-                    [Blade18SynapseSource, Blade18SynapseHardwareEventParserSource,
-                     Blade18ObserverControlsSource]),
+                new("FunctionLayerAndFnP", "SynapseSourceAndStaticDecoderWithoutPhysicalInputValidation",
+                    [Blade18SynapseSource, Blade18MappingSdkSource, Blade18MappingEngineSource,
+                     Blade18SynapseHardwareEventParserSource, Blade18ObserverControlsSource]),
                 new("FixedFanTargets", "SynapseSourceAndObservedRequestsWithSourceBackedTargetReadback",
                     [Blade18SynapseSource, Blade18ObserverFollowupSource, Blade18ObserverControlsSource,
                      "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
