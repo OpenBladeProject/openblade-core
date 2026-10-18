@@ -20,8 +20,8 @@ write was executed.
 The middleware entry contains feature injection and defaults in modules
 37915 and 68432, exact-product injection and `deviceUI` in module 70400,
 exact-product `runtimeData` in module 35924, and profile defaults in module
-26061. Shared method names alone do not establish that product 672 enables
-their firmware paths.
+26061. A shared method name alone is insufficient. An exact inherited getter/setter
+contract can support experimental admission even when Synapse hides its UI.
 
 ## Installer manifests do not enable features
 
@@ -41,8 +41,8 @@ THX package or additional firmware feature flags.
 
 | Feature | Exact-product evidence | Result |
 | --- | --- | --- |
-| Full charge | Shared middleware has the `oneTimeOverride` bit `0x04`, but product 672's `deviceUI.power` lacks `hasBatteryChargingOverrideEnabled`. | No new firmware admission. The shared method and bit definition are insufficient. |
-| Startup animation | Shared code checks `startupAnimationControlFWVersion`; product 672's runtime data and feature injection supply no value. | No new firmware admission. |
+| Temporary full charge | The exact inherited class defines GET 07/8F and SET 07/0F; shared middleware maps `oneTimeOverride` to bit `0x04`. Product 672 lacks the UI activation flag. | Experimental support requires a valid getter, an enabled charge limit for enablement, other power-mode bits clear, and independent flag and charge-policy readback. |
+| Startup animation | Exact inherited class defines getter 0F/98 and setter 0F/18. The missing startupAnimationControlFWVersion prevents Synapse UI initialization, not the command definitions. | Experimental control is admitted only after a valid exact-device getter; changes require fresh baseline and independent readback. |
 | Fn primary mode | The profile defaults to `functionKeyPrimary=func`, and shared function `An` rebuilds host mappings. Firmware `setFunctionKeySwap` requires `useFunctionKeySwap.config.primaryKey`; `setFnKeyState` requires `functionLighting.config.functionKey`. Both gates are absent for product 672. | Host mapping behavior is source-backed; a firmware primary-key switch is not admitted. |
 | Gaming Mode | Product 672 has profile defaults and a host mapping generator. Firmware `setGameModeState` requires `functionLighting.config.gamingMode`, which is absent. | OpenBlade can reuse its existing opt-in host Windows-key and Alt+Tab policy without claiming firmware Gaming Mode readback. |
 | HyperBoost | The shared `isHyperBoostSystem` path exists, but product 672 supplies no enabling feature flag. | No new firmware admission. |
@@ -137,13 +137,18 @@ Product 672 main module 26061 declares Balanced 2200–3800 RPM and Silent
 to both zones after selecting the preset's raw mode (Balanced 0, Silent 5).
 Both use class-1 target registers and the existing typed readback path. Silent
 fixed fans are admitted experimentally with their own range. Independent
-CPU/GPU targets are not exposed; host curves in Balanced link both fan requests
-to the higher target. Missing temperature data holds the admitted maximum.
+CPU/GPU target registers are independently addressed by the exact class and
+runner. Host curves in Balanced now preserve both requests; physical RPM
+independence remains unverified. The ordinary fixed-speed slider still sets both
+targets to one value. Missing temperature data holds the admitted maximum.
 Temperature telemetry remains unverified on the physical Blade 18.
 
 The Custom 1700–4300 RPM declaration is unused without the absent
-customModeSupportsMoreThanAuto feature. It does not admit Custom manual fans,
-and no corresponding Performance manual range was recovered.
+customModeSupportsMoreThanAuto feature. Synapse chooses Automatic on Custom
+entry. OpenBlade confirms that handoff before selecting Custom and preserves
+the saved manual setting for return to an admitted preset. This is host policy,
+not evidence that firmware rejects every manual request. No corresponding
+Performance manual range was recovered.
 
 ## Temperature-source recovery
 
@@ -157,10 +162,10 @@ The reviewed Product 672 sources did not supply another Windows CPU-temperature
 provider or an exact Blade 18 ACPI-to-CPU mapping. The existing Observer bundle
 reported an available root/wmi MSAcpi_ThermalZoneTemperature query with zero
 rows. That does not prove that PDH has no usable counter, but it supplies no
-missing path. Observer currently collects this WMI query, not the PDH counters
-OpenBlade reads. Its absent WMI result therefore leaves PDH availability unknown.
-A useful future Observer improvement is a bounded, read-only check of the known
-TZRZ counter paths, including success/failure, units and measured value. A local
+missing path. The recorded Observer version collected WMI without the PDH counters
+OpenBlade reads. [Observer PR #21](https://github.com/OpenBladeProject/synapse-observer/pull/21)
+adds a bounded, read-only check of both known TZRZ paths, recording API and
+counter status, units and measured values separately from WMI. A local
 read-only temperature check can establish availability without a USB capture or
 fan write. Another capture of fan commands would not establish that path.
 
@@ -190,18 +195,82 @@ is still needed where neither known Windows counter works.
 These are current implementation and source-admission limits, not claims that
 the firmware or hardware cannot support the feature.
 
-- Temporary full charge: the shared bit definition exists, but no enabled
-  exact-product setter path was recovered. Existing Power Mode Control queries
-  now name bit 0x04 in diagnostics alongside CPU Boost and local dimming. This
-  adds no query, setter, capability or claim that charging behavior is confirmed.
-- Startup animation (startup lighting): inherited get/set definitions exist, but Product 672 omits
-  the firmware-version feature configuration that activates them in Synapse.
+- Temporary full charge: the inherited command contract supports an experimental
+  path despite the absent UI activation flag. Read admission and whole-mask guards
+  prevent an unknown flag or another power-mode option from being overwritten.
+  Physical charging behavior remains unverified.
+- Startup animation (startup lighting): the missing UI feature flag is not a
+  firmware prohibition. The experimental backend uses the inherited exact-model
+  command definitions, admits the control after a valid getter, and verifies
+  every change by another getter.
 - Function-key-primary mode: Synapse's host mapping behavior is established.
   OpenBlade still needs per-device suppression before it can safely invert
   this laptop's function row without swallowing an external keyboard's F keys.
-- Independent fan targets: separate zone registers exist, but the exact-model
-  active task sends one speed to both. Asymmetric operation is an extrapolation
-  that has not been established by that source.
+- Independent fan targets: source defines separately addressed getters/setters
+  for both zones. Synapse supplies one scalar, but OpenBlade now preserves
+  independent target requests experimentally within the existing preset ranges.
+  Target-register readback is not evidence of independently measured fan RPM.
 - Custom/Performance fixed fans: the absent Custom manual feature forces
   Automatic; the declared Custom range alone does not activate it. Performance
   has no recovered manual range. Balanced and Silent remain admitted.
+
+## Startup animation command contract
+
+Product 672 inherits the [pinned rzDevice25 class](https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js),
+SHA-256 DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24. Its GET definition is length 1, class 0F, ID 98, arguments [0].
+Its SET definition is length 2, class 0F, ID 18, arguments [profile=0, disable].
+The exact middleware calls enabled ? 0 : 1. Readback accepts only [disable] or
+[0,disable], with disable 0 or 1; 0 means enabled. Other shapes remain unavailable.
+
+The factory probes only after unique exact-interface admission. A valid getter
+establishes capability; a first unavailable or malformed getter leaves unrelated
+controls available. A temporary later read failure does not erase established
+support, but mutation still requires a new valid baseline. SET success need not
+include an echo, so only the independent GET confirms the requested state.
+Mismatch or ambiguous submission pauses experimental writes without replay.
+Recovery also reads startup state after a possibly submitted startup write;
+unrelated thermal readback cannot establish its outcome. No other model inherits
+this admission.
+
+## Temporary full charge command contract
+
+The pinned rzDevice25 class defines the one-byte GET tuple [1,7,143] and SET
+tuple [1,7,15], corresponding to 07/8F and 07/0F. Its decoder names bit 0x04
+oneTimeOverride. Shared chunk 6737 maps the Boolean request to 4 or 0 and
+updates that field in the common mask. The getter/setter definitions occur at
+character offsets 52774 and 57898; inherited methods at 140931 and 141017.
+The shared Boolean mapping and mask helper occur at 1648566 and 1891171.
+These locations identify the pinned source bytes, not a future served version.
+
+OpenBlade admits the exact 02A0 capability after a valid getter. Every change
+requires fresh flag and charge-policy baselines. Since the setter replaces the
+whole mask, other bits must be clear; it writes only 04 or 00. Independent
+readback must confirm both the requested flag and unchanged charge policy.
+An ambiguous result pauses writes, and recovery rereads both fields without
+replaying the setter. Other models do not inherit this admission.
+
+## Temporary full charge in the Observer recording
+
+The October 17 bundle marks battery.temporaryFullCharge and its query as
+NotInvestigated. It contains three 07/8F [00] query requests and three
+07/0F [00] writes, no 07/0F [04] enable request, and no nonzero Power Mode
+Control setter. These occurred during Custom/Maximum Fans off to Balanced
+3000 RPM and back. Returned flag bodies were withheld, so the bundle does
+not establish full-charge state, enablement, or restoration. The shared SDK
+command contract is the evidence for experimental support; the recording is
+not evidence of enablement or physical charging behavior.
+
+## Device-specific function-row suppression
+
+Microsoft's [low-level hook structure](https://learn.microsoft.com/windows/win32/api/winuser/ns-winuser-kbdllhookstruct)
+has no source-device handle. [Raw Input registration](https://learn.microsoft.com/windows/win32/api/winuser/ns-winuser-rawinputdevice)
+can identify input but its legacy-message suppression does not implement a
+system-wide filter for one physical keyboard. Correlation alone cannot make
+media-primary inversion safe for external keyboards.
+
+The preferred next investigation is the public interception interface of the
+exact installed signed PID02A0 keyboard filter and control child, deriving its
+ABI without loading Synapse DLLs. Its internal callbacks are not that ABI.
+If it cannot provide the needed path, a new signed device filter would be
+required; OpenBlade does not add one. Existing Fn shortcuts, whose actions
+wait for matching device evidence, remain separate from always-on inversion.

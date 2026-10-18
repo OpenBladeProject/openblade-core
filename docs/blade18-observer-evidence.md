@@ -226,8 +226,9 @@ The recording establishes one value for both fans in Balanced, in 100 RPM steps.
 Later [exact-model source recovery](blade18-source-feature-recovery.md#fan-controls)
 also admits linked fixed fans in Silent at 3700–5300 RPM and the existing host
 curve backend in Balanced. Curves need a usable Windows CPU-temperature reading;
-otherwise both fans hold 3800 RPM. Independent targets and fixed fans in
-Performance, Custom or HyperBoost remain unadmitted. Preset-aware service
+otherwise both fans hold 3800 RPM. Independent target-register requests now use
+the admitted per-zone setters and readback; physical fan RPM independence is
+unverified. Fixed fans in Performance, Custom or HyperBoost remain unadmitted. Preset-aware service
 admission preserves Silent fixed control without enabling broader direct manual
 transitions. These extensions do not change the recording's physical scope.
 An exact-model OpenBlade target readback/restore round trip and fan convergence

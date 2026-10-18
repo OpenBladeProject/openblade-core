@@ -58,8 +58,10 @@ Blade 14 (2023), in 100 RPM steps. Blade 18 (2023) admits one shared
 2,200-3,800 RPM target in Balanced and 3,700-5,300 RPM in Silent, using its
 pinned class-1 target getter. Both zones must return representable stored
 targets before a change; each setter confirms both registers independently.
-The existing host curve loop is admitted in Balanced, linking both requests at
-the higher target and holding the range maximum when temperature data is missing.
+The existing host curve loop is admitted in Balanced, preserving separate zone
+targets and holding the range maximum when temperature data is missing.
+The setters/getters address each target register independently; independent
+physical RPM remains unverified.
 Blade 18 temperature telemetry remains physically unverified.
 
 Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and Blade
@@ -98,7 +100,9 @@ state. Blade 16 (2023) and Blade 14 (2023) preserve readable fixed fans through
 preset changes. Blade 18 fixed fans use preset-aware ranges in Balanced and Silent; curves
 remain Balanced-only. Shared capability, profile and service admission preserve
 that distinction. Custom manual fans remain unadmitted because the exact
-product lacks customModeSupportsMoreThanAuto. When Maximum Fans
+product lacks customModeSupportsMoreThanAuto. The service confirms Automatic
+fans before Custom entry, retaining saved manual intent for return to an admitted
+preset. When Maximum Fans
 is active, the guarded cleanup above is required before leaving Custom. A
 fixed-target change on Blade 16/14 preserves the confirmed ordinary preset or Custom mode and
 changes only the fan flag and targets. On a confirmed limited adapter, a direct
@@ -140,7 +144,8 @@ The Blade 16 (2023), both Blade 14 profiles, and Blade 18 (2023) admit every
 whole charge limit from 50% through 100%. Limits from 50% through 99% enable
 protection; 100% writes the firmware's protection-off value. The Blade 15 is
 excluded because upstream reports that its firmware echoes the battery command
-without applying it. Temporary full charge is unavailable.
+without applying it. Blade 18 also admits experimental temporary full charge
+after valid flag readback; the other experimental models do not.
 
 Battery protection uses `07/92 [0]` for GET and `07/12 [encoded limit]` for SET.
 Each operation first decodes and saves the raw protection flag and threshold,
@@ -159,6 +164,13 @@ use one independent GET because no equivalent lag is documented.
 The complete range on `029F` is directly owner-tested. The same range on
 `029D`, `02C5`, and `02A0` is explicitly classified as source-backed
 extrapolation from the shared encoding and each model's upstream 80%/off support.
+
+Temporary full charge uses exact-model inherited 07/8F and 07/0F definitions.
+Each change requires readable charge policy, an admitted enabled limit for
+enablement, and all other Power Mode Control bits clear. It writes only 04/00,
+then independently confirms the flag and unchanged charge policy. A possibly
+submitted operation pauses writes; recovery rereads both fields. See the
+[pinned source contract](blade18-source-feature-recovery.md#temporary-full-charge-command-contract).
 
 ## Lighting controls
 
@@ -208,6 +220,10 @@ activating custom mode only on the first frame of a new effect. The transport
 keeps a 20 FPS budget even when uniform sampling requests a higher rate. The retained
 baseline, ownership, cancellation and fault handling are shared with its existing
 frame transport. These paths use no other model's physical key mask or RGB readback.
+
+Blade 18 also admits experimental startup animation after a valid 0F/98 getter.
+Its 0F/18 setter uses [0,disable], followed by independent readback. See the
+[source contract](blade18-source-feature-recovery.md#startup-animation-command-contract).
 
 ### Blade 18 animated effects
 

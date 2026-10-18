@@ -31,7 +31,7 @@ Battery Saver and Battery Balanced on battery power.
 - Fixed fan targets cover 2,000–5,000 RPM on the Blade 16 (2023), and
   2,200–5,000 RPM on the Blade 14 (2023). The Blade 18 (2023) offers one
   2,200–3,800 RPM control for both fans in Balanced, and 3,700–5,300 RPM in Silent.
-  Fan curves run in Balanced and link both requests to the higher target. Missing
+  Fan curves run in Balanced and preserve the separate fan target requests. Missing
   temperature readings hold the maximum target. [Source recovery](blade18-source-feature-recovery.md#temperature-source-recovery)
   has not established a standalone Blade 18 CPU-temperature provider; variable
   curves remain unverified where neither known Windows counter works.
@@ -43,7 +43,8 @@ Battery Saver and Battery Balanced on battery power.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
   offers CPU Boost and High/High. Blade 18 (2023) offers all twelve CPU/GPU
   combinations, including Boost/Medium and High/High, using Synapse's independent
-  level controls.
+  level controls. Entering Custom returns fans to Automatic; the saved fan
+  setting remains available when returning to an admitted preset.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
   supported. The newer models offer brightness, built-in effects, and logo
   lighting. Static RGB on the Blade 16 (2023) and Blade 18 (2023) is one color
@@ -63,6 +64,8 @@ Battery Saver and Battery Balanced on battery power.
   The physical keyboard region selects the matching Synapse map, including
   regional Enter, backslash, Alt, ISO and Japanese keys. If the region cannot be
   read, keys with conflicting regional bindings do not trigger these effects.
+- Blade 18 startup animation is available experimentally after its state can be
+  read. Each change is checked by a fresh readback.
 - Blade 18 Gaming Mode can block the Windows key and Alt+Tab while
   OpenBlade is running. Blocking applies to all keyboards. See the
   [source recovery notes](blade18-source-feature-recovery.md) for remaining gaps.
@@ -78,7 +81,9 @@ Battery Saver and Battery Balanced on battery power.
   Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
   changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not
-  support charge limits. Temporary full charge is not yet supported.
+  support charge limits. Blade 18 also offers experimental temporary full charge
+  after valid state readback. Enabling it requires an active charge limit; other
+  Power Mode Control options must be off.
 
 ## Send a useful test report
 
