@@ -12,6 +12,7 @@ this decoder. Live input availability and shortcut behavior remain untested.
 | [Product 672 main](https://apps.razer.com/synapse/products/672/mw/main.57245df0507455a5119e.js) | `D523F5080784B07CB1888C39E636004626E073E2967B85999498030102F85FAE` |
 | [Shared product runtime](https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js) | `651F63DCC0EFC92B0FD7496EE70751707B5F650F20AF5C01C3255B61817C1997` |
 | [Mapping SDK](https://apps.razer.com/synapse/products/672/mw/7795.8e8d6b06ca4c3fe23fe1.js) | `13F46F9584090A9D50433C0F6B55E2004C6F398BD5D0D45551367B33F6E32BBD` |
+| `SysUtilsNative.dll` (installed Synapse, inspected offline) | `01223BFABF0355F42705836974E343A1F16F837D692999020D218B2615B8E318` |
 | `mapping_engine.dll` 1.3.16.5 | `6EABDFDEDF797E042738B630D827C06F7A45DBE560EBAEC96C66698F88F3320A` |
 
 The 142,996-byte SDK is an initial dependency named by the pinned main bundle.
@@ -77,17 +78,69 @@ For example, synthetic `04 0A 00 ...` holds Fn; `04 00 ...` releases it.
 These examples and the offline reference tests are constructed from the
 recovered algorithm, not owner-recorded key events.
 
-## Implementation boundary
+## Default shortcuts
 
-This recovery replaces the earlier claim that another capture was necessary
-to identify the report's offsets, Fn IDs, and release semantics. It does not
-enable runtime input support in this PR. A later implementation can use this
-exact-model decoder with current-host and HID identity/geometry admission,
-per-device state, repeat suppression, and state reset on disconnect or session
-changes. It must correlate Fn with the ordinary P-key edge separately for
-Fn+P and pass through unknown or ambiguous input.
+The product-672 mappings and shared SDK define these defaults:
 
-No programmable M-key slots, function-key-primary writes, Gaming Mode,
-keyboard Driver mode, or other firmware capability follows from decoding this
-read-only input report. No hardware writes, input hooks, injection, driver
-changes, or capture were performed during this investigation.
+| Fn combination | Action |
+| --- | --- |
+| P | Next performance preset |
+| R | Next available fixed display refresh rate |
+| T | Toggle the touchpad |
+| F1, F2, F3 | Mute, volume down, volume up |
+| F4 | Windows projection menu |
+| F5, F6, F7 | Previous track, play/pause, next track |
+| F8, F9 | Display brightness down, up |
+| F10, F11 | Keyboard brightness down, up |
+| F12 | Print Screen |
+| Up, Left, Down, Right, Delete | Page Up, Home, Page Down, End, Insert |
+
+SDK adapters disable T/P/R on down and execute their action on release.
+OpenBlade retains that press decision through Fn release, suppresses repeats
+for these three actions, and cancels them after loss of admission. Volume,
+brightness and navigation repeat while held. Other defaults execute once.
+
+Fn+T uses Windows' documented [Ctrl+Win+F24 touchpad toggle](https://learn.microsoft.com/en-us/windows-hardware/design/component-guidelines/touchpad-enable-or-disable-toggle-button).
+Synapse's pinned SysUtilsNative toggle export at RVA 0x77DD0 sends the same
+chord through USER32 keybd_event. Its status getter at 0x770F0 reads the
+PrecisionTouchPad Status Enabled value. OpenBlade sends the documented chord
+through its current-user input sender; it never writes that status registry
+value, loads the vendor DLL, or changes touchpad drivers. This command has no
+result readback in OpenBlade; actual Windows touchpad behavior remains untested.
+
+## Runtime admission and verification
+
+PR #786 now implements these defaults experimentally. The Session Agent accepts
+only the verified RZ09-0484 host and PID 02A0 input identity, with 16-byte report-4
+snapshots. It pins one report-4 collection during that input lifecycle; a
+second collection makes Fn ambiguous until lifecycle reset. It does not assume
+the older models' MI_01 collection or keyboard Driver mode.
+
+The existing user-mode keyboard hook suppresses the original mapped key and
+queues typed actions. Injected output is excluded from interception. A press
+that began without Fn passes through until its release. A consumed press stays
+consumed through its release even if Fn is released first; lifecycle or status
+failure cancels its action. Status reconnect, power/session changes and device
+arrival/removal clear held Fn evidence. Ordinary Blade 18 status updates with
+no Driver-mode readback do not discard its independent Fn snapshot.
+
+Fn+P uses the existing service performance shortcut path and its fresh hardware
+admission. Fn+R uses the shared current-user display controller, advertised fixed
+rates and existing power/readback checks. F-row brightness uses existing display
+and keyboard lighting executors. Navigation uses typed Windows shortcuts.
+
+Offline tests cover the decoder, exact identities, press/repeat/release latches,
+cancellation, status admission and action routing. No hardware writes, live
+input injection, installation, driver changes or new capture were performed.
+Physical validation must still establish that the report is available without
+Synapse, that Fn reports precede the ordinary keys, and that firmware or another
+controller does not produce duplicate actions. The hook's ordinary keyboard
+events have no device identity, so actions wait for the matching Raw Input
+keyboard identity. Foreign-keyboard packets cancel the tentative action;
+Windows may already have suppressed that original key while the laptop Fn is
+held. Missing hook edges reconcile releases without replaying a missed down.
+An unmatched-event overflow cancels pending actions. Test one attended press of
+each materially different action path and check restoration where applicable.
+
+No programmable M-key slots, remapping, function-key-primary writes, Gaming Mode,
+keyboard Driver mode or additional firmware capability follows from this decoder.

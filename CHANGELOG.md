@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add experimental Fire and Wheel lighting for Blade 18 (2023), using its recorded 6×16 frames. Document its Fn shortcuts and recovered input format, with source evidence in diagnostics. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
+- Add experimental Fire and Wheel lighting for Blade 18 (2023), using its recorded 6×16 frames. Add its default Synapse Fn shortcuts for performance, refresh rate, touchpad, F1–F12, arrows and Delete. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
 - Add the observed CPU Boost with GPU Low or High combinations and a shared 2200–3800 RPM fixed-fan control in Balanced on Blade 18 (2023). Keep richer Synapse lighting effects visible in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 
 ### Changed

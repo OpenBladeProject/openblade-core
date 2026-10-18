@@ -271,9 +271,11 @@ not a flag byte. The sources do not label which ID the physical key emits.
 The [decoder recovery](blade18-fn-decoder.md) pins the additional SDK hash,
 native RVAs, exact-model dispatch chain, and offline verification. Another
 capture is not required to establish the decoder. Diagnostics record its static
-provenance; runtime input support and live Fn+P behavior remain unvalidated.
-The ordinary P-key edge must be correlated separately. This recovery adds no
-input hook, key binding, or firmware write capability.
+provenance. PR #786 now correlates this snapshot with ordinary keyboard edges
+and implements the default Fn shortcuts through the existing Session Agent
+hook and typed action queues. Live input behavior remains unvalidated; see the
+[default shortcut implementation and boundaries](blade18-fn-decoder.md#default-shortcuts).
+This adds no keyboard Driver-mode or function-key-primary firmware commands.
 
 ### Logo and Chroma
 

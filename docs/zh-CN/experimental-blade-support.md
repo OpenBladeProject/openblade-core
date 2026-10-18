@@ -46,6 +46,8 @@ Blade 14 (2025) 在电池供电时还提供电池节能和电池平衡模式。
   Blade 18 还提供实验性的火焰和旋转灯效，旋转支持两个方向。火焰会重复播放一小段录制样本，
   旋转会播放录制的循环；仍需在笔记本上测试 OpenBlade 的实际显示效果。
   其他已观察到的 Synapse 灯效会记入诊断报告，目前暂不支持。
+- Blade 18 (2023) 提供实验性的 [Synapse 默认 Fn 快捷键](../blade18-fn-decoder.md#default-shortcuts)：
+  性能、刷新率、触摸板、F1–F12、方向键和 Delete。解码和动作已有源码依据，仍需在笔记本上测试。
 - Blade 14 (2023) 和 Blade 16 (2023) 新增实验性 HyperBoost，需要使用足功率电源，连接或不连接 Razer Laptop Cooling Pad 均可。
   Blade 16 需要 MCU 固件 1.5.0.0 或更新版本。
   Blade 14 需要 MCU 固件 1.1.1.3 或更新版本；如果已在 Synapse 中开启最大风扇，请先将其关闭。
