@@ -167,7 +167,10 @@ type static class OpenBlade.Contracts.Blade18KeyboardLightingLayout
   field const System.Int32 Rows = 6
   field const System.Int32 SlotCount = 96
   method static System.Boolean IsKeySlot(System.Int32 slot)
+  method static System.Boolean IsKnownLayout(System.Byte layoutId)
   method static System.Boolean TryGetKeyPosition(System.Int32 slot, out System.Double x, out System.Double y)
+  method static System.Boolean TryGetKeyPosition(System.Nullable<System.Byte> layoutId, System.Int32 slot, out System.Double x, out System.Double y)
+  method static System.Boolean TryMapScanCode(System.Nullable<System.Byte> layoutId, System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
   method static System.Boolean TryMapScanCode(System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
 type enum OpenBlade.Contracts.BreathingColorMode
   field System.Int32 value__
@@ -513,8 +516,10 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_HyperBoostWithoutCoolingPadAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_LampArrayLightingAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_SpecialKeyBindingsAccess()
+  method System.Nullable<System.Byte> get_Blade18KeyboardLayoutId()
   method System.String get_KeyboardLightingLayoutId()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, out System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, out System.Boolean SupportsBatteryProtectionOff, out System.Boolean SupportsTemporaryFullCharge)
+  method System.Void set_Blade18KeyboardLayoutId(System.Nullable<System.Byte> value)
   method System.Void set_ChargeLimits(System.Collections.Generic.IReadOnlySet<System.Int32> value)
   method System.Void set_CpuPowerLimit(OpenBlade.Contracts.CpuPowerLimitCapabilities value)
   method System.Void set_CpuVoltageOptimizer(OpenBlade.Contracts.CpuVoltageOptimizerCapabilities value)
@@ -588,6 +593,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> HyperBoostWithoutCoolingPadAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> LampArrayLightingAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> SpecialKeyBindingsAccess { get; init; }
+  property System.Nullable<System.Byte> Blade18KeyboardLayoutId { get; init; }
   property System.String KeyboardLightingLayoutId { get; init; }
 type enum OpenBlade.Contracts.DeviceFeatureAccess
   field System.Int32 value__
@@ -1441,7 +1447,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 68
+  field const System.Int32 ProtocolVersion = 69
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

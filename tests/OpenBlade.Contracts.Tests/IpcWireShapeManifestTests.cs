@@ -26,6 +26,7 @@ public sealed class IpcWireShapeManifestTests
             StringComparison.Ordinal);
         Assert.Contains("property supportsBreathingColorSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property supportsWaveDirectionSelection:System.Boolean member", manifest, StringComparison.Ordinal);
+        Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
         string? expectedHash = OpenBladeIpc.ProtocolVersion switch
         {
             47 => "182C004C3E7FBAFF946EAE2C1CFD6AE86D219A094E9DBC3BEF5A0F800D41F3D1",
@@ -50,6 +51,7 @@ public sealed class IpcWireShapeManifestTests
             66 => "F66EE64CBD3ACD3625F27D02A1A2E8FF3AA4EEB924EB7DB14D07A79539C626DF",
             67 => "1EAED39617D6E797FD3A09E5D157916D5B3D39039D6080FC0C03C9C4A311F6F4",
             68 => "79120BCCE7C872000361FFFC9926D94DAFE9E7255522F067A2BFCE849DAD37BA",
+            69 => "678062B10DF54DF104AA03EE140ECD257F0FB0E803109EFF18DB8032A53B6444",
             _ => null,
         };
 

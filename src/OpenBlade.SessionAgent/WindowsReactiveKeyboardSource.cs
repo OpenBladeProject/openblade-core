@@ -71,6 +71,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
     private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
+    private readonly Func<byte?> readBlade18KeyboardLayoutId;
     private readonly Func<SpecialKeySlot, bool> readSpecialKeyInputAdmitted;
     private readonly Action<Blade18FnShortcut>? publishBlade18FnShortcut;
     private readonly Func<bool> isBlade18FnInputAdmitted;
@@ -127,6 +128,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ?? throw new ArgumentNullException(nameof(options.ReadDriverModeObservation));
         readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy
             ?? throw new ArgumentNullException(nameof(options.ReadGamingModeKeyPolicy));
+        readBlade18KeyboardLayoutId = options.ReadBlade18KeyboardLayoutId;
         readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind
             ?? throw new ArgumentNullException(nameof(options.ReadVerifiedInputDeviceKind));
         readSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted
@@ -776,6 +778,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
         if (!ReactiveRawKeyboardInput.TryCreatePulses(
             deviceKind,
+            readBlade18KeyboardLayoutId(),
             keyboard.MakeCode,
             keyboard.Flags,
             out ReactiveKeyPulse primary,

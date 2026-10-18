@@ -90,6 +90,21 @@ public sealed class Blade18SpatialLightingEffectTests
     }
 
     [Fact]
+    public void JapaneseRegionChangesSpatialGeometryAndExcludesAbsentSlots()
+    {
+        LightingSettings tidal = LightingSettingsFactory.Tidal(Green, Blue, false, LightingDirection.Leftward, 100);
+        var japanese = new Blade18SpatialLightingEffect(tidal, 12);
+        var ansi = new Blade18SpatialLightingEffect(tidal, 1);
+        TimeSpan at = TimeSpan.FromMilliseconds(8750);
+        Assert.NotEqual(ansi.RenderFrame(at).Slots[85], japanese.RenderFrame(at).Slots[85]);
+        var reactive = new Blade18SpatialLightingEffect(LightingSettingsFactory.Reactive(Green, 100, ReactiveLightingDuration.Medium), 1);
+        Assert.Throws<ArgumentOutOfRangeException>(() => reactive.Pulse(66, TimeSpan.Zero));
+        var iso = new Blade18SpatialLightingEffect(LightingSettingsFactory.Reactive(Green, 100, ReactiveLightingDuration.Medium), 3);
+        iso.Pulse(66, TimeSpan.Zero);
+        Assert.Equal(Green, iso.RenderFrame(TimeSpan.Zero).Slots[66]);
+    }
+
+    [Fact]
     public void Constructor_RejectsMalformedOrUnrelatedEffects()
     {
         Assert.Throws<ArgumentException>(() => new Blade18SpatialLightingEffect(LightingSettingsFactory.Ripple(Green, 100) with { Brightness = 0 }));

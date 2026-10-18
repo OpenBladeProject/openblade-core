@@ -124,6 +124,7 @@ public sealed partial class MainViewModel
             && left.SupportsWaveDirectionSelection == right.SupportsWaveDirectionSelection
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
+            && left.Blade18KeyboardLayoutId == right.Blade18KeyboardLayoutId
             && string.Equals(
                 left.KeyboardLightingLayoutId,
                 right.KeyboardLightingLayoutId,

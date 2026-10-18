@@ -330,6 +330,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             ExperimentalBladePort admitted = selected;
             admitted.EnableQueryRecording();
+            await admitted.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
             selected = null;
             return new(admitted, null);
         }

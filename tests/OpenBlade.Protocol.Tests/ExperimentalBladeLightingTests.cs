@@ -1086,6 +1086,9 @@ public sealed partial class ExperimentalBladeLightingTests
         internal byte? LogoStateSelectorOverride { get; set; }
         internal byte? LogoEffectSelectorOverride { get; set; }
         internal bool IgnoreEffect { get; set; }
+        internal byte[] EditionReply { get; set; } = [1, 0, 0];
+        internal bool FailEditionRead { get; set; }
+        internal CancellationTokenSource? CancelEditionRead { get; set; }
         internal bool FailEffect { get; set; }
         internal bool IgnoreBrightness { get; set; }
         internal bool FailLogoPower { get; set; }
@@ -1125,7 +1128,17 @@ public sealed partial class ExperimentalBladeLightingTests
                 return WaitForFrameReleaseAsync();
             }
             byte[] response;
-            if (command.ClassId == 0x0F && command.CommandId == 0x82)
+            if (command.ClassId == 0 && command.CommandId == 0x86)
+            {
+                Assert.Equal(new byte[] { 0, 0, 0 }, args);
+                CancelEditionRead?.Cancel();
+                if (FailEditionRead || CancelEditionRead is not null)
+                {
+                    return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout));
+                }
+                response = EditionReply;
+            }
+            else if (command.ClassId == 0x0F && command.CommandId == 0x82)
             {
                 response = new byte[EffectReplyLength];
                 response[0] = 1; response[1] = 5; response[2] = Effect;

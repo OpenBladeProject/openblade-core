@@ -110,7 +110,10 @@ internal sealed partial class ExperimentalBladePort(
 
     internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
 
-    public DeviceCapabilities Capabilities => CreateCapabilities(model, policy.WritesAllowed);
+    public DeviceCapabilities Capabilities => CreateCapabilities(model, policy.WritesAllowed) with
+    {
+        Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
+    };
 
     internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
         new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),

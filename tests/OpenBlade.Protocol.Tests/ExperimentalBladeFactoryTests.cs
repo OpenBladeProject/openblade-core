@@ -52,12 +52,13 @@ public sealed class ExperimentalBladeFactoryTests
         HidSessionResult<IProductionLightingPort> opened = await lighting.OpenAsync(() => active, CancellationToken.None);
         Assert.Null(opened.Failure);
         await using IProductionLightingPort port = Assert.IsType<ExperimentalBladePort>(opened.Value);
-        Assert.Equal(new byte[] { 0x82, 0x82 }, io.Commands);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x86 }, io.Commands);
+        Assert.Equal((byte)12, port.Capabilities.Blade18KeyboardLayoutId);
         active = false;
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(77), CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.Equal(2, io.Commands.Count);
+        Assert.Equal(3, io.Commands.Count);
         Assert.Contains(LightingEffect.Spectrum, port.Capabilities.LightingEffects);
         Assert.True(port.Capabilities.SupportsKeyboardBrightness);
     }
@@ -340,6 +341,11 @@ public sealed class ExperimentalBladeFactoryTests
                 }
                 lastRequest.CopyTo(buffer, 0);
                 buffer[1] = 0x02;
+                if (lastRequest[8] == 0x86)
+                {
+                    buffer[9] = 12;
+                    buffer[89] ^= 12;
+                }
                 buffer[11] = PerformanceMode;
                 buffer[89] ^= PerformanceMode;
                 if (WrongSelector)

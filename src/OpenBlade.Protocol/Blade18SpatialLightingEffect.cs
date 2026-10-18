@@ -24,10 +24,11 @@ internal sealed class Blade18SpatialLightingEffect
     private static readonly double[] RandomStops = [0, 15, 30, 40, 65, 70, 90, 100];
     private static readonly RgbColor[] RandomPalette = CreateRandomPalette();
     private readonly LightingSettings settings;
+    private readonly byte? layoutId;
     private readonly TimeSpan?[] lastPulseAt = new TimeSpan?[Blade18LightingFrame.SlotCount];
     private readonly double fadeMilliseconds;
 
-    internal Blade18SpatialLightingEffect(LightingSettings settings)
+    internal Blade18SpatialLightingEffect(LightingSettings settings, byte? layoutId = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (!LightingSettingsValidation.IsWellFormed(settings)
@@ -36,6 +37,7 @@ internal sealed class Blade18SpatialLightingEffect
             throw new ArgumentException("Only valid Reactive, Ripple and Tidal settings are supported.", nameof(settings));
         }
         this.settings = settings;
+        this.layoutId = layoutId;
         ReactiveLightingDuration duration = settings.Parameters is ReactiveLightingParameters reactive
             ? reactive.Duration : ReactiveLightingDuration.Medium;
         fadeMilliseconds = duration switch
@@ -55,7 +57,7 @@ internal sealed class Blade18SpatialLightingEffect
         {
             throw new InvalidOperationException("Tidal does not consume key pulses.");
         }
-        if (!Blade18KeyboardLightingLayout.IsKeySlot(slot))
+        if (!Blade18KeyboardLightingLayout.TryGetKeyPosition(layoutId, slot, out _, out _))
         {
             throw new ArgumentOutOfRangeException(nameof(slot));
         }
@@ -98,12 +100,15 @@ internal sealed class Blade18SpatialLightingEffect
                 }
                 continue;
             }
-            Blade18KeyboardLightingLayout.TryGetKeyPosition(origin, out double originX, out double originY);
+            if (!Blade18KeyboardLightingLayout.TryGetKeyPosition(layoutId, origin, out double originX, out double originY))
+            {
+                continue;
+            }
             double outer = ageMilliseconds / 1000 * RippleCellsPerSecond;
             double inner = Math.Max(0, outer - RippleWidth);
             for (int slot = 0; slot < colors.Length; slot++)
             {
-                if (!Blade18KeyboardLightingLayout.TryGetKeyPosition(slot, out double x, out double y))
+                if (!Blade18KeyboardLightingLayout.TryGetKeyPosition(layoutId, slot, out double x, out double y))
                 {
                     continue;
                 }
@@ -116,7 +121,7 @@ internal sealed class Blade18SpatialLightingEffect
         }
     }
 
-    private static void RenderTidal(RgbColor[] colors, TidalLightingParameters parameters, TimeSpan elapsed)
+    private void RenderTidal(RgbColor[] colors, TidalLightingParameters parameters, TimeSpan elapsed)
     {
         // Exact 672 manifest: 15 columns, 7 rows, no Tidal center override.
         // Synapse defaults to floor(dimension/2), with far-side extents 8 and 4.
@@ -124,7 +129,7 @@ internal sealed class Blade18SpatialLightingEffect
         bool outward = parameters.Direction == LightingDirection.Leftward;
         for (int slot = 0; slot < colors.Length; slot++)
         {
-            if (!Blade18KeyboardLightingLayout.TryGetKeyPosition(slot, out double x, out double y))
+            if (!Blade18KeyboardLightingLayout.TryGetKeyPosition(layoutId, slot, out double x, out double y))
             {
                 continue;
             }

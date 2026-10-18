@@ -605,6 +605,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             lighting.Capabilities.SupportsPlaybackMuteIndicator,
                         KeyboardLightingLayoutId =
                             lighting.Capabilities.KeyboardLightingLayoutId,
+                        Blade18KeyboardLayoutId = lighting.Capabilities.Blade18KeyboardLayoutId,
                         SupportedLightingRefreshRates =
                             lighting.Capabilities.SupportedLightingRefreshRates,
                     };

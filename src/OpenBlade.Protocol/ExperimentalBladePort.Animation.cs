@@ -69,7 +69,8 @@ internal sealed partial class ExperimentalBladePort
                 || spatialAnimation?.IsKeyTriggered != true
                 || OwnershipState is not (LightingRendererOwnershipState.Reactive
                     or LightingRendererOwnershipState.Ripple)
-                || !Blade18KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot))
+                || !Blade18KeyboardLightingLayout.TryGetKeyPosition(
+                    blade18KeyboardLayoutId, pulse.MatrixSlot, out _, out _))
             {
                 throw new CapabilityUnavailableException(
                     "Key-triggered lighting input is not admitted for this slot and renderer.");

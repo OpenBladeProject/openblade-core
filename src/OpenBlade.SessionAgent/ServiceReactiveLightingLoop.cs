@@ -29,6 +29,8 @@ public sealed record ReactiveKeyboardSourceOptions(
     public Func<bool> IsBlade18FnInputAdmitted { get; init; } = () => false;
 
     public Action ResetFunctionRowInput { get; init; } = () => { };
+
+    public Func<byte?> ReadBlade18KeyboardLayoutId { get; init; } = () => null;
 }
 
 public interface IReactiveKeyboardSourceFactory
@@ -341,6 +343,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                         }
                     },
                     IsBlade18FnInputAdmitted = IsBlade18FnInputAdmitted,
+                    ReadBlade18KeyboardLayoutId = ReadBlade18KeyboardLayoutId,
                     ResetFunctionRowInput = () => functionRowInputPump?.Reset(),
                 });
             if (Volatile.Read(ref disposed) != 0
@@ -713,6 +716,15 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private RazerBladeInputDeviceKind ReadVerifiedInputDeviceKind() =>
         (RazerBladeInputDeviceKind)Volatile.Read(ref verifiedInputDeviceKind);
+
+    private byte? ReadBlade18KeyboardLayoutId()
+    {
+        lock (performanceShortcutStateSync)
+        {
+            return latestStatus is { DeviceVerified: true } status && IsBlade18Model(status)
+                ? status.Capabilities?.Blade18KeyboardLayoutId : null;
+        }
+    }
 
     private bool IsSpecialKeyInputAdmitted(SpecialKeySlot slot)
     {

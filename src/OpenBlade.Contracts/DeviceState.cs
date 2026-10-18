@@ -271,6 +271,9 @@ public sealed record DeviceCapabilities(
 
     public string? KeyboardLightingLayoutId { get; init; }
 
+    /// <summary>Physical product-672 region from its edition getter; independent of input language.</summary>
+    public byte? Blade18KeyboardLayoutId { get; init; }
+
     public IReadOnlySet<LightingRefreshRate> SupportedLightingRefreshRates { get; init; } =
         new HashSet<LightingRefreshRate>();
 
@@ -320,6 +323,8 @@ public sealed record DeviceCapabilities(
         && (LampArrayLightingAccess is null
             || Enum.IsDefined(LampArrayLightingAccess.Value))
         && (ThxAudio is null || ThxAudio.IsWellFormed)
+        && (Blade18KeyboardLayoutId is null
+            || Blade18KeyboardLightingLayout.IsKnownLayout(Blade18KeyboardLayoutId.Value))
         && (KeyboardLightingLayoutId is null
             ? !LightingEffects.Contains(LightingEffect.Sequence)
             : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)

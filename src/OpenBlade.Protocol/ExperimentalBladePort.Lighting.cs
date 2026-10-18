@@ -433,7 +433,7 @@ internal sealed partial class ExperimentalBladePort
         }
         Blade18SpatialLightingEffect? spatialEffect = animationRequest
             && IsBlade18SpatialEffect(settings.Effect)
-                ? new Blade18SpatialLightingEffect(settings) : null;
+                ? new Blade18SpatialLightingEffect(settings, blade18KeyboardLayoutId) : null;
         Blade18LightingFrame? firstAnimationFrame = animationRequest
             ? spatialEffect?.RenderFrame(TimeSpan.Zero)
                 ?? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
