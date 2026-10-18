@@ -107,6 +107,6 @@ Blade 14 (2025) также
 Blade 18 также поддерживает импорт отдельных цветов клавиш и последовательностей
 из классических файлов Keyboard .chroma, одноцветный и двухцветный Breathing
 и Wave влево с программной отрисовкой. Gaming Mode может блокировать клавишу
-Windows, Alt+Tab и Alt+F4, пока работает OpenBlade; это действует на все клавиатуры.
+Windows и Alt+Tab, пока работает OpenBlade; это действует на все клавиатуры.
 См. [подсветку](../blade18-spatial-lighting.md#per-key-colors-and-playback) и
 [проверенные источники](../blade18-source-feature-recovery.md).

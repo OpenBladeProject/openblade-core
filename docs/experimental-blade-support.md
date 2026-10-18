@@ -62,7 +62,7 @@ Battery Saver and Battery Balanced on battery power.
   The physical keyboard region selects the matching Synapse map, including
   regional Enter, backslash, Alt, ISO and Japanese keys. If the region cannot be
   read, keys with conflicting regional bindings do not trigger these effects.
-- Blade 18 Gaming Mode can block the Windows key, Alt+Tab and Alt+F4 while
+- Blade 18 Gaming Mode can block the Windows key and Alt+Tab while
   OpenBlade is running. Blocking applies to all keyboards. See the
   [source recovery notes](blade18-source-feature-recovery.md) for remaining gaps.
 - Blade 18 (2023) offers the [default Synapse Fn shortcuts](blade18-fn-decoder.md#default-shortcuts):

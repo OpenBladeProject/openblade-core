@@ -88,6 +88,6 @@ OpenBlade 会检查笔记本并读取当前设置。
 
 Blade 18 还支持通过经典 Keyboard .chroma 文件导入逐键颜色和动画序列，
 以及主机渲染的单色、双色 Breathing 和向左 Wave。Gaming Mode 可在
-OpenBlade 运行时屏蔽 Windows 键、Alt+Tab 和 Alt+F4，作用于所有键盘。
+OpenBlade 运行时屏蔽 Windows 键和 Alt+Tab，作用于所有键盘。
 详见[灯光说明](../blade18-spatial-lighting.md#per-key-colors-and-playback)和
 [来源核查](../blade18-source-feature-recovery.md)。
