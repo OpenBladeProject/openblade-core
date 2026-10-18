@@ -269,7 +269,10 @@ internal sealed partial class ExperimentalBladePort
         }
         RecordQuery("MaximumFans", "Confirmed",
             $"PowerModeControl=0x{payload.Span[0]:X2};MaximumFans={(payload.Span[0] & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0};"
-                + $"OtherSettings=0x{payload.Span[0] & ~TemporaryFullChargeProtocol.MaximumFanSpeedBit:X2}");
+                + $"OtherSettings=0x{payload.Span[0] & ~TemporaryFullChargeProtocol.MaximumFanSpeedBit:X2};"
+                + $"TemporaryFullChargeBit={(payload.Span[0] & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0};"
+                + $"CpuBoostBit={(payload.Span[0] & TemporaryFullChargeProtocol.CpuBoostBit) != 0};"
+                + $"LocalDimmingBit={(payload.Span[0] & TemporaryFullChargeProtocol.LocalDimmingBit) != 0}");
         return payload.Span[0];
     }
 
