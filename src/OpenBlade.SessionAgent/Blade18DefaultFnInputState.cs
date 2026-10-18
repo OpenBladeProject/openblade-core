@@ -98,6 +98,23 @@ internal sealed class Blade18DefaultFnInputState
         return consume;
     }
 
+    public bool MaySuppress(
+        uint scanCode, bool extended, bool keyDown, bool keyWasAlreadyDown,
+        bool functionHeld, bool admitted) =>
+        (activePresses.TryGetValue(new(scanCode, extended), out ActivePress press) && press.Consume)
+        || (keyDown && !keyWasAlreadyDown && functionHeld && admitted
+            && TryMap(scanCode, extended, out _));
+
+    public void PassThroughAllPresses()
+    {
+        // Changed topology makes every global hook latch ambiguous. Retain
+        // pass-through decisions so restoring topology cannot activate held keys.
+        foreach (KeyIdentity key in activePresses.Keys.ToArray())
+        {
+            activePresses[key] = activePresses[key] with { Consume = false, Canceled = true };
+        }
+    }
+
     public void Cancel()
     {
         foreach (KeyIdentity key in activePresses.Keys.ToArray())

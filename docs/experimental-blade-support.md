@@ -72,6 +72,8 @@ Battery Saver and Battery Balanced on battery power.
 - Blade 18 (2023) offers the [default Synapse Fn shortcuts](blade18-fn-decoder.md#default-shortcuts):
   performance, refresh rate, touchpad, F1–F12, arrows and Delete. The decoder and
   actions are source-backed; behavior on the laptop still needs testing.
+  OpenBlade handles these shortcuts only while the built-in keyboard is the only
+  keyboard connected.
 - Blade 14 (2023) and Blade 16 (2023) offer experimental HyperBoost on full-power
   AC, with or without the Razer Laptop Cooling Pad. They require MCU firmware
   1.1.1.3 or later on the Blade 14, and 1.5.0.0 or later on the Blade 16.

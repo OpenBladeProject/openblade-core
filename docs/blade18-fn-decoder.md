@@ -117,10 +117,22 @@ second collection makes Fn ambiguous until lifecycle reset. It does not assume
 the older models' MI_01 collection or keyboard Driver mode.
 
 The existing user-mode keyboard hook suppresses the original mapped key and
-queues typed actions. Injected output is excluded from interception. A press
+queues typed actions only in a confirmed local session with no other keyboard
+present. A fresh, bounded Raw Input device list must identify every keyboard as
+the Blade 18 before each suppressed edge. An unknown device, failed enumeration,
+or remote session passes keys through and cancels pending actions. Remote
+sessions require a separate check because Windows omits RDP devices from the
+[Raw Input device list](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getrawinputdevicelist).
+This restriction belongs to the Blade 18 backend, which has no verified
+per-device suppression or keyboard Driver-mode path. Explicit Gaming Mode
+blocking retains its existing all-keyboard policy.
+
+Injected output is excluded from interception. A press
 that began without Fn passes through until its release. A consumed press stays
 consumed through its release even if Fn is released first; lifecycle or status
-failure cancels its action. Status reconnect, power/session changes and device
+failure cancels its action. A topology change also clears consumption latches,
+so keys from a newly connected keyboard pass through. Status reconnect,
+power/session changes and device
 arrival/removal clear held Fn evidence. Ordinary Blade 18 status updates with
 no Driver-mode readback do not discard its independent Fn snapshot.
 
@@ -135,10 +147,10 @@ input injection, installation, driver changes or new capture were performed.
 Physical validation must still establish that the report is available without
 Synapse, that Fn reports precede the ordinary keys, and that firmware or another
 controller does not produce duplicate actions. The hook's ordinary keyboard
-events have no device identity, so actions wait for the matching Raw Input
-keyboard identity. Foreign-keyboard packets cancel the tentative action;
-Windows may already have suppressed that original key while the laptop Fn is
-held. Missing hook edges reconcile releases without replaying a missed down.
+events have no device identity, so actions also wait for the matching Raw Input
+keyboard identity and recheck topology before confirmation. Foreign-keyboard
+packets cancel the tentative action. Missing hook edges reconcile releases
+without replaying a missed down.
 An unmatched-event overflow cancels pending actions. Test one attended press of
 each materially different action path and check restoration where applicable.
 

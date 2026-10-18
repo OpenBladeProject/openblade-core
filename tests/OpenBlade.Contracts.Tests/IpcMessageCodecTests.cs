@@ -2976,10 +2976,157 @@ public sealed class IpcMessageCodecTests
         Assert.False(capabilities.ContainsKey("supportsDirectManualFanTransitions"));
         Assert.False(capabilities.ContainsKey("supportedBreathingColorModes"));
         Assert.False(capabilities.ContainsKey("supportsUniformLightingFrames"));
+        Assert.False(capabilities.ContainsKey("blade18KeyboardLayoutId"));
         Assert.Contains(
             "Update or repair",
             projected["message"]!.GetValue<string>(),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WriteProtocol51ReadOnlyServerFrameAsync_ProjectsBlade18SequenceState()
+    {
+        var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+        int firstKeySlot = Enumerable.Range(0, Blade18KeyboardLightingLayout.SlotCount)
+            .First(Blade18KeyboardLightingLayout.IsKeySlot);
+        slots[firstKeySlot] = new RgbColor(1, 2, 3);
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+            [new KeyboardLightingSequenceFrame(50, slots)],
+            KeyboardLightingLayoutIds.Rz09_0484);
+        LightingSettings lighting = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0484,
+            timeline,
+            loop: true,
+            brightness: 100) with
+        {
+            LogoMode = LogoLightingMode.Static,
+        };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = lighting },
+            Battery = defaults.Battery with { Lighting = lighting },
+            UsbC = defaults.UsbC with { Lighting = lighting },
+        };
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                LightingEffects = new HashSet<LightingEffect>
+                {
+                    LightingEffect.Off,
+                    LightingEffect.Sequence,
+                },
+                KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0484,
+                Blade18KeyboardLayoutId = 1,
+            },
+            ConfirmedState = new ConfirmedDeviceState(null, null, null, lighting),
+            Profiles = profiles,
+            DesiredState = baseline.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    lighting,
+                    SettingValueSource.PowerProfile),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                lighting,
+                OverrideLifetime.Persistent),
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+
+        JsonObject projected = Assert.IsType<JsonObject>(FramedJsonObject(stream)["status"]);
+        JsonObject capabilities = Assert.IsType<JsonObject>(projected["capabilities"]);
+        Assert.False(capabilities.ContainsKey("blade18KeyboardLayoutId"));
+        Assert.Null(capabilities["keyboardLightingLayoutId"]);
+        Assert.DoesNotContain(
+            (int)LightingEffect.Sequence,
+            capabilities["lightingEffects"]!.AsArray().Select(value => value!.GetValue<int>()));
+        Assert.Null(projected["confirmedState"]!["lighting"]);
+        Assert.Equal(
+            (int)LightingEffect.Off,
+            projected["desiredState"]!["lighting"]!["value"]!["effect"]!.GetValue<int>());
+        Assert.Equal(
+            (int)LogoLightingMode.Static,
+            projected["desiredState"]!["lighting"]!["value"]!["logoMode"]!.GetValue<int>());
+        Assert.Equal(
+            (int)LightingEffect.Off,
+            projected["profiles"]!["pluggedIn"]!["lighting"]!["effect"]!.GetValue<int>());
+        Assert.Equal(
+            (int)LightingEffect.Off,
+            projected["profiles"]!["battery"]!["lighting"]!["effect"]!.GetValue<int>());
+        Assert.Equal(
+            (int)LightingEffect.Off,
+            projected["profiles"]!["usbC"]!["lighting"]!["effect"]!.GetValue<int>());
+        Assert.Null(projected["lightingOverride"]);
+    }
+
+    [Theory]
+    [InlineData(KeyboardLightingLayoutIds.Rz09_0581)]
+    [InlineData(KeyboardLightingLayoutIds.Rz09_0528)]
+    public async Task WriteProtocol51ReadOnlyServerFrameAsync_PreservesFrozenSequenceLayouts(
+        string layoutId)
+    {
+        var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+        slots[1] = new RgbColor(1, 2, 3);
+        LightingSettings lighting = LightingSettingsFactory.Sequence(
+            layoutId,
+            KeyboardLightingSequenceCodec.Encode(
+                [new KeyboardLightingSequenceFrame(50, slots)]),
+            loop: true,
+            brightness: 100);
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ProfileSet profiles = baseline.Profiles with
+        {
+            PluggedIn = baseline.Profiles.PluggedIn with { Lighting = lighting },
+            Battery = baseline.Profiles.Battery with { Lighting = lighting },
+            UsbC = baseline.Profiles.UsbC with { Lighting = lighting },
+        };
+        ServiceStatusSnapshot status = baseline with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                LightingEffects = new HashSet<LightingEffect> { LightingEffect.Sequence },
+                KeyboardLightingLayoutId = layoutId,
+            },
+            ConfirmedState = new ConfirmedDeviceState(null, null, null, lighting),
+            Profiles = profiles,
+            DesiredState = baseline.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    lighting,
+                    SettingValueSource.PowerProfile),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                lighting,
+                OverrideLifetime.Persistent),
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+
+        JsonObject projected = Assert.IsType<JsonObject>(FramedJsonObject(stream)["status"]);
+        Assert.Equal(layoutId, projected["capabilities"]!["keyboardLightingLayoutId"]!.GetValue<string>());
+        Assert.Equal(
+            (int)LightingEffect.Sequence,
+            projected["confirmedState"]!["lighting"]!["effect"]!.GetValue<int>());
+        Assert.Equal(
+            (int)LightingEffect.Sequence,
+            projected["desiredState"]!["lighting"]!["value"]!["effect"]!.GetValue<int>());
+        Assert.Equal(
+            (int)LightingEffect.Sequence,
+            projected["profiles"]!["pluggedIn"]!["lighting"]!["effect"]!.GetValue<int>());
+        Assert.Equal(
+            (int)LightingEffect.Sequence,
+            projected["lightingOverride"]!["value"]!["effect"]!.GetValue<int>());
     }
 
     [Fact]

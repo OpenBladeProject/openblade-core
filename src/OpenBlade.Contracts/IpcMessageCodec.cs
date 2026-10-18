@@ -864,6 +864,16 @@ public static class IpcMessageCodec
                     .ToHashSet(),
                 CustomPerformance = ProjectProtocol51CustomCapabilities(
                     status.Capabilities.CustomPerformance),
+                LightingEffects = IsProtocol51LightingLayout(
+                    status.Capabilities.KeyboardLightingLayoutId)
+                        ? status.Capabilities.LightingEffects
+                        : status.Capabilities.LightingEffects
+                            .Where(effect => effect != LightingEffect.Sequence)
+                            .ToHashSet(),
+                KeyboardLightingLayoutId = IsProtocol51LightingLayout(
+                    status.Capabilities.KeyboardLightingLayoutId)
+                        ? status.Capabilities.KeyboardLightingLayoutId
+                        : null,
             };
         ConfirmedDeviceState? projectedConfirmedState = status.ConfirmedState is null
             ? null
@@ -880,6 +890,10 @@ public static class IpcMessageCodec
                     ? status.ConfirmedState.CustomPerformance : null,
                 Fans = status.ConfirmedState.CustomPerformance?.MaximumFans == true
                     ? null : status.ConfirmedState.Fans,
+                Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
+                    && !IsProtocol51LightingSetting(confirmedLighting)
+                        ? null
+                        : status.ConfirmedState.Lighting,
             };
 
         return status with
@@ -907,6 +921,11 @@ public static class IpcMessageCodec
                     status.DesiredState.Battery.TemporaryFullCharge),
                 CustomPerformance = ProjectProtocol51CustomSettings(
                     status.DesiredState.CustomPerformance),
+                Lighting = status.DesiredState.Lighting with
+                {
+                    Value = ProjectProtocol51LightingSetting(
+                        status.DesiredState.Lighting.Value),
+                },
             },
             PerformanceOverride = status.PerformanceOverride is { } performanceOverride
                 ? performanceOverride with
@@ -917,6 +936,10 @@ public static class IpcMessageCodec
             BatteryPolicyOverride = status.BatteryPolicyOverride is { } batteryOverride
                 && IsProtocol51BatteryLimit(batteryOverride.ChargeLimitPercent)
                     ? batteryOverride
+                    : null,
+            LightingOverride = status.LightingOverride is { Value: { } overrideLighting }
+                && IsProtocol51LightingSetting(overrideLighting)
+                    ? status.LightingOverride
                     : null,
             ThermalConvergence = null,
             HyperBoostBlockingControllers = null,
@@ -943,8 +966,25 @@ public static class IpcMessageCodec
         profile with
         {
             CustomPerformance = ProjectProtocol51CustomSettings(profile.CustomPerformance),
+            Lighting = ProjectProtocol51LightingSetting(profile.Lighting),
             ThxAudio = null,
         };
+
+    private static bool IsProtocol51LightingLayout(string? layoutId) =>
+        layoutId is null
+        || string.Equals(layoutId, KeyboardLightingLayoutIds.Rz09_0581, StringComparison.Ordinal)
+        || string.Equals(layoutId, KeyboardLightingLayoutIds.Rz09_0528, StringComparison.Ordinal);
+
+    private static bool IsProtocol51LightingSetting(LightingSettings settings) =>
+        settings.Parameters is not SequenceLightingParameters sequence
+        || IsProtocol51LightingLayout(sequence.LayoutId);
+
+    // Frozen v51 profiles require valid lighting settings. Use a placeholder only
+    // in this read-only projection; unrepresentable confirmed lighting stays unknown.
+    private static LightingSettings ProjectProtocol51LightingSetting(LightingSettings settings) =>
+        IsProtocol51LightingSetting(settings)
+            ? settings
+            : LightingSettingsFactory.Off() with { LogoMode = settings.LogoMode };
 
     private static bool ValidThxAudioProfiles(ProfileSet profiles) =>
         (profiles.PluggedIn.ThxAudio is null
@@ -1096,6 +1136,9 @@ public static class IpcMessageCodec
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "fanSpeedRangesByPerformancePreset", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "blade18KeyboardLayoutId", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "thxAudio", StringComparison.OrdinalIgnoreCase))
