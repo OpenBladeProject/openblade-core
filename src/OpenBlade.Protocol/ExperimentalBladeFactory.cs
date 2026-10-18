@@ -15,6 +15,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly SemaphoreSlim sharedCommandGate;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ExperimentalLightingOwnershipState lightingOwnership = new();
+    private readonly ExperimentalStartupAnimationState startupAnimationState = new();
+    private readonly ExperimentalTemporaryFullChargeState temporaryFullChargeState = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
@@ -34,7 +36,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     public string EvidenceSource => model.EvidenceSource;
 
-    public DeviceCapabilities Capabilities => ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed);
+    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithTemporaryFullChargeReadAdmission(
+        ExperimentalBladePort.WithStartupReadAdmission(
+            ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState), temporaryFullChargeState);
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
 
@@ -275,7 +279,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     recordQueries: false,
                     sharedOperationGate: operationGate,
                     sharedLightingOwnership: lightingOwnership,
-                    coolingPadDiscovery: new WindowsHyperBoostEligibilitySource(native));
+                    coolingPadDiscovery: new WindowsHyperBoostEligibilitySource(native),
+                    sharedStartupAnimationState: startupAnimationState,
+                    sharedTemporaryFullChargeState: temporaryFullChargeState);
                 try
                 {
                     // Correctly correlated selectors identify the interface even when
@@ -331,6 +337,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             ExperimentalBladePort admitted = selected;
             admitted.EnableQueryRecording();
             await admitted.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
+            await admitted.InitializeBlade18StartupAnimationAsync(cancellationToken).ConfigureAwait(false);
+            await admitted.InitializeBlade18TemporaryFullChargeAsync(cancellationToken).ConfigureAwait(false);
             selected = null;
             return new(admitted, null);
         }

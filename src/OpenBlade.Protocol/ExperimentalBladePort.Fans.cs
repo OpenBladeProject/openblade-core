@@ -119,23 +119,7 @@ internal sealed partial class ExperimentalBladePort
     }
 
     public Task SetFanTargetsAsync(int fan1Rpm, int fan2Rpm, CancellationToken cancellationToken) =>
-        SetExperimentalFansAsync(LinkBlade18FanTargets(fan1Rpm, fan2Rpm), cancellationToken);
-
-    private (int First, int Second) LinkBlade18FanTargets(int first, int second)
-    {
-        if (model.ProductId != 0x02A0 || first == second
-            || !SupportsExperimentalFanTarget(model, first)
-            || !SupportsExperimentalFanTarget(model, second))
-        {
-            return (first, second);
-        }
-
-        // Product 672's UI and setter task carry one manualFanSpeed scalar to
-        // both zones. Independent targets are not source-backed and were ignored
-        // in the prior capture, so a host curve links them at the higher request.
-        int linked = Math.Max(first, second);
-        return (linked, linked);
-    }
+        SetExperimentalFansAsync((fan1Rpm, fan2Rpm), cancellationToken);
 
     private async Task SetExperimentalFansAsync(
         (int First, int Second)? targets,
@@ -145,8 +129,7 @@ internal sealed partial class ExperimentalBladePort
         FanSpeedRange? range = GetExperimentalFanRange(model);
         if (range is null || targets is { } requested
             && (!SupportsExperimentalFanTarget(model, requested.First)
-                || !SupportsExperimentalFanTarget(model, requested.Second)
-                || model.ProductId == 0x02A0 && requested.First != requested.Second))
+                || !SupportsExperimentalFanTarget(model, requested.Second)))
         {
             throw new CapabilityUnavailableException("The fan request is outside this exact model's admitted range.");
         }

@@ -36,8 +36,9 @@ public sealed class ExperimentalExpandedBatteryTests
         await port.SetChargeLimitAsync(percent, CancellationToken.None);
 
         byte expected = percent == 100 ? (byte)0x50 : (byte)(0x80 | percent);
-        Assert.Equal([0x92, 0x12, 0x92], session.Commands.Select(command => command.CommandId));
-        Assert.Equal(expected, session.Commands[1].Arguments.Span[0]);
+        Assert.Equal(productId == 0x02A0 ? new byte[] { 0x92, 0x8F, 0x12, 0x92 } : [0x92, 0x12, 0x92],
+            session.Commands.Select(command => command.CommandId));
+        Assert.Equal(expected, Assert.Single(session.Commands, command => command.CommandId == 0x12).Arguments.Span[0]);
         Assert.Equal(expected, session.Raw);
         Assert.Single(session.Commands, command => command.CommandId == 0x12);
         Assert.Contains(policy.Snapshot().Observations, observation =>
@@ -231,6 +232,10 @@ public sealed class ExperimentalExpandedBatteryTests
                     new byte[] { current }, null));
             }
 
+            if (command.CommandId == 0x8F)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0 }, null));
+            }
             Assert.Equal(0x12, command.CommandId);
             setterObserved = true;
             if (CancelAtSetterSubmission is not null)

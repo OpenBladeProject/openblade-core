@@ -15,8 +15,6 @@ internal sealed partial class ExperimentalBladePort
 
     public bool SupportsProtectionQuery => GetExperimentalChargeLimits(model).Count > 0;
 
-    public bool SupportsTemporaryFullChargeQuery => false;
-
     public async Task<ConfirmedBatteryState> QueryProtectionAsync(CancellationToken cancellationToken)
     {
         if (GetExperimentalChargeLimits(model).Count == 0)
@@ -34,7 +32,10 @@ internal sealed partial class ExperimentalBladePort
         }
     }
 
-    private async Task<ConfirmedBatteryState> ReadBatteryAsync(CancellationToken cancellationToken)
+    private async Task<ConfirmedBatteryState> ReadBatteryAsync(CancellationToken cancellationToken) =>
+        (await ReadBatteryPolicyAsync(cancellationToken).ConfigureAwait(false)).State;
+
+    private async Task<(ConfirmedBatteryState State, byte Raw)> ReadBatteryPolicyAsync(CancellationToken cancellationToken)
     {
         ReadOnlyMemory<byte> payload = await ExchangeAsync("BatteryProtection", 0x07, 0x92,
             [0], false, cancellationToken).ConfigureAwait(false);
@@ -58,7 +59,7 @@ internal sealed partial class ExperimentalBladePort
         bool enabled = flag && percent < 100;
         RecordQuery("BatteryProtection", "Confirmed",
             confirmed: $"Effective={(enabled ? percent.ToString() : "Off")};ReportedProtectionEnabled={flag};ReportedLimitPercent={percent};Raw={raw:X2}");
-        return new(enabled, enabled ? percent : null, null);
+        return (new(enabled, enabled ? percent : null, null), raw);
     }
 
     public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) =>
@@ -88,6 +89,13 @@ internal sealed partial class ExperimentalBladePort
             if (baseline.ProtectionEnabled == enabled && baseline.ChargeLimitPercent == limit)
             {
                 return;
+            }
+            if (SupportsTemporaryFullChargeQuery
+                && ((await ReadTemporaryFullChargeFlagsAsync(cancellationToken).ConfigureAwait(false))
+                    & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "Cancel temporary full charge before changing the charge policy.");
             }
             RequireWriteAdmission();
             await ExchangeAsync("BatteryProtection", 0x07, 0x12, [enabled ? checked((byte)(0x80 | limit!.Value)) : (byte)0x50],

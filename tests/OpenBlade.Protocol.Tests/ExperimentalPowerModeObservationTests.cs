@@ -30,8 +30,16 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Contains($"CpuBoostBit={cpuBoost}", observation.ConfirmedValue!);
         Assert.Contains($"LocalDimmingBit={localDimming}", observation.ConfirmedValue!);
         Assert.False(port.Capabilities.SupportsTemporaryFullCharge);
-        Assert.Null(await port.QueryTemporaryFullChargeAsync(CancellationToken.None));
+        if (pid == 0x02A0)
+        {
+            Assert.Equal(temporaryFullCharge, await port.QueryTemporaryFullChargeAsync(CancellationToken.None));
+            Assert.True(port.Capabilities.SupportsTemporaryFullCharge);
+        }
+        else
+        {
+            Assert.Null(await port.QueryTemporaryFullChargeAsync(CancellationToken.None));
+        }
         Assert.Empty(session.Writes);
-        Assert.Single(session.Commands, command => command.ClassId == 0x07 && command.CommandId == 0x8F);
+        Assert.Equal(pid == 0x02A0 ? 2 : 1, session.Commands.Count(command => command.ClassId == 0x07 && command.CommandId == 0x8F));
     }
 }

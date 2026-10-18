@@ -24,7 +24,7 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Fact]
-    public async Task Blade18ManualCurveContinuation_LinksZonesAtHigherRequestedTarget()
+    public async Task Blade18ManualCurveContinuation_PreservesIndependentZoneTargets()
     {
         var session = new Session
         {
@@ -36,14 +36,13 @@ public sealed partial class ExperimentalThermalExpansionTests
 
         await port.SetFanTargetsAsync(2600, 3400, CancellationToken.None);
 
-        Assert.Equal(34, session.FirstTarget);
+        Assert.Equal(26, session.FirstTarget);
         Assert.Equal(34, session.SecondTarget);
         Assert.Equal(
             new byte[] { 0x01, 0x01 },
             session.Writes.Select(command => command.CommandId));
-        Assert.All(
-            session.Writes,
-            command => Assert.Equal(34, command.Arguments.Span[2]));
+        Assert.Equal(new byte[] { 26, 34 },
+            session.Writes.Select(command => command.Arguments.Span[2]));
     }
 
     [Fact]

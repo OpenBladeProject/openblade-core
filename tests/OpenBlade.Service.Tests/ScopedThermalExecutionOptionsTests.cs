@@ -6,7 +6,7 @@ namespace OpenBlade.Service.Tests;
 public sealed class ScopedThermalExecutionOptionsTests
 {
     [Fact]
-    public void ValidateFor_PerformanceRequiresExactPerformanceComponent()
+    public void ValidateFor_PerformanceAllowsDeclaredFanBridge()
     {
         var valid = new ScopedThermalExecutionOptions(
             [DeviceSubsystem.Performance],
@@ -16,8 +16,8 @@ public sealed class ScopedThermalExecutionOptionsTests
 
         var coupled = new ScopedThermalExecutionOptions(
             [DeviceSubsystem.Performance, DeviceSubsystem.Fans]);
-        Assert.Throws<ArgumentException>(
-            () => coupled.ValidateFor(DeviceSubsystem.Performance));
+
+        coupled.ValidateFor(DeviceSubsystem.Performance);
     }
 
     [Fact]

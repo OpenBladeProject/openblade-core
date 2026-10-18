@@ -14,7 +14,9 @@ internal sealed partial class ExperimentalBladePort(
     SemaphoreSlim? sharedOperationGate = null,
     ExperimentalLightingOwnershipState? sharedLightingOwnership = null,
     ICoolingPadDiscoverySource? coolingPadDiscovery = null,
-    TimeProvider? lightingTimeProvider = null)
+    TimeProvider? lightingTimeProvider = null,
+    ExperimentalStartupAnimationState? sharedStartupAnimationState = null,
+    ExperimentalTemporaryFullChargeState? sharedTemporaryFullChargeState = null)
     : IProductionBatteryPort, IProductionLightingPort
 {
     private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
@@ -42,14 +44,20 @@ internal sealed partial class ExperimentalBladePort(
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (Volatile.Read(ref startupAnimationState.ReconciliationRequired) != 0)
+            {
+                _ = await ReadStartupAnimationCoreAsync(cancellationToken).ConfigureAwait(false);
+            }
+            ConfirmedBatteryState? recoveredTemporaryBattery = SupportsTemporaryFullChargeQuery
+                ? await ReadTemporaryFullChargeRecoveryAsync(cancellationToken).ConfigureAwait(false) : null;
             ProductionPerformanceFanState performance = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             if (performance.Performance is null && !performance.HyperBoostActive || performance.Fans is null)
             {
                 throw new IOException("Experimental performance readback cannot form a confirmed recovery state.");
             }
-            ConfirmedBatteryState? battery = model.SupportsBatteryProtection
-                ? await ReadBatteryAsync(cancellationToken).ConfigureAwait(false) : null;
-            if (battery is not null)
+            ConfirmedBatteryState? battery = recoveredTemporaryBattery ?? (model.SupportsBatteryProtection
+                ? await ReadBatteryAsync(cancellationToken).ConfigureAwait(false) : null);
+            if (battery is not null && !SupportsTemporaryFullChargeQuery)
             {
                 battery = new ConfirmedBatteryState(battery.ProtectionEnabled, battery.ChargeLimitPercent, false);
             }
@@ -110,7 +118,8 @@ internal sealed partial class ExperimentalBladePort(
 
     internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
 
-    public DeviceCapabilities Capabilities => CreateCapabilities(model, policy.WritesAllowed) with
+    public DeviceCapabilities Capabilities => WithTemporaryFullChargeReadAdmission(WithStartupReadAdmission(
+        CreateCapabilities(model, policy.WritesAllowed), startupAnimationState), temporaryFullChargeState) with
     {
         Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
     };
@@ -123,7 +132,7 @@ internal sealed partial class ExperimentalBladePort(
                     : new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed } : [],
             CreateExperimentalLightingEffects(model, enabled),
             enabled ? GetExperimentalChargeLimits(model) : new HashSet<int>(),
-            enabled && GetExperimentalChargeLimits(model).Count > 0, false)
+            enabled && GetExperimentalChargeLimits(model).Count > 0, enabled && model.ProductId == 0x02A0)
         {
             CustomPerformance = enabled && SupportsExperimentalCustom(model) ? CreateCustomCapabilities(model) : null,
             FanSpeedRange = enabled ? GetExperimentalFanRange(model) : null,
@@ -158,6 +167,8 @@ internal sealed partial class ExperimentalBladePort(
                     Custom = DeviceFeatureAccess.ReadWrite,
                     CoolingPadEntryBaseMode = model.ProductId == 0x029D ? PerformancePreset.Balanced : null,
                 } : null,
+            OneShotLaptopControls = enabled && model.ProductId == 0x02A0
+                ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.StartupAnimation } : [],
             HostManagedLaptopControls = enabled && model.ProductId == 0x02A0
                 ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode } : [],
             KeyboardLightingLayoutId = enabled && model.ProductId == 0x02A0
@@ -455,6 +466,12 @@ internal sealed partial class ExperimentalBladePort(
         byte[] arguments,
         PowerSource? admittedFanSource)
     {
+        // The exact 02A0 full-charge bit changes battery policy, not thermal mode.
+        // It retains general submission admission and its own shared-mask guard.
+        if (IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments))
+        {
+            return arguments[0] == 0 || TemporaryFullChargeEnablePowerAdmitted();
+        }
         if (IsFanOperation(operation))
         {
             return admittedFanSource is { } source
@@ -521,6 +538,7 @@ internal sealed partial class ExperimentalBladePort(
         cancellationToken.ThrowIfCancellationRequested();
         PowerSource? admittedFanSource = null;
         if (write && IsThermalSet(commandClass, commandId)
+            && !IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments)
             && (!IsBatteryModeSet(commandClass, commandId, arguments)
                 || model.ProductId != 0x02C5 || operation == "HyperBoostRestore"))
         {
@@ -624,7 +642,6 @@ internal sealed partial class ExperimentalBladePort(
         return result.Value;
     }
 
-    public Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(null);
     public async Task<AdapterPowerState> QueryAdapterPowerStateAsync(CancellationToken cancellationToken)
     {
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -719,8 +736,6 @@ internal sealed partial class ExperimentalBladePort(
             && (operation == "Fans" || (operation is "Performance" or "HyperBoostRestore") && arguments[2] == 0)
         || commandClass == 0x07 && commandId == 0x0F && operation == "MaximumFans"
             && arguments.Length == 1 && arguments[0] == 0;
-    public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) => Unavailable();
-    public Task ApplyOneShotLaptopControlAsync(ApplyOneShotLaptopControl value, CancellationToken cancellationToken) => Unavailable();
     private static Task Unavailable() => Task.FromException(new CapabilityUnavailableException(
         "This control has no experimental implementation for the exact model."));
 
