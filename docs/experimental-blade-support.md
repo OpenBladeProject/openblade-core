@@ -53,8 +53,9 @@ Battery Saver and Battery Balanced on battery power.
   Fire repeats a short recorded sample; Wheel plays a recorded cycle. Starlight
   uses the shared twinkle pattern over this model's RGB cells. Reactive, Ripple
   and Tidal use [recovered Synapse definitions](blade18-spatial-lighting.md).
-  Key-triggered effects recognize 77 bindings shared across regional keyboards;
-  a few region-dependent keys do not trigger them yet.
+  The physical keyboard region selects the matching Synapse map, including
+  regional Enter, backslash, Alt, ISO and Japanese keys. If the region cannot be
+  read, keys with conflicting regional bindings do not trigger these effects.
 - Blade 18 (2023) offers the [default Synapse Fn shortcuts](blade18-fn-decoder.md#default-shortcuts):
   performance, refresh rate, touchpad, F1–F12, arrows and Delete. The decoder and
   actions are source-backed; behavior on the laptop still needs testing.

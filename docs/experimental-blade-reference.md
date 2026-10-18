@@ -222,8 +222,9 @@ Short/Medium/Long timing and Single/Dual/Random colors. The original model keeps
 its own hole mask; Blade 18 renders all 96 addresses in its admitted envelope.
 This is software-pattern extrapolation, not a captured Blade 18 Starlight oracle.
 Reactive, Ripple and Tidal use the [recovered product-672 map and algorithms](blade18-spatial-lighting.md):
-87 renderable slots and 77 scan-code bindings common to all nine regional layouts.
-Regional input differences remain unmapped. This admission does not enable
+all nine regional layouts, their input bindings and spatial positions. An
+exact-model edition query selects the physical region. Unknown regions retain
+unambiguous input bindings and the existing union geometry. This admission does not enable
 Sequence or individual-key color editing.
 
 The service-owned port writes six SET-only `03/0B` rows and activates custom
