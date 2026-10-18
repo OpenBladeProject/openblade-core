@@ -5,10 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.36.0-nightly.93] - 2026-10-18
+
 ### Added
 
 - Add experimental Blade 18 per-key color imports and sequence playback, single- and dual-color Breathing, leftward Wave, host Gaming Mode key blocking, startup animation and temporary full charge after valid state readback, independent curve target registers in Balanced and linked fixed fans in Silent. Custom entry returns fans to Automatic while retaining the saved fan setting. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
-
 - Add experimental Reactive, Ripple, Tidal, Fire, Wheel, Starlight, whole-keyboard Ambient Awareness and Audio Meter lighting for Blade 18 (2023), using its admitted 6×16 frame transport and Synapse regional keyboard definitions. Add its default Synapse Fn shortcuts for performance, refresh rate, touchpad, F1–F12, arrows and Delete. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
 - Add all Custom CPU/GPU level combinations, including CPU Boost with GPU Medium and High/High, and a shared 2200–3800 RPM fixed-fan control in Balanced on Blade 18 (2023). Keep richer Synapse lighting effects visible in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 - Install the supported SnapTap keyboard driver from the catalog with one button, package verification, and clear setup results. ([#811](https://github.com/OpenBladeProject/openblade-core/pull/811))
@@ -16,7 +17,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Changed
 
 - Clarify Blade 18 temperature-source limits and name decoded temporary-full-charge, CPU Boost and local-dimming bit flags in existing experimental Power Mode Control diagnostics. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
-
 - Run SnapTap through the supported Razer laptop keyboard driver on RZ09-0581, with keyboard-specific admission, supervised recovery, and a short information popup. ([#809](https://github.com/OSSBlade/openblade-core/pull/809))
 
 ### Fixed
@@ -25,7 +25,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Recheck controller admission for every lighting frame row and pause after partial frame batches, including cancellation between rows. This also protects the existing validated-model frame transports. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
 - Use the observed logo-lighting selector on Blade 18 (2023) for state queries, changes, and restoration. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 - Fix Custom-state reads on Blade 16 (2023) and Blade 18 (2023) by supplying the bounded validator required by the Maximum Fans query, and use the vendor Custom query profile on Blade 18. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
-
 - Show the specific THX detection failure and include a fresh THX detection report in exported diagnostics. ([#805](https://github.com/OSSBlade/openblade-core/pull/805))
 
 ## [0.33.1-nightly.92] - 2026-10-17
@@ -2126,7 +2125,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.33.1-nightly.92...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.36.0-nightly.93...HEAD
+[0.36.0-nightly.93]: https://github.com/OSSBlade/openblade-core/compare/v0.33.1-nightly.92...v0.36.0-nightly.93
 [0.33.1-nightly.92]: https://github.com/OSSBlade/openblade-core/compare/v0.30.0...v0.33.1-nightly.92
 [0.30.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.29.0-nightly.91...v0.30.0
 [0.29.0-nightly.91]: https://github.com/OSSBlade/openblade-core/compare/v0.28.1-nightly.90...v0.29.0-nightly.91
