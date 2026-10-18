@@ -84,8 +84,10 @@ pinned source. Other experimental profiles retain their admitted profile `0`.
 
 All five profiles admit Custom CPU/GPU levels Low, Medium, and High. The Blade
 16 (2023) also admits CPU Boost and the High/High combination. Blade 18 (2023)
-additionally admits CPU Boost with GPU Low or High; Boost/Medium and
-High/High remain unavailable on that model. See the [Observer evidence review](blade18-observer-evidence.md). Other profiles
+admits all twelve valid CPU/GPU level pairs. Its pinned Synapse policy sets the
+clusters independently; limiting pairs to recorded selections was unnecessary.
+Boost/Medium and High/High are source-backed extrapolations. See the
+[Observer evidence review](blade18-observer-evidence.md). Other profiles
 exclude High/High. Unrecognized raw levels remain diagnostic observations and
 cannot become a guessed baseline.
 
@@ -164,7 +166,7 @@ extrapolation from the shared encoding and each model's upstream 80%/off support
 | `029D` | Brightness; Off, Spectrum, random Breathing, Rightward Wave | Off, Static, Breathing | Keyboard and logo on/off are owner-reported; richer logo modes are explicit extrapolation |
 | `02C5` | Brightness; Off, Spectrum, random Breathing, Rightward Wave | Off, Static, Breathing | Keyboard and logo on/off are owner-reported; richer logo modes are explicit extrapolation |
 | `0255` | Brightness; Off, Spectrum, random or single-color Breathing; single-zone Static | None | Single-zone color and its RGB getter are exact-model tested; Wave is excluded |
-| `02A0` | Brightness; Off, Spectrum, random Breathing, Rightward Wave; uniform Static | Off, Static, Breathing | Uniform Static is extrapolated from the same command family and has no color getter |
+| `02A0` | Brightness; Off, Spectrum, random Breathing, Rightward Wave; uniform Static, Ambient Awareness, Audio Meter; Fire, Wheel, Starlight | Off, Static, Breathing | Uniform Static is extrapolated from the same command family and has no color getter |
 
 Built-in keyboard effects use `0F/02` with independent `0F/82` readback.
 Brightness uses `03/03` and `03/83`. Logo state and effect use `03/00`,
@@ -196,12 +198,16 @@ Ambient and Audio Meter continue to repaint while their renderer is active.
 The uniform frame is one color across the keyboard. It does not admit a key
 layout, per-key or spatial effects, or the `02E0` shared ambient-frame API.
 Blade 18 also uses its own recorded frame templates for Fire and Wheel, described
-below. Blade 16 uses a separate
-typed uniform-frame path for Ambient Awareness and Audio Meter. The Session
-Agent samples a 1×1 screen color or audio-peak intensity and sends one color
-through the service. Neither path uses a physical key mask or RGB readback.
+below, and the shared Starlight software pattern over its 96 RGB addresses.
+Blade 16 and Blade 18 use the typed uniform-frame path for Ambient Awareness and
+Audio Meter. The Session Agent samples a 1×1 screen color or audio-peak intensity
+and sends one color through the service. Blade 18 submits its six SET-only rows,
+activating custom mode only on the first frame of a new effect. The transport
+keeps a 20 FPS budget even when uniform sampling requests a higher rate. The retained
+baseline, ownership, cancellation and fault handling are shared with its existing
+frame transport. These paths use no other model's physical key mask or RGB readback.
 
-### Blade 18 Fire and Wheel
+### Blade 18 animated effects
 
 Exact RZ09-0484 (`1532:02A0`) uses the reviewed
 `Blade18FireWheelFrames.json` fixture: a 21-state clockwise Wheel cycle and a
@@ -210,6 +216,12 @@ Fire repeats the bounded sample. These are experimental OpenBlade playback,
 not firmware effects or physically validated OpenBlade results. See
 [Blade 18 evidence](blade18-observer-evidence.md#logo-and-chroma) for the source,
 hash, operation ranges, and timing.
+
+Starlight shares the existing pure twinkle algorithm and color choices, with
+Short/Medium/Long timing and Single/Dual/Random colors. The original model keeps
+its own hole mask; Blade 18 renders all 96 addresses in its admitted envelope.
+This is software-pattern extrapolation, not a captured Blade 18 Starlight oracle.
+Reactive, Ripple and Tidal remain unavailable; no physical key-name map is admitted.
 
 The service-owned port writes six SET-only `03/0B` rows and activates custom
 mode once on entry with `03/0A [05,00]`. Later frames have no GET or extra latch.

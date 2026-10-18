@@ -59,25 +59,27 @@ Zero-based byte offsets in these pinned files locate the relevant definitions:
 
 - Main selects `rzDevice25LedMatrixBlade` near byte 160698 and enables Custom
   performance near 161839. The backend inherits the base device at byte 1250.
-- The policy's numeric level enum near 908669 maps Low/Medium/High/Extreme to
+- The policy's numeric level enum at UTF-8 byte 909594 maps Low/Medium/High/Extreme to
   0/1/2/3. OpenBlade calls CPU level 3 Boost.
 - The base defines the CPU and GPU `0D/87` and `0D/07` tuples near 71401 and
   71523. Their GET decoders read payload byte 2 near 64561 and 65416.
-- The policy applies independent CPU and GPU settings near 1559363. There is
-  no explicit per-model allowed-combination table in these inspected files.
+- The policy applies independent CPU and GPU settings at verified UTF-8 bytes
+  1560351 and 1560392. There is no per-model allowed-combination table in these
+  inspected files.
 
 ## Resulting support and remaining gaps
 
-OpenBlade adds the observed Boost/High and Boost/Low pairs to the existing eight
-Custom combinations. High/High and Boost/Medium remain unavailable. Initial
-reads and recovery can represent both admitted Boost pairs. The setter chooses
-the shortest admitted path, confirms each change, and pauses on uncertain
-submission or readback. Medium/Low or High/Low to Boost/High takes two level
-writes through Boost/Low. High/Medium to Boost/High needs three through CPU
-Medium because either two-write ordering crosses an unadmitted combination.
-This follows the reviewed software contract; it does not claim firmware needs
-CPU Medium. The preset is not reset. Existing exact-device, controller, power,
-ownership, and safety checks continue to apply to every write.
+OpenBlade admits all twelve valid Custom CPU/GPU combinations. Boost/High and
+Boost/Low have additional Observer request evidence. High/High and Boost/Medium
+are source-backed extrapolations from the exact model's independent cluster
+setters and complete numeric level definitions. Capture coverage is not a
+firmware pair restriction. Initial reads and recovery can represent all twelve.
+
+The setter uses the shortest path, confirms each changed cluster independently,
+and pauses on uncertain submission or readback. High/Medium to Boost/High now
+uses two writes; it no longer detours through CPU Medium. The preset is not
+reset. Existing exact-device, controller, power, ownership and safety checks
+continue to apply to every write.
 
 A production-provider regression also exposed a shared Custom-state failure: the
 Maximum Fans query allowed a variable response but supplied no bounded payload
@@ -87,8 +89,10 @@ semantic check. This fixes the same path on RZ09-0483 and RZ09-0484.
 
 The main bundle's quick-effect catalog near byte 148129 also names Ambient
 Awareness, Audio Meter, Fire, Reactive, Ripple, Starlight, Wheel, and Tidal.
-These are preserved in `ObservedLightingEffects` and diagnostics. They do not
-enable additional lighting commands, host frames, or a physical key map.
+These are preserved in `ObservedLightingEffects` and diagnostics. The catalog
+alone does not admit a command or physical key map. Ambient Awareness and Audio
+Meter now reuse this model's already admitted frame transport; Starlight shares
+only the software twinkle algorithm and renders this model's own 96 addresses.
 Existing brightness, built-in effects, uniform Static, and logo support retain
 their earlier evidence classifications.
 
@@ -308,7 +312,9 @@ The exact-model 6×16 type never imports another model's holes, key map, or orac
 
 This admits experimental Fire and Wheel playback with saved built-in effect and
 raw-brightness restoration, fresh per-frame admission, and stop-on-ambiguity.
-It does not admit other spatial effects, a key-triggered renderer, or a physical
-key-name map. Appearance and restoration still need testing in OpenBlade on
+The same transport also admits uniform Ambient Awareness and Audio Meter, and
+shared-pattern Starlight. The first uniform frame activates custom mode; later
+frames submit six rows only. It does not admit a key-triggered renderer or a
+physical key-name map. Appearance and restoration still need testing in OpenBlade on
 this laptop. No installed components, hardware state, or sleep/resume behavior
 were changed here.

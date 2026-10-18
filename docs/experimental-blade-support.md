@@ -13,7 +13,7 @@ in progress.
 | Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, battery modes, Custom levels, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, HyperBoost with or without the cooling pad, fixed and maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed fans, keyboard and logo lighting, 50–100% charge limits |
-| Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including CPU Boost with GPU Low or High, fixed fans in Balanced and maximum fans, keyboard and logo lighting, 50–100% charge limits |
+| Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including every CPU Boost/GPU level combination and High/High, fixed fans in Balanced and maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 15 Base (Early 2020) | `RZ09-0328` | Gaming and Custom levels, single-zone keyboard lighting |
 
 Close Synapse before using these controls, or use
@@ -37,19 +37,22 @@ Battery Saver and Battery Balanced on battery power.
   Power Mode Control option is on, such as local dimming or temporary full charge.
   OpenBlade turns Maximum Fans off before leaving Custom.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
-  offers CPU Boost and High/High. The Blade 18 (2023) also offers CPU Boost
-  with GPU Low or High. Boost/Medium and High/High are not yet supported.
+  offers CPU Boost and High/High. Blade 18 (2023) offers all twelve CPU/GPU
+  combinations, including Boost/Medium and High/High, using Synapse's independent
+  level controls.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
   supported. The newer models offer brightness, built-in effects, and logo
   lighting. Static RGB on the Blade 16 (2023) and Blade 18 (2023) is one color
   across the keyboard; individual key colors are not yet supported.
   Firmware idle fade can restore the built-in effect; select Static again to repaint.
-  The Blade 16 also offers whole-keyboard Ambient Awareness and Audio Meter.
+  Blade 16 (2023) and Blade 18 (2023) also offer whole-keyboard Ambient Awareness
+  and Audio Meter.
   The Blade 15 offers random or single-color Breathing. Additional Synapse
   effects observed for the Blade 18 are recorded in diagnostics. Blade 18 also
-  offers experimental Fire and clockwise or counterclockwise Wheel. Fire repeats a short
-  recorded sample; Wheel plays a recorded cycle. Their appearance still needs
-  testing in OpenBlade on the laptop. Its other recorded effects are not yet supported.
+  offers experimental Fire, clockwise or counterclockwise Wheel, and Starlight.
+  Fire repeats a short recorded sample; Wheel plays a recorded cycle. Starlight
+  uses the shared twinkle pattern over this model's RGB cells. Reactive, Ripple
+  and Tidal are not yet supported.
 - Blade 18 (2023) offers the [default Synapse Fn shortcuts](blade18-fn-decoder.md#default-shortcuts):
   performance, refresh rate, touchpad, F1–F12, arrows and Delete. The decoder and
   actions are source-backed; behavior on the laptop still needs testing.
@@ -76,7 +79,8 @@ Battery Saver and Battery Balanced on battery power.
    [experimental support issue](https://github.com/OpenBladeProject/openblade-core/issues/741).
 
 Stay with the laptop during sleep/resume testing so you can resume it and check
-the result. Reports stay local until you share them.
+the result. Reports stay local until you share them. You do not need to test every setting
+or combination; report a specific problem if one appears.
 
 ## If controls pause
 
