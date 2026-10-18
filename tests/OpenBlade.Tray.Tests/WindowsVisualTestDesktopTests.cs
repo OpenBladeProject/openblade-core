@@ -38,13 +38,15 @@ public sealed class WindowsVisualTestDesktopTests
             string reportPath = Path.Combine(directory, "desktop report 雪.txt");
             const string environmentValue = "overridden environment with spaces 雪";
             const string argumentValue = "argument with spaces & punctuation ' 雪";
+            string parentDesktop = GetDesktopName(GetThreadDesktop(GetCurrentThreadId()));
             using var desktop = new WindowsVisualTestDesktop();
             ProcessStartInfo startInfo = CreateProbeStartInfo(
                 directory,
                 scriptPath,
                 reportPath,
                 argumentValue,
-                environmentValue);
+                environmentValue,
+                parentDesktop);
 
             using Process process = desktop.Start(startInfo);
             WaitForOwnedProcess(process);
@@ -52,7 +54,7 @@ public sealed class WindowsVisualTestDesktopTests
             string[] report = File.ReadAllLines(reportPath, Encoding.UTF8);
             Assert.Equal(5, report.Length);
             Assert.Equal(desktop.Name, report[0]);
-            Assert.False(string.IsNullOrWhiteSpace(report[1]));
+            Assert.Equal(parentDesktop, report[1]);
             Assert.NotEqual(report[1], report[0]);
             Assert.Equal(environmentValue, report[2]);
             Assert.Equal(directory, report[3]);
@@ -86,7 +88,8 @@ public sealed class WindowsVisualTestDesktopTests
                 scriptPath,
                 reportPath,
                 "replacement argument",
-                "replacement environment");
+                "replacement environment",
+                GetDesktopName(GetThreadDesktop(GetCurrentThreadId())));
             using Process process = desktop.Start(replacement);
             WaitForOwnedProcess(process);
 
@@ -117,7 +120,8 @@ public sealed class WindowsVisualTestDesktopTests
         string scriptPath,
         string reportPath,
         string argumentValue,
-        string environmentValue)
+        string environmentValue,
+        string parentDesktop)
     {
         var startInfo = new ProcessStartInfo(PowerShellPath)
         {
@@ -137,6 +141,7 @@ public sealed class WindowsVisualTestDesktopTests
             WorkingDirectory = workingDirectory,
         };
         startInfo.EnvironmentVariables["OPENBLADE_VISUAL_TEST_VALUE"] = environmentValue;
+        startInfo.EnvironmentVariables["OPENBLADE_VISUAL_TEST_PARENT_DESKTOP"] = parentDesktop;
         return startInfo;
     }
 
@@ -163,12 +168,6 @@ public sealed class WindowsVisualTestDesktopTests
                 [DllImport("user32.dll")]
                 public static extern IntPtr GetThreadDesktop(uint threadId);
 
-                [DllImport("user32.dll", SetLastError = true)]
-                public static extern IntPtr OpenInputDesktop(
-                    uint flags,
-                    bool inherit,
-                    uint desiredAccess);
-
                 [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
                 public static extern bool GetUserObjectInformationW(
                     IntPtr handle,
@@ -177,8 +176,6 @@ public sealed class WindowsVisualTestDesktopTests
                     int length,
                     out int needed);
 
-                [DllImport("user32.dll", SetLastError = true)]
-                public static extern bool CloseDesktop(IntPtr desktop);
             }
             '@
             Add-Type -TypeDefinition $native -Language CSharp
@@ -196,29 +193,16 @@ public sealed class WindowsVisualTestDesktopTests
 
             $threadDesktop = [OpenBladeDesktopProbe]::GetThreadDesktop(
                 [OpenBladeDesktopProbe]::GetCurrentThreadId())
-            $inputDesktop = [OpenBladeDesktopProbe]::OpenInputDesktop(0, $false, 1)
-            if ($inputDesktop -eq [IntPtr]::Zero) {
-                $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-                throw (New-Object ComponentModel.Win32Exception -ArgumentList $errorCode)
-            }
-            try {
-                $lines = @(
-                    (Get-DesktopName $threadDesktop),
-                    (Get-DesktopName $inputDesktop),
-                    $env:OPENBLADE_VISUAL_TEST_VALUE,
-                    (Get-Location).Path,
-                    $ObservedArgument)
-                [IO.File]::WriteAllLines(
-                    $ReportPath,
-                    $lines,
-                    (New-Object Text.UTF8Encoding($false)))
-            }
-            finally {
-                if (-not [OpenBladeDesktopProbe]::CloseDesktop($inputDesktop)) {
-                    $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-                    throw (New-Object ComponentModel.Win32Exception -ArgumentList $errorCode)
-                }
-            }
+            $lines = @(
+                (Get-DesktopName $threadDesktop),
+                $env:OPENBLADE_VISUAL_TEST_PARENT_DESKTOP,
+                $env:OPENBLADE_VISUAL_TEST_VALUE,
+                (Get-Location).Path,
+                $ObservedArgument)
+            [IO.File]::WriteAllLines(
+                $ReportPath,
+                $lines,
+                (New-Object Text.UTF8Encoding($false)))
             """,
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         return path;

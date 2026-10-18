@@ -30,6 +30,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\..\tests\OpenBlade.Testing\WindowsVisualTestDesktop.cs"
+             Link="WindowsVisualTestDesktop.cs" />
     <Compile Include="..\..\..\src\OpenBlade.Tray\LocalizationSnapshotWindowInput.cs"
              Link="LocalizationSnapshotWindowInput.cs" />
     <Compile Include="..\..\..\src\OpenBlade.Tray\LocalizationSnapshotPixelCanonicalizer.cs"

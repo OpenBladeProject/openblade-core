@@ -126,9 +126,10 @@ Tray visual smoke tests, installer UI tests, and the capture wrapper run their
 windows without displaying them on the user's screen. Rendering,
 localization, layout, and logical keyboard-focus checks still run. An isolation
 failure fails the test; it does not show a window on the user's desktop.
-Tray renderers use a private Windows desktop; installer windows are cloaked
-by the Windows compositor before they are shown. The Tray harness omits
-Explorer switcher registration on desktops without a shell.
+Tray renderers and installer UI tests use private Windows desktops. Installer
+tests keep one desktop for the testhost lifetime so real activation and keyboard
+focus stay isolated while WPF's text-services workers finish with the process.
+The Tray harness omits Explorer switcher registration on desktops without a shell.
 
 Run the checked-in capture wrapper so every WPF state gets a fresh testhost and
 cannot inherit retained render state from the preceding image:

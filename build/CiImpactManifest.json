@@ -41,8 +41,8 @@
   "testInputRules": [
     {
       "patterns": ["tests/OpenBlade.Testing/WindowsVisualTestDesktop.cs"],
-      "testProjects": ["tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj"],
-      "reason": "Tray visual tests and the snapshot wrapper share private desktop launch infrastructure."
+      "testProjects": ["tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj", "build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj"],
+      "reason": "Tray visual tests, installer UI tests, and the snapshot wrapper share private desktop infrastructure."
     },
     {
       "patterns": ["build/localization/LocalizationSnapshotFailureEvidence.cs"],
