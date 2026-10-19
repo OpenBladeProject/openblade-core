@@ -3247,7 +3247,7 @@
                                         <StackPanel x:Name="ThxAudioStackInstallation" Spacing="8"
                                                     Visibility="{x:Bind ThxViewModel.IsStackInstallationVisible, Mode=OneWay}">
                                             <TextBlock x:Uid="MainWindow_ThxAudioStackInstallationDescription"
-                                                       Text="Install the THX driver and configuration from Razer. A matching Realtek audio driver is required. Setup may interrupt playback and require a restart."
+                                                       Text="Install the matching audio drivers and THX components. Setup may interrupt playback and require a restart."
                                                        TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" />
                                             <Button x:Name="ThxAudioInstallStack" HorizontalAlignment="Left"
                                                     Content="{x:Bind ThxViewModel.InstallStackButtonLabel, Mode=OneWay}"

@@ -9,9 +9,35 @@ namespace OpenBlade.SessionAgent;
 
 internal enum ThxAudioProvisioningStep
 {
-    InstallDriverStack,
-    InstallProperties,
-    InstallSurroundConfiguration,
+    // These identifiers are durable journal data. Never renumber old steps.
+    InstallDriverStack = 0,
+    InstallProperties = 1,
+    InstallSurroundConfiguration = 2,
+    InstallBaseAudio = 3,
+}
+
+internal static class ThxAudioProvisioningSequence
+{
+    internal const int FormatVersion = 2;
+    internal static IReadOnlyList<ThxAudioProvisioningStep> Steps { get; } =
+        Array.AsReadOnly(new[]
+        {
+            ThxAudioProvisioningStep.InstallBaseAudio,
+            ThxAudioProvisioningStep.InstallDriverStack,
+            ThxAudioProvisioningStep.InstallProperties,
+            ThxAudioProvisioningStep.InstallSurroundConfiguration,
+        });
+
+    internal static IEnumerable<ThxAudioProvisioningStep> After(ThxAudioProvisioningStep? completed)
+    {
+        if (completed is null)
+        {
+            return Steps;
+        }
+        int index = Steps.ToList().IndexOf(completed.Value);
+        return index >= 0 ? Steps.Skip(index + 1)
+            : throw new InvalidDataException("Unknown THX provisioning checkpoint.");
+    }
 }
 
 internal sealed record ThxAudioProvisioningSnapshot(
@@ -30,6 +56,9 @@ internal sealed record ThxAudioProvisioningSnapshot(
     public bool ProvisioningProcessesAbsent { get; init; }
     public string ActiveProperties { get; init; } = "not-inspected";
     public string SurroundConfiguration { get; init; } = "not-inspected";
+    public bool BaseAudioReady { get; init; }
+    public string BaseAudioIdentity { get; init; } = "not-inspected";
+    public string BaseAudioTarget { get; init; } = string.Empty;
 }
 
 internal sealed record ThxAudioProvisioningProcessResult(int ExitCode, string Output);
@@ -39,7 +68,10 @@ internal sealed record ThxAudioProvisioningRecovery(
     string Profile,
     string ResultBootIdentity,
     ThxAudioProvisioningStep RestartStep,
-    ThxAudioProvisioningStep? LastCompletedStep);
+    ThxAudioProvisioningStep? LastCompletedStep)
+{
+    public string BaseAudioTarget { get; init; } = string.Empty;
+}
 
 internal interface IThxAudioProvisioningJournal : IDisposable
 {
@@ -62,6 +94,7 @@ internal interface IThxAudioProvisioningPlatform
     Task<ThxAudioProvisioningProcessResult> ExecuteAsync(
         string root,
         ThxAudioProvisioningStep step,
+        ThxAudioProvisioningSnapshot expected,
         CancellationToken cancellationToken);
 }
 
@@ -70,6 +103,7 @@ internal sealed class ThxAudioProvisioningCommand
     internal const string Argument = "--provision-thx-audio";
     private readonly IThxAudioProvisioningPlatform platform;
     private bool submissionMayHaveOccurred;
+    private string expectedBaseAudioTarget = string.Empty;
 
     internal ThxAudioProvisioningCommand()
         : this(new WindowsThxAudioProvisioningPlatform())
@@ -118,6 +152,7 @@ internal sealed class ThxAudioProvisioningCommand
                 return baseline.Installed ? ThxAudioProvisioningResult.AlreadyInstalled : baseline.Refusal;
             }
 
+            expectedBaseAudioTarget = baseline.BaseAudioTarget;
             journal.Begin(baseline, platform.ReadBootIdentity());
             return await ExecuteRemainingAsync(journal, root, null, cancellationToken).ConfigureAwait(false);
         }
@@ -126,7 +161,7 @@ internal sealed class ThxAudioProvisioningCommand
             return submissionMayHaveOccurred
                 ? ThxAudioProvisioningResult.RecoveryRequired : ThxAudioProvisioningResult.Canceled;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException
             or InvalidOperationException or Win32Exception or CryptographicException
             or JsonException or TimeoutException or HttpRequestException or ManagementException or COMException)
         {
@@ -150,6 +185,7 @@ internal sealed class ThxAudioProvisioningCommand
         }
         ThxAudioProvisioningSnapshot observed = platform.Capture(recovery.RestartStep);
         if (!string.Equals(observed.Profile, recovery.Profile, StringComparison.Ordinal)
+            || !string.Equals(observed.BaseAudioTarget, recovery.BaseAudioTarget, StringComparison.Ordinal)
             || !observed.ProvisioningProcessesAbsent)
         {
             return ThxAudioProvisioningResult.RecoveryRequired;
@@ -161,6 +197,7 @@ internal sealed class ThxAudioProvisioningCommand
                 ? observed.Refusal
                 : ThxAudioProvisioningResult.RecoveryRequired;
         }
+        expectedBaseAudioTarget = recovery.BaseAudioTarget;
         journal.Observe(recovery.RestartStep, observed);
         if (observed.Installed)
         {
@@ -177,8 +214,7 @@ internal sealed class ThxAudioProvisioningCommand
         ThxAudioProvisioningStep? completedStep,
         CancellationToken cancellationToken)
     {
-        foreach (ThxAudioProvisioningStep step in Enum.GetValues<ThxAudioProvisioningStep>()
-            .Where(step => completedStep is null || step > completedStep))
+        foreach (ThxAudioProvisioningStep step in ThxAudioProvisioningSequence.After(completedStep))
         {
             cancellationToken.ThrowIfCancellationRequested();
             ThxAudioProvisioningSnapshot before = platform.Capture(completedStep);
@@ -186,6 +222,10 @@ internal sealed class ThxAudioProvisioningCommand
             {
                 journal.Complete();
                 return ThxAudioProvisioningResult.Installed;
+            }
+            if (!string.Equals(before.BaseAudioTarget, expectedBaseAudioTarget, StringComparison.Ordinal))
+            {
+                return ThxAudioProvisioningResult.RecoveryRequired;
             }
             if (!before.Ready)
             {
@@ -198,7 +238,7 @@ internal sealed class ThxAudioProvisioningCommand
             }
             journal.Intent(step);
             submissionMayHaveOccurred = true;
-            ThxAudioProvisioningProcessResult result = await platform.ExecuteAsync(root, step, cancellationToken)
+            ThxAudioProvisioningProcessResult result = await platform.ExecuteAsync(root, step, before, cancellationToken)
                 .ConfigureAwait(false);
             journal.RecordResult(result, platform.ReadBootIdentity());
             if (result.ExitCode == (int)ThxAudioProvisioningResult.RestartRequired)
@@ -211,6 +251,10 @@ internal sealed class ThxAudioProvisioningCommand
             }
             ThxAudioProvisioningSnapshot after = platform.Capture(step);
             journal.Observe(step, after);
+            if (!string.Equals(after.BaseAudioTarget, expectedBaseAudioTarget, StringComparison.Ordinal))
+            {
+                return ThxAudioProvisioningResult.RecoveryRequired;
+            }
             if (after.Installed)
             {
                 journal.Complete();

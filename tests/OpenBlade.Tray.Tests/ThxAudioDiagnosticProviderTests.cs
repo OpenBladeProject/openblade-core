@@ -6,6 +6,43 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ThxAudioDiagnosticProviderTests
 {
     [Fact]
+    public async Task CaptureAsync_RedactsAndBoundsBaseAudioDetailWithoutExportingTarget()
+    {
+        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var response = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, "THX is absent.", null)
+        {
+            BaseAudio = new(true, false, false,
+                $"Base driver for {Environment.UserName} at {userProfile}.\r\n" + new string('x', 1200)),
+        };
+        var adapter = new StubAdapter(response);
+        ThxAudioDiagnosticReport report = await new ThxAudioDiagnosticProvider(adapter).CaptureAsync(CancellationToken.None);
+        Assert.Equal(1, adapter.DiscoverCount);
+        Assert.NotNull(report.BaseAudio);
+        Assert.True(report.BaseAudio.ExactRoot);
+        Assert.False(report.BaseAudio.Ready);
+        Assert.False(report.BaseAudio.CanInstall);
+        Assert.Equal(1024, report.BaseAudio.Detail.Length);
+        Assert.Contains("[REDACTED]", report.BaseAudio.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(Environment.UserName, report.BaseAudio.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain('\r', report.BaseAudio.Detail);
+        Assert.DoesNotContain('\n', report.BaseAudio.Detail);
+        string json = System.Text.Json.JsonSerializer.Serialize(report);
+        Assert.DoesNotContain("Target", json, StringComparison.Ordinal);
+        Assert.Null(typeof(ThxBaseAudioDiagnosticProof).GetProperty("Target"));
+    }
+
+    [Fact]
+    public async Task CaptureAsync_OmitsAbsentBaseProofFromExistingReportJson()
+    {
+        var adapter = new StubAdapter(new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Succeeded, ThxAudioAvailability.Available, null, null));
+        ThxAudioDiagnosticReport report = await new ThxAudioDiagnosticProvider(adapter).CaptureAsync(CancellationToken.None);
+        Assert.Null(report.BaseAudio);
+        Assert.DoesNotContain("BaseAudio", System.Text.Json.JsonSerializer.Serialize(report), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CaptureAsync_UsesDiscoveryOnlyAndReportsActualAdmissionFailure()
     {
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

@@ -12,6 +12,7 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
     private readonly FileStream stream;
     private bool hasIntent;
     private readonly string productId;
+    private readonly string modelNumber;
 
     internal static string Root => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -22,10 +23,12 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
     public ThxAudioProvisioningRecovery? Recovery { get; private set; }
     public string PackageDestination { get; }
 
-    internal ThxAudioProvisioningJournal(string productId)
+    internal ThxAudioProvisioningJournal(string productId, string modelNumber)
     {
         _ = ThxAudioProvisioningPackage.ForProduct(productId);
+        _ = ThxBaseAudioPackage.ForModel(modelNumber);
         this.productId = productId;
+        this.modelNumber = modelNumber;
         EnsureProtectedDirectory(Root);
         RejectReparse(JournalPath);
         stream = new FileStream(JournalPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
@@ -90,6 +93,8 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
         bool pending = false;
         string? packageDestination = null;
         string? profile = null;
+        string baseAudioTarget = string.Empty;
+        int formatVersion = 1;
         string? resultBootIdentity = null;
         int? resultExitCode = null;
         ThxAudioProvisioningStep? intentStep = null;
@@ -101,11 +106,20 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
             if (kind == "baseline")
             {
                 pending = false;
+                formatVersion = document.RootElement.TryGetProperty("formatVersion", out JsonElement format)
+                    ? format.GetInt32() : 1;
+                if (formatVersion is not (1 or ThxAudioProvisioningSequence.FormatVersion))
+                {
+                    throw new InvalidDataException("Unknown THX journal format.");
+                }
                 packageDestination = document.RootElement.TryGetProperty("packageDestination", out JsonElement destination)
                     ? destination.GetString() : null;
                 profile = document.RootElement.TryGetProperty("baseline", out JsonElement baseline)
                     && baseline.TryGetProperty("Profile", out JsonElement profileElement)
                         ? profileElement.GetString() : null;
+                baseAudioTarget = baseline.ValueKind == JsonValueKind.Object
+                    && baseline.TryGetProperty("BaseAudioTarget", out JsonElement target)
+                        ? target.GetString() ?? string.Empty : string.Empty;
                 resultBootIdentity = null;
                 resultExitCode = null;
                 intentStep = null;
@@ -114,10 +128,12 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
             else if (kind == "intent")
             {
                 pending = true;
-                intentStep = document.RootElement.TryGetProperty("step", out JsonElement stepElement)
-                    && stepElement.TryGetInt32(out int stepValue)
-                    && Enum.IsDefined(typeof(ThxAudioProvisioningStep), stepValue)
-                        ? (ThxAudioProvisioningStep)stepValue : null;
+                if (!document.RootElement.TryGetProperty("step", out JsonElement stepElement)
+                    || !stepElement.TryGetInt32(out int stepValue) || !IsKnownStep(stepValue, formatVersion))
+                {
+                    throw new InvalidDataException("Unknown THX journal intent step.");
+                }
+                intentStep = (ThxAudioProvisioningStep)stepValue;
                 resultBootIdentity = null;
                 resultExitCode = null;
             }
@@ -132,8 +148,11 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
             else if (kind == "observed")
             {
                 int stepValue = document.RootElement.GetProperty("step").GetInt32();
-                lastCompletedStep = Enum.IsDefined(typeof(ThxAudioProvisioningStep), stepValue)
-                    ? (ThxAudioProvisioningStep)stepValue : null;
+                if (!IsKnownStep(stepValue, formatVersion))
+                {
+                    throw new InvalidDataException("Unknown THX journal observed step.");
+                }
+                lastCompletedStep = (ThxAudioProvisioningStep)stepValue;
             }
             else if (kind == "complete")
             {
@@ -153,8 +172,9 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
             // A restart observation may be durable before the next process intent.
             // Retain that checkpoint; continuation still skips the submitted step
             // and independently rechecks it on a later Windows boot.
-            && (IsNextStep(lastCompletedStep, intentStep.Value) || lastCompletedStep == intentStep)
+            && (IsNextStep(lastCompletedStep, intentStep.Value, formatVersion) || lastCompletedStep == intentStep)
                 ? new(packageDestination, profile, resultBootIdentity, intentStep.Value, lastCompletedStep)
+                { BaseAudioTarget = baseAudioTarget }
                 : null;
         return new(pending, recovery);
     }
@@ -163,6 +183,7 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
         Append(new
         {
             kind = "baseline",
+            formatVersion = ThxAudioProvisioningSequence.FormatVersion,
             at = DateTimeOffset.UtcNow,
             processId = Environment.ProcessId,
             processPath = Environment.ProcessPath,
@@ -173,6 +194,23 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
 
     public void Intent(ThxAudioProvisioningStep step)
     {
+        if (step == ThxAudioProvisioningStep.InstallBaseAudio)
+        {
+            ThxBaseAudioRecipe recipe = ThxBaseAudioPackage.ForModel(modelNumber);
+            Append(new
+            {
+                kind = "intent",
+                at = DateTimeOffset.UtcNow,
+                processId = Environment.ProcessId,
+                step,
+                modelNumber,
+                recipe,
+                arguments = new[] { "/add-driver", recipe.RootInfName, "/install" },
+            });
+            hasIntent = true;
+            RequiresRecovery = true;
+            return;
+        }
         ThxAudioProvisioningArtifact artifact = ThxAudioProvisioningPackage.ForProduct(productId).Single(
             item => item.Step == step);
         Append(new
@@ -304,8 +342,19 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
         return destination;
     }
 
+    private static bool IsKnownStep(int value, int formatVersion) =>
+        Enum.IsDefined(typeof(ThxAudioProvisioningStep), value)
+        && (formatVersion != 1 || value is >= 0 and <= 2);
+
     private static bool IsNextStep(ThxAudioProvisioningStep? completed,
-        ThxAudioProvisioningStep submitted) => completed switch
+        ThxAudioProvisioningStep submitted, int formatVersion)
+    {
+        if (formatVersion == ThxAudioProvisioningSequence.FormatVersion)
+        {
+            return ThxAudioProvisioningSequence.After(completed).FirstOrDefault((ThxAudioProvisioningStep)(-1))
+                == submitted;
+        }
+        return completed switch
         {
             null => submitted == ThxAudioProvisioningStep.InstallDriverStack,
             ThxAudioProvisioningStep.InstallDriverStack =>
@@ -314,6 +363,7 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
                 submitted == ThxAudioProvisioningStep.InstallSurroundConfiguration,
             _ => false,
         };
+    }
 
     private sealed record JournalState(bool Pending, ThxAudioProvisioningRecovery? Recovery);
 

@@ -301,6 +301,7 @@ type sealed class OpenBlade.Session.SessionAgentPipeEndpoint
   property System.String PipeName { get; init; }
 type static class OpenBlade.Session.SessionAudioIpc
   field const System.Int32 MaximumApplicationProfiles = 256
+  field const System.Int32 MaximumBaseAudioDetailCharacters = 1024
   field const System.Int32 MaximumMessageBytes = 65536
   field const System.Int32 MaximumPresets = 256
   field const System.Int32 ProtocolVersion = 2
@@ -333,11 +334,13 @@ type sealed class OpenBlade.Session.SessionAudioResponse
   method OpenBlade.Session.ThxAudioAvailability get_Availability()
   method OpenBlade.Session.ThxAudioOperationStatus get_Status()
   method OpenBlade.Session.ThxAudioState get_State()
+  method OpenBlade.Session.ThxBaseAudioDiagnosticProof get_BaseAudio()
   method System.Guid get_RequestId()
   method System.Int32 get_Version()
   method System.String get_Error()
   method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.ThxAudioOperationStatus Status, out OpenBlade.Session.ThxAudioAvailability Availability, out System.String Error, out OpenBlade.Session.ThxAudioState State)
   method System.Void set_Availability(OpenBlade.Session.ThxAudioAvailability value)
+  method System.Void set_BaseAudio(OpenBlade.Session.ThxBaseAudioDiagnosticProof value)
   method System.Void set_Error(System.String value)
   method System.Void set_RequestId(System.Guid value)
   method System.Void set_State(OpenBlade.Session.ThxAudioState value)
@@ -352,6 +355,7 @@ type sealed class OpenBlade.Session.SessionAudioResponse
   property OpenBlade.Session.ThxAudioAvailability Availability { get; init; }
   property OpenBlade.Session.ThxAudioOperationStatus Status { get; init; }
   property OpenBlade.Session.ThxAudioState State { get; init; }
+  property OpenBlade.Session.ThxBaseAudioDiagnosticProof BaseAudio { get; init; }
   property System.Guid RequestId { get; init; }
   property System.Int32 Version { get; init; }
   property System.String Error { get; init; }
@@ -897,6 +901,29 @@ type sealed class OpenBlade.Session.ThxAudioState
   property System.Nullable<System.Boolean> SystemEffectsDisabled { get; init; }
   property System.String SelectedNativeProfileId { get; init; }
   property System.String SelectedPresetId { get; init; }
+type sealed class OpenBlade.Session.ThxBaseAudioDiagnosticProof
+  interface System.IEquatable<OpenBlade.Session.ThxBaseAudioDiagnosticProof>
+  ctor (System.Boolean ExactRoot, System.Boolean Ready, System.Boolean CanInstall, System.String Detail)
+  method OpenBlade.Session.ThxBaseAudioDiagnosticProof <Clone>$()
+  method System.Boolean get_CanInstall()
+  method System.Boolean get_ExactRoot()
+  method System.Boolean get_Ready()
+  method System.String get_Detail()
+  method System.Void Deconstruct(out System.Boolean ExactRoot, out System.Boolean Ready, out System.Boolean CanInstall, out System.String Detail)
+  method System.Void set_CanInstall(System.Boolean value)
+  method System.Void set_Detail(System.String value)
+  method System.Void set_ExactRoot(System.Boolean value)
+  method System.Void set_Ready(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.ThxBaseAudioDiagnosticProof left, OpenBlade.Session.ThxBaseAudioDiagnosticProof right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ThxBaseAudioDiagnosticProof left, OpenBlade.Session.ThxBaseAudioDiagnosticProof right)
+  method virtual System.Boolean Equals(OpenBlade.Session.ThxBaseAudioDiagnosticProof other)
+  property System.Boolean CanInstall { get; init; }
+  property System.Boolean ExactRoot { get; init; }
+  property System.Boolean Ready { get; init; }
+  property System.String Detail { get; init; }
 type sealed class OpenBlade.Session.ThxForegroundObservation
   interface System.IEquatable<OpenBlade.Session.ThxForegroundObservation>
   ctor (System.String ExecutableName, System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint = null)

@@ -21,8 +21,9 @@ curves, but have not been physically tested in OpenBlade.
 OpenBlade can download the supported THX client from Razer. On RZ09-0581,
 RZ09-0528 and RZ09-0530, it can also perform an experimental fresh installation
 of the matching THX driver, service and configuration without Synapse installed.
-The base audio drivers must already be installed: Realtek on RZ09-0528/RZ09-0530,
-or Intel SST and Windows inbox SDCA on RZ09-0581. RZ09-0581 setup
+Setup verifies the base audio bindings and can install the reviewed Realtek
+package on RZ09-0528/RZ09-0530 or Intel SST on RZ09-0581 from Microsoft Update.
+Windows inbox SDCA remains an OS prerequisite on RZ09-0581. RZ09-0581 setup
 uses the original signed 4.2.37.1621 installer recovered from the Windows cache
 and separately hosted by the driver catalog with owner-confirmed redistribution
 permission. Existing admitted stacks are retained. Pristine installation and
@@ -34,8 +35,8 @@ for the package and codec restrictions.
 
 | Model | Installed THX controls | Fresh THX setup |
 | --- | --- | --- |
-| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Experimental cached 4.2.37.1621 setup; Windows SDCA and matching Intel SST required |
-| RZ09-0528, RZ09-0530 | rznb11 spatial audio, EQ and application profiles | Experimental, matching Realtek driver required |
+| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Experimental cached 4.2.37.1621 setup with reviewed Intel SST prerequisites; Windows SDCA required |
+| RZ09-0528, RZ09-0530 | rznb11 spatial audio, EQ and application profiles | Experimental, including the reviewed Realtek base driver when needed |
 | RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed THX 2.6.5.0 service | Endpoint binding and installation sequence remain unverified |
 | RZ09-0328 | Factory audio uses Dolby Atmos; THX does not apply | Not applicable |
 
@@ -161,17 +162,20 @@ native client or changing audio settings.
 
 ## Install missing THX audio components
 
-On RZ09-0528 or RZ09-0530, select **Install THX audio** after a component check
-fails. OpenBlade verifies the client download for the current user, then asks for
-administrator permission to install the matching rznb11 driver and configuration
-from Razer. Setup may interrupt playback and may require a Windows restart.
-It does not install Synapse or change the selected THX effects or presets through
-the audio-control API.
+On RZ09-0581, RZ09-0528 or RZ09-0530, select **Install THX audio** after a
+component check fails. OpenBlade verifies the client download, then asks for
+administrator permission to install the matching audio prerequisites, THX driver
+and configuration. It obtains base drivers from Microsoft Update and THX packages
+from Razer or the authorized catalog asset. Setup may interrupt playback and
+require a Windows restart. Synapse does not need to be installed.
 
-This setup path is for a fresh THX installation with the exact supported codec
-and the matching base audio drivers described above. Connect AC power and close
-Synapse and
-THX Spatial Audio first. OpenBlade refuses to replace or repair an existing,
+This path requires an exact supported audio controller and a fresh THX state.
+A recognized working base driver is retained. An unrecognized installed base
+build is preserved and blocks setup; export diagnostics for help. RZ09-0581 also
+requires trusted Windows inbox SDCA audio components. OpenBlade checks these OS
+components instead of copying or replacing them.
+
+Connect AC power and close Synapse and THX Spatial Audio first. OpenBlade refuses to replace or repair an existing,
 partial or mismatched THX stack. The pristine-state requirement prevents the
 vendor installer and configuration updaters from overwriting existing THX user
 settings. It is an installation safeguard, not a prerequisite for ordinary THX
@@ -187,16 +191,20 @@ an uncertain operation. It does not restart Windows automatically or remove
 packages as an automatic rollback.
 
 The helper accepts one fixed operation from the installed Session Agent. It
-checks the exact host in both registry sources, USB and codec identity, current
-session, AC power and competing controllers. Downloads have pinned sizes,
-SHA-256 and THX Authenticode signer identities. Files remain locked through
-verification and process execution in a protected staging directory. Every
-vendor process is preceded by a flushed transaction intent. Success requires
-independent driver hashes, Windows catalog trust and membership, immutable
-configuration hashes, and the running service's exact path; a vendor exit code
-alone is insufficient.
+checks the exact host in both registry sources, USB and controller identity,
+current session, AC power and competing controllers. It checks every device that
+the complete root INF could match, so another matching controller cannot become
+an incidental installation target. Downloads have pinned sizes and SHA-256;
+driver files additionally require Windows catalog trust and membership, while
+THX executables require the pinned Authenticode signer. Files remain locked in
+protected staging through verification and process execution. Each process has a
+flushed transaction intent. Base setup uses one named root INF and its declared
+CopyINF closure, followed by independent actual binding and codec ancestry checks.
+Success also requires the THX package and configuration hashes and running
+service's exact path; an installer exit code alone is insufficient.
 
-The base rznb11 installer runs with the vendor's `/s /norestart` arguments. The
+The rznb11 carrier manifest records `/s /norestart`; OpenBlade instead extracts
+its independently pinned inner Burn bundle and runs only `/quiet /norestart`. The
 properties and surround configuration updaters take no arguments, deploy fixed
 outputs and restart their THX service; their ignored service-command results are
 checked independently. This source-backed sequence has simulated failure tests

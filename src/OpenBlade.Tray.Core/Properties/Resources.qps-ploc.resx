@@ -1729,4 +1729,7 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="THX audio installation failed before changes were submitted." xml:space="preserve">
     <value>[!! THX áúdíó ínstállátíón fáíléd béfóré chángés wéré súbmíttéd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót vérífý thé básé áúdíó drívérs. Éxpórt díágnóstícs fór hélp. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

@@ -2264,7 +2264,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Download the THX component from Razer. The THX audio driver must already be installed.</value>
   </data>
   <data name="MainWindow_ThxAudioStackInstallationDescription.Text" xml:space="preserve">
-    <value>Install the THX driver and configuration from Razer. A matching Realtek audio driver is required. Setup may interrupt playback and require a restart.</value>
+    <value>Install the matching audio drivers and THX components. Setup may interrupt playback and require a restart.</value>
   </data>
   <data name="MainWindow_ThxAudioLegacyEqualizerLimit.Text" xml:space="preserve">
     <value>Only spatial audio control is available for this THX version.</value>

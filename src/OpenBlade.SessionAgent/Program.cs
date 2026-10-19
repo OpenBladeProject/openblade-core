@@ -215,7 +215,8 @@ internal static class Program
                 await using var audioWorker = new ThxAudioHelperProcessClient();
                 var audioDispatcher = new SessionAudioRequestDispatcher(
                     new WindowsThxAudioAdmissionSource(),
-                    audioWorker);
+                    audioWorker,
+                    SessionAudioRequestDispatcher.CaptureBaseAudioForDiagnostics);
                 await using var audioServer = new SessionAudioPipeServer(
                     acquiredAudioOwner,
                     audioDispatcher);

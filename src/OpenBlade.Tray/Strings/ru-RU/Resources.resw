@@ -2264,7 +2264,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Скачайте компонент THX с сайта Razer. Аудиодрайвер THX должен быть уже установлен.</value>
   </data>
   <data name="MainWindow_ThxAudioStackInstallationDescription.Text" xml:space="preserve">
-    <value>Установите драйвер и конфигурацию THX с серверов Razer. Нужен подходящий аудиодрайвер Realtek. Установка может временно прервать звук и потребовать перезагрузки.</value>
+    <value>Установите подходящие аудиодрайверы и компоненты THX. Установка может прервать воспроизведение звука и потребовать перезагрузки Windows.</value>
   </data>
   <data name="MainWindow_ThxAudioLegacyEqualizerLimit.Text" xml:space="preserve">
     <value>Для этой версии THX пока доступно только управление пространственным звуком.</value>

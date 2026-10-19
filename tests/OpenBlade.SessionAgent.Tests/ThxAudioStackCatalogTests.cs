@@ -121,6 +121,67 @@ public sealed class ThxAudioStackCatalogTests
         }
     }
 
+    [Theory]
+    [InlineData("RZ09-0581", "intel")]
+    [InlineData("RZ09-0528", "realtek")]
+    [InlineData("RZ09-0530", "realtek")]
+    public void BaseAudioRecipeMatchesEveryCatalogMemberAndRootMatch(string model, string family)
+    {
+        using JsonDocument document = Read("ThxBaseAudioPrerequisitesCatalog.json");
+        JsonElement evidence = document.RootElement.GetProperty(family);
+        ThxBaseAudioRecipe recipe = ThxBaseAudioPackage.ForModel(model);
+        JsonElement source = evidence.GetProperty("source");
+        Assert.Equal(Text(source, "downloadUrl"), recipe.Source.AbsoluteUri);
+        Assert.Equal(source.GetProperty("cabSize").GetInt64(), recipe.Length);
+        Assert.Equal(Text(source, "cabSha256"), recipe.Sha256);
+        Assert.Equal(Text(evidence, family == "intel" ? "root" : "inf"), recipe.RootInfName);
+        Assert.Equal(evidence.GetProperty("rootHardwareIds").EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.Ordinal),
+            recipe.RootHardwareIds.Order(StringComparer.Ordinal));
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string Pin(JsonElement file) => Text(file, "path") + "|" + file.GetProperty("size").GetInt64() + "|" + Text(file, "sha256");
+        if (family == "intel")
+        {
+            JsonElement[] packages = evidence.GetProperty("packages").EnumerateArray().ToArray();
+            Assert.Equal(packages.Length, recipe.Packages.Count);
+            Assert.Equal(packages.Length, recipe.Catalogs.Count);
+            foreach (JsonElement package in packages)
+            {
+                JsonElement catalog = package.GetProperty("catalog");
+                string catalogName = Text(catalog, "file");
+                JsonElement[] members = package.GetProperty("files").EnumerateArray().ToArray();
+                ThxBaseAudioDriverPackage runtime = recipe.Packages.Single(value => value.InfName == Text(package, "inf"));
+                Assert.Equal(catalogName, runtime.CatalogFile);
+                Assert.Equal(members.Select(file => Text(file, "path")).Append(catalogName).Order(StringComparer.Ordinal),
+                    runtime.Files.Select(file => file.Name).Order(StringComparer.Ordinal));
+                Assert.Equal(members.Select(file => Text(file, "path")).Order(StringComparer.Ordinal),
+                    recipe.Catalogs.Single(value => value.FileName == catalogName).Members.Order(StringComparer.Ordinal));
+                files[catalogName] = catalogName + "|" + catalog.GetProperty("size").GetInt64() + "|" + Text(catalog, "sha256");
+                foreach (JsonElement file in members)
+                {
+                    string path = Text(file, "path");
+                    if (files.TryGetValue(path, out string? previous))
+                    {
+                        Assert.Equal(previous, Pin(file));
+                    }
+                    files[path] = Pin(file);
+                }
+            }
+        }
+        else
+        {
+            foreach (JsonElement file in evidence.GetProperty("files").EnumerateArray())
+            {
+                files.Add(Text(file, "path"), Pin(file));
+            }
+            ThxBaseAudioCatalog catalog = Assert.Single(recipe.Catalogs);
+            Assert.Equal(Text(evidence.GetProperty("catalog"), "file"), catalog.FileName);
+            Assert.Equal(files.Keys.Where(name => name != catalog.FileName).Order(StringComparer.Ordinal),
+                catalog.Members.Order(StringComparer.Ordinal));
+            Assert.Equal(recipe.Files, Assert.Single(recipe.Packages).Files);
+        }
+        Assert.Equal(files.Values.Order(StringComparer.Ordinal),
+            recipe.Files.Select(file => file.Name + "|" + file.Length + "|" + file.Sha256).Order(StringComparer.Ordinal));
+    }
     private static void AssertStackPins(ThxAudioDriverStack stack, JsonElement catalog)
     {
         Assert.Equal(stack.ServiceName, Text(catalog.GetProperty("stack"), "serviceName"));

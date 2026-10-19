@@ -51,6 +51,7 @@ public sealed class ThxAudioStackInstallationTests
     [InlineData(ThxAudioProvisioningResult.RecoveryRequired)]
     [InlineData(ThxAudioProvisioningResult.RestartRequired)]
     [InlineData(ThxAudioProvisioningResult.ExistingInstallation)]
+    [InlineData(ThxAudioProvisioningResult.BaseAudioUnverified)]
     public async Task SetupThatCannotSafelyRepeatStaysPausedAfterExplicitRead(ThxAudioProvisioningResult result)
     {
         int installs = 0;

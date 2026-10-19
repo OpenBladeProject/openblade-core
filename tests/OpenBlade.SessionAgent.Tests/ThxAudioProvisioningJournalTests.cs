@@ -8,7 +8,7 @@ public sealed class ThxAudioProvisioningJournalTests
     [InlineData("{\"kind\":\"baseline\"}\n", false)]
     [InlineData("{\"kind\":\"intent\"}\n", true)]
     [InlineData("{\"kind\":\"intent\"}\n{\"kind\":\"native-result\"}\n", true)]
-    [InlineData("{\"kind\":\"intent\"}\n{\"kind\":\"complete\"}\n", false)]
+    [InlineData("{\"kind\":\"intent\",\"step\":0}\n{\"kind\":\"complete\"}\n", false)]
     public void OnlyConfirmedCompletionClearsIntent(string json, bool pending)
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
@@ -74,4 +74,62 @@ public sealed class ThxAudioProvisioningJournalTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
         Assert.Null(ThxAudioProvisioningJournal.ReadRecovery(stream));
     }
+    [Theory]
+    [InlineData("observed", "999")]
+    [InlineData("observed", "-1")]
+    [InlineData("intent", "999")]
+    [InlineData("intent", "null")]
+    public void InvalidCheckpointCannotResetTheSequenceOrPermitRestartContinuation(string kind, string step)
+    {
+        string records = $$$"""
+            {"kind":"baseline","formatVersion":2,"packageDestination":"protected-package","baseline":{"Profile":"model/recipe-v2","BaseAudioTarget":"root-a"}}
+            {"kind":"intent","step":3}
+            {"kind":"native-result","bootIdentity":"boot-a","result":{"ExitCode":3010}}
+            {"kind":"{{{kind}}}","step":{{{step}}}}
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(records));
+        Assert.True(ThxAudioProvisioningJournal.HasUnfinishedTransaction(stream));
+        stream.Position = 0;
+        Assert.Null(ThxAudioProvisioningJournal.ReadRecovery(stream));
+    }
+    [Fact]
+    public void NewBaseCheckpointRequiresVersionedJournalWithoutRenumberingOldSteps()
+    {
+        Assert.Equal(0, (int)ThxAudioProvisioningStep.InstallDriverStack);
+        Assert.Equal(1, (int)ThxAudioProvisioningStep.InstallProperties);
+        Assert.Equal(2, (int)ThxAudioProvisioningStep.InstallSurroundConfiguration);
+        Assert.Equal(3, (int)ThxAudioProvisioningStep.InstallBaseAudio);
+        string records = """
+            {"kind":"baseline","formatVersion":2,"packageDestination":"protected-package","baseline":{"Profile":"model/recipe-v2","BaseAudioTarget":"root-a"}}
+            {"kind":"intent","step":3}
+            {"kind":"native-result","bootIdentity":"boot-a","result":{"ExitCode":3010}}
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(records));
+        ThxAudioProvisioningRecovery recovered = Assert.IsType<ThxAudioProvisioningRecovery>(
+            ThxAudioProvisioningJournal.ReadRecovery(stream));
+        Assert.Equal(ThxAudioProvisioningStep.InstallBaseAudio, recovered.RestartStep);
+        Assert.Equal("root-a", recovered.BaseAudioTarget);
+        using var legacy = new MemoryStream(Encoding.UTF8.GetBytes(
+            records.Replace("\"formatVersion\":2,", string.Empty, StringComparison.Ordinal)));
+        Assert.Null(ThxAudioProvisioningJournal.ReadRecovery(legacy));
+    }
+
+    [Fact]
+    public void VersionedSequenceCannotSkipBaseCheckpoint()
+    {
+        string records = """
+            {"kind":"baseline","formatVersion":2,"packageDestination":"protected-package","baseline":{"Profile":"model/recipe-v2","BaseAudioTarget":"root-a"}}
+            {"kind":"intent","step":0}
+            {"kind":"native-result","bootIdentity":"boot-a","result":{"ExitCode":3010}}
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(records));
+        Assert.Null(ThxAudioProvisioningJournal.ReadRecovery(stream));
+        string withBase = records.Replace("{\"kind\":\"intent\",\"step\":0}",
+            "{\"kind\":\"observed\",\"step\":3}\n{\"kind\":\"intent\",\"step\":0}", StringComparison.Ordinal);
+        using var ordered = new MemoryStream(Encoding.UTF8.GetBytes(withBase));
+        ThxAudioProvisioningRecovery recovered = Assert.IsType<ThxAudioProvisioningRecovery>(
+            ThxAudioProvisioningJournal.ReadRecovery(ordered));
+        Assert.Equal(ThxAudioProvisioningStep.InstallDriverStack, recovered.RestartStep);
+    }
+
 }

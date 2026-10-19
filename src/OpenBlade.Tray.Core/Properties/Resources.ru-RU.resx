@@ -1639,4 +1639,7 @@
   <data name="THX audio installation failed before changes were submitted." xml:space="preserve">
     <value>Не удалось начать установку компонентов THX. Изменения системы не выполнялись.</value>
   </data>
+  <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
+    <value>Не удалось проверить базовые аудиодрайверы. Экспортируйте данные диагностики, чтобы получить помощь.</value>
+  </data>
 </root>

@@ -319,7 +319,8 @@ public sealed partial class ThxAudioViewModel(
             state = null;
             isReadSettingsVisible = true;
             stackInstallationPaused = result is ThxAudioProvisioningResult.RecoveryRequired
-                or ThxAudioProvisioningResult.RestartRequired or ThxAudioProvisioningResult.ExistingInstallation;
+                or ThxAudioProvisioningResult.RestartRequired or ThxAudioProvisioningResult.ExistingInstallation
+                or ThxAudioProvisioningResult.BaseAudioUnverified;
             stackInstallationNeeded = result is not (ThxAudioProvisioningResult.Installed
                 or ThxAudioProvisioningResult.AlreadyInstalled or ThxAudioProvisioningResult.SourceUnavailable);
             statusKey = result switch
@@ -330,6 +331,8 @@ public sealed partial class ThxAudioViewModel(
                     "OpenBlade cannot install THX audio on this model yet.",
                 ThxAudioProvisioningResult.ExistingInstallation =>
                     "THX components are already present. OpenBlade cannot replace or repair them. Export diagnostics for help.",
+                ThxAudioProvisioningResult.BaseAudioUnverified =>
+                    "OpenBlade could not verify the base audio drivers. Export diagnostics for help.",
                 ThxAudioProvisioningResult.RestartRequired =>
                     "Restart Windows, then select Install THX audio to finish the remaining setup steps.",
                 ThxAudioProvisioningResult.RecoveryRequired =>

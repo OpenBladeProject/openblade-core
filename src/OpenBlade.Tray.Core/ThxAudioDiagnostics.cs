@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -12,7 +13,11 @@ public sealed record ThxAudioDiagnosticReport(
     ThxAudioDiagnosticCaptureStatus CaptureStatus,
     ThxAudioOperationStatus? OperationStatus,
     ThxAudioAvailability? Availability,
-    string? Error);
+    string? Error)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ThxBaseAudioDiagnosticProof? BaseAudio { get; init; }
+}
 
 public interface IThxAudioDiagnosticProvider
 {
@@ -38,7 +43,12 @@ public sealed class ThxAudioDiagnosticProvider(IThxAudioAdapter adapter)
                 ThxAudioDiagnosticCaptureStatus.Succeeded,
                 response.Status,
                 response.Availability,
-                SanitizeError(response.Error));
+                SanitizeError(response.Error))
+            {
+                BaseAudio = response.BaseAudio is { } proof
+                    ? proof with { Detail = SanitizeError(proof.Detail) ?? "No base-audio explanation was returned." }
+                    : null,
+            };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

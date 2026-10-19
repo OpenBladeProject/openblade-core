@@ -1,0 +1,744 @@
+{
+  "$schema": "../../schemas/thx-base-audio-prerequisites.schema.json",
+  "manifestType": "OpenBlade.ThxBaseAudioPrerequisites",
+  "schemaVersion": 1,
+  "status": {
+    "evidence": "SourceVerified",
+    "installation": "InstallationUnvalidated",
+    "provisioningImplemented": false
+  },
+  "intel": {
+    "models": [
+      "RZ09-0581"
+    ],
+    "source": {
+      "updateId": "04ff47e5-1b36-42e9-bc4a-af4954a217be",
+      "detailUrl": "https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=04ff47e5-1b36-42e9-bc4a-af4954a217be",
+      "downloadUrl": "https://catalog.s.download.windowsupdate.com/d/msdownload/update/driver/drvs/2026/02/6980ba42-6b23-4156-8c81-ab8ec2466d12_7f51f5eabbc0ee293e12ac3c2980a64d2d994651.cab",
+      "cabSize": 33406870,
+      "cabSha256": "BC77F3E1371C05BFE4EE68E70E4BE6A06F352143043FF0195FF92F23B8B6CDF3"
+    },
+    "rootHardwareIds": [
+      "PCI\\VEN_8086&DEV_E328&CC_0401",
+      "PCI\\VEN_8086&DEV_E328&CC_040380",
+      "PCI\\VEN_8086&DEV_E428&CC_0401",
+      "PCI\\VEN_8086&DEV_E428&CC_040380",
+      "PCI\\VEN_8086&DEV_4D28&CC_0401",
+      "PCI\\VEN_8086&DEV_4D28&CC_040380"
+    ],
+    "catalogHardwareIds": [
+      "INTELAUDIO\\DIF_0005&UIF_0000&SDW_CTLR_DEV_E328&VEN_8086&DEV_0333",
+      "INTELAUDIO\\SDW_CTLR_DEV_E328&VEN_8086&DEV_0333"
+    ],
+    "exactObservedChain": [
+      "PCI\\VEN_8086&DEV_E328&SUBSYS_30101A58&REV_00",
+      "INTELAUDIO\\DSP_CTLR_DEV_E328&VEN_8086&DEV_0222&SUBSYS_30101A58&REV_0000",
+      "INTELAUDIO\\SDW_CTLR_DEV_E328&VEN_8086&DEV_0333&SUBSYS_30101A58"
+    ],
+    "activePublishedInfBindings": [
+      "IntcAudioBus.inf=20.43.12634.0",
+      "IntcOED.inf=20.43.12634.0",
+      "IntcSdwBus.inf=20.43.12634.0"
+    ],
+    "activeInfByteMatchesOfficialCab": true,
+    "root": "IntcAudioBus.inf",
+    "copyInf": [
+      "IntcOED.inf",
+      "IntcSdwBus.inf",
+      "IntcUSB.inf",
+      "IntcBTAu.inf",
+      "IntcDMic.inf",
+      "IntcSST.inf",
+      "DetectionVerificationDrv.inf",
+      "IntcSSDW.inf",
+      "IntcSBtLe.inf"
+    ],
+    "packages": [
+      {
+        "inf": "IntcAudioBus.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcAudioBus.cat",
+          "size": 31999,
+          "sha256": "364B804D4AB699BA633097300B7E1D49C840B24F558637E2FA3D7E15F4B225E6",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcAudioBus.inf",
+            "size": 31854,
+            "sha256": "F5B56910FE18060C327782E47516864DF8A01FAED92F8A6536A051DCD342CB43",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcAudioBus.sys",
+            "size": 366048,
+            "sha256": "6B868FEA974FC806E35BBDB8C5CF21B70EA46764CDF0D811A6BDABA0D70ABD6C",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "IntcOED.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcOED.cat",
+          "size": 57872,
+          "sha256": "C4EDCDBC98004E2D44D2B168518D2828B8A8F7AA8CEEA8A3EB60AB9902C73046",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcOED.inf",
+            "size": 69302,
+            "sha256": "7C0CB7B335F022B038C07CB40342A97D9BC46EBAF53DD5AADC406F8430384368",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcOED.sys",
+            "size": 1528800,
+            "sha256": "061FCF9AA69D1405D546B29D03818AC75DF86A4D3FBB808D3C9EC6D41E89AC34",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Topology\\IntcOEDTopology.oec",
+            "size": 58449,
+            "sha256": "F5533FB888AAAEAD38809934C28FA462A2FD754C3154A7775B15FE6C710A7CC9",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Topology\\IntcOEDTopology.xml",
+            "size": 47504,
+            "sha256": "823EE148393CDC5493DE6B4399E8A49B533D16192F5B7295E01C812F8C406A80",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Fw\\dsp_fw_release.bin",
+            "size": 788656,
+            "sha256": "B998304636A4EC545AB4A724168A5FEA9FA46713213D63AFBD2928577E2ED3FA",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Libs\\dsp_lib_intel_wov_release.bin",
+            "size": 102524,
+            "sha256": "313C4E0D9CF99A1A070569483E30C3EA644F37FD28BED16E0D81E153ED09EB67",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Libs\\dsp_lib_whm_release.bin",
+            "size": 114816,
+            "sha256": "7EDB2A2CD9DBE84DDEBB7E2E0FAE045D398FC33BA9AB2AF6AE563082A99E3869",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Libs\\dsp_lib_nld_release.bin",
+            "size": 57428,
+            "sha256": "032B5C4989C3D0E22FA80B5CBB07957735BFDD8437F26994C59DCF9A8BE59E74",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Libs\\dsp_lib_asrc_release.bin",
+            "size": 73836,
+            "sha256": "CE64AF0534B333E167FD19C653A38C21CD5E520103D6A5C143393E501D3ECD9B",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Libs\\dsp_lib_psns48k_release.bin",
+            "size": 217196,
+            "sha256": "066318276A9AB10259B1AD21696750F64AC12777D9F744E219BE4D2DB60B9C08",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Libs\\dsp_lib_psns96k_release.bin",
+            "size": 237676,
+            "sha256": "B4618ABE4398E92A3585B3A5EDCBB6F66403EED3E07F1C57DC1615BF2126C728",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Libs\\dsp_lib_intel_aca_release.bin",
+            "size": 340052,
+            "sha256": "53AFBBEA2534A8D9F25FA13258FCA1D0141B3091BFACB8E74104F6225D94F1B4",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\intelwov_data_manifest.txt",
+            "size": 10,
+            "sha256": "11398CC424F4E41F39900E6E4F86DA75030D2556FB782C32BFF81E4CF9813C04",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\model_metadata_PTL.xml",
+            "size": 2569,
+            "sha256": "DC276EB1C540D395C3E7F01BC74CF1CC2CE0B7D82EA4390EEC81236655D1DF3B",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\WoV_Externals_PTL_IntelWoV_3.1.242.0_405.txt",
+            "size": 51,
+            "sha256": "148CFFAE752D9113942084EBD73C4A2F45C84FE2CE10B4DC74CD698939D522AF",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Ms\\m\\en-US\\ms_en-US_ex.eth",
+            "size": 5,
+            "sha256": "37A59654C915A7BC76C681A19E69F102A7B09BEDD35987AF033A343ACF69606C",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Ms\\m\\en-US\\ms_en-US_ex.hsc",
+            "size": 3721612,
+            "sha256": "4FB9C2C75CE3BA49DECE62B004EC6291826C188C4D0DCCB10BA05605AD93FA9D",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Ms\\m\\en-US\\ms_en-US_ex.th",
+            "size": 5,
+            "sha256": "11A68BE99E8C26AABC0B8F35727CF647AAC798A6F3BECCDE0350B0B7D8A344F8",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Ms\\m\\en-US\\ms_en-US_hq.gna",
+            "size": 142300,
+            "sha256": "1C7F3F684EF5BDD5DF3F9D1F43FE99F2977892190A63829F4260110F2EEAA76E",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Service\\MultiChannelWoV.dll",
+            "size": 847840,
+            "sha256": "CD946037EC7FE158225CEDD1475487B3E5624B29B675F0C641459FA9AE961989",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Service\\MultichannelWoVCfg.dll",
+            "size": 296416,
+            "sha256": "48AC6286BA72DE785FF322D295900D053A1276BFA387FC558843E53E4E180EDB",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Tencent\\m\\zh-CN\\tencent_zh-CN_ex.eth",
+            "size": 4,
+            "sha256": "B720401FC5F0A1962C830B14132F12C2B376F2CCA823B2EFBAF226167720251E",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Tencent\\m\\zh-CN\\tencent_zh-CN_ex.hsc",
+            "size": 894326,
+            "sha256": "18348C63A18D880DEA0165907CDB4C387F323D0E5D2DA0E103B2E67D3D3514BA",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Tencent\\m\\zh-CN\\tencent_zh-CN_ex.th",
+            "size": 4,
+            "sha256": "B720401FC5F0A1962C830B14132F12C2B376F2CCA823B2EFBAF226167720251E",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Tencent\\m\\zh-CN\\tencent_zh-CN_hq.gna",
+            "size": 139996,
+            "sha256": "A26F7A8FE12B102A07261173D49F5EC6288885389FC417B6DB6FA0BD7E8DD408",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Xiaomi\\m\\zh-CN\\xiaomi_zh-CN_ex.eth",
+            "size": 2,
+            "sha256": "4A44DC15364204A80FE80E9039455CC1608281820FE2B24F1E5233ADE6AF1DD5",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Xiaomi\\m\\zh-CN\\xiaomi_zh-CN_ex.hsc",
+            "size": 1929454,
+            "sha256": "FD9B44B517BC557BA99607DE0472FE975ED1B16D7A1B983877212DC1C8372C52",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Xiaomi\\m\\zh-CN\\xiaomi_zh-CN_ex.th",
+            "size": 2,
+            "sha256": "F5CA38F748A1D6EAF726B8A42FB575C3C71F1864A8143301782DE13DA2D9202B",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WoV\\Xiaomi\\m\\zh-CN\\xiaomi_zh-CN_hq.gna",
+            "size": 141916,
+            "sha256": "9B0CBD9D329DE650123CC0C5C4001205D4B552FAC57E51F5C4DB35494B224A98",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "AS\\DLLs\\IntelDetectorCom.dll",
+            "size": 208864,
+            "sha256": "CBBD97C59042AE894773C94C45C439BBF2A2E179CDE8E5766D8E32637795B567",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "AS\\IAS\\ControlModule.dll",
+            "size": 420320,
+            "sha256": "94F4A43273377703FF6B300B899D500FE9AF45FD0030DF3D4B2276215E5FBB3E",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "AS\\IAS\\IntelAudioService.exe",
+            "size": 368608,
+            "sha256": "5E8FEF540D61AE92631F94F3BD16D1189875EF61CCCB0DDB79C2BCD49C5F0C66",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "AS\\IAS\\IntelAudioService.exe.config",
+            "size": 160,
+            "sha256": "1EA376332392D6D7339302ADCF3689455CC5610E3DEF6CEB6CB4579A9E9DF45D",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "AS\\IAS\\NativeApiAdapter.dll",
+            "size": 130528,
+            "sha256": "C7F6D370E1598A8DAF17885E6008A22D359BBA3DFBA842B5AB465922DBF4CE2C",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "AS\\IAS\\RpcServer.dll",
+            "size": 179680,
+            "sha256": "E3106E7E46A3B01534717ADC20FCC16DEC71CC9F2DE0C9A7A177A8A9A09084B4",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "AS\\IAS\\WppLoggerDll.dll",
+            "size": 499680,
+            "sha256": "48F3ECFEDE21C570DFE715B300103ECCD76C039D7CBADD6B702130AC2F4CA3EF",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "IntcSdwBus.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcSdwBus.cat",
+          "size": 34572,
+          "sha256": "72C2D00F0C681020CD3EF7284DCB3FB04A622981DCC906EE82AFCB324FDB2394",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcSdwBus.inf",
+            "size": 25330,
+            "sha256": "2E99D9BF3C0402937378DB6CAE686EAD9D4B3D9AA287B9B9AB41D736B4354438",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcSdwBus.sys",
+            "size": 666080,
+            "sha256": "16D791A90658D969F9C6D0CEC8F59B2A0B59F3109BAFBE84AFC7EBE9D1AC5785",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "IntcUSB.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcUSB.cat",
+          "size": 37428,
+          "sha256": "B94E81E2DAC4DB635928FFA7217387A73A1F380C4FCFF8630E1016A8A584C05A",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcUSB.inf",
+            "size": 123836,
+            "sha256": "00A6351DE0BD17DF7157A31E0EE68609567B868B241D739EF5F888B55AC8DFFC",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcUSB.sys",
+            "size": 987616,
+            "sha256": "E2275C5504C0D57428D0CA1BEF43B30E5F12A0023C5A8850DAC579EA36148918",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "IntcBTAu.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcBTAu.cat",
+          "size": 37220,
+          "sha256": "1100FDA6B6F17A0243BE78CC0B4DC2BD5F2820583C7AA27E00F4627405C652C6",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcBTAu.inf",
+            "size": 123636,
+            "sha256": "FA05EBFCE85ABB68AACBD4DDF1B65FF950314B14ED0DBE066D98CC1697A209E6",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcBTAu.sys",
+            "size": 964064,
+            "sha256": "BD4E6DB219DFC829838A30AEDC2681C4C637E75D8525D5C4FD0AAE62E99592C4",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "IntcDMic.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcDMic.cat",
+          "size": 36179,
+          "sha256": "A2BD949DBA336C65410D06D555A126FD720472EA3D6332ED6522B1C3C7D9A598",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcDMic.inf",
+            "size": 109706,
+            "sha256": "DA123CBF4725E8A64DA12DD08CE0353C804112B483CA6D8B544A4D3181B1697B",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcDMic.sys",
+            "size": 846816,
+            "sha256": "69C4BCC07E9E96E3BC1A9FF559D7BD1E759F4AE27B642DEEFF2640CDF6AFE069",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "IntcSST.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcSST.cat",
+          "size": 36816,
+          "sha256": "CA17E12E1AFF1FAD693B79A8C0F750F8AB71CA517BB4445DBCD60E83401216B5",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcSST.inf",
+            "size": 201386,
+            "sha256": "0B2AC3BD44888F58FF3F8891D30B68C14A3B98C7C730F5CA41D0ECA9ECD4DE93",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcSST.sys",
+            "size": 913888,
+            "sha256": "3AE187DBCF59187788F5D20EFF4B213E406DED3A00939D6C31CF0619CC096BCF",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "DetectionVerificationDrv.inf",
+        "driverVer": "02/12/2026,01.00.4139.00",
+        "catalog": {
+          "file": "DetectionVerificationDrv.cat",
+          "size": 33851,
+          "sha256": "34F3AEE85C8C20D0B2A0F427FDA0FE71E366802EB7B649335683842FCE639587",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "DetectionVerificationDrv.inf",
+            "size": 24922,
+            "sha256": "54F01D6E8F9434736901722945A9172B122F8AE7755E8C7BC2B339B658B0E49F",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "tbb12.dll",
+            "size": 1077216,
+            "sha256": "F8883D8D4FD07D9545F629B4457D89E93B5A0316CF1D7D998855BBFF4FA51841",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "DetectionVerificationDrv.dll",
+            "size": 1065440,
+            "sha256": "DD837B3F32285B593AD7BF3AA79D939F03FDA27EAA3550250FF7102A0E480006",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "MultiChannelWoV.dll",
+            "size": 847840,
+            "sha256": "B1C9DC44D4188678325A3F7950FAAEA53853E23C08CEDC7EC7F9E1611D9B3171",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "MultichannelWoVCfg.dll",
+            "size": 296416,
+            "sha256": "20DEA0D9E4A60E7E6AFDF4997F0C926E45894AEA3E9A725C84C35DC5DB9C1AF1",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntelSSTPreprocStreamer.dll",
+            "size": 89541088,
+            "sha256": "71FAAEA41FDF14F3130F3427DB1726A7D118A55708DEC510E417BE6CE8C929E7",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Cfg\\aec_wov_str_def_1ch_in.tf",
+            "size": 5024,
+            "sha256": "352A5F2DBCF991B2D65C461AB79E9B0A681525BFD8169DB99113FE524531588B",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Cfg\\aec_wov_str_def_2ch_in.tf",
+            "size": 5024,
+            "sha256": "9FC744CB4F007E7EA7D14D97679CF8B2AFDCB8CA8D9D491E58F53EBA9C7DBE08",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Cfg\\aec_wov_str_def_4ch_in.tf",
+            "size": 5024,
+            "sha256": "24AB69FA7E99DD52F626580ED9124EBF57DC57480CD956ADF3D2EE1EDE31B2BC",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Cfg\\str_1ch_in_1_out_bypass.tf",
+            "size": 3680,
+            "sha256": "559EC8B27876F9E70F12547254EE7248A5B049A43916058F52D53FD27854FCCD",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Cfg\\str_2ch_in_1_out_bypass.tf",
+            "size": 3680,
+            "sha256": "D8570F77C7B5966677AD1D7307BE9B2B527ED49320DAC3EBB6FEA32D6CA70659",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "Cfg\\str_4ch_in_1_out_bypass.tf",
+            "size": 3680,
+            "sha256": "EBCEB855FC8C5E00D3835F7C572CACFDFEA67AEDBA25AD60F4E979A5370FFC4E",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "WakeWordEngine.dll",
+            "size": 1080288,
+            "sha256": "D0D0510380DBCB8DF98E2D9B33E1F418CECC44AFF4B07899CE5DFE711C0DD4BC",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "IntcSSDW.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcSSdw.cat",
+          "size": 28555,
+          "sha256": "4CDBE04475CF579F7A3AEB7E9D6F39E547C00610C1490C3E5C6F586379486DB9",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcSSDW.inf",
+            "size": 28430,
+            "sha256": "B155DC0DE3BBCBBA188997EDAD693C9A4F781A666CE576644031E17F3741AC11",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcSSDW.sys",
+            "size": 650208,
+            "sha256": "80D6F6F74DBA9737C79E4E85EF76A7AAC56B89C9198B644B871E39F6FF273F94",
+            "catalogMembership": "Verified"
+          }
+        ]
+      },
+      {
+        "inf": "IntcSBtLe.inf",
+        "driverVer": "02/18/2026,20.43.12634.0",
+        "catalog": {
+          "file": "IntcSBtLe.cat",
+          "size": 28560,
+          "sha256": "1108A637D8BCF8078299D5882BE50CA8D7E080A392F8922042AA3C1E125CE3D3",
+          "status": "Valid",
+          "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        },
+        "files": [
+          {
+            "path": "IntcSBtLe.inf",
+            "size": 25312,
+            "sha256": "D1A29B46BBEBAF2F97438D92088C325DCD8280C4AC908766E41958715E3B9598",
+            "catalogMembership": "Verified"
+          },
+          {
+            "path": "IntcSBtLe.sys",
+            "size": 543200,
+            "sha256": "23457CF1CBED9A0E69FD02D0E1E16F1D8973A40B7958AC37980BC82B73954860",
+            "catalogMembership": "Verified"
+          }
+        ]
+      }
+    ],
+    "inbox": [
+      {
+        "inf": "wdmaudio.inf",
+        "needs": [
+          "WDMPORTCLS.CopyFilesOnly",
+          "wdmaudio.Registration"
+        ]
+      },
+      {
+        "inf": "ks.inf",
+        "needs": [
+          "ks.Registration"
+        ]
+      },
+      {
+        "inf": "WUDFRD.inf",
+        "needs": [
+          "WUDFRD.NT",
+          "WUDFRD.NT.HW",
+          "WUDFRD.NT.Services"
+        ],
+        "files": [
+          "WUDFRd.sys",
+          "WUDFCoinstaller.dll"
+        ]
+      },
+      {
+        "inf": "sdcaclass.inf",
+        "service": "SdcaClassInbox",
+        "observedVersion": "10.0.26100.9549"
+      },
+      {
+        "inf": "sdcamfd.inf",
+        "service": "SdcaMfdInbox",
+        "observedVersion": "10.0.26100.9278"
+      },
+      {
+        "inf": "sdcaaggregator.inf",
+        "service": "SdcaAggregatorInbox",
+        "observedVersion": "10.0.26100.9278"
+      },
+      {
+        "inf": "sdcahid.inf",
+        "service": "SdcaHidInbox",
+        "observedVersion": "10.0.26100.9278"
+      }
+    ],
+    "sameCabNotInRootClosure": [
+      "IntcAcaCxSensor.inf",
+      "IntcNldCxSensor.inf",
+      "IntcAudioSensorProxyDriver.inf",
+      "LT6911Au.inf"
+    ],
+    "limit": "Catalog source is generic E328 only; it does not establish SUBSYS_30101A58 or RZ09-0581 applicability."
+  },
+  "realtek": {
+    "models": {
+      "RZ09_0528": "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A58300E",
+      "RZ09_0530": "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582023"
+    },
+    "rootHardwareIds": [
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582024",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A58300E",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582023",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582022",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582020",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_1A58201E",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_1A58201C",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582013",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582014",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_1A582013",
+      "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_1A582014"
+    ],
+    "source": {
+      "updateIds": [
+        "f71ce91f-b0b5-429f-bfff-b543346235ad",
+        "0f83ef46-311d-40c7-8994-f44bae577952"
+      ],
+      "detailUrls": [
+        "https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=f71ce91f-b0b5-429f-bfff-b543346235ad",
+        "https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=0f83ef46-311d-40c7-8994-f44bae577952"
+      ],
+      "downloadUrl": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2025/12/1c966046-ecd6-45e9-925f-082db468dd12_7e26b6d172655b467d0ed11a646dc2fba919dab2.cab",
+      "cabSize": 13640113,
+      "cabSha256": "6B82AB54C802FECED29BDEAF2248FC861B48DECD94AFD236AB652A19584B3FF9"
+    },
+    "driverVer": "10/28/2025,6.0.9906.1",
+    "inf": "HDXACPRazer.inf",
+    "catalog": {
+      "file": "hdxrt.cat",
+      "status": "Valid",
+      "signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "thumbprint": "4208374A9DBBCD92CBC4814EEE5234BC0E2EA94B",
+      "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+    },
+    "files": [
+      {
+        "path": "HDXACPRazer.inf",
+        "size": 89050,
+        "sha256": "4CC05F0201957D45C4916AF3A389F7401A55B7F91D0A4AD0C284123231D422C1",
+        "catalogMembership": "Verified"
+      },
+      {
+        "path": "hdxrt.cat",
+        "size": 3132044,
+        "sha256": "B169F8E4BA5B93E4AD371DB288A6E5C7551F24325CBFFDA343FE7DC2D2D71B12",
+        "catalogMembership": "CatalogSelfSignature"
+      },
+      {
+        "path": "RTKVHD64.sys",
+        "size": 6815784,
+        "sha256": "DF536B680E64F662FD8C3D7EED60B93FD8384F9EA5572D83702C69D7AD35CA50",
+        "catalogMembership": "Verified"
+      },
+      {
+        "path": "RTAIODAT.DAT",
+        "size": 62753315,
+        "sha256": "A52249669388EDC4239A5878BF572C7AF61F61AF1F6C9A0494C156EDFC6BE02A",
+        "catalogMembership": "Verified"
+      },
+      {
+        "path": "RtEventLog.dll",
+        "size": 22512,
+        "sha256": "D977D977846471D09ECB6E63D781F66A4658C60F19D9F9FCE81832C3C1196D9C",
+        "catalogMembership": "Verified"
+      }
+    ],
+    "inbox": [
+      "ks.inf:KS.Registration",
+      "wdmaudio.inf:WDMAUDIO.Registration"
+    ]
+  },
+  "verification": {
+    "intelCatalogs": 10,
+    "intelMemberChecks": 65,
+    "intelFailures": 0,
+    "realtekMemberChecks": 4,
+    "realtekFailures": 0,
+    "synapseReferences": 0
+  },
+  "limits": [
+    "No install, staging, device write, service start, reboot, or vendor-code execution was performed.",
+    "Intel clean-install order and reboot behavior remain unvalidated.",
+    "Windows inbox dependencies are prerequisites and are not redistributable members of the vendor CAB closures.",
+    "No model beyond RZ09-0581, RZ09-0528, and RZ09-0530 is admitted."
+  ]
+}

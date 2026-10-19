@@ -40,14 +40,16 @@ public sealed class ThxAudioProvisioningCommandTests
         var platform = new FakePlatform();
         Assert.Equal(ThxAudioProvisioningResult.Installed,
             await new ThxAudioProvisioningCommand(platform).RunAsync(default));
-        Assert.Equal(Enum.GetValues<ThxAudioProvisioningStep>(), platform.Executed);
+        Assert.Equal(ThxAudioProvisioningSequence.Steps, platform.Executed);
         Assert.Equal(
-            new ThxAudioProvisioningStep?[] { null, null, null, ThxAudioProvisioningStep.InstallDriverStack,
+            new ThxAudioProvisioningStep?[] { null, null, null,
+                ThxAudioProvisioningStep.InstallBaseAudio, ThxAudioProvisioningStep.InstallBaseAudio,
+                ThxAudioProvisioningStep.InstallDriverStack,
                 ThxAudioProvisioningStep.InstallDriverStack, ThxAudioProvisioningStep.InstallProperties,
                 ThxAudioProvisioningStep.InstallProperties, ThxAudioProvisioningStep.InstallSurroundConfiguration,
             },
             platform.Captures);
-        Assert.Equal(3, platform.Journal.Intents.Count);
+        Assert.Equal(4, platform.Journal.Intents.Count);
         Assert.True(platform.Journal.Completed);
     }
 
@@ -135,7 +137,8 @@ public sealed class ThxAudioProvisioningCommandTests
         var platform = new FakePlatform { CompleteBeforeSecondStep = true };
         Assert.Equal(ThxAudioProvisioningResult.Installed,
             await new ThxAudioProvisioningCommand(platform).RunAsync(default));
-        Assert.Equal(new[] { ThxAudioProvisioningStep.InstallDriverStack }, platform.Executed);
+        Assert.Equal(new[] { ThxAudioProvisioningStep.InstallBaseAudio,
+            ThxAudioProvisioningStep.InstallDriverStack }, platform.Executed);
         Assert.True(platform.Journal.Completed);
     }
 
@@ -148,6 +151,73 @@ public sealed class ThxAudioProvisioningCommandTests
         Assert.Single(platform.Executed);
     }
 
+    [Fact]
+    public async Task MissingBaseReadbackStopsBeforeThxInstaller()
+    {
+        var platform = new FakePlatform { FailBaseReadback = true };
+        Assert.Equal(ThxAudioProvisioningResult.RecoveryRequired,
+            await new ThxAudioProvisioningCommand(platform).RunAsync(default));
+        Assert.Equal([ThxAudioProvisioningStep.InstallBaseAudio], platform.Executed);
+        Assert.False(platform.Journal.Completed);
+    }
+
+    [Fact]
+    public async Task ChangedBaseTargetAfterSubmissionStopsBeforeThxInstaller()
+    {
+        var platform = new FakePlatform { ChangeBaseTarget = true };
+        Assert.Equal(ThxAudioProvisioningResult.RecoveryRequired,
+            await new ThxAudioProvisioningCommand(platform).RunAsync(default));
+        Assert.Equal([ThxAudioProvisioningStep.InstallBaseAudio], platform.Executed);
+        Assert.False(platform.Journal.Completed);
+    }
+
+    [Fact]
+    public async Task VerifiedBaseRestartContinuesWithThxWithoutReplayingBase()
+    {
+        var platform = new FakePlatform
+        {
+            Pending = true,
+            BootIdentity = "boot-b",
+            Recovery = Recovery(ThxAudioProvisioningStep.InstallBaseAudio, "boot-a"),
+        };
+        Assert.Equal(ThxAudioProvisioningResult.Installed,
+            await new ThxAudioProvisioningCommand(platform).RunAsync(default));
+        Assert.Equal(new[]
+        {
+            ThxAudioProvisioningStep.InstallDriverStack,
+            ThxAudioProvisioningStep.InstallProperties,
+            ThxAudioProvisioningStep.InstallSurroundConfiguration,
+        }, platform.Executed);
+    }
+
+    [Fact]
+    public async Task DifferentRecipeOrBaseTargetCannotResumeAnOldTransaction()
+    {
+        foreach (ThxAudioProvisioningRecovery recovery in new[]
+        {
+            Recovery(ThxAudioProvisioningStep.InstallBaseAudio, "boot-a") with { Profile = "old-recipe" },
+            Recovery(ThxAudioProvisioningStep.InstallBaseAudio, "boot-a") with { BaseAudioTarget = "different-root" },
+        })
+        {
+            var platform = new FakePlatform { Pending = true, BootIdentity = "boot-b", Recovery = recovery };
+            Assert.Equal(ThxAudioProvisioningResult.RecoveryRequired,
+                await new ThxAudioProvisioningCommand(platform).RunAsync(default));
+            Assert.Empty(platform.Executed);
+            Assert.False(platform.Acquired);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, ThxAudioProvisioningResult.Failed)]
+    [InlineData(true, ThxAudioProvisioningResult.RecoveryRequired)]
+    public async Task InvalidPackageStopsWithResultAppropriateToSubmission(bool afterIntent, ThxAudioProvisioningResult expected)
+    {
+        var platform = new FakePlatform { InvalidPackageAfterIntent = afterIntent, InvalidPackageBeforeIntent = !afterIntent };
+        Assert.Equal(expected, await new ThxAudioProvisioningCommand(platform).RunAsync(default));
+        Assert.Equal(afterIntent ? 1 : 0, platform.Executed.Count);
+        Assert.Equal(afterIntent ? 1 : 0, platform.Journal.Intents.Count);
+        Assert.False(platform.Journal.Completed);
+    }
     private sealed class FakePlatform : IThxAudioProvisioningPlatform
     {
         internal ThxAudioProvisioningSnapshot Snapshot = new(true, false);
@@ -155,7 +225,7 @@ public sealed class ThxAudioProvisioningCommandTests
         internal readonly List<ThxAudioProvisioningStep> Executed = [];
         internal readonly List<ThxAudioProvisioningStep?> Captures = [];
         internal bool Pending, Acquired, OpenedJournal, FailFinalReadback, CancelDuringExecute,
-            CompleteBeforeSecondStep;
+            CompleteBeforeSecondStep, FailBaseReadback, ChangeBaseTarget, InvalidPackageBeforeIntent, InvalidPackageAfterIntent;
         internal int ExitCode;
         internal string BootIdentity = "boot-a";
         internal ThxAudioProvisioningRecovery? Recovery;
@@ -164,6 +234,17 @@ public sealed class ThxAudioProvisioningCommandTests
         public ThxAudioProvisioningSnapshot Capture(ThxAudioProvisioningStep? completedStep = null)
         {
             Captures.Add(completedStep);
+            if (completedStep == ThxAudioProvisioningStep.InstallBaseAudio && FailBaseReadback)
+            {
+                return new(false, false, ThxAudioProvisioningResult.BaseAudioUnverified)
+                {
+                    BaseAudioTarget = "root-a",
+                };
+            }
+            if (completedStep == ThxAudioProvisioningStep.InstallBaseAudio && ChangeBaseTarget)
+            {
+                return new(true, false) { BaseAudioTarget = "root-b" };
+            }
             if (CompleteBeforeSecondStep && completedStep == ThxAudioProvisioningStep.InstallDriverStack
                 && ++baseCaptures == 2)
             {
@@ -171,13 +252,14 @@ public sealed class ThxAudioProvisioningCommandTests
             }
             if (FailFinalReadback && completedStep == ThxAudioProvisioningStep.InstallSurroundConfiguration)
             {
-                return new(true, false);
+                return new(true, false) { BaseAudioTarget = "root-a" };
             }
             return completedStep == ThxAudioProvisioningStep.InstallSurroundConfiguration
                 ? InstalledSnapshot() : Snapshot with
                 {
                     Profile = "RZ09-0528/rznb11",
                     ProvisioningProcessesAbsent = true,
+                    BaseAudioTarget = "root-a",
                 };
         }
         public string ReadBootIdentity() => BootIdentity;
@@ -190,13 +272,22 @@ public sealed class ThxAudioProvisioningCommandTests
         }
         public Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken)
         {
+            if (InvalidPackageBeforeIntent)
+            {
+                throw new InvalidDataException("Changed downloaded package.");
+            }
             Acquired = true;
             return Task.FromResult(destination);
         }
         public Task<ThxAudioProvisioningProcessResult> ExecuteAsync(
-            string root, ThxAudioProvisioningStep step, CancellationToken cancellationToken)
+            string root, ThxAudioProvisioningStep step, ThxAudioProvisioningSnapshot expected,
+            CancellationToken cancellationToken)
         {
             Executed.Add(step);
+            if (InvalidPackageAfterIntent)
+            {
+                throw new InvalidDataException("Changed execution package.");
+            }
             if (CancelDuringExecute)
             {
                 throw new OperationCanceledException();
@@ -208,6 +299,7 @@ public sealed class ThxAudioProvisioningCommandTests
         {
             Profile = "RZ09-0528/rznb11",
             ProvisioningProcessesAbsent = true,
+            BaseAudioTarget = "root-a",
         };
     }
 
@@ -228,5 +320,5 @@ public sealed class ThxAudioProvisioningCommandTests
 
     private static ThxAudioProvisioningRecovery Recovery(ThxAudioProvisioningStep step,
         string resultBoot, ThxAudioProvisioningStep? completed = null) =>
-        new("reviewed", "RZ09-0528/rznb11", resultBoot, step, completed);
+        new("reviewed", "RZ09-0528/rznb11", resultBoot, step, completed) { BaseAudioTarget = "root-a" };
 }

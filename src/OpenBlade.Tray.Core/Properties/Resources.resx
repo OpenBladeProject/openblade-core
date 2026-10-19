@@ -1639,4 +1639,7 @@ Details: {1}</value>
   <data name="THX audio installation failed before changes were submitted." xml:space="preserve">
     <value>THX audio installation failed before changes were submitted.</value>
   </data>
+  <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
+    <value>OpenBlade could not verify the base audio drivers. Export diagnostics for help.</value>
+  </data>
 </root>

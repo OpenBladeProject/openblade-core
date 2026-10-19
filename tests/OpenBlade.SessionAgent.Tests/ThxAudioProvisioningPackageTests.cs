@@ -316,6 +316,7 @@ public sealed class ThxAudioProvisioningPackageTests
         Assert.Equal(6, (int)ThxAudioProvisioningResult.ExistingInstallation);
         Assert.Equal(10, (int)ThxAudioProvisioningResult.AcPowerRequired);
         Assert.Equal(11, (int)ThxAudioProvisioningResult.ControllerActive);
+        Assert.Equal(12, (int)ThxAudioProvisioningResult.BaseAudioUnverified);
         Assert.Equal(1602, (int)ThxAudioProvisioningResult.Canceled);
         Assert.Equal(3010, (int)ThxAudioProvisioningResult.RestartRequired);
     }

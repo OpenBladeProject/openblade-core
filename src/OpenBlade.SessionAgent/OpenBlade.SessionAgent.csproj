@@ -27,6 +27,9 @@
     <ProjectReference Include="..\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="ThxBaseAudioPackage.json" />
+  </ItemGroup>
   <Target Name="PrepareOpenBladeSessionAgentManifest"
           BeforeTargets="CoreCompile">
     <Error Condition="!Exists('$(OpenBladeSessionAgentManifestSource)')"

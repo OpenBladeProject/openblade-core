@@ -34,7 +34,7 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
             return Refuse(ThxAudioProvisioningResult.Unavailable);
         }
         ThxAudioCompatibilityProfile? profile = WindowsThxAudioAdmissionSource.GetExactHostProfile();
-        if (profile is null || !WindowsThxAdmissionQueries.HasExactDeviceIdentities(profile))
+        if (profile is null)
         {
             return Refuse(ThxAudioProvisioningResult.Unavailable);
         }
@@ -49,6 +49,7 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         bool acPower = power.AcLineStatus == 1;
         bool controllersAbsent = !WindowsThxAudioAdmissionSource.IsCompetingControllerRunning();
 
+        bool exactCodec = WindowsThxAdmissionQueries.HasExactDeviceIdentities(profile);
         string driverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "DriverStore", "FileRepository");
         string commonData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
@@ -65,14 +66,18 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         bool service = stackHashes && catalogs && WindowsThxAdmissionQueries.HasRunningPinnedService(
             profile.Stack.ServiceName, serviceBinary!);
         bool provisioningProcessesAbsent = NoProvisioningProcesses(productId);
-        bool complete = stackHashes && catalogs && properties && surround && service;
+        bool complete = exactCodec && stackHashes && catalogs && properties && surround && service;
+        ThxBaseAudioAdmissionSnapshot? baseAudio = null;
         ThxAudioProvisioningSnapshot Snapshot(bool ready, bool installed,
             ThxAudioProvisioningResult refusal = ThxAudioProvisioningResult.Unavailable) =>
             new(ready, installed, refusal)
             {
                 Profile = GetPlanIdentity(profile),
                 ExactHost = true,
-                ExactDevices = true,
+                ExactDevices = exactCodec,
+                BaseAudioReady = baseAudio?.Ready == true,
+                BaseAudioTarget = baseAudio?.Target ?? string.Empty,
+                BaseAudioIdentity = baseAudio?.Identity ?? "not-inspected",
                 AcPower = acPower,
                 ControllersAbsent = controllersAbsent,
                 StackHashes = stackHashes,
@@ -82,7 +87,7 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
                 ActiveProperties = propertiesEvidence,
                 SurroundConfiguration = surroundEvidence,
             };
-        if (!complete && properties && surround && ThxAudioCompatibility.TryResolveRunningDriverStack(
+        if (!complete && exactCodec && properties && surround && ThxAudioCompatibility.TryResolveRunningDriverStack(
             driverStore, runtimeProfile, WindowsThxAdmissionQueries.HasRunningPinnedService,
             out ThxAudioDriverStack? installedStack, out _, out _)
             && HasTrustedCatalogMembership(driverStore, installedStack!))
@@ -96,15 +101,30 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         }
         if (complete)
         {
+            if (completedStep is not null)
+            {
+                baseAudio = WindowsThxBaseAudioAdmission.Capture(profile);
+                return Snapshot(baseAudio.ExactRoot && baseAudio.Ready,
+                    baseAudio.ExactRoot && baseAudio.Ready, ThxAudioProvisioningResult.BaseAudioUnverified);
+            }
             return Snapshot(true, true);
+        }
+        // A complete admitted THX installation above is retained even if its
+        // base driver is outside this fresh-install recipe. New provisioning
+        // additionally requires actual bound base-driver evidence.
+        baseAudio = WindowsThxBaseAudioAdmission.Capture(profile);
+        if (!baseAudio.ExactRoot || (!baseAudio.Ready && !baseAudio.CanInstall))
+        {
+            return Snapshot(false, false, ThxAudioProvisioningResult.BaseAudioUnverified);
         }
         bool expected = completedStep switch
         {
+            ThxAudioProvisioningStep.InstallBaseAudio => baseAudio.Ready && IsPristine(driverStore, commonData),
             // The base installer starts the service, whose initialization may create ProgramData files.
             // No reviewed source pins that intermediate content. The pristine baseline and journal bound
             // its provenance; each updater's immutable output is pinned immediately after its own step.
-            ThxAudioProvisioningStep.InstallDriverStack => stackHashes && catalogs && service,
-            ThxAudioProvisioningStep.InstallProperties => stackHashes && catalogs && service && properties,
+            ThxAudioProvisioningStep.InstallDriverStack => baseAudio.Ready && exactCodec && stackHashes && catalogs && service,
+            ThxAudioProvisioningStep.InstallProperties => baseAudio.Ready && exactCodec && stackHashes && catalogs && service && properties,
             ThxAudioProvisioningStep.InstallSurroundConfiguration => complete,
             _ => IsPristine(driverStore, commonData),
         };
@@ -148,15 +168,29 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         {
             throw new InvalidOperationException("This host has no admitted THX provisioning recipe.");
         }
-        return new ThxAudioProvisioningJournal(productId);
+        ThxAudioCompatibilityProfile profile = GetProvisioningProfile();
+        return new ThxAudioProvisioningJournal(productId, profile.ModelNumber);
     }
-    public Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken) =>
-        ThxAudioProvisioningPackage.AcquireVerifiedAsync(destination, productId ?? string.Empty, cancellationToken);
+
+    public async Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken)
+    {
+        ThxAudioCompatibilityProfile profile = GetProvisioningProfile();
+        string root = await ThxAudioProvisioningPackage.AcquireVerifiedAsync(
+            destination, profile.ProductId, cancellationToken).ConfigureAwait(false);
+        await ThxBaseAudioPackage.AcquireVerifiedAsync(Path.Combine(root, "base-audio"),
+            profile.ModelNumber, cancellationToken).ConfigureAwait(false);
+        return root;
+    }
 
     public async Task<ThxAudioProvisioningProcessResult> ExecuteAsync(
-        string root, ThxAudioProvisioningStep step, CancellationToken cancellationToken)
+        string root, ThxAudioProvisioningStep step, ThxAudioProvisioningSnapshot expected,
+        CancellationToken cancellationToken)
     {
         ThxAudioProvisioningJournal.ValidateProtectedDirectory(root);
+        if (step == ThxAudioProvisioningStep.InstallBaseAudio)
+        {
+            return await ExecuteBaseAudioAsync(root, expected, cancellationToken).ConfigureAwait(false);
+        }
         ThxAudioProvisioningArtifact artifact = ThxAudioProvisioningPackage.ForProduct(productId ?? string.Empty).Single(item => item.Step == step);
         string fullRoot = Path.GetFullPath(root);
         string path = Path.GetFullPath(Path.Combine(fullRoot, artifact.ExecutableFileName));
@@ -187,6 +221,71 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
             arguments = [.. arguments, "/log", log];
         }
         ProcessStartInfo start = CreateStartInfo(path, fullRoot, temp, arguments);
+        _ = RevalidateBaseAudio(expected, requireReady: true);
+        return await RunProcessAsync(start, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ThxAudioProvisioningProcessResult> ExecuteBaseAudioAsync(
+        string root, ThxAudioProvisioningSnapshot expected, CancellationToken cancellationToken)
+    {
+        ThxAudioCompatibilityProfile profile = GetProvisioningProfile();
+        ThxBaseAudioAdmissionSnapshot current = RevalidateBaseAudio(expected, requireReady: false);
+        if (current.Ready)
+        {
+            return new(0, "The recognized base audio binding is already ready; no driver process was started.");
+        }
+        string packageRoot = Path.Combine(root, "base-audio", "package");
+        ThxBaseAudioRecipe recipe = ThxBaseAudioPackage.ForModel(profile.ModelNumber);
+        using IDisposable verified = ThxBaseAudioPackage.VerifyForExecution(
+            packageRoot, profile.ModelNumber, cancellationToken);
+        string system32 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32");
+        string temp = Path.Combine(root, "temp");
+        ThxAudioProvisioningJournal.EnsureProtectedDirectory(temp);
+        ProcessStartInfo start = CreateStartInfo(Path.Combine(system32, "pnputil.exe"), packageRoot, temp,
+            ["/add-driver", Path.Combine(packageRoot, recipe.RootInfName), "/install"]);
+        // CopyINF recursively stages the pinned closure. No wildcard install,
+        // forced downgrade, preliminary staging, alternate sequence or rescan.
+        current = RevalidateBaseAudio(expected, requireReady: false);
+        if (current.Ready)
+        {
+            return new(0, "The recognized base audio binding became ready before submission.");
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return await RunProcessAsync(start, cancellationToken).ConfigureAwait(false);
+    }
+
+    private ThxAudioCompatibilityProfile GetProvisioningProfile()
+    {
+        ThxAudioCompatibilityProfile? profile = WindowsThxAudioAdmissionSource.GetExactHostProfile();
+        if (profile is null || profile.ProductId != productId || productId is not ("rznb11" or "rznb12"))
+        {
+            throw new InvalidOperationException("The exact THX provisioning host changed.");
+        }
+        _ = ThxBaseAudioPackage.ForModel(profile.ModelNumber);
+        return profile;
+    }
+
+    private ThxBaseAudioAdmissionSnapshot RevalidateBaseAudio(
+        ThxAudioProvisioningSnapshot expected, bool requireReady)
+    {
+        ThxAudioCompatibilityProfile profile = GetProvisioningProfile();
+        ThxBaseAudioAdmissionSnapshot observed = WindowsThxBaseAudioAdmission.Capture(profile);
+        if (!observed.ExactRoot || !string.Equals(observed.Target, expected.BaseAudioTarget, StringComparison.Ordinal)
+            || (requireReady ? !observed.Ready : !observed.Ready && !observed.CanInstall)
+            || !ProcessIdToSessionId((uint)Environment.ProcessId, out uint session)
+            || session == 0 || session == uint.MaxValue || session != WTSGetActiveConsoleSessionId()
+            || !GetSystemPowerStatus(out PowerStatus power) || power.AcLineStatus != 1
+            || WindowsThxAudioAdmissionSource.IsCompetingControllerRunning()
+            || !NoProvisioningProcesses(profile.ProductId))
+        {
+            throw new InvalidOperationException("THX base audio or controller admission changed before submission.");
+        }
+        return observed;
+    }
+
+    private static async Task<ThxAudioProvisioningProcessResult> RunProcessAsync(
+        ProcessStartInfo start, CancellationToken cancellationToken)
+    {
         using Process process = Process.Start(start)
             ?? throw new InvalidOperationException("THX provisioning process did not start.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -214,6 +313,10 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         // must pause an older incomplete transaction.
         string pins = JsonSerializer.Serialize(new
         {
+            FormatVersion = ThxAudioProvisioningSequence.FormatVersion,
+            Steps = ThxAudioProvisioningSequence.Steps,
+            BaseAudio = ThxBaseAudioPackage.ForModel(profile.ModelNumber),
+            InboxPolicy = "MicrosoftWindowsCatalogsAndExactSdcaAncestry-v1",
             Artifacts = ThxAudioProvisioningPackage.ForProduct(profile.ProductId),
             profile.Stack,
             profile.ActivePropertiesSha256,
@@ -331,7 +434,8 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         {
             foreach (string processName in ThxAudioProvisioningPackage.ForProduct(productId).SelectMany(
                 artifact => new[] { artifact.FileName, artifact.ExecutableFileName })
-                .Select(name => Path.GetFileNameWithoutExtension(name)!).Distinct(StringComparer.OrdinalIgnoreCase))
+                .Select(name => Path.GetFileNameWithoutExtension(name)!).Append("pnputil")
+                .Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 Process[] processes = Process.GetProcessesByName(processName);
                 try

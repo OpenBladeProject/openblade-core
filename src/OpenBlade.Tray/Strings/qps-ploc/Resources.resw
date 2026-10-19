@@ -2264,7 +2264,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Dównlóád thé THX cómpónént fróm Razer. Thé THX áúdíó drívér múst álréádý bé ínstálléd. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioStackInstallationDescription.Text" xml:space="preserve">
-    <value>[!! Ínstáll thé THX drívér ánd cónfígúrátíón fróm Razer. Á mátchíng Réálték áúdíó drívér ís réqúíréd. Sétúp máý íntérrúpt pláýbáck ánd réqúíré á réstárt. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Ínstáll thé mátchíng áúdíó drívérs ánd THX cómpónénts. Sétúp máý íntérrúpt pláýbáck ánd réqúíré á réstárt. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ThxAudioLegacyEqualizerLimit.Text" xml:space="preserve">
     <value>[!! Ónlý spátíál áúdíó cóntról ís áváíláblé fór thís THX vérsíón. ~~~~~~~~~~~~~~~~~~ !!]</value>

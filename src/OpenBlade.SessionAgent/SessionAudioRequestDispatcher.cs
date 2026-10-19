@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using OpenBlade.Session;
+using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
@@ -9,6 +11,7 @@ public sealed class SessionAudioRequestDispatcher
 
     private readonly IThxAudioAdmissionSource admission;
     private readonly IThxAudioWorker worker;
+    private readonly Func<ThxBaseAudioAdmissionSnapshot?>? baseAudioDiagnosticProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Dictionary<ThxAudioEndpoint, ThxAudioState> confirmed = [];
@@ -24,10 +27,12 @@ public sealed class SessionAudioRequestDispatcher
 
     internal SessionAudioRequestDispatcher(
         IThxAudioAdmissionSource admission,
-        IThxAudioWorker worker)
+        IThxAudioWorker worker,
+        Func<ThxBaseAudioAdmissionSnapshot?>? baseAudioDiagnosticProvider = null)
     {
         this.admission = admission ?? throw new ArgumentNullException(nameof(admission));
         this.worker = worker ?? throw new ArgumentNullException(nameof(worker));
+        this.baseAudioDiagnosticProvider = baseAudioDiagnosticProvider;
     }
 
     public async Task<SessionAudioResponse> DispatchAsync(
@@ -70,6 +75,53 @@ public sealed class SessionAudioRequestDispatcher
         }
     }
 
+    internal static ThxBaseAudioAdmissionSnapshot? CaptureBaseAudioForDiagnostics() =>
+        CaptureBaseAudioForDiagnostics(WindowsThxAudioAdmissionSource.GetExactHostProfile(), WindowsThxBaseAudioAdmission.Capture);
+
+    internal static ThxBaseAudioAdmissionSnapshot? CaptureBaseAudioForDiagnostics(
+        ThxAudioCompatibilityProfile? profile, Func<ThxAudioCompatibilityProfile, ThxBaseAudioAdmissionSnapshot> capture) =>
+        profile is { ModelNumber: "RZ09-0528" or "RZ09-0530" or "RZ09-0581" } ? capture(profile) : null;
+
+    private ThxBaseAudioDiagnosticProof? ReadBaseAudioDiagnostics()
+    {
+        try
+        {
+            ThxBaseAudioAdmissionSnapshot? snapshot = baseAudioDiagnosticProvider?.Invoke();
+            if (snapshot is null)
+            {
+                return null;
+            }
+            if ((snapshot.Ready || snapshot.CanInstall) && !snapshot.ExactRoot
+                || snapshot.Ready && snapshot.CanInstall)
+            {
+                throw new InvalidDataException("Inconsistent base-audio diagnostic flags.");
+            }
+            // Target is private transaction identity. Remove it defensively before
+            // forwarding the already identity-free admission explanation.
+            string detail = snapshot.Target.Length == 0 ? snapshot.Identity
+                : snapshot.Identity.Replace(snapshot.Target, "[REDACTED]", StringComparison.OrdinalIgnoreCase);
+            detail = UserModeDiagnosticTextRedactor.RedactDefault(detail);
+            detail = Regex.Replace(detail,
+                @"\b(?:PCI|HDAUDIO|INTELAUDIO|SOUNDWIRE|USB|SDCA|SWD|SWC)\\[^\s|,]+",
+                "[REDACTED]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+            detail = new string(detail.Select(character => char.IsControl(character) ? ' ' : character).ToArray()).Trim();
+            if (detail.Length == 0)
+            {
+                detail = "The base-audio query returned no explanation.";
+            }
+            if (detail.Length > SessionAudioIpc.MaximumBaseAudioDetailCharacters)
+            {
+                detail = detail[..SessionAudioIpc.MaximumBaseAudioDetailCharacters].TrimEnd();
+            }
+            return new(snapshot.ExactRoot, snapshot.Ready, snapshot.CanInstall, detail);
+        }
+        catch (Exception exception)
+        {
+            // A diagnostic failure neither masks THX discovery nor authorizes setup.
+            return new(false, false, false, $"The base-audio diagnostic query failed: {exception.GetType().Name}.");
+        }
+    }
+
     internal async Task<T> RunAutomationAsync<T>(
         Func<CancellationToken, Task<T>> operation,
         CancellationToken cancellationToken)
@@ -103,24 +155,16 @@ public sealed class SessionAudioRequestDispatcher
             if (request is DiscoverThxAudioRequest)
             {
                 ThxAudioAdmission current = admission.Check();
-                if (!current.IsAvailable)
-                {
-                    // Discovery is observational, including diagnostic exports.
-                    // Native operations still perform fresh helper admission.
-                    return Response(
-                        request,
-                        ThxAudioOperationStatus.Unavailable,
-                        current.Availability,
-                        current.Error,
-                        null);
-                }
-
+                // Discovery is observational. The optional proof cannot change THX
+                // availability or the native worker's separate fresh admission.
+                ThxBaseAudioDiagnosticProof? proof = isExplicitRead ? ReadBaseAudioDiagnostics() : null;
                 return Response(
                     request,
-                    ThxAudioOperationStatus.Succeeded,
+                    current.IsAvailable ? ThxAudioOperationStatus.Succeeded : ThxAudioOperationStatus.Unavailable,
                     current.Availability,
-                    null,
-                    null);
+                    current.IsAvailable ? null : current.Error,
+                    null) with
+                { BaseAudio = proof };
             }
 
             // The helper performs fresh full admission immediately before native

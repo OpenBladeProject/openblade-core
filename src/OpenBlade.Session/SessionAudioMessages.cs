@@ -6,6 +6,7 @@ public static class SessionAudioIpc
 {
     public const int ProtocolVersion = 2;
     public const int MaximumMessageBytes = 64 * 1024;
+    public const int MaximumBaseAudioDetailCharacters = 1024;
     // The admitted rznb12 stack returned 218 profile presets during runtime
     // validation. Retain a bounded list alongside the independent 64 KiB frame cap.
     public const int MaximumPresets = 256;
@@ -173,4 +174,17 @@ public sealed record SessionAudioResponse(
     ThxAudioOperationStatus Status,
     ThxAudioAvailability Availability,
     string? Error,
-    ThxAudioState? State);
+    ThxAudioState? State)
+{
+    // This optional discovery field completes the unreleased v2 shape. Omission
+    // preserves existing response JSON and permits older responses without it.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ThxBaseAudioDiagnosticProof? BaseAudio { get; init; }
+}
+
+// Observational diagnostics only; these flags never authorize an operation.
+public sealed record ThxBaseAudioDiagnosticProof(
+    bool ExactRoot,
+    bool Ready,
+    bool CanInstall,
+    string Detail);

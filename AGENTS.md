@@ -336,6 +336,18 @@ inventing a page-specific appearance:
    may provision the pinned rznb11 stack on exact RZ09-0528/RZ09-0530 or the
    separately pinned cached rznb12 4.2.37.1621 stack on exact RZ09-0581 with
    matching codec, AC power, no competing controller and no existing THX stack.
+   Before THX, that fixed setup may provision Realtek 6.0.9906.1 on exact
+   RZ09-0528/RZ09-0530 or Intel SST 20.43.12634.0 on exact RZ09-0581 from the
+   pinned official Microsoft CABs. Require exact root identity, all root-INF
+   matching targets, actual bound package/catalog evidence and fresh ancestry.
+   Keep existing recognized base drivers; preserve/refuse unknown builds rather
+   than force a downgrade. Verify Windows inbox SDCA audio roles through Windows
+   servicing catalogs without bundling them or inventing a Windows version floor.
+   Import only the reviewed root and its declared CopyINF closure; never use
+   wildcard installation, forced replacement, guessed child creation or an
+   automatic alternate sequence. Require independent base binding readback and
+   retain numeric journal meanings with a versioned ordered recipe. This grants
+   no development-time installation or hardware authority.
    Synapse must not be a prerequisite. The owner-confirmed Razer redistribution
    permission covers the original signed THX installer as a catalog release asset;
    retain its notices and exact source, size, hash and signer pins. Never bundle

@@ -11,6 +11,7 @@ public enum ThxAudioProvisioningResult
     ExistingInstallation = 6,
     AcPowerRequired = 10,
     ControllerActive = 11,
+    BaseAudioUnverified = 12,
     Canceled = 1602,
     RestartRequired = 3010,
 }
