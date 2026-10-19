@@ -32,6 +32,14 @@
         },
         "infSha256": "0FDA4FBAEDDFDD0CA2D6ED5AE02163925271B84CD211F41557B2042B4AB508CF",
         "catalogSha256": "799010EB2FAA139C24FE2AC025330489807444F596923C411B94B1436662DD48",
+        "oemCodecTuning": {
+          "fileName": "RTAIODAT.DAT",
+          "size": 54704172,
+          "sha256": "E84591EF1106343CE3200795CDFADDC4D6347F6F86E8E28012CEC82F130E5A32",
+          "profileName": "Razer_2020",
+          "scope": "RealtekCodec",
+          "thxIntegration": "NotEstablished"
+        },
         "catalogSigner": {
           "status": "Valid",
           "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
@@ -63,6 +71,14 @@
         },
         "infSha256": "D77B028513AB214994DD0E2BDD39A8DDF3C76390D4C63F8D1F241BF53AE268B7",
         "catalogSha256": "BBE5CC8367251380E3412873FD0DD2DB4EEA897FD9CAEAF4834D2B2B75A1030B",
+        "oemCodecTuning": {
+          "fileName": "RTAIODAT.DAT",
+          "size": 57817855,
+          "sha256": "98509C3F66CA9D20B12DE14A8063C25502C439840193D501E80A857EA510F08B",
+          "profileName": "Razer_3006",
+          "scope": "RealtekCodec",
+          "thxIntegration": "NotEstablished"
+        },
         "catalogSigner": {
           "status": "Valid",
           "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
@@ -94,6 +110,14 @@
         },
         "infSha256": "D77B028513AB214994DD0E2BDD39A8DDF3C76390D4C63F8D1F241BF53AE268B7",
         "catalogSha256": "BBE5CC8367251380E3412873FD0DD2DB4EEA897FD9CAEAF4834D2B2B75A1030B",
+        "oemCodecTuning": {
+          "fileName": "RTAIODAT.DAT",
+          "size": 57817855,
+          "sha256": "98509C3F66CA9D20B12DE14A8063C25502C439840193D501E80A857EA510F08B",
+          "profileName": "Razer_3007",
+          "scope": "RealtekCodec",
+          "thxIntegration": "NotEstablished"
+        },
         "catalogSigner": {
           "status": "Valid",
           "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
@@ -338,13 +362,13 @@
   ],
   "modelBinding": {
     "status": "Blocked",
-    "exactOemChildEnumerationPackage": "Missing",
-    "exactModelTuning": "Missing",
+    "exactOemChildEnumerationPackage": "NotEstablished",
+    "exactModelTuning": "NotEstablished",
     "genericComponentsAreModelBindingEvidence": false,
     "installableCandidate": false,
     "blockers": [
-      "No reviewed OEM extension or child-enumeration package connects the generic THX software-component IDs to any candidate profile's exact Realtek codec.",
-      "The available THX configuration identifies itself as generic-config-fallback-V2 and does not provide exact Razer model tuning."
+      "Runtime enumeration of the generic THX software-component IDs from each candidate profile's exact Realtek codec is not established.",
+      "The generic-config-fallback-V2 configuration does not establish THX acoustic deviceEQ integration with the reviewed Realtek codec OEM profiles."
     ]
   },
   "evidenceSources": [
@@ -389,7 +413,7 @@
   },
   "limitations": [
     "The four generic THX packages are signed component candidates, not evidence that any candidate model enumerates or safely accepts them.",
-    "The exact Realtek base packages establish codec identity only and do not contain the missing THX child-enumeration or model-tuning layer.",
+    "The exact Realtek base packages contain reviewed OEM codec profiles, but that evidence does not establish THX acoustic tuning or integration.",
     "This metadata does not define an installation order, authorize installation, or establish clean-install, repair, rollback, or physical behavior."
   ]
 }

@@ -346,19 +346,19 @@
           "modelNumber": "RZ09-0484",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications and an exact Realtek codec package are reviewed, but the generic THX components lack the required exact OEM child-enumeration and model-tuning binding."
+          "reason": "Official THX specifications and exact Realtek codec OEM tuning are reviewed, but runtime THX software-component enumeration and THX deviceEQ integration are not established."
         },
         {
           "modelNumber": "RZ09-0483",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications and an exact Realtek codec package are reviewed, but the generic THX components lack the required exact OEM child-enumeration and model-tuning binding."
+          "reason": "Official THX specifications and exact Realtek codec OEM tuning are reviewed, but runtime THX software-component enumeration and THX deviceEQ integration are not established."
         },
         {
           "modelNumber": "RZ09-0482",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications and an exact Realtek codec package are reviewed, but the generic THX components lack the required exact OEM child-enumeration and model-tuning binding."
+          "reason": "Official THX specifications and exact Realtek codec OEM tuning are reviewed, but runtime THX software-component enumeration and THX deviceEQ integration are not established."
         },
         {
           "modelNumber": "RZ09-0530",

@@ -21,7 +21,7 @@ OpenBlade can download the supported THX client from Razer. On RZ09-0528 and
 RZ09-0530, it can also perform an experimental fresh installation of the reviewed
 THX driver, service and configuration. A matching Realtek base audio driver must
 already be installed. RZ09-0581 still requires its THX stack to be present because
-the reviewed Razer sources do not provide its base installer. See the
+a public download source for its base installer has not been established. See the
 [installation compatibility investigation](thx-installation-investigation.md)
 for the package and codec restrictions.
 
@@ -29,9 +29,9 @@ for the package and codec restrictions.
 
 | Model | Installed THX controls | Fresh THX setup |
 | --- | --- | --- |
-| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Base installer unavailable |
+| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Public base-installer source unavailable |
 | RZ09-0528, RZ09-0530 | rznb11 spatial audio, EQ and application profiles | Experimental, matching Realtek driver required |
-| RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed THX 2.6.5.0 service | Blocked by missing OEM binding and tuning package |
+| RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed THX 2.6.5.0 service | THX component binding remains unverified |
 | RZ09-0328 | Factory audio uses Dolby Atmos; THX does not apply | Not applicable |
 
 On the three 2023 models, select the output currently used by Windows. OpenBlade
@@ -44,9 +44,10 @@ backend; the pinned factory audio components must already be installed.
 
 Razer documents the older driver and Store control app in
 [its THX setup guide](https://mysupport.razer.com/app/answers/detail/a_id/5798/).
-The public THX 2.6.5 component downloads contain generic fallback tuning. They
-cannot recreate these laptops' factory audio stack without the exact OEM package.
-The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/870a4d0b6e8791785c9f8fb66e782e311b22d3ff/components/thx-legacy/2.6.5.0/stack.json)
+The exact Realtek packages contain model-specific OEM codec tuning. The public
+THX 2.6.5 component downloads contain generic fallback configuration, and the
+connection between those layers remains unverified for fresh installation.
+The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/e65d43dcd5128291dfcc9b333d6cd3e93c2f9ad3/components/thx-legacy/2.6.5.0/stack.json)
 records verified packages and the remaining installation blockers. For recovery,
 use the exact laptop's Windows driver updates or
 [Razer recovery image](https://mysupport.razer.com/app/answers/detail/a_id/5997/).

@@ -84,9 +84,11 @@ Only RZ09-0581 has physical round-trip evidence. RZ09-0528 and RZ09-0530 remain
 source-backed experimental support; no native calls or writes on those models
 occurred here, and their support is not production-ready.
 
-The current vendor definitions for RZ09-0328/-0482/-0483/-0484 supply no THX
-activation or resources. A force toggle supplies neither missing endpoint
-bindings nor correct tuning. New component builds require their own pins.
+The reviewed Synapse middleware resources for RZ09-0328/-0482/-0483/-0484
+do not supply a THX installer. The three 2023 models use the separate legacy
+THX service described in [THX audio](thx-audio.md); RZ09-0328 uses Dolby Atmos.
+A force toggle supplies neither missing endpoint bindings nor correct tuning.
+New component builds require their own pins.
 
 No machine entitlement gate was found in the inspected MSI/custom-action
 path; this does not establish that native code has none. These packages are
@@ -144,3 +146,105 @@ has a durable intent, and the resulting stack/configuration/service must pass
 independent verification. The implementation and simulated tests are separate
 from physical installation evidence; no vendor installer or updater was run in
 this investigation.
+
+## Expanded source search (2026-10-19)
+
+### Recovered rznb12 installer
+
+Read-only inspection of the Windows Installer cache recovered a complete signed
+rznb12 base installer, identified by its embedded original filename:
+
+`THXAPO_rznb12_v4.2.37.1621-5117e8e-i2546a_MSHLKSIGN-2255eea3.3219a439.exe`
+
+The 53,720,208-byte cached executable has SHA-256
+`32392A63FC704DFC4BFBE4F33ED038773BBDE21AC88C61BAEEA013E3F98E8CF2`.
+Its Authenticode signature is valid, with THX LTD. certificate thumbprint
+`B23FAAE4D5ADEDA77BCCD9F12F32C92D3FF755D5`.
+
+Static extraction of its cached MSI cabinet recovered the APO, extension and
+service packages at version 4.2.37.1621, dated 2026-01-23. All nine non-catalog
+files, including the INFs, match their signed Microsoft Windows catalogs. The
+extension binds the `30101A58` SoundWire subsystem used by RZ09-0581 and selects
+`SO6120_speakers-default`. Its 340-entry properties archive contains the
+PI4120, SO6120 and KI8120 presets; its SHA-256 is
+`FF587D74CE7763FCB2B0150B62A67237844B688647CE0434219B814608E12C07`.
+The installer metadata specifies `ProductIds=["rznb12"]`, exact hardware IDs,
+`UseSetupApi=true` and `IncludeClientApp=false`.
+
+This establishes an older model-bound package, not a public acquisition source
+or compatibility with OpenBlade's pinned 4.2.41.2499 runtime. The base version
+and its installer behavior need separate review before admission. The original
+source URL is absent from the inspected installer registration. HEAD against
+its exact filename in the known Razer common THX directory returned HTTP 403;
+that directory placement was an inference, and the response does not establish
+whether the object exists. The cached binary was not executed or published.
+
+### Advertised Synapse manifest history
+
+The [official installer loader](https://apps.razer.com/installer/assets/index.325f8759.js)
+resolves each product's `installer-manifest.json`, then its advertised latest
+and archived manifest paths. Following those references inspected all seven
+[product 736 versions](https://apps.razer.com/synapse/products/736/mw/installer-manifest.json),
+1.0.0 through 1.0.6. None advertises a base APO installer. Versions 1.0.0-1.0.3
+carry native client 1.0.2.1; 1.0.4-1.0.5 carry 1.1.1.0; 1.0.6 adds the known
+rznb12 configuration updaters.
+
+The advertised histories for
+[669 / RZ09-0482](https://apps.razer.com/synapse/products/669/mw/installer-manifest.json)
+(1.0.2),
+[671 / RZ09-0483](https://apps.razer.com/synapse/products/671/mw/installer-manifest.json)
+(1.0.0-1.0.1) and
+[672 / RZ09-0484](https://apps.razer.com/synapse/products/672/mw/installer-manifest.json)
+(1.0.1) contain no THX/audio resources. Current beta 736 and production 737
+also supplied no alternate rznb12 base resource. These are bounded feed
+results; they do not prove the packages are absent from all Razer delivery
+channels or Windows Update.
+
+### Windows Update and legacy OEM tuning
+
+Static inspection corrected the earlier assumption that the exact Realtek
+packages establish only codec identity. Their signed `RTAIODAT.DAT` files also
+contain per-subsystem Razer codec profiles:
+
+| Model | Exact codec subsystem | Realtek package | OEM codec profile |
+| --- | --- | --- | --- |
+| RZ09-0482 | `1A582020` | [6.0.9484.1](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=d5987bbd-d8bd-4ebe-95e6-2c521b13baaa) | `Razer_2020` |
+| RZ09-0483 | `1A583006` | [6.0.9601.1](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=fc8c3fe8-290e-4984-af52-75020538e18d) | `Razer_3006` |
+| RZ09-0484 | `1A583007` | [6.0.9601.1](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=01c12b71-a0f8-40ff-8be0-7b9c4225ed5a) | `Razer_3007` |
+
+The 6.0.9484.1 data file is 54,704,172 bytes, SHA-256
+`E84591EF1106343CE3200795CDFADDC4D6347F6F86E8E28012CEC82F130E5A32`.
+Both 6.0.9601.1 downloads contain the same 57,817,855-byte data file, SHA-256
+`98509C3F66CA9D20B12DE14A8063C25502C439840193D501E80A857EA510F08B`.
+All three data files passed membership verification against their signed Windows
+catalogs.
+
+For reproducibility, these files start with `MDTR`. Little-endian 32-bit hardware
+and profile counts are at byte 8. The hardware table starts at byte 24 with a
+28-byte stride; its first field is the subsystem and fourth field is the profile
+index. The profile table starts at `24 + hardwareCount * 28 + 4`, also with a
+28-byte stride and a 16-byte ASCII name. Records 2402, 2376 and 2374 select
+profile indices 2428, 2397 and 2394 for the models above. The shared field value
+`0x250B` has no established meaning and is not evidence of a THX selector.
+
+The profiles contain distinct Realtek EQ, DRC, amplifier and speaker-protection
+blocks. This establishes OEM codec tuning, not THX acoustic `deviceEQ` or a
+complete THX configuration. Both Razer INFs also declare the THX MFX capability
+GUID `{E82A5EE8-44D2-44C1-897E-AA5AFBF146BA}`. Their INF text does not declare
+`AddComponent`, `AddSoftware`, `Include`/`Needs` or literal `VEN_THX` child
+enumeration. The runtime driver could interpret additional data; absence from
+the INF does not prove a separate extension package is required.
+
+The generic THX SCU package invokes `spatial-config-util.exe` through
+`AddSoftware` after its software component exists. Its
+`generic-config-fallback-V2` configuration has empty `deviceEQ` objects. The
+remaining gap is the runtime enumeration, binding and configuration path between
+the exact Razer codec package and these THX components, including installation
+order. No missing standalone OEM package has been established.
+
+The rznb12 Catalog search covered its component IDs, extension ID, recovered
+filename and versions 4.2.37.1621, 4.2.38.1962 and 4.2.41.2499 without finding
+an exact package. The generic THX 4.2.38.1967 result explicitly targets
+`SWC\VEN_THX&SID_RZNB11SVC`; it is not an rznb12 substitute. These bounded
+search results do not establish whether Windows Update can privately target
+another submission to the exact device.
