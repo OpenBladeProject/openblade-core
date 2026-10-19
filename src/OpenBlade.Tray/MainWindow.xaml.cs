@@ -288,6 +288,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public Visibility ThxAudioNavigationVisibility => localizationSnapshotMode
         || RazerBladeModelCatalog.Find(ViewModel.DetectedFirmware?.ModelNumber)?.ModelNumber
             is "RZ09-0581" or "RZ09-0528" or "RZ09-0530"
+                or "RZ09-0482" or "RZ09-0483" or "RZ09-0484"
         ? Visibility.Visible : Visibility.Collapsed;
 
     public DisplaySettingsViewModel DisplayViewModel { get; }
