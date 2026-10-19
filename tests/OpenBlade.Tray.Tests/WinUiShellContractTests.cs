@@ -2736,6 +2736,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("foreach ($trayPage", capture, StringComparison.Ordinal);
         Assert.Contains("'settings-appearance'", capture, StringComparison.Ordinal);
+        Assert.Contains("'laptop-snap-tap-info'", capture, StringComparison.Ordinal);
         Assert.Contains("'profiles-narrow'", capture, StringComparison.Ordinal);
         Assert.Contains("'profiles-wide'", capture, StringComparison.Ordinal);
         Assert.Contains(

@@ -104,6 +104,49 @@ public sealed class LocalizationSnapshotPixelCanonicalizerTests
         AssertPixel(pixels, 3, 1, 1, Selected);
     }
 
+    [Fact]
+    public void RequireVisibleDetailRejectsTransparentPopupEvenWithHiddenRgbData()
+    {
+        byte[] pixels = [255, 100, 50, 0, 10, 20, 30, 0];
+        Assert.Throws<InvalidOperationException>(() =>
+            OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.RequireVisibleDetail(pixels));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(255)]
+    public void RequireVisibleDetailRejectsUniformSurfaceWithTransparentBorder(byte value)
+    {
+        byte[] pixels = [0, 0, 0, 0, value, value, value, 255, value, value, value, 255];
+        Assert.Throws<InvalidOperationException>(() =>
+            OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.RequireVisibleDetail(pixels));
+    }
+
+    [Fact]
+    public void RequireVisibleDetailAcceptsVisibleTextOnSurface()
+    {
+        byte[] pixels = CreatePixels(["WDW"]);
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.RequireVisibleDetail(pixels);
+    }
+
+    [Fact]
+    public void FlyoutSnapshotRejectsAntialiasedTextWithoutPresenterSurface()
+    {
+        byte[] pixels = [0, 0, 0, 0, 0, 0, 0, 158, 0, 0, 0, 73];
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.RequireVisibleDetail(pixels);
+        Assert.Throws<InvalidOperationException>(() =>
+            OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.RequireVisibleDetail(
+                pixels, requireOpaqueSurface: true));
+    }
+
+    [Fact]
+    public void FlyoutSnapshotAcceptsTextAndSurfaceWithTransparentRoundedCorner()
+    {
+        byte[] pixels = [0, 0, 0, 0, 247, 247, 247, 255, 135, 135, 135, 255];
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.RequireVisibleDetail(
+            pixels, requireOpaqueSurface: true);
+    }
+
     private static byte[] CreatePixels(IReadOnlyList<string> rows)
     {
         int width = rows[0].Length;
