@@ -378,7 +378,7 @@ Both inventories contain a `PC00.LPCB.TZRZ` PDH sample of 3182 tenths kelvin
 (45.05 degrees Celsius), while the other known TZRZ path fails. Equal idle
 samples do not prove a frozen CPU sensor or an exact CPU-package mapping.
 
-Offline fixes now distinguish each experimental write-admission rejection and
+Offline fixes now distinguish each shared experimental write-admission guard rejection and
 stop one-shot firmware spinners after a completed unconfirmed read. Controls
 remain disabled until readback is confirmed; a later successful refresh restores
 them. The shared diagnostic and presentation fixes do not establish physical

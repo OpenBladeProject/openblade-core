@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop startup-animation and other firmware controls from loading indefinitely after an unconfirmed read, and report the specific shared admission check blocking experimental writes. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
+
 ## [0.37.3-nightly.96] - 2026-10-19
 
 ### Changed
