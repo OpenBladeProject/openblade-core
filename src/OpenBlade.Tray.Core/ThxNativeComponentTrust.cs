@@ -9,6 +9,11 @@ namespace OpenBlade.Tray;
 internal static class ThxNativeComponentTrust
 {
     internal static void Verify(string path, SafeFileHandle handle, CancellationToken cancellationToken)
+        => Verify(path, handle, ThxNativeComponentPackage.SignerSubject,
+            ThxNativeComponentPackage.SignerThumbprint, cancellationToken);
+
+    internal static void Verify(string path, SafeFileHandle handle, string signerSubject,
+        string signerThumbprint, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var file = new WinTrustFileInfo
@@ -40,7 +45,7 @@ internal static class ThxNativeComponentTrust
                     throw new CryptographicException($"Windows rejected THX component trust (0x{status:X8}).");
                 }
                 cancellationToken.ThrowIfCancellationRequested();
-                VerifySigner(data.State);
+                VerifySigner(data.State, signerSubject, signerThumbprint);
             }
             finally
             {
@@ -55,7 +60,7 @@ internal static class ThxNativeComponentTrust
         }
     }
 
-    private static void VerifySigner(nint state)
+    private static void VerifySigner(nint state, string signerSubject, string signerThumbprint)
     {
         // Read the signer from the successful trust provider state. Reopening the path
         // would conflict with the retained DELETE-access handle used for atomic publish.
@@ -74,8 +79,7 @@ internal static class ThxNativeComponentTrust
 #pragma warning disable SYSLIB0057
         using var signedBy = new X509Certificate2(info.Certificate);
 #pragma warning restore SYSLIB0057
-        if (signedBy.Subject != ThxNativeComponentPackage.SignerSubject ||
-            signedBy.Thumbprint != ThxNativeComponentPackage.SignerThumbprint)
+        if (signedBy.Subject != signerSubject || signedBy.Thumbprint != signerThumbprint)
         {
             throw new CryptographicException("The THX component signer does not match the reviewed Razer signature.");
         }

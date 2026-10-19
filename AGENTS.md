@@ -308,7 +308,14 @@ inventing a page-specific appearance:
    installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
    `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off
    by default, uses current-user typed Audio IPC and an isolated native helper,
-   and never installs or bundles THX drivers or services. An explicit user
+   and never bundles THX drivers or services. An explicit elevated setup action
+   may provision the pinned rznb11 stack on exact RZ09-0528/RZ09-0530 with
+   matching codec, AC power, no competing controller and no existing THX stack.
+   Use only reviewed vendor downloads, exact hashes/signatures, protected staging,
+   durable per-process intents and independent installed catalog/config/service
+   verification. Never retry an uncertain submission or replace an existing stack.
+   The rznb12 base installer is unavailable in the reviewed source, so setup must
+   refuse that family. An explicit user
    action may download only the pinned native client from its reviewed Razer
    HTTPS URL into OpenBlade's per-user component directory, after exact size,
    SHA-256, Windows Authenticode trust and signer verification. Publish it

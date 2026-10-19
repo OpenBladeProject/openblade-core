@@ -2081,7 +2081,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Ожидание обработчика ввода…</value>
   </data>
   <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
-    <value>Экспериментальная функция. Необходимы совместимые компоненты THX, уже установленные на ноутбуке.</value>
+    <value>Экспериментальная функция. Требуются совместимые с этой моделью компоненты THX.</value>
   </data>
   <data name="MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Эквалайзер THX</value>
@@ -2262,5 +2262,8 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_ThxAudioComponentDownloadDescription.Text" xml:space="preserve">
     <value>Скачайте компонент THX с сайта Razer. Аудиодрайвер THX должен быть уже установлен.</value>
+  </data>
+  <data name="MainWindow_ThxAudioStackInstallationDescription.Text" xml:space="preserve">
+    <value>Установите драйвер и конфигурацию THX с серверов Razer. Нужен подходящий аудиодрайвер Realtek. Установка может временно прервать звук и потребовать перезагрузки.</value>
   </data>
 </root>

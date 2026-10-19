@@ -22,6 +22,8 @@
   <ItemGroup>
     <None Update="Fixtures\DriverCatalogApplicability.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\ThxNativeComponentCatalog.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\ThxRznb11StackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\ThxRznb12StackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,6 +45,7 @@
     <Compile Include="..\..\src\OpenBlade.Tray\ElevatedServiceControlLauncher.cs"
              Link="ElevatedServiceControlLauncher.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\RazerDriverInstallLauncher.cs" Link="RazerDriverInstallLauncher.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\ThxAudioInstallLauncher.cs" Link="ThxAudioInstallLauncher.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\GpuAppCleanupCoordinator.cs" Link="GpuAppCleanupCoordinator.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\GpuAppForceCloseOutcomeTracker.cs"
              Link="GpuAppForceCloseOutcomeTracker.cs" />

@@ -2064,7 +2064,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>正在等待输入辅助进程…</value>
   </data>
   <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
-    <value>实验性功能。需预先安装兼容的 THX 组件。</value>
+    <value>实验性功能。需要适用于此型号的 THX 组件。</value>
   </data>
   <data name="MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>THX 均衡器</value>
@@ -2245,5 +2245,8 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="MainWindow_ThxAudioComponentDownloadDescription.Text" xml:space="preserve">
     <value>从 Razer 下载 THX 组件。需预先安装 THX 音频驱动程序。</value>
+  </data>
+  <data name="MainWindow_ThxAudioStackInstallationDescription.Text" xml:space="preserve">
+    <value>从 Razer 下载并安装 THX 驱动及配置。电脑需要已有匹配的 Realtek 音频驱动。安装过程可能暂时中断声音播放，并要求重启 Windows。</value>
   </data>
 </root>

@@ -117,3 +117,30 @@ ProgramData. OpenBlade pins both immutable active files as well as the complete
 driver packages. Mutable `properties.json`, endpoint values, and preset
 selection files are excluded from hash admission because legitimate control
 changes update them. Unknown immutable payloads fail closed.
+
+## Standalone provisioning follow-up (2026-10-19)
+
+A fresh read of product 709/710/736 manifests retained the same artifact pins.
+The catalog now records separate rznb11 and rznb12 stack descriptors, including
+all seven supported-model applicability decisions. The product 736 manifest
+still has no base rznb12 APO installer; its two configuration updaters are not a
+complete driver package. A bounded follow-up also found no audio installer on the
+[RZ09-0581 support downloads page](https://mysupport.razer.com/app/answers/detail/a_id/20585)
+and no result in the
+[Microsoft Update Catalog exact-version search](https://www.catalog.update.microsoft.com/Search.aspx?q=4.2.41.2499).
+These findings describe the sources reviewed, not every possible acquisition route.
+The THX installers also do not contain the Realtek base codec driver.
+
+The 709/710 base-installer resources explicitly specify `/s /norestart`. Static
+inspection of both signed rznb11 configuration updater entry paths shows fixed
+zero-argument deployment. They write the previously pinned immutable outputs
+and invoke a stop/start command for `thx_rznb11_service`, ignoring its result.
+Independent file and service checks are therefore required.
+
+OpenBlade's experimental provisioning path admits only a pristine THX state on
+exact RZ09-0528/RZ09-0530 hosts and codecs. It does not use the vendor's legacy
+2.x/3.x removal path to repair or upgrade an existing installation. Every launch
+has a durable intent, and the resulting stack/configuration/service must pass
+independent verification. The implementation and simulated tests are separate
+from physical installation evidence; no vendor installer or updater was run in
+this investigation.

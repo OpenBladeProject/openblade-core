@@ -14,6 +14,25 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (ThxAudioProvisioningElevationBridge.HasCommandSwitch(args))
+        {
+            return ThxAudioProvisioningElevationBridge.IsRequested(args)
+                ? ThxAudioProvisioningElevationBridge.Run()
+                : (int)ThxAudioProvisioningResult.Unavailable;
+        }
+
+        if (ThxAudioProvisioningCommand.HasCommandSwitch(args))
+        {
+            if (!ThxAudioProvisioningCommand.IsRequested(args))
+            {
+                return (int)ThxAudioProvisioningResult.Unavailable;
+            }
+            return (int)new ThxAudioProvisioningCommand()
+                .RunAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+
         if (SnapTapInputHost.IsRequested(args))
         {
             return SnapTapInputHost.Run(args);

@@ -108,7 +108,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         return false;
     }
 
-    private static ThxAudioCompatibilityProfile? GetExactHostProfile()
+    internal static ThxAudioCompatibilityProfile? GetExactHostProfile()
     {
         using RegistryKey localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
         string? biosManufacturer = ReadString(localMachine, BiosKey, "SystemManufacturer");
@@ -167,7 +167,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
     internal static string GetServiceVerificationFailure(ThxAudioDriverStack stack) =>
         $"THX service {stack.ServiceName} could not be verified against {stack.ServiceExecutable}.";
 
-    private static bool IsCompetingControllerRunning() =>
+    internal static bool IsCompetingControllerRunning() =>
         HasProcess("RazerAppEngine")
         || HasProcess("Razer Synapse Service")
         || HasProcess("RazerSynapseService")

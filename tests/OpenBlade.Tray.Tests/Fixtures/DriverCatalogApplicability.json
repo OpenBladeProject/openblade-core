@@ -3,7 +3,7 @@
   "reviewedAt": "2026-10-19",
   "coreSource": {
     "repository": "OpenBladeProject/openblade-core",
-    "commit": "8793f6ead3f6208973d9c3b25bdd129b2f4b817a",
+    "commit": "70e0e05dcc3f0dd65244422d403bb889d95a96b4",
     "path": "src/OpenBlade.Contracts/RazerBladeModelCatalog.cs"
   },
   "profiles": [
@@ -227,6 +227,102 @@
           "vendorBuild": "2608200948",
           "vendorRevision": "c0877d27ea53c0c724bd71ca4df01007860db08c",
           "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+        }
+      ]
+    },
+    {
+      "path": "components/thx-rznb11/4.2.29.1159/stack.json",
+      "kind": "UpstreamAudioStack",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "Applicable",
+          "evidence": "components/thx-rznb11/4.2.29.1159/stack.json#/applicableProfiles",
+          "reason": "Exact vendor product manifest, THX product family and signed extension-INF codec binding."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "Applicable",
+          "evidence": "components/thx-rznb11/4.2.29.1159/stack.json#/applicableProfiles",
+          "reason": "Exact vendor product manifest, THX product family and signed extension-INF codec binding."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        }
+      ]
+    },
+    {
+      "path": "components/thx-rznb12/4.2.41.2499/stack.json",
+      "kind": "UpstreamAudioStack",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "Applicable",
+          "evidence": "components/thx-rznb12/4.2.41.2499/stack.json#/applicableProfiles",
+          "reason": "Exact vendor product manifest, THX product family and signed extension-INF codec binding."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotEstablished",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model is outside the reviewed exact-model and codec scope of this THX family. A shared client DLL is not stack applicability evidence."
         }
       ]
     }

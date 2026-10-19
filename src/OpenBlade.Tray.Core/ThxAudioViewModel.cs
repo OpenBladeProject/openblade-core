@@ -30,13 +30,18 @@ public interface IThxAudioAdapter
 public sealed partial class ThxAudioViewModel(
     IThxAudioAdapter adapter,
     Func<CancellationToken, Task<string>>? downloadComponent = null,
-    Func<bool>? hasVerifiedComponent = null) : INotifyPropertyChanged, IAsyncDisposable
+    Func<bool>? hasVerifiedComponent = null,
+    Func<CancellationToken, Task<ThxAudioProvisioningResult>>? installStack = null,
+    Func<bool>? canInstallStack = null) : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IThxAudioAdapter adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
     private readonly Func<CancellationToken, Task<string>> downloadComponent =
         downloadComponent ?? ThxNativeComponentPackage.AcquireVerifiedAsync;
     private readonly Func<bool> hasVerifiedComponent =
         hasVerifiedComponent ?? ThxNativeComponentPackage.HasVerifiedComponent;
+    private readonly Func<CancellationToken, Task<ThxAudioProvisioningResult>> installStack =
+        installStack ?? (_ => Task.FromResult(ThxAudioProvisioningResult.Unavailable));
+    private readonly Func<bool> canInstallStack = canInstallStack ?? (() => false);
     private readonly CancellationTokenSource lifetime = new();
     private ThxAudioState? state;
     private ThxAudioEndpoint endpoint;
@@ -50,6 +55,9 @@ public sealed partial class ThxAudioViewModel(
     private bool automaticConnectionAttempted;
     private bool componentDownloadNeeded;
     private bool downloadingComponent;
+    private bool stackInstallationNeeded;
+    private bool stackInstallationPaused;
+    private bool installingStack;
     private Task pendingOperation = Task.CompletedTask;
     private ThxAudioEnhancementKind? pendingEnhancementKind;
     private long enhancementContextRevision;
@@ -71,10 +79,13 @@ public sealed partial class ThxAudioViewModel(
     public bool IsReadSettingsVisible => isReadSettingsVisible;
     public bool CanToggleIntegration => !busy && !disposed;
     public bool CanRead => enabled && !busy && !disposed;
-    public bool IsComponentDownloadVisible => enabled && componentDownloadNeeded;
+    public bool IsComponentDownloadVisible => enabled && componentDownloadNeeded && !stackInstallationNeeded;
     public bool CanDownloadComponent => IsComponentDownloadVisible && !busy && !disposed;
     public string DownloadComponentButtonLabel => TrayText.Get(downloadingComponent
         ? "Downloading THX component..." : "Download THX component");
+    public bool IsStackInstallationVisible => enabled && stackInstallationNeeded;
+    public bool CanInstallStack => IsStackInstallationVisible && !busy && !disposed && !stackInstallationPaused;
+    public string InstallStackButtonLabel => TrayText.Get(installingStack ? "Installing THX audio..." : "Install THX audio");
     public bool CanEdit => CanRead && state is not null && availability == ThxAudioAvailability.Available;
     public bool SpatialEnabled => state?.SpatialEnabled ?? false;
     public bool EqualizerEnabled => state?.EqualizerEnabled ?? false;
@@ -161,6 +172,7 @@ public sealed partial class ThxAudioViewModel(
         isReadSettingsVisible = false;
         automaticConnectionAttempted = false;
         componentDownloadNeeded = false;
+        stackInstallationNeeded = false;
         ResetAdvancedDrafts();
         availability = value ? ThxAudioAvailability.ComponentsUnavailable : ThxAudioAvailability.Disabled;
         failureDetail = null;
@@ -254,6 +266,96 @@ public sealed partial class ThxAudioViewModel(
         finally
         {
             busy = downloadingComponent = false;
+            if (!disposed)
+            {
+                NotifyAll();
+            }
+        }
+    }
+
+    public Task InstallStackAsync()
+    {
+        if (!CanInstallStack)
+        {
+            return Task.CompletedTask;
+        }
+        busy = installingStack = true;
+        failureDetail = null;
+        NotifyAll();
+        pendingOperation = InstallStackCoreAsync();
+        return pendingOperation;
+    }
+
+    private async Task InstallStackCoreAsync()
+    {
+        bool requested = false;
+        try
+        {
+            // Acquire the client as the original user before elevation. Stack setup
+            // runs separately and never applies a native THX audio setting.
+            if (!hasVerifiedComponent())
+            {
+                _ = await downloadComponent(lifetime.Token);
+                componentDownloadNeeded = false;
+            }
+            // Discovery checks files and service state without loading the native
+            // audio client. A missing DLL alone needs no elevated driver setup.
+            SessionAudioResponse inspection = await adapter.DiscoverAsync(lifetime.Token);
+            if (inspection.Status == ThxAudioOperationStatus.Succeeded
+                && inspection.Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly)
+            {
+                stackInstallationNeeded = false;
+                isReadSettingsVisible = true;
+                statusKey = "THX audio is installed. Read the current settings to connect.";
+                return;
+            }
+            requested = true;
+            ThxAudioProvisioningResult result = await installStack(lifetime.Token);
+            state = null;
+            isReadSettingsVisible = true;
+            stackInstallationPaused = result is ThxAudioProvisioningResult.RecoveryRequired
+                or ThxAudioProvisioningResult.RestartRequired or ThxAudioProvisioningResult.ExistingInstallation;
+            stackInstallationNeeded = result is not (ThxAudioProvisioningResult.Installed
+                or ThxAudioProvisioningResult.AlreadyInstalled or ThxAudioProvisioningResult.SourceUnavailable);
+            statusKey = result switch
+            {
+                ThxAudioProvisioningResult.Installed or ThxAudioProvisioningResult.AlreadyInstalled =>
+                    "THX audio is installed. Read the current settings to connect.",
+                ThxAudioProvisioningResult.SourceUnavailable =>
+                    "OpenBlade cannot install THX audio on this model yet.",
+                ThxAudioProvisioningResult.ExistingInstallation =>
+                    "THX components are already present. OpenBlade cannot replace or repair them. Export diagnostics for help.",
+                ThxAudioProvisioningResult.RestartRequired =>
+                    "Restart Windows, then select Install THX audio to finish the remaining setup steps.",
+                ThxAudioProvisioningResult.RecoveryRequired =>
+                    "THX setup could not be confirmed. Do not run setup again. Export diagnostics for help.",
+                ThxAudioProvisioningResult.AcPowerRequired => "Connect AC power before installing THX audio.",
+                ThxAudioProvisioningResult.ControllerActive => "Close Synapse and THX Spatial Audio before installing THX audio.",
+                ThxAudioProvisioningResult.Canceled => "THX audio installation canceled.",
+                ThxAudioProvisioningResult.Unavailable => "THX audio setup is unavailable for this laptop or audio device.",
+                _ => "THX audio installation failed before changes were submitted.",
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            stackInstallationPaused = requested;
+            statusKey = requested
+                ? "THX setup could not be confirmed. Do not run setup again. Export diagnostics for help."
+                : "THX audio installation canceled.";
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or HttpRequestException
+            or InvalidOperationException or UnauthorizedAccessException or System.ComponentModel.Win32Exception
+            or System.Security.Cryptography.CryptographicException)
+        {
+            stackInstallationPaused = requested;
+            statusKey = requested
+                ? "THX setup could not be confirmed. Do not run setup again. Export diagnostics for help."
+                : "THX audio installation failed before changes were submitted.";
+            failureDetail = exception.Message;
+        }
+        finally
+        {
+            busy = installingStack = false;
             if (!disposed)
             {
                 NotifyAll();
@@ -481,6 +583,8 @@ public sealed partial class ThxAudioViewModel(
                 return;
             }
             availability = response.Availability;
+            stackInstallationNeeded = response.Status != ThxAudioOperationStatus.Indeterminate
+                && response.Availability == ThxAudioAvailability.ComponentsUnavailable && canInstallStack();
             componentDownloadNeeded = response.Status != ThxAudioOperationStatus.Indeterminate
                 && response.Availability == ThxAudioAvailability.ComponentsUnavailable
                 && !hasVerifiedComponent();
@@ -539,7 +643,7 @@ public sealed partial class ThxAudioViewModel(
             or OperationCanceledException or UnauthorizedAccessException)
         {
             state = null;
-            componentDownloadNeeded = false;
+            componentDownloadNeeded = stackInstallationNeeded = false;
             isReadSettingsVisible = true;
             statusKey = isMutation
                 ? "The audio change could not be confirmed. Read the current settings before trying again."
@@ -573,6 +677,7 @@ public sealed partial class ThxAudioViewModel(
             nameof(IsEnabled), nameof(IsBusy), nameof(ShowStatusMessage), nameof(IsReadSettingsVisible),
             nameof(CanToggleIntegration), nameof(CanRead),
             nameof(IsComponentDownloadVisible), nameof(CanDownloadComponent), nameof(DownloadComponentButtonLabel),
+            nameof(IsStackInstallationVisible), nameof(CanInstallStack), nameof(InstallStackButtonLabel),
             nameof(CanEdit), nameof(SpatialEnabled), nameof(EqualizerEnabled), nameof(Endpoint),
             nameof(SelectedEndpoint), nameof(Presets), nameof(SelectedPreset), nameof(StatusMessage),
             nameof(EqualizerBands), nameof(HasEqualizerBands), nameof(CanEditEqualizerBands),

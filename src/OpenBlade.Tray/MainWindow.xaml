@@ -3191,7 +3191,7 @@
                                                 <TextBlock x:Uid="MainWindow_ThxAudioIntegrationTitle" Text="Use installed THX audio"
                                                            Style="{StaticResource CardTitleStyle}" />
                                                 <TextBlock x:Uid="MainWindow_ThxAudioDescription"
-                                                           Text="Experimental. Requires the supported THX components already installed."
+                                                           Text="Experimental. Requires compatible THX components for this laptop."
                                                            Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <ToggleSwitch x:Uid="MainWindow_ThxAudioIntegrationToggle" Grid.Column="1"
@@ -3243,6 +3243,16 @@
                                                     Content="{x:Bind ThxViewModel.DownloadComponentButtonLabel, Mode=OneWay}"
                                                     IsEnabled="{x:Bind ThxViewModel.CanDownloadComponent, Mode=OneWay}"
                                                     Click="OnThxDownloadComponent" />
+                                        </StackPanel>
+                                        <StackPanel x:Name="ThxAudioStackInstallation" Spacing="8"
+                                                    Visibility="{x:Bind ThxViewModel.IsStackInstallationVisible, Mode=OneWay}">
+                                            <TextBlock x:Uid="MainWindow_ThxAudioStackInstallationDescription"
+                                                       Text="Install the THX driver and configuration from Razer. A matching Realtek audio driver is required. Setup may interrupt playback and require a restart."
+                                                       TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" />
+                                            <Button x:Name="ThxAudioInstallStack" HorizontalAlignment="Left"
+                                                    Content="{x:Bind ThxViewModel.InstallStackButtonLabel, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind ThxViewModel.CanInstallStack, Mode=OneWay}"
+                                                    Click="OnThxInstallStack" />
                                         </StackPanel>
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions>

@@ -2428,7 +2428,10 @@ public sealed class WinUiShellContractTests
             bool isTextScaleConsumer = file.EndsWith(
                 "MainWindow.xaml.cs",
                 StringComparison.OrdinalIgnoreCase);
-            if (!isRegistryReader && !isShellThemeSource)
+            bool isThxInstallerHostReader = file.EndsWith(
+                "ThxAudioInstallLauncher.cs",
+                StringComparison.OrdinalIgnoreCase);
+            if (!isRegistryReader && !isShellThemeSource && !isThxInstallerHostReader)
             {
                 Assert.DoesNotContain(
                     "Microsoft.Win32",
@@ -2438,6 +2441,12 @@ public sealed class WinUiShellContractTests
             if (!isShellThemeSource)
             {
                 Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
+                Assert.DoesNotContain(@"Themes\Personalize", source, StringComparison.Ordinal);
+            }
+            if (isThxInstallerHostReader)
+            {
+                Assert.Contains("RegistryHive.LocalMachine", source, StringComparison.Ordinal);
+                Assert.DoesNotContain("RegistryHive.CurrentUser", source, StringComparison.Ordinal);
             }
             bool isAccentColorManager = file.EndsWith(
                 "AccentColorManager.cs",
@@ -4647,9 +4656,10 @@ public sealed class WinUiShellContractTests
             "ThxViewModel = CreateThxAudioViewModel(thxAudioAdapter, localizationSnapshotMode);",
             window,
             StringComparison.Ordinal);
-        Assert.Contains("return new ThxAudioViewModel(adapter);", window, StringComparison.Ordinal);
+        Assert.Contains("return new ThxAudioViewModel(adapter, installStack: installer.RequestAsync,", window, StringComparison.Ordinal);
+        Assert.Contains("canInstallStack: ThxAudioInstallLauncher.IsSupportedHost);", window, StringComparison.Ordinal);
         Assert.Contains("\"disconnected-preview\"", window, StringComparison.Ordinal);
-        Assert.Contains("}, () => false);", window, StringComparison.Ordinal);
+        Assert.Contains("}, () => false, async token =>", window, StringComparison.Ordinal);
         Assert.Contains(
             "IServiceClient serviceClient = new ServiceClient();",
             window.Replace("\r\n", "\n", StringComparison.Ordinal),

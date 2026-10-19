@@ -17,9 +17,12 @@ mutable user settings remain editable. Other payloads are not yet admitted.
 The two rznb11 models have vendor-backed controls and their own speaker EQ
 curves, but have not been physically tested in OpenBlade.
 
-OpenBlade can download the supported THX client from Razer. The matching audio
-driver, service and configuration must already be installed. Other Blade models are
-not yet supported. See the
+OpenBlade can download the supported THX client from Razer. On RZ09-0528 and
+RZ09-0530, it can also perform an experimental fresh installation of the reviewed
+THX driver, service and configuration. A matching Realtek base audio driver must
+already be installed. RZ09-0581 still requires its THX stack to be present because
+the reviewed Razer sources do not provide its base installer. Other Blade models
+are not yet supported. See the
 [installation compatibility investigation](thx-installation-investigation.md)
 for the package and codec restrictions.
 
@@ -118,6 +121,49 @@ opened. If the Session Agent cannot be reached, the entry records that query
 failure instead. Exporting checks installed components without loading the THX
 native client or changing audio settings.
 
+## Install missing THX audio components
+
+On RZ09-0528 or RZ09-0530, select **Install THX audio** after a component check
+fails. OpenBlade verifies the client download for the current user, then asks for
+administrator permission to install the matching rznb11 driver and configuration
+from Razer. Setup may interrupt playback and may require a Windows restart.
+It does not install Synapse or change the selected THX effects or presets through
+the audio-control API.
+
+This setup path is for a fresh THX installation with the exact supported codec
+and an existing Realtek base audio driver. Connect AC power and close Synapse and
+THX Spatial Audio first. OpenBlade refuses to replace or repair an existing,
+partial or mismatched THX stack. The pristine-state requirement prevents the
+vendor installer and configuration updaters from overwriting existing THX user
+settings. It is an installation safeguard, not a prerequisite for ordinary THX
+controls.
+
+After setup, select **Read settings** to connect. If setup requests a restart,
+restart Windows, then select **Install THX audio** to finish only the remaining
+steps. OpenBlade requires a recorded successful restart request, a new Windows
+boot identity and fresh stack verification before continuing; it never repeats
+the submitted step. If its result cannot be confirmed, stop and export
+diagnostics; OpenBlade keeps a durable installation record and does not replay
+an uncertain operation. It does not restart Windows automatically or remove
+packages as an automatic rollback.
+
+The helper accepts one fixed operation from the installed Session Agent. It
+checks the exact host in both registry sources, USB and codec identity, current
+session, AC power and competing controllers. Downloads have pinned sizes,
+SHA-256 and THX Authenticode signer identities. Files remain locked through
+verification and process execution in a protected staging directory. Every
+vendor process is preceded by a flushed transaction intent. Success requires
+independent driver hashes, Windows catalog trust and membership, immutable
+configuration hashes, and the running service's exact path; a vendor exit code
+alone is insufficient.
+
+The base rznb11 installer runs with the vendor's `/s /norestart` arguments. The
+properties and surround configuration updaters take no arguments, deploy fixed
+outputs and restart their THX service; their ignored service-command results are
+checked independently. This source-backed sequence has simulated failure tests
+but has not been installed on RZ09-0528 or RZ09-0530 during development. It remains
+experimental. No rznb11 package may be substituted for rznb12.
+
 ## Component and process boundaries
 
 Admission pairs each exact model with its own product ID, signed-INF audio
@@ -194,8 +240,9 @@ The native DLL stays mapped until the helper exits because its async
 callbacks can outlive client unregistration. Windows provides this lifetime
 through [module pinning](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandleexw).
 The client talks to the separately installed THX properties service, while
-the Windows Audio APO performs audio processing. The helper does not open
+the Windows Audio APO performs audio processing. The audio-control helper does not open
 the laptop control HID handle, launch Synapse, install drivers, or elevate.
+The explicitly launched setup helper above is a separate fixed operation.
 OpenBlade's existing hardware ownership and competing-controller checks are
 unchanged.
 
