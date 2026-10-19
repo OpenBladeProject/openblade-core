@@ -334,6 +334,21 @@ if ($contractDifference.Count -ne 0) {
     throw "Every build-contract suite must have an explicit input rule: $($contractDifference -join ', ')"
 }
 
+foreach ($legacyThxInput in @(
+        'build/Export-LegacyThxBindingEvidence.ps1',
+        'tests/Build.Tests/LegacyThxBindingEvidence.Tests.ps1',
+        'docs/thx-installation-investigation.md')) {
+    $legacyThx = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($legacyThxInput)
+    Assert-Equal 'affected' $legacyThx.Mode 'Legacy THX evidence inputs must have declared CI coverage.'
+    Assert-Contains $legacyThx.ContractTests `
+        'tests/Build.Tests/LegacyThxBindingEvidence.Tests.ps1' `
+        'Legacy THX source evidence changes must run their observational collector contracts.'
+    Assert-Equal 0 $legacyThx.QualityProjects.Count `
+        'Developer-only evidence collection must not require a product rebuild.'
+    Assert-Equal $false $legacyThx.RunInstaller `
+        'Developer-only evidence collection must not require installer publication.'
+}
+
 $ci = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\ci.yml') -Raw
 foreach ($requiredContract in @(
         'Test-OpenBladeCiFullBoundary -EventName $env:OPENBLADE_EVENT_NAME',

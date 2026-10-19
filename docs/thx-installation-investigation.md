@@ -517,6 +517,41 @@ and `installableCandidate=false` until the remaining binding/dependency and
 installation contract is established. Static recovery evidence would still
 require a separate clean installation test with Synapse absent.
 
+### Collecting original binding from a working legacy laptop
+
+A working RZ09-0482, RZ09-0483 or RZ09-0484 can supply another source of
+binding evidence when its recovery image is unavailable. The developer-only
+collector reads the exact model and codec chain, Windows-recorded extension
+configurations, the source driver's `InterfaceSetting` and referenced `FX`/`EP`
+registry trees, and bounded installation-log facts. It copies only the selected
+original INF/CAT pairs, preserving their bytes and recording their hashes.
+
+Run it from the repository in Windows PowerShell 5.1, substituting the laptop's
+model and a new output directory:
+
+```powershell
+powershell.exe -NoProfile -File .\build\Export-LegacyThxBindingEvidence.ps1 `
+    -Model RZ09-0483 -OutputDirectory "$env:TEMP\THX-binding-evidence"
+```
+
+The script does not install or execute vendor components, change devices,
+services, registry or audio settings, elevate itself, or upload its output.
+It refuses unsupported hosts. Missing optional source facts are recorded
+explicitly; failed required reads stop collection. A Windows-recorded extension
+configuration is a selection lead; it does not prove successful application or
+current endpoint processing. Historical SetupAPI package aliases can be reused,
+so uncertain package attribution remains unresolved.
+
+Review the output privately before sharing it. The manifest uses aliases and
+sanitized facts; the copied original packages are private source evidence and
+must not be committed to this repository. The result remains `Partial`.
+Signature and catalog-membership verification are deferred as
+`PendingOfflineReview` so collection stays offline. Missing endpoint association
+or installation provenance remains explicit. This collector has fixture coverage;
+a successful
+capture from a working legacy laptop and a clean installation with Synapse absent
+remain unvalidated. Collection alone cannot establish an installable recipe.
+
 ### Runtime prerequisites without Synapse
 
 A static PE import audit covered the pinned native v4 client, rznb11 service/APO
