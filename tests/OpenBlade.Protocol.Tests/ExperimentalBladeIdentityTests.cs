@@ -1,11 +1,24 @@
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
 public sealed class ExperimentalBladeIdentityTests
 {
+    [Fact]
+    public void EveryExperimentalProfileHasACatalogIdentityForApplicabilityReview()
+    {
+        foreach (ExperimentalBladeModel profile in ExperimentalBladeModels.All)
+        {
+            RazerBladeModelInfo model = Assert.Single(RazerBladeModelCatalog.All,
+                candidate => candidate.ModelNumber == profile.ModelNumber);
+            Assert.Equal("1532", model.UsbVendorId);
+            Assert.Equal(profile.ProductId.ToString("X4"), model.UsbProductId);
+        }
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
