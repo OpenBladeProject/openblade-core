@@ -434,13 +434,46 @@ internal sealed partial class ExperimentalBladePort(
 
     private void RequireWriteAdmission(bool thermal = false, FanMode? fanMode = null)
     {
-        if (!policy.WritesAllowed || !exactHostStillPresent() || additionalWriteAdmission?.Invoke() == false
-            || thermal && !ExternalPowerPresent()
-            || fanMode is { } requestedFan
-                && !FanModeSourceIsAdmitted(capturePowerSource(), requestedFan))
+        if (!policy.WritesAllowed)
         {
+            policy.Record("WriteAdmission", "Guard", "Blocked", failure: "RecoveryRequired");
             throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                "Experimental exact identity or recovery admission blocked the write.");
+                "Experimental writes are paused after an uncertain result. Check the current settings, then resume experimental controls.");
+        }
+        if (!exactHostStillPresent())
+        {
+            policy.Record("WriteAdmission", "Guard", "Blocked", failure: "ExactHostUnavailable");
+            throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                "OpenBlade can no longer confirm the exact admitted laptop identity. Refresh device detection before retrying.");
+        }
+        if (additionalWriteAdmission?.Invoke() == false)
+        {
+            policy.Record("WriteAdmission", "Guard", "Blocked", failure: "AdditionalAdmissionRejected");
+            throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                "Additional write safety checks did not pass. Check Troubleshooting before retrying.");
+        }
+        if (thermal)
+        {
+            PowerSource source = capturePowerSource();
+            if (source is not (PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC))
+            {
+                policy.Record("WriteAdmission", "Guard", "Blocked",
+                    confirmed: $"PowerSource={source}", failure: "ExternalPowerNotConfirmed");
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    $"Thermal writes require confirmed external power; the current source is {source}. Connect the factory charger and retry.");
+            }
+        }
+        if (fanMode is { } requestedFan)
+        {
+            PowerSource source = capturePowerSource();
+            if (!FanModeSourceIsAdmitted(source, requestedFan))
+            {
+                policy.Record("WriteAdmission", "Guard", "Blocked",
+                    requested: $"FanMode={requestedFan}", confirmed: $"PowerSource={source}",
+                    failure: "FanModePowerSourceRejected");
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    $"Fan mode {requestedFan} is not admitted on {source} power. Connect the factory charger or choose a fan mode admitted for that source.");
+            }
         }
     }
 

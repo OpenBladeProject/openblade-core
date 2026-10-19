@@ -1593,6 +1593,10 @@ public sealed class CapabilityPresentationTests
             "ToggleSwitch",
             "StartupAnimationToggle");
         Assert.Equal("OnStartupAnimationToggled", Attribute(startupAnimation, "Toggled"));
+        Assert.Equal("{x:Bind StartupAnimationStateLabel, Mode=OneWay}", Attribute(startupAnimation, "OnContent"));
+        Assert.Equal("{x:Bind StartupAnimationStateLabel, Mode=OneWay}", Attribute(startupAnimation, "OffContent"));
+        Assert.Equal("{x:Bind TrayDashboardGamingModeLabel, Mode=OneWay}", Attribute(gamingMode, "OnContent"));
+        Assert.Equal("{x:Bind TrayDashboardGamingModeLabel, Mode=OneWay}", Attribute(gamingMode, "OffContent"));
         Assert.Equal(
             "{StaticResource CompactCardToggleSwitchStyle}",
             Attribute(startupAnimation, "Style"));

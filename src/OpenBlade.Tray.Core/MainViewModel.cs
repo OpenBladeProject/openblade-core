@@ -2880,13 +2880,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             observation.GamingModeReadPending);
 
     public bool CanEditStartupAnimation =>
-        CanMutate && SupportsStartupAnimation && !IsStartupAnimationFieldLoading;
+        CanMutate && SupportsStartupAnimation && !IsStartupAnimationFieldLoading
+        && !observation.StartupAnimationReadPending;
 
     public bool CanEditFunctionKeyPrimary =>
-        CanMutate && SupportsFunctionKeyPrimary && !IsFunctionKeyFieldLoading;
+        CanMutate && SupportsFunctionKeyPrimary && !IsFunctionKeyFieldLoading
+        && !observation.FunctionKeyReadPending;
 
     public bool CanEditGamingMode =>
         CanMutate && SupportsGamingMode && !IsGamingModeFieldLoading
+        && !observation.GamingModeReadPending
         && (!Capabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.GamingMode)
             || HasConfirmedPowerSource);
 
@@ -3396,12 +3399,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             observation = observation with { StartupAnimationEnabled = value };
             Notify(nameof(StartupAnimationEnabled));
             Notify(nameof(StartupAnimationToggleIsOn));
+            Notify(nameof(StartupAnimationStateLabel));
             Notify(nameof(IsStartupAnimationFieldLoading));
             NotifyLaptopBehaviorProfilePresentations();
         }
     }
 
     public bool StartupAnimationToggleIsOn => StartupAnimationEnabled is true;
+
+    public string StartupAnimationStateLabel => FormatOneShotBooleanState(
+        StartupAnimationEnabled,
+        observation.StartupAnimationReadPending,
+        IsStartupAnimationFieldLoading);
 
     public bool SupportsFunctionKeyPrimary => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.FunctionKeyPrimary);
@@ -3425,19 +3434,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public string FunctionKeyPrimaryStateLabel => FunctionKeyPrimary switch
-    {
-        FunctionKeyPrimaryMode.FunctionKeys => TrayText.Get("Function keys"),
-        FunctionKeyPrimaryMode.MultimediaKeys => TrayText.Get("Media keys"),
-        null => TrayText.Get("Checking"),
-        _ => TrayText.Get("Checking"),
-    };
+    public string FunctionKeyPrimaryStateLabel =>
+        observation.FunctionKeyReadPending && !IsFunctionKeyFieldLoading
+            ? TrayText.Get("Unavailable")
+            : FunctionKeyPrimary switch
+            {
+                FunctionKeyPrimaryMode.FunctionKeys => TrayText.Get("Function keys"),
+                FunctionKeyPrimaryMode.MultimediaKeys => TrayText.Get("Media keys"),
+                null => TrayText.Get("Checking"),
+                _ => TrayText.Get("Checking"),
+            };
 
     public IReadOnlyList<FunctionKeyPrimaryOption> AvailableFunctionKeyPrimaryOptions =>
         FunctionKeyPrimaryOptions;
 
     public FunctionKeyPrimaryOption? SelectedFunctionKeyPrimaryOption =>
-        FunctionKeyPrimaryOptions.FirstOrDefault(option => option.Value == FunctionKeyPrimary);
+        observation.FunctionKeyReadPending && !IsFunctionKeyFieldLoading
+            ? null
+            : FunctionKeyPrimaryOptions.FirstOrDefault(option => option.Value == FunctionKeyPrimary);
 
     public bool SupportsGamingMode => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.GamingMode)
@@ -3464,12 +3478,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool GamingModeToggleIsOn => GamingModeEnabled is true;
 
-    public string TrayDashboardGamingModeLabel => GamingModeEnabled switch
-    {
-        true => TrayText.Get("On"),
-        false => TrayText.Get("Off"),
-        null => TrayText.Get("Checking"),
-    };
+    public string TrayDashboardGamingModeLabel => FormatOneShotBooleanState(
+        GamingModeEnabled,
+        observation.GamingModeReadPending,
+        IsGamingModeFieldLoading);
+
+    private static string FormatOneShotBooleanState(bool? enabled, bool readPending, bool loading) =>
+        readPending && !loading ? TrayText.Get("Unavailable") : enabled switch
+        {
+            true => TrayText.Get("On"),
+            false => TrayText.Get("Off"),
+            null => loading ? TrayText.Get("Checking") : TrayText.Get("Unavailable"),
+        };
 
     public bool BlockWindowsKeyInGamingMode =>
         CurrentGamingModeKeyPolicy.BlockWindowsKey;
@@ -4872,11 +4892,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && value.IsWellFormed()
         && !IsOneShotOperationInProgress(value.Control)
         && !IsOneShotFieldLoading(value.Control)
+        && HasOneShotReadback(value.Control)
         && CanMutate
         && (CommandCapabilities.OneShotLaptopControls.Contains(value.Control)
             || value.Control == OneShotLaptopControl.GamingMode
                 && HasConfirmedPowerSource
                 && CommandCapabilities.HostManagedLaptopControls.Contains(value.Control));
+
+    private bool HasOneShotReadback(OneShotLaptopControl control) => control switch
+    {
+        OneShotLaptopControl.StartupAnimation => !observation.StartupAnimationReadPending,
+        OneShotLaptopControl.FunctionKeyPrimary => !observation.FunctionKeyReadPending,
+        OneShotLaptopControl.GamingMode => !observation.GamingModeReadPending,
+        _ => true,
+    };
 
     private bool IsOneShotOperationInProgress(OneShotLaptopControl control) => control switch
     {
@@ -4901,7 +4930,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         operationInProgress
         || IsConnected
         && Capabilities.OneShotLaptopControls.Contains(control)
-        && readPending;
+        && readPending
+        // Missing readback is not ongoing work. Only a transient service refresh
+        // or the explicit operation above may show progress; a completed failed
+        // read stays unavailable and must not authorize an action.
+        && IsCheckingLaptopConnection(latestStatus);
 
     private bool CanSetFullChargeOverride(object? parameter)
     {
@@ -8917,9 +8950,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     .EffectiveLaptopBehavior.GamingModeEnabled ?? false
                 : readbacks.GamingModeEnabled;
 
+        NotifyFirmwareFieldLoadingState();
         if (pendingChanged)
         {
-            NotifyFirmwareFieldLoadingState();
             NotifyCommands();
         }
     }
@@ -9024,6 +9057,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyFirmwareFieldLoadingState()
     {
+        NotifyComputed(nameof(StartupAnimationStateLabel), StartupAnimationStateLabel);
+        NotifyComputed(nameof(FunctionKeyPrimaryStateLabel), FunctionKeyPrimaryStateLabel);
+        NotifyComputed(nameof(SelectedFunctionKeyPrimaryOption), SelectedFunctionKeyPrimaryOption);
+        NotifyComputed(nameof(TrayDashboardGamingModeLabel), TrayDashboardGamingModeLabel);
         NotifyComputed(nameof(IsStartupAnimationFieldLoading), IsStartupAnimationFieldLoading);
         NotifyComputed(nameof(CanEditStartupAnimation), CanEditStartupAnimation);
         NotifyComputed(nameof(IsFunctionKeyFieldLoading), IsFunctionKeyFieldLoading);

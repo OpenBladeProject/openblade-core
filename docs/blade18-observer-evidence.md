@@ -356,3 +356,33 @@ Power Mode Control GET shapes that were accidentally omitted from earlier export
 A real temporary-full-charge query failure still leaves battery state unconfirmed;
 OpenBlade does not invent an inactive override. The fix needs the owner's normal
 OpenBlade checks for physical confirmation, not another Synapse capture.
+
+## Owner checks after initialization recovery, 2026-10-19
+
+The owner tested `0.37.1-nightly.95+b54c6b65` and supplied separate
+[fan-curve](https://github.com/user-attachments/files/33680970/blade-evidence-20261019-185828.Custom.Fan.Curve.zip)
+and [remaining-check](https://github.com/user-attachments/files/33680969/blade-evidence-20261019-190948.Every.other.setting.zip)
+bundles in [issue #739](https://github.com/OpenBladeProject/openblade-core/issues/739#issuecomment-6275137584).
+These are owner reports and Windows inventory, with no control-call or special-key
+observations. Factory-charger use is established by the maintainer's clarification.
+
+The Balanced fan curve reports a blocked experimental write and unconfirmed
+restoration. Silent fixed fans report an operation failure; Maximum Fans switches
+off after attempts with Boost/High and Low/Low separately. Fn+P and Fn+R do not
+act, while Fn+F2 works independently of OpenBlade. Startup animation remains
+loading. Temporary full charge was skipped at 100%; keyboard-effect checks have
+no finished report. None of these results establishes successful firmware
+application or restoration.
+
+Both inventories contain a `PC00.LPCB.TZRZ` PDH sample of 3182 tenths kelvin
+(45.05 degrees Celsius), while the other known TZRZ path fails. Equal idle
+samples do not prove a frozen CPU sensor or an exact CPU-package mapping.
+
+Offline fixes now distinguish each experimental write-admission rejection and
+stop one-shot firmware spinners after a completed unconfirmed read. Controls
+remain disabled until readback is confirmed; a later successful refresh restores
+them. The shared diagnostic and presentation fixes do not establish physical
+recovery of the reported fan, startup, shortcut or temperature behavior.
+Nightly .96 separately includes typed-query isolation from PR #824; it was
+published after these checks. Keep physical follow-up in #739 and use the
+existing source and evidence before considering any further owner request.

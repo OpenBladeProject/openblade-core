@@ -3086,13 +3086,13 @@ public sealed partial class MainViewModelTests
         client.Publish(status);
         await WaitUntilAsync(() => viewModel.SupportsFunctionKeyPrimary);
 
-        Assert.Equal("Checking", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Equal("Unavailable", viewModel.FunctionKeyPrimaryStateLabel);
         Assert.Null(viewModel.SelectedFunctionKeyPrimaryOption);
         Assert.Equal(
             ["Function keys", "Media keys"],
             viewModel.AvailableFunctionKeyPrimaryOptions.Select(option => option.Label));
         Assert.DoesNotContain("â", viewModel.FunctionKeyPrimaryStateLabel, StringComparison.Ordinal);
-        Assert.True(viewModel.IsFunctionKeyFieldLoading);
+        Assert.False(viewModel.IsFunctionKeyFieldLoading);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
         Assert.False(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
             viewModel.FunctionKeysPrimaryAction));
@@ -3168,15 +3168,13 @@ public sealed partial class MainViewModelTests
             FunctionKeyPrimary = null,
             GamingModeEnabled = null,
         });
-        await WaitUntilAsync(() => viewModel.IsFunctionKeyFieldLoading);
+        await WaitUntilAsync(() => viewModel.FunctionKeyPrimaryStateLabel == "Unavailable");
 
-        Assert.True(viewModel.IsStartupAnimationFieldLoading);
-        Assert.True(viewModel.IsGamingModeFieldLoading);
+        Assert.False(viewModel.IsStartupAnimationFieldLoading);
+        Assert.False(viewModel.IsGamingModeFieldLoading);
         Assert.False(viewModel.StartupAnimationToggleIsOn);
-        Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
-        Assert.Equal(
-            FunctionKeyPrimaryMode.FunctionKeys,
-            viewModel.SelectedFunctionKeyPrimaryOption?.Value);
+        Assert.Equal("Unavailable", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.Null(viewModel.SelectedFunctionKeyPrimaryOption);
         Assert.False(viewModel.GamingModeToggleIsOn);
         Assert.False(viewModel.CanEditStartupAnimation);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
