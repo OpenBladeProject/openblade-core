@@ -379,7 +379,8 @@ internal sealed class ProductionBatteryPort :
                     result.Failure.Value,
                     result.Diagnostic,
                     cancellationToken,
-                    DeviceStateQuery.BatteryProtection);
+                    DeviceStateQuery.BatteryProtection,
+                    result.NativeRetirement);
             }
 
             return MapProtectionState(result.Value);
@@ -414,7 +415,8 @@ internal sealed class ProductionBatteryPort :
                     result.Failure.Value,
                     result.Diagnostic,
                     cancellationToken,
-                    DeviceStateQuery.TemporaryFullCharge);
+                    DeviceStateQuery.TemporaryFullCharge,
+                    result.NativeRetirement);
             }
 
             return result.Value;
@@ -461,7 +463,8 @@ internal sealed class ProductionBatteryPort :
                     .ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken,
+                    nativeRetirement: result.NativeRetirement);
             }
 
             if (result.Value != AdapterPowerState.Unknown
@@ -500,7 +503,8 @@ internal sealed class ProductionBatteryPort :
                 cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken,
+                    nativeRetirement: result.NativeRetirement);
             }
 
             return result.Value;
@@ -532,7 +536,8 @@ internal sealed class ProductionBatteryPort :
                     cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken,
+                    nativeRetirement: result.NativeRetirement);
             }
 
             return result.Value;
@@ -563,7 +568,8 @@ internal sealed class ProductionBatteryPort :
                 cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken,
+                    nativeRetirement: result.NativeRetirement);
             }
 
             return result.Value;
@@ -595,7 +601,8 @@ internal sealed class ProductionBatteryPort :
                     cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken,
+                    nativeRetirement: result.NativeRetirement);
             }
 
             return result.Value;
@@ -625,7 +632,8 @@ internal sealed class ProductionBatteryPort :
                 cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken,
+                    nativeRetirement: result.NativeRetirement);
             }
 
             return result.Value;
@@ -1357,7 +1365,8 @@ internal sealed class ProductionBatteryPort :
                 ThrowReadFailure(
                     result.Failure.Value,
                     result.Diagnostic,
-                    cancellationToken);
+                    cancellationToken,
+                    nativeRetirement: result.NativeRetirement);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -2193,7 +2202,8 @@ internal sealed class ProductionBatteryPort :
             HidSessionFailureKind failure = adapter.Failure.Value;
             try
             {
-                ThrowReadFailure(failure, adapter.Diagnostic, cancellationToken);
+                ThrowReadFailure(failure, adapter.Diagnostic, cancellationToken,
+                    nativeRetirement: adapter.NativeRetirement);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -2367,7 +2377,8 @@ internal sealed class ProductionBatteryPort :
             cancellationToken).ConfigureAwait(false);
         if (result.Failure is not null)
         {
-            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken, query);
+            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken, query,
+                result.NativeRetirement);
         }
 
         if (!CustomPerformanceProtocol.TryDecodeQuery(
@@ -2412,7 +2423,8 @@ internal sealed class ProductionBatteryPort :
             cancellationToken).ConfigureAwait(false);
         if (result.Failure is not null)
         {
-            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken, query);
+            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken, query,
+                result.NativeRetirement);
         }
 
         if (!ThermalModeProtocol.TryDecodeQuery(result.Value.Span, channel, out _))
@@ -2520,7 +2532,8 @@ internal sealed class ProductionBatteryPort :
         HidSessionFailureKind failure,
         HidSessionFailureDiagnostic? diagnostic,
         CancellationToken cancellationToken,
-        DeviceStateQuery? query = null)
+        DeviceStateQuery? query = null,
+        Task? nativeRetirement = null)
     {
         if (failure is not (
             HidSessionFailureKind.ConflictBlocked
@@ -2536,7 +2549,7 @@ internal sealed class ProductionBatteryPort :
             case HidSessionFailureKind.QueuedCanceled when cancellationToken.IsCancellationRequested:
                 throw new OperationCanceledException(cancellationToken);
             case HidSessionFailureKind.Timeout:
-                throw new TimeoutException("Battery state query timed out.");
+                throw new NativeDeviceReadTimeoutException(diagnostic, query, nativeRetirement);
             case HidSessionFailureKind.ProtocolFailure:
                 throw new RazerProtocolException(
                     "Battery state query failed protocol validation.",
@@ -2545,9 +2558,11 @@ internal sealed class ProductionBatteryPort :
                 {
                     StateQuery = query,
                     RejectedPayloadHex = diagnostic?.RejectedPayloadHex,
+                    Diagnostic = diagnostic,
+                    NativeRetirement = nativeRetirement,
                 };
             default:
-                throw new NativeDeviceReadException(failure, diagnostic, query);
+                throw new NativeDeviceReadException(failure, diagnostic, query, nativeRetirement);
         }
     }
 

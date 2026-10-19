@@ -1240,7 +1240,7 @@ public sealed class ControlCoordinator
                                 LightingOffConfirmationUnavailable: false);
                 return (read, null);
             }
-            catch (RazerProtocolException exception) when (
+            catch (Exception exception) when (
                 DeviceStateReadIsolation.PartialRead(exception) is { } partial)
             {
                 return (

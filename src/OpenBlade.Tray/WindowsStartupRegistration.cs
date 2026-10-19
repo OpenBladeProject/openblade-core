@@ -66,13 +66,15 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
         return !startupLaunch || !File.Exists(disabledMarkerPath);
     }
 
-    public Task<bool> IsEnabledAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(
-            !File.Exists(disabledMarkerPath)
-            && HasStartupLauncher());
-    }
+    public Task<bool> IsEnabledAsync(CancellationToken cancellationToken) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return !File.Exists(disabledMarkerPath)
+                    && HasStartupLauncher();
+            },
+            cancellationToken);
 
     public async Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
     {

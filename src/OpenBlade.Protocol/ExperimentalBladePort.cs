@@ -618,11 +618,8 @@ internal sealed partial class ExperimentalBladePort(
                     : WriteSubmissionState.KnownNotApplied,
                     $"Experimental {operation} exchange failed: {result.Failure}.");
             }
-            if (result.Diagnostic is not null)
-            {
-                throw new NativeDeviceReadException(result.Failure.Value, result.Diagnostic, stateQuery: null);
-            }
-            throw new IOException($"Experimental {operation} exchange failed: {result.Failure}.");
+            throw new NativeDeviceReadException(result.Failure.Value, result.Diagnostic,
+                ReadQueryFor(operation, commandClass, commandId, arguments), result.NativeRetirement);
         }
         if ((!variableResponse && result.Value.Length != arguments.Length)
             || payloadValidator is not null && !payloadValidator(result.Value)
@@ -641,6 +638,21 @@ internal sealed partial class ExperimentalBladePort(
         }
         return result.Value;
     }
+
+    private static DeviceStateQuery? ReadQueryFor(
+        string operation, byte commandClass, byte commandId, byte[] arguments) =>
+        (commandClass, commandId, arguments) switch
+        {
+            (0x07, 0x92, [0]) => DeviceStateQuery.BatteryProtection,
+            (0x07, 0x8F, [0]) when operation == "TemporaryFullCharge" => DeviceStateQuery.TemporaryFullCharge,
+            (0x07, 0x8F, [0]) when operation == "MaximumFans" => DeviceStateQuery.PerformanceAndFans,
+            (0x0D, 0x82, [0, 1, 0, 0]) => DeviceStateQuery.ThermalChannelOne,
+            (0x0D, 0x82, [0, 2, 0, 0]) => DeviceStateQuery.ThermalChannelTwo,
+            (0x0D, 0x81, [0 or 1, 1 or 2, 0]) => DeviceStateQuery.PerformanceAndFans,
+            (0x0D, 0x87, [0 or 1, 1, 0]) => DeviceStateQuery.CustomCpuPerformance,
+            (0x0D, 0x87, [0 or 1, 2, 0]) => DeviceStateQuery.CustomGpuPerformance,
+            _ => null,
+        };
 
     public async Task<AdapterPowerState> QueryAdapterPowerStateAsync(CancellationToken cancellationToken)
     {

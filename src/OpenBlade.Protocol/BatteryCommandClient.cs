@@ -68,6 +68,7 @@ internal sealed class BatteryCommandClient : IBatteryCommandClient
             return new(default, response.Failure)
             {
                 Diagnostic = response.Diagnostic,
+                NativeRetirement = response.NativeRetirement,
             };
         }
 

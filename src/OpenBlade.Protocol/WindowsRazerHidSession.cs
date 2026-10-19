@@ -612,7 +612,8 @@ internal sealed class WindowsRazerHidSession :
         if (cancellation is not null)
         {
             Poison();
-            return Failure(cancellation.Value);
+            return DiagnosticFailure(cancellation.Value, HidSessionFailurePhase.SetCompletion,
+                setResult.Completion, nativeRetirement: setResult.NativeRetirement);
         }
 
         if (!item.ExpectResponse)
@@ -635,16 +636,19 @@ internal sealed class WindowsRazerHidSession :
             catch (OperationCanceledException) when (settleCancellation.IsCancellationRequested)
             {
                 Poison();
-                return Failure(
+                return DiagnosticFailure(
                     ClassifyCancellation(item.CancellationToken, deadline.Token)
-                    ?? HidSessionFailureKind.NativeIoFailure);
+                    ?? HidSessionFailureKind.NativeIoFailure,
+                    HidSessionFailurePhase.SetCompletion,
+                    setResult.Completion, nativeRetirement: setResult.NativeRetirement);
             }
 
             cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
             if (cancellation is not null)
             {
                 Poison();
-                return Failure(cancellation.Value);
+                return DiagnosticFailure(cancellation.Value, HidSessionFailurePhase.SetCompletion,
+                    setResult.Completion, nativeRetirement: setResult.NativeRetirement);
             }
         }
 

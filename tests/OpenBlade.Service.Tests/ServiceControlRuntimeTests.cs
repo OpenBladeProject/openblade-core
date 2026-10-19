@@ -10807,8 +10807,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Contains("PayloadValidator", context.Runtime.GetStatus().Message);
     }
 
-    [Fact]
-    public async Task RepeatedBatteryContentRejection_PublishesOtherSubsystemsAndReadsMcuVersion()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task IsolatedBatteryFailure_PublishesOtherSubsystemsAtStartupAndRefresh(int kind)
     {
         var firmware = new FirmwareVersions(
             "4.01",
@@ -10825,28 +10828,29 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             FanMode.Automatic,
             Battery: null,
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
-        const string rejection =
-            "Temporary full charge query (07/8F) returned unrecognized payload 05 (PayloadValidator).";
-        context.Device.ReadStateFailure = new RazerProtocolException(
-            rejection,
-            HidProtocolValidationFailure.PayloadValidator)
+        string rejection = kind switch
         {
-            StateQuery = DeviceStateQuery.TemporaryFullCharge,
-            PartialState = new PartialDeviceStateRead(
-                partialState,
-                lightingOffConfirmationUnavailable: false,
-                [
-                    new DeviceStateReadFailure(
-                        DeviceStateQuery.TemporaryFullCharge,
-                        new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery },
-                        rejection),
-                ]),
+            0 => "Temporary full charge query (07/8F) returned unrecognized payload 05 (PayloadValidator).",
+            1 => "Temporary full charge query (07/8F) failed native I/O.",
+            _ => "Temporary full charge query (07/8F) failed protocol validation (Status).",
         };
+        var partial = new PartialDeviceStateRead(
+            partialState, lightingOffConfirmationUnavailable: false,
+            [new DeviceStateReadFailure(DeviceStateQuery.TemporaryFullCharge,
+                new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery }, rejection)]);
+        context.Device.ReadStateFailure = kind == 1
+            ? new PartialDeviceStateReadException(partial)
+            : new RazerProtocolException(rejection, kind == 0
+                ? HidProtocolValidationFailure.PayloadValidator : HidProtocolValidationFailure.Status)
+            {
+                StateQuery = DeviceStateQuery.TemporaryFullCharge,
+                PartialState = partial,
+            };
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
-        Assert.Equal(2, context.Device.StateReadCalls);
+        Assert.Equal(kind == 0 ? 4 : 2, context.Device.StateReadCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
         Assert.True(status.DeviceVerified);
         Assert.False(status.WritesBlocked);

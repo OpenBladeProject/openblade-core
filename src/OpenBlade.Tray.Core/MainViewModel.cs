@@ -55,6 +55,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan ControlPresentationHoldGracePeriod =
         TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan StartupRegistrationStepTimeout =
+        TimeSpan.FromSeconds(5);
     private static readonly HashSet<string> CompetingLightingControllers = new(
         ["RazerAppEngine", "Razer Synapse Service"],
         StringComparer.OrdinalIgnoreCase);
@@ -4967,7 +4969,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             watchTask ??= WatchStatusAsync(lifetime.Token);
             startupInitializationTask ??= InitializeStartupRegistrationAsync(lifetime.Token);
-            return startupInitializationTask;
+            return Task.CompletedTask;
         }
     }
 
@@ -4976,14 +4978,33 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         try
         {
             bool enabled = await startupRegistration.IsEnabledAsync(cancellationToken)
+                .WaitAsync(StartupRegistrationStepTimeout, cancellationToken)
                 .ConfigureAwait(false);
-            await dispatcher.InvokeAsync(
-                () =>
-                {
-                    StartAtSignIn = enabled;
-                    StartupStateKnown = true;
-                },
-                cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        if (Volatile.Read(ref disposed) != 0)
+                        {
+                            return;
+                        }
+
+                        StartAtSignIn = enabled;
+                        StartupStateKnown = true;
+                    },
+                    cancellationToken)
+                    .WaitAsync(StartupRegistrationStepTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // The optional UI publication must not hold shutdown open.
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -4991,15 +5012,33 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
-            await dispatcher.InvokeAsync(
-                () =>
-                {
-                    StartupStatusMessage = TrayText.Format(
-                        "Start at sign-in is unavailable: {0}",
-                        exception.Message);
-                    StartupStateKnown = false;
-                },
-                cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        if (Volatile.Read(ref disposed) != 0)
+                        {
+                            return;
+                        }
+
+                        StartupStatusMessage = TrayText.Format(
+                            "Start at sign-in is unavailable: {0}",
+                            exception.Message);
+                        StartupStateKnown = false;
+                    },
+                    cancellationToken)
+                    .WaitAsync(StartupRegistrationStepTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // The optional UI publication must not hold shutdown open.
+            }
         }
     }
 
@@ -5111,9 +5150,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        Task? activeWatch;
+        Task? activeStartupInitialization;
+        lock (startSync)
         {
-            return;
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+            {
+                return;
+            }
+
+            activeWatch = watchTask;
+            activeStartupInitialization = startupInitializationTask;
         }
 
         lifetime.Cancel();
@@ -5122,12 +5169,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             await command.DisposeAsync();
         }
 
-        Task? activeWatch = Volatile.Read(ref watchTask);
         if (activeWatch is not null)
         {
             try
             {
                 await activeWatch;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+        if (activeStartupInitialization is not null)
+        {
+            try
+            {
+                await activeStartupInitialization;
             }
             catch (OperationCanceledException)
             {

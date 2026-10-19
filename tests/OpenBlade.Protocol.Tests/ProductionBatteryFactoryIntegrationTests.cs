@@ -567,7 +567,7 @@ public sealed class ProductionBatteryFactoryIntegrationTests
 
         IProductionBatteryPort first = Assert.IsAssignableFrom<IProductionBatteryPort>(
             (await factory.OpenAsync(default)).Value);
-        await Assert.ThrowsAsync<TimeoutException>(() => first.QueryProtectionAsync(default));
+        await Assert.ThrowsAnyAsync<TimeoutException>(() => first.QueryProtectionAsync(default));
         await Assert.ThrowsAsync<IOException>(() => first.QueryProtectionAsync(default));
         Assert.Equal(1, poisoned.ExecuteCount);
         await first.DisposeAsync();

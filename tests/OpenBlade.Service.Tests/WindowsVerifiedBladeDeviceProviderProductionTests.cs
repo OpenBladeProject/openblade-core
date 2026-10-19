@@ -4,7 +4,7 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
+public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
 {
     [Theory]
     [InlineData(2, null, "Performance and fan state query")]
@@ -660,7 +660,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         await device.SetGpuClockOffsetsAsync(
             new GpuClockOffsetSettings(125, 500),
             default);
-        Task<ConfirmedDeviceState> read = device.ReadStateAsync(cancellation.Token);
+        Task<ConfirmedDeviceState> read = Task.Run(() => device.ReadStateAsync(cancellation.Token));
         Assert.True(activity.Entered.Wait(TimeSpan.FromSeconds(5)));
         Task<GpuClockOffsetManagementState> stateRead = Task.Run(
             () => managedDevice.GpuClockOffsetManagementState);
@@ -3490,6 +3490,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public Exception? PerformanceFanFailure { get; init; }
         public Exception? StartupAnimationFailure { get; init; }
         public Action? AfterPerformanceWrite { get; init; }
+        public Exception? DisposeFailure { get; init; }
         public Action? BeforeHyperBoostFailure { get; init; }
         public TaskCompletionSource ProtectionQueryStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -3704,6 +3705,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public ValueTask DisposeAsync()
         {
             DisposeCount++;
+            if (DisposeFailure is not null)
+            {
+                throw DisposeFailure;
+            }
             return ValueTask.CompletedTask;
         }
     }
@@ -3720,10 +3725,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public List<GpuClockOffsetSettings> Writes { get; } = [];
 
         public bool FailWrites { get; init; }
+        public Exception? QueryFailure { get; set; }
 
         public GpuClockOffsetCapabilities? Query()
         {
             QueryCount++;
+            if (QueryFailure is not null)
+            {
+                throw QueryFailure;
+            }
             return Capabilities;
         }
 

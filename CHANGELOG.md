@@ -9,6 +9,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Simplify the SnapTap information popup in English, Russian, and Simplified Chinese, and fix its localization review snapshots. ([#818](https://github.com/OSSBlade/openblade-core/pull/818))
 
+### Fixed
+
+- Isolate failed battery and thermal state queries so unrelated controls stay available across Blade models. Keep optional GPU and sign-in checks from blocking state updates or Tray startup. ([#824](https://github.com/OpenBladeProject/openblade-core/pull/824))
 ## [0.37.1-nightly.95] - 2026-10-19
 
 ### Fixed
