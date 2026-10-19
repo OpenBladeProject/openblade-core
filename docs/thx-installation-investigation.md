@@ -461,14 +461,32 @@ caller-supplied typed values. The copy helper can carry CompositeFX properties
 13/14/19/20 when already supplied. Neither inspected helper derives THX CLSIDs
 from RTKAMPI tuning. The interface path uses `InterfaceSetting`, a conditional
 `SysRecFx` capture fallback, `%ws_ext` sections and separate `FriendlyName`
-handling. Output-specific section-list names come from unresolved adapter
-virtual methods, so the complete binding origin is still unproved.
+handling.
 
-The smallest missing source is the original exact-model INF/AddReg declarations
-supplying the render output's `InterfaceSetting` list and referenced
-`FxProperties` subtree, including the actual THX CLSIDs. This trace does not
-exclude other runtime paths. Fresh legacy setup remains blocked on that binding
-source and the installation contract.
+The base adapter callbacks are now resolved. Constructor `0x140589504` installs
+vtable `0x1401E02F8`; caller `0x14012E0CC` stores that adapter at device `+0x1A8`.
+Slot `+0x38` selects wave names through `0x140593D10`; slot `+0x40` selects
+topology names through `0x140593940`. Confirmed selectable pairs include
+`RearLineOutWave2` / `PrimaryLineOutTopo`, `SecondaryLineOutWave` /
+`SecondaryLineOutTopo`, and `RearLineOutWave3` / `SingleLineOutTopo`, alongside
+the SST and HAP variants used by the recovered THX extension. These functions
+select names from endpoint flags; they do not construct the FX property values.
+
+Both selectors first consult an override at adapter `+0xC08`. Its creator,
+`0x14059C620`, dispatches by codec family at `+0xC8C`. The applicable override
+and endpoint flags for subsystem suffixes 2020/3006/3007 remain unproved, so the
+fallback names are not confirmed runtime selections for those laptops.
+
+The recovered THX extension already appends `OutAPO`/`HPAPO` settings to ordinary,
+SST or HAP topology lists. Their shared sections supply device types and the
+configuration path, rather than the complete effect CLSID chain. The remaining
+acquisition target is an original exact-model signed integration package
+supplying the matching render FX subtree and actual THX CLSIDs, with installation
+provenance/order. Factory registry evidence should preserve the final
+`InterfaceSetting` lists, referenced `FX\0`/`EP\0` subtrees and adapter/endpoint
+identity; final endpoint `FxProperties` alone cannot prove provisioning. This
+bounded trace does not exclude other runtime paths. Fresh legacy setup remains
+blocked on that binding source and the installation contract.
 
 If an exact-model recovery image becomes available, first inventory its ZIP and
 OEM provisioning files, then selectively extract the audio DriverStore packages,
@@ -486,3 +504,30 @@ settings were changed. Legacy fresh setup remains `CandidateOnly`, `Blocked`
 and `installableCandidate=false` until the remaining binding/dependency and
 installation contract is established. Static recovery evidence would still
 require a separate clean installation test with Synapse absent.
+
+### Runtime prerequisites without Synapse
+
+A static PE import audit covered the pinned native v4 client, rznb11 service/APO
+and patch, cached rznb12 4.2.37.1621 service/APO and patch, all four 1845/1846
+configuration updaters, and the legacy 2.6.5 APO/service/configuration utility.
+Their inspected normal imports name Windows system libraries only; none declares
+delay imports. The configuration updaters and `spatial-config-util.exe` are
+native executables. These findings identify no directly imported Synapse runtime
+or separate Visual C++ runtime requirement in those files; they do not exclude
+later dynamic loads or prove successful fresh installation.
+
+The legacy service INF launches `VSSrvInit.exe` through `AddSoftware`. That
+42,080-byte initializer, SHA-256
+`E2E15276061505C12A1540D4DDCF6788F1794C421385A43C6730DECD9679DCC0`, targets
+`.NETFramework,Version=v4.0,Profile=Client`. The inspected modern MSI custom
+actions and `THXSetup` target .NET Framework 4.8. Bypassing a managed outer
+bootstrapper does not remove those inner custom-action requirements.
+
+OpenBlade already requires Windows 11 24H2 or later. Microsoft's
+[Framework installation table](https://learn.microsoft.com/en-us/dotnet/framework/install/on-windows-and-server)
+identifies .NET Framework 4.8.1 as included in 24H2 and able to run .NET Framework
+4 applications. This supplies the inspected framework prerequisites independently
+of Synapse. OpenBlade's existing installer also provisions its pinned x64 Visual
+C++ runtime; the import audit does not establish a new THX dependency on it. A
+clean installation with Synapse absent still needs to validate dynamic loading,
+service initialization, endpoint creation and audible processing.
