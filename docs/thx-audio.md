@@ -10,18 +10,22 @@ enhancements. Other outputs and rznb11 audible processing remain unvalidated.
 
 OpenBlade checks the exact laptop, present audio hardware IDs from the signed
 installer INF, and a complete pinned THX stack before connecting. RZ09-0581
-uses rznb12 4.2.41.2499; RZ09-0528 and RZ09-0530 use the reviewed rznb11
+admits rznb12 4.2.41.2499 and the separately pinned 4.2.37.1621 build;
+RZ09-0528 and RZ09-0530 use the reviewed rznb11
 4.2.29.1159 driver stack with the official 4.2.37.1845 active configuration.
 The immutable properties archive and surround configuration are pinned too;
 mutable user settings remain editable. Other payloads are not yet admitted.
 The two rznb11 models have vendor-backed controls and their own speaker EQ
 curves, but have not been physically tested in OpenBlade.
 
-OpenBlade can download the supported THX client from Razer. On RZ09-0528 and
-RZ09-0530, it can also perform an experimental fresh installation of the reviewed
-THX driver, service and configuration. A matching Realtek base audio driver must
-already be installed. RZ09-0581 still requires its THX stack to be present because
-a public download source for its base installer has not been established. See the
+OpenBlade can download the supported THX client from Razer. On RZ09-0581,
+RZ09-0528 and RZ09-0530, it can also perform an experimental fresh installation
+of the matching THX driver, service and configuration without Synapse installed.
+A matching Realtek base audio driver must already be installed. RZ09-0581 setup
+uses the original signed 4.2.37.1621 installer recovered from the Windows cache
+and separately hosted by the driver catalog with owner-confirmed redistribution
+permission. Existing admitted stacks are retained. Pristine installation and
+runtime control on this cached build still need physical validation. See the
 [installation compatibility investigation](thx-installation-investigation.md)
 for the package and codec restrictions.
 
@@ -29,7 +33,7 @@ for the package and codec restrictions.
 
 | Model | Installed THX controls | Fresh THX setup |
 | --- | --- | --- |
-| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Public base-installer source unavailable |
+| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Experimental cached 4.2.37.1621 setup, matching Realtek driver required |
 | RZ09-0528, RZ09-0530 | rznb11 spatial audio, EQ and application profiles | Experimental, matching Realtek driver required |
 | RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed THX 2.6.5.0 service | THX component binding remains unverified |
 | RZ09-0328 | Factory audio uses Dolby Atmos; THX does not apply | Not applicable |
@@ -45,8 +49,10 @@ backend; the pinned factory audio components must already be installed.
 Razer documents the older driver and Store control app in
 [its THX setup guide](https://mysupport.razer.com/app/answers/detail/a_id/5798/).
 The exact Realtek packages contain model-specific OEM codec tuning. The public
-THX 2.6.5 component downloads contain generic fallback configuration, and the
-connection between those layers remains unverified for fresh installation.
+THX 2.6.5 SCU contains the model-specific PI490, SO690 and KI890 acoustic
+profiles and selects them from the Realtek subsystem ID. The original rule that
+creates the THX components and binds processing to the codec endpoints remains
+unverified, so fresh installation is blocked.
 The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/e65d43dcd5128291dfcc9b333d6cd3e93c2f9ad3/components/thx-legacy/2.6.5.0/stack.json)
 records verified packages and the remaining installation blockers. For recovery,
 use the exact laptop's Windows driver updates or
@@ -56,7 +62,7 @@ contract and COM activation boundary.
 
 ## Use the controls
 
-1. Close Synapse, then select **THX Audio** in the left menu in OpenBlade.
+1. Select **THX Audio** in the left menu in OpenBlade. If Synapse is installed, close it first.
 2. Enable **Use installed THX audio**. OpenBlade checks the installed stack and
    reads the selected output automatically.
 3. Select **Speakers** or **Headphones** to read that output.
@@ -124,8 +130,10 @@ Read settings appears only after a failed operation, when an explicit read is
 needed for recovery. Loading replaces the status message in the same area.
 Automatic connections never clear an uncertain-write pause. If a change cannot
 be confirmed, use **Read settings** before trying another change. OpenBlade does not repeat an uncertain command. If the supported
-components are unavailable, the audio controls remain disabled. Uninstalling
-Synapse may remove required components; their retention has not been tested.
+components are unavailable, the audio controls remain disabled. The explicit
+setup action can provision the supported modern stacks with Synapse absent.
+Uninstalling Synapse from an existing installation may remove shared components;
+that retention path has not been tested.
 
 ## Report a detection problem
 
@@ -211,7 +219,13 @@ and loading. Full native readback and pause-on-uncertainty remain unchanged.
 All three admitted models use the pinned `ThxV4Native_v1.1.1.0.dll`. The rznb11 middleware
 ABI and typed property operations match the reviewed rznb12 implementation;
 factory speaker curves remain model-specific. A new component build needs
-its own source review and admission.
+its own source review and admission. The cached rznb12 1621 build is a separate
+whole-stack exception with the same pinned 1846 active configuration and native
+client. Before its first mutation, the helper must successfully read both outputs,
+including every exposed property and preset list, for that exact stack identity.
+The original 1621 properties archive alone cannot admit control. Static contract
+comparison supports this experimental pairing; it does not prove native success
+or audible processing on the older build.
 
 The explicit download uses the reviewed
 [Razer native client URL](https://app-assets.razer.com/files/synapse/devices/common/THX/ThxV4Native_v1.1.1.0.dll)

@@ -150,7 +150,27 @@
           "runOnInstall": "/s /norestart",
           "restartRequired": true
         }
-      ]
+      ],
+      "embeddedInstaller": {
+        "containerFormat": "RawDeflate",
+        "compressedOffset": 569682,
+        "compressedLength": 50445093,
+        "fileName": "thx-rznb11-base.exe",
+        "size": 51037408,
+        "sha256": "819B1504B025105589B5899CC09BB612B7AD83F8DED8DE0D087F81D4085542ED",
+        "authenticode": {
+          "status": "Valid",
+          "signerSubject": "CN=THX LTD., O=THX LTD., L=Novato, S=California, C=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.1.3.6.1.4.1.311.60.2.1.3=US, SERIALNUMBER=6128649, OID.2.5.4.15=Private Organization",
+          "signerThumbprint": "B23FAAE4D5ADEDA77BCCD9F12F32C92D3FF755D5"
+        },
+        "arguments": [
+          "/quiet",
+          "/norestart"
+        ],
+        "carrierExecutionAllowed": false,
+        "extractionDestination": "ProtectedComponentDirectory",
+        "outputCreation": "CreateNew"
+      }
     },
     {
       "id": "PropertiesUpdater",
@@ -242,6 +262,11 @@
     "baseAudioDriverIncluded": false,
     "existingStackReplacementAllowed": false,
     "physicalInstallationValidation": "Pending",
+    "freshInstallAdmission": {
+      "mode": "ConditionalWholeStack",
+      "existingStackRequiredState": "Absent",
+      "completePinnedStackRequired": true
+    },
     "blockers": []
   },
   "delivery": {
@@ -269,6 +294,8 @@
   "limitations": [
     "The THX package is not a replacement for the matching Realtek base audio driver.",
     "The exact model, present codec hardware ID, service and immutable configuration must match; shared native middleware does not make this stack universal.",
+    "The signed outer wrapper is a verified carrier and must never be executed. Extract only the fixed pinned inner Burn bundle into a protected component directory using create-new semantics, then reverify its exact length, SHA-256 and THX Authenticode signer before fixed-argument execution.",
+    "Fresh-install admission is conditional on a pristine THX state and the complete pinned base/updater/configuration stack.",
     "Catalog applicability is source evidence. Fresh installation and audible processing on the rznb11 models remain unvalidated.",
     "A vendor installer success code does not prove a complete installation. Independently verify the installed packages, catalog membership, active configuration and running service."
   ]

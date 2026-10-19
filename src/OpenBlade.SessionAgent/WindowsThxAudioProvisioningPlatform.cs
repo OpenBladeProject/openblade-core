@@ -14,6 +14,8 @@ namespace OpenBlade.SessionAgent;
 
 internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisioningPlatform
 {
+    private readonly string? productId = WindowsThxAudioAdmissionSource.GetExactHostProfile()?.ProductId;
+
     public ThxAudioProvisioningSnapshot Capture(ThxAudioProvisioningStep? completedStep = null)
     {
         string? processPath = Environment.ProcessPath;
@@ -36,7 +38,7 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         {
             return Refuse(ThxAudioProvisioningResult.Unavailable);
         }
-        if (profile.ProductId != "rznb11")
+        if (profile.ProductId != productId || productId is not ("rznb11" or "rznb12"))
         {
             return Refuse(ThxAudioProvisioningResult.SourceUnavailable);
         }
@@ -50,6 +52,8 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         string driverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "DriverStore", "FileRepository");
         string commonData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        ThxAudioCompatibilityProfile runtimeProfile = profile;
+        profile = profile with { Stack = ThxAudioCompatibility.GetProvisioningStack(profile) };
         bool stackHashes = ThxAudioCompatibility.TryResolveDriverStack(driverStore, profile.Stack,
             out string? serviceBinary);
         bool catalogs = stackHashes && HasTrustedCatalogMembership(driverStore, profile.Stack);
@@ -60,13 +64,13 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         bool surround = surroundEvidence == profile.SurroundConfigSha256;
         bool service = stackHashes && catalogs && WindowsThxAdmissionQueries.HasRunningPinnedService(
             profile.Stack.ServiceName, serviceBinary!);
-        bool provisioningProcessesAbsent = NoProvisioningProcesses();
+        bool provisioningProcessesAbsent = NoProvisioningProcesses(productId);
         bool complete = stackHashes && catalogs && properties && surround && service;
         ThxAudioProvisioningSnapshot Snapshot(bool ready, bool installed,
             ThxAudioProvisioningResult refusal = ThxAudioProvisioningResult.Unavailable) =>
             new(ready, installed, refusal)
             {
-                Profile = profile.ModelNumber + "/" + profile.ProductId,
+                Profile = GetPlanIdentity(profile),
                 ExactHost = true,
                 ExactDevices = true,
                 AcPower = acPower,
@@ -78,6 +82,18 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
                 ActiveProperties = propertiesEvidence,
                 SurroundConfiguration = surroundEvidence,
             };
+        if (!complete && properties && surround && ThxAudioCompatibility.TryResolveRunningDriverStack(
+            driverStore, runtimeProfile, WindowsThxAdmissionQueries.HasRunningPinnedService,
+            out ThxAudioDriverStack? installedStack, out _, out _)
+            && HasTrustedCatalogMembership(driverStore, installedStack!))
+        {
+            // An already complete admitted build needs no replacement. The setup
+            // target remains the exact cached build when starting from pristine.
+            stackHashes = true;
+            catalogs = true;
+            service = true;
+            complete = true;
+        }
         if (complete)
         {
             return Snapshot(true, true);
@@ -126,25 +142,32 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         throw new InvalidOperationException("Windows boot identity is unavailable.");
     }
 
-    public IThxAudioProvisioningJournal OpenJournal() => new ThxAudioProvisioningJournal();
+    public IThxAudioProvisioningJournal OpenJournal()
+    {
+        if (productId is not ("rznb11" or "rznb12"))
+        {
+            throw new InvalidOperationException("This host has no admitted THX provisioning recipe.");
+        }
+        return new ThxAudioProvisioningJournal(productId);
+    }
     public Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken) =>
-        ThxAudioProvisioningPackage.AcquireVerifiedAsync(destination, cancellationToken);
+        ThxAudioProvisioningPackage.AcquireVerifiedAsync(destination, productId ?? string.Empty, cancellationToken);
 
     public async Task<ThxAudioProvisioningProcessResult> ExecuteAsync(
         string root, ThxAudioProvisioningStep step, CancellationToken cancellationToken)
     {
         ThxAudioProvisioningJournal.ValidateProtectedDirectory(root);
-        ThxAudioProvisioningArtifact artifact = ThxAudioProvisioningPackage.Artifacts.Single(item => item.Step == step);
+        ThxAudioProvisioningArtifact artifact = ThxAudioProvisioningPackage.ForProduct(productId ?? string.Empty).Single(item => item.Step == step);
         string fullRoot = Path.GetFullPath(root);
-        string path = Path.GetFullPath(Path.Combine(fullRoot, artifact.FileName));
+        string path = Path.GetFullPath(Path.Combine(fullRoot, artifact.ExecutableFileName));
         if (!path.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException("THX provisioning artifact escaped its protected root.");
         }
         ThxAudioProvisioningJournal.RejectReparse(path);
         using var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (locked.Length != artifact.Length || !CryptographicOperations.FixedTimeEquals(
-            Convert.FromHexString(artifact.Sha256), SHA256.HashData(locked)))
+        if (locked.Length != artifact.ExecutableLength || !CryptographicOperations.FixedTimeEquals(
+            Convert.FromHexString(artifact.ExecutableSha256), SHA256.HashData(locked)))
         {
             throw new InvalidDataException("Verified THX provisioning artifact changed before execution.");
         }
@@ -156,7 +179,14 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         cancellationToken.ThrowIfCancellationRequested();
         string temp = Path.Combine(fullRoot, "temp");
         ThxAudioProvisioningJournal.EnsureProtectedDirectory(temp);
-        ProcessStartInfo start = CreateStartInfo(path, fullRoot, temp, artifact.Arguments);
+        IReadOnlyList<string> arguments = artifact.Arguments;
+        if (artifact.EmbeddedInstaller is not null)
+        {
+            string log = Path.Combine(fullRoot, "thx-base-install.log");
+            ThxAudioProvisioningJournal.RejectReparse(log);
+            arguments = [.. arguments, "/log", log];
+        }
+        ProcessStartInfo start = CreateStartInfo(path, fullRoot, temp, arguments);
         using Process process = Process.Start(start)
             ?? throw new InvalidOperationException("THX provisioning process did not start.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -177,11 +207,27 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         }
     }
 
+    internal static string GetPlanIdentity(ThxAudioCompatibilityProfile profile)
+    {
+        // Recovery belongs to this complete recipe, not merely the family or
+        // carrier. Changes to arguments, extraction pins or installed file pins
+        // must pause an older incomplete transaction.
+        string pins = JsonSerializer.Serialize(new
+        {
+            Artifacts = ThxAudioProvisioningPackage.ForProduct(profile.ProductId),
+            profile.Stack,
+            profile.ActivePropertiesSha256,
+            profile.SurroundConfigSha256,
+        });
+        return profile.ModelNumber + "/" + profile.ProductId + "/"
+            + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(pins)));
+    }
+
     private static bool IsPristine(string driverStore, string commonData)
     {
         try
         {
-            if (Directory.EnumerateDirectories(driverStore, "thx_*", SearchOption.TopDirectoryOnly).Any()
+            if (Directory.EnumerateDirectories(driverStore, "thx*", SearchOption.TopDirectoryOnly).Any()
                 || PathExists(Path.Combine(commonData, "thx")))
             {
                 return false;
@@ -189,7 +235,8 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
             using RegistryKey services = Registry.LocalMachine.OpenSubKey(
                 @"SYSTEM\CurrentControlSet\Services", writable: false)
                 ?? throw new InvalidOperationException("Windows services registry is unavailable.");
-            return !services.GetSubKeyNames().Any(name => name.StartsWith("thx_", StringComparison.OrdinalIgnoreCase));
+            return !services.GetSubKeyNames().Any(name => name.StartsWith("thx", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("VSSrv", StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -278,12 +325,13 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         catch (IOException) { return "unreadable"; }
     }
 
-    private static bool NoProvisioningProcesses()
+    private static bool NoProvisioningProcesses(string productId)
     {
         try
         {
-            foreach (string processName in ThxAudioProvisioningPackage.Artifacts.Select(
-                artifact => Path.GetFileNameWithoutExtension(artifact.FileName)))
+            foreach (string processName in ThxAudioProvisioningPackage.ForProduct(productId).SelectMany(
+                artifact => new[] { artifact.FileName, artifact.ExecutableFileName })
+                .Select(name => Path.GetFileNameWithoutExtension(name)!).Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 Process[] processes = Process.GetProcessesByName(processName);
                 try

@@ -310,7 +310,9 @@ inventing a page-specific appearance:
    exact host/codec/output ancestry and form-factor checks, guarded COM
    registrations, isolated synchronous helper lifetime and explicit readback.
    EQ, presets, automation and fresh legacy provisioning are not admitted;
-   generic fallback packages do not establish OEM binding or acoustic tuning.
+   SCU embeds exact-model acoustic tuning, but the original signed component
+   and endpoint binding rule remains unresolved. Do not invent SWC nodes,
+   change signed INFs or write guessed endpoint APO registrations.
    Discovery never activates COM. The native integration remains experimental
    until exact-model physical validation; see [legacy THX](docs/thx-legacy-interface.md).
    The optional experimental THX audio integration may use the already
@@ -318,13 +320,22 @@ inventing a page-specific appearance:
    `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off
    by default, uses current-user typed Audio IPC and an isolated native helper,
    and never bundles THX drivers or services. An explicit elevated setup action
-   may provision the pinned rznb11 stack on exact RZ09-0528/RZ09-0530 with
+   may provision the pinned rznb11 stack on exact RZ09-0528/RZ09-0530 or the
+   separately pinned cached rznb12 4.2.37.1621 stack on exact RZ09-0581 with
    matching codec, AC power, no competing controller and no existing THX stack.
-   Use only reviewed vendor downloads, exact hashes/signatures, protected staging,
-   durable per-process intents and independent installed catalog/config/service
-   verification. Never retry an uncertain submission or replace an existing stack.
-   The rznb12 base installer is unavailable in the reviewed source, so setup must
-   refuse that family. An explicit user
+   Synapse must not be a prerequisite. The owner-confirmed Razer redistribution
+   permission covers the original signed THX installer as a catalog release asset;
+   retain its notices and exact source, size, hash and signer pins. Never bundle
+   vendor bytes in OpenBlade or Git. Verify the carrier, statically extract the
+   pinned complete inner Burn, verify its independent signature, and execute only
+   that inner installer from protected staging. Never run the wrapper that extracts
+   into a user-writable directory. Keep durable per-process intents bound to the
+   whole recipe and independently verify installed catalogs/config/service. Never
+   retry an uncertain submission or replace an existing admitted stack. Keep
+   4.2.41.2499 admitted as a separate whole stack; never mix package versions.
+   Cached 1621 additionally requires a successful complete read of both endpoints
+   tied to the freshly admitted stack identity before mutations. Its runtime and
+   pristine installation remain experimental until physically tested. An explicit user
    action may download only the pinned native client from its reviewed Razer
    HTTPS URL into OpenBlade's per-user component directory, after exact size,
    SHA-256, Windows Authenticode trust and signer verification. Publish it

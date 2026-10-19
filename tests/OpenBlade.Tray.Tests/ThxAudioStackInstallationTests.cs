@@ -117,9 +117,14 @@ public sealed class ThxAudioStackInstallationTests
         Assert.DoesNotContain(start.Environment.Keys, name => name.StartsWith("DOTNET_", StringComparison.OrdinalIgnoreCase)
             || name.StartsWith("CORECLR_", StringComparison.OrdinalIgnoreCase) || name.StartsWith("COR_", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(System.Diagnostics.ProcessWindowStyle.Hidden, start.WindowStyle);
+        Assert.True(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 16 - RZ09-0581", "Razer", "Blade 16 - RZ09-0581"));
         Assert.True(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 16 - RZ09-0528", "Razer", "Blade 16 - RZ09-0528"));
         Assert.True(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 14 - RZ09-0530", "Razer", "Blade 14 - RZ09-0530"));
-        Assert.False(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 16 - RZ09-0581", "Razer", "Blade 16 - RZ09-0581"));
+        Assert.False(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 14 - RZ09-0482", "Razer", "Blade 14 - RZ09-0482"));
+        Assert.False(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 16 - RZ09-0483", "Razer", "Blade 16 - RZ09-0483"));
+        Assert.False(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 18 - RZ09-0484", "Razer", "Blade 18 - RZ09-0484"));
+        Assert.False(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 15 Base Model (Early 2020) - RZ09-0328",
+            "Razer", "Blade 15 Base Model (Early 2020) - RZ09-0328"));
         Assert.False(ThxAudioInstallLauncher.MatchesHost("Razer", "Blade 16 - RZ09-0528", "Razer", "Blade 14 - RZ09-0530"));
     }
 

@@ -8,7 +8,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Add experimental spatial-audio control through the installed THX 2.6.5.0 stack on Blade 14 RZ09-0482, Blade 16 RZ09-0483 and Blade 18 RZ09-0484. Review every supported model in the driver catalog; record the exact Realtek OEM codec tuning and keep legacy installation blocked until THX component binding is verified, and identify RZ09-0328 as Dolby Atmos. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
-- Install the matching THX driver and configuration directly from Razer on RZ09-0528 and RZ09-0530 without Synapse, with hash and signature verification. This experimental fresh setup requires the matching Realtek audio driver. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
+- Install the matching THX driver and configuration without Synapse on RZ09-0581, RZ09-0528 and RZ09-0530, using verified original installers from Razer or the driver catalog. Verify and extract the signed inner installer into protected staging before execution. This experimental fresh setup requires the matching Realtek audio driver; RZ09-0581 uses the separately pinned cached build. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
 
 ## [0.37.0-nightly.94] - 2026-10-19
 

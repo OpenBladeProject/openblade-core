@@ -36,7 +36,7 @@ internal sealed class ThxAudioInstallLauncher
     internal static bool MatchesHost(string? biosManufacturer, string? biosProduct,
         string? systemManufacturer, string? systemProduct) =>
         biosManufacturer == "Razer" && systemManufacturer == "Razer" && biosProduct == systemProduct
-        && biosProduct is "Blade 16 - RZ09-0528" or "Blade 14 - RZ09-0530";
+        && biosProduct is "Blade 16 - RZ09-0581" or "Blade 16 - RZ09-0528" or "Blade 14 - RZ09-0530";
 
     internal static ProcessStartInfo CreateStartInfo()
     {

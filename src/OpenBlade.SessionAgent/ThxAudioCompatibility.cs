@@ -65,9 +65,38 @@ internal static class ThxAudioCompatibility
             ]),
         ]);
 
+    // Original signed rznb12 4.2.37.1621 package, separately reviewed for
+    // exact RZ09-0581. Never combine its package members with 4.2.41.2499.
+    internal static readonly ThxAudioDriverStack Rznb12CachedStack = new(
+        "thx_rznb12_service", "thx_rznb12_svc.exe",
+        [
+            new("thx_rznb12_apo4.inf",
+            [
+                new("thx_rznb12_apo4.cat", "0CCD88E5DABA6C9C6788B4F623CEDB94FEB2239DB8296A5363199B590D99AC7B"),
+                new("thx_rznb12_apo4.dll", "B33AD0EF245F8E78C697E239CD21CE3485AD76E1A207918B440F574DA1BD9D9C"),
+                new("thx_rznb12_apo4.inf", "467F2BF8FBAB6049003DAFBAE7C8BB47CD9251BEB46A9AF3F41DE236C19E1488"),
+                new("thx_rznb12_apo4_data.bin", "A3E707295B5D83274F6CC2957B6620280D581B89D6EA91F1244898D90AC2B71A"),
+                new("thx_rznb12_apo4_grpc.dll", "E927352ADDE3055777956FD14B7F7C59F3B213B04632F198CCE5B8C9A34101C7"),
+            ]),
+            new("thx_rznb12_ext.inf",
+            [
+                new("thx_rznb12_ext.cat", "A7698D49CC930770674D5EA223B5EBDF1E3546F3CC6D1AFF441D40E6FB55F4BF"),
+                new("thx_rznb12_ext.inf", "D336ADC5A91F2A54CC0E1596FCFE2F3F6A8FF2F9E8AD29F700AAD07FC28B7DA9"),
+            ]),
+            new("thx_rznb12_svc.inf",
+            [
+                new("thx_rznb12_props.dat", "FF587D74CE7763FCB2B0150B62A67237844B688647CE0434219B814608E12C07"),
+                new("thx_rznb12_surround_714_patch.exe", "0943D5D4EA86911313A479BE8B341F28A1547F671796E640EA59CE61A8751679"),
+                new("thx_rznb12_svc.cat", "B03977363841C14406F90883B93852CD37765B173930040CDE338DF5721797D7"),
+                new("thx_rznb12_svc.exe", "20349EFE0BAD4ADE84BF57EFC38A7D7B7DF82CCEF3555D17DC1B34142840F6DF"),
+                new("thx_rznb12_svc.inf", "2402A0E8DCF6BA2756D2803BDE6C858FF0D8859B12988163C229BCB94A6DDBC3"),
+            ]),
+        ]);
+
     // Microsoft Update Catalog Windows 11 THX 2.6.5.0. These packages are
     // admitted only when already installed with the exact model's codec.
-    // Their generic fallback tuning is NOT a factory provisioning source.
+    // SCU embeds exact-model THX tuning, but fresh provisioning still requires
+    // the original signed component/endpoint binding rule.
     internal static readonly ThxAudioDriverStack Legacy265Stack = new(
         "VSSrv", "VSSrv.exe",
         [
@@ -171,6 +200,57 @@ internal static class ThxAudioCompatibility
             [@"INTELAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583007"], Legacy265Stack, true, true)
         { Backend = ThxAudioNativeBackend.Legacy265 },
     ];
+
+    internal static IEnumerable<ThxAudioDriverStack> GetRuntimeStacks(ThxAudioCompatibilityProfile profile)
+    {
+        yield return profile.Stack;
+        if (profile.ModelNumber == "RZ09-0581" && profile.ProductId == "rznb12"
+            && ReferenceEquals(profile.Stack, Rznb12Stack))
+        {
+            yield return Rznb12CachedStack;
+        }
+    }
+
+    internal static ThxAudioDriverStack GetProvisioningStack(ThxAudioCompatibilityProfile profile) =>
+        profile.ModelNumber == "RZ09-0581" && profile.ProductId == "rznb12"
+            ? Rznb12CachedStack : profile.Stack;
+
+    internal static bool TryResolveRunningDriverStack(string driverStore, ThxAudioCompatibilityProfile profile,
+        Func<string, string, bool> hasRunningService, out ThxAudioDriverStack? matchedStack,
+        out string? serviceBinary, out string? error)
+    {
+        matchedStack = null;
+        serviceBinary = null;
+        error = null;
+        foreach (ThxAudioDriverStack candidate in GetRuntimeStacks(profile))
+        {
+            if (!TryResolveDriverStack(driverStore, candidate, out string? executable, out string? candidateError))
+            {
+                error ??= candidateError;
+                continue;
+            }
+            if (!hasRunningService(candidate.ServiceName, executable!))
+            {
+                error = WindowsThxAudioAdmissionSource.GetServiceFailure(candidate);
+                continue;
+            }
+            if (matchedStack is not null)
+            {
+                matchedStack = null;
+                serviceBinary = null;
+                error = "Multiple reviewed THX driver stacks claim the active service.";
+                return false;
+            }
+            matchedStack = candidate;
+            serviceBinary = executable;
+        }
+        if (matchedStack is null)
+        {
+            return false;
+        }
+        error = null;
+        return true;
+    }
 
     internal static bool MatchesHost(ThxAudioCompatibilityProfile profile,
         string? biosManufacturer, string? biosProduct, string? systemManufacturer, string? systemProduct) =>

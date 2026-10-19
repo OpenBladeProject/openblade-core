@@ -140,7 +140,8 @@ and invoke a stop/start command for `thx_rznb11_service`, ignoring its result.
 Independent file and service checks are therefore required.
 
 OpenBlade's experimental provisioning path admits only a pristine THX state on
-exact RZ09-0528/RZ09-0530 hosts and codecs. It does not use the vendor's legacy
+exact RZ09-0528/RZ09-0530 hosts and codecs, and now the separately reviewed
+cached 1621 build on exact RZ09-0581. It does not use the vendor's legacy
 2.x/3.x removal path to repair or upgrade an existing installation. Every launch
 has a durable intent, and the resulting stack/configuration/service must pass
 independent verification. The implementation and simulated tests are separate
@@ -171,13 +172,46 @@ PI4120, SO6120 and KI8120 presets; its SHA-256 is
 The installer metadata specifies `ProductIds=["rznb12"]`, exact hardware IDs,
 `UseSetupApi=true` and `IncludeClientApp=false`.
 
-This establishes an older model-bound package, not a public acquisition source
-or compatibility with OpenBlade's pinned 4.2.41.2499 runtime. The base version
-and its installer behavior need separate review before admission. The original
-source URL is absent from the inspected installer registration. HEAD against
-its exact filename in the known Razer common THX directory returned HTTP 403;
-that directory placement was an inference, and the response does not establish
-whether the object exists. The cached binary was not executed or published.
+The original Razer URL is absent from the inspected installer registration.
+HEAD against its inferred filename in the common THX directory returned HTTP
+403; this does not establish whether an object exists there. The owner confirmed
+that existing written Razer permission covers original THX installers as catalog
+release assets. The catalog therefore provides a separate, exact pinned delivery
+route for this unmodified cached installer, with its original license notice.
+The permission document is retained outside Git and was not independently reviewed.
+
+Static review found no Synapse runtime dependency in the standalone MSI/service
+path. The wrapper is a .NET Framework 4.8 program that extracts an elevated Burn
+to a user-writable location (LocalAppData for rznb12, Temp for rznb11). OpenBlade
+never executes either wrapper. It hashes, length-checks and signature-verifies
+the locked original carrier, extracts the fixed raw-DEFLATE range as data into
+protected staging, then independently hashes and verifies the complete signed
+inner Burn before executing it. The fixed arguments are `/quiet /norestart` plus
+a protected absolute `/log` path. Detached cached Burn engines lack the attached
+MSI/CAB payload and are not valid replacement installers.
+
+| Family | Compressed offset | Compressed length | Complete inner length | Complete inner SHA-256 |
+| --- | --- | --- | --- | --- |
+| rznb11 | 569682 | 50445093 | 51037408 | `819B1504B025105589B5899CC09BB612B7AD83F8DED8DE0D087F81D4085542ED` |
+| rznb12 | 577088 | 52553413 | 53145160 | `DE47E110A3E528249EAF59FA7932C1A568183A38F7B52246EE395A0418B14620` |
+
+Both inner signatures use the reviewed THX certificate above. The installer can
+report success after ignored SetupAPI failures, so exit zero never replaces the
+independent package/catalog, active-file and running-service checks. The durable
+journal binds recovery to the complete recipe, arguments, extraction and installed
+file pins. Uncertain results pause; another recipe cannot resume them.
+
+OpenBlade admits cached 1621 as a separate complete stack, retaining 2499 and
+rejecting mixed package members. The exact 1846 active configuration and native
+client remain required. The two builds' speakers/headphones endpoint definitions
+and exposed property contracts match, but their archive schemas and other content
+differ materially. No vendor manifest explicitly pairs 1621 with 1846. Admission
+therefore additionally requires complete successful reads of both endpoints and
+preset lists before any mutation, tied to the freshly verified stack identity.
+This is experimental source-backed admission, not a pristine-install, native-runtime
+or audible result. Synapse must be absent for the eventual fresh-install acceptance
+test; merely closing it cannot establish that result. No vendor executable was run
+and the working installed 2499 stack was not replaced during this review.
 
 ### Advertised Synapse manifest history
 
@@ -229,18 +263,48 @@ profile indices 2428, 2397 and 2394 for the models above. The shared field value
 
 The profiles contain distinct Realtek EQ, DRC, amplifier and speaker-protection
 blocks. This establishes OEM codec tuning, not THX acoustic `deviceEQ` or a
-complete THX configuration. Both Razer INFs also declare the THX MFX capability
-GUID `{E82A5EE8-44D2-44C1-897E-AA5AFBF146BA}`. Their INF text does not declare
-`AddComponent`, `AddSoftware`, `Include`/`Needs` or literal `VEN_THX` child
-enumeration. The runtime driver could interpret additional data; absence from
-the INF does not prove a separate extension package is required.
+complete THX configuration. The AMD `HDXACPRazer.inf` declares the THX MFX
+capability GUID `{E82A5EE8-44D2-44C1-897E-AA5AFBF146BA}`; the reviewed Intel
+`HDXSSTRazer.inf` does not. Ordinary `ks.inf`/`wdmaudio.inf` Include/Needs are
+present. Neither reviewed Razer INF establishes THX-specific child enumeration
+or endpoint binding. The AMD GUID is not an alias registered by THX 2.6.5's
+reviewed APO INF; its host/offload CLSIDs differ. These bounded findings do not
+prove that no runtime integration exists or that a separate extension is required.
 
-The generic THX SCU package invokes `spatial-config-util.exe` through
-`AddSoftware` after its software component exists. Its
-`generic-config-fallback-V2` configuration has empty `deviceEQ` objects. The
-remaining gap is the runtime enumeration, binding and configuration path between
-the exact Razer codec package and these THX components, including installation
-order. No missing standalone OEM package has been established.
+### Legacy THX tuning and binding review
+
+The signed [THX SCU 2.6.5 package](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=d7c9ca5f-77ae-4681-a1b4-78453818d1c4)
+contains `spatial-config-util.exe` 4.5.5.0, SHA-256
+`E0C8C2B0BF40A25CFFD5545A8043E31F2D61FD4CD7A82B229CDE53F269943CF9`.
+Its embedded default `devices-V2.yaml` selects actual model-specific THX acoustic
+payloads; they are not merely profile names or the adjacent generic fallback file.
+The generic fallback is explicitly rejected by the normal execution path.
+
+| Model | Subsystem suffix → profile | Selected speaker profile | SpeakerPath SHA-256 |
+| --- | --- | --- | --- |
+| RZ09-0482 | 2020 → PI490 | profile-20230502 | `A694CC6E87985CF3EF58AAA2CF1E00FCCA4F24FE02EE464AC164C72986F4AF68` |
+| RZ09-0483 | 3006 → SO690 | profile-20221107 | `94A947281EF38E06C8C81F26BBAA3A64640323FD50F264E171FC52401EBD36E2` |
+| RZ09-0484 | 3007 → KI890 | profile-20221122-PVT-red | `ECECE0925FC8FA43D4102A9E49BB7EE1A7F8A9B3F6233F4D50A71C788A0FC767` |
+
+Static extraction validated the embedded gzip/base64 JSON bytes, including shared
+headphone and crosstalk processing. On the normal INF branch, SCU reads Realtek
+subsystem information, chooses the Razer profile and writes a merged
+`ProgramData\THX\thx_spatial.conf.json`. The `_ISST_SSP` branch adds `-oem`
+and selects by OEM product name instead. The actual child branch and final
+serialized configuration on each factory laptop are still unverified.
+
+The remaining blocker is the original signed rule that creates/associates THX
+SWC devnodes, activates the correct endpoint APOs, chooses the SCU branch and
+orders installation/rescan/restart. The earliest visible exact Intel Realtek
+[6.0.9452.1 package](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=bf428f32-bf81-4c77-b0b4-6a9a36701cd5)
+also lacks that THX rule. The modern installer's absent-device fallback only
+stages an INF; it does not supply legacy SWC creation semantics.
+
+An original integration installer/rule, or factory SetupAPI logs together with
+original signed INFs and actual codec/THX parent-child nodes, can resolve the
+specific gap. No extra acoustic tuning package has been shown to be missing.
+Do not fabricate SWC nodes, modify signed INFs, or write guessed endpoint FX
+registry values. Fresh legacy provisioning stays blocked.
 
 The rznb12 Catalog search covered its component IDs, extension ID, recovered
 filename and versions 4.2.37.1621, 4.2.38.1962 and 4.2.41.2499 without finding
@@ -248,3 +312,23 @@ an exact package. The generic THX 4.2.38.1967 result explicitly targets
 `SWC\VEN_THX&SID_RZNB11SVC`; it is not an rznb12 substitute. These bounded
 search results do not establish whether Windows Update can privately target
 another submission to the exact device.
+
+
+### Original Razer download route
+
+The official model download listings for [RZ09-0482](https://mysupport.razer.com/app/answers/detail/a_id/13732),
+[RZ09-0483](https://mysupport.razer.com/app/answers/detail/a_id/9743) and
+[RZ09-0484](https://mysupport.razer.com/app/answers/detail/a_id/9676) did not expose
+a separately named Realtek/THX package in indexed official-page content. Direct
+page requests reached Razer's pre-check; this was not a complete live-link audit.
+
+The [RZ09-0482 AMD APU guide](https://mysupport.razer.com/app/answers/detail/a_id/13229)
+links the original [APU package](https://rzr.to/oGIdKJ), an 888,405,128-byte ZIP.
+HTTP range inspection recovered its complete 417-entry directory and selected
+small audio INF/manifest entries without downloading or executing the full bundle.
+`amdacpbus.inf` stages `amdacpbusext.inf`, which targets
+`PCI\VEN_1022&DEV_15E2&SUBSYS_201C1A58&REV_60`, copies `acpcfg0001.dat`, and
+registers `AcpConfigDatPath`. The inspected ACPBus/ACPAfd/ACPBtAfd/HDMI audio
+INFs and installer manifests contain no THX-specific child/binding declaration.
+This is an additional ACP integration source, not proof of a THX binding rule or
+of that PCI identity on an actual RZ09-0482. Binary ACP behavior remains unexamined.

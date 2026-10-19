@@ -13,6 +13,8 @@ internal sealed record ThxAudioAdmission(
     public string? ProductId { get; init; }
     public string? ModelNumber { get; init; }
     public bool MutationAllowed { get; init; }
+    public bool RequiresEndpointProbe { get; init; }
+    public string DriverStackIdentity { get; init; } = string.Empty;
     public bool IsAvailable =>
         Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly
         && ThxAudioCompatibility.Profiles.Any(profile =>
@@ -61,7 +63,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                 { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
             }
 
-            if (!HasPinnedComponents(profile, out string? componentError))
+            if (!HasPinnedComponents(profile, out string? componentError, out bool requiresEndpointProbe, out string stackIdentity))
             {
                 return new ThxAudioAdmission(
                     profile.Backend == ThxAudioNativeBackend.Legacy265
@@ -78,7 +80,13 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
             }
             return new ThxAudioAdmission(profile.MutationAllowed
                 ? ThxAudioAvailability.Available : ThxAudioAvailability.AvailableReadOnly, null)
-            { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber, MutationAllowed = profile.MutationAllowed };
+            {
+                ProductId = profile.ProductId,
+                ModelNumber = profile.ModelNumber,
+                MutationAllowed = profile.MutationAllowed,
+                RequiresEndpointProbe = requiresEndpointProbe,
+                DriverStackIdentity = stackIdentity,
+            };
         }
         catch (Exception exception)
         {
@@ -135,8 +143,11 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
     internal static bool IsExactUsbPnpDeviceId(string value) =>
         ThxAudioCompatibility.MatchesUsb(ThxAudioCompatibility.Profiles[0], value);
 
-    private static bool HasPinnedComponents(ThxAudioCompatibilityProfile profile, out string? error)
+    private static bool HasPinnedComponents(ThxAudioCompatibilityProfile profile, out string? error,
+        out bool requiresEndpointProbe, out string stackIdentity)
     {
+        requiresEndpointProbe = false;
+        stackIdentity = string.Empty;
         if (profile.Backend == ThxAudioNativeBackend.Legacy265)
         {
             string legacyDriverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
@@ -160,21 +171,16 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         }
         string driverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "DriverStore", "FileRepository");
-        if (!ThxAudioCompatibility.TryResolveDriverStack(
-            driverStore, profile.Stack, out string? serviceBinary, out error))
-        {
-            return false;
-        }
-        if (!ThxAudioCompatibility.HasPinnedActiveConfiguration(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), profile, out error))
-        {
-            return false;
-        }
-        bool serviceAvailable;
         try
         {
-            serviceAvailable = WindowsThxAdmissionQueries.HasRunningPinnedService(
-                profile.Stack.ServiceName, serviceBinary!);
+            if (!ThxAudioCompatibility.TryResolveRunningDriverStack(driverStore, profile,
+                WindowsThxAdmissionQueries.HasRunningPinnedService, out ThxAudioDriverStack? matchedStack, out _, out error))
+            {
+                return false;
+            }
+            requiresEndpointProbe = ReferenceEquals(matchedStack, ThxAudioCompatibility.Rznb12CachedStack);
+            stackIdentity = matchedStack!.Packages.SelectMany(package => package.Files)
+                .Single(file => file.Name == matchedStack.ServiceExecutable).Sha256;
         }
         catch (Exception exception) when (exception is System.ComponentModel.Win32Exception
             or IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
@@ -182,9 +188,9 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
             error = GetServiceVerificationFailure(profile.Stack);
             return false;
         }
-        if (!serviceAvailable)
+        if (!ThxAudioCompatibility.HasPinnedActiveConfiguration(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), profile, out error))
         {
-            error = GetServiceFailure(profile.Stack);
             return false;
         }
         error = null;

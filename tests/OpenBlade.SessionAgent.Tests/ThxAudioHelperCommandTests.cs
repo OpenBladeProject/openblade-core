@@ -201,8 +201,158 @@ public sealed class ThxAudioHelperCommandTests
         Assert.Equal(0, exitCode);
         Assert.Empty(native.PropertyWrites);
         Assert.Equal(1, native.AddCalls);
+        Assert.Equal(1, native.CheckStatusCalls);
+        Assert.Equal(1, native.PresetListCalls);
         Assert.Equal(1, native.RemoveCalls);
         Assert.Contains("\"status\":0", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CachedStack_MutationBeforeEndpointProbeDoesNotCallNative()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(
+            () => native,
+            new FixedAdmission(CachedAdmitted("cached-stack-a")),
+            new StringReader(RequestLines(SpatialRequest(true))),
+            output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        ThxAudioHelperResponse response = Assert.Single(ReadResponses(output));
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, response.Status);
+        Assert.Contains("Read both THX endpoints", response.Error!, StringComparison.Ordinal);
+        Assert.Equal(0, native.AddCalls);
+        Assert.Equal(0, native.CheckStatusCalls);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(0, native.SelectPresetCalls);
+    }
+
+    [Fact]
+    public async Task CachedStack_MissingIdentityFailsClosedBeforeNativeConstruction()
+    {
+        bool constructed = false;
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(
+            () =>
+            {
+                constructed = true;
+                return new FakeNative();
+            },
+            new FixedAdmission(Admitted() with
+            {
+                RequiresEndpointProbe = true,
+            }),
+            new StringReader(RequestLines(ReadRequest())),
+            output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        ThxAudioHelperResponse response = Assert.Single(ReadResponses(output));
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, response.Status);
+        Assert.False(constructed);
+        Assert.Contains("identity is unavailable", response.Error!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CachedStack_ReadProbesBothEndpointsThenAllowsMutation()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(
+            () => native,
+            new FixedAdmission(CachedAdmitted("cached-stack-a")),
+            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
+            output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        ThxAudioHelperResponse[] responses = ReadResponses(output);
+        Assert.Equal(2, responses.Length);
+        Assert.All(responses, response =>
+            Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status));
+        Assert.Equal(2, native.AddCalls);
+        Assert.Equal(3, native.CheckStatusCalls);
+        Assert.Equal(3, native.PresetListCalls);
+        Assert.Contains(native.RegisteredDevices,
+            value => value.Contains("speakers", StringComparison.Ordinal));
+        Assert.Contains(native.RegisteredDevices,
+            value => value.Contains("headphones", StringComparison.Ordinal));
+        Assert.Single(native.PropertyWrites);
+        Assert.True(native.Spatial);
+    }
+
+    [Fact]
+    public async Task CachedStack_MalformedSecondEndpointDoesNotCompleteProbe()
+    {
+        var native = new FakeNative
+        {
+            ApplyWritesToReadback = true,
+            HeadphonesPresetListJson = "{malformed",
+        };
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(
+            () => native,
+            new FixedAdmission(CachedAdmitted("cached-stack-a")),
+            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
+            output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        ThxAudioHelperResponse response = Assert.Single(ReadResponses(output));
+        Assert.Equal(ThxAudioOperationStatus.Failed, response.Status);
+        Assert.Equal(2, native.AddCalls);
+        Assert.Equal(2, native.CheckStatusCalls);
+        Assert.Empty(native.PropertyWrites);
+        Assert.False(native.Spatial);
+    }
+
+    [Fact]
+    public async Task CachedStack_ChangedIdentityRequiresNewEndpointProbe()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        int checks = 0;
+        using var changedOutput = new StringWriter();
+        var changedCommand = new ThxAudioHelperCommand(
+            () => native,
+            new ChangingAdmission(() => CachedAdmitted(
+                ++checks == 1 ? "cached-stack-a" : "cached-stack-b")),
+            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
+            changedOutput);
+
+        await changedCommand.RunAsync(CancellationToken.None);
+
+        ThxAudioHelperResponse[] changedResponses = ReadResponses(changedOutput);
+        Assert.Equal(2, changedResponses.Length);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, changedResponses[0].Status);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, changedResponses[1].Status);
+        Assert.Empty(native.PropertyWrites);
+
+        using var unprobedOutput = new StringWriter();
+        var unprobedCommand = new ThxAudioHelperCommand(
+            () => native,
+            new FixedAdmission(CachedAdmitted("cached-stack-b")),
+            new StringReader(RequestLines(SpatialRequest(true))),
+            unprobedOutput);
+        await unprobedCommand.RunAsync(CancellationToken.None);
+        Assert.Equal(
+            ThxAudioOperationStatus.Unavailable,
+            Assert.Single(ReadResponses(unprobedOutput)).Status);
+        Assert.Empty(native.PropertyWrites);
+
+        using var reprobedOutput = new StringWriter();
+        var reprobedCommand = new ThxAudioHelperCommand(
+            () => native,
+            new FixedAdmission(CachedAdmitted("cached-stack-b")),
+            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
+            reprobedOutput);
+        await reprobedCommand.RunAsync(CancellationToken.None);
+
+        Assert.All(ReadResponses(reprobedOutput), response =>
+            Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status));
+        Assert.Single(native.PropertyWrites);
+        Assert.True(native.Spatial);
     }
 
     [Fact]
@@ -1075,6 +1225,12 @@ public sealed class ThxAudioHelperCommandTests
         MutationAllowed = true,
     };
 
+    private static ThxAudioAdmission CachedAdmitted(string identity) => Admitted() with
+    {
+        RequiresEndpointProbe = true,
+        DriverStackIdentity = identity,
+    };
+
     private static string RequestLines(params ThxAudioHelperRequest[] requests) =>
         string.Concat(requests.Select(request => System.Text.Json.JsonSerializer.Serialize(
             request, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) + "\n"));
@@ -1113,6 +1269,7 @@ public sealed class ThxAudioHelperCommandTests
         public string SelectedPreset { get; set; } = "music";
         public string PresetListJson { get; set; } =
             "[\"default\",\"custom\",\"music\",\"movie\",\"game\",\"podcast\"]";
+        public string? HeadphonesPresetListJson { get; set; }
         public int AddCalls { get; private set; }
         public int CheckStatusCalls { get; private set; }
         public int RemoveCalls { get; private set; }
@@ -1220,7 +1377,10 @@ public sealed class ThxAudioHelperCommandTests
         public string GetPresetList(string deviceJson, string presetGroupId)
         {
             PresetListCalls++;
-            return PresetListJson;
+            return HeadphonesPresetListJson is not null
+                && deviceJson.Contains("headphones", StringComparison.Ordinal)
+                    ? HeadphonesPresetListJson
+                    : PresetListJson;
         }
 
         public string GetSelectedPreset(string deviceJson, string presetGroupId) =>

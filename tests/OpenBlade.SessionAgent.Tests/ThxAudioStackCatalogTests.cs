@@ -23,17 +23,7 @@ public sealed class ThxAudioStackCatalogTests
             Assert.Equal(profile.UsbProductId, Text(identity.GetProperty("usbIdentity"), "pid"));
             Assert.Equal(profile.CodecHardwareIds.Order(StringComparer.OrdinalIgnoreCase),
                 identity.GetProperty("codecHardwareIds").EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.OrdinalIgnoreCase));
-            Assert.Equal(profile.Stack.ServiceName, Text(catalog.GetProperty("stack"), "serviceName"));
-            Assert.Equal(profile.Stack.ServiceExecutable, Text(catalog.GetProperty("stack"), "serviceExecutable"));
-            Assert.Equal(profile.Stack.Packages.Select(package => package.InfName).Order(StringComparer.Ordinal),
-                catalog.GetProperty("driverPackages").EnumerateArray().Select(package => Text(package, "infName")).Order(StringComparer.Ordinal));
-            foreach (ThxAudioDriverPackage package in profile.Stack.Packages)
-            {
-                JsonElement descriptor = catalog.GetProperty("driverPackages").EnumerateArray()
-                    .Single(value => Text(value, "infName") == package.InfName);
-                Assert.Equal(package.Files.Select(file => file.Name + "|" + file.Sha256).Order(StringComparer.Ordinal),
-                    descriptor.GetProperty("files").EnumerateArray().Select(file => Text(file, "name") + "|" + Text(file, "sha256")).Order(StringComparer.Ordinal));
-            }
+            AssertStackPins(profile.Stack, catalog);
             JsonElement[] active = catalog.GetProperty("activeConfiguration").EnumerateArray().ToArray();
             Assert.Equal(profile.ActivePropertiesSha256, Text(active.Single(file => Text(file, "fileName") == $"thx_{family}_props.dat"), "sha256"));
             Assert.Equal(profile.SurroundConfigSha256, Text(active.Single(file => Text(file, "fileName") == "surround_714_config.json"), "sha256"));
@@ -41,13 +31,34 @@ public sealed class ThxAudioStackCatalogTests
     }
 
     [Fact]
-    public void FixedProvisioningArtifactsMatchTheReviewedVendorDownloads()
+    public void CachedRznb12IsASeparateWholeStackWithConditionalEndpointAdmission()
     {
-        using JsonDocument document = Read("ThxRznb11StackCatalog.json");
+        using JsonDocument document = Read("ThxRznb12CachedStackCatalog.json");
+        JsonElement catalog = document.RootElement;
+        var profile = ThxAudioCompatibility.Profiles.Single(value => value.ModelNumber == "RZ09-0581");
+        AssertStackPins(ThxAudioCompatibility.GetProvisioningStack(profile), catalog);
+        Assert.Equal("RZ09-0581", Text(Assert.Single(catalog.GetProperty("applicableProfiles").EnumerateArray()), "modelNumber"));
+        JsonElement admission = catalog.GetProperty("provisioning").GetProperty("freshInstallAdmission");
+        Assert.Equal("ConditionalWholeStack", Text(admission, "mode"));
+        Assert.True(admission.GetProperty("completePinnedStackRequired").GetBoolean());
+        Assert.Equal(["Speakers", "Headphones"], admission.GetProperty("requiredPreMutationEndpointReads")
+            .EnumerateArray().Select(value => value.GetString()!).ToArray());
+        Assert.Equal("FreshInstallCandidate", Text(catalog.GetProperty("provisioning"), "status"));
+        Assert.Equal(profile.ActivePropertiesSha256, Text(catalog.GetProperty("activeConfiguration")
+            .EnumerateArray().Single(file => Text(file, "fileName") == "thx_rznb12_props.dat"), "sha256"));
+    }
+
+    [Theory]
+    [InlineData("rznb11", "ThxRznb11StackCatalog.json")]
+    [InlineData("rznb12", "ThxRznb12CachedStackCatalog.json")]
+    public void FixedProvisioningArtifactsMatchTheReviewedDownloadsAndProtectedInnerRecipe(string family, string fixture)
+    {
+        using JsonDocument document = Read(fixture);
         JsonElement catalog = document.RootElement;
         JsonElement[] artifacts = catalog.GetProperty("artifacts").EnumerateArray().ToArray();
-        Assert.Equal(ThxAudioProvisioningPackage.Artifacts.Count, artifacts.Length);
-        foreach (ThxAudioProvisioningArtifact artifact in ThxAudioProvisioningPackage.Artifacts)
+        var recipe = ThxAudioProvisioningPackage.ForProduct(family);
+        Assert.Equal(recipe.Count, artifacts.Length);
+        foreach (ThxAudioProvisioningArtifact artifact in recipe)
         {
             JsonElement entry = artifacts.Single(value => Text(value, "fileName") == artifact.FileName);
             Assert.Equal(artifact.Source.AbsoluteUri, Text(entry, "sourceUrl"));
@@ -55,6 +66,26 @@ public sealed class ThxAudioStackCatalogTests
             Assert.Equal(artifact.Sha256, Text(entry, "sha256"));
             Assert.Equal(ThxAudioProvisioningPackage.SignerSubject, Text(entry.GetProperty("authenticode"), "signerSubject"));
             Assert.Equal(ThxAudioProvisioningPackage.SignerThumbprint, Text(entry.GetProperty("authenticode"), "signerThumbprint"));
+            if (artifact.EmbeddedInstaller is { } inner)
+            {
+                JsonElement embedded = entry.GetProperty("embeddedInstaller");
+                Assert.Equal(inner.FileName, Text(embedded, "fileName"));
+                Assert.Equal(inner.CompressedOffset, embedded.GetProperty("compressedOffset").GetInt64());
+                Assert.Equal(inner.CompressedLength, embedded.GetProperty("compressedLength").GetInt32());
+                Assert.Equal(inner.Length, embedded.GetProperty("size").GetInt64());
+                Assert.Equal(inner.Sha256, Text(embedded, "sha256"));
+                Assert.Equal(ThxAudioProvisioningPackage.SignerThumbprint,
+                    Text(embedded.GetProperty("authenticode"), "signerThumbprint"));
+                Assert.Equal(artifact.Arguments, embedded.GetProperty("arguments").EnumerateArray()
+                    .Select(value => value.GetString()!).ToArray());
+                Assert.False(embedded.GetProperty("carrierExecutionAllowed").GetBoolean());
+                Assert.Equal("ProtectedComponentDirectory", Text(embedded, "extractionDestination"));
+                Assert.Equal("CreateNew", Text(embedded, "outputCreation"));
+            }
+            else
+            {
+                Assert.False(entry.TryGetProperty("embeddedInstaller", out _));
+            }
         }
         using JsonDocument unavailable = Read("ThxRznb12StackCatalog.json");
         Assert.Equal("BaseInstallerUnavailable", Text(unavailable.RootElement.GetProperty("provisioning"), "status"));
@@ -83,6 +114,21 @@ public sealed class ThxAudioStackCatalogTests
                 .Single(value => Text(value, "infName").Equals(package.InfName, StringComparison.OrdinalIgnoreCase));
             Assert.Equal(package.Files.Select(file => file.Name + "|" + file.Sha256).Order(StringComparer.OrdinalIgnoreCase),
                 source.GetProperty("files").EnumerateArray().Select(file => Text(file, "name") + "|" + Text(file, "sha256")).Order(StringComparer.OrdinalIgnoreCase));
+        }
+    }
+
+    private static void AssertStackPins(ThxAudioDriverStack stack, JsonElement catalog)
+    {
+        Assert.Equal(stack.ServiceName, Text(catalog.GetProperty("stack"), "serviceName"));
+        Assert.Equal(stack.ServiceExecutable, Text(catalog.GetProperty("stack"), "serviceExecutable"));
+        Assert.Equal(stack.Packages.Select(package => package.InfName).Order(StringComparer.Ordinal),
+            catalog.GetProperty("driverPackages").EnumerateArray().Select(package => Text(package, "infName")).Order(StringComparer.Ordinal));
+        foreach (ThxAudioDriverPackage package in stack.Packages)
+        {
+            JsonElement descriptor = catalog.GetProperty("driverPackages").EnumerateArray()
+                .Single(value => Text(value, "infName") == package.InfName);
+            Assert.Equal(package.Files.Select(file => file.Name + "|" + file.Sha256).Order(StringComparer.Ordinal),
+                descriptor.GetProperty("files").EnumerateArray().Select(file => Text(file, "name") + "|" + Text(file, "sha256")).Order(StringComparer.Ordinal));
         }
     }
 

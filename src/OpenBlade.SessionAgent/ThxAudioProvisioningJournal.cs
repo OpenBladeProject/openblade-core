@@ -11,6 +11,7 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
     private const int MaximumLength = 4 * 1024 * 1024;
     private readonly FileStream stream;
     private bool hasIntent;
+    private readonly string productId;
 
     internal static string Root => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -21,8 +22,10 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
     public ThxAudioProvisioningRecovery? Recovery { get; private set; }
     public string PackageDestination { get; }
 
-    internal ThxAudioProvisioningJournal()
+    internal ThxAudioProvisioningJournal(string productId)
     {
+        _ = ThxAudioProvisioningPackage.ForProduct(productId);
+        this.productId = productId;
         EnsureProtectedDirectory(Root);
         RejectReparse(JournalPath);
         stream = new FileStream(JournalPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
@@ -170,7 +173,7 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
 
     public void Intent(ThxAudioProvisioningStep step)
     {
-        ThxAudioProvisioningArtifact artifact = ThxAudioProvisioningPackage.Artifacts.Single(
+        ThxAudioProvisioningArtifact artifact = ThxAudioProvisioningPackage.ForProduct(productId).Single(
             item => item.Step == step);
         Append(new
         {
@@ -183,6 +186,7 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
             artifact.Length,
             artifact.Sha256,
             artifact.Arguments,
+            artifact.EmbeddedInstaller,
         });
         hasIntent = true;
         RequiresRecovery = true;

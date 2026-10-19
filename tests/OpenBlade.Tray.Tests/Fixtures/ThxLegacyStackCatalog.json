@@ -46,6 +46,14 @@
           "thumbprint": "A1355F1428C87090B6238B5F20C5C84A300FE419",
           "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
         }
+      },
+      "thxScuTuning": {
+        "subsystemSelector": "2020",
+        "profileId": "PI490",
+        "profileVersion": "profile-20230502",
+        "speakerPathSha256": "A694CC6E87985CF3EF58AAA2CF1E00FCCA4F24FE02EE464AC164C72986F4AF68",
+        "schema": "devices-V2",
+        "genericFallbackAccepted": false
       }
     },
     {
@@ -85,6 +93,14 @@
           "thumbprint": "62C16976BFBBF57B8F8B588A043B4FB0BC294A6D",
           "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
         }
+      },
+      "thxScuTuning": {
+        "subsystemSelector": "3006",
+        "profileId": "SO690",
+        "profileVersion": "profile-20221107",
+        "speakerPathSha256": "94A947281EF38E06C8C81F26BBAA3A64640323FD50F264E171FC52401EBD36E2",
+        "schema": "devices-V2",
+        "genericFallbackAccepted": false
       }
     },
     {
@@ -124,6 +140,14 @@
           "thumbprint": "62C16976BFBBF57B8F8B588A043B4FB0BC294A6D",
           "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
         }
+      },
+      "thxScuTuning": {
+        "subsystemSelector": "3007",
+        "profileId": "KI890",
+        "profileVersion": "profile-20221122-PVT-red",
+        "speakerPathSha256": "ECECE0925FC8FA43D4102A9E49BB7EE1A7F8A9B3F6233F4D50A71C788A0FC767",
+        "schema": "devices-V2",
+        "genericFallbackAccepted": false
       }
     }
   ],
@@ -363,12 +387,32 @@
   "modelBinding": {
     "status": "Blocked",
     "exactOemChildEnumerationPackage": "NotEstablished",
-    "exactModelTuning": "NotEstablished",
+    "exactModelTuning": "Established",
+    "genericFallbackAccepted": false,
+    "ordinaryAudioIncludeNeedsPresent": true,
+    "thxSpecificIncludeNeedsPresent": false,
+    "endpointFxApoBinding": "NotEstablished",
+    "apoRegistration": {
+      "hostClsid": "68650828-CA0F-4196-9096-5F50931AF10A",
+      "offloadClsid": "E6769B7D-B58F-45CA-B6F2-964B83EDCB76"
+    },
+    "e82GuidEvidence": {
+      "guid": "E82A5EE8-44D2-44C1-897E-AA5AFBF146BA",
+      "presentIn": [
+        "RZ09-0482 HDXACPRazer.inf"
+      ],
+      "absentFrom": [
+        "RZ09-0483 HDXSSTRazer.inf",
+        "RZ09-0484 HDXSSTRazer.inf"
+      ],
+      "equalsThxApoClsid": false,
+      "role": "NotEstablished"
+    },
     "genericComponentsAreModelBindingEvidence": false,
     "installableCandidate": false,
     "blockers": [
-      "Runtime enumeration of the generic THX software-component IDs from each candidate profile's exact Realtek codec is not established.",
-      "The generic-config-fallback-V2 configuration does not establish THX acoustic deviceEQ integration with the reviewed Realtek codec OEM profiles."
+      "Creation or association of the generic THX software-component IDs with each candidate profile's exact Realtek codec is not established.",
+      "Endpoint FX/APO binding, including the exact host/offload CLSID selection conditions, is not established."
     ]
   },
   "evidenceSources": [
@@ -413,7 +457,9 @@
   },
   "limitations": [
     "The four generic THX packages are signed component candidates, not evidence that any candidate model enumerates or safely accepts them.",
-    "The exact Realtek base packages contain reviewed OEM codec profiles, but that evidence does not establish THX acoustic tuning or integration.",
+    "The signed SCU contains exact subsystem-to-profile selection and model-specific THX SpeakerPath tuning for all three candidates; it rejects the generic fallback.",
+    "The ordinary ks.inf/wdmaudio.inf Include/Needs dependencies are present, but no THX-specific Include/Needs establishes software-component enumeration or endpoint binding.",
+    "E82A5EE8-44D2-44C1-897E-AA5AFBF146BA appears only in the reviewed RZ09-0482 AMD INF, is absent from the two Intel INFs, is not either THX APO CLSID, and has an unresolved role.",
     "This metadata does not define an installation order, authorize installation, or establish clean-install, repair, rollback, or physical behavior."
   ]
 }

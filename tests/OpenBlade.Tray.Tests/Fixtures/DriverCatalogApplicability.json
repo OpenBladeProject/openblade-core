@@ -279,6 +279,54 @@
       ]
     },
     {
+      "path": "components/thx-rznb12/4.2.37.1621/stack.json",
+      "kind": "UpstreamAudioStack",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "Applicable",
+          "evidence": "components/thx-rznb12/4.2.37.1621/stack.json#/applicableProfiles",
+          "reason": "The recovered signed carrier, protected inner Burn bundle, all three driver packages, official configuration updaters and immutable outputs are pinned for the exact RZ09-0581 codec subsystem. Fresh-install use remains conditional on a pristine state, the complete stack and both-endpoint read admission; catalog applicability does not claim physical validation."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "NotApplicable",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model uses the separately reviewed rznb11 family; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "NotApplicable",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model uses the separately reviewed rznb11 family; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/3641/",
+          "reason": "The exact-model specification identifies Dolby Atmos rather than THX; rznb12 is not applicable."
+        }
+      ]
+    },
+    {
       "path": "components/thx-rznb12/4.2.41.2499/stack.json",
       "kind": "UpstreamAudioStack",
       "review": [
@@ -346,19 +394,19 @@
           "modelNumber": "RZ09-0484",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications and exact Realtek codec OEM tuning are reviewed, but runtime THX software-component enumeration and THX deviceEQ integration are not established."
+          "reason": "Official THX specifications, exact Realtek codec OEM tuning and the SCU's model-specific THX SpeakerPath profile are reviewed, but THX software-component association and endpoint FX/APO binding are not established."
         },
         {
           "modelNumber": "RZ09-0483",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications and exact Realtek codec OEM tuning are reviewed, but runtime THX software-component enumeration and THX deviceEQ integration are not established."
+          "reason": "Official THX specifications, exact Realtek codec OEM tuning and the SCU's model-specific THX SpeakerPath profile are reviewed, but THX software-component association and endpoint FX/APO binding are not established."
         },
         {
           "modelNumber": "RZ09-0482",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications and exact Realtek codec OEM tuning are reviewed, but runtime THX software-component enumeration and THX deviceEQ integration are not established."
+          "reason": "Official THX specifications, exact Realtek codec OEM tuning and the SCU's model-specific THX SpeakerPath profile are reviewed, but THX software-component association and endpoint FX/APO binding are not established."
         },
         {
           "modelNumber": "RZ09-0530",
