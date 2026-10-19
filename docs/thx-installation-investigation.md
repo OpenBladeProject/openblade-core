@@ -290,21 +290,22 @@ Static extraction validated the embedded gzip/base64 JSON bytes, including share
 headphone and crosstalk processing. On the normal INF branch, SCU reads Realtek
 subsystem information, chooses the Razer profile and writes a merged
 `ProgramData\THX\thx_spatial.conf.json`. The `_ISST_SSP` branch adds `-oem`
-and selects by OEM product name instead. The actual child branch and final
-serialized configuration on each factory laptop are still unverified.
+and selects by OEM product name instead. The actual factory child nodes and
+final serialized configuration on each laptop are still unverified.
 
-The remaining blocker is the original signed rule that creates/associates THX
-SWC devnodes, activates the correct endpoint APOs, chooses the SCU branch and
-orders installation/rescan/restart. The earliest visible exact Intel Realtek
+The later factory-export review below recovers a catalog-authenticated THX
+extension that declares the exact-model SWC children and normal SCU branch.
+The remaining blocker is the complete matching endpoint FX/APO binding and
+installation/rescan/restart contract. The earliest visible exact Intel Realtek
 [6.0.9452.1 package](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=bf428f32-bf81-4c77-b0b4-6a9a36701cd5)
-also lacks that THX rule. The modern installer's absent-device fallback only
-stages an INF; it does not supply legacy SWC creation semantics.
+does not supply that contract. The modern installer's absent-device fallback
+only stages an INF; it does not supply legacy SWC creation semantics.
 
-An original integration installer/rule, or factory SetupAPI logs together with
-original signed INFs and actual codec/THX parent-child nodes, can resolve the
+An original matching integration package or factory SetupAPI logs together with
+original signed INFs and actual codec/THX parent-child nodes can resolve the
 specific gap. No extra acoustic tuning package has been shown to be missing.
-Do not fabricate SWC nodes, modify signed INFs, or write guessed endpoint FX
-registry values. Fresh legacy provisioning stays blocked.
+Do not fabricate SWC nodes, modify signed INF directives, or write guessed
+endpoint FX registry values. Fresh legacy provisioning stays blocked.
 
 The rznb12 Catalog search covered its component IDs, extension ID, recovered
 filename and versions 4.2.37.1621, 4.2.38.1962 and 4.2.41.2499 without finding
@@ -332,3 +333,108 @@ registers `AcpConfigDatPath`. The inspected ACPBus/ACPAfd/ACPBtAfd/HDMI audio
 INFs and installer manifests contain no THX-specific child/binding declaration.
 This is an additional ACP integration source, not proof of a THX binding rule or
 of that PCI identity on an actual RZ09-0482. Binary ACP behavior remains unexamined.
+
+### Recovery images and the recovered THX child extension
+
+Razer's [missing THX codec guide](https://mysupport.razer.com/app/answers/detail/a_id/3985/)
+recommends a factory recovery image after Windows reset or clean installation.
+This makes the image a promising source for original integration packages; it
+does not establish which files it contains or independent installability.
+The [official download process](https://mysupport.razer.com/app/answers/detail/a_id/5997/)
+requires a Razer ID, a registered laptop and its serial, and supplies a link valid
+for 48 hours. No exact RZ09-0482, RZ09-0483 or RZ09-0484 image was obtained in
+this investigation. The public support listings exposed no image manifest.
+
+A public [factory-driver export](https://github.com/Torahime3/razer-blade-14-thx-driver-restore/tree/4f3451e246a93d48dabf8e2140ce3aebbd2a08f4),
+although described by its uploader as a 2022 Blade 14 backup, contains a newer
+[THXHDAudio.inf](https://github.com/Torahime3/razer-blade-14-thx-driver-restore/blob/4f3451e246a93d48dabf8e2140ce3aebbd2a08f4/drivers/thxhdaudio.inf_amd64_a639441cfa75798e/THXHDAudio.inf)
+with exact codec matches for all three supported 2023 models. This is a signed
+vendor artifact recovered through a public mirror, not a verified recovery image
+from one of those laptops.
+
+| Model | Exact codec match | THX install section |
+| --- | --- | --- |
+| RZ09-0482 | `HDAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582020` | `DeviceExtension_Install_RT_SKU_C` |
+| RZ09-0483 | `INTELAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583006` | `DeviceExtension_Install_RT_SKU_A` |
+| RZ09-0484 | `INTELAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583007` | `DeviceExtension_Install_RT_SKU_A` |
+
+The extension has DriverVer `06/17/2023,2.6.5.0`, ExtensionId
+`{17B56683-7F95-4BAB-8031-AB5DE114A4CC}` and catalog `THXHDAudio.cat`.
+Both selected `.NT.Components` sections declare THXAPO, THXSVC, THXHSA and
+THXSCU children with component IDs `VEN_THX&CID_THXAPO`,
+`VEN_THX&PID_THXSVC`, `VEN_THX&PID_THXHSA` and `VEN_THX&PID_THXSCU`.
+They select the normal AVX2 APO and subsystem-based SCU, not the separate
+SSE2/ISST_SSP path. The extension adds the OutAPO/HPAPO topology settings,
+THX endpoint device types and `%ProgramData%\THX\thx_spatial.conf.json` path.
+
+The Git export normalized the INF to LF. Its downloaded bytes failed catalog
+membership. Restoring CRLF, with no directive changes, recovered the exact
+SHA-256 already present in the original catalog. Windows SDK SignTool
+`verify /kp /c` then passed against the Microsoft Windows Hardware Compatibility
+Publisher chain (signer `B878D8EB696CF3D4505E2F6641C57AF9062EC51A`, timestamp
+2023-06-21). The original catalog passed kernel-policy signature verification
+separately. Byte pins are:
+
+| Artifact | Bytes | SHA-256 |
+| --- | --- | --- |
+| Downloaded LF INF, not catalog-valid | 28,868 | `5E800A76DD0DC284A048E7301433765D114640CFF82EC87D65D44DC375AF3D14` |
+| Recovered original CRLF INF, catalog-valid | 29,311 | `6FE831463C60FD2C1ADA9207FD63607491BEA87F70AE5D48B9982F32B6571D72` |
+| Original THXHDAudio.cat | 25,994 | `FB496566667F6AE7C415A96BFE3D97B14BD63C1681C19B9906A21EBF0AFFE799` |
+
+This closes the missing child-enumeration declaration and SCU branch questions,
+but not the full endpoint FX chain. The CompositeFX CLSIDs elsewhere in this
+THX INF belong to different AE34 Intel SSP IDs. They must not be attributed to
+the three codec sections above.
+
+The same export's [hdx_razerext_thx_rtk_gen4_kd.inf](https://github.com/Torahime3/razer-blade-14-thx-driver-restore/blob/4f3451e246a93d48dabf8e2140ce3aebbd2a08f4/drivers/hdx_razerext_thx_rtk_gen4_kd.inf_amd64_37ae9ddc6f6cd57c/hdx_razerext_thx_rtk_gen4_kd.inf)
+provides a concrete separate Realtek/THX CompositeFX-chain example, with
+ExtensionId `{C3A63EDD-2D27-4B66-B155-5E94B43D926A}`. Its original CRLF bytes
+also pass `verify /kp /c` against `HDXRTExt.cat`; INF SHA-256 is
+`67EACBBBB5D40916E1767456947E79D4D199EF1B2B307D3DADAC244EA49D654D`.
+However, DriverVer `01/04/2022,6.0.9292.1` omits all three target subsystem IDs.
+A matching newer extension or another exact-model signed binding source is
+still required; the older package cannot be generalized by editing its model list.
+
+A further official Catalog search found a shared Realtek 6.0.9909.1 codec CAB
+for [RZ09-0482](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=09e3be47-66f8-436d-ae59-fb32539a4556),
+[RZ09-0483](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=353e4569-423f-4fd6-be0f-9579d7fcf819)
+and [RZ09-0484](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=52814225-cea2-480e-8199-930c0922929f).
+The original CAB is 13,638,225 bytes, SHA-256
+`86C019C45400B3456E77A97D6DA29302C273423E3396255DE6FB7B8B64002EE6`.
+Its 216 files contain base MEDIA codec content rather than extension packages.
+The exact Razer INFs and `RTAIODAT.DAT` passed `verify /kp /c` against its
+original `hdxrt.cat`; the INFs contain no `AddComponent` or `AddSoftware`.
+This newer base package does not supply the missing FX extension.
+
+The 6.0.9909.1 `RTAIODAT.DAT` is 62,753,315 bytes, SHA-256
+`08653E16F4D5A7EA432538E6E480AD0F77D33D9878D5AAAE29C8A7781DD8C83D`.
+Its exact Razer profile payloads are byte-identical to those in 6.0.9484.1 and
+6.0.9601.1: 2020 and 3007 contain RTSPKPT/RTKAMPI subrecords; 3006 contains
+RTEQEX1/2 and RTKHDRC1/2. Whole-file ASCII, UTF-16 and binary-GUID searches
+found no explicit THX CompositeFX, endpoint-setting or APO CLSID declaration.
+The shared hardware-row field `0x250B` remains undecoded. A compact selector
+interpreted by driver code is still possible; marker absence does not establish
+that runtime integration through this file is impossible.
+
+Queries for the Realtek extension GUID, filename and exact codec IDs found no
+extension entry. Control queries for IDs in the recovered signed 2022 extension
+also returned only MEDIA packages. These searches therefore cannot prove that
+the needed newer extension never existed or is unavailable through privately
+targeted Windows Update delivery.
+
+If an exact-model recovery image becomes available, first inventory its ZIP and
+OEM provisioning files, then selectively extract the audio DriverStore packages,
+setup scripts and any retained SetupAPI logs. [wimlib extract](https://wimlib.net/man1/wimextract.html)
+supports selected paths and split WIM inputs without applying the OS.
+[Microsoft's setup-log guide](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/deployment-troubleshooting-and-log-files?view=windows-11)
+identifies `Windows\INF\setupapi.offline.log`, `setupapi.dev.log` and Panther
+as relevant setup evidence, if retained. Inspect registry hives as files rather
+than loading them into the live registry. Preserve complete original packages,
+catalog membership and exact-model provenance; archive integrity checks alone
+do not verify driver signatures.
+
+No recovery was booted or applied, and no driver, service, registry or audio
+settings were changed. Legacy fresh setup remains `CandidateOnly`, `Blocked`
+and `installableCandidate=false` until the remaining binding/dependency and
+installation contract is established. Static recovery evidence would still
+require a separate clean installation test with Synapse absent.

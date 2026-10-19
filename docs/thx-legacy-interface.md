@@ -145,7 +145,8 @@ Production legacy controls currently expose only the spatial toggle. EQ,
 presets and application automation remain unavailable until their own semantics
 and independent readback are established. SCU 2.6.5 embeds exact-model THX
 acoustic profiles (PI490, SO690 and KI890), and selects them from the codec
-subsystem ID on its normal branch. Fresh provisioning remains blocked until
-original signed evidence establishes component creation, endpoint APO binding,
-SCU branch and installation order. See the
-[installation investigation](thx-installation-investigation.md#legacy-thx-tuning-and-binding-review).
+subsystem ID on its normal branch. A recovered, catalog-authenticated
+THXHDAudio extension declares the exact-model child components and normal SCU
+branch. Fresh provisioning remains blocked on the matching endpoint FX/APO
+binding and installation order. See the
+[installation investigation](thx-installation-investigation.md#recovery-images-and-the-recovered-thx-child-extension).

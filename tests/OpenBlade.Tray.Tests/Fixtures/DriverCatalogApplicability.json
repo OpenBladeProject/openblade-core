@@ -394,19 +394,19 @@
           "modelNumber": "RZ09-0484",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications, exact Realtek codec OEM tuning and the SCU's model-specific THX SpeakerPath profile are reviewed, but THX software-component association and endpoint FX/APO binding are not established."
+          "reason": "Official THX specifications, exact Realtek tuning, model-specific THX SCU tuning and the signed exact-codec child-extension declarations are reviewed; complete endpoint FX/APO binding and the installation sequence remain unestablished."
         },
         {
           "modelNumber": "RZ09-0483",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications, exact Realtek codec OEM tuning and the SCU's model-specific THX SpeakerPath profile are reviewed, but THX software-component association and endpoint FX/APO binding are not established."
+          "reason": "Official THX specifications, exact Realtek tuning, model-specific THX SCU tuning and the signed exact-codec child-extension declarations are reviewed; complete endpoint FX/APO binding and the installation sequence remain unestablished."
         },
         {
           "modelNumber": "RZ09-0482",
           "status": "CandidateOnly",
           "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
-          "reason": "Official THX specifications, exact Realtek codec OEM tuning and the SCU's model-specific THX SpeakerPath profile are reviewed, but THX software-component association and endpoint FX/APO binding are not established."
+          "reason": "Official THX specifications, exact Realtek tuning, model-specific THX SCU tuning and the signed exact-codec child-extension declarations are reviewed; complete endpoint FX/APO binding and the installation sequence remain unestablished."
         },
         {
           "modelNumber": "RZ09-0530",

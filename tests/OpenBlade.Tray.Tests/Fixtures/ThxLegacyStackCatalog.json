@@ -386,7 +386,72 @@
   ],
   "modelBinding": {
     "status": "Blocked",
-    "exactOemChildEnumerationPackage": "NotEstablished",
+    "exactOemChildEnumerationPackage": "Established",
+    "oemChildExtensionEvidence": {
+      "source": {
+        "repositoryUrl": "https://github.com/Torahime3/razer-blade-14-thx-driver-restore",
+        "commit": "4f3451e246a93d48dabf8e2140ce3aebbd2a08f4",
+        "infPath": "drivers/thxhdaudio.inf_amd64_a639441cfa75798e/THXHDAudio.inf",
+        "catalogPath": "drivers/thxhdaudio.inf_amd64_a639441cfa75798e/THXHDAudio.cat"
+      },
+      "packageIdentity": {
+        "infName": "THXHDAudio.inf",
+        "catalogFile": "THXHDAudio.cat",
+        "extensionId": "17B56683-7F95-4BAB-8031-AB5DE114A4CC",
+        "driverDate": "2023-06-17",
+        "driverVersion": "2.6.5.0"
+      },
+      "gitNormalizedInf": {
+        "lineEndings": "LF",
+        "size": 28868,
+        "sha256": "5E800A76DD0DC284A048E7301433765D114640CFF82EC87D65D44DC375AF3D14",
+        "catalogMemberVerification": "Invalid"
+      },
+      "recoveredSignedInf": {
+        "lineEndings": "CRLF",
+        "size": 29311,
+        "sha256": "6FE831463C60FD2C1ADA9207FD63607491BEA87F70AE5D48B9982F32B6571D72",
+        "recovery": "RestoreGitNormalizedLineEndingsOnly",
+        "directiveModifications": false,
+        "catalogMemberVerification": "Valid"
+      },
+      "catalog": {
+        "size": 25994,
+        "sha256": "FB496566667F6AE7C415A96BFE3D97B14BD63C1681C19B9906A21EBF0AFFE799",
+        "signatureVerification": "Valid",
+        "signerThumbprint": "B878D8EB696CF3D4505E2F6641C57AF9062EC51A",
+        "signatureTimestampDate": "2023-06-21"
+      },
+      "exactMatches": [
+        {
+          "modelNumber": "RZ09-0482",
+          "hardwareId": "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582020",
+          "installSection": "DeviceExtension_Install_RT_SKU_C"
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "hardwareId": "INTELAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583006",
+          "installSection": "DeviceExtension_Install_RT_SKU_A"
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "hardwareId": "INTELAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583007",
+          "installSection": "DeviceExtension_Install_RT_SKU_A"
+        }
+      ],
+      "componentIds": [
+        "VEN_THX&CID_THXAPO",
+        "VEN_THX&PID_THXSVC",
+        "VEN_THX&PID_THXHSA",
+        "VEN_THX&PID_THXSCU"
+      ],
+      "componentVariant": "Avx2Subsystem",
+      "renderEndpointSettings": [
+        "OutAPO",
+        "HPAPO"
+      ],
+      "configurationPath": "%ProgramData%\\THX\\thx_spatial.conf.json"
+    },
     "exactModelTuning": "Established",
     "genericFallbackAccepted": false,
     "ordinaryAudioIncludeNeedsPresent": true,
@@ -411,8 +476,8 @@
     "genericComponentsAreModelBindingEvidence": false,
     "installableCandidate": false,
     "blockers": [
-      "Creation or association of the generic THX software-component IDs with each candidate profile's exact Realtek codec is not established.",
-      "Endpoint FX/APO binding, including the exact host/offload CLSID selection conditions, is not established."
+      "The complete exact-model endpoint CompositeFX chain, including the host/offload SFX and MFX registration supplied outside this extension, is not established.",
+      "The safe installation order and required device rescan or restart sequence are not established."
     ]
   },
   "evidenceSources": [
@@ -456,10 +521,12 @@
     "containsFullInstanceId": false
   },
   "limitations": [
-    "The four generic THX packages are signed component candidates, not evidence that any candidate model enumerates or safely accepts them.",
+    "The recovered signed THXHDAudio extension exactly matches all three candidate codec IDs and enumerates the four normal AVX2/subsystem THX components; the generic component packages alone remain insufficient model-binding evidence.",
+    "The Git-hosted INF is LF-normalized and fails catalog membership verification; only the byte-exact CRLF reconstruction is covered by the original catalog, and no reconstructed driver bytes are stored in this catalog.",
     "The signed SCU contains exact subsystem-to-profile selection and model-specific THX SpeakerPath tuning for all three candidates; it rejects the generic fallback.",
-    "The ordinary ks.inf/wdmaudio.inf Include/Needs dependencies are present, but no THX-specific Include/Needs establishes software-component enumeration or endpoint binding.",
+    "The Realtek base INFs contain only ordinary ks.inf/wdmaudio.inf Include/Needs dependencies; component enumeration instead comes from the separately pinned THXHDAudio extension, and the base INFs do not establish endpoint binding.",
     "E82A5EE8-44D2-44C1-897E-AA5AFBF146BA appears only in the reviewed RZ09-0482 AMD INF, is absent from the two Intel INFs, is not either THX APO CLSID, and has an unresolved role.",
-    "This metadata does not define an installation order, authorize installation, or establish clean-install, repair, rollback, or physical behavior."
+    "The extension names OutAPO and HPAPO and the ProgramData THX configuration path, but it does not establish the complete exact-model endpoint CompositeFX chain.",
+    "This metadata does not define an installation order or rescan/restart sequence, authorize installation, or establish clean-install, repair, rollback, or physical behavior."
   ]
 }

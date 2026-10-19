@@ -1,7 +1,7 @@
 # Reviewed driver catalog snapshots
 
 These metadata-only fixtures are copied from
-[blade-driver-catalog commit f4dec7d](https://github.com/OpenBladeProject/blade-driver-catalog/tree/f4dec7de7d8b3ece8fb3012428310746e37000f8):
+[blade-driver-catalog commit f549d93](https://github.com/OpenBladeProject/blade-driver-catalog/tree/f549d938e907f6b115c3327cbe8bd882fd0a465b):
 
 - `DriverCatalogApplicability.json`: `catalog/applicability.json`
 - `ThxNativeComponentCatalog.json`: `components/thx-v4-native/1.1.1.0/component.json`
@@ -14,9 +14,10 @@ When adding a model to `RazerBladeModelCatalog`, review every catalog entry
 against exact-model vendor evidence and update the catalog ledger first.
 Refresh the snapshots from the reviewed catalog commit and update this link.
 `NotEstablished` records missing evidence, not a runtime incompatibility claim.
-The legacy snapshot records both Realtek OEM codec tuning and the embedded
-model-specific THX SCU tuning, separately from the unverified component/endpoint
-binding that keeps fresh installation blocked. The cached rznb12 snapshot pins
+The legacy snapshot records Realtek OEM codec tuning, embedded model-specific
+THX SCU tuning and the catalog-authenticated exact-codec child extension.
+The complete endpoint FX chain and installation contract remain unverified,
+so fresh installation stays blocked. The cached rznb12 snapshot pins
 the published original carrier and protected inner execution recipe; it remains
 an experimental whole-stack candidate with both-endpoint read admission.
 The fixtures contain no vendor binaries and tests make no network requests.
