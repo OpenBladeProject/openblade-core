@@ -3051,7 +3051,7 @@
                                                                 <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
                                                                     <StackPanel MaxWidth="320" Spacing="12">
                                                                         <TextBlock x:Uid="SnapTap_InfoTitle" Text="About SnapTap" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
-                                                                        <TextBlock x:Uid="SnapTap_InfoInput" Text="SnapTap uses the Razer keyboard driver on the laptop keyboard. Requires the supported RZ09-0581 driver." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                                        <TextBlock x:Uid="SnapTap_InfoInput" Text="SnapTap uses the Razer keyboard driver for the laptop’s built-in keyboard." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                                         <TextBlock x:Uid="SnapTap_InfoCompatibility" Text="Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                                     </StackPanel>
                                                                 </ScrollViewer>
