@@ -2260,4 +2260,7 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
     <value>Key blocking applies to all keyboards while OpenBlade is running.</value>
   </data>
+  <data name="MainWindow_ThxAudioComponentDownloadDescription.Text" xml:space="preserve">
+    <value>Download the THX component from Razer. The THX audio driver must already be installed.</value>
+  </data>
 </root>

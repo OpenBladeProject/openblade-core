@@ -103,6 +103,41 @@ Translations must not change:
 Product names such as OpenBlade, Razer, NVIDIA, and Windows remain unchanged
 unless the product owner publishes a localized form.
 
+## Translation wording review
+
+Review a feature's labels, status messages, help text and accessibility names
+together, with its English source and a rendered screen available. Translate
+the action or audio concept in context; do not preserve English sentence order
+or turn internal names such as "integration" into unfamiliar UI terms. A button
+and any instructions referring to it must use the same translated name.
+
+Give new or substantially changed translations a separate wording pass before
+merging. A native speaker is preferable when available; otherwise use an
+independent review with the source text, feature behavior and screenshots.
+Record uncertain terms in the PR instead of claiming that automated validation
+proves natural language quality. Review both supported languages when a shared
+feature's terminology changes.
+
+Use this THX glossary as the reference for the current controls. Choose inflection
+and sentence structure to suit the surrounding text; these are concepts, not
+word-for-word templates. Add reviewed terms here as new audio controls appear.
+
+| Concept | Simplified Chinese | Russian |
+| --- | --- | --- |
+| THX audio effects | THX 音效 | Звук THX |
+| Spatial audio | 空间音效 | Пространственный звук |
+| Equalizer / preset | 均衡器 / 预设 | Эквалайзер / пресет |
+| Sound normalization | 音量均衡 | Выравнивание громкости |
+| Voice clarity | 人声清晰度 | Чёткость речи |
+| Audio enhancements | 音效增强 | Улучшения звука |
+| Saved audio settings | 已保存的音效设置 | Сохранённые настройки звука |
+| Flatten EQ (set all band gains to zero) | 增益归零 | Обнулить полосы |
+
+Check the rendered feature in each changed language for wrapping, truncation,
+ambiguous instructions and inconsistent terms. Resource validation protects
+keys and placeholders; pseudo-localization exercises layout expansion. Neither
+check establishes that a translation sounds natural.
+
 ## Pseudo-localization review
 
 The committed `qps-ploc` catalogs accent, bracket, and expand the en-US text.

@@ -1,0 +1,86 @@
+{
+  "$schema": "../../../schemas/upstream-component.schema.json",
+  "manifestType": "OpenBlade.RazerUpstreamComponentCatalogEntry",
+  "schemaVersion": 1,
+  "component": {
+    "id": "razer-thx-v4-native",
+    "kind": "StandaloneDll",
+    "displayName": "Razer THX V4 Native component",
+    "version": "1.1.1.0"
+  },
+  "artifact": {
+    "fileName": "ThxV4Native_v1.1.1.0.dll",
+    "size": 13684872,
+    "sha256": "8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A"
+  },
+  "authenticode": {
+    "status": "Valid",
+    "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+    "signerThumbprint": "3FDDBD6F820144422494342EF44898D732E068DC",
+    "issuer": "CN=DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1, O=\"DigiCert, Inc.\", C=US"
+  },
+  "applicableProfiles": [
+    {
+      "vendorProductId": 709,
+      "modelNumber": "RZ09-0530",
+      "productName": "Razer Blade 14 (2025)",
+      "usbIdentity": { "vid": "1532", "pid": "02C5" }
+    },
+    {
+      "vendorProductId": 710,
+      "modelNumber": "RZ09-0528",
+      "productName": "Razer Blade 16 (2025)",
+      "usbIdentity": { "vid": "1532", "pid": "02C6" }
+    },
+    {
+      "vendorProductId": 736,
+      "modelNumber": "RZ09-0581",
+      "productName": "Razer Blade 16 (2026)",
+      "usbIdentity": { "vid": "1532", "pid": "02E0" }
+    }
+  ],
+  "upstreamManifestEvidence": [
+    {
+      "vendorProductId": 709,
+      "manifest": "mw/manifest.json",
+      "resourceName": "THXNativeDLLV4Common-709",
+      "resourcePath": "thxv4common",
+      "sha256": "8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A"
+    },
+    {
+      "vendorProductId": 710,
+      "manifest": "mw/manifest.json",
+      "resourceName": "THXNativeDLLV4Common-710",
+      "resourcePath": "thxv4common",
+      "sha256": "8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A"
+    },
+    {
+      "vendorProductId": 736,
+      "manifest": "mw/manifest.json",
+      "resourceName": "THXNativeDLLV4Common-736",
+      "resourcePath": "thxv4common",
+      "sha256": "8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A"
+    }
+  ],
+  "delivery": {
+    "method": "DirectVendorDownload",
+    "sourceUrl": "https://app-assets.razer.com/files/synapse/devices/common/THX/ThxV4Native_v1.1.1.0.dll",
+    "requiredVerification": ["Sha256", "Authenticode"]
+  },
+  "redistribution": {
+    "status": "NotPublished",
+    "catalogContainsArtifact": false,
+    "catalogReleaseAsset": false
+  },
+  "privacy": {
+    "containsComponentBytes": false,
+    "containsSerial": false,
+    "containsUsername": false,
+    "containsLocalPath": false
+  },
+  "limitations": [
+    "This entry describes one standalone vendor DLL, not a Driver Store package.",
+    "The direct download does not install the related APO or other THX components.",
+    "Matching vendor manifests and a valid signature do not prove runtime compatibility or production admission."
+  ]
+}

@@ -27,9 +27,16 @@ public interface IThxAudioAdapter
 /// User-requested audio operations only. Restoring the preference, discovering
 /// components, switching endpoints, and disposing never change audio settings.
 /// </summary>
-public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotifyPropertyChanged, IAsyncDisposable
+public sealed partial class ThxAudioViewModel(
+    IThxAudioAdapter adapter,
+    Func<CancellationToken, Task<string>>? downloadComponent = null,
+    Func<bool>? hasVerifiedComponent = null) : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IThxAudioAdapter adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
+    private readonly Func<CancellationToken, Task<string>> downloadComponent =
+        downloadComponent ?? ThxNativeComponentPackage.AcquireVerifiedAsync;
+    private readonly Func<bool> hasVerifiedComponent =
+        hasVerifiedComponent ?? ThxNativeComponentPackage.HasVerifiedComponent;
     private readonly CancellationTokenSource lifetime = new();
     private ThxAudioState? state;
     private ThxAudioEndpoint endpoint;
@@ -41,6 +48,8 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     private bool isReadSettingsVisible;
     private bool disposed;
     private bool automaticConnectionAttempted;
+    private bool componentDownloadNeeded;
+    private bool downloadingComponent;
     private Task pendingOperation = Task.CompletedTask;
     private ThxAudioEnhancementKind? pendingEnhancementKind;
     private long enhancementContextRevision;
@@ -62,6 +71,10 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
     public bool IsReadSettingsVisible => isReadSettingsVisible;
     public bool CanToggleIntegration => !busy && !disposed;
     public bool CanRead => enabled && !busy && !disposed;
+    public bool IsComponentDownloadVisible => enabled && componentDownloadNeeded;
+    public bool CanDownloadComponent => IsComponentDownloadVisible && !busy && !disposed;
+    public string DownloadComponentButtonLabel => TrayText.Get(downloadingComponent
+        ? "Downloading THX component..." : "Download THX component");
     public bool CanEdit => CanRead && state is not null && availability == ThxAudioAvailability.Available;
     public bool SpatialEnabled => state?.SpatialEnabled ?? false;
     public bool EqualizerEnabled => state?.EqualizerEnabled ?? false;
@@ -147,6 +160,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         state = null;
         isReadSettingsVisible = false;
         automaticConnectionAttempted = false;
+        componentDownloadNeeded = false;
         ResetAdvancedDrafts();
         availability = value ? ThxAudioAvailability.ComponentsUnavailable : ThxAudioAvailability.Disabled;
         failureDetail = null;
@@ -199,6 +213,52 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         automaticConnectionAttempted = true;
         return StartAsync(token => adapter.ReadAsync(endpoint, token), isMutation: false,
             isExplicitRead: true);
+    }
+
+    public Task DownloadComponentAsync()
+    {
+        if (!CanDownloadComponent)
+        {
+            return Task.CompletedTask;
+        }
+        busy = downloadingComponent = true;
+        failureDetail = null;
+        NotifyAll();
+        pendingOperation = DownloadComponentCoreAsync();
+        return pendingOperation;
+    }
+
+    private async Task DownloadComponentCoreAsync()
+    {
+        try
+        {
+            // This explicit file download never calls the audio adapter. A later
+            // Read settings action still performs fresh, complete THX admission.
+            _ = await downloadComponent(lifetime.Token);
+            componentDownloadNeeded = false;
+            isReadSettingsVisible = true;
+            statusKey = "THX component downloaded. Read the current settings to connect.";
+        }
+        catch (OperationCanceledException)
+        {
+            statusKey = "THX component download canceled.";
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or HttpRequestException
+            or InvalidOperationException or UnauthorizedAccessException
+            or System.ComponentModel.Win32Exception
+            or System.Security.Cryptography.CryptographicException)
+        {
+            statusKey = "THX component download failed.";
+            failureDetail = exception.Message;
+        }
+        finally
+        {
+            busy = downloadingComponent = false;
+            if (!disposed)
+            {
+                NotifyAll();
+            }
+        }
     }
 
     public Task SetSpatialAsync(bool value) => !CanEdit || SpatialEnabled == value
@@ -421,6 +481,9 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
                 return;
             }
             availability = response.Availability;
+            componentDownloadNeeded = response.Status != ThxAudioOperationStatus.Indeterminate
+                && response.Availability == ThxAudioAvailability.ComponentsUnavailable
+                && !hasVerifiedComponent();
             if (response.Status == ThxAudioOperationStatus.Succeeded
                 && response.Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly)
             {
@@ -476,6 +539,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
             or OperationCanceledException or UnauthorizedAccessException)
         {
             state = null;
+            componentDownloadNeeded = false;
             isReadSettingsVisible = true;
             statusKey = isMutation
                 ? "The audio change could not be confirmed. Read the current settings before trying again."
@@ -508,6 +572,7 @@ public sealed partial class ThxAudioViewModel(IThxAudioAdapter adapter) : INotif
         {
             nameof(IsEnabled), nameof(IsBusy), nameof(ShowStatusMessage), nameof(IsReadSettingsVisible),
             nameof(CanToggleIntegration), nameof(CanRead),
+            nameof(IsComponentDownloadVisible), nameof(CanDownloadComponent), nameof(DownloadComponentButtonLabel),
             nameof(CanEdit), nameof(SpatialEnabled), nameof(EqualizerEnabled), nameof(Endpoint),
             nameof(SelectedEndpoint), nameof(Presets), nameof(SelectedPreset), nameof(StatusMessage),
             nameof(EqualizerBands), nameof(HasEqualizerBands), nameof(CanEditEqualizerBands),

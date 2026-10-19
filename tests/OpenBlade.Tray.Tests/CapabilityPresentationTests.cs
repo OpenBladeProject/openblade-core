@@ -408,6 +408,15 @@ public sealed class CapabilityPresentationTests
         XElement read = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Uid") == "MainWindow_ThxAudioReadSettings");
         Assert.Equal("{x:Bind ThxViewModel.IsReadSettingsVisible, Mode=OneWay}", Attribute(read, "Visibility"));
+        XElement downloadPanel = NamedElement(document, "StackPanel", "ThxAudioComponentDownload");
+        Assert.Equal("{x:Bind ThxViewModel.IsComponentDownloadVisible, Mode=OneWay}", Attribute(downloadPanel, "Visibility"));
+        XElement downloadDescription = Assert.Single(downloadPanel.Elements(), element => element.Name.LocalName == "TextBlock");
+        Assert.Equal("Wrap", Attribute(downloadDescription, "TextWrapping"));
+        Assert.Equal("{StaticResource SecondaryTextStyle}", Attribute(downloadDescription, "Style"));
+        XElement download = NamedElement(document, "Button", "ThxAudioDownloadComponent");
+        Assert.Equal("{x:Bind ThxViewModel.CanDownloadComponent, Mode=OneWay}", Attribute(download, "IsEnabled"));
+        Assert.Equal("{x:Bind ThxViewModel.DownloadComponentButtonLabel, Mode=OneWay}", Attribute(download, "Content"));
+        Assert.Equal("OnThxDownloadComponent", Attribute(download, "Click"));
         XElement cpuSelector = NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomCpuSelector");
         XElement gpuSelector = NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomGpuSelector");
         XElement customPerformanceSubcell = cpuSelector.Ancestors()

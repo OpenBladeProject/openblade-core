@@ -17,7 +17,8 @@ mutable user settings remain editable. Other payloads are not yet admitted.
 The two rznb11 models have vendor-backed controls and their own speaker EQ
 curves, but have not been physically tested in OpenBlade.
 
-OpenBlade does not install THX software or drivers. Other Blade models are
+OpenBlade can download the supported THX client from Razer. The matching audio
+driver, service and configuration must already be installed. Other Blade models are
 not yet supported. See the
 [installation compatibility investigation](thx-installation-investigation.md)
 for the package and codec restrictions.
@@ -101,6 +102,15 @@ If THX cannot connect, the THX Audio page shows the detection failure below
 the status message. Component failures name the missing or incompatible native
 DLL, driver package, configuration file, or service.
 
+If the native THX component is missing, select **Download THX component**.
+OpenBlade downloads the reviewed file directly from Razer and checks its size,
+SHA-256 and Razer signature before saving it. After the download, select
+**Read settings** to connect. A failed or canceled download leaves an existing
+component unchanged. The download does not change audio settings.
+
+This client download removes the need for Synapse's copy of the DLL; it does
+not install the THX audio driver, service or model-specific configuration.
+
 Choose **About > Export diagnostics** and share the saved ZIP when reporting
 the problem. Its `thx-audio.json` entry records a fresh detection result and
 failure detail, even when the integration is off or the THX page has not been
@@ -124,10 +134,44 @@ admission without loading native code. The DLL hash is checked again with the
 file locked through native loading to prevent replacement between verification
 and loading. Full native readback and pause-on-uncertainty remain unchanged.
 
-All models use the pinned `ThxV4Native_v1.1.1.0.dll`. The rznb11 middleware
+All three admitted models use the pinned `ThxV4Native_v1.1.1.0.dll`. The rznb11 middleware
 ABI and typed property operations match the reviewed rznb12 implementation;
 factory speaker curves remain model-specific. A new component build needs
 its own source review and admission.
+
+The explicit download uses the reviewed
+[Razer native client URL](https://app-assets.razer.com/files/synapse/devices/common/THX/ThxV4Native_v1.1.1.0.dll)
+and pins its 13,684,872-byte length, SHA-256
+`8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A`,
+and Razer USA Ltd. signing certificate
+`3FDDBD6F820144422494342EF44898D732E068DC`, alongside Windows Authenticode
+trust verification. The
+[catalog entry](https://github.com/OpenBladeProject/blade-driver-catalog/blob/89c12ae4d805a8102776f75b8e27d46084a137b9/components/thx-v4-native/1.1.1.0/component.json)
+records the same evidence as metadata; neither
+repository redistributes the DLL. Runtime pins are local and do not depend on
+the catalog being available.
+
+The catalog's applicability ledger reviews every supported OpenBlade model for
+every driver stack and standalone component. Razer's manifests identify this
+exact client for RZ09-0530, RZ09-0528 and RZ09-0581. The other four supported
+models have no THX client resource in the reviewed manifests; their applicability
+is recorded as not established. The DLL is shared middleware, while each model
+still needs its matching audio stack. The existing catalog driver stacks also
+retain their exact device IDs even where common dependency files are identical.
+
+Adding a supported model requires reviewing all catalog entries and refreshing
+the offline fixtures under `tests/OpenBlade.Tray.Tests/Fixtures`. Tests compare
+the complete supported model list with that review and the runtime THX pins with
+the catalog descriptor. Catalog tests separately reject missing artifact reviews
+and mismatched applicability lists.
+
+The downloaded client lives under
+`%LOCALAPPDATA%\OpenBlade\Components\THX\1.1.1.0`. Admission prefers a verified
+copy there and retains the verified Synapse-installed path as a fallback. Both
+paths use the same exact-model stack admission and locked hash check before
+loading. Discovery and startup do not initiate downloads. This change requires
+a coordinated full installation because the Session Agent's resolver changes;
+the Audio IPC contract remains unchanged.
 
 The tray stores an additive per-user opt-in preference. It uses a separate
 current-user/session Audio IPC endpoint, version 1. Saved audio uses profile

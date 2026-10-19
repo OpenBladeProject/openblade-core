@@ -9,6 +9,13 @@ public sealed class ThxAudioAdmissionTests : IDisposable
         "OpenBlade.ThxAudioAdmission.Tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void NativeComponentAdmissionSharesAcquisitionPins()
+    {
+        Assert.Equal(OpenBlade.Tray.ThxNativeComponentPackage.Sha256, WindowsThxAudioAdmissionSource.NativeDllSha256);
+        Assert.Equal(OpenBlade.Tray.ThxNativeComponentPackage.FileName, WindowsThxAudioAdmissionSource.NativeDllName);
+    }
+
+    [Fact]
     public void AdmissionDefaultsDoNotAuthorizeNativeAccess()
     {
         var admission = new ThxAudioAdmission(ThxAudioAvailability.Available, null);

@@ -1588,4 +1588,19 @@
     <value>{0}
 Details: {1}</value>
   </data>
+  <data name="Download THX component" xml:space="preserve">
+    <value>Download THX component</value>
+  </data>
+  <data name="Downloading THX component..." xml:space="preserve">
+    <value>Downloading THX component...</value>
+  </data>
+  <data name="THX component downloaded. Read the current settings to connect." xml:space="preserve">
+    <value>THX component downloaded. Read the current settings to connect.</value>
+  </data>
+  <data name="THX component download canceled." xml:space="preserve">
+    <value>THX component download canceled.</value>
+  </data>
+  <data name="THX component download failed." xml:space="preserve">
+    <value>THX component download failed.</value>
+  </data>
 </root>

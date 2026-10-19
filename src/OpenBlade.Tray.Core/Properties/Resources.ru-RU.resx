@@ -1480,28 +1480,28 @@
     <value>Вентиляторами управляет режим «Максимальные обороты». Выключите его, чтобы выбрать режим вентиляторов.</value>
   </data>
   <data name="THX audio integration is off." xml:space="preserve">
-    <value>Интеграция THX Audio выключена.</value>
+    <value>Управление звуком THX выключено.</value>
   </data>
   <data name="Read the current THX settings to connect." xml:space="preserve">
-    <value>Прочитайте текущие настройки THX для подключения.</value>
+    <value>Для подключения считайте текущие настройки THX.</value>
   </data>
   <data name="THX settings are up to date." xml:space="preserve">
     <value>Настройки THX актуальны.</value>
   </data>
   <data name="THX components found. Read the current settings to connect." xml:space="preserve">
-    <value>Компоненты THX найдены. Прочитайте текущие настройки для подключения.</value>
+    <value>Компоненты THX найдены. Для подключения считайте текущие настройки.</value>
   </data>
   <data name="THX settings could not be confirmed. Read them again before making changes." xml:space="preserve">
-    <value>Не удалось подтвердить настройки THX. Прочитайте их снова перед изменением.</value>
+    <value>Не удалось подтвердить настройки THX. Считайте их повторно, прежде чем вносить изменения.</value>
   </data>
   <data name="The audio change could not be confirmed. Read the current settings before trying again." xml:space="preserve">
-    <value>Не удалось подтвердить изменение звука. Прочитайте текущие настройки перед повторной попыткой.</value>
+    <value>Не удалось подтвердить изменение настроек звука. Считайте текущие настройки перед повторной попыткой.</value>
   </data>
   <data name="The supported THX components are unavailable." xml:space="preserve">
-    <value>Поддерживаемые компоненты THX недоступны.</value>
+    <value>Необходимые компоненты THX недоступны.</value>
   </data>
   <data name="The Session Agent could not read THX settings." xml:space="preserve">
-    <value>Session Agent не удалось прочитать настройки THX.</value>
+    <value>Агенту сеанса не удалось считать настройки THX.</value>
   </data>
   <data name="Close Synapse before connecting to THX audio." xml:space="preserve">
     <value>Закройте Synapse перед подключением к THX Audio.</value>
@@ -1552,31 +1552,31 @@
     <value>Для этого профиля питания сохранены настройки звука.</value>
   </data>
   <data name="Current audio settings captured. Save the profile to keep them." xml:space="preserve">
-    <value>Текущие настройки звука считаны. Сохраните их в профиль.</value>
+    <value>Текущие настройки звука считаны. Сохраните профиль питания, чтобы сохранить эти настройки.</value>
   </data>
   <data name="Choose an EQ preset for both outputs before capturing audio settings." xml:space="preserve">
-    <value>Прежде чем считывать настройки звука, выберите пресет эквалайзера для обоих выходов.</value>
+    <value>Перед считыванием настроек звука выберите пресеты эквалайзера для динамиков и наушников.</value>
   </data>
   <data name="Close Synapse and THX Spatial Audio before connecting." xml:space="preserve">
     <value>Перед подключением закройте Synapse и THX Spatial Audio.</value>
   </data>
   <data name="Audio automation is paused. Read the current THX settings to resume." xml:space="preserve">
-    <value>Автоматизация звука приостановлена. Считайте текущие настройки THX, чтобы продолжить.</value>
+    <value>Автоматическое применение настроек звука приостановлено. Считайте текущие настройки THX, чтобы возобновить его.</value>
   </data>
   <data name="Adjust the selected preset, then apply your EQ changes." xml:space="preserve">
     <value>Настройте выбранный пресет и примените изменения эквалайзера.</value>
   </data>
   <data name="Choose Game, Movie, Music, Voice, or Custom to edit EQ." xml:space="preserve">
-    <value>Выберите Игры, Кино, Музыка, Голос или Свой, чтобы настроить эквалайзер.</value>
+    <value>Для настройки эквалайзера выберите «Игры», «Кино», «Музыка», «Голос» или «Пользовательский».</value>
   </data>
   <data name="THX audio is unavailable for this model or audio device." xml:space="preserve">
     <value>THX Audio недоступен для этой модели или аудиоустройства.</value>
   </data>
   <data name="THX is available for reading. Controls await validation for this model." xml:space="preserve">
-    <value>Доступно чтение настроек THX. Управление ожидает проверки на этой модели.</value>
+    <value>Настройки THX доступны только для чтения. Возможность их изменения ещё не проверена на этой модели.</value>
   </data>
   <data name="Application routing is not yet enabled for this model." xml:space="preserve">
-    <value>Автоматическое переключение звука пока недоступно для этой модели.</value>
+    <value>Автоматическое переключение звука для приложений пока недоступно на этой модели.</value>
   </data>
   <data name="Windows audio enhancements are off for this output. Enable Device Default Effects in Windows sound settings to hear THX." xml:space="preserve">
     <value>Для этого выхода отключены улучшения звука Windows. Чтобы услышать THX, включите «Эффекты устройства по умолчанию» в настройках звука Windows.</value>
@@ -1587,5 +1587,20 @@
   <data name="{0}&#xA;Details: {1}" xml:space="preserve">
     <value>{0}
 Подробности: {1}</value>
+  </data>
+  <data name="Download THX component" xml:space="preserve">
+    <value>Скачать компонент THX</value>
+  </data>
+  <data name="Downloading THX component..." xml:space="preserve">
+    <value>Загрузка компонента THX...</value>
+  </data>
+  <data name="THX component downloaded. Read the current settings to connect." xml:space="preserve">
+    <value>Компонент THX скачан. Для подключения считайте текущие настройки.</value>
+  </data>
+  <data name="THX component download canceled." xml:space="preserve">
+    <value>Загрузка компонента THX отменена.</value>
+  </data>
+  <data name="THX component download failed." xml:space="preserve">
+    <value>Не удалось скачать компонент THX.</value>
   </data>
 </root>
