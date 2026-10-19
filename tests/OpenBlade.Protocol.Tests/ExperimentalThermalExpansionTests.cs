@@ -600,6 +600,9 @@ public sealed partial class ExperimentalThermalExpansionTests
         internal HidProtocolValidationFailure? FanTargetAckProtocolFailure { get; init; }
         internal byte[]? FanModeReadbackPayloadOverride { get; init; }
         internal byte[]? FanTargetReadbackPayloadOverride { get; init; }
+        internal byte[]? CustomLevelAckPayloadOverride { get; init; }
+        internal HidProtocolValidationFailure? CustomLevelAckProtocolFailure { get; init; }
+        internal byte[]? CustomLevelReadbackPayloadOverride { get; init; }
         internal byte[] AdapterPowerPayload { get; set; } = [0x11, 0x11];
         internal byte[] HyperBoostFirmware { get; init; } = [1, 5, 0, 0];
         internal bool MaximumFans
@@ -610,6 +613,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         internal byte? FanTargetClassOverride { get; init; }
         internal bool IgnoreFanTargets { get; init; }
         internal bool IgnoreFanMode { get; init; }
+        internal bool IgnoreCustomLevels { get; init; }
         internal bool IgnoreMaximum { get; init; }
         internal bool ResetTargetsOnModeWrite { get; init; }
         internal Action<RazerCommandSpec>? BeforeSubmission { get; set; }
@@ -619,9 +623,11 @@ public sealed partial class ExperimentalThermalExpansionTests
         private bool maximumWriteSeen;
         private bool fanModeWriteSeen;
         private bool fanTargetWriteSeen;
+        private bool customLevelWriteSeen;
         internal int MaximumSetAttempts { get; private set; }
         internal int FanModeSetAttempts { get; private set; }
         internal int FanTargetSetAttempts { get; private set; }
+        internal int CustomLevelSetAttempts { get; private set; }
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal IEnumerable<RazerCommandSpec> Writes => Commands.Where(item => item.CommandId < 0x80);
         internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
@@ -653,7 +659,11 @@ public sealed partial class ExperimentalThermalExpansionTests
                         ? FanModeReadbackPayloadOverride
                         : [0, payload[1], Mode, Fan];
                     break;
-                case (0x0D, 0x87): payload = [0, payload[1], payload[1] == 1 ? Cpu : Gpu]; break;
+                case (0x0D, 0x87):
+                    payload = customLevelWriteSeen && CustomLevelReadbackPayloadOverride is not null
+                        ? CustomLevelReadbackPayloadOverride
+                        : [0, payload[1], payload[1] == 1 ? Cpu : Gpu];
+                    break;
                 case (0x0D, 0x81):
                     payload = fanTargetWriteSeen && FanTargetReadbackPayloadOverride is not null
                         ? FanTargetReadbackPayloadOverride
@@ -680,7 +690,17 @@ public sealed partial class ExperimentalThermalExpansionTests
                     }
                     break;
                 case (0x0D, 0x07):
-                    if (payload[1] == 1) { Cpu = payload[2]; } else { Gpu = payload[2]; }
+                    CustomLevelSetAttempts++;
+                    if (!IgnoreCustomLevels)
+                    {
+                        if (payload[1] == 1) { Cpu = payload[2]; } else { Gpu = payload[2]; }
+                    }
+                    customLevelWriteSeen = true;
+                    payload = CustomLevelAckPayloadOverride ?? payload;
+                    if (CustomLevelAckProtocolFailure is { } levelFailure)
+                    {
+                        return ProtocolFailure(levelFailure);
+                    }
                     break;
                 case (0x07, 0x0F):
                     MaximumSetAttempts++;

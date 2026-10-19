@@ -184,6 +184,19 @@ internal sealed partial class ExperimentalBladePort(
     private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>
         model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0;
 
+    // Products 671 and 672 inherit these SET helpers from their exact pinned rzDevice25 sources:
+    // 671 rzDevice25.5e330aa9fdf6f29eec62.js
+    // (SHA-256 41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9),
+    // 672 rzDevice25.85ce8530211c29f3c304.js
+    // (SHA-256 DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24).
+    // Their 0D/01 parsers/setters are at 671 chars 2101/2543 and 672 chars 60353/60797;
+    // 0D/02 parsers/setters at 671 chars 2958/3448 and 672 chars 61214/61706;
+    // and 0D/07 parsers/setters at 671 chars 7082/7516 and 672 chars 65356/65792.
+    // Their 07/0F helpers/public methods are at 671 chars 20394/140294 and 672 chars 52955/141017.
+    // These paths accept status ACKs and parse optional payload; every relaxed caller keeps an independent GET.
+    private static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
+        model.ProductId is 0x029F or 0x02A0;
+
     private static IReadOnlySet<PerformancePreset> CreatePerformancePresets(ExperimentalBladeModel model)
     {
         if (!SupportsExperimentalCustom(model))
@@ -348,6 +361,7 @@ internal sealed partial class ExperimentalBladePort(
         }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
+        bool acceptsStatusOnlyAck = UsesSourceBackedSetAckContract(model);
         try
         {
             RequirePerformanceWriteAdmission(value);
@@ -386,6 +400,9 @@ internal sealed partial class ExperimentalBladePort(
                     RequirePerformanceWriteAdmission(value);
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0],
                         true, cancellationToken,
+                        variableResponse: acceptsStatusOnlyAck,
+                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
+                        requireEcho: !acceptsStatusOnlyAck,
                         requireAdequateAdapter: value != PerformancePreset.Balanced).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false))
@@ -410,7 +427,10 @@ internal sealed partial class ExperimentalBladePort(
                 // changing a preset does not request relinquishing fixed targets.
                 await ExchangeAsync("Performance", 0x0D, 0x02,
                     [1, selector, mode, baseline.Fans == FanMode.Fixed ? (byte)1 : (byte)0],
-                    true, cancellationToken).ConfigureAwait(false);
+                    true, cancellationToken,
+                    variableResponse: acceptsStatusOnlyAck,
+                    payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
+                    requireEcho: !acceptsStatusOnlyAck).ConfigureAwait(false);
                 submitted = true;
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);

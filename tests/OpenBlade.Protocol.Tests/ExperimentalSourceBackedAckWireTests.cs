@@ -14,12 +14,16 @@ public sealed partial class ExperimentalThermalExpansionTests
     [InlineData(0x029F, SourceBackedAckCommand.FanMode, "00010203")]
     [InlineData(0x029F, SourceBackedAckCommand.FanTarget, "")]
     [InlineData(0x029F, SourceBackedAckCommand.FanTarget, "000102")]
+    [InlineData(0x029F, SourceBackedAckCommand.CustomLevel, "")]
+    [InlineData(0x029F, SourceBackedAckCommand.CustomLevel, "000102")]
     [InlineData(0x02A0, SourceBackedAckCommand.MaximumFans, "")]
     [InlineData(0x02A0, SourceBackedAckCommand.MaximumFans, "00")]
     [InlineData(0x02A0, SourceBackedAckCommand.FanMode, "")]
     [InlineData(0x02A0, SourceBackedAckCommand.FanMode, "00010203")]
     [InlineData(0x02A0, SourceBackedAckCommand.FanTarget, "")]
     [InlineData(0x02A0, SourceBackedAckCommand.FanTarget, "000102")]
+    [InlineData(0x02A0, SourceBackedAckCommand.CustomLevel, "")]
+    [InlineData(0x02A0, SourceBackedAckCommand.CustomLevel, "000102")]
     public async Task SourceBackedProductsAck_TraversesRealSessionValidation(
         int pid,
         SourceBackedAckCommand commandKind,
@@ -46,9 +50,11 @@ public sealed partial class ExperimentalThermalExpansionTests
     [InlineData(0x029F, SourceBackedAckCommand.MaximumFans, "0000")]
     [InlineData(0x029F, SourceBackedAckCommand.FanMode, "0000000000")]
     [InlineData(0x029F, SourceBackedAckCommand.FanTarget, "00000000")]
+    [InlineData(0x029F, SourceBackedAckCommand.CustomLevel, "00000000")]
     [InlineData(0x02A0, SourceBackedAckCommand.MaximumFans, "0000")]
     [InlineData(0x02A0, SourceBackedAckCommand.FanMode, "0000000000")]
     [InlineData(0x02A0, SourceBackedAckCommand.FanTarget, "00000000")]
+    [InlineData(0x02A0, SourceBackedAckCommand.CustomLevel, "00000000")]
     public async Task SourceBackedProductsAck_RealSessionRejectsOversizedPayload(
         int pid,
         SourceBackedAckCommand commandKind,
@@ -76,9 +82,11 @@ public sealed partial class ExperimentalThermalExpansionTests
     [InlineData(0x029F, SourceBackedAckCommand.MaximumFans, false, HidProtocolValidationFailure.Status)]
     [InlineData(0x029F, SourceBackedAckCommand.FanMode, true, HidProtocolValidationFailure.TransactionMismatch)]
     [InlineData(0x029F, SourceBackedAckCommand.FanTarget, true, HidProtocolValidationFailure.TransactionMismatch)]
+    [InlineData(0x029F, SourceBackedAckCommand.CustomLevel, true, HidProtocolValidationFailure.TransactionMismatch)]
     [InlineData(0x02A0, SourceBackedAckCommand.MaximumFans, false, HidProtocolValidationFailure.Status)]
     [InlineData(0x02A0, SourceBackedAckCommand.FanMode, true, HidProtocolValidationFailure.TransactionMismatch)]
     [InlineData(0x02A0, SourceBackedAckCommand.FanTarget, true, HidProtocolValidationFailure.TransactionMismatch)]
+    [InlineData(0x02A0, SourceBackedAckCommand.CustomLevel, true, HidProtocolValidationFailure.TransactionMismatch)]
     public async Task SourceBackedProductsAck_RealSessionRetainsStatusAndCorrelationChecks(
         int pid,
         SourceBackedAckCommand commandKind,
@@ -122,6 +130,13 @@ public sealed partial class ExperimentalThermalExpansionTests
                 FanModeAckPayloadOverride = [],
                 FanTargetAckPayloadOverride = [],
             },
+            SourceBackedAckCommand.CustomLevel => new Session
+            {
+                Mode = 4,
+                Cpu = 1,
+                Gpu = 2,
+                CustomLevelAckPayloadOverride = [],
+            },
             _ => new Session
             {
                 Fan = 1,
@@ -135,6 +150,12 @@ public sealed partial class ExperimentalThermalExpansionTests
                 CustomPerformanceSettings.Default with { MaximumFans = true },
                 CancellationToken.None);
         }
+        else if (commandKind == SourceBackedAckCommand.CustomLevel)
+        {
+            await port.SetCustomPerformanceAsync(
+                new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High),
+                CancellationToken.None);
+        }
         else
         {
             await port.SetFanTargetsAsync(3000, 3000, CancellationToken.None);
@@ -144,6 +165,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         {
             SourceBackedAckCommand.MaximumFans => 0x0F,
             SourceBackedAckCommand.FanMode => 0x02,
+            SourceBackedAckCommand.CustomLevel => 0x07,
             _ => 0x01,
         };
         RazerCommandSpec command = session.Writes.First(item => item.CommandId == commandId);
@@ -185,6 +207,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         MaximumFans,
         FanMode,
         FanTarget,
+        CustomLevel,
     }
 
     private sealed class AllowGuard : IHardwareAccessGuard

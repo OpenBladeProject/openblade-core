@@ -408,11 +408,11 @@ was skipped, so it remains untested rather than a reported failure.
 
 The owner bundles do not retain the returned setter bodies, so they cannot prove
 why the fan operations failed. The pinned Synapse sources do establish a separate
-contract error: OpenBlade required fan setters and Maximum Fans to echo the
+contract error: OpenBlade required performance, fan, custom-level and Maximum Fans setters to echo the
 request, although the vendor accepts a correlated successful status and only
 parses the optional payload. The correction accepts bounded acknowledgements:
-zero to four bytes for fan mode, zero to three for fan target, and zero to one
-for Power Mode Control. Existing independent mode, target and Power Mode Control
+zero to four bytes for fan/performance mode, zero to three for fan targets and
+custom levels, and zero to one for Power Mode Control. Existing independent mode, target and Power Mode Control
 GETs still determine success. Invalid envelopes, failed status, mismatched
 transactions, oversized replies and failed readback retain write-pause behavior.
 No alternative write or replay follows an ambiguous result.
@@ -435,6 +435,11 @@ contents. Product 671's main selects `rzDevice25LedMatrixBlade` at character
 61506. Module 77127 inherits 71513, which inherits the base module 74503.
 That base's corresponding Power Mode setter is at 20394 and public fan setters
 at 141280 and 141463, with the same optional parsing and no echo requirement.
+The `0D/02` fan/performance parser and setter are at 2958/3448 (671) and
+61214/61706 (672); the `0D/07` custom-level parser and setter at 7082/7516 (671)
+and 65356/65792 (672) follow the same contract. The correction covers every
+existing caller with authoritative readback, including performance changes,
+Custom entry and levels, and the admitted 029F HyperBoost/Maximum Fans cleanup.
 Offsets are zero-based characters in the pinned minified files.
 
 The correction therefore covers `02A0` and `029F` through their reviewed source
