@@ -2210,7 +2210,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>О SnapTap</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>SnapTap использует драйвер Razer для встроенной клавиатуры ноутбука. Требуется поддерживаемый драйвер RZ09-0581.</value>
+    <value>SnapTap использует драйвер Razer для встроенной клавиатуры ноутбука.</value>
   </data>
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>Совместимость с играми не проверена.</value>

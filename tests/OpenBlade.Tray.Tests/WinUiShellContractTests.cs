@@ -20,7 +20,7 @@ public sealed class WinUiShellContractTests
         XElement description = document.Descendants().Single(element => Attribute(element, "Uid") == "SnapTap_Description");
         Assert.Equal("When A and D overlap, the last pressed key wins.", Attribute(description, "Text"));
         XElement[] details = button.Descendants().Where(element => element.Name.LocalName == "TextBlock").ToArray();
-        Assert.Contains(details, element => Attribute(element, "Text")?.Contains("laptop keyboard", StringComparison.Ordinal) == true);
+        Assert.Contains(details, element => Attribute(element, "Text")?.Contains("built-in keyboard", StringComparison.Ordinal) == true);
         Assert.Contains(details, element => Attribute(element, "Text") == "Game compatibility has not been verified.");
     }
 
