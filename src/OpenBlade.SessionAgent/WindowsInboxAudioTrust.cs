@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Tray;
 
@@ -64,15 +63,11 @@ internal static class WindowsInboxAudioTrust
                 using var catalogLock = File.OpenHandle(info.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
                 try
                 {
-#pragma warning disable SYSLIB0057
-                    using var certificate = X509Certificate.CreateFromSignedFile(info.Path);
-#pragma warning restore SYSLIB0057
-                    if (!string.Equals(certificate.Subject,
-                        "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US", StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-
+                    // The subject must belong to the signer of the successful trust
+                    // provider state, not an unrelated certificate in the PKCS#7 bag.
+                    ThxNativeComponentTrust.VerifyPublisher(info.Path, catalogLock,
+                        "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+                        CancellationToken.None);
                     RazerDriverPackageTrust.VerifyCatalogMembers(Path.GetDirectoryName(info.Path)!, Path.GetFileName(info.Path),
                         [path], CancellationToken.None, cacheOnly: true);
                     return identity;

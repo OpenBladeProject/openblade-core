@@ -5,7 +5,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace OpenBlade.Tray;
 
-/// <summary>Authenticode policy for the user-mode THX client, independent of driver catalog trust.</summary>
+/// <summary>Authenticode signer policy from successful Windows trust-provider state.</summary>
 internal static class ThxNativeComponentTrust
 {
     internal static void Verify(string path, SafeFileHandle handle, CancellationToken cancellationToken)
@@ -16,6 +16,29 @@ internal static class ThxNativeComponentTrust
         string signerThumbprint, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        // Existing native-client callers must always provide both reviewed pins.
+        // They cannot opt into the separate Windows publisher-only policy.
+        if (string.IsNullOrEmpty(signerThumbprint))
+        {
+            throw new CryptographicException("A pinned component requires its reviewed signer thumbprint.");
+        }
+        VerifyCore(path, handle, signerSubject, signerThumbprint, cacheOnly: false, cancellationToken);
+    }
+
+    // Windows servicing certificates rotate. Require the verified publisher, while
+    // leaving current Windows chain, timestamp and cached revocation policy intact.
+    internal static void VerifyPublisher(string path, SafeFileHandle handle, string signerSubject,
+        CancellationToken cancellationToken) =>
+        VerifyCore(path, handle, signerSubject, signerThumbprint: null, cacheOnly: true, cancellationToken);
+
+    private static void VerifyCore(string path, SafeFileHandle handle, string signerSubject,
+        string? signerThumbprint, bool cacheOnly, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrEmpty(signerSubject))
+        {
+            throw new CryptographicException("A verified signer subject is required.");
+        }
         var file = new WinTrustFileInfo
         {
             Size = (uint)Marshal.SizeOf<WinTrustFileInfo>(),
@@ -35,7 +58,7 @@ internal static class ThxNativeComponentTrust
                 UnionChoice = 1,
                 Info = pointer,
                 StateAction = 1,
-                ProviderFlags = 0x80 | 0x2000, // Chain excluding root; reject MD2/MD4. Honor timestamp policy.
+                ProviderFlags = 0x80 | 0x2000 | (cacheOnly ? 0x1000u : 0u), // Chain excluding root; reject MD2/MD4. Honor timestamps.
             };
             try
             {
@@ -60,7 +83,7 @@ internal static class ThxNativeComponentTrust
         }
     }
 
-    private static void VerifySigner(nint state, string signerSubject, string signerThumbprint)
+    private static void VerifySigner(nint state, string signerSubject, string? signerThumbprint)
     {
         // Read the signer from the successful trust provider state. Reopening the path
         // would conflict with the retained DELETE-access handle used for atomic publish.
@@ -79,11 +102,18 @@ internal static class ThxNativeComponentTrust
 #pragma warning disable SYSLIB0057
         using var signedBy = new X509Certificate2(info.Certificate);
 #pragma warning restore SYSLIB0057
-        if (signedBy.Subject != signerSubject || signedBy.Thumbprint != signerThumbprint)
+        if (!MatchesSigner(signedBy.Subject, signedBy.Thumbprint, signerSubject, signerThumbprint))
         {
-            throw new CryptographicException("The THX component signer does not match the reviewed Razer signature.");
+            throw new CryptographicException("The verified signer does not match the required publisher and signer pins.");
         }
     }
+
+    internal static bool MatchesSigner(string actualSubject, string actualThumbprint,
+        string expectedSubject, string? expectedThumbprint) =>
+        !string.IsNullOrEmpty(expectedSubject)
+        && string.Equals(actualSubject, expectedSubject, StringComparison.Ordinal)
+        && (expectedThumbprint is null || !string.IsNullOrEmpty(expectedThumbprint)
+            && string.Equals(actualThumbprint, expectedThumbprint, StringComparison.Ordinal));
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ProviderCertificateHeader
