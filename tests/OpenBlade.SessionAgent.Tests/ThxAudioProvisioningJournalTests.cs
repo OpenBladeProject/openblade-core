@@ -43,6 +43,25 @@ public sealed class ThxAudioProvisioningJournalTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
+    [InlineData(2)]
+    public void RestartObservationBeforeNextIntentRetainsUnsubmittedContinuation(int step)
+    {
+        string json = $$$"""
+            {"kind":"baseline","packageDestination":"C:\\ProgramData\\OpenBlade.ThxAudioProvisioning\\0123456789abcdef0123456789abcdef","baseline":{"Profile":"RZ09-0528/rznb11"}}
+            {"kind":"intent","step":{{{step}}}}
+            {"kind":"native-result","bootIdentity":"boot-a","result":{"ExitCode":3010,"Output":""}}
+            {"kind":"observed","step":{{{step}}}}
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        ThxAudioProvisioningRecovery recovery = Assert.IsType<ThxAudioProvisioningRecovery>(
+            ThxAudioProvisioningJournal.ReadRecovery(stream));
+        Assert.Equal((ThxAudioProvisioningStep)step, recovery.RestartStep);
+        Assert.Equal(recovery.RestartStep, recovery.LastCompletedStep);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
     [InlineData(1602)]
     public void AmbiguousOrOrdinaryExitIsNeverResumable(int exitCode)
     {
@@ -50,6 +69,7 @@ public sealed class ThxAudioProvisioningJournalTests
             {"kind":"baseline","packageDestination":"C:\\ProgramData\\OpenBlade.ThxAudioProvisioning\\0123456789abcdef0123456789abcdef","baseline":{"Profile":"RZ09-0528/rznb11"}}
             {"kind":"intent","step":0}
             {"kind":"native-result","bootIdentity":"boot-a","result":{"ExitCode":{{{exitCode}}},"Output":""}}
+            {"kind":"observed","step":0}
             """;
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
         Assert.Null(ThxAudioProvisioningJournal.ReadRecovery(stream));

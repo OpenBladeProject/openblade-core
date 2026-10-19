@@ -147,7 +147,10 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
             && resultExitCode == (int)ThxAudioProvisioningResult.RestartRequired
             && packageDestination is not null && profile is not null
             && resultBootIdentity is not null && intentStep is not null
-            && IsNextStep(lastCompletedStep, intentStep.Value)
+            // A restart observation may be durable before the next process intent.
+            // Retain that checkpoint; continuation still skips the submitted step
+            // and independently rechecks it on a later Windows boot.
+            && (IsNextStep(lastCompletedStep, intentStep.Value) || lastCompletedStep == intentStep)
                 ? new(packageDestination, profile, resultBootIdentity, intentStep.Value, lastCompletedStep)
                 : null;
         return new(pending, recovery);
