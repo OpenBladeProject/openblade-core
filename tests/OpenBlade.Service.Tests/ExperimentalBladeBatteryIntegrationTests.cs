@@ -10,6 +10,76 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ExperimentalBladeBatteryIntegrationTests
 {
+    [Fact]
+    public async Task OptionalCapabilities_ArePromotedOnlyAfterSuccessfulExplicitReads()
+    {
+        var io = new Io { Raw = 0xD0 };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        DeviceCapabilities initial = await device.ReadCapabilitiesAsync(CancellationToken.None);
+        Assert.False(initial.SupportsTemporaryFullCharge);
+        Assert.DoesNotContain(OneShotLaptopControl.StartupAnimation, initial.OneShotLaptopControls);
+        Assert.DoesNotContain(io.Commands, command => command is (0x0F, 0x98) or (0x07, 0x8F));
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(CancellationToken.None);
+        Assert.False(state.Battery!.TemporaryFullCharge);
+        Assert.True(await device.ReadStartupAnimationAsync(CancellationToken.None));
+        DeviceCapabilities refreshed = await device.ReadCapabilitiesAsync(CancellationToken.None);
+
+        Assert.True(refreshed.SupportsTemporaryFullCharge);
+        Assert.Contains(OneShotLaptopControl.StartupAnimation, refreshed.OneShotLaptopControls);
+        Assert.Empty(io.Setters);
+        Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
+    }
+
+    [Fact]
+    public async Task StartupGetterStatusFailure_DoesNotBlockIndependentControls()
+    {
+        var io = new Io { Raw = 0xD0, Mode = 4, Cpu = 3, Gpu = 2, RejectedGetter = (0x0F, 0x98) };
+        var native = new Native();
+        io.Events = native.Events;
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io, native: native);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        Assert.Null(await device.ReadStartupAnimationAsync(CancellationToken.None));
+        ConfirmedDeviceState state = await device.ReadStateAsync(CancellationToken.None);
+
+        Assert.Equal(80, state.Battery!.ChargeLimitPercent);
+        Assert.False(state.Battery.TemporaryFullCharge);
+        Assert.Equal(PerformancePreset.Custom, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High),
+            state.CustomPerformance);
+        Assert.Equal(LightingEffect.Spectrum, state.Lighting!.Effect);
+        Assert.Equal(LogoLightingMode.Off, state.LogoLighting);
+        Assert.Empty(io.Setters);
+        Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
+        Assert.True(native.Events.IndexOf("close:501") < native.Events.IndexOf("open:502"));
+        Assert.DoesNotContain(native.Events.Skip(native.Events.IndexOf("close:501") + 1),
+            item => item.StartsWith("query:501:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task FullChargeStatusFailure_RetainsQueryDiagnosticWithoutInventingBatteryState()
+    {
+        var io = new Io { Raw = 0xD0, RejectedGetter = (0x07, 0x8F) };
+        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        IOException failure = await Assert.ThrowsAsync<IOException>(() => device.ReadStateAsync(CancellationToken.None));
+        NativeDeviceReadException cause = Assert.IsType<NativeDeviceReadException>(failure.InnerException);
+        Assert.Equal(DeviceStateQuery.TemporaryFullCharge, cause.StateQuery);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, cause.Failure);
+        Assert.Equal(HidProtocolValidationFailure.Status, cause.Diagnostic?.ProtocolValidationFailure);
+        Assert.Contains("query=TemporaryFullCharge", failure.Message);
+        Assert.Contains("failure=ProtocolFailure", failure.Message);
+        Assert.Contains("phase=ProtocolValidation", failure.Message);
+        Assert.DoesNotContain("Battery state query failed.", failure.Message);
+        Assert.Empty(io.Setters);
+        Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
+    }
+
     [Theory]
     [InlineData("battery", 0x02A0)]
     [InlineData("battery", 0x029F)]
@@ -534,6 +604,7 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
     {
         private byte[] request = [];
         internal byte Raw { get; set; }
+        internal (byte Class, byte Id)? RejectedGetter { get; init; }
         internal byte Mode { get; set; }
         internal byte Fan { get; set; }
         internal byte FirstTarget { get; set; } = 38;
@@ -627,7 +698,8 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                         HidFeatureTermination.Completed));
                 }
                 request.CopyTo(buffer, 0);
-                buffer[1] = 2;
+                buffer[1] = RejectedGetter is { } rejected
+                    && buffer[7] == rejected.Class && buffer[8] == rejected.Id ? (byte)5 : (byte)2;
                 if (buffer[7] == 0x07 && buffer[8] == 0x92)
                 {
                     buffer[9] = Raw;
