@@ -1915,7 +1915,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("stackalloc byte[blade18 ? 16 : 3]", source, StringComparison.Ordinal);
         Assert.Contains("blade18 && reportSize != 16", source, StringComparison.Ordinal);
         Assert.Contains("blade18Correlation.TryConsume(", source, StringComparison.Ordinal);
-        Assert.Contains("ConfirmBlade18Input(confirmed, extended)", source, StringComparison.Ordinal);
+        Assert.Contains("EmitAndRouteConfirmedBlade18Shortcut(", source, StringComparison.Ordinal);
+        Assert.Contains("ConfirmBlade18Input);", source, StringComparison.Ordinal);
         Assert.Contains("readSpecialKeyInputAdmitted", source, StringComparison.Ordinal);
         Assert.Contains(
             "readSpecialKeyInputAdmitted(specialKey)",
