@@ -3231,9 +3231,19 @@
                                                        Visibility="{x:Bind ThxViewModel.ShowStatusMessage, Mode=OneWay}"
                                                        VerticalAlignment="Center" Style="{StaticResource SecondaryTextStyle}"
                                                        AutomationProperties.LiveSetting="Polite" />
-                                            <ProgressBar IsIndeterminate="True" Height="3" VerticalAlignment="Center"
+                                            <ProgressBar x:Name="ThxAudioProgress" IsIndeterminate="True" Height="3" VerticalAlignment="Center"
                                                          Visibility="{x:Bind ThxViewModel.IsBusy, Mode=OneWay}" />
                                         </Grid>
+                                        <StackPanel x:Name="ThxAudioComponentDownload" Spacing="8"
+                                                    Visibility="{x:Bind ThxViewModel.IsComponentDownloadVisible, Mode=OneWay}">
+                                            <TextBlock x:Uid="MainWindow_ThxAudioComponentDownloadDescription"
+                                                       Text="Download the THX component from Razer. The THX audio driver must already be installed."
+                                                       TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" />
+                                            <Button x:Name="ThxAudioDownloadComponent" HorizontalAlignment="Left"
+                                                    Content="{x:Bind ThxViewModel.DownloadComponentButtonLabel, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind ThxViewModel.CanDownloadComponent, Mode=OneWay}"
+                                                    Click="OnThxDownloadComponent" />
+                                        </StackPanel>
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />

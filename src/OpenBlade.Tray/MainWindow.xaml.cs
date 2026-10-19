@@ -183,7 +183,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             gpuAppAdapter.QueryAsync,
             gpuAppAdapter.CloseAsync,
             ViewModel.SetGpuAppCleanupVisibleAsync);
-        ThxViewModel = new ThxAudioViewModel(thxAudioAdapter);
+        ThxViewModel = CreateThxAudioViewModel(thxAudioAdapter, localizationSnapshotMode);
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
@@ -296,6 +296,29 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public FirmwareUpdateAssistantViewModel FirmwareUpdateViewModel { get; }
 
+    private static ThxAudioViewModel CreateThxAudioViewModel(IThxAudioAdapter adapter, bool snapshotMode)
+    {
+#if OPENBLADE_DEVELOPER_HARNESS
+        if (snapshotMode)
+        {
+            return new ThxAudioViewModel(adapter, async token =>
+            {
+                string? result = Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_DOWNLOAD_STATE");
+                if (result == "downloading")
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
+                if (result == "downloaded")
+                {
+                    return "disconnected-preview";
+                }
+                throw new IOException("The downloaded THX component could not be verified.");
+            }, () => false);
+        }
+#endif
+        return new ThxAudioViewModel(adapter);
+    }
+
     private static IThxAudioAdapter CreateThxAudioAdapter(bool snapshotMode)
     {
 #if OPENBLADE_DEVELOPER_HARNESS
@@ -325,6 +348,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ThxAudioEnhancements.IsExpanded = false;
         ThxAudioApplications.IsExpanded = false;
         await ThxViewModel.RefreshAsync();
+        string? downloadState = Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_DOWNLOAD_STATE");
+        if (downloadState == "downloading")
+        {
+            _ = ThxViewModel.DownloadComponentAsync();
+            await Task.Delay(100);
+            ThxAudioProgress.UpdateLayout();
+            PauseSnapshotStoryboards(ThxAudioProgress);
+        }
+        else if (downloadState is "downloaded" or "failed")
+        {
+            await ThxViewModel.DownloadComponentAsync();
+        }
         FrameworkElement target = ThxAudioSection;
         if (destination == "thx-audio-enhancements")
         {
@@ -351,6 +386,23 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 AnimationDesired = false,
                 VerticalAlignmentRatio = 0,
             });
+        }
+    }
+
+    private static void PauseSnapshotStoryboards(DependencyObject element)
+    {
+        // Render the real indeterminate template at a fixed frame. A moving
+        // progress bar cannot satisfy the harness's canonical-frame check.
+        if (element is FrameworkElement framework)
+        {
+            foreach (VisualStateGroup group in VisualStateManager.GetVisualStateGroups(framework))
+            {
+                group.CurrentState?.Storyboard?.Pause();
+            }
+        }
+        for (int index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(element); index++)
+        {
+            PauseSnapshotStoryboards(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(element, index));
         }
     }
 #endif
@@ -3459,6 +3511,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnThxReadSettings(object sender, RoutedEventArgs args) =>
         await RunHandlerAsync(ThxViewModel.RefreshAsync, nameof(OnThxReadSettings));
+
+    private async void OnThxDownloadComponent(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.DownloadComponentAsync, nameof(OnThxDownloadComponent));
 
     private async void OnThxEndpointChanged(object sender, ResponsiveChoiceSelectionChangedEventArgs args)
     {

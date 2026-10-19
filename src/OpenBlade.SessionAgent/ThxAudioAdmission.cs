@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Principal;
 using Microsoft.Win32;
 using OpenBlade.Session;
+using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
@@ -25,9 +26,8 @@ internal interface IThxAudioAdmissionSource
 
 internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
 {
-    internal const string NativeDllSha256 =
-        "8E8F6923624762935D70B72F58BEC00808DB84DF740340047919B53331130A0A";
-    internal const string NativeDllName = "ThxV4Native_v1.1.1.0.dll";
+    internal const string NativeDllSha256 = ThxNativeComponentPackage.Sha256;
+    internal const string NativeDllName = ThxNativeComponentPackage.FileName;
     private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
     private const string SystemInformationKey =
         @"SYSTEM\CurrentControlSet\Control\SystemInformation";
@@ -82,30 +82,30 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         }
     }
 
-    internal static string GetNativeDllPath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Razer",
-        "RazerAppEngine",
-        "User Data",
-        "Apps",
-        "Common",
-        "thxv4common",
-        NativeDllName);
+    internal static string GetNativeDllPath() =>
+        ThxNativeComponentPackage.TryResolve(out string? path)
+            ? path! : File.Exists(ThxNativeComponentPackage.GetInstalledPath())
+                ? ThxNativeComponentPackage.GetInstalledPath() : ThxNativeComponentPackage.GetSynapsePath();
 
-    internal static bool HasPinnedNativeDll() =>
-        ThxAudioCompatibility.HasHash(GetNativeDllPath(), NativeDllSha256);
+    internal static bool HasPinnedNativeDll() => ThxNativeComponentPackage.HasVerifiedComponent();
 
     internal static bool HasPinnedNativeDll(string path, out string? error)
     {
-        ThxAudioPinnedFileStatus status = ThxAudioCompatibility.GetPinnedFileStatus(path, NativeDllSha256);
-        error = status switch
+        try
         {
-            ThxAudioPinnedFileStatus.Missing => $"The pinned THX native component {NativeDllName} is missing.",
-            ThxAudioPinnedFileStatus.IncompatibleOrUnreadable =>
-                $"The pinned THX native component {NativeDllName} is incompatible or unreadable.",
-            _ => null,
-        };
-        return status == ThxAudioPinnedFileStatus.Verified;
+            using var file = ThxNativeComponentPackage.OpenVerifiedRead(path);
+            error = null;
+            return true;
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            error = $"The pinned THX native component {NativeDllName} is missing.";
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException)
+        {
+            error = $"The pinned THX native component {NativeDllName} is incompatible or unreadable.";
+        }
+        return false;
     }
 
     private static ThxAudioCompatibilityProfile? GetExactHostProfile()

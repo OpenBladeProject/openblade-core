@@ -1,9 +1,9 @@
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Session;
+using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
@@ -73,18 +73,7 @@ internal sealed class ThxAudioNativeAdapter : IThxAudioNativeAdapter
     internal ThxAudioNativeAdapter()
     {
         string path = WindowsThxAudioAdmissionSource.GetNativeDllPath();
-        using var pinnedFile = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read);
-        if (!CryptographicOperations.FixedTimeEquals(
-                Convert.FromHexString(WindowsThxAudioAdmissionSource.NativeDllSha256),
-                SHA256.HashData(pinnedFile)))
-        {
-            throw new InvalidOperationException(
-                "The pinned THX native component is unavailable or has changed.");
-        }
+        using var pinnedFile = ThxNativeComponentPackage.OpenVerifiedRead(path);
         // Keep the verified file open without write/delete sharing until the
         // loader maps that same path, closing the hash/load replacement race.
         library = LoadLibraryExW(path, nint.Zero, LoadLibrarySearchSystem32);

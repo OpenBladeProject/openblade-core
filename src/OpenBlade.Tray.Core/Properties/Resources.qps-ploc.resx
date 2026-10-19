@@ -1678,4 +1678,19 @@
     <value>[!! {0}
 Détáíls: {1} ~~~ !!]</value>
   </data>
+  <data name="Download THX component" xml:space="preserve">
+    <value>[!! Dównlóád THX cómpónént ~~~~~~~ !!]</value>
+  </data>
+  <data name="Downloading THX component..." xml:space="preserve">
+    <value>[!! Dównlóádíng THX cómpónént... ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX component downloaded. Read the current settings to connect." xml:space="preserve">
+    <value>[!! THX cómpónént dównlóádéd. Réád thé cúrrént séttíngs tó cónnéct. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX component download canceled." xml:space="preserve">
+    <value>[!! THX cómpónént dównlóád cáncéléd. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX component download failed." xml:space="preserve">
+    <value>[!! THX cómpónént dównlóád fáíléd. ~~~~~~~~~~ !!]</value>
+  </data>
 </root>

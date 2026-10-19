@@ -148,6 +148,14 @@ physical-validation status.
 
 ## Source-backed experimental admission
 
+When adding a supported model, review every entry in the blade-driver-catalog
+applicability ledger against exact-model vendor evidence. Update its reviewed
+profile list and each artifact's Applicable or NotEstablished decision, then
+refresh the offline catalog fixtures in `OpenBlade.Tray.Tests`. Shared files do
+not establish applicability of a complete driver stack. The coverage tests
+compare the ledger with `RazerBladeModelCatalog.All` so a new model cannot skip
+this review. Catalog applicability does not grant runtime hardware admission.
+
 Physical validation is the promotion gate for validated support, not a
 prerequisite for releasing a separately implemented experimental control for
 community testing. The maintainer need not own every experimental laptop.
@@ -300,7 +308,14 @@ inventing a page-specific appearance:
    installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
    `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off
    by default, uses current-user typed Audio IPC and an isolated native helper,
-   and never installs or bundles THX components. Component discovery and
+   and never installs or bundles THX drivers or services. An explicit user
+   action may download only the pinned native client from its reviewed Razer
+   HTTPS URL into OpenBlade's per-user component directory, after exact size,
+   SHA-256, Windows Authenticode trust and signer verification. Publish it
+   atomically; acquisition must not load native code or change audio settings.
+   Keep the verified Synapse-installed client usable, and retain the full
+   model-specific stack admission and locked hash check before native loading.
+   Do not bundle or redistribute the DLL. Component discovery and
    shutdown must not change audio settings. Automatic changes, including
    startup reconciliation, require both the per-user integration preference
    and the active profile's explicit audio automation opt-in, a known
@@ -550,6 +565,10 @@ translations.
 - Follow [the localization workflow](docs/localization.md) when changing UI
   text: update source fallbacks and matching translations, preserve placeholders
   and access keys, and regenerate the authoritative catalogs and pseudo locale.
+- Review translations as a complete feature using its glossary, behavior and
+  rendered screens. Give changed wording a separate language review; mechanical
+  resource checks do not establish natural phrasing. Record uncertain terms in
+  the PR and keep button labels consistent with instructions that name them.
 
 ## Versioning and commits
 

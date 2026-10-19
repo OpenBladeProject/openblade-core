@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-19",
+  "coreSource": {
+    "repository": "OpenBladeProject/openblade-core",
+    "commit": "8793f6ead3f6208973d9c3b25bdd129b2f4b817a",
+    "path": "src/OpenBlade.Contracts/RazerBladeModelCatalog.cs"
+  },
+  "profiles": [
+    {
+      "modelNumber": "RZ09-0581",
+      "productName": "Razer Blade 16 (2026)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "02E0"
+      },
+      "vendorProductId": 736
+    },
+    {
+      "modelNumber": "RZ09-0528",
+      "productName": "Razer Blade 16 (2025)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "02C6"
+      },
+      "vendorProductId": 710
+    },
+    {
+      "modelNumber": "RZ09-0484",
+      "productName": "Razer Blade 18 (2023)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "02A0"
+      },
+      "vendorProductId": 672
+    },
+    {
+      "modelNumber": "RZ09-0483",
+      "productName": "Razer Blade 16 (2023)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "029F"
+      },
+      "vendorProductId": 671
+    },
+    {
+      "modelNumber": "RZ09-0482",
+      "productName": "Razer Blade 14 (2023)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "029D"
+      },
+      "vendorProductId": 669
+    },
+    {
+      "modelNumber": "RZ09-0530",
+      "productName": "Razer Blade 14 (2025)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "02C5"
+      },
+      "vendorProductId": 709
+    },
+    {
+      "modelNumber": "RZ09-0328",
+      "productName": "Razer Blade 15 Base (2020)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "0255"
+      },
+      "vendorProductId": 597
+    }
+  ],
+  "entries": [
+    {
+      "path": "devices/rz09-0528/1532-02c6/1.0.0.78-1.0.0.76/manifest.json",
+      "kind": "DriverStack",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0528/1532-02c6/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0528 / PID 02C6. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "Applicable",
+          "evidence": "devices/rz09-0528/1532-02c6/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "Reviewed exact-model package scope, PID-specific INF hardware matches and device topology."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0528/1532-02c6/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0528 / PID 02C6. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0528/1532-02c6/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0528 / PID 02C6. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0528/1532-02c6/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0528 / PID 02C6. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0528/1532-02c6/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0528 / PID 02C6. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0528/1532-02c6/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0528 / PID 02C6. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        }
+      ]
+    },
+    {
+      "path": "devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json",
+      "kind": "DriverStack",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "Applicable",
+          "evidence": "devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "Reviewed exact-model package scope, PID-specific INF hardware matches and device topology."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0581 / PID 02E0. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0581 / PID 02E0. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0581 / PID 02E0. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0581 / PID 02E0. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0581 / PID 02E0. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotEstablished",
+          "evidence": "devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json#/packages",
+          "reason": "The complete stack targets RZ09-0581 / PID 02E0. Shared RzCommon files and its generic child match do not establish applicability of the PID-specific stack to this model."
+        }
+      ]
+    },
+    {
+      "path": "components/thx-v4-native/1.1.1.0/component.json",
+      "kind": "UpstreamComponent",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "Applicable",
+          "evidence": "https://apps.razer.com/synapse/products/736/mw/manifest.json",
+          "vendorBuild": "2609300331",
+          "vendorRevision": "966bbb84c29adbb359389bbbe2af3fcdff397aa4",
+          "reason": "Exact-model THXNativeDLLV4Common resource names the pinned 1.1.1.0 DLL URL and SHA-256."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "Applicable",
+          "evidence": "https://apps.razer.com/synapse/products/710/mw/manifest.json",
+          "vendorBuild": "2609300314",
+          "vendorRevision": "5d7f793ac59d077baa74a1e05c93c177f4f96701",
+          "reason": "Exact-model THXNativeDLLV4Common resource names the pinned 1.1.1.0 DLL URL and SHA-256."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/672/mw/manifest.json",
+          "vendorBuild": "2610090242",
+          "vendorRevision": "8cb1e111267df5b957c71709163d36fdd47c99f5",
+          "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/671/mw/manifest.json",
+          "vendorBuild": "2610090414",
+          "vendorRevision": "dd891ee27b3290778f962f3f760eed2d25dbdca6",
+          "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/669/mw/manifest.json",
+          "vendorBuild": "2608200925",
+          "vendorRevision": "76a8f2534f94101018d4d3664f75cb6db83539d4",
+          "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "Applicable",
+          "evidence": "https://apps.razer.com/synapse/products/709/mw/manifest.json",
+          "vendorBuild": "2609300318",
+          "vendorRevision": "7b731e07dc34fee1ba8fa9f36daf3a00b3207e99",
+          "reason": "Exact-model THXNativeDLLV4Common resource names the pinned 1.1.1.0 DLL URL and SHA-256."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/597/mw/manifest.json",
+          "vendorBuild": "2608200948",
+          "vendorRevision": "c0877d27ea53c0c724bd71ca4df01007860db08c",
+          "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+        }
+      ]
+    }
+  ]
+}

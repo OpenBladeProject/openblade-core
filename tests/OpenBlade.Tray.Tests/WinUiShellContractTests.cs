@@ -4644,9 +4644,12 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "ThxViewModel = new ThxAudioViewModel(thxAudioAdapter);",
+            "ThxViewModel = CreateThxAudioViewModel(thxAudioAdapter, localizationSnapshotMode);",
             window,
             StringComparison.Ordinal);
+        Assert.Contains("return new ThxAudioViewModel(adapter);", window, StringComparison.Ordinal);
+        Assert.Contains("\"disconnected-preview\"", window, StringComparison.Ordinal);
+        Assert.Contains("}, () => false);", window, StringComparison.Ordinal);
         Assert.Contains(
             "IServiceClient serviceClient = new ServiceClient();",
             window.Replace("\r\n", "\n", StringComparison.Ordinal),

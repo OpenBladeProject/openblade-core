@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Download the missing THX client directly from Razer with hash and signature verification, while preserving the matching audio driver requirements. Improve Chinese and Russian THX wording. ([#816](https://github.com/OpenBladeProject/openblade-core/pull/816))
+
 ### Changed
 
 - Store the sanitized protocol evidence required by OpenBlade directly in the core repository, so public clones, builds, and tests no longer depend on the private legacy capture repository. Use Synapse Observer for new evidence collection. ([#815](https://github.com/OpenBladeProject/openblade-core/pull/815))

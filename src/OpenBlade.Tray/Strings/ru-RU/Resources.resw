@@ -2081,7 +2081,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Ожидание обработчика ввода…</value>
   </data>
   <data name="MainWindow_ThxAudioDescription.Text" xml:space="preserve">
-    <value>Экспериментальная функция. Требуется установка поддерживаемых компонентов THX.</value>
+    <value>Экспериментальная функция. Необходимы совместимые компоненты THX, уже установленные на ноутбуке.</value>
   </data>
   <data name="MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Эквалайзер THX</value>
@@ -2096,7 +2096,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Использовать установленный THX Audio</value>
   </data>
   <data name="MainWindow_ThxAudioReadSettings.Content" xml:space="preserve">
-    <value>Прочитать настройки</value>
+    <value>Считать настройки</value>
   </data>
   <data name="MainWindow_ThxAudioSpatial.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>THX Spatial Audio</value>
@@ -2108,7 +2108,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Аудиовыход THX</value>
   </data>
   <data name="MainWindow_ThxAudioOutputTitle.Text" xml:space="preserve">
-    <value>Выход</value>
+    <value>Устройство вывода</value>
   </data>
   <data name="MainWindow_ThxAudioPreset.AccessibleName" xml:space="preserve">
     <value>Пресет эквалайзера THX</value>
@@ -2123,25 +2123,25 @@ OpenBlade повторно проверит этот список и остан�
     <value>Отменить изменения</value>
   </data>
   <data name="MainWindow_ThxAudioNormalization.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Нормализация звука</value>
+    <value>Выравнивание громкости</value>
   </data>
   <data name="MainWindow_ThxAudioNormalizationLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Уровень нормализации звука</value>
+    <value>Степень выравнивания громкости</value>
   </data>
   <data name="MainWindow_ThxAudioNormalizationTitle.Text" xml:space="preserve">
-    <value>Нормализация звука</value>
+    <value>Выравнивание громкости</value>
   </data>
   <data name="MainWindow_ThxAudioVoiceClarity.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Чёткость голоса</value>
+    <value>Чёткость речи</value>
   </data>
   <data name="MainWindow_ThxAudioVoiceClarityLevel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Уровень чёткости голоса</value>
+    <value>Уровень чёткости речи</value>
   </data>
   <data name="MainWindow_ThxAudioVoiceClarityTitle.Text" xml:space="preserve">
-    <value>Чёткость голоса</value>
+    <value>Чёткость речи</value>
   </data>
   <data name="MainWindow_ThxAudioAddRule.Content" xml:space="preserve">
-    <value>Добавить правило приложения</value>
+    <value>Добавить правило для приложения</value>
   </data>
   <data name="MainWindow_ThxAudioApplicationExecutable.Header" xml:space="preserve">
     <value>Исполняемый файл приложения</value>
@@ -2162,7 +2162,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Удалить</value>
   </data>
   <data name="MainWindow_ThxAudioRoutingEnabled.Content" xml:space="preserve">
-    <value>Автоматически применять сохранённый звук и правила приложений</value>
+    <value>Автоматически применять сохранённые настройки звука и правила для приложений</value>
   </data>
   <data name="MainWindow_ThxAudioSaveProfile.Content" xml:space="preserve">
     <value>Сохранить в профиль питания</value>
@@ -2174,10 +2174,10 @@ OpenBlade повторно проверит этот список и остан�
     <value>Применить эквалайзер</value>
   </data>
   <data name="MainWindow_ThxAudioFlattenEqualizer.Content" xml:space="preserve">
-    <value>Выровнять</value>
+    <value>Обнулить полосы</value>
   </data>
   <data name="MainWindow_ThxAudioResetEqualizer.Content" xml:space="preserve">
-    <value>Заводская кривая</value>
+    <value>Заводские настройки</value>
   </data>
   <data name="MainWindow_ThxAudioNavigationItemText.Content" xml:space="preserve">
     <value>Звук THX</value>
@@ -2186,16 +2186,16 @@ OpenBlade повторно проверит этот список и остан�
     <value>Звук THX</value>
   </data>
   <data name="MainWindow_ThxAudioApplications.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Сохранённый звук и приложения</value>
+    <value>Сохранённые настройки звука и приложения</value>
   </data>
   <data name="MainWindow_ThxAudioApplicationsTitle.Text" xml:space="preserve">
-    <value>Сохранённый звук и приложения</value>
+    <value>Сохранённые настройки звука и приложения</value>
   </data>
   <data name="MainWindow_ThxAudioEnhancements.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Улучшения</value>
+    <value>Улучшения звука</value>
   </data>
   <data name="MainWindow_ThxAudioEnhancementsTitle.Text" xml:space="preserve">
-    <value>Улучшения</value>
+    <value>Улучшения звука</value>
   </data>
   <data name="SnapTap_KeyboardHeader.Text" xml:space="preserve">
     <value>Клавиатура</value>
@@ -2259,5 +2259,8 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
     <value>Блокировка клавиш действует на всех клавиатурах, пока работает OpenBlade.</value>
+  </data>
+  <data name="MainWindow_ThxAudioComponentDownloadDescription.Text" xml:space="preserve">
+    <value>Скачайте компонент THX с сайта Razer. Аудиодрайвер THX должен быть уже установлен.</value>
   </data>
 </root>

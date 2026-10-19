@@ -38,6 +38,8 @@ public static class RazerBladeModelCatalog
         new("RZ09-0328", "Razer Blade 15 Base", 2020) { UsbVendorId = "1532", UsbProductId = "0255" },
     ];
 
+    public static IReadOnlyList<RazerBladeModelInfo> All { get; } = Array.AsReadOnly(Models);
+
     public static RazerBladeModelInfo? Find(string? modelNumber)
     {
         if (string.IsNullOrWhiteSpace(modelNumber))

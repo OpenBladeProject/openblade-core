@@ -2260,4 +2260,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
     <value>[!! Kéý blóckíng ápplíés tó áll kéýbóárds whílé OpenBlade ís rúnníng. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ThxAudioComponentDownloadDescription.Text" xml:space="preserve">
+    <value>[!! Dównlóád thé THX cómpónént fróm Razer. Thé THX áúdíó drívér múst álréádý bé ínstálléd. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

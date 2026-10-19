@@ -1719,6 +1719,8 @@ type static class OpenBlade.Contracts.RazerBladeModelCatalog
   field const System.String Rz090484ModelNumber = "RZ09-0484"
   field const System.String Rz090528ModelNumber = "RZ09-0528"
   method static OpenBlade.Contracts.RazerBladeModelInfo Find(System.String modelNumber)
+  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RazerBladeModelInfo> get_All()
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RazerBladeModelInfo> All { get; }
 type sealed class OpenBlade.Contracts.RazerBladeModelInfo
   interface System.IEquatable<OpenBlade.Contracts.RazerBladeModelInfo>
   ctor (System.String ModelNumber, System.String ProductName, System.Int32 ModelYear)
