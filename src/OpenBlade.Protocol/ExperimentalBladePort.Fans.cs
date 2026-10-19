@@ -206,13 +206,26 @@ internal sealed partial class ExperimentalBladePort
                 PerformancePreset.Custom => 4,
                 _ => throw new IOException("Unrepresentable fan baseline."),
             };
+            // Products 671 and 672 inherit the same pinned rzDevice25 SET contract:
+            // 671 rzDevice25.5e330aa9fdf6f29eec62.js
+            // (SHA-256 41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9),
+            // and 672 rzDevice25.85ce8530211c29f3c304.js
+            // (SHA-256 DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24).
+            // Both parse fan-mode/fan-target ACK payloads only when present; bound their
+            // lengths (671 chars 2300-3900; 672 chars 60353/60797/61200/61706) and keep
+            // the existing GETs authoritative. Other profiles retain exact echo.
+            bool acceptsStatusOnlyAck = model.ProductId is 0x029F or 0x02A0;
             if (baseline.Fans != (targets.HasValue ? FanMode.Fixed : FanMode.Automatic))
             {
                 foreach (byte zone in new byte[] { 1, 2 })
                 {
                     RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
                     await ExchangeAsync("Fans", 0x0D, 0x02, [1, zone, mode, targets.HasValue ? (byte)1 : (byte)0],
-                        true, cancellationToken, writeAdmission: SourceUnchanged).ConfigureAwait(false);
+                        true, cancellationToken,
+                        variableResponse: acceptsStatusOnlyAck,
+                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
+                        requireEcho: !acceptsStatusOnlyAck,
+                        writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                 }
                 // The mode flag changes before either retained target is
@@ -235,7 +248,11 @@ internal sealed partial class ExperimentalBladePort
                     int rpm = zone == 1 ? target.First : target.Second;
                     RequireWriteAdmission(fanMode: FanMode.Fixed);
                     await ExchangeAsync("FanTargets", 0x0D, 0x01, [1, zone, checked((byte)(rpm / 100))],
-                        true, cancellationToken, writeAdmission: SourceUnchanged).ConfigureAwait(false);
+                        true, cancellationToken,
+                        variableResponse: acceptsStatusOnlyAck,
+                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 3 : null,
+                        requireEcho: !acceptsStatusOnlyAck,
+                        writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                     saved = zone == 1 ? (rpm, saved.Second) : (saved.First, rpm);
                     // After the first zone write, the untouched zone can still

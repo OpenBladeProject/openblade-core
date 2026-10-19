@@ -181,9 +181,21 @@ internal sealed partial class ExperimentalBladePort
                 RequireMaximumFansWriteBaseline(
                     await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false));
                 RequireWriteAdmission(thermal: true);
+                // Products 671 and 672 inherit the same pinned rzDevice25 SET contract:
+                // 671 rzDevice25.5e330aa9fdf6f29eec62.js
+                // (SHA-256 41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9),
+                // and 672 rzDevice25.85ce8530211c29f3c304.js
+                // (SHA-256 DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24).
+                // Both accept a correlated successful 07/0F ACK without requiring an echo
+                // (671 helper/public chars 20394/140294; 672 chars 52955/141017).
+                // Bound it to zero or one byte and keep the independent GET authoritative.
+                bool acceptsStatusOnlyAck = model.ProductId is 0x029F or 0x02A0;
                 await ExchangeAsync("MaximumFans", 0x07, 0x0F,
                     [value.MaximumFans ? TemporaryFullChargeProtocol.MaximumFanSpeedBit : (byte)0],
-                    true, cancellationToken).ConfigureAwait(false);
+                    true, cancellationToken,
+                    variableResponse: acceptsStatusOnlyAck,
+                    payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
+                    requireEcho: !acceptsStatusOnlyAck).ConfigureAwait(false);
                 submitted = true;
                 if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false) != value.MaximumFans)
                 {
