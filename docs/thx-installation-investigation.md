@@ -134,7 +134,7 @@ These findings describe the sources reviewed, not every possible acquisition rou
 The THX installers do not contain the base audio prerequisites. RZ09-0528 and
 RZ09-0530 use a matching Realtek HDA codec package; RZ09-0581 instead uses
 Windows inbox SDCA audio over Intel SST. The reviewed prerequisite source and
-complete root match sets are recorded in the [catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/cef04300954d4ff2b9c07bc97f2d4e5c1bcc4c03/evidence/thx-base-audio/prerequisites.json).
+complete root match sets are recorded in the [catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/60adc8e510097344f34244fd113dd4be949a9d81/evidence/thx-base-audio/prerequisites.json).
 The experimental setup recipe imports the pinned base root and its declared
 CopyINF closure only after exact host/controller and installed-binding admission.
 Windows inbox components are checked through servicing catalogs, not bundled.

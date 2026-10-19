@@ -1,7 +1,7 @@
 # Reviewed driver catalog snapshots
 
 These metadata-only fixtures are copied from
-[blade-driver-catalog commit cef0430](https://github.com/OpenBladeProject/blade-driver-catalog/tree/cef04300954d4ff2b9c07bc97f2d4e5c1bcc4c03):
+[blade-driver-catalog commit 60adc8e](https://github.com/OpenBladeProject/blade-driver-catalog/tree/60adc8e510097344f34244fd113dd4be949a9d81):
 
 - `DriverCatalogApplicability.json`: `catalog/applicability.json`
 - `ThxNativeComponentCatalog.json`: `components/thx-v4-native/1.1.1.0/component.json`

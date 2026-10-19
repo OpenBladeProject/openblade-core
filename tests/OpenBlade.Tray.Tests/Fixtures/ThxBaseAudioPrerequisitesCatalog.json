@@ -5,7 +5,7 @@
   "status": {
     "evidence": "SourceVerified",
     "installation": "InstallationUnvalidated",
-    "provisioningImplemented": false
+    "provisioningImplemented": true
   },
   "intel": {
     "models": [
