@@ -47,3 +47,6 @@ src/OpenBlade.Tray/Assets/Brand/Tray/*
 src/OpenBlade.Tray/Assets/Brand/TrayStatus/*
 !src/OpenBlade.Tray/Assets/Brand/TrayStatus/generic-error-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/TrayStatus/generic-error-light.ico
+
+# Trail-Code runtime statistics
+/graft/.cache/

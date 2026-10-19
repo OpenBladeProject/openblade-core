@@ -4,6 +4,18 @@ This file is the first instruction source for AI coding agents working in this
 repository. Keep changes narrow, evidence-based, and suitable for a native
 Windows hardware utility.
 
+<!-- trail:start -->
+## Trail-Code context
+
+Use the `trail_*` MCP tools or `trail` CLI to navigate indexed code. Start with
+`trail map` for orientation, `trail ask "<question>" --source` for ranked source
+spans, `trail grep "<symbol>"` for exhaustive matches, or `trail callers <symbol>`
+for dependencies. Treat graph results as navigation aids; verify the current
+source for consequential changes. The deterministic index is `.trail/cache/`;
+`trail build` refreshes it without a model or API key. Optional LLM summaries
+require a separate `--deep` build.
+<!-- trail:end -->
+
 ## Parallel work
 
 Use parallel subagents when a task has multiple independent workstreams and the
