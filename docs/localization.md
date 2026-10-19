@@ -168,6 +168,13 @@ a private desktop kept for the testhost lifetime. This preserves both screenshot
 rendering and real focus checks without affecting the user's desktop. The Tray
 harness omits Explorer switcher registration on desktops without a shell.
 
+The SnapTap information snapshot renders its existing localized content through
+WinUI's flyout presenter template in the disconnected window. RenderTargetBitmap
+cannot capture a Popup surface directly. The capture checks for visible detail
+and an opaque flyout surface before writing the PNG, so transparent text-only
+images fail. This reviews the flyout's content and appearance; popup placement
+and interactive dismissal are separate from the snapshot.
+
 Run the checked-in capture wrapper so every WPF state gets a fresh testhost and
 cannot inherit retained render state from the preceding image:
 

@@ -2210,7 +2210,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>[!! SnápTáp úsés thé Razer kéýbóárd drívér ón thé láptóp kéýbóárd. Réqúírés thé súppórtéd RZ09-0581 drívér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! SnápTáp úsés thé Razer kéýbóárd drívér fór thé láptóp’s búílt-ín kéýbóárd. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
     <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>

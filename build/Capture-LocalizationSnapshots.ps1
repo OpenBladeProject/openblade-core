@@ -118,6 +118,7 @@ try {
             'profiles-narrow',
             'profiles-wide',
             'laptop',
+            'laptop-snap-tap-info',
             'thx-audio',
             'thx-audio-headphones',
             'thx-audio-enhancements',

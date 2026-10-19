@@ -9,6 +9,47 @@ public sealed class WindowsRazerHidSessionTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
+    [Theory]
+    [InlineData(0x0F, 0x98)]
+    [InlineData(0x07, 0x8F)]
+    public async Task QueryEvidence_RetainsOptionalVariableGetterStatusFailureAfterDisposal(
+        int commandClass, int commandId)
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        byte[] reply = Response(1, (byte)commandClass, (byte)commandId, [0]);
+        reply[1] = 0x05;
+        var io = new ScriptedIo(SetSuccess(), GetResult(reply));
+        Func<ReadOnlyMemory<byte>, bool> validator = commandClass == 0x0F
+            ? static payload => payload.Length is 1 or 2
+            : static payload => payload.Length == 1;
+        var command = new RazerCommandSpec((byte)commandClass, (byte)commandId,
+            new byte[] { 0 }, 1, validator)
+        {
+            AllowVariableResponseLength = true,
+        };
+        await using (WindowsRazerHidSession actor = CreateActor(io, queryDiagnostics: diagnostics))
+        {
+            HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(command,
+                () => TransactionIdAssignment.Valid(1), Timeout, CancellationToken.None);
+            Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+            Assert.Equal(HidProtocolValidationFailure.Status, result.Diagnostic?.ProtocolValidationFailure);
+            Assert.Null(result.QueryResponsePayloadHex);
+            Assert.NotEqual(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+        }
+
+        FirmwareQueryDiagnostic query = Assert.Single(diagnostics.Snapshot());
+        Assert.Equal($"{commandClass:X2}/{commandId:X2}", query.Command);
+        Assert.Equal("00", query.RequestPayloadHex);
+        Assert.Equal(1, query.ObservationCount);
+        Assert.Equal(1, query.FailureCount);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, query.LastFailure!.Failure);
+        Assert.Equal(HidSessionFailurePhase.ProtocolValidation, query.LastFailure.Phase);
+        Assert.Equal(HidProtocolValidationFailure.Status, query.LastFailure.ProtocolValidationFailure);
+        Assert.Null(query.LastFailure.ResponsePayloadHex);
+        Assert.Contains(query.Command, System.Text.Json.JsonSerializer.Serialize(diagnostics.Snapshot()));
+        Assert.Equal(2, io.Calls.Count);
+    }
+
     [Fact]
     public async Task QueryEvidence_RetainsUnknownAdapterAfterRecoveryAndSessionDisposal()
     {

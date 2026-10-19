@@ -5,6 +5,47 @@ internal static class LocalizationSnapshotPixelCanonicalizer
     public const string RenderProfileIdentifier =
         "bgra8-4-bit-midpoint-local-majority-v2";
 
+    public static void RequireVisibleDetail(byte[] pixels, bool requireOpaqueSurface = false)
+    {
+        if (requireOpaqueSurface)
+        {
+            int opaquePixels = 0;
+            for (int index = 3; index < pixels.Length; index += 4)
+            {
+                opaquePixels += pixels[index] == 255 ? 1 : 0;
+            }
+
+            // A flyout has a solid surface apart from its rounded corners.
+            // Content-only captures contain antialiased text on transparency:
+            // they have varying pixels but still omit the actual flyout.
+            int pixelCount = pixels.Length / 4;
+            if (opaquePixels <= pixelCount / 2)
+            {
+                throw new InvalidOperationException(
+                    "The flyout snapshot is missing its opaque presenter surface.");
+            }
+        }
+
+        uint? firstVisiblePixel = null;
+        for (int index = 0; index < pixels.Length; index += 4)
+        {
+            if (pixels[index + 3] == 0)
+            {
+                continue;
+            }
+
+            uint pixel = ReadPixel(pixels, index);
+            firstVisiblePixel ??= pixel;
+            if (pixel != firstVisiblePixel.Value)
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "The localization snapshot is blank: no visible detail was rendered.");
+    }
+
     public static void Canonicalize(byte[] pixels, int width, int height)
     {
         if (width <= 0 || height <= 0 ||

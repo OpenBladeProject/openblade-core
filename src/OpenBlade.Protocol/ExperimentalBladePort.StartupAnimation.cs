@@ -35,14 +35,6 @@ internal sealed partial class ExperimentalBladePort
         };
     }
 
-    internal async Task InitializeBlade18StartupAnimationAsync(CancellationToken token)
-    {
-        if (SupportsStartupAnimationQuery)
-        {
-            _ = await QueryStartupAnimationAsync(token).ConfigureAwait(false);
-        }
-    }
-
     public async Task<bool?> QueryStartupAnimationAsync(CancellationToken cancellationToken)
     {
         if (!SupportsStartupAnimationQuery)

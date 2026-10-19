@@ -2210,7 +2210,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Game compatibility has not been verified.</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>SnapTap uses the Razer keyboard driver on the laptop keyboard. Requires the supported RZ09-0581 driver.</value>
+    <value>SnapTap uses the Razer keyboard driver for the laptop’s built-in keyboard.</value>
   </data>
   <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
     <value>About SnapTap</value>

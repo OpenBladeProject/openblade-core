@@ -245,6 +245,13 @@ try {
         Assert-True ($profileContext.Screenshots.Split(';') -ccontains $profileScreenshot) `
             "Profile rows must reference '$profileScreenshot'."
     }
+    $snapTapContext = @($rows | Where-Object Key -ceq 'SnapTap_InfoInput.Text')[0]
+    foreach ($snapTapScreenshot in @(
+            'context/tray/main-laptop-snap-tap-info.png',
+            'context/tray/snap-tap-information.png')) {
+        Assert-True ($snapTapContext.Screenshots.Split(';') -ccontains $snapTapScreenshot) `
+            "SnapTap help must reference '$snapTapScreenshot'."
+    }
     $taglineContext = @($rows | Where-Object Key -ceq `
         'MainWindow_TextBlockForGamersByTheCommunity.Text')[0]
     Assert-Equal 'context/tray/main-about.png' $taglineContext.Screenshots `

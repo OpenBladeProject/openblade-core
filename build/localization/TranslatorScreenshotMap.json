@@ -16,6 +16,8 @@
     "tray/main-thx-audio-enhancements.png",
     "tray/main-thx-audio-applications.png",
     "tray/main-laptop.png",
+    "tray/main-laptop-snap-tap-info.png",
+    "tray/snap-tap-information.png",
     "tray/main-lighting.png",
     "tray/main-profiles.png",
     "tray/main-profiles-narrow.png",
@@ -25,6 +27,13 @@
     "tray/tray-dashboard.png"
   ],
   "rules": [
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^SnapTap_",
+      "context": "SnapTap controls and information popup on the Laptop page.",
+      "screenshots": ["tray/main-laptop-snap-tap-info.png", "tray/snap-tap-information.png"]
+    },
     {
       "surface": "tray",
       "match": "key",

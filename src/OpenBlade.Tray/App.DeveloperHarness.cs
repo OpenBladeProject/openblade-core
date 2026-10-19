@@ -714,10 +714,9 @@ public partial class App
                 }
                 if (captureSnapTapInformation)
                 {
-                    UIElement information = snapshotMainWindow.ShowLocalizationSnapshotSnapTapInformation();
-                    await WaitForSnapshotLayoutAsync();
-                    await SaveSnapshotAsync(
-                        information,
+                    await SaveFlyoutSnapshotAsync(
+                        snapshotMainWindow,
+                        snapshotMainWindow.GetLocalizationSnapshotSnapTapInformation(),
                         Path.Combine(resolvedDirectory, "snap-tap-information.png"));
                 }
                 await SaveSnapshotAsync(
@@ -916,7 +915,50 @@ public partial class App
         }
     }
 
-    private static async Task SaveSnapshotAsync(object? content, string path)
+    private static async Task SaveFlyoutSnapshotAsync(
+        Window window,
+        Microsoft.UI.Xaml.Controls.Flyout flyout,
+        string path)
+    {
+        if (window.Content is not XamlGrid root || flyout.Content is not UIElement content)
+        {
+            throw new InvalidOperationException("The flyout snapshot requires a window root and content.");
+        }
+
+        // RenderTargetBitmap cannot capture Popup-hosted visuals. Render the
+        // existing localized content with WinUI's real FlyoutPresenter in the
+        // disconnected window tree instead; do not duplicate its text or styles.
+        var presenter = new Microsoft.UI.Xaml.Controls.FlyoutPresenter
+        {
+            Style = flyout.FlyoutPresenterStyle ?? (Style)Current.Resources["DefaultFlyoutPresenterStyle"],
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        XamlGrid.SetRowSpan(presenter, Math.Max(1, root.RowDefinitions.Count));
+        flyout.Content = null;
+        try
+        {
+            presenter.Content = content;
+            root.Children.Add(presenter);
+            await WaitForSnapshotLayoutAsync();
+            root.UpdateLayout();
+            presenter.ApplyTemplate();
+            presenter.UpdateLayout();
+            // FlyoutPresenter itself is not a RenderTargetBitmap target. Its
+            // applied template root contains the real surface, padding and text.
+            await SaveSnapshotAsync(
+                VisualTreeHelper.GetChild(presenter, 0), path, requireOpaqueSurface: true);
+        }
+        finally
+        {
+            root.Children.Remove(presenter);
+            presenter.Content = null;
+            flyout.Content = content;
+        }
+    }
+
+    private static async Task SaveSnapshotAsync(
+        object? content, string path, bool requireOpaqueSurface = false)
     {
         if (content is not UIElement element)
         {
@@ -966,6 +1008,9 @@ public partial class App
 
             stableFrame = candidate;
         }
+
+        LocalizationSnapshotPixelCanonicalizer.RequireVisibleDetail(
+            stableFrame.Pixels, requireOpaqueSurface);
 
         using var stream = new InMemoryRandomAccessStream();
         BitmapEncoder encoder = await BitmapEncoder.CreateAsync(

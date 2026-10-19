@@ -10,6 +10,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Add experimental spatial-audio control through the installed THX 2.6.5.0 stack on Blade 14 RZ09-0482, Blade 16 RZ09-0483 and Blade 18 RZ09-0484. Review every supported model in the driver catalog; record the exact Realtek OEM codec tuning and keep legacy installation blocked until THX component binding is verified, and identify RZ09-0328 as Dolby Atmos. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
 - Install the matching THX driver and configuration without Synapse on RZ09-0581, RZ09-0528 and RZ09-0530, using verified original installers from Razer or the driver catalog. Verify and extract the signed inner installer into protected staging before execution. This experimental fresh setup requires the matching Realtek audio driver; RZ09-0581 uses the separately pinned cached build. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
 
+### Changed
+
+- Simplify the SnapTap information popup in English, Russian, and Simplified Chinese, and fix its localization review snapshots. ([#818](https://github.com/OSSBlade/openblade-core/pull/818))
+
+## [0.37.1-nightly.95] - 2026-10-19
+
+### Fixed
+
+- Restore Blade 18 controls when an optional startup-lighting or keyboard-layout read fails during initialization. Preserve the actual failed query in diagnostics and include optional query failures in exported firmware diagnostics. ([#820](https://github.com/OpenBladeProject/openblade-core/pull/820))
+
 ## [0.37.0-nightly.94] - 2026-10-19
 
 ### Added
@@ -2140,7 +2150,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.37.0-nightly.94...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.37.1-nightly.95...HEAD
+[0.37.1-nightly.95]: https://github.com/OSSBlade/openblade-core/compare/v0.37.0-nightly.94...v0.37.1-nightly.95
 [0.37.0-nightly.94]: https://github.com/OSSBlade/openblade-core/compare/v0.36.0-nightly.93...v0.37.0-nightly.94
 [0.36.0-nightly.93]: https://github.com/OSSBlade/openblade-core/compare/v0.33.1-nightly.92...v0.36.0-nightly.93
 [0.33.1-nightly.92]: https://github.com/OSSBlade/openblade-core/compare/v0.30.0...v0.33.1-nightly.92

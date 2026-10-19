@@ -2193,7 +2193,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>关于 SnapTap</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>SnapTap 通过 Razer 键盘驱动控制笔记本内置键盘。需要受支持的 RZ09-0581 驱动。</value>
+    <value>SnapTap 通过 Razer 键盘驱动控制笔记本内置键盘。</value>
   </data>
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>尚未验证游戏兼容性。</value>
