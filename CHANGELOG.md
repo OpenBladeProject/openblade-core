@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Simplify the SnapTap information popup in English, Russian, and Simplified Chinese. ([#818](https://github.com/OSSBlade/openblade-core/pull/818))
+
 ## [0.37.0-nightly.94] - 2026-10-19
 
 ### Added
