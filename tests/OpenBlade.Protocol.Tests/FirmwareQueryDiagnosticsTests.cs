@@ -50,6 +50,27 @@ public sealed class FirmwareQueryDiagnosticsTests
         Assert.Empty(recorder.Snapshot());
     }
 
+    [Theory]
+    [InlineData(0x0F, 0x98)]
+    [InlineData(0x07, 0x8F)]
+    public void CanRecord_AdmitsExactOptionalVariableGetters(int commandClass, int commandId)
+    {
+        Func<ReadOnlyMemory<byte>, bool> validator = commandClass == 0x0F
+            ? static payload => payload.Length is 1 or 2
+            : static payload => payload.Length == 1;
+        RazerCommandSpec command = Command(commandClass, commandId, "00") with
+        {
+            AllowVariableResponseLength = true,
+            PayloadValidator = validator,
+        };
+
+        Assert.True(FirmwareQueryDiagnostics.CanRecord(command));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(command with { PayloadValidator = null }));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(command with { ExpectedPayloadLength = 2 }));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(command with { Arguments = new byte[] { 1 } }));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(command with { CommandId = 0x18 }));
+    }
+
     [Fact]
     public void CanRecord_RejectsChangedLengthAndVariableResponseContracts()
     {

@@ -322,3 +322,37 @@ admits the exact-model key map and Reactive, Ripple and Tidal; the recording
 itself does not establish those semantics. Appearance and restoration still need testing in OpenBlade on
 this laptop. No installed components, hardware state, or sleep/resume behavior
 were changed here.
+
+## OpenBlade initialization failure, 2026-10-19
+
+The [owner diagnostics](https://github.com/user-attachments/files/33658141/OpenBlade-diagnostics-20261019-085725Z.zip)
+from `0.37.0-nightly.94+942c620e` have SHA-256
+`C23196B2DC73F20FACB7C338785EC4CC624B25AC79E025F3DEF11F21F23CDA56`.
+They confirm exact host and HID admission, no competing controller, the expected
+Custom performance selectors and a readable keyboard layout. Startup-animation
+reads intermittently fail protocol status validation. Other observations include
+a valid startup state, an inactive temporary-full-charge flag and a 280 W adapter.
+The adapter reply is not a battery-protection reply. Missing temperatures and fan
+RPM while initialization is blocked do not establish a missing telemetry source.
+
+The factory previously read layout, startup animation and temporary full charge
+before returning any control port. A rejected optional getter poisons the native
+session, so its failure escaped initialization and was reported as a generic
+battery-state failure before the battery query ran. Offline real-session regression
+tests reproduce that coupling. They do not establish the meaning of the owner's
+rejected status byte, which the bundle does not retain.
+
+Startup animation now uses its existing independent service probe; temporary full
+charge uses its existing battery-state probe. Both mutation capabilities still
+require successful explicit readback and appear on the next capability refresh.
+If optional layout metadata poisons a session, initialization fully disposes it
+before one fresh identity, controller and interface admission, without repeating
+the layout probe or guessing a region. A failed cleanup or cancellation prevents
+reopening. No setter is part of initialization.
+
+Experimental read failures retain their typed query and native/protocol diagnostic.
+The firmware-query recorder also accepts the exact variable-response startup and
+Power Mode Control GET shapes that were accidentally omitted from earlier exports.
+A real temporary-full-charge query failure still leaves battery state unconfirmed;
+OpenBlade does not invent an inactive override. The fix needs the owner's normal
+OpenBlade checks for physical confirmation, not another Synapse capture.
