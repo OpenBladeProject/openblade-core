@@ -541,7 +541,7 @@ then starts `VSSrv` if stopped and waits for `Running`, with two-second pauses.
 Its registry access reads the optional log path; it contains no endpoint FX
 writer or Synapse launch. The initializer does not inspect the child exit code
 and its process/service waits are unbounded, so its exit alone cannot establish
-successful setup. The delegated native `-service` branch remains untraced.
+successful setup.
 Microsoft's [AddSoftware contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-addsoftware-directive)
 queues this software after device installation without guaranteeing when or
 whether it runs. Consequently, a successful INF installation cannot by itself
@@ -551,9 +551,31 @@ readback before enabling controls.
 The matching `VSSrv.exe` resource `REGISTRY/101/1033` contains HKCR COM-class
 templates for its settings/APO-control objects and their type library; it does
 not contain an endpoint `InterfaceSetting`/`FxProperties` declaration. These
-static templates do not establish which registration branch runs, or exclude
-additional native behavior. COM registration and endpoint FX binding remain
-separate requirements; no native registration command was executed here.
+templates are now linked to the native registration branch. Parser
+`0x140056500` calls `0x140057BD0`, which applies resource 101 and the known
+APPID substitution, sets `HKCR\AppID\{EF809770-D328-4410-9772-32775E710711}`'s
+`LocalService`, and invokes service creation. Pre-registration `0x14005AFF0`
+stops and deletes an existing VSSrv service; deletion can follow a reported stop
+failure. Consequently, `-service` is a service-replacement operation, not a
+read-only registration probe or an automatically retryable repair.
+
+Creation at `0x140055A10` uses the quoted executable path, own-process service
+type, LocalSystem default account and RPCSS dependency. It initially selects
+demand start; the caller's `0x1400533B0` subsequently selects automatic start.
+All nine object-map registration/category callbacks are verified no-ops at
+`0x14000A040`. Module substitution callback `0x14004FC90` adds only APPID;
+`0x1400582A0` supplies the known executable REGISTRY resource to the generic
+ATL interpreter. Final helper `0x1400530A0` registers the type library, whose
+loader first uses the executable and can fall back to same-stem `VSSrv.tlb`.
+That sidecar is a dynamic boundary and is not assumed to equal the embedded
+library. Optional post-registration callback `0x14022F750` is zero in the stored
+image; runtime-null has not been proved.
+
+This supplies a positive original service/COM setup contract, with no concrete
+new endpoint FX binding source in the inspected paths. It does not prove all
+process side effects, successful registration or complete THX setup. COM
+registration and endpoint FX binding remain separate requirements; no native
+registration command was executed here.
 
 OpenBlade already requires Windows 11 24H2 or later. Microsoft's
 [Framework installation table](https://learn.microsoft.com/en-us/dotnet/framework/install/on-windows-and-server)
