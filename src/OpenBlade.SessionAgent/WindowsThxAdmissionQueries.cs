@@ -88,6 +88,40 @@ internal static class WindowsThxAdmissionQueries
         throw new InvalidDataException("The present-device inventory exceeded its admission bound.");
     }
 
+    internal static bool HasExactEndpointCodec(string endpointId, ThxAudioCompatibilityProfile profile)
+    {
+        if (!WindowsThxActiveOutput.TryGetRenderEndpointId(endpointId, out _)
+            || CM_Locate_DevNode(out uint node, @"SWD\MMDEVAPI\" + endpointId, 0) != 0)
+        {
+            return false;
+        }
+        var buffer = new byte[MaximumPropertyBytes];
+        // AudioEndpoint devnodes are children of their physical audio adapter.
+        // Inspect that actual ancestry instead of guessing from a friendly name.
+        for (int depth = 0; depth < 8; depth++)
+        {
+            if (CM_Get_Parent(out uint parent, node, 0) != 0)
+            {
+                return false;
+            }
+            node = parent;
+            DevicePropertyKey key = HardwareIds;
+            uint bytes = (uint)buffer.Length;
+            uint result = CM_Get_DevNode_Property(node, ref key, out uint type, buffer, ref bytes, 0);
+            if (result == 0 && ThxAudioCompatibility.MatchesCodec(profile, ParseHardwareIds(buffer, bytes, type)))
+            {
+                return true;
+            }
+            // Missing properties are ordinary for intermediate software nodes.
+            // Other failures, including a changing or oversized property, fail closed.
+            if (result is not (0 or 0x25)) // CR_NO_SUCH_VALUE
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
     internal static bool HasCompetingService()
     {
         using SafeServiceHandle manager = OpenManager();
@@ -292,6 +326,16 @@ internal static class WindowsThxAdmissionQueries
         private SafeServiceHandle() : base(true) { }
         protected override bool ReleaseHandle() => CloseServiceHandle(handle);
     }
+
+    [DllImport("cfgmgr32.dll", EntryPoint = "CM_Locate_DevNodeW", CharSet = CharSet.Unicode)]
+    private static extern uint CM_Locate_DevNode(out uint node, string deviceId, uint flags);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern uint CM_Get_Parent(out uint parent, uint node, uint flags);
+
+    [DllImport("cfgmgr32.dll", EntryPoint = "CM_Get_DevNode_PropertyW")]
+    private static extern uint CM_Get_DevNode_Property(uint node, ref DevicePropertyKey key,
+        out uint type, [Out] byte[] buffer, ref uint bytes, uint flags);
 
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeDeviceInfoSet SetupDiGetClassDevs(IntPtr classGuid, string? enumerator, IntPtr parent, uint flags);

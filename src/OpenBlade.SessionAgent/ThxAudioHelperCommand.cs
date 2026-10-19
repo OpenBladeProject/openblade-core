@@ -9,7 +9,9 @@ internal sealed class ThxAudioHelperCommand(
     IThxAudioAdmissionSource admission,
     TextReader input,
     TextWriter output,
-    Func<string, ThxAudioEndpoint, bool?>? readSystemEffectsDisabled = null)
+    Func<string, ThxAudioEndpoint, bool?>? readSystemEffectsDisabled = null,
+    Func<ILegacyThxAudioNativeAdapter>? createLegacyNative = null,
+    Func<ThxAudioCompatibilityProfile, ThxAudioEndpoint, string?>? readLegacyOutput = null)
 {
     private const string PresetGroupId = "profile_presets";
     private const string SpatialPropertyId = "spatial_enabled";
@@ -101,6 +103,7 @@ internal sealed class ThxAudioHelperCommand(
     };
 
     private IThxAudioNativeAdapter? native;
+    private LegacyThxAudioCommand? legacy;
     private (string? ProductId, string? ModelNumber)? registeredIdentity;
     private readonly Dictionary<ThxAudioEndpoint, string> registeredDevices = [];
 
@@ -181,6 +184,21 @@ internal sealed class ThxAudioHelperCommand(
             return Unavailable(
                 current.Availability,
                 current.Error ?? "THX audio is unavailable.");
+        }
+
+        ThxAudioCompatibilityProfile profile = ThxAudioCompatibility.Profiles.Single(value =>
+            value.ProductId == current.ProductId && value.ModelNumber == current.ModelNumber);
+        if (profile.Backend == ThxAudioNativeBackend.Legacy265)
+        {
+            // The legacy COM service has a different endpoint and setting contract.
+            // It must never load/register a device through the V4 JSON client.
+            legacy ??= new LegacyThxAudioCommand(
+                createLegacyNative ?? (static () => new LegacyThxAudioNativeAdapter()),
+                admission, readLegacyOutput ?? WindowsThxActiveOutput.ReadExactDefaultOutputId);
+            // A pre-buffered first pipe read can complete synchronously on
+            // Program.Main's STA thread. ConfigureAwait(false) alone does not
+            // guarantee MTA; construct/use/release COM together on a pool thread.
+            return Task.Run(() => legacy.Execute(request, current, profile)).GetAwaiter().GetResult();
         }
 
         if ((current.ProductId, current.ModelNumber) is not

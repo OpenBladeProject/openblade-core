@@ -5,6 +5,27 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class ThxAudioViewModelTests
 {
+    [Fact]
+    public async Task LegacySpatialControlDoesNotExposeOrSubmitAnUnverifiedEqualizerSwitch()
+    {
+        var legacy = new ThxAudioState(ThxAudioEndpoint.Speakers, true, false, null, [])
+        {
+            Equalizer = ThxAudioFeatureAccess.ObservedOnly,
+            ApplicationProfiles = ThxAudioFeatureAccess.Unavailable,
+        };
+        var adapter = new FakeAdapter { ConnectResponse = Response(ThxAudioOperationStatus.Succeeded, legacy) };
+        await using var viewModel = new ThxAudioViewModel(adapter);
+        await viewModel.SetEnabledAsync(true);
+        Assert.True(viewModel.CanEdit);
+        Assert.True(viewModel.ShowEqualizerLimit);
+        Assert.False(viewModel.ShowEqualizerControls);
+        Assert.False(viewModel.CanEditEqualizer);
+        Assert.False(viewModel.HasEnhancements);
+        Assert.False(viewModel.SupportsSavedAudio);
+        await viewModel.SetEqualizerAsync(true);
+        Assert.DoesNotContain(adapter.Calls, call => call.StartsWith("equalizer:", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(ThxAudioAvailability.ComponentsUnavailable)]
     [InlineData(ThxAudioAvailability.UnsupportedModel)]

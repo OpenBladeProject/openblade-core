@@ -304,6 +304,15 @@ inventing a page-specific appearance:
    Keep its durable journal, independent readback and stop-on-ambiguity behavior;
    never install from the input worker or bundle vendor binaries. Other models need
    separately reviewed driver evidence; see [SnapTap](docs/snap-tap.md).
+   The separately reviewed legacy THX 2.6.5.0 backend may offer manual spatial
+   audio control on exact RZ09-0482 (`029D`), RZ09-0483 (`029F`) and RZ09-0484
+   (`02A0`) when their pinned service/APO stack is already installed. Keep its
+   exact host/codec/output ancestry and form-factor checks, guarded COM
+   registrations, isolated synchronous helper lifetime and explicit readback.
+   EQ, presets, automation and fresh legacy provisioning are not admitted;
+   generic fallback packages do not establish OEM binding or acoustic tuning.
+   Discovery never activates COM. The native integration remains experimental
+   until exact-model physical validation; see [legacy THX](docs/thx-legacy-interface.md).
    The optional experimental THX audio integration may use the already
    installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
    `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off

@@ -207,6 +207,7 @@ public static class SessionAudioIpcCodec
     private static bool ValidState(ThxAudioState state) =>
         Enum.IsDefined(state.Endpoint)
         && Enum.IsDefined(state.ApplicationProfiles)
+        && Enum.IsDefined(state.Equalizer)
         && state.Presets is not null
         && state.Presets.Count <= SessionAudioIpc.MaximumPresets
         && (state.SelectedPresetId is null

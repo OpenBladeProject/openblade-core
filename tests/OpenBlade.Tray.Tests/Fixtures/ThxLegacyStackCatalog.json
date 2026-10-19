@@ -1,0 +1,395 @@
+{
+  "$schema": "../../../schemas/legacy-thx-stack.schema.json",
+  "manifestType": "OpenBlade.RazerLegacyThxStackEvidence",
+  "schemaVersion": 1,
+  "stack": {
+    "id": "thx-legacy-2.6.5",
+    "driverVersion": "2.6.5.0",
+    "generation": "LegacyThxSpatialAudioControl",
+    "controlApplicationProductId": "9NC521C2JHDK"
+  },
+  "candidateProfiles": [
+    {
+      "vendorProductId": 669,
+      "modelNumber": "RZ09-0482",
+      "productName": "Razer Blade 14 (2023)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "029D"
+      },
+      "officialProductEvidenceUrl": "https://mysupport.razer.com/app/answers/detail/a_id/13030/",
+      "baseAudioPackage": {
+        "driverVersion": "6.0.9484.1",
+        "updateId": "d5987bbd-d8bd-4ebe-95e6-2c521b13baaa",
+        "hardwareId": "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582020",
+        "infName": "HDXACPRazer.inf",
+        "catalogFile": "hdxrt.cat",
+        "cab": {
+          "fileName": "17d1ce54-8f63-460c-ab23-df60162ca800_5b2e0c7b3c4f527787ec88dd887dcc8aeee269a0.cab",
+          "size": 12574870,
+          "sha256": "6340FE3A2730FA7469D09BA5F8029F9492A8CF745562A66B2842154DE5726EF2",
+          "downloadUrl": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2023/04/17d1ce54-8f63-460c-ab23-df60162ca800_5b2e0c7b3c4f527787ec88dd887dcc8aeee269a0.cab"
+        },
+        "infSha256": "0FDA4FBAEDDFDD0CA2D6ED5AE02163925271B84CD211F41557B2042B4AB508CF",
+        "catalogSha256": "799010EB2FAA139C24FE2AC025330489807444F596923C411B94B1436662DD48",
+        "catalogSigner": {
+          "status": "Valid",
+          "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "A1355F1428C87090B6238B5F20C5C84A300FE419",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        }
+      }
+    },
+    {
+      "vendorProductId": 671,
+      "modelNumber": "RZ09-0483",
+      "productName": "Razer Blade 16 (2023)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "029F"
+      },
+      "officialProductEvidenceUrl": "https://mysupport.razer.com/app/answers/detail/a_id/9668/",
+      "baseAudioPackage": {
+        "driverVersion": "6.0.9601.1",
+        "updateId": "fc8c3fe8-290e-4984-af52-75020538e18d",
+        "hardwareId": "INTELAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583006",
+        "infName": "HDXSSTRazer.inf",
+        "catalogFile": "hdxrt.cat",
+        "cab": {
+          "fileName": "9d7d28d7-2c13-4cff-b9b7-c2d55cd6a2ca_04cc93a2df245242c7873b681892fed29835f848.cab",
+          "size": 12861844,
+          "sha256": "27AE05348EBB066F3F7FD4896A1E40416E565841ED76CEA38D039A2241905C78",
+          "downloadUrl": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2024/01/9d7d28d7-2c13-4cff-b9b7-c2d55cd6a2ca_04cc93a2df245242c7873b681892fed29835f848.cab"
+        },
+        "infSha256": "D77B028513AB214994DD0E2BDD39A8DDF3C76390D4C63F8D1F241BF53AE268B7",
+        "catalogSha256": "BBE5CC8367251380E3412873FD0DD2DB4EEA897FD9CAEAF4834D2B2B75A1030B",
+        "catalogSigner": {
+          "status": "Valid",
+          "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "62C16976BFBBF57B8F8B588A043B4FB0BC294A6D",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        }
+      }
+    },
+    {
+      "vendorProductId": 672,
+      "modelNumber": "RZ09-0484",
+      "productName": "Razer Blade 18 (2023)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "02A0"
+      },
+      "officialProductEvidenceUrl": "https://mysupport.razer.com/app/answers/detail/a_id/9676/",
+      "baseAudioPackage": {
+        "driverVersion": "6.0.9601.1",
+        "updateId": "01c12b71-a0f8-40ff-8be0-7b9c4225ed5a",
+        "hardwareId": "INTELAUDIO\\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583007",
+        "infName": "HDXSSTRazer.inf",
+        "catalogFile": "hdxrt.cat",
+        "cab": {
+          "fileName": "9d7d28d7-2c13-4cff-b9b7-c2d55cd6a2ca_04cc93a2df245242c7873b681892fed29835f848.cab",
+          "size": 12861844,
+          "sha256": "27AE05348EBB066F3F7FD4896A1E40416E565841ED76CEA38D039A2241905C78",
+          "downloadUrl": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2024/01/9d7d28d7-2c13-4cff-b9b7-c2d55cd6a2ca_04cc93a2df245242c7873b681892fed29835f848.cab"
+        },
+        "infSha256": "D77B028513AB214994DD0E2BDD39A8DDF3C76390D4C63F8D1F241BF53AE268B7",
+        "catalogSha256": "BBE5CC8367251380E3412873FD0DD2DB4EEA897FD9CAEAF4834D2B2B75A1030B",
+        "catalogSigner": {
+          "status": "Valid",
+          "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "thumbprint": "62C16976BFBBF57B8F8B588A043B4FB0BC294A6D",
+          "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+        }
+      }
+    }
+  ],
+  "knownNonThxProfiles": [
+    {
+      "modelNumber": "RZ09-0328",
+      "productName": "Razer Blade 15 Base (2020)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "0255"
+      },
+      "audioTechnology": "DolbyAtmos",
+      "officialProductEvidenceUrl": "https://mysupport.razer.com/app/answers/detail/a_id/3641/"
+    }
+  ],
+  "genericComponentPackages": [
+    {
+      "role": "Service",
+      "driverVersion": "2.6.5.0",
+      "updateId": "9a0052d8-8511-47b4-80d4-6dc4abf83d97",
+      "hardwareIds": [
+        "SWC\\VEN_THX&PID_THXSVC"
+      ],
+      "infName": "THXRTSVC.inf",
+      "catalogFile": "thxrtsvc.cat",
+      "cab": {
+        "fileName": "8b4409cd-8a6e-41ec-862f-450d54379efb_cab1992d4866f0362ec52a4b459b0ad460710d10.cab",
+        "size": 868077,
+        "sha256": "3E7ACA4C7BA6ABC44750FDD226BD9BAD7EA2848045E1BE0C6FEA619C2AA28389",
+        "downloadUrl": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2023/07/8b4409cd-8a6e-41ec-862f-450d54379efb_cab1992d4866f0362ec52a4b459b0ad460710d10.cab"
+      },
+      "files": [
+        {
+          "name": "THXRTSVC.inf",
+          "role": "Inf",
+          "size": 1725,
+          "sha256": "31428C1C6632C165A6DF0F0CE7EBBAAE1870F02F619E4D93B894B1F9BCCF918C"
+        },
+        {
+          "name": "thxrtsvc.cat",
+          "role": "Catalog",
+          "size": 11956,
+          "sha256": "925B47DF9D2D9A3FE9F85D42CA27C1D1020E16043FA3B99081D521EDDC233063"
+        },
+        {
+          "name": "VSHelper.exe",
+          "role": "Payload",
+          "size": 310840,
+          "sha256": "B1708DCA72A4392A1B4005570CCD6CFE36E7AC5454A1B34CBB303FCE64BD22F0"
+        },
+        {
+          "name": "VSSrv.exe",
+          "role": "Payload",
+          "size": 2430000,
+          "sha256": "DC709A34D2CB043505B200316B4CA1A51B9AE1FC917B55DD804D5F30841C868F"
+        },
+        {
+          "name": "VSSrvInit.exe",
+          "role": "Payload",
+          "size": 42080,
+          "sha256": "E2E15276061505C12A1540D4DDCF6788F1794C421385A43C6730DECD9679DCC0"
+        }
+      ],
+      "authenticodeFiles": [
+        "VSHelper.exe",
+        "VSSrv.exe",
+        "VSSrvInit.exe"
+      ],
+      "catalogSigner": {
+        "status": "Valid",
+        "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "thumbprint": "B878D8EB696CF3D4505E2F6641C57AF9062EC51A",
+        "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+      },
+      "authenticodeSigner": {
+        "status": "Valid",
+        "subject": "CN=THX LTD., O=THX LTD., STREET=\"201 3RD STREET, SUITE 909\", L=SAN FRANCISCO, S=CALIFORNIA, C=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.1.3.6.1.4.1.311.60.2.1.3=US, SERIALNUMBER=6128649, OID.2.5.4.15=Private Organization",
+        "thumbprint": "4BB8A04FDA0285FB9A7ACC812422559A120107C6",
+        "issuer": "CN=GlobalSign GCC R45 EV CodeSigning CA 2020, O=GlobalSign nv-sa, C=BE"
+      }
+    },
+    {
+      "role": "Hsa",
+      "driverVersion": "2.6.5.0",
+      "updateId": "2d6cda10-f6d5-4f44-acb1-71bb84653d0c",
+      "hardwareIds": [
+        "SWC\\VEN_THX&PID_THXHSA"
+      ],
+      "infName": "THXRTHSA.inf",
+      "catalogFile": "thxrthsa.cat",
+      "cab": {
+        "fileName": "b425ab20-cabb-442f-b678-a30f623d0452_54702a3308bd44aff8c408396dc96067a9678550.cab",
+        "size": 17450,
+        "sha256": "90A0BB7CA17F04605C5599A77E33B466366ACF3FA816D62B1944D3F15FF0600F",
+        "downloadUrl": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2023/07/b425ab20-cabb-442f-b678-a30f623d0452_54702a3308bd44aff8c408396dc96067a9678550.cab"
+      },
+      "files": [
+        {
+          "name": "THXRTHSA.inf",
+          "role": "Inf",
+          "size": 1589,
+          "sha256": "0230764C35EFC4A809F4C13F10B757C2280380EF76983F51B78314B7A4A3630E"
+        },
+        {
+          "name": "thxrthsa.cat",
+          "role": "Catalog",
+          "size": 10758,
+          "sha256": "77C87F21C02E3ABD1452005A7072B8B501500348669A2B61D129C9D09C8E1237"
+        }
+      ],
+      "authenticodeFiles": [],
+      "catalogSigner": {
+        "status": "Valid",
+        "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "thumbprint": "B878D8EB696CF3D4505E2F6641C57AF9062EC51A",
+        "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+      }
+    },
+    {
+      "role": "Configuration",
+      "driverVersion": "2.6.5.0",
+      "updateId": "d7c9ca5f-77ae-4681-a1b4-78453818d1c4",
+      "hardwareIds": [
+        "SWC\\VEN_THX&PID_THXSCU",
+        "SWC\\VEN_THX&PID_THXSCU_ISST_SSP"
+      ],
+      "infName": "THXRTSCU.inf",
+      "catalogFile": "thxrtscu.cat",
+      "cab": {
+        "fileName": "75723fad-a197-48d1-a903-c924e9475205_17f7e617ac50991ea12bcea29c70a39d9b61064e.cab",
+        "size": 3546492,
+        "sha256": "C8273CCE2258582519EE9A8CEC92E41D4BE990733044F00EEF6DF51997D41F79",
+        "downloadUrl": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2023/07/75723fad-a197-48d1-a903-c924e9475205_17f7e617ac50991ea12bcea29c70a39d9b61064e.cab"
+      },
+      "files": [
+        {
+          "name": "THXRTSCU.inf",
+          "role": "Inf",
+          "size": 1918,
+          "sha256": "2BA94E4C1E8077F8C68553C77BAEE078389AD295F032ACE99F4A43ABFD2CFB29"
+        },
+        {
+          "name": "thxrtscu.cat",
+          "role": "Catalog",
+          "size": 11288,
+          "sha256": "8CD57D8BEB3A9F4DE7787D094F54199915FCB6C2DFBB1764FEBAF8D3BCDBC505"
+        },
+        {
+          "name": "spatial-config-util.exe",
+          "role": "Payload",
+          "size": 10750600,
+          "sha256": "E0C8C2B0BF40A25CFFD5545A8043E31F2D61FD4CD7A82B229CDE53F269943CF9"
+        },
+        {
+          "name": "thx_spatial.conf.json",
+          "role": "Payload",
+          "size": 185189,
+          "sha256": "5A4BE782C11CC656AFBB3A256CE5D3A2FEE2FA05A8C974F6017FCE5125421BAB"
+        }
+      ],
+      "authenticodeFiles": [
+        "spatial-config-util.exe"
+      ],
+      "catalogSigner": {
+        "status": "Valid",
+        "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "thumbprint": "B878D8EB696CF3D4505E2F6641C57AF9062EC51A",
+        "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+      },
+      "authenticodeSigner": {
+        "status": "Valid",
+        "subject": "CN=THX LTD., O=THX LTD., STREET=\"201 3RD STREET, SUITE 909\", L=SAN FRANCISCO, S=CALIFORNIA, C=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.1.3.6.1.4.1.311.60.2.1.3=US, SERIALNUMBER=6128649, OID.2.5.4.15=Private Organization",
+        "thumbprint": "4BB8A04FDA0285FB9A7ACC812422559A120107C6",
+        "issuer": "CN=GlobalSign GCC R45 EV CodeSigning CA 2020, O=GlobalSign nv-sa, C=BE"
+      }
+    },
+    {
+      "role": "Apo",
+      "driverVersion": "2.6.5.0",
+      "updateId": "07c8c7dc-edbe-4a21-a228-4821eaaaf727",
+      "hardwareIds": [
+        "SWC\\VEN_THX&CID_THXAPO",
+        "SWC\\VEN_THX&CID_THXAPO_SSE2"
+      ],
+      "infName": "THXRTAPO.inf",
+      "catalogFile": "thxrtapo.cat",
+      "cab": {
+        "fileName": "d5ee7b1e-62b6-4b6b-ad4b-c6de41be8507_78fce546892b74ba407b2111848ca978b23bb9cd.cab",
+        "size": 5557554,
+        "sha256": "5964AF8DF1082680D54326EBA859C735EA80AA1BCA3C0E51DD71A0D51B718289",
+        "downloadUrl": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2023/07/d5ee7b1e-62b6-4b6b-ad4b-c6de41be8507_78fce546892b74ba407b2111848ca978b23bb9cd.cab"
+      },
+      "files": [
+        {
+          "name": "THXRTAPO.inf",
+          "role": "Inf",
+          "size": 14396,
+          "sha256": "D29578E92279B32D7B0EB5848E229797CF5B87A885F3DE3E80BEA4B1015C6665"
+        },
+        {
+          "name": "thxrtapo.cat",
+          "role": "Catalog",
+          "size": 125464,
+          "sha256": "2EB157516387C315AD71B8F4240E06C6156633439C8EFA8D7148B2F3D0C54D3C"
+        },
+        {
+          "name": "THXOutAPO-AVX2-v2.6.dll",
+          "role": "Payload",
+          "size": 6576152,
+          "sha256": "49962CC201A76B5BCA85B5D2E9DA60A68D2DB3B076AA481F629418118EA350DE"
+        },
+        {
+          "name": "THXOutAPO-SSE2-v2.6.dll",
+          "role": "Payload",
+          "size": 6561064,
+          "sha256": "51DD5B5F358314AC95E1640547753BE76C1F5C92AA62DB956D21CADDB96BB989"
+        }
+      ],
+      "authenticodeFiles": [
+        "THXOutAPO-AVX2-v2.6.dll",
+        "THXOutAPO-SSE2-v2.6.dll"
+      ],
+      "catalogSigner": {
+        "status": "Valid",
+        "subject": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "thumbprint": "B878D8EB696CF3D4505E2F6641C57AF9062EC51A",
+        "issuer": "CN=Microsoft Windows Third Party Component CA 2012, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+      },
+      "authenticodeSigner": {
+        "status": "Valid",
+        "subject": "CN=THX LTD., O=THX LTD., STREET=\"201 3RD STREET, SUITE 909\", L=SAN FRANCISCO, S=CALIFORNIA, C=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.1.3.6.1.4.1.311.60.2.1.3=US, SERIALNUMBER=6128649, OID.2.5.4.15=Private Organization",
+        "thumbprint": "4BB8A04FDA0285FB9A7ACC812422559A120107C6",
+        "issuer": "CN=GlobalSign GCC R45 EV CodeSigning CA 2020, O=GlobalSign nv-sa, C=BE"
+      }
+    }
+  ],
+  "modelBinding": {
+    "status": "Blocked",
+    "exactOemChildEnumerationPackage": "Missing",
+    "exactModelTuning": "Missing",
+    "genericComponentsAreModelBindingEvidence": false,
+    "installableCandidate": false,
+    "blockers": [
+      "No reviewed OEM extension or child-enumeration package connects the generic THX software-component IDs to any candidate profile's exact Realtek codec.",
+      "The available THX configuration identifies itself as generic-config-fallback-V2 and does not provide exact Razer model tuning."
+    ]
+  },
+  "evidenceSources": [
+    {
+      "kind": "RazerLegacyThxRepair",
+      "url": "https://mysupport.razer.com/app/answers/detail/a_id/5798/"
+    },
+    {
+      "kind": "RazerThxCompatibility",
+      "url": "https://mysupport.razer.com/app/answers/detail/a_id/3779/"
+    },
+    {
+      "kind": "RazerAudioRecovery",
+      "url": "https://mysupport.razer.com/app/answers/detail/a_id/3985/"
+    },
+    {
+      "kind": "MicrosoftUpdateCatalog",
+      "url": "https://www.catalog.update.microsoft.com/Search.aspx?q=THX%202.6.5.0"
+    }
+  ],
+  "delivery": {
+    "method": "MicrosoftUpdateCatalog",
+    "packagePurpose": "ComponentCandidatesOnly",
+    "requiredVerification": [
+      "Size",
+      "Sha256",
+      "CatalogSignature",
+      "PayloadAuthenticode"
+    ]
+  },
+  "redistribution": {
+    "status": "NotPublished",
+    "catalogContainsArtifact": false,
+    "catalogReleaseAsset": false
+  },
+  "privacy": {
+    "containsDriverBytes": false,
+    "containsSerial": false,
+    "containsUsername": false,
+    "containsLocalPath": false,
+    "containsFullInstanceId": false
+  },
+  "limitations": [
+    "The four generic THX packages are signed component candidates, not evidence that any candidate model enumerates or safely accepts them.",
+    "The exact Realtek base packages establish codec identity only and do not contain the missing THX child-enumeration or model-tuning layer.",
+    "This metadata does not define an installation order, authorize installation, or establish clean-install, repair, rollback, or physical behavior."
+  ]
+}

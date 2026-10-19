@@ -4,13 +4,13 @@ namespace OpenBlade.Session;
 
 public static class SessionAudioIpc
 {
-    public const int ProtocolVersion = 1;
+    public const int ProtocolVersion = 2;
     public const int MaximumMessageBytes = 64 * 1024;
     // The admitted rznb12 stack returned 218 profile presets during runtime
     // validation. Retain a bounded list alongside the independent 64 KiB frame cap.
     public const int MaximumPresets = 256;
     public const int MaximumApplicationProfiles = 256;
-    public const string PipeNamePrefix = "OpenBlade.Session.Audio.v1";
+    public const string PipeNamePrefix = "OpenBlade.Session.Audio.v2";
 }
 
 public enum ThxAudioEndpoint
@@ -27,6 +27,7 @@ public enum ThxAudioAvailability
     ControllerActive,
     Available,
     AvailableReadOnly,
+    LegacyComponentsUnavailable,
 }
 
 public enum ThxAudioOperationStatus
@@ -78,6 +79,9 @@ public sealed record ThxAudioState(
     string? SelectedPresetId,
     IReadOnlyList<ThxAudioPreset> Presets)
 {
+    // Some backends expose EQ data without a separately verified on/off control.
+    public ThxAudioFeatureAccess Equalizer { get; init; } = ThxAudioFeatureAccess.Available;
+
     public string? SelectedNativeProfileId { get; init; }
 
     public IReadOnlyList<ThxAudioEqualizerBand> EqualizerBands { get; init; } = [];

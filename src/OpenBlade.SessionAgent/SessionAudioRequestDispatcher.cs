@@ -156,6 +156,11 @@ public sealed class SessionAudioRequestDispatcher
                     "Read THX state before changing it.",
                     null);
             }
+            if (request is SetThxEqualizerRequest && prior.Equalizer != ThxAudioFeatureAccess.Available)
+            {
+                return Response(request, ThxAudioOperationStatus.Failed, ThxAudioAvailability.Available,
+                    "The current THX backend does not expose an equalizer switch.", null);
+            }
             if (request is SelectThxPresetRequest preset
                 && !prior.Presets.Any(value => string.Equals(
                     value.Id,

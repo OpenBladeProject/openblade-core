@@ -2249,4 +2249,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_ThxAudioStackInstallationDescription.Text" xml:space="preserve">
     <value>从 Razer 下载并安装 THX 驱动及配置。电脑需要已有匹配的 Realtek 音频驱动。安装过程可能暂时中断声音播放，并要求重启 Windows。</value>
   </data>
+  <data name="MainWindow_ThxAudioLegacyEqualizerLimit.Text" xml:space="preserve">
+    <value>此版本 THX 暂仅支持空间音频控制。</value>
+  </data>
 </root>

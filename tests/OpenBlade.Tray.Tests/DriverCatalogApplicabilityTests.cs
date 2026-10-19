@@ -37,7 +37,7 @@ public sealed class DriverCatalogApplicabilityTests
                 .Order(StringComparer.Ordinal).ToArray());
             foreach (JsonElement review in reviews)
             {
-                Assert.Contains(Text(review, "status"), new[] { "Applicable", "NotEstablished" });
+                Assert.Contains(Text(review, "status"), new[] { "Applicable", "NotEstablished", "CandidateOnly", "NotApplicable" });
                 Assert.False(string.IsNullOrWhiteSpace(Text(review, "evidence")));
                 Assert.False(string.IsNullOrWhiteSpace(Text(review, "reason")));
             }

@@ -303,8 +303,8 @@ type static class OpenBlade.Session.SessionAudioIpc
   field const System.Int32 MaximumApplicationProfiles = 256
   field const System.Int32 MaximumMessageBytes = 65536
   field const System.Int32 MaximumPresets = 256
-  field const System.Int32 ProtocolVersion = 1
-  field const System.String PipeNamePrefix = "OpenBlade.Session.Audio.v1"
+  field const System.Int32 ProtocolVersion = 2
+  field const System.String PipeNamePrefix = "OpenBlade.Session.Audio.v2"
 type static class OpenBlade.Session.SessionAudioIpcCodec
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Session.SessionAudioRequest request, System.Threading.CancellationToken cancellationToken = null)
   method static System.Threading.Tasks.Task WriteResponseAsync(System.IO.Stream stream, OpenBlade.Session.SessionAudioResponse response, System.Threading.CancellationToken cancellationToken = null)
@@ -752,6 +752,7 @@ type enum OpenBlade.Session.ThxAudioAvailability
   field const OpenBlade.Session.ThxAudioAvailability ComponentsUnavailable = 2
   field const OpenBlade.Session.ThxAudioAvailability ControllerActive = 3
   field const OpenBlade.Session.ThxAudioAvailability Disabled = 0
+  field const OpenBlade.Session.ThxAudioAvailability LegacyComponentsUnavailable = 6
   field const OpenBlade.Session.ThxAudioAvailability UnsupportedModel = 1
 type enum OpenBlade.Session.ThxAudioEndpoint
   field System.Int32 value__
@@ -847,6 +848,7 @@ type sealed class OpenBlade.Session.ThxAudioState
   method OpenBlade.Session.ThxAudioEnhancement get_SoundNormalization()
   method OpenBlade.Session.ThxAudioEnhancement get_VoiceClarity()
   method OpenBlade.Session.ThxAudioFeatureAccess get_ApplicationProfiles()
+  method OpenBlade.Session.ThxAudioFeatureAccess get_Equalizer()
   method OpenBlade.Session.ThxAudioState <Clone>$()
   method System.Boolean get_ApplicationAutomationPaused()
   method System.Boolean get_EqualizerEnabled()
@@ -863,6 +865,7 @@ type sealed class OpenBlade.Session.ThxAudioState
   method System.Void set_ApplicationProfileCatalog(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioApplicationProfile> value)
   method System.Void set_ApplicationProfiles(OpenBlade.Session.ThxAudioFeatureAccess value)
   method System.Void set_Endpoint(OpenBlade.Session.ThxAudioEndpoint value)
+  method System.Void set_Equalizer(OpenBlade.Session.ThxAudioFeatureAccess value)
   method System.Void set_EqualizerBands(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioEqualizerBand> value)
   method System.Void set_EqualizerEnabled(System.Boolean value)
   method System.Void set_FactoryPresetCurves(System.Collections.Generic.IReadOnlyList<OpenBlade.Session.ThxAudioPresetCurve> value)
@@ -883,6 +886,7 @@ type sealed class OpenBlade.Session.ThxAudioState
   property OpenBlade.Session.ThxAudioEnhancement SoundNormalization { get; init; }
   property OpenBlade.Session.ThxAudioEnhancement VoiceClarity { get; init; }
   property OpenBlade.Session.ThxAudioFeatureAccess ApplicationProfiles { get; init; }
+  property OpenBlade.Session.ThxAudioFeatureAccess Equalizer { get; init; }
   property System.Boolean ApplicationAutomationPaused { get; init; }
   property System.Boolean EqualizerEnabled { get; init; }
   property System.Boolean SpatialEnabled { get; init; }

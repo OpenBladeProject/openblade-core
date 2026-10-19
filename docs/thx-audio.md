@@ -21,10 +21,37 @@ OpenBlade can download the supported THX client from Razer. On RZ09-0528 and
 RZ09-0530, it can also perform an experimental fresh installation of the reviewed
 THX driver, service and configuration. A matching Realtek base audio driver must
 already be installed. RZ09-0581 still requires its THX stack to be present because
-the reviewed Razer sources do not provide its base installer. Other Blade models
-are not yet supported. See the
+the reviewed Razer sources do not provide its base installer. See the
 [installation compatibility investigation](thx-installation-investigation.md)
 for the package and codec restrictions.
+
+## Coverage of supported laptops
+
+| Model | Installed THX controls | Fresh THX setup |
+| --- | --- | --- |
+| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Base installer unavailable |
+| RZ09-0528, RZ09-0530 | rznb11 spatial audio, EQ and application profiles | Experimental, matching Realtek driver required |
+| RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed THX 2.6.5.0 service | Blocked by missing OEM binding and tuning package |
+| RZ09-0328 | Factory audio uses Dolby Atmos; THX does not apply | Not applicable |
+
+On the three 2023 models, select the output currently used by Windows. OpenBlade
+checks the service's output identifier, Windows default output, speaker/headphone
+form factor and exact Realtek codec ancestry before control. It does not switch
+the output or listening mode. EQ, presets and automatic audio profiles remain
+unavailable for this older THX version. Its native behavior has not been physically
+validated in OpenBlade. The Store control app and Synapse are not needed for this
+backend; the pinned factory audio components must already be installed.
+
+Razer documents the older driver and Store control app in
+[its THX setup guide](https://mysupport.razer.com/app/answers/detail/a_id/5798/).
+The public THX 2.6.5 component downloads contain generic fallback tuning. They
+cannot recreate these laptops' factory audio stack without the exact OEM package.
+The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/870a4d0b6e8791785c9f8fb66e782e311b22d3ff/components/thx-legacy/2.6.5.0/stack.json)
+records verified packages and the remaining installation blockers. For recovery,
+use the exact laptop's Windows driver updates or
+[Razer recovery image](https://mysupport.razer.com/app/answers/detail/a_id/5997/).
+See the [legacy interface review](thx-legacy-interface.md) for the pinned native
+contract and COM activation boundary.
 
 ## Use the controls
 
@@ -43,7 +70,7 @@ for the package and codec restrictions.
    finishes or a short pause in keyboard changes. Each row shows its level.
 
 RZ09-0581 speakers have seven EQ bands. The rznb11 models and all headphone
-outputs have ten. All bands support -12 to +12 dB.
+outputs on the three V4 models have ten. All bands support -12 to +12 dB.
 Editing Music keeps Music selected; Custom is also available as its own preset.
 An observed Default or application preset must be changed to one of the five
 EQ choices before editing. Preset selection applies the complete saved curve.
@@ -78,7 +105,7 @@ automation with the Session Agent. Unresolved foreground identity preserves
 the current state. Hosted applications whose executable cannot be identified
 are not yet supported for automatic switching.
 
-Application routing is available on all three admitted models. The rznb11
+Application routing is available on the three V4 models. The rznb11
 models use the same reviewed executable map and routing operations; their
 physical automation behavior remains unvalidated.
 
@@ -217,10 +244,10 @@ copy there and retains the verified Synapse-installed path as a fallback. Both
 paths use the same exact-model stack admission and locked hash check before
 loading. Discovery and startup do not initiate downloads. This change requires
 a coordinated full installation because the Session Agent's resolver changes;
-the Audio IPC contract remains unchanged.
+audio IPC is now version 2; update the Tray and Session Agent together.
 
 The tray stores an additive per-user opt-in preference. It uses a separate
-current-user/session Audio IPC endpoint, version 1. Saved audio uses profile
+current-user/session Audio IPC endpoint, version 2. Saved audio uses profile
 store schema 21, export schema 13, and service IPC version 68. Existing Display
 and GPU IPC versions are unchanged. Each power profile limits its application-rule
 list to 4 KiB of encoded JSON so all three profiles and maximum lighting settings
@@ -482,3 +509,8 @@ These gaps keep the integration experimental and prevent a production-ready
 claim; they do not block an experimental release with the limits stated here.
 Any UI preview must use a disconnected, simulated backend and must not connect
 to the installed Session Agent's THX endpoint.
+
+The legacy backend uses audio IPC v2 to mark EQ as observed-only rather than
+reporting a guessed switch value. A coordinated full installation is required;
+tray-only deployment cannot update this contract. Catalog and runtime tests
+require an explicit THX or non-THX review whenever a supported model is added.

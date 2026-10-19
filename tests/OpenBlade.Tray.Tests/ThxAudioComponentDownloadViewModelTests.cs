@@ -35,6 +35,7 @@ public sealed class ThxAudioComponentDownloadViewModelTests
     [Theory]
     [InlineData(ThxAudioAvailability.UnsupportedModel, false)]
     [InlineData(ThxAudioAvailability.ControllerActive, false)]
+    [InlineData(ThxAudioAvailability.LegacyComponentsUnavailable, false)]
     [InlineData(ThxAudioAvailability.ComponentsUnavailable, true)]
     public async Task ComponentDownloadDoesNotReplaceOtherAdmissionFailures(
         ThxAudioAvailability availability, bool componentAvailable)

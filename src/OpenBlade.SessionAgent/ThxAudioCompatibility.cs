@@ -2,6 +2,10 @@ using System.Security.Cryptography;
 
 namespace OpenBlade.SessionAgent;
 
+internal enum ThxAudioNativeBackend { V4, Legacy265 }
+
+internal sealed record ThxAudioExcludedModel(string ModelNumber, string ProductName, string UsbProductId, string Reason);
+
 internal sealed record ThxAudioPinnedFile(string Name, string Sha256);
 internal sealed record ThxAudioDriverPackage(string InfName, IReadOnlyList<ThxAudioPinnedFile> Files);
 internal sealed record ThxAudioDriverStack(
@@ -18,6 +22,7 @@ internal sealed record ThxAudioCompatibilityProfile(
     bool ReadAllowed,
     bool MutationAllowed)
 {
+    public ThxAudioNativeBackend Backend { get; init; }
     public string ActivePropertiesSha256 { get; init; } = string.Empty;
     public string SurroundConfigSha256 { get; init; } = string.Empty;
 }
@@ -57,6 +62,29 @@ internal static class ThxAudioCompatibility
                 new("thx_rznb12_svc.inf", "0B312BA852C34727A0CD51BABCFE6B8E56E7A40D83BFB5BE8F9F8218B60AB610"),
                 new("thx_rznb12_svc.exe", "BD1DC54D4ABECC67DD3A8FA25A39223577E035A623FEF38C915F70A659E8DD42"),
                 new("thx_rznb12_svc.cat", "C8F088106319AF05D5D57D7A04BF918E19BF795AF62F0B6FA8B93C31D5CBF9C7"),
+            ]),
+        ]);
+
+    // Microsoft Update Catalog Windows 11 THX 2.6.5.0. These packages are
+    // admitted only when already installed with the exact model's codec.
+    // Their generic fallback tuning is NOT a factory provisioning source.
+    internal static readonly ThxAudioDriverStack Legacy265Stack = new(
+        "VSSrv", "VSSrv.exe",
+        [
+            new("thxrtsvc.inf",
+            [
+                new("THXRTSVC.inf", "31428C1C6632C165A6DF0F0CE7EBBAAE1870F02F619E4D93B894B1F9BCCF918C"),
+                new("thxrtsvc.cat", "925B47DF9D2D9A3FE9F85D42CA27C1D1020E16043FA3B99081D521EDDC233063"),
+                new("VSSrv.exe", "DC709A34D2CB043505B200316B4CA1A51B9AE1FC917B55DD804D5F30841C868F"),
+                new("VSHelper.exe", "B1708DCA72A4392A1B4005570CCD6CFE36E7AC5454A1B34CBB303FCE64BD22F0"),
+                new("VSSrvInit.exe", "E2E15276061505C12A1540D4DDCF6788F1794C421385A43C6730DECD9679DCC0"),
+            ]),
+            new("thxrtapo.inf",
+            [
+                new("THXRTAPO.inf", "D29578E92279B32D7B0EB5848E229797CF5B87A885F3DE3E80BEA4B1015C6665"),
+                new("thxrtapo.cat", "2EB157516387C315AD71B8F4240E06C6156633439C8EFA8D7148B2F3D0C54D3C"),
+                new("THXOutAPO-AVX2-v2.6.dll", "49962CC201A76B5BCA85B5D2E9DA60A68D2DB3B076AA481F629418118EA350DE"),
+                new("THXOutAPO-SSE2-v2.6.dll", "51DD5B5F358314AC95E1640547753BE76C1F5C92AA62DB956D21CADDB96BB989"),
             ]),
         ]);
 
@@ -102,6 +130,13 @@ internal static class ThxAudioCompatibility
         @"SOUNDWIRE\SDCA_11&MAN_025D&FUNC_0721&TYPE_0B&VER_01&ADR_04&LID_03&UID_00&SUBSYS_30101A58&DynamicEnumSpeaker0",
     ];
 
+    // Exact Razer specification Answer 3641 identifies Dolby Atmos, not THX.
+    internal static IReadOnlyList<ThxAudioExcludedModel> ExcludedModels { get; } =
+    [
+        new("RZ09-0328", "Blade 15 Base Model (Early 2020) - RZ09-0328", "0255",
+            "This model's factory audio uses Dolby Atmos. The THX driver stacks are not applicable."),
+    ];
+
     internal static IReadOnlyList<ThxAudioCompatibilityProfile> Profiles { get; } =
     [
         new("RZ09-0581", "Blade 16 - RZ09-0581", "02E0", "rznb12", Sonya12CodecIds, Rznb12Stack,
@@ -126,6 +161,15 @@ internal static class ThxAudioCompatibility
             ActivePropertiesSha256 = "4FDDEEF868014DB94B902475CA2DB1919E8A902D027CFCE8A7ED691E403319EF",
             SurroundConfigSha256 = CommonSurroundConfigSha256,
         },
+        new("RZ09-0482", "Blade 14 - RZ09-0482", "029D", "thx-2.6.5",
+            [@"HDAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A582020"], Legacy265Stack, true, true)
+        { Backend = ThxAudioNativeBackend.Legacy265 },
+        new("RZ09-0483", "Blade 16 - RZ09-0483", "029F", "thx-2.6.5",
+            [@"INTELAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583006"], Legacy265Stack, true, true)
+        { Backend = ThxAudioNativeBackend.Legacy265 },
+        new("RZ09-0484", "Blade 18 - RZ09-0484", "02A0", "thx-2.6.5",
+            [@"INTELAUDIO\FUNC_01&VEN_10EC&DEV_0298&SUBSYS_1A583007"], Legacy265Stack, true, true)
+        { Backend = ThxAudioNativeBackend.Legacy265 },
     ];
 
     internal static bool MatchesHost(ThxAudioCompatibilityProfile profile,
@@ -145,6 +189,31 @@ internal static class ThxAudioCompatibility
     internal static bool MatchesCodec(ThxAudioCompatibilityProfile profile, IEnumerable<string> hardwareIds) =>
         hardwareIds.Any(actual => profile.CodecHardwareIds.Any(expected =>
             string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)));
+
+    internal static bool HasPinnedLegacySystemFiles(string systemDirectory, string registeredApoPath, out string? error)
+    {
+        // The INF installs either AVX2 or SSE2. Verify the actual registered
+        // runtime, not both mutually exclusive copy sections or a stale DLL.
+        foreach (ThxAudioPinnedFile file in Legacy265Stack.Packages[0].Files
+            .Where(file => file.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!HasPinnedFile(Path.Combine(systemDirectory, file.Name), file.Sha256,
+                "legacy runtime", file.Name, out error))
+            {
+                return false;
+            }
+        }
+        ThxAudioPinnedFile? apo = Legacy265Stack.Packages[1].Files.SingleOrDefault(file =>
+            file.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Path.GetFullPath(Path.Combine(systemDirectory, file.Name)),
+                registeredApoPath, StringComparison.OrdinalIgnoreCase));
+        if (apo is null)
+        {
+            error = "The legacy THX APO registration does not name a pinned System32 component.";
+            return false;
+        }
+        return HasPinnedFile(registeredApoPath, apo.Sha256, "legacy runtime", apo.Name, out error);
+    }
 
     internal static bool HasPinnedActiveConfiguration(string commonApplicationData,
         ThxAudioCompatibilityProfile profile) =>

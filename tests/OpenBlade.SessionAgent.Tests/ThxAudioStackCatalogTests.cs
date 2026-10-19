@@ -61,6 +61,31 @@ public sealed class ThxAudioStackCatalogTests
         Assert.DoesNotContain(unavailable.RootElement.GetProperty("artifacts").EnumerateArray(), artifact => Text(artifact, "role") == "BaseInstaller");
     }
 
+    [Fact]
+    public void LegacyRuntimePinsMatchComponentEvidenceWithoutClaimingProvisioning()
+    {
+        using JsonDocument document = Read("ThxLegacyStackCatalog.json");
+        JsonElement root = document.RootElement;
+        Assert.False(root.GetProperty("modelBinding").GetProperty("installableCandidate").GetBoolean());
+        Assert.Equal("Blocked", Text(root.GetProperty("modelBinding"), "status"));
+        var profiles = ThxAudioCompatibility.Profiles.Where(profile => profile.Backend == ThxAudioNativeBackend.Legacy265).ToArray();
+        Assert.Equal(profiles.Select(profile => profile.ModelNumber).Order(StringComparer.Ordinal),
+            root.GetProperty("candidateProfiles").EnumerateArray().Select(profile => Text(profile, "modelNumber")).Order(StringComparer.Ordinal));
+        foreach (var profile in profiles)
+        {
+            var candidate = root.GetProperty("candidateProfiles").EnumerateArray().Single(value => Text(value, "modelNumber") == profile.ModelNumber);
+            Assert.Equal(profile.CodecHardwareIds.Single(), Text(candidate.GetProperty("baseAudioPackage"), "hardwareId"));
+            Assert.Equal(profile.UsbProductId, Text(candidate.GetProperty("usbIdentity"), "pid"));
+        }
+        foreach (var package in ThxAudioCompatibility.Legacy265Stack.Packages)
+        {
+            var source = root.GetProperty("genericComponentPackages").EnumerateArray()
+                .Single(value => Text(value, "infName").Equals(package.InfName, StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(package.Files.Select(file => file.Name + "|" + file.Sha256).Order(StringComparer.OrdinalIgnoreCase),
+                source.GetProperty("files").EnumerateArray().Select(file => Text(file, "name") + "|" + Text(file, "sha256")).Order(StringComparer.OrdinalIgnoreCase));
+        }
+    }
+
     private static JsonDocument Read(string name) => JsonDocument.Parse(File.ReadAllText(
         Path.Combine(AppContext.BaseDirectory, "Fixtures", name)));
     private static string Text(JsonElement value, string name) => value.GetProperty(name).GetString()!;

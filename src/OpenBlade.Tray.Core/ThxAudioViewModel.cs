@@ -88,6 +88,9 @@ public sealed partial class ThxAudioViewModel(
     public string InstallStackButtonLabel => TrayText.Get(installingStack ? "Installing THX audio..." : "Install THX audio");
     public bool CanEdit => CanRead && state is not null && availability == ThxAudioAvailability.Available;
     public bool SpatialEnabled => state?.SpatialEnabled ?? false;
+    public bool ShowEqualizerControls => state?.Equalizer is not (ThxAudioFeatureAccess.ObservedOnly or ThxAudioFeatureAccess.Unavailable);
+    public bool ShowEqualizerLimit => state?.Equalizer == ThxAudioFeatureAccess.ObservedOnly;
+    public bool CanEditEqualizer => CanEdit && state?.Equalizer == ThxAudioFeatureAccess.Available;
     public bool EqualizerEnabled => state?.EqualizerEnabled ?? false;
     public ThxAudioEndpoint Endpoint => endpoint;
     public IReadOnlyList<ThxAudioEndpointOption> Endpoints { get; } =
@@ -104,7 +107,7 @@ public sealed partial class ThxAudioViewModel(
         : TrayText.Format("{0}\nDetails: {1}", TrayText.Get(statusKey), failureDetail);
     public IReadOnlyList<ThxEqualizerBandViewModel> EqualizerBands => equalizerBands;
     public bool HasEqualizerBands => equalizerBands.Count > 0;
-    public bool CanEditEqualizerBands => CanEdit && HasEqualizerBands && HasEditableEqualizerPreset;
+    public bool CanEditEqualizerBands => CanEditEqualizer && HasEqualizerBands && HasEditableEqualizerPreset;
     private bool HasEditableEqualizerPreset => state?.SelectedPresetId is "game" or "movie" or "music" or "voice" or "custom";
     public string EqualizerDraftHint => TrayText.Get(HasEditableEqualizerPreset
         ? "Adjust the selected preset, then apply your EQ changes."
@@ -116,6 +119,8 @@ public sealed partial class ThxAudioViewModel(
     public bool HasEqualizerChanges => equalizerBands.Any(band => band.HasChanges);
     public bool CanApplyEqualizer => CanEditEqualizerBands && HasEqualizerChanges;
     public bool CanDiscardEqualizerChanges => CanEditEqualizerBands && HasEqualizerChanges;
+    public bool HasEnhancements => HasSoundNormalization || HasVoiceClarity;
+    public bool SupportsSavedAudio => state?.Equalizer == ThxAudioFeatureAccess.Available;
     public bool HasSoundNormalization => state?.SoundNormalization is not null;
     public bool HasVoiceClarity => state?.VoiceClarity is not null;
     public bool CanEditSoundNormalization => CanEdit && HasSoundNormalization;
@@ -367,7 +372,7 @@ public sealed partial class ThxAudioViewModel(
         ? Task.CompletedTask
         : StartAsync(token => adapter.SetSpatialAsync(endpoint, value, token), isMutation: true);
 
-    public Task SetEqualizerAsync(bool value) => !CanEdit || EqualizerEnabled == value
+    public Task SetEqualizerAsync(bool value) => !CanEditEqualizer || EqualizerEnabled == value
         ? Task.CompletedTask
         : StartAsync(token => adapter.SetEqualizerAsync(endpoint, value, token), isMutation: true);
 
@@ -634,7 +639,7 @@ public sealed partial class ThxAudioViewModel(
                     ? "Close Synapse and THX Spatial Audio before connecting."
                     : response.Availability == ThxAudioAvailability.UnsupportedModel
                     ? "THX audio is unavailable for this model or audio device."
-                    : response.Availability == ThxAudioAvailability.ComponentsUnavailable
+                    : response.Availability is ThxAudioAvailability.ComponentsUnavailable or ThxAudioAvailability.LegacyComponentsUnavailable
                     ? "The supported THX components are unavailable."
                     : "THX settings could not be confirmed. Read them again before making changes.";
             }
@@ -678,7 +683,7 @@ public sealed partial class ThxAudioViewModel(
             nameof(CanToggleIntegration), nameof(CanRead),
             nameof(IsComponentDownloadVisible), nameof(CanDownloadComponent), nameof(DownloadComponentButtonLabel),
             nameof(IsStackInstallationVisible), nameof(CanInstallStack), nameof(InstallStackButtonLabel),
-            nameof(CanEdit), nameof(SpatialEnabled), nameof(EqualizerEnabled), nameof(Endpoint),
+            nameof(CanEdit), nameof(CanEditEqualizer), nameof(HasEnhancements), nameof(SupportsSavedAudio), nameof(ShowEqualizerControls), nameof(ShowEqualizerLimit), nameof(SpatialEnabled), nameof(EqualizerEnabled), nameof(Endpoint),
             nameof(SelectedEndpoint), nameof(Presets), nameof(SelectedPreset), nameof(StatusMessage),
             nameof(EqualizerBands), nameof(HasEqualizerBands), nameof(CanEditEqualizerBands),
             nameof(EqualizerDraftHint), nameof(CanResetEqualizer),

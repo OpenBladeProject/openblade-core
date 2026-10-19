@@ -340,7 +340,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "rznb11", StringComparison.Ordinal), systemEffectsDisabled: string.Equals(
                 Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_EFFECTS_DISABLED"),
                 "1", StringComparison.Ordinal), detectionError:
-                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_ERROR"));
+                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_ERROR"), usesLegacy: string.Equals(
+                    Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_STACK"), "legacy", StringComparison.Ordinal));
         }
 #endif
         return new SessionThxAudioAdapter();

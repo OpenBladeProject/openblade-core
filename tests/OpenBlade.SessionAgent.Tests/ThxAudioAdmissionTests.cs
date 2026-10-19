@@ -27,7 +27,7 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     [Fact]
     public void CatalogKeepsExactModelCodecAndStackPairsSeparate()
     {
-        Assert.Equal(3, ThxAudioCompatibility.Profiles.Count);
+        Assert.Equal(6, ThxAudioCompatibility.Profiles.Count);
         ThxAudioCompatibilityProfile sonya12 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0581");
         ThxAudioCompatibilityProfile sonya11 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0528");
         ThxAudioCompatibilityProfile piper11 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0530");
@@ -41,7 +41,7 @@ public sealed class ThxAudioAdmissionTests : IDisposable
             [@"SOUNDWIRE\SDCA_FUNCTION_11&MAN_025D&FUNC_0721&TYPE_0B&VER_01&ADR_04&SUBSYS_30101A58"]));
         Assert.False(ThxAudioCompatibility.MatchesCodec(sonya11, piper11.CodecHardwareIds));
         Assert.False(ThxAudioCompatibility.MatchesCodec(piper11, sonya11.CodecHardwareIds));
-        foreach (ThxAudioCompatibilityProfile profile in ThxAudioCompatibility.Profiles)
+        foreach (ThxAudioCompatibilityProfile profile in ThxAudioCompatibility.Profiles.Where(profile => profile.Backend == ThxAudioNativeBackend.V4))
         {
             Assert.True(ThxAudioCompatibility.MatchesCodec(profile, profile.CodecHardwareIds));
             Assert.Equal(32, Convert.FromHexString(profile.ActivePropertiesSha256).Length);
@@ -69,6 +69,11 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     [InlineData("rznb12", "RZ09-0528", false)]
     [InlineData("rznb11", "RZ09-0581", false)]
     [InlineData(null, "RZ09-0581", false)]
+    [InlineData("thx-2.6.5", "RZ09-0482", true)]
+    [InlineData("thx-2.6.5", "RZ09-0483", true)]
+    [InlineData("thx-2.6.5", "RZ09-0484", true)]
+    [InlineData("thx-2.6.5", "RZ09-0328", false)]
+    [InlineData("rznb11", "RZ09-0482", false)]
     public void NativeAvailabilityRequiresKnownProductModelPair(string? productId, string modelNumber, bool expected)
     {
         var admission = new ThxAudioAdmission(ThxAudioAvailability.Available, null)

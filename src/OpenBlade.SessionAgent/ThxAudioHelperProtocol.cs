@@ -6,10 +6,10 @@ namespace OpenBlade.SessionAgent;
 
 internal static class ThxAudioHelperProtocol
 {
-    internal const int Version = 1;
+    internal const int Version = 2;
     internal const int MaximumLineCharacters = 64 * 1024;
     internal const string CommandSwitch = "--thx-audio-helper";
-    private const string PipeNamePrefix = "OpenBlade.Thx.Helper.v1";
+    private const string PipeNamePrefix = "OpenBlade.Thx.Helper.v2";
 
     internal static string CreatePipeName(int parentProcessId, Guid nonce) =>
         $"{PipeNamePrefix}.{parentProcessId}.{nonce:N}";

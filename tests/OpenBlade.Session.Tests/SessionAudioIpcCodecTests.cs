@@ -7,6 +7,22 @@ namespace OpenBlade.Session.Tests;
 public sealed class SessionAudioIpcCodecTests
 {
     [Fact]
+    public async Task ResponsePreservesLegacyEqAccessWithoutInventingAnEnabledState()
+    {
+        var response = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Succeeded, ThxAudioAvailability.Available, null,
+            new ThxAudioState(ThxAudioEndpoint.Speakers, true, false, null, [])
+            { Equalizer = ThxAudioFeatureAccess.ObservedOnly, ApplicationProfiles = ThxAudioFeatureAccess.Unavailable });
+        using var stream = new MemoryStream();
+        await SessionAudioIpcCodec.WriteResponseAsync(stream, response, CancellationToken.None);
+        stream.Position = 0;
+        var decoded = await SessionAudioIpcCodec.ReadResponseAsync(stream, CancellationToken.None);
+        Assert.Equal(ThxAudioFeatureAccess.ObservedOnly, decoded.State!.Equalizer);
+        Assert.True(decoded.State.SpatialEnabled);
+        Assert.Empty(decoded.State.Presets);
+    }
+
+    [Fact]
     public async Task Response_RoundTripsRznb11TenBandSpeakers()
     {
         ThxAudioState baseline = State(ThxAudioEndpoint.Speakers);
@@ -17,7 +33,7 @@ public sealed class SessionAudioIpcCodecTests
             FactoryPresetCurves = baseline.FactoryPresetCurves.Select(curve =>
                 curve with { GainsDb = new[] { 0d, 0d, 0d }.Concat(curve.GainsDb).ToArray() }).ToArray(),
         };
-        var response = new SessionAudioResponse(1, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
+        var response = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
             ThxAudioAvailability.Available, null, state);
         using var stream = new MemoryStream();
         await SessionAudioIpcCodec.WriteResponseAsync(stream, response);
