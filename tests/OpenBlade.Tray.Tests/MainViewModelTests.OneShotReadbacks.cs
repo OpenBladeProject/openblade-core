@@ -78,7 +78,10 @@ public sealed partial class MainViewModelTests
             FunctionKeyPrimary = FunctionKeyPrimaryMode.MultimediaKeys,
             GamingModeEnabled = true,
         });
-        await WaitUntilAsync(() => viewModel.CanEditGamingMode);
+        await WaitUntilAsync(() => viewModel.CanEditGamingMode
+            && viewModel.StartupAnimationEnabled == true
+            && viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.MultimediaKeys
+            && viewModel.GamingModeEnabled == true);
 
         client.Publish(status with { Revision = status.Revision + 1 });
         await WaitUntilAsync(() => viewModel.StartupAnimationStateLabel == "Unavailable");
@@ -96,7 +99,12 @@ public sealed partial class MainViewModelTests
             FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
             GamingModeEnabled = false,
         });
-        await WaitUntilAsync(() => viewModel.CanEditGamingMode);
+        // The test dispatcher permits concurrent readers during the callback;
+        // admission flags are updated before the retained bound values.
+        await WaitUntilAsync(() => viewModel.CanEditGamingMode
+            && viewModel.StartupAnimationEnabled == false
+            && viewModel.FunctionKeyPrimaryStateLabel == "Function keys"
+            && viewModel.GamingModeEnabled == false);
         Assert.False(viewModel.IsStartupAnimationFieldLoading);
         Assert.True(viewModel.CanEditStartupAnimation);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);

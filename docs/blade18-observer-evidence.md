@@ -386,3 +386,60 @@ recovery of the reported fan, startup, shortcut or temperature behavior.
 Nightly .96 separately includes typed-query isolation from PR #824; it was
 published after these checks. Keep physical follow-up in #739 and use the
 existing source and evidence before considering any further owner request.
+
+### Owner follow-up
+
+Ask for one ZIP from **About > Export diagnostics**, with the existing settings
+left unchanged. There is no need to repeat the Observer checklist, reproduce a
+failed write, change CPU/GPU pairs, or discharge the battery for another test.
+The ordinary OpenBlade export includes cached device verification, confirmed
+state, experimental write-pause state, bounded command/query history, and the
+Session Agent's persistent logs. The Observer inventory bundles do not include
+that service recovery state. Pause further fan tests while restoration remains
+unconfirmed; use the export to identify the next concrete issue on our side.
+
+Treat Fn+F2 as the laptop's independent media-key behavior. Do not ask for another
+Fn capture unless the existing source, input-stage diagnostics and topology logs
+leave a specific unresolved gap. An inactive GPU or two equal idle thermal-zone
+samples do not justify a benchmark or sensor stress test. Temporary full charge
+was skipped, so it remains untested rather than a reported failure.
+
+## Source-backed setter acknowledgement correction
+
+The owner bundles do not retain the returned setter bodies, so they cannot prove
+why the fan operations failed. The pinned Synapse sources do establish a separate
+contract error: OpenBlade required fan setters and Maximum Fans to echo the
+request, although the vendor accepts a correlated successful status and only
+parses the optional payload. The correction accepts bounded acknowledgements:
+zero to four bytes for fan mode, zero to three for fan target, and zero to one
+for Power Mode Control. Existing independent mode, target and Power Mode Control
+GETs still determine success. Invalid envelopes, failed status, mismatched
+transactions, oversized replies and failed readback retain write-pause behavior.
+No alternative write or replay follows an ambiguous result.
+
+Exact-model source pins, all below `https://apps.razer.com/synapse/products/`:
+
+| Product | Artifact under `<product>/mw/` | SHA-256 |
+| --- | --- | --- |
+| 672 / `02A0` | `rzDevice25.85ce8530211c29f3c304.js` | `DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24` |
+| 671 / `029F` | `main.2ceb8f5607c0e7a5901a.js` | `CACF8758BF8B4DF35B7D51536830149ED428960AFEDF08CC81367E75520551D1` |
+| 671 / `029F` | `rzDevice25LedMatrixBlade.44210ae56dcdfbe53eb0.js` | `C29BBE95CDF766A01919D6B09089E37302EECF321FA6B48158B830236852B565` |
+| 671 / `029F` | `rzDevice25LedMatrix.51b6086238084861d253.js` | `DBA943F8A628EF05463028DAC13D9CC745CA3201C971AE08E7C863D1A592AF1D` |
+| 671 / `029F` | `rzDevice25.5e330aa9fdf6f29eec62.js` | `41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9` |
+
+Product 672's public `setPowerModeControl` at character 141017 delegates through
+module 34836's `_w` export to the setter at 52955; module 31509 maps its header to
+`07/0F`. The fan parser/setter spans begin at 60353 and 61706, and its transport
+response handler at 117937 accepts successful status without comparing payload
+contents. Product 671's main selects `rzDevice25LedMatrixBlade` at character
+61506. Module 77127 inherits 71513, which inherits the base module 74503.
+That base's corresponding Power Mode setter is at 20394 and public fan setters
+at 141280 and 141463, with the same optional parsing and no echo requirement.
+Offsets are zero-based characters in the pinned minified files.
+
+The correction therefore covers `02A0` and `029F` through their reviewed source
+contracts. Other model reply contracts remain unchanged. It does not admit a
+new command or change the shared-mask pre-write guard: Maximum Fans still refuses
+to overwrite another active Power Mode Control bit. This source review does not
+establish that the owner's failed operations had this cause or that hardware
+recovery is complete. Keep issue #739 open for that distinction.
