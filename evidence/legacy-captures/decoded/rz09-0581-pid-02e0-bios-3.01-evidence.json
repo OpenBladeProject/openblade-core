@@ -1,0 +1,1201 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "transport": {
+    "interfaceNumber": 2,
+    "usagePage": "0001",
+    "usage": "0002",
+    "windowsFeatureReportBytes": 91,
+    "usbEnvelopeBytes": 90,
+    "reportId": 0
+  },
+  "captureSources": [
+    {
+      "id": "main",
+      "fileName": "opensynapse-synapse-session.pcap",
+      "sha256": "143387CCE493276DADCA968C8226C5ECFADD1CD8092D139280895AA23FF98041"
+    },
+    {
+      "id": "performance-full-power",
+      "fileName": "opensynapse-performance-full-power.pcap",
+      "sha256": "E15A35D0A0072BD0E3DC84581F3E87B402B84021C2358CEB69AE8B83BD9106E4"
+    },
+    {
+      "id": "performance-silent-online",
+      "fileName": "opensynapse-perf-silent-online-20260714.pcap",
+      "sha256": "565FF0CE7B3C2D3F75D195DF3A92573178FE4F8A69F4F5224C0B8D8DE6D9602D"
+    },
+    {
+      "id": "performance-performance-online",
+      "fileName": "opensynapse-perf-performance-online-20260714.pcap",
+      "sha256": "6F8FB3A9E4B4396FD7F0C7580E183830B8CB18A8090F7751EE4DDC033E30D58F"
+    },
+    {
+      "id": "performance-balanced-online",
+      "fileName": "opensynapse-perf-balanced-online-20260714.pcap",
+      "sha256": "5EC21531D40DC1E96A7716E5E56E0DC224ABD5AFE0AD42FE7CCEEF0B0AB97201"
+    },
+    {
+      "id": "fan-maximum-online",
+      "fileName": "opensynapse-fan-maximum-online-20260714.pcap",
+      "sha256": "99789A0D36A281CCA04E23F2D6F834A772DA0116E9150B0B3B9E8C1A6E643D07"
+    },
+    {
+      "id": "fan-auto-online",
+      "fileName": "opensynapse-fan-auto-online-20260714.pcap",
+      "sha256": "A0A26EB5F8720F373A7B8C23377CCC0C445FC1665E203E5296620F31B9BA1169"
+    },
+    {
+      "id": "lighting-static-online",
+      "fileName": "opensynapse-lighting-static-online-20260714.pcap",
+      "sha256": "76CA001583EC41F2ABE53872278686A8E5CA3419F6D0583BD6E3802CD2400B0A"
+    },
+    {
+      "id": "lighting-spectrum-online",
+      "fileName": "opensynapse-lighting-spectrum-online-20260714.pcap",
+      "sha256": "00F3D449110411497DB894A07009BDF5B13B183A2931A129C8189BC7AE921171"
+    },
+    {
+      "id": "lighting-breathing-online",
+      "fileName": "opensynapse-lighting-breathing-online-20260714.pcap",
+      "sha256": "30B199AD90D675223E29D0B31E8DD9F786AB248282B1F9CA3FC23A283693FE31"
+    },
+    {
+      "id": "lighting-reactive-online",
+      "fileName": "opensynapse-lighting-reactive-online-20260714.pcap",
+      "sha256": "84545D9F5214B1650EF931F9CAD8A0A9ED8B914CBA06567FDA4064967A3828B6"
+    },
+    {
+      "id": "lighting-off-online",
+      "fileName": "opensynapse-lighting-off-online-20260714.pcap",
+      "sha256": "BB4F15926F7D896586109EC45C6E56EAB18550226B4E65C302E6329E81CE8870"
+    },
+    {
+      "id": "lighting-brightness-50-online",
+      "fileName": "opensynapse-lighting-brightness-50-online-20260714.pcap",
+      "sha256": "4ED4F52BDDC14C72758405F867F8DE533F11E9F68346E00CD12A7DD0EC77CC8A"
+    },
+    {
+      "id": "performance-fan-state-refresh-negative",
+      "fileName": "openblade-performance-fan-refresh-20260714.pcap",
+      "sha256": "8D323555E7CF173E41B0E7AFB3690D395815C4430378A4DD7B229183F836C499",
+      "bytes": 235494,
+      "firstEpoch": "1784084232.487321000",
+      "lastEpoch": "1784084361.799563000"
+    },
+    {
+      "id": "fan-fixed-hydration-negative",
+      "fileName": "openblade-fan-balanced-maximum-hydration-20260716-191400.pcap",
+      "sha256": "2CA5ED0700028006E6EEFADEC3DA8D447A6DD645DD1F1CCE358882550C4EDA7F",
+      "bytes": 265407,
+      "frameCount": 2606,
+      "firstEpoch": "1784254423.857195000",
+      "lastEpoch": "1784254640.268310000"
+    },
+    {
+      "id": "performance-fan-cold-hydration-negative",
+      "fileName": "openblade-balanced-auto-cold-hydration-20260716-200509.pcap",
+      "sha256": "611336A8D54581C8FFD6565BD553320AF1A55540C2AF9D740762E1FE0597EFB4",
+      "bytes": 641695,
+      "frameCount": 4822,
+      "firstEpoch": "1784257538.718577000",
+      "lastEpoch": "1784257825.907999000"
+    },
+    {
+      "id": "lighting-hydration-100-negative",
+      "fileName": "openblade-lighting-hydration-100-20260716.pcap",
+      "sha256": "46D7F69422F9D182A8AF507A98C3970B91772C7D78304CD853AB4FBF28D0E4B9",
+      "bytes": 291667,
+      "frameCount": 2628,
+      "firstCapturedAtUtc": "2026-07-17T03:50:13.240289Z",
+      "lastCapturedAtUtc": "2026-07-17T03:52:42.464622Z"
+    },
+    {
+      "id": "lighting-hydration-49-negative",
+      "fileName": "openblade-lighting-hydration-49-20260716.pcap",
+      "sha256": "848FBE79F2D1587D75E1C0B0E13508B97E910B691667A2A34659873B0715BAF3",
+      "bytes": 130683,
+      "frameCount": 1186,
+      "firstCapturedAtUtc": "2026-07-17T03:53:54.394326Z",
+      "lastCapturedAtUtc": "2026-07-17T03:55:01.348385Z"
+    },
+    {
+      "id": "battery-query-sequence-one-second-negative",
+      "fileName": "openblade-battery-query-sequence-20260714.pcap",
+      "sha256": "83D9C6BDFC6FA757FDF93E431C027F741C2F7172F1A6D3493B8BDA95CB0CCA3D",
+      "bytes": 3585,
+      "firstEpoch": "1784091240.288634000",
+      "lastEpoch": "1784091296.254691000"
+    },
+    {
+      "id": "battery-query-sequence-eight-second-negative",
+      "fileName": "openblade-battery-query-sequence-8s-20260714.pcap",
+      "sha256": "23AA9BFD7636C000B7AE5043C7A00C8563025635B6B09D4173D7AEE9774149E8",
+      "bytes": 3177,
+      "firstEpoch": "1784092168.904587000",
+      "lastEpoch": "1784092212.263108000"
+    },
+    {
+      "id": "battery-query-sequence-settled-success",
+      "fileName": "openblade-battery-query-sequence-settled-20260714.pcap",
+      "sha256": "EEECED460B5B4267988A69D05FABE466EED47B2582520A6C67BB18FDA7B2AFBA",
+      "bytes": 3656,
+      "frameCount": 56,
+      "firstEpoch": "1784094542.297520000",
+      "lastEpoch": "1784094577.836499000"
+    },
+    {
+      "id": "battery-validation-same-candidate-zero-write",
+      "fileName": "openblade-battery-validate-off-final-20260715.pcap",
+      "sha256": "A4622641B5D5513472F14675897B8CADAB0561B1668854C99C9F3FF8A8E43303",
+      "bytes": 2798,
+      "frameCount": 56,
+      "firstEpoch": "1784100734.073152000",
+      "lastEpoch": "1784100762.110777000"
+    },
+    {
+      "id": "battery-validation-limit80-timing-negative",
+      "fileName": "openblade-battery-limit80-final-20260715.pcap",
+      "sha256": "D273D68F529641BDED9370846A11B599266A53B343FD5AB18613645B5B39ABD5",
+      "bytes": 4658,
+      "frameCount": 76,
+      "firstEpoch": "1784101018.217661000",
+      "lastEpoch": "1784101074.208114000"
+    },
+    {
+      "id": "battery-validation-limit80-strict-success",
+      "fileName": "openblade-battery-limit80-settle20-final-20260715.pcap",
+      "sha256": "BDDB65D1664FDC3331F25282F75229B38A2011E443F5670D58AE32CA6BD36B5B",
+      "bytes": 5732,
+      "frameCount": 98,
+      "firstEpoch": "1784101756.209719000",
+      "lastEpoch": "1784101801.217561000"
+    },
+    {
+      "id": "battery-limits-reversible-validation",
+      "fileName": "openblade-battery-limits-validation-20260716.pcap",
+      "sha256": "78021A61ED560F82F5C6C20D53799A1689AF28B8C4867728BB9D90ED379F422A",
+      "bytes": 24968,
+      "frameCount": 420,
+      "minimumSetCompletionToQueryMilliseconds": 21.689
+    },
+    {
+      "id": "temporary-full-charge-validation-strict-success",
+      "fileName": "openblade-temporary-full-charge-validation-20260716-193219.pcap",
+      "sha256": "AF7EBDCBCB1189150F4FC8E7229E6E007035DC69C30749FF9342B455D75B58D9",
+      "bytes": 3415,
+      "frameCount": 38,
+      "firstEpoch": "1784230342.046093000",
+      "lastEpoch": "1784230344.027286000",
+      "minimumSetCompletionToQueryMilliseconds": 25.315
+    }
+  ],
+  "frameProvenance": {
+    "performance-silent": { "capture": "performance-silent-online", "setFrames": [271, 275], "getResponseFrames": [274, 278] },
+    "performance-balanced": { "capture": "performance-balanced-online", "setFrames": [125, 129], "getResponseFrames": [128, 134] },
+    "performance-performance": { "capture": "performance-performance-online", "setFrames": [179, 183], "getResponseFrames": [182, 186] },
+    "fan-fixed-3500": { "capture": "main", "setFrames": [4965, 4969], "getResponseFrames": [4968, 4972] },
+    "fan-maximum-5400": {
+      "capture": "fan-maximum-online",
+      "modeSetFrames": [379, 383],
+      "modeResponseFrames": [382, 387],
+      "targetSetFrames": [395, 400],
+      "targetResponseFrames": [398, 404]
+    },
+    "fan-auto": {
+      "capture": "fan-auto-online",
+      "unresolvedPreludeFrames": [73, 76],
+      "modeSetFrames": [77, 83],
+      "modeResponseFrames": [82, 86],
+      "telemetryFrames": [87, 90, 91, 94]
+    },
+    "battery-limit-50": { "capture": "main", "setFrames": [6097], "getResponseFrames": [6100] },
+    "battery-limit-55": { "capture": "main", "setFrames": [6069], "getResponseFrames": [6072] },
+    "battery-limit-60": { "capture": "main", "setFrames": [6049], "getResponseFrames": [6052] },
+    "battery-limit-65": { "capture": "main", "setFrames": [6027], "getResponseFrames": [6030] },
+    "battery-limit-70": { "capture": "main", "setFrames": [6007], "getResponseFrames": [6010] },
+    "battery-limit-75": { "capture": "main", "setFrames": [5827], "getResponseFrames": [5830] },
+    "battery-limit-80": { "capture": "main", "setFrames": [6211, 6885], "getResponseFrames": [6214, 6888], "independentQueryFrames": [3173, 3176] },
+    "battery-protection-off": { "capture": "main", "setFrames": [6673], "getResponseFrames": [6676] },
+    "charge-to-100-enable": { "capture": "temporary-full-charge-validation-strict-success", "setFrames": [15], "getResponseFrames": [18], "independentQueryFrames": [23, 26] },
+    "charge-to-100-cancel": { "capture": "temporary-full-charge-validation-strict-success", "setFrames": [27], "getResponseFrames": [30], "independentQueryFrames": [35, 38] },
+    "lighting-brightness-49": { "capture": "main", "setFrames": [11265], "getResponseFrames": [11268] },
+    "lighting-brightness-100": { "capture": "main", "setFrames": [11635, 11871], "getResponseFrames": [11638, 11874] },
+    "lighting-off": { "capture": "main", "setFrames": [11747], "getResponseFrames": [11750] },
+    "lighting-off-online": {
+      "capture": "lighting-off-online",
+      "setFrames": [153],
+      "status02EchoFrames": [156],
+      "lastInterface3StreamFrame": 151
+    }
+  },
+  "actions": [
+    {
+      "action": "performance-silent",
+      "commands": [
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "adapter-wattage-level-full-power-280w" },
+        { "class": "0D", "id": "02", "payloadHex": "01010500", "expectedStatus": "02", "expectedPayloadHex": "01010500" },
+        { "class": "0D", "id": "02", "payloadHex": "01020500", "expectedStatus": "02", "expectedPayloadHex": "01020500" }
+      ],
+      "onlineEvidence": { "capture": "performance-silent-online", "frameByte10": "05", "allUsbTransfersSucceeded": true, "ackEchoOnly": true },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "performance-balanced",
+      "commands": [
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "adapter-wattage-level-full-power-280w" },
+        { "class": "0D", "id": "02", "payloadHex": "01010000", "expectedStatus": "02", "expectedPayloadHex": "01010000" },
+        { "class": "0D", "id": "02", "payloadHex": "01020000", "expectedStatus": "02", "expectedPayloadHex": "01020000" }
+      ],
+      "onlineEvidence": { "capture": "performance-balanced-online", "frameByte10": "00", "allUsbTransfersSucceeded": true, "ackEchoOnly": true },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "performance-performance",
+      "commands": [
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "adapter-wattage-level-full-power-280w" },
+        { "class": "0D", "id": "02", "payloadHex": "01010200", "expectedStatus": "02", "expectedPayloadHex": "01010200" },
+        { "class": "0D", "id": "02", "payloadHex": "01020200", "expectedStatus": "02", "expectedPayloadHex": "01020200" }
+      ],
+      "onlineEvidence": { "capture": "performance-performance-online", "frameByte10": "02", "allUsbTransfersSucceeded": true, "ackEchoOnly": true },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "fan-fixed-3500",
+      "commands": [
+        { "class": "0D", "id": "01", "payloadHex": "010123", "expectedStatus": "02", "expectedPayloadHex": "010123" },
+        { "class": "0D", "id": "01", "payloadHex": "010223", "expectedStatus": "02", "expectedPayloadHex": "010223" }
+      ],
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "fan-maximum-5400",
+      "commands": [
+        { "class": "0D", "id": "02", "payloadHex": "01010001", "expectedStatus": "02", "expectedPayloadHex": "01010001" },
+        { "class": "0D", "id": "02", "payloadHex": "01020001", "expectedStatus": "02", "expectedPayloadHex": "01020001" },
+        { "class": "0D", "id": "01", "payloadHex": "010136", "expectedStatus": "02", "expectedPayloadHex": "010136" },
+        { "class": "0D", "id": "01", "payloadHex": "010236", "expectedStatus": "02", "expectedPayloadHex": "010236" }
+      ],
+      "onlineEvidence": {
+        "capture": "fan-maximum-online",
+        "visualSelection": "Fixed Fan Speed",
+        "visualDisplay": "5400 RPM / HIGH",
+        "targetHundredsRpm": 54,
+        "visuallyConfirmedRpm": 5400,
+        "stateQuery07_8C": "adapter-wattage-level-readback",
+        "fanTelemetry0D_88": "live-telemetry-not-target-setter-or-mode-readback",
+        "independentModeReadBack": false,
+        "allUsbTransfersSucceeded": true,
+        "ackEchoOnly": true
+      },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "fan-auto",
+      "commands": [
+        { "class": "0D", "id": "02", "payloadHex": "01010000", "expectedStatus": "02", "expectedPayloadHex": "01010000" },
+        { "class": "0D", "id": "02", "payloadHex": "01020000", "expectedStatus": "02", "expectedPayloadHex": "01020000" }
+      ],
+      "onlineEvidence": {
+        "capture": "fan-auto-online",
+        "visualSelection": "Auto",
+        "stateQuery07_8C": "adapter-wattage-level-readback",
+        "fanTelemetry0D_88": "live-telemetry-not-target-setter-or-mode-readback",
+        "immediateTelemetryRpm": 5300,
+        "targetSetter0D_01Observed": false,
+        "independentModeReadBack": false,
+        "allUsbTransfersSucceeded": true,
+        "ackEchoOnly": true
+      },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-limit-50",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "B2", "expectedStatus": "02", "expectedPayloadHex": "B2" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit50", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "battery-limit-55",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "B7", "expectedStatus": "02", "expectedPayloadHex": "B7" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit55", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "battery-limit-60",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "BC", "expectedStatus": "02", "expectedPayloadHex": "BC" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit60", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "battery-limit-65",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "C1", "expectedStatus": "02", "expectedPayloadHex": "C1" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit65", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "battery-limit-70",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "C6", "expectedStatus": "02", "expectedPayloadHex": "C6" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit70", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "battery-limit-75",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "CB", "expectedStatus": "02", "expectedPayloadHex": "CB" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit75", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "battery-limit-80",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "D0", "expectedStatus": "02", "expectedPayloadHex": "D0" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "battery-protection-off",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "50", "expectedStatus": "02", "expectedPayloadHex": "50" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "onlineEvidence": {
+        "fixture": "rz09-0581-pid-02e0-bios-3.01-protection-off-validation-fixture.json",
+        "baseline": "Limit80",
+        "candidate": "ProtectionOff",
+        "temporaryFullChargeStayedInactive": true,
+        "restoredTo": "Limit80"
+      },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "charge-to-100-enable",
+      "commands": [{ "class": "07", "id": "0F", "payloadHex": "04", "expectedStatus": "02", "expectedPayloadHex": "04" }],
+      "readbackCommand": { "class": "07", "id": "8F", "payloadHex": "00", "expectedPayloadHex": "04" },
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-validation-fixture.json", "baseline": false, "candidate": true, "restoredTo": false },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "charge-to-100-cancel",
+      "commands": [{ "class": "07", "id": "0F", "payloadHex": "00", "expectedStatus": "02", "expectedPayloadHex": "00" }],
+      "readbackCommand": { "class": "07", "id": "8F", "payloadHex": "00", "expectedPayloadHex": "00" },
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-validation-fixture.json", "baseline": true, "candidate": false, "restoredTo": false },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
+    },
+    {
+      "action": "lighting-brightness-49",
+      "commands": [{ "class": "03", "id": "03", "payloadHex": "01057D", "expectedStatus": "02", "expectedPayloadHex": "01057D" }],
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "lighting-brightness-100",
+      "commands": [{ "class": "03", "id": "03", "payloadHex": "0105FF", "expectedStatus": "02", "expectedPayloadHex": "0105FF" }],
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "lighting-off",
+      "commands": [{ "class": "03", "id": "03", "payloadHex": "010500", "checksumHex": "07", "expectedStatus": "02", "expectedPayloadHex": "010500" }],
+      "onlineEvidence": {
+        "capture": "lighting-off-online",
+        "semantic": "brightness-zero-not-effect-disable",
+        "interface3StreamStopped": true,
+        "interface3StreamAbsentForRemainder": true,
+        "status02EchoOnly": true,
+        "independentReadBack": false
+      },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    }
+  ],
+  "lightingOnlineEvidence": {
+    "quickEffects": {
+      "sharedTransitionHandshake": {
+        "interfaceNumber": 2,
+        "featureReportBytes": 90,
+        "operations": ["00/86", "00/84", "03/0A"],
+        "entryPayloadHex": "0500",
+        "identifiesEffect": false,
+        "semanticStatus": "likely-generic-custom-matrix-mode-entry",
+        "unresolvedOperations": ["00/86", "00/84"]
+      },
+      "nativeColorSetterIsolated": false,
+      "nativeDurationSetterIsolated": false,
+      "effects": [
+        {
+          "name": "Static",
+          "capture": "lighting-static-online",
+          "requestFrames": [464, 471, 475],
+          "readbackFrames": [468, 474, 480],
+          "firstNormalizedGreenMatrixFrame": 669,
+          "renderingObservation": "sparse-uniform-green-keepalives",
+          "hostRenderedMatrixStream": true,
+          "nativeEffectSetterIsolated": false,
+          "productionAdmitted": false
+        },
+        {
+          "name": "Spectrum",
+          "capture": "lighting-spectrum-online",
+          "requestFrames": [181, 185, 189],
+          "readbackFrames": [184, 188, 192],
+          "streamStartFrame": 193,
+          "renderingObservation": "software-hue-cycle-about-20-hz",
+          "hostRenderedMatrixStream": true,
+          "nativeEffectSetterIsolated": false,
+          "productionAdmitted": false
+        },
+        {
+          "name": "Breathing",
+          "capture": "lighting-breathing-online",
+          "requestFrames": [1243, 1251, 1255, 1261],
+          "successfulReadbackFrames": [1246, 1254, 1264],
+          "retryReason": "03/0A-retried-after-short-read",
+          "transitionStreamFrame": 1257,
+          "renderingObservation": "software-rendered-green-intensity-ramp",
+          "hostRenderedMatrixStream": true,
+          "nativeEffectSetterIsolated": false,
+          "productionAdmitted": false
+        },
+        {
+          "name": "Reactive",
+          "capture": "lighting-reactive-online",
+          "requestFrames": [927, 937, 941],
+          "readbackFrames": [932, 940, 944],
+          "streamStartFrame": 929,
+          "renderingObservation": "black-idle-after-transition",
+          "keyActivationCaptured": false,
+          "durationInferred": false,
+          "hostRenderedMatrixStream": true,
+          "nativeEffectSetterIsolated": false,
+          "productionAdmitted": false
+        }
+      ]
+    },
+    "matrixTransport": {
+      "interfaceNumber": 3,
+      "featureReportBytes": 374,
+      "class": "03",
+      "id": "0B",
+      "argumentDataSizeHex": "0136",
+      "matrixSpanEndHex": "65",
+      "rgbTripletCountApprox": 102,
+      "litPositionCount": 86,
+      "layoutHoleCount": 16,
+      "checksumRule": "xor-bytes-2-through-byte-before-checksum",
+      "reservedFinalByteZero": true,
+      "getReportReadbackExists": false,
+      "productionAdmitted": false,
+      "streamingBoundary": "outside-safe-mvp-command-table",
+      "boundaryReason": "continuous-animation-streaming-has-ownership-timer-and-power-implications"
+    },
+    "brightness": {
+      "command": "03/03",
+      "payloadPrefixHex": "0105",
+      "mapping": "round(percent * 255 / 100)",
+      "observed": {
+        "ui0Hex": "00",
+        "ui49Hex": "7D",
+        "ui100Hex": "FF"
+      },
+      "ui50Capture": {
+        "capture": "lighting-brightness-50-online",
+        "inferredHex": "80",
+        "inferredPayloadHex": "010580",
+        "directlyObserved": false,
+        "brightnessTransactionEmitted": false,
+        "ambientMatrixScaled": false
+      },
+      "steadyStateDwell": {
+        "capture": "main",
+        "setters": [
+          {
+            "uiPercent": 49,
+            "payloadHex": "01057D",
+            "requestFrames": [11265, 11505],
+            "responseFrames": [11268, 11508],
+            "responseStatusHex": "02",
+            "status02AckEchoesOnly": true
+          },
+          {
+            "uiPercent": 100,
+            "payloadHex": "0105FF",
+            "requestFrames": [11635, 11871],
+            "responseFrames": [11638, 11874],
+            "responseStatusHex": "02",
+            "status02AckEchoesOnly": true
+          }
+        ],
+        "dwellWindows": [
+          { "uiPercent": 49, "firstFrame": 11269, "lastFrame": 11504, "fanRpmPairCount": 56, "lightingQueryCount": 0 },
+          { "uiPercent": 49, "firstFrame": 11509, "lastFrame": 11634, "fanRpmPairCount": 30, "lightingQueryCount": 0 },
+          { "uiPercent": 100, "firstFrame": 11639, "lastFrame": 11746, "fanRpmPairCount": 26, "lightingQueryCount": 0 },
+          { "uiPercent": 100, "firstFrame": 11877, "lastFrame": 12218, "fanRpmPairCount": 80, "lightingQueryCount": 0 }
+        ],
+        "onlyDwellQueryOperation": "0D/88",
+        "independentBrightnessReadbackObserved": false,
+        "pageHydrationComparisonRequired": false,
+        "reason": "The 49% and 100% setters received status-02 acknowledgement echoes, while all four steady-state windows contained only fan-RPM queries and no lighting query. Controlled no-mutation page hydration at both states was subsequently captured and likewise exposed no lighting readback."
+      },
+      "controlledHydrationComparison": {
+        "captures": ["lighting-hydration-100-negative", "lighting-hydration-49-negative"],
+        "brightnessStatesPercent": [100, 49],
+        "pageHydratedToExistingState": true,
+        "brightnessCommandCount": [0, 0],
+        "lightingQueryCount": [0, 0],
+        "observedReadOperations": ["07/92", "07/8F", "0D/88"],
+        "batteryResponsesIdenticalAcrossStates": true,
+        "fanResponsesAreLiveRpmTelemetry": true,
+        "matrixReportsAreHostOriginatedWrites": true,
+        "independentBrightnessReadbackObserved": false,
+        "independentEffectReadbackObserved": false,
+        "independentColorReadbackObserved": false,
+        "productionAdmitted": false
+      },
+      "excludedSelector0018Reports": {
+        "operations": ["03/01", "03/02", "03/00"],
+        "selectorHex": "0018",
+        "requestFrames": [871, 875, 879, 971],
+        "responseFrames": [874, 878, 882, 974],
+        "deviceProtocolStatusHex": "05",
+        "semanticStatus": "unsupported",
+        "explicitlyExcludedAsBrightnessWrites": true
+      }
+    },
+    "productionAdmission": {
+      "quickEffectsAdmitted": false,
+      "matrixStreamingAdmitted": false,
+      "brightnessZeroAdmitted": false,
+      "reason": "No lighting action has passed typed OpenBlade apply, independent readback, and OpenBlade restoration."
+    }
+  },
+  "performanceFanRefreshEvidence": {
+    "capture": "performance-fan-state-refresh-negative",
+    "condition": {
+      "acOnline": true,
+      "displayedPerformance": "Balanced",
+      "displayedFanMode": "Auto (Default)",
+      "userInitiatedSettingMutation": false
+    },
+    "modeAckEchoes0D_02": {
+      "command": "0D/02",
+      "requestCount": 32,
+      "replyCount": 32,
+      "firstRequestFrame": 97,
+      "lastRequestFrame": 851,
+      "firstReplyGetRequestFrame": 99,
+      "firstReplyFrame": 100,
+      "lastReplyGetRequestFrame": 853,
+      "lastReplyFrame": 854,
+      "status02AckEchoesOnly": true,
+      "independentStateValues": false,
+      "observation": "All 32 replies are status-02 echoes of the preceding 0D/02 request payload; they do not independently report performance or fan mode."
+    },
+    "fanTelemetry0D_88": {
+      "command": "0D/88",
+      "firstAfterNavigateAway": {
+        "requestFrames": [1091, 1095],
+        "responseFrames": [1094, 1100]
+      },
+      "firstAfterReturn": {
+        "requestFrames": [1151, 1155],
+        "responseFrames": [1154, 1158]
+      },
+      "semantic": "fan-rpm-only",
+      "performanceOrFanModeReadback": false,
+      "observation": "The paired selector responses report live fan RPM only; continuous polling was observed across both navigation windows and does not encode performance or fan mode."
+    },
+    "stateBearingQueryCandidates": [
+      {
+        "command": "0D/8E",
+        "requestFrames": [557],
+        "responseFrames": [560],
+        "requestArgumentLength": 1,
+        "requestPayloadHex": "00",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "00",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/8F",
+        "requestFrames": [561],
+        "responseFrames": [564],
+        "requestArgumentLength": 1,
+        "requestPayloadHex": "00",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "01",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/80",
+        "requestFrames": [565],
+        "responseFrames": [568],
+        "requestArgumentLength": 80,
+        "requestPayloadAllZero": true,
+        "responseStatusHex": "02",
+        "responsePayloadPrefixHex": "020102",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/89",
+        "requestFrames": [569, 751],
+        "responseFrames": [572, 754],
+        "requestArgumentLength": 2,
+        "requestPayloadHex": "0000",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0202",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/8B",
+        "requestFrames": [573],
+        "responseFrames": [576],
+        "requestArgumentLength": 2,
+        "requestPayloadHex": "0000",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0201",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/8A",
+        "requestFrames": [577],
+        "responseFrames": [580],
+        "requestArgumentLength": 2,
+        "requestPayloadHex": "0000",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0206",
+        "semantic": "unassigned-single-state-query-candidate"
+      }
+    ],
+    "candidateDiscriminator": {
+      "requiredKnownStates": ["Balanced+Auto", "Silent+Auto", "Performance+Auto", "Balanced+Maximum"],
+      "method": "Capture Performance-page hydration without changing a setting, then diff successful device response payloads for the candidate commands.",
+      "admissionBoundary": "A candidate remains untrusted until one field tracks only the independently established preset or fan mode and survives typed apply, fresh query/readback, and restoration."
+    },
+    "adapterWattage07_8C": {
+      "command": "07/8C",
+      "responsePayloadHex": "1111",
+      "semantic": "full-oem-power-280w",
+      "performanceOrFanModeReadback": false,
+      "observation": "This full-power response is independently distinguished from USB-C PD response 0711 and corroborated by Synapse reporting 100 W current versus 280 W recommended under USB-C PD."
+    },
+    "conclusion": {
+      "queryShapedStateResponsesObservedInCapture": true,
+      "independentPerformanceOrFanModeReadbackEstablished": false,
+      "performanceFanProductionAdmissionAllowed": false,
+      "typedMutationHarnessAllowed": false,
+      "reason": "Fresh state-bearing high-bit 0D responses were observed in this capture with a single Balanced+Auto state, but no comparative known-state capture assigns any field to performance or fan mode. They cannot yet establish baseline, post-apply readback, or restoration for production admission."
+    }
+  },
+  "fanFixedHydrationEvidence": {
+    "capture": "fan-fixed-hydration-negative",
+    "condition": {
+      "performance": "Balanced",
+      "fanMode": "Fixed Fan Speed",
+      "targetRpm": 5400,
+      "userInitiatedSettingMutationDuringCapture": false
+    },
+    "candidateCommands": ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+    "candidateCommandOccurrences": 0,
+    "observedTraffic": {
+      "fanRpm0D_88": {
+        "requestCount": 299,
+        "responseCount": 300,
+        "observedRpmRange": "4700-5300",
+        "semantic": "fan-rpm-only"
+      },
+      "otherQueries": ["07/92", "07/8F"]
+    },
+    "conclusion": {
+      "fanModeReadbackEstablished": false,
+      "performanceFanProductionAdmissionAllowed": false,
+      "reason": "The fixed-5400 Performance-page hydration capture contained none of the six candidate state queries, so it cannot discriminate fan mode."
+    }
+  },
+  "performanceFanDirectQueryEvidence": {
+    "fixtureFile": "rz09-0581-pid-02e0-bios-3.01-performance-fan-discriminator-negative.json",
+    "reader": "OpenBlade.Capture query-performance-fan-discriminator",
+    "readOnly": true,
+    "states": ["Balanced+Auto", "Silent+Auto", "Performance+Auto", "Balanced+Fixed5400"],
+    "commands": ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A", "0F/98"],
+    "allResponsesIdentical": true,
+    "conclusion": {
+      "performanceReadbackEstablished": false,
+      "fanModeReadbackEstablished": false,
+      "performanceFanProductionAdmissionAllowed": false,
+      "typedMutationHarnessAllowed": false,
+      "reason": "Every fixed read-only response, including cold-start candidate 0F/98, was identical across the three performance presets and Auto versus Fixed 5400 fan mode."
+    }
+  },
+  "performanceFanColdHydrationEvidence": {
+    "capture": "performance-fan-cold-hydration-negative",
+    "condition": {
+      "performance": "Balanced",
+      "fanMode": "Auto (Default)",
+      "acOnline": true,
+      "synapseVisibleUiStartedDuringCapture": true,
+      "userInitiatedSettingMutationDuringCapture": false
+    },
+    "candidateCommands": ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+    "candidateCommandOccurrences": 0,
+    "featureReports": {
+      "requestCount": 570,
+      "fullResponseCount": 569,
+      "validChecksumCount": 1139,
+      "invalidChecksumCount": 0
+    },
+    "observedHighBitQueries": [
+      { "command": "07/92", "requestCount": 60, "fullResponseCount": 59, "responsePayloadHex": "D0", "semantic": "battery-policy-readback" },
+      { "command": "07/8F", "requestCount": 57, "fullResponseCount": 56, "responsePayloadHex": "00", "semantic": "temporary-full-charge-readback" },
+      { "command": "0D/88", "requestCount": 445, "fullResponseCount": 446, "semantic": "fan-rpm-only" },
+      { "command": "07/8C", "requestCount": 2, "fullResponseCount": 2, "responsePayloadHex": "1111", "semantic": "full-oem-power-280w" },
+      { "command": "0F/98", "requestCount": 2, "fullResponseCount": 2, "responsePayloadHex": "00", "semantic": "new-unresolved-cold-start-query-candidate" }
+    ],
+    "modeAckEchoes0D_02": {
+      "requestFrames": [2143, 2147, 2179, 2183],
+      "responseFrames": [2146, 2150, 2182, 2186],
+      "requestPayloadsHex": ["01010000", "01020000", "01010000", "01020000"],
+      "status02AckEchoesOnly": true,
+      "independentStateValues": false,
+      "observation": "Cold visible-UI startup emitted the Balanced selector pair twice without a user setting change; the replies are acknowledgements, not independent readback."
+    },
+    "newCandidate0F_98": {
+      "requestFrames": [2061, 2139],
+      "responseFrames": [2064, 2142],
+      "requestPayloadHex": "00",
+      "responseStatusHex": "02",
+      "responsePayloadHex": "00",
+      "productionAdmitted": false,
+      "reason": "A single Balanced+Auto observation cannot assign this response to performance preset or fan mode."
+    },
+    "conclusion": {
+      "independentPerformanceOrFanModeReadbackEstablished": false,
+      "performanceFanProductionAdmissionAllowed": false,
+      "typedMutationHarnessAllowed": false,
+      "reason": "Cold Synapse startup exposed 0F/98, but its constant single-state response does not establish performance or fan-mode readback. The original six candidates were absent."
+    }
+  },
+  "batteryQuerySequenceEvidence": {
+    "capture": "battery-query-sequence-one-second-negative",
+    "scope": "capture-scoped-negative-diagnostic",
+    "transactions": [
+      {
+        "queryOrdinal": 1,
+        "transactionId": 1,
+        "setReportFrame": 29,
+        "getReportFrame": 31,
+        "responseFrame": 32,
+        "requestEpoch": "1784091269.902250000",
+        "responseEpoch": "1784091269.904590000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff"
+      },
+      {
+        "queryOrdinal": 2,
+        "transactionId": 2,
+        "setReportFrame": 33,
+        "getReportFrame": 35,
+        "responseFrame": 36,
+        "requestEpoch": "1784091270.925382000",
+        "responseEpoch": "1784091270.926054000",
+        "statusHex": "01",
+        "semanticStatus": "Command Busy"
+      }
+    ],
+    "requestSpacingSeconds": 1.023132,
+    "setterReport07_12Count": 0,
+    "independentFinalQuery": {
+      "command": "query-battery",
+      "performedAfterCaptureStopped": true,
+      "setting": "ProtectionOff",
+      "failure": "None",
+      "success": true
+    },
+    "conclusion": {
+      "secondQueryReturnedBusyWithoutConfiguredSetToGetSettle": true,
+      "nextDiscriminatorSetToGetSettleMilliseconds": 10,
+      "reason": "The second query returned Busy in this capture without a configured SET-completion-to-GET settle; the next read-only discriminator is a 10 ms SET-completion-to-GET settle."
+    }
+  },
+  "batteryQuerySequenceEightSecondEvidence": {
+    "capture": "battery-query-sequence-eight-second-negative",
+    "scope": "capture-scoped-negative-diagnostic",
+    "transactions": [
+      {
+        "queryOrdinal": 1,
+        "transactionId": 1,
+        "setReportFrame": 23,
+        "getReportFrame": 25,
+        "responseFrame": 26,
+        "requestEpoch": "1784092198.585862",
+        "responseEpoch": "1784092198.587841",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff"
+      },
+      {
+        "queryOrdinal": 2,
+        "transactionId": 2,
+        "setReportFrame": 40,
+        "getReportFrame": 51,
+        "responseFrame": 52,
+        "requestEpoch": "1784092206.694461",
+        "responseEpoch": "1784092206.695602",
+        "statusHex": "01",
+        "semanticStatus": "Command Busy"
+      }
+    ],
+    "requestSpacingSeconds": 8.108599,
+    "completedCount": 2,
+    "success": false,
+    "queryOrdinalsNotAttempted": [3, 4, 5],
+    "setterReport07_12Count": 0,
+    "independentFinalQuery": {
+      "command": "query-battery",
+      "performedAfterCaptureStopped": true,
+      "setting": "ProtectionOff",
+      "failure": "None",
+      "success": true
+    },
+    "selectiveSuspendResumeConfound": {
+      "observed": true,
+      "effectOnResult": "unresolved"
+    },
+    "conclusion": {
+      "eightSecondsPreventedBusyInCapture": false,
+      "reason": "Eight seconds did not prevent Busy in this capture; selective-suspend/resume is an unresolved confound."
+    }
+  },
+  "batteryQuerySequenceSettledEvidence": {
+    "capture": "battery-query-sequence-settled-success",
+    "scope": "capture-scoped-read-only-success",
+    "captureIdentity": {
+      "rootBus": 3,
+      "deviceAddress": 2,
+      "vendorId": "1532",
+      "productId": "02E0",
+      "featureReportInterface": 2
+    },
+    "commandSummary": {
+      "featureReportBytes": 90,
+      "query07_92Count": 5,
+      "setter07_12Count": 0,
+      "other90ByteFeatureCommandCount": 0
+    },
+    "transactions": [
+      {
+        "queryOrdinal": 1,
+        "transactionId": 1,
+        "setReportFrame": 31,
+        "setReportEpoch": "1784094567.652130000",
+        "setCompletionFrame": 32,
+        "setCompletionEpoch": "1784094567.652613000",
+        "getReportFrame": 33,
+        "getReportEpoch": "1784094567.670339000",
+        "setCompletionToGetMilliseconds": 17.726,
+        "responseFrame": 34,
+        "responseEpoch": "1784094567.670693000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff"
+      },
+      {
+        "queryOrdinal": 2,
+        "transactionId": 2,
+        "setReportFrame": 35,
+        "setReportEpoch": "1784094568.690617000",
+        "setCompletionFrame": 36,
+        "setCompletionEpoch": "1784094568.690994000",
+        "getReportFrame": 37,
+        "getReportEpoch": "1784094568.714859000",
+        "setCompletionToGetMilliseconds": 23.865,
+        "responseFrame": 38,
+        "responseEpoch": "1784094568.715491000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff",
+        "requestSpacingSeconds": 1.038487
+      },
+      {
+        "queryOrdinal": 3,
+        "transactionId": 3,
+        "setReportFrame": 39,
+        "setReportEpoch": "1784094569.734583000",
+        "setCompletionFrame": 40,
+        "setCompletionEpoch": "1784094569.734892000",
+        "getReportFrame": 41,
+        "getReportEpoch": "1784094569.752903000",
+        "setCompletionToGetMilliseconds": 18.011,
+        "responseFrame": 42,
+        "responseEpoch": "1784094569.753310000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff",
+        "requestSpacingSeconds": 1.043966
+      },
+      {
+        "queryOrdinal": 4,
+        "transactionId": 4,
+        "setReportFrame": 43,
+        "setReportEpoch": "1784094570.766632000",
+        "setCompletionFrame": 44,
+        "setCompletionEpoch": "1784094570.767071000",
+        "getReportFrame": 45,
+        "getReportEpoch": "1784094570.785589000",
+        "setCompletionToGetMilliseconds": 18.518,
+        "responseFrame": 46,
+        "responseEpoch": "1784094570.786020000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff",
+        "requestSpacingSeconds": 1.032049
+      },
+      {
+        "queryOrdinal": 5,
+        "transactionId": 5,
+        "setReportFrame": 47,
+        "setReportEpoch": "1784094571.808097000",
+        "setCompletionFrame": 48,
+        "setCompletionEpoch": "1784094571.808647000",
+        "getReportFrame": 49,
+        "getReportEpoch": "1784094571.833650000",
+        "setCompletionToGetMilliseconds": 25.003,
+        "responseFrame": 50,
+        "responseEpoch": "1784094571.834171000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff",
+        "requestSpacingSeconds": 1.041465
+      }
+    ],
+    "cliResult": {
+      "settings": [
+        "ProtectionOff",
+        "ProtectionOff",
+        "ProtectionOff",
+        "ProtectionOff",
+        "ProtectionOff"
+      ],
+      "completedCount": 5,
+      "success": true,
+      "exitCode": 0
+    },
+    "conclusion": {
+      "acceptanceConditionsPassedInCapture": true,
+      "settlingResolvedPriorSameSessionBusyInCapture": true,
+      "productionBatteryWriteAdmissionChanged": false,
+      "writeAuthorizedByReadOnlyEvidence": false,
+      "reason": "For this exact capture/device, adequate SET-completion-to-GET settling resolves the prior same-session Busy behavior. This read-only evidence does not authorize battery writes or change production admission."
+    }
+  },
+  "batteryValidationEvidence": {
+    "sameCandidateZeroWrite": {
+      "capture": "battery-validation-same-candidate-zero-write",
+      "scope": "capture-scoped-zero-write-safety-success",
+      "cli": {
+        "candidate": "ProtectionOff",
+        "applyAttempted": false,
+        "primaryFailure": "SameCandidate",
+        "success": false,
+        "exitCode": 2
+      },
+      "transaction": {
+        "setReportFrame": 23,
+        "setCompletionFrame": 24,
+        "getReportFrame": 25,
+        "responseFrame": 26,
+        "setCompletionToGetMilliseconds": 24.824,
+        "transactionId": 1,
+        "command": "07/92",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff"
+      },
+      "setter07_12Count": 0,
+      "other90ByteFeatureCommandCount": 0,
+      "conclusion": {
+        "zeroWriteSafetyPassed": true,
+        "writeAdmissionEvidence": false
+      }
+    },
+    "limit80TimingNegative": {
+      "capture": "battery-validation-limit80-timing-negative",
+      "scope": "capture-scoped-functional-success-strict-timing-failure",
+      "requestTuples": [
+        "01/07/92/00",
+        "02/07/12/D0",
+        "03/07/92/00",
+        "04/07/12/50",
+        "05/07/92/00",
+        "01/07/92/00"
+      ],
+      "responseTuples": [
+        "02/01/07/92/50",
+        "02/02/07/12/D0",
+        "02/03/07/92/D0",
+        "02/04/07/12/50",
+        "02/05/07/92/50",
+        "02/01/07/92/50"
+      ],
+      "setCompletionToGetMilliseconds": [9.618, 21.558, 10.453, 10.213, 11.278, 16.146],
+      "minimumSettleMilliseconds": 9.618,
+      "functionalSequenceObserved": true,
+      "commandIsolationPassed": true,
+      "timingGatePassed": false,
+      "strictAcceptanceConditionsPassed": false,
+      "productionBatteryWriteAdmissionChanged": false
+    },
+    "limit80StrictSuccess": {
+      "capture": "battery-validation-limit80-strict-success",
+      "scope": "capture-scoped-strict-apply-readback-restore-success",
+      "installedExecutableHashes": {
+        "OpenBlade.Service.exe": "64C437562C73FE5A648712B500337959D73CF28E6551D144ECE96C0AF7FB7C7A",
+        "OpenBlade.Tray.exe": "114D199A0C39618F1D51C133B37594438638CE985E161394AAEFB8BC270781EF",
+        "OpenBlade.Capture.exe": "92974C6482D6BEEAE7E732A188DB38FCD1F4EFE1685FA820D04201ADD670201D"
+      },
+      "requestTuples": [
+        "01/07/92/00",
+        "02/07/12/D0",
+        "03/07/92/00",
+        "04/07/12/50",
+        "05/07/92/00",
+        "01/07/92/00"
+      ],
+      "responseTuples": [
+        "02/01/07/92/50",
+        "02/02/07/12/D0",
+        "02/03/07/92/D0",
+        "02/04/07/12/50",
+        "02/05/07/92/50",
+        "02/01/07/92/50"
+      ],
+      "setCompletionToGetMilliseconds": [24.372, 28.062, 24.870, 26.797, 22.265, 31.662],
+      "minimumSettleMilliseconds": 22.265,
+      "cli": {
+        "applyAttempted": true,
+        "applied": true,
+        "readBack": true,
+        "restored": true,
+        "primaryFailure": "None",
+        "restorationFailure": "None",
+        "success": true,
+        "exitCode": 0
+      },
+      "independentFinalQuery": {
+        "candidate": "ProtectionOff",
+        "primaryFailure": "SameCandidate",
+        "setting": "ProtectionOff",
+        "exitCode": 2
+      },
+      "other90ByteFeatureCommandCount": 0,
+      "functionalSequenceObserved": true,
+      "commandIsolationPassed": true,
+      "timingGatePassed": true,
+      "strictAcceptanceConditionsPassed": true
+    },
+    "temporaryFullChargeStrictSuccess": {
+      "capture": "temporary-full-charge-validation-strict-success",
+      "scope": "capture-scoped-strict-enable-readback-cancel-restore-success",
+      "requestTuples": [
+        "01/07/92/00",
+        "02/07/8F/00",
+        "03/07/0F/04",
+        "04/07/92/00",
+        "05/07/8F/00",
+        "06/07/0F/00",
+        "07/07/92/00",
+        "08/07/8F/00"
+      ],
+      "responseTuples": [
+        "02/01/07/92/D0",
+        "02/02/07/8F/00",
+        "02/03/07/0F/04",
+        "02/04/07/92/D0",
+        "02/05/07/8F/04",
+        "02/06/07/0F/00",
+        "02/07/07/92/D0",
+        "02/08/07/8F/00"
+      ],
+      "setCompletionToGetMilliseconds": [28.196, 39.513, 36.113, 40.809, 41.959, 25.315, 41.960, 42.056],
+      "minimumSettleMilliseconds": 25.315,
+      "cli": {
+        "enableAttempted": true,
+        "enableAcknowledged": true,
+        "candidateProtection": "Limit80",
+        "candidateTemporaryFullCharge": true,
+        "readBack": true,
+        "cancelAttempted": true,
+        "cancelAcknowledged": true,
+        "restorationProtection": "Limit80",
+        "restorationTemporaryFullCharge": false,
+        "restored": true,
+        "primaryFailure": "None",
+        "restorationFailure": "None",
+        "success": true,
+        "exitCode": 0
+      },
+      "independentFinalQuery": {
+        "protection": "Limit80",
+        "temporaryFullCharge": false,
+        "protectionSuccess": true,
+        "temporaryFullChargeSuccess": true
+      },
+      "other90ByteFeatureCommandCount": 0,
+      "functionalSequenceObserved": true,
+      "commandIsolationPassed": true,
+      "timingGatePassed": true,
+      "strictAcceptanceConditionsPassed": true
+    },
+    "historicalAdmissionBoundaryAfterLimit80Validation": {
+      "productionBatteryWriteAdmissionChanged": false,
+      "limit80WriteAuthorizedInProduction": false,
+      "otherBatteryLimitsAuthorizedInProduction": false,
+      "fullChargeOverrideAuthorizedInProduction": false,
+      "reason": "The exact Limit80 validation gates passed, but production capability and trusted-hash admission require a separate review. No other battery limit was validated by OpenBlade."
+    }
+  },
+  "adapterPowerReadEvidence": {
+    "fixtureFile": "rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json",
+    "command": "07/8C",
+    "requestPayloadHex": "0000",
+    "readOnly": true,
+    "mappings": [
+      { "responsePayloadHex": "0711", "adapterWattageLevel": 100, "powerSource": "usb-c-pd" },
+      { "responsePayloadHex": "1111", "adapterWattageLevel": 280, "powerSource": "full-oem-adapter" }
+    ],
+    "unknownPayloadPolicy": "unknown-fail-closed",
+    "synapseCorroboration": {
+      "observedAtLocal": "2026-07-17T16:05:53.296-07:00",
+      "currentAdapterWattageLevel": 100,
+      "recommendedAdapterWattageLevel": 280,
+      "lowPower": true,
+      "selectedPerformance": "Balanced",
+      "automaticFanMode": true
+    }
+  },
+  "unsupportedObservations": [
+    {
+      "feature": "keyboard-effects-and-color",
+      "reason": "Synapse renders effects as continuous 374-byte feature reports on USB interface 3. No GET_REPORT readback was observed and this collection is not admitted by the 91-byte control-interface gate."
+    },
+    {
+      "feature": "battery-profile-ui-selection",
+      "reason": "Superseded by the focused 2026-07-17 battery-profile capture: Battery Saver repeatedly wrote 01010300/01020300, while battery Balanced repeatedly wrote 01010600/01020600. Independent 0D/82 reads tracked mode 03 and mode 06 respectively."
+    },
+    {
+      "feature": "fan-rpm-telemetry",
+      "reason": "0D/88 payload 01 <selector> returns 01 <selector> <rpm/100>. It can corroborate a resulting speed but cannot independently read back fan mode or fixed target."
+    }
+  ],
+  "admission": {
+    "productionHashAdded": true,
+    "authorizedActions": ["battery-limit-50", "battery-limit-55", "battery-limit-60", "battery-limit-65", "battery-limit-70", "battery-limit-75", "battery-limit-80", "battery-protection-off", "temporary-full-charge-query", "charge-to-100-enable", "charge-to-100-cancel"],
+    "unauthorizedActions": ["performance", "fan-mode", "lighting"],
+    "reason": "Every admitted battery write passed typed OpenBlade application, independent query/readback, restoration, command-isolation, and timing gates on this exact device. The paired temporary-full-charge enable and cancel commands are admitted together so enabling cannot be exposed without trusted cancellation."
+  }
+}

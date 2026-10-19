@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade.Capture 0.5.0+7316548ca840ea07a7941d4b07b7b78f07fbdf75",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-09T21:21:19.8072212Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "68F5BCDFA47400DA9ACC427BAD875815F41BDF617D19A366B65781B3A87C7001",
+    "byteLength": 1336,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance",
+    "name": "Typed pad-absent HyperBoost reversible validation",
+    "value": "Balanced mode 0 to HyperBoost mode 7 on both channels, immediate typed readback, then exact Balanced restoration with pad USB and external power operator-confirmed disconnected; no dwell or load",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully: both mode-7 setters were acknowledged while the cooling pad was physically absent.",
+    "readbackResult": "Readback confirmed mode 7/value 0 independently on both thermal channels.",
+    "restorationResult": "Restored successfully: the saved Balanced pair was submitted once and acknowledged on both channels.",
+    "restorationReadbackResult": "Restoration readback confirmed the exact saved mode 0/value 0 state on both channels."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "PadAbsentPreflight",
+      "summary": "The validator confirmed the exact laptop and BIOS, inactive competing controllers, inactive OpenBlade service, two preliminary command-level absence samples 500 ms apart, the full-power 280 W adapter state, two identical paired Balanced/Automatic laptop reads, and operator confirmation that both pad power sources were disconnected.",
+      "firstAbsenceConfirmed": true,
+      "secondAbsenceConfirmed": true,
+      "baselineBalancedConfirmed": true,
+      "fullPowerAdapterConfirmed": true,
+      "interactiveApprovalConfirmed": true,
+      "operatorConfirmedUsbAndExternalPowerDisconnected": true
+    },
+    {
+      "kind": "FinalPreApplySafetyGate",
+      "summary": "Inside the exclusive laptop session, the validator performed a third exact-pad absence observation immediately before the writes and reconfirmed full-power eligibility. It did not continuously monitor pad absence or perform a post-restoration absence observation.",
+      "preApplyAbsenceObservationCount": 3,
+      "preApplyPadAbsenceConfirmed": true,
+      "continuousAbsenceConfirmed": false,
+      "postRestorationPadAbsenceConfirmed": false
+    },
+    {
+      "kind": "ImmediateApplyReadbackAndRestoration",
+      "summary": "The validator submitted exactly one mode-7 write per channel, received both acknowledgements, independently confirmed the paired HyperBoost state, then restored and independently confirmed the exact saved Balanced state without dwell or load.",
+      "applyAttempted": true,
+      "applyAcknowledged": true,
+      "candidateConfirmed": true,
+      "restoreAttempted": true,
+      "restoreAcknowledged": true,
+      "restored": true,
+      "manualRecoveryRequired": false,
+      "indeterminatePartialWrite": false,
+      "safetyFailure": "none",
+      "failure": "none"
+    },
+    {
+      "kind": "WrapperIntegrityAndCleanup",
+      "summary": "The elevated wrapper bound the exact Capture executable, recorded the sanitized semantic result, reported an empty stderr and no wrapper failure, and restored both temporarily stopped Razer services.",
+      "wrapperCompletionTimeUtc": "2026-08-09T21:21:19.8072212Z",
+      "wrapperCompletionTimeSource": "elevated wrapper report file completion metadata",
+      "wrapperSha256": "FDDDA6D4649A943812951F8F3E8523692B91DEC90A2B3B6C252E3C886F0EFBB3",
+      "wrapperByteLength": 2081,
+      "captureExecutableSha256": "9F46A160FE90E14ADBE451BA23B2406BC3301836D85069E92FE301DF9A85BC84",
+      "captureProductVersion": "0.5.0+7316548ca840ea07a7941d4b07b7b78f07fbdf75",
+      "validatorExitCode": 0,
+      "stderrEmpty": true,
+      "wrapperFailure": false,
+      "servicesRestored": true
+    }
+  ],
+  "limitations": [
+    "This single exact-device run proves only that the immediate firmware transition and restoration were accepted and readable after three pad-absence observations before mutation and operator confirmation that both cooling-pad power sources were physically disconnected.",
+    "Pad absence was not monitored continuously and was not observed again after restoration.",
+    "No dwell, benchmark, sustained workload, power-limit measurement, component-temperature trend, or long-duration thermal validation was performed.",
+    "The result does not establish that pad-less HyperBoost is thermally safe or suitable for production use, and it does not remove the existing cooling-pad presence gate.",
+    "The result does not expand support to another laptop model, firmware version, power-adapter state, or cooling-pad fan operation.",
+    "The private typed transcript and elevated wrapper report remain uncommitted."
+  ],
+  "productionAdmission": {
+    "hyperBoostAccess": "ReadWrite",
+    "hyperBoostReadbackConfirmed": true,
+    "hyperBoostWriteAdmitted": true,
+    "coolingPadRequired": true,
+    "fullPowerAdapterRequired": true,
+    "padLessImmediateTransitionObserved": true,
+    "padLessImmediateReversibleNoLoadValidationConfirmed": true,
+    "padLessActivationAdmitted": false,
+    "coolingPadFanWriteAdmitted": false,
+    "reason": "One exact-build no-load run showed that the laptop accepted HyperBoost, returned typed paired mode-7 readback, and restored Balanced after three pad-absence observations before mutation. The validator itself kept production admission false, and this run does not establish continuous absence, load or thermal safety, lifecycle behavior, or production-service eligibility."
+  },
+  "notes": [
+    "capturedAtUtc records the elevated wrapper report completion time from file metadata; the validator did not emit its own timestamp.",
+    "USBPcap was not running during the typed validation.",
+    "The installed OpenBlade service remained stopped and was not restarted.",
+    "Razer Game Manager Service 3 and Razer Elevation Service were restored after the bounded run."
+  ]
+}

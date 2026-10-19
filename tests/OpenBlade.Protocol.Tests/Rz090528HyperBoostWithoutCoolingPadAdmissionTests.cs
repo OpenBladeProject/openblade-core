@@ -65,13 +65,13 @@ public sealed class Rz090528HyperBoostWithoutCoolingPadAdmissionTests
         {
             new("src/OpenBlade.Protocol/Fixtures/" + manifest.Evidence.ReadinessDescriptor,
                 manifest.Evidence.ReadinessDescriptorSha256),
-            new("captures/annotations/" + manifest.Evidence.SupplementalAdapterTransitionAnnotation,
+            new("evidence/legacy-captures/annotations/" + manifest.Evidence.SupplementalAdapterTransitionAnnotation,
                 manifest.Evidence.SupplementalAdapterTransitionAnnotationSha256),
         };
 
         foreach (AdmissionEvidenceReference reference in cited)
         {
-            string path = Path.Combine(RepositoryRoot(), reference.Artifact.Replace('/', Path.DirectorySeparatorChar));
+            string path = RepositoryArtifactPath(reference.Artifact);
             Assert.True(File.Exists(path), reference.Artifact);
             Assert.Equal(reference.Sha256, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
         }
@@ -196,8 +196,16 @@ public sealed class Rz090528HyperBoostWithoutCoolingPadAdmissionTests
     ];
 
     private static JsonElement ReadAnnotation(AdmissionEvidenceReference reference) =>
-        JsonDocument.Parse(File.ReadAllBytes(Path.Combine(
-            RepositoryRoot(), reference.Artifact.Replace('/', Path.DirectorySeparatorChar)))).RootElement.Clone();
+        JsonDocument.Parse(File.ReadAllBytes(RepositoryArtifactPath(reference.Artifact))).RootElement.Clone();
+
+    private static string RepositoryArtifactPath(string artifact)
+    {
+        const string legacyPrefix = "captures/";
+        string currentPath = artifact.StartsWith(legacyPrefix, StringComparison.Ordinal)
+            ? "evidence/legacy-captures/" + artifact[legacyPrefix.Length..]
+            : artifact;
+        return Path.Combine(RepositoryRoot(), currentPath.Replace('/', Path.DirectorySeparatorChar));
+    }
 
     private static string RepositoryRoot()
     {

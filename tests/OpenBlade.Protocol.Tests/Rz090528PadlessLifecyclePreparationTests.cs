@@ -45,7 +45,7 @@ public sealed class Rz090528PadlessLifecyclePreparationTests
             {
                 if (property.Value.ValueKind == System.Text.Json.JsonValueKind.Null) { continue; }
                 string artifact = property.Value.GetProperty("artifact").GetString()!;
-                string path = Path.Combine(RepositoryRoot(), artifact.Replace('/', Path.DirectorySeparatorChar));
+                string path = RepositoryArtifactPath(artifact);
                 Assert.True(File.Exists(path), artifact);
                 Assert.Equal(property.Value.GetProperty("sha256").GetString(),
                     Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))));
@@ -53,6 +53,15 @@ public sealed class Rz090528PadlessLifecyclePreparationTests
             }
         }
         Assert.Equal(9, cited);
+    }
+
+    private static string RepositoryArtifactPath(string artifact)
+    {
+        const string legacyPrefix = "captures/";
+        string currentPath = artifact.StartsWith(legacyPrefix, StringComparison.Ordinal)
+            ? "evidence/legacy-captures/" + artifact[legacyPrefix.Length..]
+            : artifact;
+        return Path.Combine(RepositoryRoot(), currentPath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     [Theory]

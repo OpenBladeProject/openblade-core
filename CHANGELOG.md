@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Store the sanitized protocol evidence required by OpenBlade directly in the core repository, so public clones, builds, and tests no longer depend on the private legacy capture repository. Use Synapse Observer for new evidence collection. ([#815](https://github.com/OpenBladeProject/openblade-core/pull/815))
+
 ## [0.36.0-nightly.93] - 2026-10-18
 
 ### Added

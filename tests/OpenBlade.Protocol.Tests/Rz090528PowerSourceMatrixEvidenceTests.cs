@@ -104,13 +104,13 @@ public sealed class Rz090528PowerSourceMatrixEvidenceTests
 
     private static JsonDocument LoadHistoricalEvidence() => JsonDocument.Parse(
         File.ReadAllText(RepositoryFile(
-            "captures",
+            "evidence", "legacy-captures",
             "decoded",
             "rz09-0528-pid-02c6-bios-2.02-power-source-matrix.json")));
 
     private static JsonDocument LoadCurrentEvidence() => JsonDocument.Parse(
         File.ReadAllText(RepositoryFile(
-            "captures",
+            "evidence", "legacy-captures",
             "decoded",
             "rz09-0528-pid-02c6-bios-2.02-evidence.json")));
 

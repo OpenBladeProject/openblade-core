@@ -128,12 +128,12 @@ public sealed class OnlineProtocolEvidenceTests
     private static JsonDocument LoadEvidence() => JsonDocument.Parse(File.ReadAllText(EvidencePath()));
 
     private static string EvidencePath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-evidence.json");
 
     private static string AnnotationPath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "annotations",
         "2026-07-14-online-performance-fan-session.json");
 

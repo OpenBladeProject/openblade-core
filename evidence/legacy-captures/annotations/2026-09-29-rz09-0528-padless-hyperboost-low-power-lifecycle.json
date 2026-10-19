@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "evidenceKind": "InstalledLowPowerLifecycle",
+  "evidenceProvenance": {
+    "controller": "OpenBlade installed developer lifecycle-validation Service 0.23.0-nightly.4+8ed9088a verified by OpenBlade.FirmwareSmoke 0.23.0-nightly.4+8ed9088a",
+    "role": "OpenBladeTypedValidation",
+    "sourceRevision": "8ed9088af1753c88973038b0440ee8e85156b248",
+    "installerSha256": "E76D0CEF23F753F02AD90D1BB98BAC5E42CFEC6073666831001ECC33AC0FF09D",
+    "serviceExecutableSha256": "DB01160980A6A7A49ADD3E475F909AFC6649B7DC1B9086F787604F4716EBFBA2",
+    "productionServiceAssemblySha256": "30477520926B9A30F9F5074637B926D0DCEC5BCA6815231F792C18089C8586AF",
+    "validationServiceAssemblySha256": "2247130A9E0EC41FFE60BE86528B1A87BA6B3D2E09B727D00BF0C548C5209893",
+    "validationBuildManifestSha256": "4438DFE2C6D8BB01F41D9D95D3D017BC1153E2ECF46AF50E53E8183516FB119A",
+    "readinessDescriptorSha256": "A18E7BA301C87A0BA41BA0F39FECDFC4FC3A43660AE5DE28077C2863E7165237",
+    "firmwareSmokeExecutableSha256": "D49003FA626D9CA18DF6543EB494466BC0A31F86A6108765E8174654D3FA381D",
+    "firmwareSmokeAssemblySha256": "6AB04DA4ED0A6F95F820FD6958888C3E440D132264C1681FF89913FF6904A31E",
+    "installedGenerationSha256": "0F1218B973F3AB674F9D04D84C6893F65D3778EDB45B08DD227796DB27F32B5D"
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "sku": "RZ09-05289EN4",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "operatorConfirmation": {
+    "attended": true,
+    "fullPowerAdapterConnected": true,
+    "performanceAndAutomaticSelectedInTray": true,
+    "eachElevationApprovedByOperator": true,
+    "spokenPromptsUsed": true,
+    "singleWindowsSleepInvokedByOperator": true,
+    "resumeReportedByOperator": true
+  },
+  "scenario": {
+    "transition": "Performance with Automatic fans to service-owned HyperBoost mode 7, one operator-initiated Windows Sleep (Start, Power, Sleep) of about fifteen seconds and resume, one owned restoration by the same Service process, then read-only verification",
+    "baseMode": "Performance",
+    "restoreIntent": {
+      "performance": "Performance",
+      "fans": "Automatic",
+      "customPerformance": null,
+      "gpuClockTuning": null
+    },
+    "requiresCoolingPad": false,
+    "padlessEligibilityObservedByService": "CoolingPadAbsent",
+    "activePowerSource": "PluggedIn",
+    "restorationBoundary": "before display-off safety boundary",
+    "restorationBoundaryNote": "The Service restored before Windows turned off the display on the way into sleep, the earlier of the two accepted low-power boundaries; the suspend callback was not needed"
+  },
+  "validation": {
+    "arm": {
+      "success": true,
+      "hyperBoostConfirmed": true,
+      "durableOwnershipConfirmed": true,
+      "markerCreated": true,
+      "cleanupAttempted": false,
+      "manualRecoveryRequired": false
+    },
+    "boundary": {
+      "sleepCount": 1,
+      "sameServiceProcessAcrossBoundary": true,
+      "serviceRestarted": false,
+      "restorationBeforeSleep": true
+    },
+    "verification": {
+      "success": true,
+      "exactInstalledGeneration": true,
+      "expectedProcessBoundary": true,
+      "exactRestoreIntentConfirmed": true,
+      "journalRetired": true,
+      "recoveryAttemptsObserved": 1,
+      "recoveryCompletionsObserved": 1,
+      "stableSecondObservation": true,
+      "readOnly": true
+    },
+    "postResumeState": {
+      "baselinePassed": true,
+      "performance": "Performance",
+      "fans": "Automatic",
+      "hyperBoostActive": false,
+      "externalChanges": [],
+      "writesBlocked": false,
+      "unconfirmedWrites": 0,
+      "activePowerSource": "PluggedIn",
+      "keyboardDriverModeReacquired": true
+    }
+  },
+  "productionRestore": {
+    "restored": true,
+    "journalAbsentBeforeRestore": true,
+    "finalBaselinePassed": true,
+    "finalServiceProductVersion": "0.23.0-nightly.4+8ed9088a",
+    "finalPerformance": "Balanced",
+    "finalFans": "Automatic",
+    "finalExternalChanges": [],
+    "note": "The clean production-Service start applied the saved full-AC profile (Balanced); the Performance selection was a temporary tray setting, which a clean Service start does not keep"
+  },
+  "companionEvidence": {
+    "annotation": "2026-09-29-rz09-0528-padless-hyperboost-crash-recovery-lifecycle.json",
+    "annotationSha256": "7CD8C237B4092018EE418F859AEAFCE5CA1E0C96554FDC6A72A865888A0B8B73",
+    "sameInstalledGeneration": true,
+    "relationship": "The unexpected-exit lifecycle for the same installed generation"
+  },
+  "artifacts": [
+    {
+      "role": "FreshBaseline",
+      "sha256": "109B4B9426A3A09BF418FABC0D94EDFE032C683729A6B91CCD9F1A2512D7E4AE",
+      "byteLength": 5815,
+      "committed": false
+    },
+    {
+      "role": "ValidationServiceSwapReport",
+      "sha256": "B9184CD1AD4D44E7FA12B569BFE8123AF14818FA40D869DE53A04E52B9E10D27",
+      "byteLength": 397,
+      "committed": false
+    },
+    {
+      "role": "LifecycleArm",
+      "sha256": "AE098AF2E24B0C4AD76984CCE230A558E99919C3B2B32BD2515916DF37908A23",
+      "byteLength": 2676,
+      "committed": false
+    },
+    {
+      "role": "PrivateLifecycleMarker",
+      "sha256": "F125F13A6A3426B1E7D7C2EBA0AECB341DA4E15B58C5E8367DD5D1373BB99849",
+      "byteLength": 2049,
+      "committed": false
+    },
+    {
+      "role": "LifecycleVerification",
+      "sha256": "0E548E86A0C57EEEBF87EDB148C35F6228DCC47931C6490211B5DBE1813F5583",
+      "byteLength": 2607,
+      "committed": false
+    },
+    {
+      "role": "PostResumeBaseline",
+      "sha256": "D937EE9C970E8D987AD2607461C98762E710D528D8A5E644326526EF0008FE71",
+      "byteLength": 5818,
+      "committed": false
+    },
+    {
+      "role": "ProductionRestoreReport",
+      "sha256": "7B81B51B7623A85DE35286FC3AC87BE1C3A6D7887606EC37D5F2CE8AC40E113A",
+      "byteLength": 218,
+      "committed": false
+    },
+    {
+      "role": "FinalBaseline",
+      "sha256": "F47A2E95F0A059F3F5DD391D368262B17A09660B50394EA476E4EF56C3492B16",
+      "byteLength": 5820,
+      "committed": false
+    }
+  ],
+  "interpretation": {
+    "supports": "One installed-Service low-power restoration of OpenBlade-owned padless HyperBoost on exact RZ09-0528 hardware across one Windows Sleep and resume, restoring the recorded Performance and Automatic entry intent in the same Service process with matching desired state, no external changes, a retired journal, and exactly one recovery attempt and completion",
+    "lowPowerLifecycleValidated": true,
+    "crashRecoveryValidated": true,
+    "productionPadlessAdmitted": false,
+    "limits": "Covers one full-power-AC run with no GPU tuning or custom performance and one operator-initiated Sleep; the display-off boundary restored first, so the suspend callback path was not exercised. crashRecoveryValidated reflects the cited companion annotation. Production admission requires a separate reviewed change. No USB capture was taken; no Razer service was started, stopped, or changed."
+  },
+  "sanitization": {
+    "rawOutputsExcluded": true,
+    "privateMarkerExcluded": true,
+    "diagnosticsExcluded": true,
+    "localPathsExcluded": true,
+    "processIdentityExcluded": true,
+    "transitionIdentifierExcluded": true,
+    "userIdentityExcluded": true,
+    "serialNumbersExcluded": true
+  }
+}

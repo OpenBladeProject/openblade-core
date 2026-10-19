@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "evidenceKind": "ExactDeviceHyperBoostGpuSemanticCheckpoint",
+  "annotation": "annotations/2026-09-27-rz09-0528-hyperboost-gpu-developer-validation.json",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "sku": "RZ09-05289EN4",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "gpu": {
+    "model": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "driverVersion": "617.14",
+    "offsetUnits": "Normalized MHz; core and memory reported independently by NVML and NVAPI"
+  },
+  "provenance": {
+    "sourceRevision": "f5d2c63e6bdd9e869332b21eb5585eda48ca6cb4",
+    "validatorAssemblySha256": "1C1372817C44A78110F9E7F1138BA7C0B6B446DE331651F3C9263B4449F408B6",
+    "protocolAssemblySha256": "FD3CD7D06D4B534972C032120F159C54EAB6E496B8A47F6927405F89B905A067",
+    "buildManifestSha256": "8745BE7D2B963F04422652A3F1A104131E00E8944789791496EC5EE4F97194B7",
+    "startedAtUtc": "2026-09-27T22:08:31.2945167Z",
+    "developerCompletedAtUtc": "2026-09-27T22:08:47.5960037Z",
+    "wrapperCompletedAtUtc": "2026-09-27T22:09:03.4416010Z",
+    "installedProductValidation": false
+  },
+  "scenarios": [
+    {
+      "number": 1,
+      "sequence": [
+        "Performance/Automatic; GPU 0/0",
+        "HyperBoost; GPU 0/0",
+        "HyperBoost; GPU +5/+5",
+        "HyperBoost; GPU 0/0",
+        "Performance/Automatic; GPU 0/0"
+      ],
+      "gpuZeroConfirmedBeforeHyperBoostExit": true
+    },
+    {
+      "number": 2,
+      "sequence": [
+        "Performance/Automatic; GPU 0/0",
+        "Performance/Automatic; GPU +5/+5",
+        "HyperBoost; GPU +5/+5",
+        "Performance/Automatic; GPU +5/+5",
+        "Performance/Automatic; GPU 0/0"
+      ],
+      "nonzeroOffsetsPreservedAcrossHyperBoostEntryAndExit": true
+    }
+  ],
+  "gpuObservations": [
+    {
+      "phase": "Scenario1/Baseline",
+      "nvml": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      },
+      "nvapi": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      }
+    },
+    {
+      "phase": "Scenario1/Candidate",
+      "nvml": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      },
+      "nvapi": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      }
+    },
+    {
+      "phase": "Scenario1/Candidate/ApplyFive",
+      "nvml": {
+        "coreMegahertz": 5,
+        "memoryMegahertz": 5
+      },
+      "nvapi": {
+        "coreMegahertz": 5,
+        "memoryMegahertz": 5
+      }
+    },
+    {
+      "phase": "Scenario1/Candidate/RestoreZero",
+      "nvml": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      },
+      "nvapi": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      }
+    },
+    {
+      "phase": "Scenario1/Restored",
+      "nvml": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      },
+      "nvapi": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      }
+    },
+    {
+      "phase": "Scenario2/Baseline",
+      "nvml": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      },
+      "nvapi": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      }
+    },
+    {
+      "phase": "Scenario2/Baseline/ApplyFive",
+      "nvml": {
+        "coreMegahertz": 5,
+        "memoryMegahertz": 5
+      },
+      "nvapi": {
+        "coreMegahertz": 5,
+        "memoryMegahertz": 5
+      }
+    },
+    {
+      "phase": "Scenario2/Candidate",
+      "nvml": {
+        "coreMegahertz": 5,
+        "memoryMegahertz": 5
+      },
+      "nvapi": {
+        "coreMegahertz": 5,
+        "memoryMegahertz": 5
+      }
+    },
+    {
+      "phase": "Scenario2/Restored",
+      "nvml": {
+        "coreMegahertz": 5,
+        "memoryMegahertz": 5
+      },
+      "nvapi": {
+        "coreMegahertz": 5,
+        "memoryMegahertz": 5
+      }
+    },
+    {
+      "phase": "Scenario2/Restored/RestoreZero",
+      "nvml": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      },
+      "nvapi": {
+        "coreMegahertz": 0,
+        "memoryMegahertz": 0
+      }
+    }
+  ],
+  "thermalResults": [
+    {
+      "Target": "HyperBoostFromPerformance",
+      "Baseline": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "Candidate": {
+        "Thermal1Hex": "01010700",
+        "Thermal2Hex": "01020700"
+      },
+      "CandidateFanRpm": null,
+      "CandidateFanRpmSamples": [],
+      "Restoration": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "ApplyAttempted": true,
+      "ApplyAcknowledged": true,
+      "CandidateConfirmed": true,
+      "RestoreAttempted": true,
+      "RestoreAcknowledged": true,
+      "Restored": true,
+      "IndeterminatePartialWrite": false,
+      "ManualRecoveryRequired": false,
+      "Failure": "None",
+      "Success": true
+    },
+    {
+      "Target": "HyperBoostFromPerformance",
+      "Baseline": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "Candidate": {
+        "Thermal1Hex": "01010700",
+        "Thermal2Hex": "01020700"
+      },
+      "CandidateFanRpm": null,
+      "CandidateFanRpmSamples": [],
+      "Restoration": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "ApplyAttempted": true,
+      "ApplyAcknowledged": true,
+      "CandidateConfirmed": true,
+      "RestoreAttempted": true,
+      "RestoreAcknowledged": true,
+      "Restored": true,
+      "IndeterminatePartialWrite": false,
+      "ManualRecoveryRequired": false,
+      "Failure": "None",
+      "Success": true
+    }
+  ],
+  "admission": {
+    "productionImportAllowed": false,
+    "productionCoverageAdvanced": false,
+    "installedCombinationValidated": false,
+    "padlessActivationAdmitted": false,
+    "balancedOrSilentTransitionsValidated": false,
+    "lifecycleValidated": false,
+    "stressValidated": false,
+    "gpuOffsetEndpointsValidated": false
+  },
+  "limitations": [
+    "Two developer-only bounded scenarios using Performance/Automatic and HyperBoost with a present genuine cooling pad; only normalized GPU offsets 0 and +5 MHz on both domains were exercised.",
+    "No installed service or tray combined HyperBoost/GPU validation was performed.",
+    "No stress, sustained load, temperature, power-limit, performance improvement, offset endpoints, negative offsets, or larger offsets were validated.",
+    "No Balanced/Silent HyperBoost, padless entry, pad removal, AC removal, sleep/resume, reboot, or other lifecycle validation.",
+    "No cooling-pad feature writes, independent pad fan RPM readback, or prior pad-state restoration were validated."
+  ]
+}

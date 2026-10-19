@@ -144,7 +144,7 @@ public sealed class PerformanceReadbackEvidenceTests
     private static JsonDocument LoadFixture() => JsonDocument.Parse(File.ReadAllText(FixturePath()));
 
     private static string FixturePath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-performance-readback-fixture.json");
 

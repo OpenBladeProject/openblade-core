@@ -64,8 +64,10 @@ foreach ($parallelJob in @($qualityJob, $contractJob, $componentJob, $installerJ
 }
 Assert-True ($qualityJob.Contains('dotnet test OpenBlade.slnx')) `
     'The quality lane must own solution tests.'
-Assert-True ($qualityJob.Contains('submodules: recursive')) `
-    'The quality lane must check out capture fixtures used by protocol tests.'
+Assert-True ($qualityJob.Contains('submodules: false')) `
+    'The quality lane must use the self-contained source checkout.'
+Assert-True (-not $qualityJob.Contains('submodules: recursive')) `
+    'The quality lane must not depend on a recursive submodule checkout.'
 Assert-True (-not $qualityJob.Contains('Get-ChildItem .\tests\Build.Tests')) `
     'The quality lane must not serialize build contracts after solution tests.'
 Assert-True ($contractJob.Contains('Get-ChildItem .\tests\Build.Tests')) `
@@ -76,8 +78,10 @@ Assert-True ($contractJob.Contains(
 Assert-True ($contractJob.Contains(
         'dotnet restore .\build\installer\OpenBlade.Installer.UI.Tests\OpenBlade.Installer.UI.Tests.csproj -p:NuGetAudit=false')) `
     'The full contract lane must restore the disconnected installer renderer.'
-Assert-True ($contractJob.Contains('submodules: recursive')) `
-    'The build-contract lane must check out capture tools used by contract tests.'
+Assert-True ($contractJob.Contains('submodules: false')) `
+    'The build-contract lane must use the self-contained source checkout.'
+Assert-True (-not $contractJob.Contains('submodules: recursive')) `
+    'The build-contract lane must not depend on a recursive submodule checkout.'
 Assert-True (-not $contractJob.Contains('.\build\Publish.ps1')) `
     'The build-contract lane must not serialize installer publication.'
 Assert-True ($componentJob.Contains('.\build\Run-AffectedCi.ps1')) `
@@ -87,7 +91,7 @@ Assert-True ($componentJob.Contains('-Lane Publish')) `
 Assert-True ($installerJob.Contains('.\build\Publish.ps1')) `
     'The installer lane must own production publication.'
 Assert-True ($installerJob.Contains('submodules: false')) `
-    'The installer lane must not fetch the captures submodule it does not consume.'
+    'The installer lane must use the self-contained source checkout.'
 foreach ($requiredGateDependency in @(
         '- validate-request',
         '- quality-and-tests',

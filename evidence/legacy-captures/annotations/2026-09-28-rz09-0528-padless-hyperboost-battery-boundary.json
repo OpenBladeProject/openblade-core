@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 1,
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "evidenceProvenance": {
+    "controller": "OpenBlade exact-device developer validation runner",
+    "role": "ReversibleValidation",
+    "sourceRevision": "888dca81dfe6ca756524e7e880e155b5e7fc2567",
+    "planSha256": "FAEAE270DA1DB0E520A256BD67AE8C1112107D5886D585B22A0B5B4CABECC0E7"
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "bios": "2.02"
+  },
+  "operatorConfirmation": {
+    "padUsbAndPowerDisconnected": true,
+    "usbCPowerDisconnected": true,
+    "originalAdapterConnected": true,
+    "noWorkload": true,
+    "attendedSpokenPromptsConfirmed": true
+  },
+  "validation": {
+    "success": true,
+    "thermalPair": {
+      "Target": "HyperBoostFromPerformance",
+      "Baseline": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "Candidate": {
+        "Thermal1Hex": "01010700",
+        "Thermal2Hex": "01020700"
+      },
+      "Restoration": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "ApplyAttempted": true,
+      "ApplyAcknowledged": true,
+      "CandidateConfirmed": true,
+      "RestoreAttempted": true,
+      "RestoreAcknowledged": true,
+      "Restored": true,
+      "IndeterminatePartialWrite": false,
+      "ManualRecoveryRequired": false,
+      "Failure": "None",
+      "Success": true
+    },
+    "boundary": {
+      "completed": true,
+      "batteryObserved": true,
+      "automaticReversionObserved": false,
+      "batteryWritesPerformed": false,
+      "operatorPrompts": {
+        "unplugPromptLatencyMilliseconds": 60.2,
+        "reconnectPromptLatencyMilliseconds": 30.1,
+        "unplugPromptToFirstCoherentBatterySampleMilliseconds": 7718.4
+      },
+      "samples": [
+        {
+          "Phase": "EntryBeforeApply",
+          "ElapsedMilliseconds": 768.5551,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 2,
+          "Thermal2Mode": 2,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 51,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "EntryBeforeApply",
+          "ElapsedMilliseconds": 3384.84,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 2,
+          "Thermal2Mode": 2,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 51.6,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 654.0526,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 47.5,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 2261.795,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 47,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 3876.0079,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 46.8,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 5898.9447,
+          "FirmwarePowerBefore": "0011",
+          "FirmwarePowerAfter": "0011",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": null,
+          "WindowsAcAfter": false,
+          "CpuCelsius": 46.4,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "TransitionalDiscarded"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 7718.4348,
+          "FirmwarePowerBefore": "0011",
+          "FirmwarePowerAfter": "0011",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": false,
+          "WindowsAcAfter": false,
+          "CpuCelsius": 45.4,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 9550.4701,
+          "FirmwarePowerBefore": "0011",
+          "FirmwarePowerAfter": "0011",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": false,
+          "WindowsAcAfter": false,
+          "CpuCelsius": 46.6,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 11369.0195,
+          "FirmwarePowerBefore": "0011",
+          "FirmwarePowerAfter": "0011",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": false,
+          "WindowsAcAfter": false,
+          "CpuCelsius": 45.6,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 13082.7022,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 45.6,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 14761.3219,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 45.2,
+          "GpuCelsius": 41,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        }
+      ]
+    },
+    "finalGpuOffsetsZero": true,
+    "hardwareDisposed": true,
+    "externalTelemetryQuiesced": true,
+    "snapshotQuiesced": true
+  },
+  "preRestartFullAcProof": [
+    {
+      "WindowsAcBefore": true,
+      "WindowsAcAfter": true,
+      "FirmwarePower": "1111",
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    },
+    {
+      "WindowsAcBefore": true,
+      "WindowsAcAfter": true,
+      "FirmwarePower": "1111",
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    }
+  ],
+  "restoration": {
+    "ValidationExitCode": 0,
+    "IndependentPerformanceStateConfirmed": true,
+    "OriginalIntentRestored": true,
+    "OriginalRestoreExitCode": 0,
+    "RestorationPending": false,
+    "Failure": null,
+    "Errors": [],
+    "servicesReturnedToPriorState": true,
+    "gpuOffsetsIndependentlyZero": true
+  },
+  "interpretation": {
+    "cpuSource": "HWiNFO named CPU Tctl/Tdie with newly consumed row peaks",
+    "gpuSource": "NVML temperature and utilization",
+    "powerSource": "Firmware 07/8C bracket (1111 full AC, 0011 battery) with Windows AC status before and after each sample",
+    "elapsedBasis": "Entry samples are timed from preparation start; boundary samples from the unplug prompt arming. Intervals do not establish exact physical mode residency.",
+    "firmwareBehavior": "Paired mode 7 remained reported on battery during this short no-load interval; no automatic reversion was observed",
+    "productionPadlessAdmitted": false,
+    "batterySetterAdmitted": false,
+    "thermalSafetyEstablished": false,
+    "usbCTransitionValidated": false,
+    "limits": "Single attended no-load full-AC to battery to full-AC transition with roughly 6 to 9 seconds on battery (bounded by samples); no workload, sustained, USB-C, low-power, sleep or crash-recovery claim."
+  },
+  "sanitization": {
+    "rawOutputsExcluded": true,
+    "localPathsExcluded": true,
+    "deviceInstancePathsExcluded": true,
+    "serialNumbersExcluded": true,
+    "processIdentityExcluded": true,
+    "profileContentsExcluded": true
+  }
+}

@@ -1,0 +1,343 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/OpenBladeProject/openblade-captures",
+  "sourceRevision": "4f2bf1565c7557439760db7e45104bb1e8b62bfd",
+  "sourceLicenseFile": null,
+  "files": [
+    {
+      "sourcePath": "annotations/2026-07-14-online-lighting-session.json",
+      "path": "legacy-captures/annotations/2026-07-14-online-lighting-session.json",
+      "sha256": "546cae9cb445929b0feb490da7d3e0e8a35d4e4e91560f1a5a47208cc1f51728"
+    },
+    {
+      "sourcePath": "annotations/2026-07-14-online-performance-fan-session.json",
+      "path": "legacy-captures/annotations/2026-07-14-online-performance-fan-session.json",
+      "sha256": "1c9ac03f93efdb1cc6b717ee9ecfd32977a3ad1106499991df50bac39fbbcf3e"
+    },
+    {
+      "sourcePath": "annotations/2026-07-14-performance-fan-state-refresh-negative.json",
+      "path": "legacy-captures/annotations/2026-07-14-performance-fan-state-refresh-negative.json",
+      "sha256": "a8545e8abe76e1528ad411959a2fed02fe80cfa54f96c5b824f50f205ce8b129"
+    },
+    {
+      "sourcePath": "annotations/2026-07-16-lighting-hydration-negative.json",
+      "path": "legacy-captures/annotations/2026-07-16-lighting-hydration-negative.json",
+      "sha256": "6ec1e7c17077cbcb747c3cb90c9abb5b11f40d8b2d97fa7004473d0841a32782"
+    },
+    {
+      "sourcePath": "annotations/2026-07-29-rz09-0528-battery-limit-70-admission.json",
+      "path": "legacy-captures/annotations/2026-07-29-rz09-0528-battery-limit-70-admission.json",
+      "sha256": "8bd5c189fb60201d21463d83fc43178e95ca34e9138c6d54abea53027dc5e9f8"
+    },
+    {
+      "sourcePath": "annotations/2026-07-29-rz09-0528-battery-limit-matrix.json",
+      "path": "legacy-captures/annotations/2026-07-29-rz09-0528-battery-limit-matrix.json",
+      "sha256": "dbd29cd9eec8201a28f723a493c473e590698383e3d4d4a4583cd1f51797bd90"
+    },
+    {
+      "sourcePath": "annotations/2026-07-29-rz09-0528-keyboard-brightness-admission.json",
+      "path": "legacy-captures/annotations/2026-07-29-rz09-0528-keyboard-brightness-admission.json",
+      "sha256": "54ede140cc68f4bbf8cccddb427be8b9d6404eb6440ec6f12d20a0feabf99c7e"
+    },
+    {
+      "sourcePath": "annotations/2026-07-29-rz09-0528-lighting-query-navigation-negative.json",
+      "path": "legacy-captures/annotations/2026-07-29-rz09-0528-lighting-query-navigation-negative.json",
+      "sha256": "f85c1b96949e25c252db399d31cfc1664cc02c899b995614a8ef6c99ad3037f1"
+    },
+    {
+      "sourcePath": "annotations/2026-07-29-rz09-0528-power-source-matrix.json",
+      "path": "legacy-captures/annotations/2026-07-29-rz09-0528-power-source-matrix.json",
+      "sha256": "b5ce8ff4e73ab21acd8d27a3cb177782e2965cbedd6335ca8221d5c8aa79114f"
+    },
+    {
+      "sourcePath": "annotations/2026-07-29-rz09-0528-temporary-full-charge-admission.json",
+      "path": "legacy-captures/annotations/2026-07-29-rz09-0528-temporary-full-charge-admission.json",
+      "sha256": "b3cc94bfd96da62cad582c65ed2194fc5589c1f0ea93406f6008a1959e5b21cd"
+    },
+    {
+      "sourcePath": "annotations/2026-07-30-rz09-0528-full-menu-upper-effects-oracle.json",
+      "path": "legacy-captures/annotations/2026-07-30-rz09-0528-full-menu-upper-effects-oracle.json",
+      "sha256": "f4634c60ac7bfcc16705a2d34c9fb7c4980c1cd328322786bee7ec7c58f7b247"
+    },
+    {
+      "sourcePath": "annotations/2026-07-30-rz09-0528-openblade-full-lighting-lifecycle.json",
+      "path": "legacy-captures/annotations/2026-07-30-rz09-0528-openblade-full-lighting-lifecycle.json",
+      "sha256": "8f3c99fcab25805758fbbe1bb6d82ea798500282f9709439f5d03a18b9e89722"
+    },
+    {
+      "sourcePath": "annotations/2026-07-30-rz09-0528-openblade-matrix-lighting-lifecycle.json",
+      "path": "legacy-captures/annotations/2026-07-30-rz09-0528-openblade-matrix-lighting-lifecycle.json",
+      "sha256": "f6a74b40f555c4f8e7b9236c7727ae4de81083512755e7f426c68717767cb358"
+    },
+    {
+      "sourcePath": "annotations/2026-07-30-rz09-0528-openblade-media-row-regression.json",
+      "path": "legacy-captures/annotations/2026-07-30-rz09-0528-openblade-media-row-regression.json",
+      "sha256": "758fe37ab835a7b22a56247589c39c9c26184f3ee35973d828cc506746bb0371"
+    },
+    {
+      "sourcePath": "annotations/2026-07-30-rz09-0528-reactive-ripple-physical-j-oracle.json",
+      "path": "legacy-captures/annotations/2026-07-30-rz09-0528-reactive-ripple-physical-j-oracle.json",
+      "sha256": "55d15c0631bf7c709a68a4312389e8f82425052226d9a61aa90322c429dd4b52"
+    },
+    {
+      "sourcePath": "annotations/2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json",
+      "path": "legacy-captures/annotations/2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json",
+      "sha256": "b1673380ec86030642d0e5f007e55ee12594b89c035c6a216c4503b5010026ab"
+    },
+    {
+      "sourcePath": "annotations/2026-08-12-rz09-0581-slimq-330w-production-admission.json",
+      "path": "legacy-captures/annotations/2026-08-12-rz09-0581-slimq-330w-production-admission.json",
+      "sha256": "6402dfa16478ddb80a6e7ce0442612e34215e4fc05dc400ea83ea2ede3c148a6"
+    },
+    {
+      "sourcePath": "annotations/2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json",
+      "path": "legacy-captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json",
+      "sha256": "2bb2912f64e7b6dd1619821f9bd6253ce22c39acd73ad42cefa9d70c7db42874"
+    },
+    {
+      "sourcePath": "annotations/2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json",
+      "path": "legacy-captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json",
+      "sha256": "d202cb0bdf516fd9e3b4393fd6fde28a7916f5909c884fa44829051686652207"
+    },
+    {
+      "sourcePath": "annotations/2026-08-19-rz09-0581-hyperboost-padless-immediate.json",
+      "path": "legacy-captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-immediate.json",
+      "sha256": "e64a2eb77c254704e3752641eb16bda9e27bcb0c126167a21071a808f9f5c32a"
+    },
+    {
+      "sourcePath": "annotations/2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json",
+      "path": "legacy-captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json",
+      "sha256": "8871085e3825a7cff8549cb844c5dd620fc67e8df50f7990af63b59b24f1a984"
+    },
+    {
+      "sourcePath": "annotations/2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json",
+      "path": "legacy-captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-low-power-recovery.json",
+      "sha256": "7c074f286c2b99d2de7baabda2b0356d14a1b5bb3657c3c165589402bedf1a91"
+    },
+    {
+      "sourcePath": "annotations/2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json",
+      "path": "legacy-captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-steel-nomad.json",
+      "sha256": "4818729c2e46f7e3b3c308552c3a5e049a441f49b21df7b45dd88545b81bb00c"
+    },
+    {
+      "sourcePath": "annotations/2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json",
+      "path": "legacy-captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-sustained-no-load.json",
+      "sha256": "40e6e6ee1f9ebac212f72bdf883a5f1cea065fcece7916e95dffe77fce3efa61"
+    },
+    {
+      "sourcePath": "annotations/2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json",
+      "path": "legacy-captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json",
+      "sha256": "b1916c7338e09f7effc5ea4b04194128f76c50a75edf31cf8259bd8accab4684"
+    },
+    {
+      "sourcePath": "annotations/2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json",
+      "path": "legacy-captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json",
+      "sha256": "ac861d69bc8e7b56b5db929c384255bb6db1af4d35ce3b6b842eed7bc8ece078"
+    },
+    {
+      "sourcePath": "annotations/2026-09-27-rz09-0528-hyperboost-developer-validation.json",
+      "path": "legacy-captures/annotations/2026-09-27-rz09-0528-hyperboost-developer-validation.json",
+      "sha256": "34d897926c34498381dd32faa2094a019c8d2580495c79312fcff4f7b06aae76"
+    },
+    {
+      "sourcePath": "annotations/2026-09-27-rz09-0528-hyperboost-vendor-round-trip.json",
+      "path": "legacy-captures/annotations/2026-09-27-rz09-0528-hyperboost-vendor-round-trip.json",
+      "sha256": "05edddfc0bfa18e366a7b8909ccd93a20c88d66b1320cf18d8f868cd4634a72a"
+    },
+    {
+      "sourcePath": "annotations/2026-09-27-rz09-0528-installed-hyperboost-pad-disconnect.json",
+      "path": "legacy-captures/annotations/2026-09-27-rz09-0528-installed-hyperboost-pad-disconnect.json",
+      "sha256": "543c436e1b06cabbc6a5353bd89ee88189107dc15ded1a30d5f31a5b3f9fa3c0"
+    },
+    {
+      "sourcePath": "annotations/2026-09-27-rz09-0528-installed-hyperboost-validation.json",
+      "path": "legacy-captures/annotations/2026-09-27-rz09-0528-installed-hyperboost-validation.json",
+      "sha256": "bb130c589e8ecf7597c5efe6f4db281043c61b07b1ec63ba755b593b1b286679"
+    },
+    {
+      "sourcePath": "annotations/2026-09-27-rz09-0528-padless-hyperboost-immediate.json",
+      "path": "legacy-captures/annotations/2026-09-27-rz09-0528-padless-hyperboost-immediate.json",
+      "sha256": "affd4f85c5677b747009a42b3ad0defbdfafc7a255b7b5962140afe1d77bcb92"
+    },
+    {
+      "sourcePath": "annotations/2026-09-27-rz09-0528-padless-hyperboost-no-load.json",
+      "path": "legacy-captures/annotations/2026-09-27-rz09-0528-padless-hyperboost-no-load.json",
+      "sha256": "abf4418ff29832a18ac0356f8150cf10278e673ea30ec3337c6d074150c64913"
+    },
+    {
+      "sourcePath": "annotations/2026-09-28-rz09-0528-padless-hyperboost-battery-boundary.json",
+      "path": "legacy-captures/annotations/2026-09-28-rz09-0528-padless-hyperboost-battery-boundary.json",
+      "sha256": "ec8a775c3040d90ef0fcd6aff07fac8b6231a65e7e05f99ea6a39725bcd51ce3"
+    },
+    {
+      "sourcePath": "annotations/2026-09-28-rz09-0528-padless-hyperboost-usb-c-boundary.json",
+      "path": "legacy-captures/annotations/2026-09-28-rz09-0528-padless-hyperboost-usb-c-boundary.json",
+      "sha256": "badbf8d3e135add8f3ec4d8dafea75ebbad8b87c7895b151b9f5d508c7224c7c"
+    },
+    {
+      "sourcePath": "annotations/2026-09-29-rz09-0528-padless-hyperboost-crash-recovery-lifecycle.json",
+      "path": "legacy-captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-crash-recovery-lifecycle.json",
+      "sha256": "7cd8c237b4092018ee418f859aeafce5ca1e0c96554fdc6a72a865888a0b8b73"
+    },
+    {
+      "sourcePath": "annotations/2026-09-29-rz09-0528-padless-hyperboost-low-power-lifecycle.json",
+      "path": "legacy-captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-low-power-lifecycle.json",
+      "sha256": "8cd05a30f2a5a7cefb3d627808ad702338fe824b51eb37f7096a57a5ba9fd65b"
+    },
+    {
+      "sourcePath": "annotations/2026-09-29-rz09-0528-padless-hyperboost-no-load-sixty-second.json",
+      "path": "legacy-captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-no-load-sixty-second.json",
+      "sha256": "8d079a96aec545665b05d1564fcf5663311651b845a34f236dc98cc8de0df997"
+    },
+    {
+      "sourcePath": "annotations/2026-09-29-rz09-0528-padless-hyperboost-stress-test-sixty-second.json",
+      "path": "legacy-captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-stress-test-sixty-second.json",
+      "sha256": "83a14bcbabf41df1c961312d85d3db3b1c8b5b3586e3576d3039423439473538"
+    },
+    {
+      "sourcePath": "annotations/2026-09-29-rz09-0528-padless-post-restoration-absence.json",
+      "path": "legacy-captures/annotations/2026-09-29-rz09-0528-padless-post-restoration-absence.json",
+      "sha256": "9314c72e868e4d2c025e569e03b6152ec460ee4d68ebbb564056604a99aa5174"
+    },
+    {
+      "sourcePath": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json",
+      "path": "legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json",
+      "sha256": "e321b7cb1d672ee9d6ea676b44ae328334b27d907b3d9cc43215c098ace7c70e"
+    },
+    {
+      "sourcePath": "decoded/rz09-0528-pid-02c6-bios-2.02-evidence.json",
+      "path": "legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-evidence.json",
+      "sha256": "448137a3735f4a0757fa3f088f5f003c1d275c3567edbf1a24ff762e65e4bd19"
+    },
+    {
+      "sourcePath": "decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-developer-validation.json",
+      "path": "legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-developer-validation.json",
+      "sha256": "ff727ba094f75fc17287b6a13ffb5cc379150ea668c19e76010a1ff6b9ea0c92"
+    },
+    {
+      "sourcePath": "decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-gpu-developer-validation.json",
+      "path": "legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-gpu-developer-validation.json",
+      "sha256": "356f02c90214812b7b1d415431de759481ef902883aa344d6396ca139b851b4a"
+    },
+    {
+      "sourcePath": "decoded/rz09-0528-pid-02c6-bios-2.02-lamp-array.json",
+      "path": "legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-lamp-array.json",
+      "sha256": "e5e673f641788efb84866a6c571e8bf589645f1b06262cd76ea30b97bedda4f7"
+    },
+    {
+      "sourcePath": "decoded/rz09-0528-pid-02c6-bios-2.02-power-source-matrix.json",
+      "path": "legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-power-source-matrix.json",
+      "sha256": "813b15c505119b88c5072c979767261446cb6be35d44c7f6395ffd8dd81a20b2"
+    },
+    {
+      "sourcePath": "decoded/rz09-0528-pid-02c6-bios-2.02-reactive-ripple-physical-j.json",
+      "path": "legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-reactive-ripple-physical-j.json",
+      "sha256": "4a494e9c10644daa066794ce382fb9c1e0ac4e02e3c3ecedbc95eebb4129405e"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json",
+      "sha256": "ff14acd8fbe414b3d08664f6cf27374de6d2d3e1c35030895877d51ed2573064"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-ambient-awareness-regions-oracle-summary.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-ambient-awareness-regions-oracle-summary.json",
+      "sha256": "e10d56da3e1abfd5f9df8a34bdff6395828237eeeb911beb694396c3baf49d15"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json",
+      "sha256": "45d97b7eac07dcb90789e9ab6dbb89e26552718e660d574b6e89c16f3bdffbc2"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-evidence.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-evidence.json",
+      "sha256": "c481495cd68710e05fa5d2428c01cf496160836184b8ab712e3b0baf8f2369a4"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-extended-controls-oracle-summary.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-extended-controls-oracle-summary.json",
+      "sha256": "cb1eb4554072da47e6ce761031600361104736dbc2079df419678e0497e755b2"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-fan-rpm-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-fan-rpm-fixture.json",
+      "sha256": "a939ca5fc2ecba21950a73b3606c479cab35fbd927541a89c468217d9279a316"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-fixed-fan-5400-readback-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-fixed-fan-5400-readback-fixture.json",
+      "sha256": "88a6914c411576fcc52fcdab491133c4b02e9f871ad836c901c3b4248dc6fe30"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-function-key-primary-readback.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-function-key-primary-readback.json",
+      "sha256": "a9b712a5e633171ce7d9fa5c1acfdc9ae941b228434689a1f5db99715265ade9"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-gaming-mode-readback.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-gaming-mode-readback.json",
+      "sha256": "2580b4b20b6c88c6be3a423efd7ef83973bd7c80fe1138fc8f5e144dbfec558e"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-lighting-brightness-query-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-lighting-brightness-query-fixture.json",
+      "sha256": "5fbcfa0a2025cb6867832dac578b7f6fdf529a68afd6706f4b79930c68454123"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-lighting-matrix-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-lighting-matrix-fixture.json",
+      "sha256": "c3f2238b3eb8a7ea3bf077518d9232b43316f38c146d5f813aab559a856fdbd2"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-lighting-spectrum-random-oracle-summary.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-lighting-spectrum-random-oracle-summary.json",
+      "sha256": "2fe206f846e436ba4e415362413ffba6bec49720a668cc319b57fa311d712041"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-mcu-version-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-mcu-version-fixture.json",
+      "sha256": "18b7cc1db1364a3f42763d4d5cb8487dd92bd9de1640b1af0c7421e20c4e492d"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-performance-fan-discriminator-negative.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-performance-fan-discriminator-negative.json",
+      "sha256": "49034516d0f36156e101f2b2753cc4b068ff44dbcd14ebde9dd9fe7a70b265d7"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-performance-readback-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-performance-readback-fixture.json",
+      "sha256": "1dded454764fe0e4e9330859744cd33d228f8e0ac0cb0904bfddfd21e75a2a99"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-protection-off-validation-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-protection-off-validation-fixture.json",
+      "sha256": "15944b88cbbfd457624225bf37a7969334fa48b98227c1f3f2189ae29cf16e22"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-synapse-state-ownership.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-synapse-state-ownership.json",
+      "sha256": "1d4a9a7fcae16ceba06252b01cb839a70bc9f729ad87d774a17a2ffd6b6c70c1"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-read-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-read-fixture.json",
+      "sha256": "3be61a7fe741eb2c6d86445404893654c572a30da94f7f2025f95e5460e68b9e"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-validation-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-validation-fixture.json",
+      "sha256": "6c6e73e9ea710d8ca0899cdae577b53b968e6970aa6bdfb98b6c8ab16d8915e8"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-3.01-thermal-write-validation-fixture.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-thermal-write-validation-fixture.json",
+      "sha256": "551f8443229dc269ee167250a842b36422f202e95eec0be8020ef4046d55fe76"
+    },
+    {
+      "sourcePath": "decoded/rz09-0581-pid-02e0-bios-4.00-usb-c-power-classes.json",
+      "path": "legacy-captures/decoded/rz09-0581-pid-02e0-bios-4.00-usb-c-power-classes.json",
+      "sha256": "c461731be2f65319d7e8dc1e768287018523ad4d77e02b3c3c7c6f837bb3e140"
+    }
+  ]
+}

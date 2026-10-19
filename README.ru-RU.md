@@ -105,7 +105,7 @@ OpenBlade работает самостоятельно. Если вы хоти�
 приведены в [AGENTS.md](AGENTS.md) и [VERSIONING.md](VERSIONING.md).
 
 Связанные репозитории: [документация пользователя](https://github.com/OSSBlade/openblade-docs),
-[записи обмена с устройством](https://github.com/OSSBlade/openblade-captures) и
+[Synapse Observer](https://github.com/OpenBladeProject/synapse-observer) и
 [фирменные материалы](https://github.com/OSSBlade/openblade-branding).
 
 <a id="license"></a>

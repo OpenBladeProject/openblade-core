@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade installed validation Service 0.19.1+b071753a71b72980a134cf8f9530c3e8d9a15481 verified by OpenBlade.FirmwareSmoke 0.19.1+b071753a71b72980a134cf8f9530c3e8d9a15481",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-20T18:56:09.4446733Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": "1.04",
+    "mcu": "1.6.0.0"
+  },
+  "capture": {
+    "sha256": "B1B19F604D4DA148AF4E31FC6A29D1FE2B58C57C778AE8C8C4E9B07349D04F8A",
+    "byteLength": 919,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance lifecycle",
+    "name": "Exact-head installed-service padless HyperBoost low-power recovery validation",
+    "value": "Balanced and Automatic to service-owned HyperBoost, one operator-initiated Windows Sleep and resume boundary, one owned Service restoration, then stable read-only lifecycle verification",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once through the exact installed validation Service while the cooling pad was physically absent.",
+    "readbackResult": "Confirmed mode 7 and durable service ownership before the low-power boundary.",
+    "restorationResult": "Restored successfully once by the same installed Service to the saved Balanced base with Automatic laptop fans.",
+    "restorationReadbackResult": "Confirmed the exact restored state twice, a retired ownership journal, the expected same-Service boundary, and exactly one recovery attempt and completion."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ExactInstalledPreflight",
+      "summary": "The validation build bound exact RZ09-0581 identity, BIOS 4.00 provenance, Balanced and Automatic baseline, admitted full-power adapter, physical pad absence, one matching Service, Tray, and Session Agent, and zero blocked or unconfirmed writes.",
+      "sourceRevision": "b071753a71b72980a134cf8f9530c3e8d9a15481",
+      "serviceProductVersion": "0.19.1+b071753a71b72980a134cf8f9530c3e8d9a15481",
+      "serviceExecutableSha256": "9D9FAACD0C1C7E7D577E4767E2608357920552DCAB6C45DAC99866D4608DEB48",
+      "validationServiceAssemblySha256": "96DB9E36F285DCE56586090EC238B832CF43DBC1522612CAF307E905C08A08C3",
+      "validationBuildManifestSha256": "0C5EA3F8DF27851045EC82CC7A13020105F6B438CB8CF7BD446F1BAF8B32F2F2",
+      "installedGenerationSha256": "DF3D9BB53C39E3365A6767B9B6697B659BA7D0F03F9B9F8811D60716F336B88F",
+      "baselineArtifactSha256": "979764ECB4D92E813A4262D857D4044BDEF6D63231EAC166F218063E955D5E7E",
+      "requiresCoolingPad": false
+    },
+    {
+      "kind": "OwnedLifecycleArm",
+      "summary": "The installed Service applied HyperBoost once, confirmed mode 7, finalized durable padless ownership, and created the private marker without cleanup or manual recovery.",
+      "armArtifactSha256": "5CE832098CEE705813226C074819F99E95E501F4A144CF050C6AF0DE4D5A7DAE",
+      "armArtifactByteLength": 926,
+      "privateMarkerSha256": "D65F7A729CBE9E4610D5DAB64BDF996F6B66A3F20C0A25606A54498DB8BE9110",
+      "hyperBoostConfirmed": true,
+      "durableOwnershipConfirmed": true,
+      "cleanupAttempted": false,
+      "manualRecoveryRequired": false
+    },
+    {
+      "kind": "ObservedLowPowerSafetyBoundary",
+      "summary": "The operator invoked Windows Sleep once and resumed after approximately fifteen seconds. The typed verifier confirmed the expected same-Service low-power safety boundary; the retained artifact does not distinguish which serialized Windows notification won.",
+      "operatorSleepAndResumeConfirmed": true,
+      "expectedSameServiceBoundary": true,
+      "boundaryNotificationPathDetermined": false
+    },
+    {
+      "kind": "InstalledRecoveryVerification",
+      "summary": "Read-only FirmwareSmoke verification confirmed stable Balanced and Automatic state, a retired journal, the exact installed generation, and exactly one matching Service recovery attempt and completion.",
+      "verificationArtifactSha256": "B1B19F604D4DA148AF4E31FC6A29D1FE2B58C57C778AE8C8C4E9B07349D04F8A",
+      "verificationArtifactByteLength": 919,
+      "exactInstalledGeneration": true,
+      "expectedServiceBoundary": true,
+      "exactBaseAndAutomaticConfirmed": true,
+      "journalRetired": true,
+      "recoveryAttemptsObserved": 1,
+      "recoveryCompletionsObserved": 1,
+      "stableSecondObservation": true,
+      "lowPowerLifecycleValidated": true
+    },
+    {
+      "kind": "ArtifactIntegrityAndProductionRestore",
+      "summary": "Private marker, diagnostics, deployment, and verification files remain uncommitted. After both lifecycle scenarios, the exact production Service assembly was restored and a final read-only baseline confirmed Balanced, Automatic, zero blocked or unconfirmed writes, and a retired journal.",
+      "firmwareSmokeExecutableSha256": "CD7BAA9CA4E926CE7A4D552276F386E59B971467E950CE73C948A97B28A8B3EC",
+      "productionServiceAssemblySha256": "0FA1F32ED30366495559AEAE3C549F09A9548CE3422B59930C5191739E06F2CE",
+      "productionRestoreArtifactSha256": "84C379C04F1F9CE70CC92A5F6E2B2F1F1C15332EF2C350B529E0DC4ABCF44D71",
+      "validatorExitCode": 0,
+      "success": true
+    }
+  ],
+  "limitations": [
+    "This run validates one installed-Service low-power restoration on exact RZ09-0581 hardware with BIOS 4.00 provenance, Balanced and Automatic, an admitted full-power adapter, and confirmed physical pad absence.",
+    "The verifier proves the expected serialized low-power safety boundary and exactly one restoration; it does not claim whether the registered suspend callback or the conservative display-off boundary won.",
+    "Unexpected-exit recovery is an independent gate and is recorded in a separate exact-generation annotation."
+  ],
+  "productionAdmission": {
+    "lowPowerLifecycleValidated": true,
+    "crashRecoveryValidated": false,
+    "padLessActivationAdmitted": false,
+    "reason": "Exact-head low-power recovery is validated; production admission additionally requires the independent exact-head unexpected-exit annotation."
+  },
+  "notes": [
+    "FirmwareSmoke verification was read-only and issued no recovery write.",
+    "USBPcap was not running.",
+    "No Razer service was started, stopped, or restored.",
+    "Private lifecycle markers, diagnostics, local paths, service instance identifiers, and user identity are not committed."
+  ]
+}

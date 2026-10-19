@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "synapseAmbientAwarenessRegionsOracleCapture",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "sourceCapture": {
+    "sha256": "56AA5AC9153476C005291EE447F0F785B42B7C2613095CECEA121DEE6EC5921D",
+    "bytes": 385923,
+    "packetCount": 2852,
+    "durationSeconds": 158.578031,
+    "finalizedGracefully": true,
+    "decodable": true,
+    "matrixFrameCount": 493,
+    "rawCaptureCommitted": false
+  },
+  "captureAddress": {
+    "usbPcapRoot": 3,
+    "deviceAddress": 2,
+    "verifiedByDescriptor": true
+  },
+  "screenRegions": [
+    {
+      "uiOrder": 1,
+      "semanticName": "Full",
+      "matrixFramesInBoundedWindow": 95,
+      "meanRgb": [16.0, 21.4, 24.4],
+      "meanUniqueColors": 68.7
+    },
+    {
+      "uiOrder": 2,
+      "semanticName": "Left",
+      "matrixFramesInBoundedWindow": 95,
+      "meanRgb": [25.2, 26.2, 26.8],
+      "meanUniqueColors": 51.0
+    },
+    {
+      "uiOrder": 3,
+      "semanticName": "Top",
+      "matrixFramesInBoundedWindow": 90,
+      "meanRgb": [19.3, 24.6, 28.4],
+      "meanUniqueColors": 63.7
+    },
+    {
+      "uiOrder": 4,
+      "semanticName": "Right",
+      "matrixFramesInBoundedWindow": 93,
+      "meanRgb": [15.5, 28.4, 37.9],
+      "meanUniqueColors": 70.7
+    },
+    {
+      "uiOrder": 5,
+      "semanticName": "Bottom",
+      "matrixFramesInBoundedWindow": 95,
+      "meanRgb": [9.4, 21.8, 30.5],
+      "meanUniqueColors": 76.9
+    }
+  ],
+  "protocol": {
+    "selectionCount": 5,
+    "identicalEntrySequenceCount": 5,
+    "entrySequence": [
+      "00/86:000000",
+      "00/84:0000",
+      "03/0A:0500"
+    ],
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "independentRegionSetterObserved": false,
+    "regionEncodedInMatrixRgb": true
+  },
+  "restoration": {
+    "effect": "Ambient Awareness",
+    "screenRegion": "Full",
+    "brightnessPercent": 77,
+    "visuallyConfirmed": true
+  },
+  "implementationBoundary": {
+    "firmwareOnlyImplementationPossible": false,
+    "signedInSessionRequired": true,
+    "screenCaptureRequired": true,
+    "productionControlAdmitted": false,
+    "reason": "The region is a Synapse renderer input; the laptop receives only the common matrix-entry handshake and sampled 102-slot RGB frames."
+  },
+  "notes": [
+    "Full, Left, Top, Right, and Bottom are icon-derived semantic labels because the Synapse controls are unlabeled.",
+    "Mean RGB values describe only this bounded oracle run and prove that the five sampling choices produced distinct host-rendered streams; they are not reusable effect templates."
+  ]
+}

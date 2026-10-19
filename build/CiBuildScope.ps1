@@ -143,7 +143,6 @@ function New-OpenBladeCiFullPlan {
         ContractTests = @('*')
         ContractRestoreProjects = @('OpenBlade.slnx')
         PublishProjects = @()
-        RequiresCaptures = $true
         RunInstaller = $true
         Reasons = @($Reason)
     }
@@ -205,7 +204,6 @@ function Get-OpenBladeCiPlan {
     $contractTests = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $contractRestoreProjects = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $reasons = [Collections.Generic.List[string]]::new()
-    $requiresCaptures = $false
     $runInstaller = $false
     $recognizedNonDocumentation = $false
 
@@ -231,10 +229,6 @@ function Get-OpenBladeCiPlan {
                 if (-not [string]::IsNullOrWhiteSpace([string]$restoreProject)) {
                     [void]$contractRestoreProjects.Add([string]$restoreProject)
                 }
-            }
-            if ($rule.PSObject.Properties.Name -contains 'requiresCaptures' -and
-                [bool]$rule.requiresCaptures) {
-                $requiresCaptures = $true
             }
             $pathRecognized = $true
             $reasons.Add("$path selects $($rule.test).")
@@ -267,10 +261,6 @@ function Get-OpenBladeCiPlan {
                 if (-not [string]::IsNullOrWhiteSpace([string]$project)) {
                     [void]$directTests.Add([string]$project)
                 }
-            }
-            if ($rule.PSObject.Properties.Name -contains 'requiresCaptures' -and
-                [bool]$rule.requiresCaptures) {
-                $requiresCaptures = $true
             }
             $pathRecognized = $true
             $reasons.Add("${path}: $($rule.reason)")
@@ -316,10 +306,6 @@ function Get-OpenBladeCiPlan {
                     foreach ($restoreProject in @($ownRule[0].restoreProjects)) {
                         [void]$contractRestoreProjects.Add([string]$restoreProject)
                     }
-                }
-                if ($ownRule[0].PSObject.Properties.Name -contains 'requiresCaptures' -and
-                    [bool]$ownRule[0].requiresCaptures) {
-                    $requiresCaptures = $true
                 }
                 $pathRecognized = $true
                 $recognizedNonDocumentation = $true
@@ -397,9 +383,6 @@ function Get-OpenBladeCiPlan {
         $projects[$_.ToLowerInvariant()].Kind -eq 'Production'
     })
 
-    if ($testProjects -contains 'tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj') {
-        $requiresCaptures = $true
-    }
     if ($affectedProductionProjects -contains 'src/OpenBlade.Setup/OpenBlade.Setup.csproj') {
         $runInstaller = $true
     }
@@ -421,7 +404,6 @@ function Get-OpenBladeCiPlan {
             ContractTests = @()
             ContractRestoreProjects = @()
             PublishProjects = @()
-            RequiresCaptures = $false
             RunInstaller = $false
             Reasons = if ($recognizedNonDocumentation) { @($reasons) } else { @('No executable validation consumes the changed documentation.') }
         }
@@ -436,7 +418,6 @@ function Get-OpenBladeCiPlan {
         ContractTests = @($contractTests | Sort-Object)
         ContractRestoreProjects = @($contractRestoreProjects | Sort-Object)
         PublishProjects = @($publishProjects)
-        RequiresCaptures = $requiresCaptures
         RunInstaller = $runInstaller
         Reasons = @($reasons)
     }
@@ -456,8 +437,7 @@ function Format-OpenBladeCiPlan {
         "- Test projects: $(@($Plan.TestProjects).Count)",
         "- Build-contract suites: $(@($Plan.ContractTests).Count)",
         "- Component publishes: $(@($Plan.PublishProjects).Count)",
-        "- Full installer: $($Plan.RunInstaller)",
-        "- Capture evidence required: $($Plan.RequiresCaptures)"
+        "- Full installer: $($Plan.RunInstaller)"
     ))
     foreach ($selection in @(
             [pscustomobject]@{ Name = 'Quality projects'; Values = @($Plan.QualityProjects) },

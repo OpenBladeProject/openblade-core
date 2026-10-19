@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade.Capture 0.17.0+18bd0017ce315c6801cff79cc7b2b1160d76d570",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-19T06:16:22.6395901Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "2235AF90C8D393B94AAD316B78FE150E0C0AC028983C1E2C76FFA9A8830154C4",
+    "byteLength": 1527,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance",
+    "name": "Padless HyperBoost Steel Nomad reviewed-load dwell",
+    "value": "Exact-hash externally launched Steel Nomad workload observed for thirty two-second HyperBoost safety samples, followed by exact Balanced restoration",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once from the confirmed Balanced and Automatic baseline.",
+    "readbackResult": "Confirmed paired HyperBoost mode 7, exact workload identity, required GPU telemetry, and safety limits throughout all thirty samples.",
+    "restorationResult": "Restored successfully once to the saved Balanced pair after the full reviewed-load dwell.",
+    "restorationReadbackResult": "Confirmed exact Balanced restoration and fresh post-restoration cooling-pad absence."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ReviewedExternalWorkload",
+      "summary": "The validator bound the operator-launched Steel Nomad executable by exact name and SHA-256 and revalidated it throughout the run; OpenBlade did not launch or stop the workload.",
+      "planId": "rz09-0581-bios-4.00-pad-absent-external-load-v1",
+      "planSha256": "2D1BBA887F0DC952EEABB39BC3E670A2CE3DA338EC05E46646B1E9F64D780086",
+      "workloadName": "3DMarkSteelNomad.exe",
+      "workloadSha256": "8C690B613734D680268727B9A73475709593D606125C2B73234171C5BB3D312E",
+      "workloadOwnership": "externallyLaunchedAndOperatorOwned",
+      "externalWorkloadMaintained": true
+    },
+    {
+      "kind": "SustainedSafetyObservation",
+      "summary": "Thirty of thirty samples completed with continuous physical pad absence, FullPower330W, paired mode 7, CPU and GPU telemetry, and both laptop fans above the reviewed 2000 RPM minimum.",
+      "plannedSampleCount": 30,
+      "completedSampleCount": 30,
+      "completedFullDuration": true,
+      "continuousPadAbsenceConfirmed": true,
+      "fullPowerAdapterMaintained": true,
+      "hyperBoostStateMaintained": true,
+      "requiredSensorsMaintained": true,
+      "cpuMinimumCelsius": 45,
+      "cpuMaximumCelsius": 45,
+      "cpuLimitCelsius": 90,
+      "gpuMinimumCelsius": 77,
+      "gpuMaximumCelsius": 83,
+      "gpuLimitCelsius": 85,
+      "fan1MinimumRpm": 4200,
+      "fan1MaximumRpm": 5400,
+      "fan2MinimumRpm": 4000,
+      "fan2MaximumRpm": 5100,
+      "requiredMinimumFanRpm": 2000
+    },
+    {
+      "kind": "RestorationAndAbsence",
+      "summary": "The validator restored the exact saved Balanced pair once, confirmed it, and reconfirmed pad absence without retry or manual recovery.",
+      "balancedRestorationConfirmed": true,
+      "postRestorationPadAbsenceConfirmed": true,
+      "indeterminatePartialWrite": false,
+      "manualRecoveryRequired": false,
+      "failure": "none"
+    },
+    {
+      "kind": "ArtifactIntegrity",
+      "summary": "The successful run used the exact repaired PR head whose WDDM activity source primes its read-only counter before the first telemetry decision.",
+      "captureProductVersion": "0.17.0+18bd0017ce315c6801cff79cc7b2b1160d76d570",
+      "captureExecutableSha256": "28750F3623BF7F82CF393EE0783B2A8FA55827D8CEC1601B6F9E7FC590073BF6",
+      "validatorExitCode": 0,
+      "success": true
+    }
+  ],
+  "limitations": [
+    "This validates one 60-second Steel Nomad workload window and does not establish every workload, ambient condition, or long-duration thermal envelope.",
+    "The platform CPU-side EC thermal input remained 45 C; it is not per-core DTS telemetry and is interpreted only according to the reviewed plan.",
+    "The result is scoped to RZ09-0581 BIOS 4.00, Balanced and Automatic, FullPower330W, and confirmed pad absence.",
+    "Installed-service low-power and unexpected-exit recovery remain unvalidated, so production padless HyperBoost remains disabled."
+  ],
+  "productionAdmission": {
+    "reviewedLoadValidated": true,
+    "postRestorationAbsenceValidated": true,
+    "padLessActivationAdmitted": false,
+    "reason": "The reviewed external-load gate passed, but adapter-transition and installed-service lifecycle gates remain independently required."
+  },
+  "notes": [
+    "A prior run on 0f56b0c1 safely aborted after the first post-apply sample because an unprimed WDDM counter reported GPU temperature unavailable; it restored Balanced with no indeterminate write and is not used as positive evidence.",
+    "Commit 18bd0017 primes the read-only WDDM activity counter; Service tests passed 1247 of 1247 and Capture tests passed 456 of 456 before this successful rerun.",
+    "USBPcap was not running, and no Razer service was started, stopped, or restored by the validator."
+  ]
+}

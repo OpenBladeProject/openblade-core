@@ -382,7 +382,8 @@ public sealed class ProductionBatteryEvidenceFixtureTests
     }
 
     private static JsonDocument ReadFixture(string fileName) => JsonDocument.Parse(
-        File.ReadAllText(RepositoryFile(Path.Combine("captures", "decoded", fileName))));
+        File.ReadAllText(RepositoryFile(Path.Combine(
+            "evidence", "legacy-captures", "decoded", fileName))));
 
     private static string RepositoryFile(string relativePath)
     {

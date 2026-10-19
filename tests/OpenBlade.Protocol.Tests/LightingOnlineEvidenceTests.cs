@@ -285,16 +285,16 @@ public sealed class LightingOnlineEvidenceTests
     private static JsonDocument LoadEvidence() => JsonDocument.Parse(File.ReadAllText(EvidencePath()));
 
     private static string EvidencePath() => RepositoryFile(
-        "captures", "decoded", "rz09-0581-pid-02e0-bios-3.01-evidence.json");
+        "evidence", "legacy-captures", "decoded", "rz09-0581-pid-02e0-bios-3.01-evidence.json");
 
     private static string AnnotationPath() => RepositoryFile(
-        "captures", "annotations", "2026-07-14-online-lighting-session.json");
+        "evidence", "legacy-captures", "annotations", "2026-07-14-online-lighting-session.json");
 
     private static string HydrationAnnotationPath() => RepositoryFile(
-        "captures", "annotations", "2026-07-16-lighting-hydration-negative.json");
+        "evidence", "legacy-captures", "annotations", "2026-07-16-lighting-hydration-negative.json");
 
     private static string AmbientAwarenessEvidencePath() => RepositoryFile(
-        "captures", "decoded",
+        "evidence", "legacy-captures", "decoded",
         "rz09-0581-pid-02e0-bios-3.01-ambient-awareness-regions-oracle-summary.json");
 
     private static string RepositoryFile(params string[] relativeSegments)

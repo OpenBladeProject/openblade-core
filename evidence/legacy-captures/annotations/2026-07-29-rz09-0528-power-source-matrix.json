@@ -1,0 +1,250 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse 4.0.698.98 and OpenBlade.Capture 0.1",
+    "role": "ExactDeviceInteractiveValidation",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeReadbackConfirmed": false
+  },
+  "capturedAtUtc": "2026-07-29T19:47:59.5073290Z",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "capture": {
+    "sha256": "504C5F3F3E71B0A3D6B6AC4AA51528A9CB6CCFB68BB2F1748FD0C4852AD00CFD",
+    "byteLength": 14318,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "External power and source-aware performance availability",
+    "name": "Barrel AC, USB-C-only, and battery transition matrix",
+    "value": "Nine successful exact-device sessions spanning all directed transitions and stable baselines",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Confirmed: every physical transition produced the expected visible Synapse source state and the outgoing exact-device query/setter pattern described below.",
+    "readbackResult": "Confirmed limitation: the decoded USBPcap stream contains outgoing 07/8C query forms, 0D/02 setters, and source-correlated 16-byte input reports on endpoint 0x82. Those input reports were not independently read through OpenBlade, and no independent 0D/82 response was captured, so typed firmware readback is not claimed.",
+    "restorationResult": "Confirmed visually: USB-C was disconnected, barrel AC was reconnected, and Synapse returned to Plugged In, Balanced, Auto with its full-power Performance and Custom options available.",
+    "restorationReadbackResult": "Confirmed limitation: restoration was operator-correlated in Synapse and the outgoing restoration setters were decoded, but this matrix did not independently read back the restored thermal state."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "PowerSourceCommandMapping",
+      "summary": "Exact PID 02C6 repeatedly emitted 07/8C:0000 around physical power transitions. Battery destinations emitted paired Battery Saver/Automatic 0D/02 setters, while USB-C-only and restored full-power destinations emitted paired Balanced/Automatic setters.",
+      "adapterPowerQuery": "07/8C:0000",
+      "batterySaverAutomatic": [
+        "0D/02:01010300",
+        "0D/02:01020300"
+      ],
+      "balancedAutomatic": [
+        "0D/02:01010000",
+        "0D/02:01020000"
+      ]
+    },
+    {
+      "kind": "VisibleSourceCapabilities",
+      "summary": "Synapse showed Battery Saver and Auto on battery; Balanced and Auto with an inadequate-power warning on USB-C-only; and Balanced/Performance/Custom plus fixed-fan availability on barrel AC.",
+      "battery": "On Battery; Battery Saver selected; Auto fan; fixed fan unavailable",
+      "usbCOnly": "Plugged In; Balanced selected; Auto fan; Performance and Custom unavailable; inadequate-power warning visible",
+      "barrelAc": "Plugged In; Balanced selected; Auto fan; Performance and Custom available; no inadequate-power warning"
+    },
+    {
+      "kind": "PowerSourceInputReportCandidates",
+      "summary": "Exact PID 02C6 endpoint 0x82 emitted 16-byte report-ID-05 messages with event byte 33 and source-correlated values 0011, 0711, and 1111. Battery and USB-C transitions repeatedly distinguished 0011 and 0711, while barrel-AC transitions emitted 1111.",
+      "endpoint": "0x82",
+      "byteLength": 16,
+      "batteryCandidate": "05330011000000000000000000000000",
+      "usbCOnlyCandidate": "05330711000000000000000000000000",
+      "barrelAcCandidate": "05331111000000000000000000000000",
+      "admissionBoundary": "The stable USB-C no-action session also emitted 1111 without a captured 07/8C request. These are retained as source-event candidates, not treated as independently matched feature-query replies."
+    },
+    {
+      "kind": "SuccessfulCaptureMatrix",
+      "summary": "All nine listed captures targeted USBPcap2 device address 3 after visual re-verification, ended through the sentinel-driven graceful-stop path, decoded successfully, and remain private and ignored.",
+      "captures": [
+        {
+          "name": "Barrel AC to USB-C, including the physical cable-free interval",
+          "startedAtUtc": "2026-07-29T19:47:59.4373541Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:48:31.048Z",
+          "sha256": "504C5F3F3E71B0A3D6B6AC4AA51528A9CB6CCFB68BB2F1748FD0C4852AD00CFD",
+          "byteLength": 14318,
+          "transactionCount": 59,
+          "transactionsSha256": "3C44B271B859873A4E1B2EA1CDD7A02F6871BD8EFCDD8E9CACAEAA9B498ECD70",
+          "relevantCommands": {
+            "07/8C:0000": 5,
+            "0D/02:01010300": 1,
+            "0D/02:01020300": 1,
+            "0D/02:01010000": 1,
+            "0D/02:01020000": 1
+          },
+          "sourceInputReportValues": ["0011", "0711"]
+        },
+        {
+          "name": "Stable USB-C-only no-action baseline",
+          "startedAtUtc": "2026-07-29T19:48:51.1101928Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:49:13.299Z",
+          "sha256": "DF972057FF5780B3BF740FF7598DFC3BF95F3DD57BF82CB6C500A7313E2735E5",
+          "byteLength": 8353,
+          "transactionCount": 46,
+          "transactionsSha256": "283C8A2F5DFC8B760612F2B17AD7482C232F8E177FE364E90C909EA3C6C62619",
+          "relevantCommands": {},
+          "sourceInputReportValues": ["1111"]
+        },
+        {
+          "name": "Stable USB-C-only to barrel AC",
+          "startedAtUtc": "2026-07-29T19:49:30.4357756Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:50:24.015Z",
+          "sha256": "E75B936026D850A23429EA0A466B8657C3714B00EAC4E0F214D462820E2C5094",
+          "byteLength": 23065,
+          "transactionCount": 108,
+          "transactionsSha256": "333AA539A701B6A21CCC31388390D94BB432EF8289F3464693D49FF6E04E7852",
+          "relevantCommands": {
+            "07/8C:0000": 5,
+            "0D/02:01010300": 1,
+            "0D/02:01020300": 1,
+            "0D/02:01010000": 1,
+            "0D/02:01020000": 1,
+            "0D/07:010102": 1
+          },
+          "sourceInputReportValues": ["0011", "1111"]
+        },
+        {
+          "name": "Full external power to battery-only",
+          "startedAtUtc": "2026-07-29T19:50:57.9510697Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:51:23.282Z",
+          "sha256": "10240E82BC3DB201F793581B94B5C2F031103F011DF6225F6482A19FF7EA7501",
+          "byteLength": 12733,
+          "transactionCount": 62,
+          "transactionsSha256": "0439EBBFAA27DA2DF28D1DC4DA31DF3AE2108806015641F15E5926B48A433833",
+          "relevantCommands": {
+            "07/8C:0000": 2,
+            "0D/02:01010300": 1,
+            "0D/02:01020300": 1
+          },
+          "sourceInputReportValues": ["0011"]
+        },
+        {
+          "name": "Stable battery-only no-action baseline",
+          "startedAtUtc": "2026-07-29T19:51:44.8450867Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:51:59.724Z",
+          "sha256": "76882F8F43F75DD66DF19F0FA6E09DB4D5871F712F8D5C59F57FC6C898B3BAAF",
+          "byteLength": 5647,
+          "transactionCount": 31,
+          "transactionsSha256": "9FDB3FEEE6E9429C8E45CB0CBBA788C209CA4689F878C5E90F23F09E148F6C94",
+          "relevantCommands": {},
+          "sourceInputReportValues": []
+        },
+        {
+          "name": "Battery-only to USB-C-only",
+          "startedAtUtc": "2026-07-29T19:52:16.6101505Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:52:39.326Z",
+          "sha256": "8074CBDF2ED3BF90E7F5C6F60FF20A03F1BCC41FFFE37B8E22AEEF20E40ECF5D",
+          "byteLength": 11701,
+          "transactionCount": 55,
+          "transactionsSha256": "6DE27930608DD05B8537F2C98B93B8D4ADED39713E95E599F557D605328F2748",
+          "relevantCommands": {
+            "07/8C:0000": 3,
+            "0D/02:01010000": 1,
+            "0D/02:01020000": 1
+          },
+          "sourceInputReportValues": ["0711"]
+        },
+        {
+          "name": "USB-C-only to battery-only",
+          "startedAtUtc": "2026-07-29T19:52:57.5331092Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:53:23.309Z",
+          "sha256": "0807E5281A65C5B0EC773B3ADE767E0C6E88C9DF896258E0FE065BA9D7704101",
+          "byteLength": 12733,
+          "transactionCount": 62,
+          "transactionsSha256": "8106B0A8050649E049EF76F8FA0EFA70CAA40639550B0C3E84AAA3ED71B1AF79",
+          "relevantCommands": {
+            "07/8C:0000": 2,
+            "0D/02:01010300": 1,
+            "0D/02:01020300": 1
+          },
+          "sourceInputReportValues": ["0011"]
+        },
+        {
+          "name": "Battery-only to barrel AC-only",
+          "startedAtUtc": "2026-07-29T19:53:52.2137284Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:54:18.508Z",
+          "sha256": "3F9B08C12DE4049452B8B12FF8FB2169DAC25591D376A9BA93572769504B39AD",
+          "byteLength": 13375,
+          "transactionCount": 63,
+          "transactionsSha256": "EDF48EC6E94752E8B2631F78DD76FCB24F2EFF4201F5724436C9FAEE74DB4CD0",
+          "relevantCommands": {
+            "07/8C:0000": 3,
+            "0D/02:01010000": 1,
+            "0D/02:01020000": 1,
+            "0D/07:010102": 1
+          },
+          "sourceInputReportValues": ["1111"]
+        },
+        {
+          "name": "Barrel AC-only to battery-only",
+          "startedAtUtc": "2026-07-29T19:54:38.8561431Z",
+          "operatorConfirmedAtUtc": "2026-07-29T19:55:00.287Z",
+          "sha256": "7AAB57DABA5C2E056364257EA1F5AD98BAE9C0FE453645D6AD3158F2AB59884F",
+          "byteLength": 11431,
+          "transactionCount": 55,
+          "transactionsSha256": "2EE6F77CA4687D7C883AB134F2B57D3CE27A51B9B584FA5C5EC73DF2BF34CD47",
+          "relevantCommands": {
+            "07/8C:0000": 2,
+            "0D/02:01010300": 1,
+            "0D/02:01020300": 1
+          },
+          "sourceInputReportValues": ["0011"]
+        }
+      ]
+    },
+    {
+      "kind": "PreservedFailedSessions",
+      "summary": "Two initial sessions failed before capture readiness because a USBPcapCMD listing process was active. They contain no PCAP and remain preserved as failures rather than being relabeled or discarded.",
+      "sessions": [
+        {
+          "startedAtUtc": "2026-07-29T19:46:44.5437967Z",
+          "status": "FailedBeforeReady"
+        },
+        {
+          "startedAtUtc": "2026-07-29T19:47:21.9960379Z",
+          "status": "FailedBeforeReady"
+        }
+      ]
+    },
+    {
+      "kind": "OperatorCorrelationCorrection",
+      "summary": "The On Battery UI seen during the first successful session was the literal cable-free interval after barrel AC was removed and before USB-C was connected. It was not delayed USB-C recognition."
+    }
+  ],
+  "productionAdmission": {
+    "powerSourceTransitionSetters": false,
+    "exactUsbCPowerClassReadback": false,
+    "batteryThermalSetters": false,
+    "identityScope": "RZ09-0528, BIOS 2.02, USB 1532:02C6, HID usage 0001:0002, 91-byte feature reports"
+  },
+  "limitations": [
+    "The decoded captures include source-correlated 16-byte endpoint-0x82 input reports, but they do not contain an independently matched OpenBlade 07/8C USB-C readback or an independent 0D/82 thermal response.",
+    "Synapse UI confirmation is not firmware readback and does not production-admit the observed battery or USB-C setters.",
+    "Value 0711 appears in an exact PID 02C6 source-transition input report, but that candidate event is not equivalent to a typed 07/8C readback. The generic PID 02E0 mapping must not be production-admitted for PID 02C6 until an exact OpenBlade query confirms it.",
+    "Active Synapse lighting produced unrelated 03/0B matrix writes and 03/0A polling; those commands were excluded from the power-source interpretation.",
+    "The occasional 0D/07:010102 write during AC restoration is a CPU High reapplication, not a power-source command.",
+    "Raw PCAPs, capture paths, serial numbers, and other unique identifiers remain private and uncommitted."
+  ],
+  "notes": [
+    "The verified transient USB device address was 3 before every successful session, and only USBPcap2/device 3 was captured.",
+    "Every successful session used SkipServiceManagement and SkipAdministratorCheck and ended through the sentinel-driven graceful-stop path with no recorded errors.",
+    "The user-visible state was restored to barrel AC, Plugged In, Balanced, Auto. CPU Voltage Optimizer remained On at visible -1.000 and GPU Overclock remained Off.",
+    "Keyboard brightness remained Off; keyboard quick effect and logo effect remained Static."
+  ]
+}

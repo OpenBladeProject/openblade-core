@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "evidenceId": "RZ09-0528-SYNAPSE-REACTIVE-RIPPLE-PHYSICAL-J-20260730",
+  "evidenceRole": "SanitizedExactDevicePhysicalKeyOracle",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "capture": {
+    "targetedController": "USBPcap2",
+    "verifiedTransientDeviceAddress": 3,
+    "status": "Completed",
+    "terminationReason": "StopSentinel",
+    "stopMode": "Graceful",
+    "rawArtifactsCommitted": false,
+    "rawHashesPersistedHere": false,
+    "uniqueIdentifiersIncluded": false,
+    "decodedTransactionCount": 5796
+  },
+  "protocol": {
+    "rowReportCount": 4896,
+    "latchReportCount": 821,
+    "completeFrameCount": 816,
+    "checksumFailureCount": 0,
+    "discardedIncompleteRowSets": 5,
+    "rowCommand": "03/0B",
+    "rowArguments": "FF <row:00-05> 00 10 <17 RGB slots>",
+    "latchCommand": "03/0A",
+    "latchArguments": "0500",
+    "slotsPerFrame": 102,
+    "activeSlots": 86,
+    "continuousTrafficDirection": "SET-only",
+    "matrixGetterObserved": false
+  },
+  "reactive": {
+    "physicalKey": "J",
+    "matrixSlot": 59,
+    "color": "00FF00",
+    "operatorCorrelatedResponseSlots": [59, 55, 44, 76, 38, 66],
+    "durations": [
+      {
+        "name": "Short",
+        "activeMilliseconds": 404.428,
+        "frameCount": 10
+      },
+      {
+        "name": "Medium",
+        "activeMilliseconds": 1403.087,
+        "frameCount": 32
+      },
+      {
+        "name": "Long",
+        "activeMilliseconds": 1878.641,
+        "frameCount": 42
+      }
+    ]
+  },
+  "ripple": {
+    "physicalKey": "J",
+    "originMatrixSlot": 59,
+    "originColor": "00FF00",
+    "episodeFrameCount": 17,
+    "maximumSimultaneouslyLitSlots": 27,
+    "traversedActiveSlotCount": 86,
+    "traversedEveryActiveSlot": true
+  },
+  "independentGeometry": {
+    "source": "Windows.Devices.Lights.LampArray read-only probe",
+    "lampCount": 85,
+    "mappedVirtualKeyCount": 72,
+    "unmappedLampIndices": [15, 59, 72, 74, 78, 84],
+    "jLampIndex": 53,
+    "jMatrixSlot": 59,
+    "rightAltLampIndex": 77,
+    "rightAltMatrixSlot": 91,
+    "pid02e0RightAltSlotReused": false
+  },
+  "operatorObservation": {
+    "allEffectsLookedVisuallyCorrect": true,
+    "evidenceRole": "VisualConfirmationOnly"
+  },
+  "restoration": {
+    "keyboardEffect": "Static",
+    "keyboardColor": "green",
+    "brightnessPercent": 50,
+    "logoMode": "Static",
+    "visuallyConfirmed": true
+  },
+  "admission": {
+    "reactiveKeyMap": "Captured",
+    "rippleKeyMap": "Captured",
+    "rippleDurationControl": "Absent",
+    "matrixGetter": "NotInvestigated",
+    "productionLifecycle": "NotValidated"
+  },
+  "boundaries": [
+    "The operator visual observation is not a matrix GET or independent device readback.",
+    "Only J received a direct physical Reactive/Ripple origin correlation in this trace.",
+    "The remaining ordinary-key map is derived from the exact read-only PID 02C6 LampArray geometry aligned to the independently captured six-row matrix.",
+    "No PID 02E0 key-map ownership is copied to PID 02C6.",
+    "Raw PCAPs, raw hashes, serial numbers, device instance suffixes, and other unique identifiers are intentionally absent."
+  ]
+}

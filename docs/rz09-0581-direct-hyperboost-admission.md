@@ -39,8 +39,8 @@ The RZ09-0528 portion of issue #609 was completed by PRs #596 and #610.
 
 ## Lifecycle coverage
 
-The existing RZ09-0581 [crash-recovery annotation](../captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json)
-and [low-power annotation](../captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json)
+The existing RZ09-0581 [crash-recovery annotation](../evidence/legacy-captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json)
+and [low-power annotation](../evidence/legacy-captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json)
 record Balanced/Automatic restoration, stable repeated readback and journal
 retirement. Unexpected exit, shutdown and low-power restoration share
 `RestoreOwnedHyperBoostForLifecycleCoreAsync` and `RestoreHyperBoostIntentAsync`.

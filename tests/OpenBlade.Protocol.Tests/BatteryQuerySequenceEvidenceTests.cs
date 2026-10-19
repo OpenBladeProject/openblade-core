@@ -329,7 +329,7 @@ public sealed class BatteryQuerySequenceEvidenceTests
     private static JsonDocument LoadEvidence() => JsonDocument.Parse(File.ReadAllText(EvidencePath()));
 
     private static string EvidencePath() => RepositoryFile(
-        "captures", "decoded", "rz09-0581-pid-02e0-bios-3.01-evidence.json");
+        "evidence", "legacy-captures", "decoded", "rz09-0581-pid-02e0-bios-3.01-evidence.json");
 
     private static string RepositoryFile(params string[] relativeSegments)
     {

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "source": {
+    "fileName": "openblade-performance-fan-refresh-20260714.pcap",
+    "sha256": "8D323555E7CF173E41B0E7AFB3690D395815C4430378A4DD7B229183F836C499",
+    "bytes": 235494
+  },
+  "action": "mcu-version-query",
+  "readOnly": true,
+  "productionWired": true,
+  "command": {
+    "classHex": "00",
+    "idHex": "87",
+    "payloadLength": 4,
+    "requestPayloadHex": "00000000"
+  },
+  "exchange": {
+    "setReportFrame": 73,
+    "getReportFrame": 75,
+    "responseFrame": 76,
+    "transactionIdHex": "02",
+    "requestEnvelopeHex": "000200000004008700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008300",
+    "expectedStatusHex": "02",
+    "expectedResponsePayloadHex": "01050000",
+    "responseEnvelopeHex": "020200000004008701050000303130340000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008200",
+    "decodedVersion": "1.5.0.0"
+  },
+  "synapsePublishedCode": {
+    "deviceBundle": "https://apps.razer.com/synapse/products/736/mw/rzDevice25.d7ded15ce6957bbe7b4b.js",
+    "initializationBundle": "https://apps.razer.com/synapse/products/736/mw/6737.5aa168d31468934a9753.js",
+    "requestDescriptor": [4, 0, 135],
+    "decoderFields": ["major", "minor", "internal", "reserved"],
+    "runtimeField": "firmwareInfo.currentFWVersion",
+    "synapseLabel": "MCU"
+  },
+  "rawCaptureCommitted": false
+}

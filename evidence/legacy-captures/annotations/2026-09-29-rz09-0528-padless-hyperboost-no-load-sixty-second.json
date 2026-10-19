@@ -1,0 +1,379 @@
+{
+  "schemaVersion": 1,
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "evidenceProvenance": {
+    "controller": "OpenBlade exact-device developer validation runner",
+    "role": "ReversibleValidation",
+    "sourceRevision": "6960f65a806ac1193db15f6d49933a7449a64460",
+    "profile": "NoLoad60",
+    "planSha256": "7C5F8DA522F2DEBA865D4128E9D485D152E41F6E7AB0B9DE5847E6A1D88F424E"
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "bios": "2.02"
+  },
+  "operatorConfirmation": {
+    "padUsbAndPowerDisconnected": true,
+    "originalAdapterConnected": true,
+    "usbCDisconnected": true,
+    "noWorkload": true,
+    "attendedSpokenPromptsConfirmed": true
+  },
+  "validation": {
+    "success": true,
+    "thermalPair": {
+      "Target": "HyperBoostFromPerformance",
+      "Baseline": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "Candidate": {
+        "Thermal1Hex": "01010700",
+        "Thermal2Hex": "01020700"
+      },
+      "Restoration": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "ApplyAttempted": true,
+      "ApplyAcknowledged": true,
+      "CandidateConfirmed": true,
+      "RestoreAttempted": true,
+      "RestoreAcknowledged": true,
+      "Restored": true,
+      "IndeterminatePartialWrite": false,
+      "ManualRecoveryRequired": false,
+      "Failure": "None",
+      "Success": true
+    },
+    "workloadBound": false,
+    "qualificationSamples": 0,
+    "observationMilliseconds": 60005.6607,
+    "candidateApplyMilliseconds": 781.1881,
+    "confirmedCandidateToRestorationReadbackMilliseconds": 60778.9138,
+    "samples": [
+      {
+        "ElapsedMilliseconds": 442.4802,
+        "CpuCelsius": 49,
+        "GpuCelsius": 42,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 210.5261,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 2447.9128,
+        "CpuCelsius": 47.5,
+        "GpuCelsius": 42,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 205.5989,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 4448.9208,
+        "CpuCelsius": 46.1,
+        "GpuCelsius": 42,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 216.8815,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 6459.1471,
+        "CpuCelsius": 45.2,
+        "GpuCelsius": 42,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 211.0859,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 8438.9504,
+        "CpuCelsius": 46.2,
+        "GpuCelsius": 42,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 211.0248,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 10478.2411,
+        "CpuCelsius": 45.4,
+        "GpuCelsius": 42,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 215.8993,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 12441.468,
+        "CpuCelsius": 44.9,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 209.7214,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 14467.735,
+        "CpuCelsius": 44.9,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 235.4192,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 16444.2956,
+        "CpuCelsius": 44.8,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 209.734,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 18448.9467,
+        "CpuCelsius": 44.8,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 218.4366,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 20430.3756,
+        "CpuCelsius": 44.8,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 213.9771,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 22432.0724,
+        "CpuCelsius": 44.5,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 209.9471,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 24464.143,
+        "CpuCelsius": 44.5,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 206.4982,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 26436.6675,
+        "CpuCelsius": 45.2,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 206.095,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 28441.2789,
+        "CpuCelsius": 44.8,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 210.8963,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 30434.5882,
+        "CpuCelsius": 44.4,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 210.5025,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 32435.2909,
+        "CpuCelsius": 44.2,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 214.4628,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 34445.751,
+        "CpuCelsius": 44.1,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 205.3011,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 36434.2408,
+        "CpuCelsius": 44,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 206.9059,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 38461.2649,
+        "CpuCelsius": 44.4,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 222.7258,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 40450.0261,
+        "CpuCelsius": 44.4,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 219.0786,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 42442.2537,
+        "CpuCelsius": 45.8,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 212.191,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 44464.8845,
+        "CpuCelsius": 45,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 215.9922,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 46432.7778,
+        "CpuCelsius": 44.4,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 210.2199,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 48449.1736,
+        "CpuCelsius": 44.4,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 217.6347,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 50447.4584,
+        "CpuCelsius": 44.1,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 219.3974,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 52446.6181,
+        "CpuCelsius": 44.1,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 214.9238,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 54450.2899,
+        "CpuCelsius": 44.1,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 209.4414,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 56445.8922,
+        "CpuCelsius": 44.5,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 213.2746,
+        "Fan1Rpm": 0,
+        "Fan2Rpm": 0
+      },
+      {
+        "ElapsedMilliseconds": 58022.159,
+        "CpuCelsius": 44.6,
+        "GpuCelsius": 41,
+        "GpuUtilizationPercent": 0,
+        "CpuSourceAgeMilliseconds": 209.5212,
+        "Fan1Rpm": null,
+        "Fan2Rpm": null
+      }
+    ],
+    "finalGpuOffsetsZero": true,
+    "hardwareDisposed": true,
+    "externalTelemetryQuiesced": true,
+    "snapshotQuiesced": true
+  },
+  "preRestartFullAcProof": [
+    {
+      "WindowsAcBefore": true,
+      "WindowsAcAfter": true,
+      "FirmwarePower": "1111",
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    },
+    {
+      "WindowsAcBefore": true,
+      "WindowsAcAfter": true,
+      "FirmwarePower": "1111",
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    }
+  ],
+  "restoration": {
+    "ValidationExitCode": 0,
+    "BenchmarkExitConfirmed": true,
+    "IndependentPerformanceStateConfirmed": true,
+    "OriginalIntentRestored": true,
+    "OriginalRestoreExitCode": 0,
+    "RestorationPending": false,
+    "Failure": null,
+    "Errors": [],
+    "servicesReturnedToPriorState": true,
+    "gpuOffsetsIndependentlyZero": true
+  },
+  "interpretation": {
+    "cpuSource": "HWiNFO named CPU Tctl/Tdie with newly consumed row peaks",
+    "gpuSource": "NVML temperature and utilization",
+    "fanSource": "Typed firmware fan readbacks at each paired snapshot; the final external-only sample has no fresh fan measurement",
+    "experimentalTripwire": "CPU 85 C / GPU 80 C user-approved experiment limits matching the reviewed RZ09-0581 plans; not hardware ratings",
+    "timing": "Scheduled observation duration differs from candidate-apply latency and confirmed-candidate-to-restoration-readback interval. Readback intervals do not establish exact physical residency.",
+    "fanBehavior": "Firmware kept both fans at zero RPM in mode 7 at idle; valid readbacks were required and zero RPM was allowed for this no-load profile only",
+    "productionPadlessAdmitted": false,
+    "thermalSafetyEstablished": false,
+    "sustainedBeyondWindowEstablished": false,
+    "limits": "Single attended 60-second no-load observation; no load, sustained, adapter, low-power, sleep or crash-recovery claim."
+  },
+  "sanitization": {
+    "rawOutputsExcluded": true,
+    "localPathsExcluded": true,
+    "deviceInstancePathsExcluded": true,
+    "serialNumbersExcluded": true,
+    "processIdentityExcluded": true,
+    "profileContentsExcluded": true
+  }
+}

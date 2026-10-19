@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade.Capture 0.17.0+18bd0017ce315c6801cff79cc7b2b1160d76d570",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-19T06:16:22.6395901Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "6F71FB0DFCFC473C0F58ABC566B2002F328F6BCEF25C752CDD53ABFABCC67305",
+    "byteLength": 1072,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance and adapter classification",
+    "name": "Padless HyperBoost FullPower330W to USB-C100W transition",
+    "value": "Confirm paired mode 7 on FullPower330W, observe one fresh UsbCPower100W classification after the operator transition, then restore exact Balanced immediately",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once from the confirmed Balanced and Automatic baseline on FullPower330W.",
+    "readbackResult": "Confirmed paired HyperBoost mode 7 and then one fresh UsbCPower100W adapter classification while the pad remained absent.",
+    "restorationResult": "Restored successfully once to the saved Balanced pair immediately after the adapter query.",
+    "restorationReadbackResult": "Confirmed exact Balanced restoration and fresh post-restoration pad absence."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ReviewedTransitionPlan",
+      "summary": "The validator used the dedicated hash-pinned adapter-transition plan and permitted exactly one fresh destination adapter query before restoration.",
+      "planId": "rz09-0581-bios-4.00-pad-absent-adapter-transition-v1",
+      "planSha256": "95E2333A19118480E6D8193933B7548587BF5C40D151C99BFE81E06D421C7537"
+    },
+    {
+      "kind": "TypedAdapterTransition",
+      "summary": "The initial adapter was FullPower330W. After paired mode-7 confirmation and explicit operator authorization, a fresh typed query returned UsbCPower100W.",
+      "initialAdapterState": "fullPower330W",
+      "observedAdapterState": "usbCPower100W",
+      "freshAdapterReadCompleted": true,
+      "reviewedAdapterTransitionConfirmed": true,
+      "hyperBoostReadbackConfirmed": true
+    },
+    {
+      "kind": "PadAbsenceAndRestoration",
+      "summary": "Physical pad absence was confirmed before apply, again after the adapter swap and before its query, and after exact Balanced restoration.",
+      "firstAbsenceConfirmed": true,
+      "secondAbsenceConfirmed": true,
+      "preApplyPadAbsenceConfirmed": true,
+      "transitionTimePadAbsenceConfirmed": true,
+      "postRestorationPadAbsenceConfirmed": true,
+      "balancedRestorationConfirmed": true,
+      "indeterminatePartialWrite": false,
+      "manualRecoveryRequired": false,
+      "failure": "none"
+    },
+    {
+      "kind": "ArtifactIntegrity",
+      "summary": "The private bounded semantic record binds the exact Capture executable, dedicated transition plan, typed adapter classes, and successful restoration.",
+      "captureProductVersion": "0.17.0+18bd0017ce315c6801cff79cc7b2b1160d76d570",
+      "captureExecutableSha256": "28750F3623BF7F82CF393EE0783B2A8FA55827D8CEC1601B6F9E7FC590073BF6",
+      "validatorExitCode": 0,
+      "success": true
+    }
+  ],
+  "limitations": [
+    "This run validates one immediate FullPower330W to UsbCPower100W transition and exact restoration; it does not establish sustained operation on USB-C power.",
+    "No benchmark or dwell was performed during the adapter transition.",
+    "The result is scoped to the exact machine, BIOS 4.00, Balanced and Automatic, and confirmed pad absence.",
+    "Installed-service low-power and unexpected-exit recovery remain unvalidated, so production padless HyperBoost remains disabled."
+  ],
+  "productionAdmission": {
+    "adapterTransitionValidated": true,
+    "postRestorationAbsenceValidated": true,
+    "padLessActivationAdmitted": false,
+    "reason": "The reviewed adapter-transition gate passed, but installed-service low-power and crash-recovery gates remain independently required."
+  },
+  "notes": [
+    "USBPcap was not running.",
+    "The OpenBlade service and competing Razer applications remained inactive.",
+    "No Razer service was started, stopped, or restored by the validator."
+  ]
+}

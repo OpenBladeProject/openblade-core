@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse 4.0.698.98 and OpenBlade.Capture 0.1",
+    "role": "ExactDeviceInteractiveValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-07-29T03:48:13.937Z",
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "6E72B5AAB4B87A01380C54EC186F6C42F1890403E21E0BC482EC2CEF9550AB3A",
+    "byteLength": 1497881,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Battery charge limit",
+    "name": "Set Battery Health Optimizer from 80 to 70 percent",
+    "value": "70 percent",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Confirmed captured 07/12 C6 setter and successful typed applies",
+    "readbackResult": "Confirmed 07/92 C6 at 70 percent and D0 at 80 percent",
+    "restorationResult": "Restored the saved 80-percent charge limit after every validation",
+    "restorationReadbackResult": "Confirmed Limit80 by typed firmware readback and visible Synapse state"
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "CapturedSetter",
+      "summary": "The only action-specific charge-limit setter was 07/12 with argument C6 at 28.225041 seconds.",
+      "requestEnvelopeHex": "000F000000010712C600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000D200"
+    },
+    {
+      "kind": "BaselineCapture",
+      "summary": "The 30-second idle baseline stopped gracefully and contained no operator charge-limit change.",
+      "sha256": "9912229349842D561351BFA81333646C82F1ED0F4E1835AEE2677274D86EC9B3",
+      "byteLength": 792985
+    },
+    {
+      "kind": "TypedReadback",
+      "summary": "Three 07/92 00 reads returned C6 at 70 percent and three returned D0 at 80 percent.",
+      "requestArgumentsHex": "00",
+      "limit70RawHex": "C6",
+      "limit80RawHex": "D0"
+    },
+    {
+      "kind": "OpenBladeReversibleValidation",
+      "summary": "80-to-70-to-80 and 80-to-75-to-80 each applied, read back, and restored in both quiet-controller and Synapse-running lighting-off windows."
+    },
+    {
+      "kind": "ProductionReadback",
+      "summary": "Three exact production-factory probes exposed only limit 70, opened successfully, and returned confirmed protection enabled at 80 percent."
+    },
+    {
+      "kind": "ControllerContention",
+      "summary": "Active Spectrum traffic produced an unrelated 03/0B response and TransactionMismatch; ten reads succeeded after the operator switched lighting off while Synapse remained running.",
+      "unrelatedCommandHex": "030B"
+    }
+  ],
+  "productionAdmission": {
+    "chargeLimits": [
+      70
+    ],
+    "batteryProtectionOff": false,
+    "temporaryFullCharge": false,
+    "otherChargeLimits": false,
+    "identityScope": "RZ09-0528, BIOS 2.02, USB 1532:02C6, HID usage 0001:0002, 91-byte feature reports"
+  },
+  "limitations": [
+    "At this charge-limit checkpoint, only the captured 70-percent setter was admitted; later exact-device evidence separately admits temporary full charge.",
+    "The 75-percent setter was reversibly validated but was not independently captured, so it is not production-admitted.",
+    "Active Synapse Spectrum traffic can race the shared feature response; OpenBlade rejects unrelated acknowledgements.",
+    "Keyboard lighting remains off at the operator's request.",
+    "Two failed USBPcap query attempts produced no PCAP and are preserved privately as failures, not evidence.",
+    "Raw PCAPs and unique device identifiers remain private and uncommitted."
+  ],
+  "notes": [
+    "Final charge limit was restored to 80 percent and temporary full charge remained unchecked."
+  ]
+}

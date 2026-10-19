@@ -166,25 +166,23 @@ $docs = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
 Assert-Equal 'none' $docs.Mode `
     'Documentation without an executable contract must skip expensive validation.'
 
-$captures = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('captures')
-Assert-Equal $true $captures.RequiresCaptures `
-    'Capture pointer changes must initialize the evidence submodule.'
-Assert-Contains $captures.TestProjects `
+$evidence = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'evidence/legacy-captures/decoded/example.json')
+Assert-Contains $evidence.TestProjects `
     'tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj' `
-    'Capture changes must run Protocol evidence tests.'
-Assert-Contains $captures.ContractTests `
-    'tests/Build.Tests/UsbPcapCaptureControl.Tests.ps1' `
-    'Capture changes must run capture-tool contracts.'
+    'Legacy evidence changes must run Protocol evidence tests.'
+Assert-Contains $evidence.TestProjects `
+    'tests/OpenBlade.Capture.Tests/OpenBlade.Capture.Tests.csproj' `
+    'Legacy evidence changes must run Capture evidence tests.'
+Assert-Contains $evidence.ContractTests `
+    'tests/Build.Tests/LegacyEvidenceProvenance.Tests.ps1' `
+    'Legacy evidence changes must verify the provenance map.'
 
 $sparseContract = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'tests/Build.Tests/SparsePackageIdentity.Tests.ps1')
 Assert-Contains $sparseContract.ContractRestoreProjects `
     'src/OpenBlade.SessionAgent/OpenBlade.SessionAgent.csproj' `
     'A changed sparse-identity suite must restore its publish input.'
-$captureContract = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
-    'tests/Build.Tests/UsbPcapCaptureControl.Tests.ps1')
-Assert-Equal $true $captureContract.RequiresCaptures `
-    'A changed capture contract must initialize its submodule input.'
 $undeclaredContract = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'tests/Build.Tests/NewUndeclared.Tests.ps1')
 Assert-Equal 'full' $undeclaredContract.Mode `
@@ -292,7 +290,6 @@ Assert-Contains $testMetadata.TestProjects `
 Assert-Equal $false $testMetadata.RunInstaller 'Test metadata must not publish the installer.'
 Assert-Equal 0 @($testMetadata.ContractTests).Count 'Test metadata must not select unrelated contracts.'
 Assert-Equal 0 @($testMetadata.PublishProjects).Count 'Test metadata must not publish product binaries.'
-Assert-Equal $false $testMetadata.RequiresCaptures 'Deployment test metadata needs no captures.'
 
 $serviceMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'src/OpenBlade.Service/OpenBlade.Service.csproj')
@@ -349,7 +346,6 @@ foreach ($requiredContract in @(
         'Get-OpenBladeCiPlan',
         'validation-plan-json:',
         'run-component-publish:',
-        'checkout-captures:',
         'Format-OpenBladeCiPlan',
         'uses: ./.github/workflows/build.yml')) {
     if (-not $ci.Contains($requiredContract)) {
@@ -401,12 +397,16 @@ foreach ($requiredBuildContract in @(
         'component-publish:',
         '.\build\Run-AffectedCi.ps1',
         '$expectedInputs = [ordered]@{',
-        'OPENBLADE_CHECKOUT_CAPTURES',
         'OPENBLADE_COMPONENT_PUBLISH_RESULT:',
         '-RunComponentPublish')) {
     if (-not $build.Contains($requiredBuildContract)) {
         throw "Shared build workflow is missing '$requiredBuildContract'."
     }
+}
+
+if ($build.Contains('OPENBLADE_CHECKOUT_CAPTURES') -or
+    $build.Contains('checkout-captures:')) {
+    throw 'The shared build workflow must not depend on the removed captures submodule.'
 }
 
 $contractsStart = $build.IndexOf('  build-contracts:', [StringComparison]::Ordinal)

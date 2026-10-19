@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "source": {
+    "fileName": "lighting-brightness-query.pcap",
+    "sha256": "A2A14395DADEC171910D6F948D6B29818773DC089699CC2CC658355DFD89BCE9",
+    "bytes": 7273
+  },
+  "action": "lighting-brightness-query",
+  "readOnly": true,
+  "productionWired": false,
+  "command": {
+    "classHex": "03",
+    "idHex": "83",
+    "payloadLength": 3,
+    "requestPayloadHex": "010500"
+  },
+  "exchange": {
+    "setReportFrame": 33,
+    "getReportFrame": 35,
+    "responseFrame": 36,
+    "transactionIdHex": "01",
+    "requestEnvelopeHex": "000100000003038301050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008700",
+    "expectedStatusHex": "02",
+    "expectedResponsePayloadHex": "0105FF",
+    "responseEnvelopeHex": "02010000000303830105FF00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007800",
+    "decodedRawBrightness": 255,
+    "decodedBrightnessPercent": 100
+  },
+  "rawCaptureCommitted": false,
+  "admission": {
+    "captured": true,
+    "decoded": true,
+    "interactiveApplication": false,
+    "independentReadback": true,
+    "restorationRequired": false,
+    "stateUnchanged": true,
+    "productionAdmitted": false,
+    "note": "This capture validates only the read-only query. It does not admit a lighting setter or effect command."
+  }
+}

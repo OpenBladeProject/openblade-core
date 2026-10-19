@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse 4.0.698.98",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeReadbackConfirmed": false
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "capture": {
+    "controller": "\\\\.\\USBPcap2",
+    "deviceAddressReverifiedBeforeEveryCapture": 3,
+    "captureMode": "DeviceAddress",
+    "stopMode": "Graceful",
+    "rawCaptureCommitted": false
+  },
+  "priorState": {
+    "batteryHealthOptimizerEnabled": true,
+    "chargeLimitPercent": 80,
+    "temporaryFullChargeEnabled": false
+  },
+  "sanitizedEvidence": [
+    {
+      "transition": "80->75",
+      "command": "07/12",
+      "argumentsHex": "CB",
+      "captureSha256": "F88E24CD0DDF239FAFEA03A7952F9B1B7294C60AFF5C18FADE67A088EB953D43",
+      "captureByteLength": 2552
+    },
+    {
+      "transition": "75->70",
+      "command": "07/12",
+      "argumentsHex": "C6",
+      "captureSha256": "6FE44130376012D290152C3A61B494F633D0CE858BEB99CB9D66D3B922299F16",
+      "captureByteLength": 2552
+    },
+    {
+      "transition": "70->65",
+      "command": "07/12",
+      "argumentsHex": "C1",
+      "captureSha256": "96D8A54DD06E55FAFD034FCAD846D217D665CA6602329CB39313BA6C0B1F4C93",
+      "captureByteLength": 2552
+    },
+    {
+      "transition": "65->60",
+      "command": "07/12",
+      "argumentsHex": "BC",
+      "captureSha256": "88A1378223CF3DAFFC848F742B809AFD0D7217DAD05FD0C3EB729DE6845A64FB",
+      "captureByteLength": 2552
+    },
+    {
+      "transition": "60->55",
+      "command": "07/12",
+      "argumentsHex": "B7",
+      "captureSha256": "B3DFA1E3C1F34D327C6BB3CACEC19F95158C6A22F7A6689137445DB2FA5C3547",
+      "captureByteLength": 2552
+    },
+    {
+      "transition": "55->50",
+      "command": "07/12",
+      "argumentsHex": "B2",
+      "captureSha256": "FBAFEC7C446C5A9557CC7A4871AEA15A5D0FFD409704D09622D2898F0455CA9D",
+      "captureByteLength": 2552
+    },
+    {
+      "transition": "50->80 restoration",
+      "command": "07/12",
+      "argumentsHex": "D0",
+      "captureSha256": "18FCA28C391AD701E60B8C422BC40F40FAD4C3738FC3121FFBAFC79A519BE140",
+      "captureByteLength": 2552
+    },
+    {
+      "transition": "optimizer on->off",
+      "command": "07/12",
+      "argumentsHex": "50",
+      "captureSha256": "B34BB14E08F0B9EEDB525AF3056C3A96C22672B16F546C080446DB28644134FF",
+      "captureByteLength": 2552
+    },
+    {
+      "transition": "optimizer off->on at 80 restoration",
+      "command": "07/12",
+      "argumentsHex": "D0",
+      "captureSha256": "5239DEC370B81DEE7ADCCB13E147075A15A096F7BE38C4A396604D84D387C374",
+      "captureByteLength": 2552
+    }
+  ],
+  "correlation": {
+    "limitEncoding": "0x80 + percentage when protection is enabled",
+    "protectionOffEncoding": "raw percentage without bit 7; Synapse used 0x50 while the saved limit was 80",
+    "repeatedTraffic": "Each action was followed by 07/8F 00 and 07/0F 00 host writes; those writes are recorded but are not treated as limit readback."
+  },
+  "validation": {
+    "operatorConfirmed": true,
+    "visibleApplyConfirmed": true,
+    "restorationResult": "Battery Health Optimizer visibly enabled at 80 percent; temporary full charge remained unchecked.",
+    "independentFirmwareReadback": true,
+    "subsequentOpenBladeValidation": "Exact-device typed round trips for 50, 55, 60, 65, 75, and protection-off each reported Applied=True, ReadBack=True, Restored=True, Success=True. A production probe then read protection enabled at 80 percent and temporary full charge false."
+  },
+  "limitations": [
+    "These are setter captures. Visible Synapse state is not independent firmware readback.",
+    "Independent readback is supplied by the subsequent exact-device OpenBlade validation, not by the USBPcap trace itself."
+  ]
+}

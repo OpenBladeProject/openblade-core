@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade installed Service 0.17.0+f52440583dbdf7f20bca0564cb37e01603f68d4e verified by OpenBlade.FirmwareSmoke 0.17.0+f52440583dbdf7f20bca0564cb37e01603f68d4e",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-19T11:28:49.6358568Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "352BDCDE996CE2108D5B6625187FA7B9DEA95BE1FEF931122F1851EA16351816",
+    "byteLength": 919,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance lifecycle",
+    "name": "Installed-service padless HyperBoost low-power lifecycle recovery validation",
+    "value": "Balanced and Automatic to service-owned HyperBoost, one operator-initiated Windows Modern Standby sleep/resume boundary, one owned Service restoration, then read-only lifecycle verification",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once through the exact installed validation Service while the cooling pad was physically absent.",
+    "readbackResult": "Confirmed service-owned HyperBoost and a durable ownership journal before the low-power boundary.",
+    "restorationResult": "Restored successfully once by the same installed Service to the saved Balanced base with Automatic laptop fans.",
+    "restorationReadbackResult": "Confirmed the exact restored pair twice, a retired ownership journal, the same Service instance, and exactly one recovery attempt and completion."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ExactInstalledPreflight",
+      "summary": "The validation build bound the exact RZ09-0581 BIOS 4.00 installation, Balanced and Automatic baseline, admitted full-power adapter, confirmed physical pad absence, one exact Service, one exact Session Agent, and a one-time lifecycle-validation manifest.",
+      "serviceProductVersion": "0.17.0+f52440583dbdf7f20bca0564cb37e01603f68d4e",
+      "serviceExecutableSha256": "B059E4756D24A26738785C8403F1452A0F13C8C276E32C0317F02B20DB9C87D4",
+      "validationBuildManifestSha256": "0B6360396EC299BD7812AF2DF4E185D658396375448BA126615C1AB17416997A",
+      "requiresCoolingPad": false
+    },
+    {
+      "kind": "OwnedLifecycleArm",
+      "summary": "The installed Service applied HyperBoost once, confirmed mode 7, finalized durable ownership, and created the private marker without cleanup or manual recovery.",
+      "armArtifactSha256": "92654EA7879F67C4F9EDCC1590F8DD62C2944B0D059A4B6DAC8D7D5650D74F5B",
+      "armArtifactByteLength": 926,
+      "hyperBoostConfirmed": true,
+      "durableOwnershipConfirmed": true,
+      "manualRecoveryRequired": false
+    },
+    {
+      "kind": "ObservedModernStandbyBoundary",
+      "summary": "Windows Kernel-Power recorded ordered Modern Standby entry for a screen-off request and exit for keyboard input during the armed validation window.",
+      "entryEventId": 506,
+      "exitEventId": 507,
+      "orderedEntryAndExitConfirmed": true,
+      "sameServiceInstanceRequired": true
+    },
+    {
+      "kind": "InstalledRecoveryVerification",
+      "summary": "Read-only FirmwareSmoke verification confirmed stable Balanced and Automatic state, a retired journal, the expected same-Service boundary, and exactly one matching Service recovery attempt and completion.",
+      "exactInstalledGeneration": true,
+      "expectedServiceBoundary": true,
+      "exactBaseAndAutomaticConfirmed": true,
+      "journalRetired": true,
+      "recoveryAttemptsObserved": 1,
+      "recoveryCompletionsObserved": 1,
+      "stableSecondObservation": true,
+      "lowPowerLifecycleValidated": true
+    },
+    {
+      "kind": "ArtifactIntegrity",
+      "summary": "The private arm, marker, diagnostics, Windows event records, and verification result remain uncommitted; this annotation retains only bounded hashes, lengths, semantic outcomes, and exact executable provenance.",
+      "verificationArtifactSha256": "352BDCDE996CE2108D5B6625187FA7B9DEA95BE1FEF931122F1851EA16351816",
+      "verificationArtifactByteLength": 919,
+      "firmwareSmokeExecutableSha256": "802815E036D9E823518085E6E0BA65A7BCD6D41FE03CD1CC0A8F6C913245BA95",
+      "validatorExitCode": 0,
+      "success": true
+    }
+  ],
+  "limitations": [
+    "This run validates one installed-Service low-power restoration on the exact RZ09-0581 BIOS 4.00 generation, Balanced and Automatic, admitted full-power adapter, and confirmed physical pad absence.",
+    "The verifier accepts either the registered suspend callback or the narrow Modern Standby display-off fallback and proves exactly one restoration; it does not claim which notification path won the serialized race.",
+    "The earlier failed low-power run remains preserved as negative evidence for the pre-fix implementation."
+  ],
+  "productionAdmission": {
+    "lowPowerLifecycleValidated": true,
+    "padLessActivationAdmitted": true,
+    "reason": "The exact installed Service completed one owned padless HyperBoost restoration across an observed Modern Standby entry and exit, and all independent padless admission gates now have reviewed positive evidence."
+  },
+  "notes": [
+    "FirmwareSmoke verification was read-only and issued no recovery write.",
+    "USBPcap was not running.",
+    "No Razer service was started, stopped, or restored.",
+    "The original stopped OpenBlade Service registration and the installed normal-integrity Tray and Session Agent were restored after validation.",
+    "Private lifecycle markers, diagnostics, local paths, service instance identifiers, and user identity are not committed."
+  ]
+}

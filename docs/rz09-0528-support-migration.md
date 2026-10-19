@@ -13,7 +13,7 @@ The chronological, append-only record was preserved in the
 Do not append new status updates there.
 
 The authoritative feature status is the sanitized
-[device-coverage ledger](https://github.com/OpenBladeProject/openblade-captures/blob/main/decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json).
+[device-coverage ledger](../evidence/legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json).
 If this summary and the ledger disagree, the ledger wins and this summary must
 be corrected.
 
@@ -142,7 +142,7 @@ the exact-device developer round trip on 2026-09-27. Both enable channels were
 acknowledged and independently read as mode 7, then both channels were restored
 and independently read as Performance/Automatic. The embedded exact-model
 fixture is checked against its reviewed SHA-256 before command admission.
-The [sanitized developer checkpoint](https://github.com/OpenBladeProject/openblade-captures/blob/34b5da28b7bbf9391eed9298676ee235e0bc76b3/decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-developer-validation.json)
+The [sanitized developer checkpoint](../evidence/legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-developer-validation.json)
 records the exact build, acknowledgements, independent readbacks and restoration.
 The path requires an explicitly writable Performance base mode,
 keeps the cooling-pad dependency in the ownership journal, and preserves the
@@ -153,7 +153,7 @@ placeholders and do not establish captured direct-transition evidence. The
 2026 model retains its separately admitted padless Balanced transition.
 GPU tuning was independently validated in Balanced, Silent, Performance and
 Custom modes. A separate exact-device combined validation on 2026-09-27 passed
-both sequences recorded in the [combined validation checkpoint](https://github.com/OpenBladeProject/openblade-captures/blob/16a350740ac971ce7b56bc9c9233ce060c8951ed/decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-gpu-developer-validation.json): enter HyperBoost, apply +5/+5 logical MHz, restore zero, then
+both sequences recorded in the [combined validation checkpoint](../evidence/legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-gpu-developer-validation.json): enter HyperBoost, apply +5/+5 logical MHz, restore zero, then
 exit; and apply +5/+5 before entry, confirm the offsets through entry and exit,
 then restore zero. NVML and NVAPI agreed at each stage. A separate read-only
 process confirmed zero offsets and a typed query confirmed Performance/Automatic
@@ -163,8 +163,10 @@ bounded checks do not establish sustained-load stability or padless operation.
 Installed build `0.23.0+6e10043f` passed the typed service enable/disable
 round trip and a separate pad-disconnect check. The latter confirmed a
 service-owned exit with zero helper disable calls, journal removal and original
-settings restoration. The [installed evidence](https://github.com/OpenBladeProject/openblade-captures/pull/24)
-records both sessions and their exact build provenance.
+settings restoration. The installed
+[round-trip](../evidence/legacy-captures/annotations/2026-09-27-rz09-0528-installed-hyperboost-validation.json)
+and [pad-disconnect](../evidence/legacy-captures/annotations/2026-09-27-rz09-0528-installed-hyperboost-pad-disconnect.json)
+annotations record both sessions and their exact build provenance.
 
 Separate developer experiments with the pad USB and power disconnected passed
 an immediate Performance-to-HyperBoost round trip and a 60-second no-load
@@ -174,7 +176,7 @@ zone reported 45 C and the GPU remained explicitly inactive. Fans rose from zero
 experimental abort threshold guarded that zone, not a CPU core thermal limit.
 Both experiments restored Performance, then the original
 Balanced settings, and independently confirmed zero GPU offsets. The
-[sanitized no-load report](https://github.com/OpenBladeProject/openblade-captures/blob/c12bacf4ebbc66a098fb1cef7ab901dd02bd4398/annotations/2026-09-27-rz09-0528-padless-hyperboost-no-load.json)
+[sanitized no-load report](../evidence/legacy-captures/annotations/2026-09-27-rz09-0528-padless-hyperboost-no-load.json)
 records actual timestamps and readings. These results alone did not admit
 installed padless operation; see [Pad-less production admission](#pad-less-production-admission).
 
@@ -239,8 +241,8 @@ Installed lifecycle runs on build `0.23.0-nightly.4+8ed9088a` closed the last
 two gates. An unexpected Service termination and one Windows Sleep each ended
 with exactly one owned restoration to Performance/Automatic, matching desired
 state, no external changes and a retired journal
-([crash recovery](https://github.com/OpenBladeProject/openblade-captures/pull/31),
-[low power](https://github.com/OpenBladeProject/openblade-captures/pull/32)).
+([crash recovery](../evidence/legacy-captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-crash-recovery-lifecycle.json),
+[low power](../evidence/legacy-captures/annotations/2026-09-29-rz09-0528-padless-hyperboost-low-power-lifecycle.json)).
 The exact-model admission manifest
 `Rz09_0528_02c6_2_02_HyperBoostWithoutCoolingPadAdmission.json` binds all ten
 gates to hash-pinned 2025 evidence. It is model-scoped: BIOS 2.02 is capture
@@ -297,45 +299,48 @@ separate. A discovered value may be documented before it is writable.
 
 For every remaining hardware control:
 
-1. Record the exact device, firmware, power source, visible Synapse page,
+1. Use [Synapse Observer](https://github.com/OpenBladeProject/synapse-observer)
+   to record the exact device, firmware, power source, visible Synapse page,
    saved value, and one intended action.
-2. Re-resolve the transient USB address immediately before capture.
-3. Capture an idle baseline and one operator-correlated action against only the
-   verified controller and device.
-4. Record UTC timing, graceful-stop state, byte lengths, hashes, and decoded
-   transactions. Keep identifying and raw data private.
+2. Record an idle baseline and one operator-correlated action for the exact
+   model and controller.
+3. Restore the saved Synapse value and verify the restored state before ending
+   the observation.
+4. Record UTC timing, the action and restoration pair, and sanitized decoded
+   semantics. Keep identifying and raw data private.
 5. Preserve failed, contaminated, and timed-out sessions honestly.
 6. Derive a candidate only from the exact-device delta.
 7. Add a guarded typed query before attempting a write.
 8. Establish independent readback and value discrimination.
 9. Save the prior value, apply one bounded value, read it back, restore it,
    and independently confirm restoration.
-10. Add sanitized evidence and update the coverage ledger.
+10. Add reviewed sanitized evidence with its own source and provenance, then
+    update the coverage ledger. Keep the fixed legacy `evidence/provenance.json`
+    map unchanged.
 11. Implement the smallest exact-device factory/port change.
 12. Add capability-boundary, failure, rollback, and restoration tests.
-13. Run focused tests, the full solution, and the capture-tool suite.
+13. Run focused tests, the full solution, and the evidence-provenance contract.
 
 An empty coverage leaf is not completion. Advancing a leaf requires updating
 the ledger and its coverage-contract test deliberately.
 
-## Capture safety
+## Evidence collection safety
 
-- Target only the reverified PID `02C6` device on `\\.\USBPcap2`.
-- Treat every USB device address as transient. Address `3` was historical, not
-  permanent.
-- Never run USBPcap and an OpenBlade HID query or write against the interface
-  at the same time.
-- Use the private ignored capture broker only while the operator is present.
-- Use hidden `-SkipServiceManagement` because the OpenBlade service is absent
-  in the capture environment described by the historical sessions.
-- Use `-SkipAdministratorCheck` only when the child lacks an administrator
-  token and the already-installed capture driver remains accessible.
+- Use Synapse Observer for new observations and select only the exact model and
+  controller under review.
+- Save the current setting, record one deliberate action, restore the saved
+  value, and verify restoration before ending the observation.
 - Never commit PCAPs, serial numbers, HID paths, device-instance identifiers,
-  local usernames, private capture hashes, or broker request files.
+  local usernames, or private recording hashes.
 - Sanitized annotations must retain enough timing, decode, restoration, and
   failure information for review without retaining unique identifiers.
-- Save and restore every user-visible setting. The preferred quiet final
-  lighting state is Static at 50% unless the operator requests otherwise.
+- Save and restore every user-visible setting. Restore the exact saved state
+  unless the operator explicitly requests another final state.
+
+The archived implementation log documents the old private USBPcap workflow for
+historical provenance. It is not the current collection procedure. If a
+maintainer must reproduce it, preserve its stricter interface-exclusion and
+target-verification rules.
 
 Continuous Synapse matrix traffic can overwrite the shared feature response.
 Reject mismatched transaction, command-class, and command-ID responses. Never
@@ -448,22 +453,19 @@ dotnet build OpenBlade.slnx -c Release -p:NuGetAudit=false --no-restore
 dotnet test OpenBlade.slnx -c Release -p:NuGetAudit=false --no-build --no-restore
 ```
 
-From `openblade-captures`, use Windows PowerShell 5.1:
+Verify the core-owned evidence set with Windows PowerShell 5.1:
 
 ```powershell
 & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
   -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-  -File .\tests\Run-All.ps1
+  -File .\tests\Build.Tests\LegacyEvidenceProvenance.Tests.ps1
 ```
-
-Do not omit `-NonInteractive`; an intentionally missing validation mode can
-otherwise prompt and look hung.
 
 Before handoff:
 
 1. Run focused tests for every changed boundary.
 2. Run the full build and test commands above.
-3. Rerun the capture-tool suite after any toolkit change.
+3. Rerun the evidence-provenance contract after any fixture change.
 4. Run `git diff --check`.
 5. Confirm touched files use the repository line-ending convention.
 6. Confirm no raw or identifying artifact is staged.

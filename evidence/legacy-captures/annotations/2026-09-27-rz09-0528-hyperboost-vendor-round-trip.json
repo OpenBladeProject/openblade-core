@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse vendor UI plus independent exact-device OpenBlade read-only probe",
+    "role": "OracleCaptureWithIndependentReadback",
+    "trackingIssue": "https://github.com/OpenBladeProject/openblade-core/issues/597",
+    "publicationStatus": "UserApprovedSanitizedEvidence",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeReadbackConfirmed": true,
+    "openBladeRestorationWritePerformed": false,
+    "vendorLaptopRestorationIndependentlyConfirmed": true,
+    "coolingPadRestorationIndependentlyConfirmed": false
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "sku": "RZ09-05289EN4",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0",
+    "firmwareRole": "Captured provenance; not a newly imposed firmware admission restriction"
+  },
+  "coolingPad": {
+    "vendorIdHex": "1532",
+    "productIdHex": "0F43",
+    "deviceRevisionHex": "0200",
+    "presentThroughout": true,
+    "presenceSpoofed": false,
+    "controlSemanticsIndependentlyValidated": false
+  },
+  "adapter": {
+    "classification": "FullPower280W",
+    "independentPayloadHex": "1111"
+  },
+  "captures": [
+    {
+      "phase": "baseline",
+      "captureReadyAtUtc": "2026-09-27T20:26:54.8958722+00:00",
+      "captureStoppedAtUtc": "2026-09-27T20:27:06.1593178+00:00",
+      "stopMode": "Graceful",
+      "forcedShutdownDataLossDisclosed": false,
+      "decodable": true,
+      "byteLength": 50838,
+      "sha256": "0B88082E7E4BCEDF23ACD8EA084807153B16425A37712498B1AB16999F751FD9",
+      "transactionCount": 279,
+      "rawCaptureCommitted": false
+    },
+    {
+      "phase": "enable",
+      "captureReadyAtUtc": "2026-09-27T20:27:18.6315978+00:00",
+      "captureStoppedAtUtc": "2026-09-27T20:27:33.5973865+00:00",
+      "stopMode": "Graceful",
+      "forcedShutdownDataLossDisclosed": false,
+      "decodable": true,
+      "byteLength": 75160,
+      "sha256": "469CE1EFB718F9BD9C12F902DAFA7C55DF22A0C54F1DD3C145701705B2FCC68B",
+      "transactionCount": 414,
+      "rawCaptureCommitted": false
+    },
+    {
+      "phase": "disable",
+      "captureReadyAtUtc": "2026-09-27T20:28:02.7979501+00:00",
+      "captureStoppedAtUtc": "2026-09-27T20:28:21.6750572+00:00",
+      "stopMode": "Graceful",
+      "forcedShutdownDataLossDisclosed": false,
+      "decodable": true,
+      "byteLength": 87852,
+      "sha256": "96634379B3D991B39C1EB31B8516FBD3FE95470715D4AD29CD4A590749E15161",
+      "transactionCount": 482,
+      "rawCaptureCommitted": false
+    }
+  ],
+  "action": {
+    "name": "Vendor HyperBoost enable and disable",
+    "operatorConfirmedEnabledWithoutWarning": true,
+    "operatorConfirmedRestoredPerformanceAutomatic": true,
+    "initialUiMode": null,
+    "initialThermalReadbackRecorded": false
+  },
+  "baseline": {
+    "thermalTransactionsObserved": false,
+    "relevantTraffic": "Keyboard matrix/latch and cooling-pad lighting; no thermal commands"
+  },
+  "transactions": [
+    {
+      "phase": "enable",
+      "target": "Laptop1532:02C6",
+      "requestFrame": 367,
+      "requestRelativeSeconds": 6.82502,
+      "commandClassHex": "07",
+      "commandIdHex": "8C",
+      "requestPayloadHex": "0000",
+      "responseFrame": 370,
+      "responseRelativeSeconds": 6.837348,
+      "responseStatusHex": "02",
+      "responsePayloadHex": "1111",
+      "transactionMatched": true,
+      "checksumValidated": true,
+      "semanticRole": "AdapterReadback"
+    },
+    {
+      "phase": "enable",
+      "target": "Laptop1532:02C6",
+      "requestFrame": 371,
+      "requestRelativeSeconds": 6.844141,
+      "commandClassHex": "0D",
+      "commandIdHex": "02",
+      "requestPayloadHex": "01010700",
+      "responseFrame": 374,
+      "responseRelativeSeconds": 6.853342,
+      "responseStatusHex": "02",
+      "responsePayloadHex": "01010700",
+      "transactionMatched": true,
+      "checksumValidated": true,
+      "semanticRole": "VendorThermalSetterAcknowledgement"
+    },
+    {
+      "phase": "enable",
+      "target": "Laptop1532:02C6",
+      "requestFrame": 377,
+      "requestRelativeSeconds": 6.866734,
+      "commandClassHex": "0D",
+      "commandIdHex": "02",
+      "requestPayloadHex": "01020700",
+      "responseFrame": 380,
+      "responseRelativeSeconds": 6.880347,
+      "responseStatusHex": "02",
+      "responsePayloadHex": "01020700",
+      "transactionMatched": true,
+      "checksumValidated": true,
+      "semanticRole": "VendorThermalSetterAcknowledgement"
+    },
+    {
+      "phase": "enable",
+      "target": "CoolingPad1532:0F43",
+      "requestFrame": 429,
+      "requestRelativeSeconds": 7.827502,
+      "commandClassHex": "0D",
+      "commandIdHex": "01",
+      "requestPayloadHex": "010514",
+      "responseFrame": 432,
+      "responseRelativeSeconds": 7.837347,
+      "responseStatusHex": "02",
+      "responsePayloadHex": "010514",
+      "transactionMatched": true,
+      "checksumValidated": true,
+      "semanticRole": "VendorPadSetterAcknowledgementOnly"
+    },
+    {
+      "phase": "disable",
+      "target": "Laptop1532:02C6",
+      "requestFrame": 553,
+      "requestRelativeSeconds": 10.390997,
+      "commandClassHex": "07",
+      "commandIdHex": "8C",
+      "requestPayloadHex": "0000",
+      "responseFrame": 558,
+      "responseRelativeSeconds": 10.401221,
+      "responseStatusHex": "02",
+      "responsePayloadHex": "1111",
+      "transactionMatched": true,
+      "checksumValidated": true,
+      "semanticRole": "AdapterReadback"
+    },
+    {
+      "phase": "disable",
+      "target": "CoolingPad1532:0F43",
+      "requestFrame": 555,
+      "requestRelativeSeconds": 10.393154,
+      "commandClassHex": "0D",
+      "commandIdHex": "10",
+      "requestPayloadHex": "01012C",
+      "responseFrame": 560,
+      "responseRelativeSeconds": 10.403209,
+      "responseStatusHex": "02",
+      "responsePayloadHex": "01012C",
+      "transactionMatched": true,
+      "checksumValidated": true,
+      "semanticRole": "VendorPadSetterAcknowledgementOnly"
+    },
+    {
+      "phase": "disable",
+      "target": "Laptop1532:02C6",
+      "requestFrame": 561,
+      "requestRelativeSeconds": 10.409133,
+      "commandClassHex": "0D",
+      "commandIdHex": "02",
+      "requestPayloadHex": "01010200",
+      "responseFrame": 566,
+      "responseRelativeSeconds": 10.422235,
+      "responseStatusHex": "02",
+      "responsePayloadHex": "01010200",
+      "transactionMatched": true,
+      "checksumValidated": true,
+      "semanticRole": "VendorThermalSetterAcknowledgement"
+    },
+    {
+      "phase": "disable",
+      "target": "Laptop1532:02C6",
+      "requestFrame": 567,
+      "requestRelativeSeconds": 10.429715,
+      "commandClassHex": "0D",
+      "commandIdHex": "02",
+      "requestPayloadHex": "01020200",
+      "responseFrame": 570,
+      "responseRelativeSeconds": 10.439231,
+      "responseStatusHex": "02",
+      "responsePayloadHex": "01020200",
+      "transactionMatched": true,
+      "checksumValidated": true,
+      "semanticRole": "VendorThermalSetterAcknowledgement"
+    }
+  ],
+  "independentReadback": [
+    {
+      "state": "HyperBoostActive",
+      "readOnly": true,
+      "productionAdmitted": false,
+      "success": true,
+      "thermalQueryClassHex": "0D",
+      "thermalQueryCommandHex": "82",
+      "thermal1RequestPayloadHex": "01010000",
+      "thermal1ResponsePayloadHex": "01010700",
+      "thermal2RequestPayloadHex": "01020000",
+      "thermal2ResponsePayloadHex": "01020700",
+      "responseStatusHex": "02",
+      "adapterQueryClassHex": "07",
+      "adapterQueryCommandHex": "8C",
+      "adapterResponsePayloadHex": "1111"
+    },
+    {
+      "state": "RestoredPerformanceAutomatic",
+      "readOnly": true,
+      "productionAdmitted": false,
+      "success": true,
+      "thermalQueryClassHex": "0D",
+      "thermalQueryCommandHex": "82",
+      "thermal1RequestPayloadHex": "01010000",
+      "thermal1ResponsePayloadHex": "01010200",
+      "thermal2RequestPayloadHex": "01020000",
+      "thermal2ResponsePayloadHex": "01020200",
+      "responseStatusHex": "02",
+      "adapterQueryClassHex": "07",
+      "adapterQueryCommandHex": "8C",
+      "adapterResponsePayloadHex": "1111"
+    }
+  ],
+  "finalState": {
+    "performance": "Performance",
+    "fans": "Automatic",
+    "hyperBoostActive": false,
+    "independentThermalReadbackConfirmed": true,
+    "adapter": "FullPower280W",
+    "originalOpenBladeServiceRestored": true,
+    "captureStopped": true,
+    "sessionFailure": null,
+    "vendorLaptopRestored": true,
+    "coolingPadRestorationIndependentlyConfirmed": false
+  },
+  "productionAdmission": {
+    "unchanged": true,
+    "hyperBoostReadbackConfirmed": true,
+    "hyperBoostWriteAdmitted": false,
+    "padLessActivationAdmitted": false,
+    "coolingPadFanWriteAdmitted": false
+  },
+  "limitations": [
+    "No independently queried thermal baseline immediately before the vendor enable action.",
+    "No OpenBlade HyperBoost setter apply/readback/restore validation.",
+    "No direct Balanced or Silent return transition has been validated on this model.",
+    "Cooling-pad commands co-occurred with the laptop transition; their necessity and standalone effects are unproven.",
+    "No pad-absent activation, removal, reconnect, or spoofed-pad behavior is admitted.",
+    "No battery, USB-C, inadequate-adapter, or full-power adapter transition validation.",
+    "No sleep/resume, cold boot, service restart, unexpected controller loss, or process crash recovery validation.",
+    "No sustained-load, power-limit, thermal-limit, or performance improvement claim is established.",
+    "The user initially reported unresponsive physical cooling-pad controls after capture and Synapse closure. After Synapse was reopened, the user confirmed physical-button selection of High; the vendor UI displayed High with configured 2700 RPM. The user then confirmed continued fan operation after normal Profile > Exit. This records recovery of the reported symptom, not independent typed pad readback, restoration to a pre-capture pad state, measured RPM, or established causality. Laptop Performance/Automatic restoration remains independently confirmed."
+  ],
+  "privacy": {
+    "rawCaptureCommitted": false,
+    "rawReportsIncluded": false,
+    "serialNumbersRetained": false,
+    "devicePathsRetained": false,
+    "localPathsRetained": false,
+    "userProfileNamesRetained": false,
+    "usbDeviceAddressesRetained": false
+  },
+  "coolingPadFollowup": {
+    "source": "User reports and vendor UI observation after the capture session",
+    "chronology": [
+      {
+        "sequence": 1,
+        "source": "User report after vendor capture and Synapse closure",
+        "observation": "Physical cooling-pad controls do not seem to work."
+      },
+      {
+        "sequence": 2,
+        "source": "User report after Synapse was reopened",
+        "observation": "The physical button selected High and the fan operated at High."
+      },
+      {
+        "sequence": 3,
+        "source": "Vendor UI observation",
+        "observation": "Synapse displayed High with a configured value of 2700 RPM; this is not an independent tachometer reading."
+      },
+      {
+        "sequence": 4,
+        "source": "Operator observation and user confirmation",
+        "observation": "Synapse was closed through Profile > Exit and its app processes were absent. The user confirmed the fan continued running at High after exit."
+      }
+    ],
+    "physicalControlResponsivenessUserConfirmed": true,
+    "fanOperationAfterVendorExitUserConfirmed": true,
+    "restorationIndependentlyConfirmed": false,
+    "independentTypedPadReadbackPerformed": false,
+    "reportedSymptomRecovered": true,
+    "causeEstablished": false
+  },
+  "decodedEvidence": "decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-semantic-evidence.json"
+}

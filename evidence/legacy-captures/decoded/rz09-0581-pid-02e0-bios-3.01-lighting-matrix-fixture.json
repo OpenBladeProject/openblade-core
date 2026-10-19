@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vid": "1532",
+    "pid": "02E0",
+    "bios": "3.01"
+  },
+  "rawCapturesCommitted": false,
+  "protocol": {
+    "reportIdHex": "00",
+    "featureReportBufferLength": 375,
+    "envelopeLength": 374,
+    "payloadLengthHex": "0136",
+    "classHex": "03",
+    "idHex": "0B",
+    "payloadHeaderHex": "00000065",
+    "rgbSlotCount": 102,
+    "checksumOffset": 372,
+    "checksumRule": "xor-envelope-bytes-2-through-371",
+    "terminatorHex": "00"
+  },
+  "layout": {
+    "source": "stable Static frame 819",
+    "holeSlots": [0, 17, 31, 34, 48, 51, 64, 65, 68, 70, 81, 82, 85, 89, 92, 93],
+    "litSlotCount": 86,
+    "slotNumbering": "protocol-order-not-physical-key-map"
+  },
+  "frames": [
+    {
+      "effect": "Static",
+      "captureFileName": "opensynapse-lighting-static-online-20260714.pcap",
+      "captureSha256": "76CA001583EC41F2ABE53872278686A8E5CA3419F6D0583BD6E3802CD2400B0A",
+      "frameNumber": 819,
+      "transactionIdHex": "18",
+      "renderer": "static",
+      "configuredColorHex": "00FF00",
+      "envelopeBase64": "ABgAAAE2AwsAAABlAAAAAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAAAAAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAAAAAP8AAP8AAAAAAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAAAAAP8AAP8AAAAAAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAAAAAAAAAP8AAP8AAAAAAP8AAAAAAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAAAAAAAAAP8AAP8AAAAAAP8AAP8AAP8AAAAAAP8AAP8AAAAAAAAAAP8AAP8AAP8AAP8AAP8AAP8AAP8AAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgA="
+    },
+    {
+      "effect": "Spectrum",
+      "captureFileName": "opensynapse-lighting-spectrum-online-20260714.pcap",
+      "captureSha256": "00F3D449110411497DB894A07009BDF5B13B183A2931A129C8189BC7AE921171",
+      "frameNumber": 193,
+      "transactionIdHex": "03",
+      "renderer": "spectrum-host-color-sample",
+      "hostColorSampleHex": "00FB00",
+      "envelopeBase64": "AAMAAAE2AwsAAABlAAAAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAAAAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAAAAAPsAAPsAAAAAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAAAAAPsAAPsAAAAAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAAAAAAAAAPsAAPsAAAAAAPsAAAAAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAAAAAAAAAPsAAPsAAAAAAPsAAPsAAPsAAAAAAPsAAPsAAAAAAAAAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAPsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgA="
+    },
+    {
+      "effect": "Breathing",
+      "captureFileName": "opensynapse-lighting-breathing-online-20260714.pcap",
+      "captureSha256": "30B199AD90D675223E29D0B31E8DD9F786AB248282B1F9CA3FC23A283693FE31",
+      "frameNumber": 1669,
+      "transactionIdHex": "1F",
+      "renderer": "breathing-intensity-sample",
+      "configuredColorHex": "00FF00",
+      "intensityHex": "82",
+      "envelopeBase64": "AB8AAAE2AwsAAABlAAAAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAAAAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAAAAAIIAAIIAAAAAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAAAAAIIAAIIAAAAAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAAAAAAAAAIIAAIIAAAAAAIIAAAAAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAAAAAAAAAIIAAIIAAAAAAIIAAIIAAIIAAAAAAIIAAIIAAAAAAAAAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAIIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgA="
+    },
+    {
+      "effect": "Reactive",
+      "captureFileName": "opensynapse-lighting-reactive-online-20260714.pcap",
+      "captureSha256": "84545D9F5214B1650EF931F9CAD8A0A9ED8B914CBA06567FDA4064967A3828B6",
+      "frameNumber": 1253,
+      "transactionIdHex": "08",
+      "renderer": "reactive-black-idle-frame",
+      "envelopeBase64": "AAgAAAE2AwsAAABlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgA="
+    }
+  ],
+  "ambiguities": [
+    "The captures prove the 102-slot spatial frame format and exact sampled RGB values.",
+    "The captures do not isolate Synapse's wall-clock-to-Spectrum-color curve, so the offline renderer accepts an explicit host-color sample.",
+    "The captures do not isolate Synapse's wall-clock-to-Breathing-intensity curve, so the offline renderer accepts an explicit intensity sample.",
+    "The Reactive capture proves only the black idle frame. Active-key placement, duration, and decay still require focused captures.",
+    "No independent matrix GET report exists. This fixture does not admit matrix writes to production."
+  ],
+  "productionWired": false,
+  "productionAdmitted": false
+}

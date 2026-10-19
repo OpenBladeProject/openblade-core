@@ -42,11 +42,6 @@ on:
         required: false
         default: true
         type: boolean
-      checkout-captures:
-        description: Initialize the pinned capture-evidence submodule.
-        required: false
-        default: true
-        type: boolean
 
 permissions:
   contents: read
@@ -68,7 +63,6 @@ jobs:
           OPENBLADE_RUN_CONTRACTS: ${{ inputs.run-contracts }}
           OPENBLADE_RUN_COMPONENT_PUBLISH: ${{ inputs.run-component-publish }}
           OPENBLADE_RUN_INSTALLER: ${{ inputs.run-installer }}
-          OPENBLADE_CHECKOUT_CAPTURES: ${{ inputs.checkout-captures }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:OPENBLADE_BUILD_CHANNEL -notin @('Stable', 'Nightly')) {
@@ -98,16 +92,14 @@ jobs:
               ($env:OPENBLADE_RUN_QUALITY -ne 'true' -or
                $env:OPENBLADE_RUN_CONTRACTS -ne 'true' -or
                $env:OPENBLADE_RUN_COMPONENT_PUBLISH -ne 'false' -or
-               $env:OPENBLADE_RUN_INSTALLER -ne 'true' -or
-               $env:OPENBLADE_CHECKOUT_CAPTURES -ne 'true')) {
-            throw 'Full validation requires exhaustive lanes and capture evidence.'
+               $env:OPENBLADE_RUN_INSTALLER -ne 'true')) {
+            throw 'Full validation requires exhaustive lanes.'
           }
           if ($env:OPENBLADE_VALIDATION_MODE -eq 'none' -and
               ($env:OPENBLADE_RUN_QUALITY -ne 'false' -or
                $env:OPENBLADE_RUN_CONTRACTS -ne 'false' -or
                $env:OPENBLADE_RUN_COMPONENT_PUBLISH -ne 'false' -or
-               $env:OPENBLADE_RUN_INSTALLER -ne 'false' -or
-               $env:OPENBLADE_CHECKOUT_CAPTURES -ne 'false')) {
+               $env:OPENBLADE_RUN_INSTALLER -ne 'false')) {
             throw 'Validation mode none cannot enable an execution lane.'
           }
           if ($env:OPENBLADE_VALIDATION_MODE -eq 'affected') {
@@ -121,7 +113,6 @@ jobs:
               OPENBLADE_RUN_COMPONENT_PUBLISH =
                 @($plan.PublishProjects).Count -gt 0 -and -not [bool]$plan.RunInstaller
               OPENBLADE_RUN_INSTALLER = [bool]$plan.RunInstaller
-              OPENBLADE_CHECKOUT_CAPTURES = [bool]$plan.RequiresCaptures
             }
             foreach ($expectedInput in $expectedInputs.GetEnumerator()) {
               $actual = [Environment]::GetEnvironmentVariable($expectedInput.Key)
@@ -143,15 +134,7 @@ jobs:
       DOTNET_NOLOGO: true
       OPENBLADE_SKIP_INTERACTIVE_DESKTOP_TESTS: 0
     steps:
-      - name: Check out source with capture evidence
-        if: ${{ inputs.checkout-captures }}
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-          submodules: recursive
-
-      - name: Check out source without capture evidence
-        if: ${{ !inputs.checkout-captures }}
+      - name: Check out source
         uses: actions/checkout@v7
         with:
           persist-credentials: false
@@ -214,15 +197,7 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: true
     steps:
-      - name: Check out source with capture evidence
-        if: ${{ inputs.checkout-captures }}
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-          submodules: recursive
-
-      - name: Check out source without capture evidence
-        if: ${{ !inputs.checkout-captures }}
+      - name: Check out source
         uses: actions/checkout@v7
         with:
           persist-credentials: false

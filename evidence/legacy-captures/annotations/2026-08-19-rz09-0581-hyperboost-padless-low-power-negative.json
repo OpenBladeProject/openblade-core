@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade installed Service 0.17.0+7e3884a79511de035ca93fc53f659b04d2998729 with OpenBlade.FirmwareSmoke 0.17.0+7e3884a79511de035ca93fc53f659b04d2998729",
+    "role": "NegativeCapture",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-19T10:30:13.7586671Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "8C1F1A56A5E428F52DDB460C66FF9C7F018120E3C4AF629C6F5A017FB7C4FB3C",
+    "byteLength": 919,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance lifecycle",
+    "name": "Installed-service padless HyperBoost low-power lifecycle validation",
+    "value": "Balanced and Automatic to service-owned HyperBoost, one operator-initiated Windows sleep/resume boundary, then read-only lifecycle verification",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once through the exact installed validation Service while the cooling pad was physically absent.",
+    "readbackResult": "Confirmed service-owned HyperBoost and a durable ownership journal before the low-power boundary.",
+    "restorationResult": "Failed lifecycle restoration: the service did not observe the required low-power lifecycle boundary and left HyperBoost active until a separate authorized typed cleanup.",
+    "restorationReadbackResult": "A later one-shot typed cleanup confirmed Balanced and Automatic; this cleanup does not validate automatic low-power restoration."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ExactInstalledPreflight",
+      "summary": "The validation build bound the exact RZ09-0581 BIOS 4.00 installation, Balanced and Automatic baseline, admitted full-power adapter, confirmed physical pad absence, and a one-time validation manifest.",
+      "serviceProductVersion": "0.17.0+7e3884a79511de035ca93fc53f659b04d2998729",
+      "serviceExecutableSha256": "E2F7EEF9566311627CBA0476F533D3DA7916F9A7AE2D56AC9AA660AC00345C33",
+      "validationBuildManifestSha256": "11A16E6EC1D0A48B02177E83F4DA66F4324AFA648EE9C3DDEA6D6481B07768A8",
+      "requiresCoolingPad": false
+    },
+    {
+      "kind": "OwnedLifecycleArm",
+      "summary": "The installed Service applied HyperBoost once, confirmed mode 7, finalized durable ownership, and created the private marker without cleanup or manual recovery.",
+      "armArtifactSha256": "0373230FC2F40B384EDE7E27614C510301F370002C1D8618BC48BF18BAA6A7BA",
+      "armArtifactByteLength": 926,
+      "hyperBoostConfirmed": true,
+      "durableOwnershipConfirmed": true,
+      "manualRecoveryRequired": false
+    },
+    {
+      "kind": "LowPowerBoundaryNegative",
+      "summary": "After the operator initiated Windows sleep for approximately ten seconds and resumed, the same Service instance remained active but no owned HyperBoost low-power recovery attempt or completion was recorded.",
+      "expectedServiceBoundary": true,
+      "exactBaseAndAutomaticConfirmed": false,
+      "journalRetired": false,
+      "recoveryAttemptsObserved": 0,
+      "recoveryCompletionsObserved": 0,
+      "stableSecondObservation": false,
+      "lowPowerLifecycleValidated": false
+    },
+    {
+      "kind": "SeparateSafeCleanup",
+      "summary": "After the read-only failure result, one authorized typed Service cleanup restored and confirmed Balanced and Automatic without retry; a fresh read-only baseline then passed every safety check.",
+      "cleanupAttemptCount": 1,
+      "balancedAndAutomaticConfirmed": true,
+      "pendingWrites": false,
+      "baselineHealthConfirmed": true
+    },
+    {
+      "kind": "ArtifactIntegrity",
+      "summary": "The private arm and verification records remain uncommitted; this annotation retains only bounded hashes, lengths, semantic outcomes, and exact executable provenance.",
+      "verificationArtifactSha256": "8C1F1A56A5E428F52DDB460C66FF9C7F018120E3C4AF629C6F5A017FB7C4FB3C",
+      "verificationArtifactByteLength": 919,
+      "firmwareSmokeExecutableSha256": "1C6CA4E7D2A482509A61062FCB2FB2590958E2E15A6888376196E94CA4766858",
+      "validatorExitCode": 2,
+      "success": false
+    }
+  ],
+  "limitations": [
+    "This is authoritative negative evidence for the tested low-power path: Windows display and power notifications did not reach the Service as the lifecycle boundary required by the recovery implementation.",
+    "The separate typed cleanup proves safe restoration after the failed validation, not automatic sleep/resume recovery.",
+    "Production padless HyperBoost must remain disabled while the low-power lifecycle gate is false."
+  ],
+  "productionAdmission": {
+    "lowPowerLifecycleValidated": false,
+    "padLessActivationAdmitted": false,
+    "reason": "The installed Service did not restore owned padless HyperBoost across the observed sleep/resume boundary."
+  },
+  "notes": [
+    "USBPcap was not running.",
+    "No Razer service was started, stopped, or restored.",
+    "Private lifecycle markers, diagnostics, local paths, and service instance identifiers are not committed."
+  ]
+}

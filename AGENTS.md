@@ -194,7 +194,8 @@ hardware writes, installations, or unattended sleep/resume tests.
   a read-only green gate before reversible writes, and always restores state.
 - `src/OpenBlade.Setup`: transactional install, repair, shutdown, and uninstall.
 - `tests/*`: project-aligned tests plus `Build.Tests` release-payload checks.
-- `captures`: submodule containing sanitized evidence and capture tooling.
+- `evidence`: core-owned immutable sanitized legacy evidence and its provenance
+  map. Use Synapse Observer for new observations.
 - `build`: publish, package, and deployment scripts.
 
 ## Settings cell presentation
@@ -382,27 +383,34 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
   that shared path. Record the connector used and any source-specific behavior
   left untested; do not repeat a disruptive lifecycle test solely to match the
   connector in the original report.
-- Never run USBPcap capture and OpenBlade control against the same interface at
-  the same time.
-- Never call `GenerateConsoleCtrlEvent` with process group `0`. USBPcapCMD must
-  run in its own process group and receive a targeted `CTRL_BREAK_EVENT`; force
-  termination is an explicit fallback that may lose buffered capture data.
+- Use [Synapse Observer](https://github.com/OpenBladeProject/synapse-observer)
+  for new protocol observations. Save the baseline, record one deliberate
+  action, restore the saved value, and verify restoration.
+- The private legacy USBPcap tooling is obsolete. If a maintainer must
+  reproduce an archived workflow, never run USBPcap capture and OpenBlade
+  control against the same interface at the same time. `USBPcapCMD` must run
+  in its own process group and receive a targeted `CTRL_BREAK_EVENT`; never
+  call `GenerateConsoleCtrlEvent` with process group `0`. Force termination is
+  an explicit fallback that may lose buffered capture data.
 - Never commit raw PCAP files, device serials, user paths, or unsanitized
   payloads. Capture provenance and restoration results belong in the sanitized
   annotation.
 - Preserve untracked `.capture-control-*` and `.query-control-*` directories
   unless their owner explicitly asks to remove them.
 
-### Captures history boundary
+### Legacy evidence history boundary
 
-The `captures` submodule history was rewritten; super-repo commit `568fa88` is
-the boundary. Commits before it reference submodule commits absent from the
-remote, so `git submodule update`, `git bisect` across the boundary, and
-historical CI re-runs fail by design, not by fault. An existing local clone may
-still resolve the old pointers from unreferenced objects, while a fresh clone
-will not; do not conclude from local success that CI is misconfigured. To
-investigate older super-repo commits, check them out without recursing
-submodules.
+Current source stores the sanitized evidence required by production admission,
+tests, and documentation under `evidence/legacy-captures`. Its
+`evidence/provenance.json` map records the original private repository, pinned
+revision, original path, and SHA-256 for each imported file. A normal clone,
+build, and test run needs no private repository access.
+
+Older super-repo commits used a `captures` submodule. Its history was rewritten;
+super-repo commit `568fa88` is the boundary. Commits before it reference
+submodule commits absent from the remote, so historical recursive checkouts,
+bisects across the boundary, and CI re-runs can fail by design. Investigate
+those commits without recursing submodules.
 
 ## Change workflow
 
@@ -486,16 +494,6 @@ unrelated worktrees and checkout changes.
     the branch. For a merged pull request, also prove that the branch tip is
     reachable from `origin/main`. If any safety check fails, report the blocker
     instead of silently leaving cleanup incomplete or deleting uncertain work.
-    A worktree that initialized `captures` needs submodule-aware removal. First
-    ensure no long-lived process uses the worktree as its current directory and
-    prove both the parent worktree and `captures` are clean. Then run
-    `git -C <worktree> submodule deinit -f -- captures`, followed by
-    `git worktree remove --force <worktree>`; plain removal still rejects a
-    worktree that contained a submodule. If Git unregisters the worktree but
-    Windows leaves an empty directory locked, do not delete the branch yet:
-    identify and restart only the verified locking process from its intended
-    working directory, prove the residual directory is empty and unregistered,
-    then remove that exact directory.
     After any successful branch merge, also update the primary non-linked-
     worktree checkout to the latest `main` with `git pull --ff-only origin main`;
     this synchronization is the required exception to the landing-checkout
@@ -603,8 +601,8 @@ installation path.
 Do not run production publishing from a OneDrive-linked worktree. The deep WiX
 upgrade-probe extraction path repeatedly fails during validated cleanup there,
 even after the binaries and installers build successfully. Create a short,
-detached exact-commit worktree under `C:\tmp`, initialize the pinned `captures`
-submodule, and run the unchanged `build/Publish.ps1` from that worktree. Never
+detached exact-commit worktree under `C:\tmp` and run the unchanged
+`build/Publish.ps1` from that worktree. Never
 install artifacts left in `.staging` by the failed OneDrive-path run.
 
 On managed hosts, NuGet restore and publish commonly fail in the sandbox with

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade.Capture 0.17.0+0f56b0c1ef6049430848e191249cbaaae3d2ef14",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-19T06:16:22.6395901Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": null,
+    "mcu": null
+  },
+  "capture": {
+    "sha256": "5FA55D83DA5C51EFB18CC2A0B13F8881361C231A5CFBA5B3ECE0FF084BDB84A0",
+    "byteLength": 786,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance",
+    "name": "Exact-head padless HyperBoost immediate reversible validation",
+    "value": "Balanced and Automatic to paired HyperBoost mode 7, immediate typed readback, exact Balanced restoration, and fresh post-restoration pad-absence observation",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once on the exact laptop while the cooling pad USB and external power were disconnected.",
+    "readbackResult": "Confirmed paired HyperBoost mode 7 readback on both thermal channels.",
+    "restorationResult": "Restored successfully once to the saved Balanced and Automatic pair.",
+    "restorationReadbackResult": "Confirmed the exact saved Balanced state and a fresh post-restoration physical pad-absence observation."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ExactHeadPreflight",
+      "summary": "The validator bound OpenBlade.Capture 0.17.0+0f56b0c1, exact RZ09-0581 BIOS 4.00 and PID 02E0, inactive Synapse and OpenBlade service, two pad-absence observations, Balanced and Automatic baseline, and admitted FullPower330W adapter classification.",
+      "firstAbsenceConfirmed": true,
+      "secondAbsenceConfirmed": true,
+      "baselineBalancedConfirmed": true,
+      "initialAdapterState": "fullPower330W",
+      "interactiveApprovalConfirmed": true
+    },
+    {
+      "kind": "ImmediateApplyReadbackRestore",
+      "summary": "The validator submitted one paired HyperBoost transition, confirmed paired mode 7, restored the saved pair once, and confirmed Balanced without retry or manual recovery.",
+      "preApplyPadAbsenceConfirmed": true,
+      "hyperBoostReadbackConfirmed": true,
+      "balancedRestorationConfirmed": true,
+      "indeterminatePartialWrite": false,
+      "manualRecoveryRequired": false,
+      "safetyFailure": "none",
+      "failure": "none"
+    },
+    {
+      "kind": "PostRestorationAbsence",
+      "summary": "A fresh physical VID/PID presence observation after restoration again confirmed that the cooling pad was absent.",
+      "postRestorationPadAbsenceConfirmed": true
+    },
+    {
+      "kind": "ArtifactIntegrity",
+      "summary": "The private bounded semantic record binds the exact Capture executable and successful typed result; it contains no raw HID path, serial, user path, or process identity.",
+      "captureProductVersion": "0.17.0+0f56b0c1ef6049430848e191249cbaaae3d2ef14",
+      "captureExecutableSha256": "2FBD66D2A1F8EC2089B6813D58B5B0018E1BC914582B372BA0CEE0FA34BE349D",
+      "validatorExitCode": 0,
+      "success": true
+    }
+  ],
+  "limitations": [
+    "This exact-head run proves one immediate reversible transition only; it does not establish sustained thermal behavior, adapter-transition behavior, or installed-service lifecycle recovery.",
+    "The result is scoped to RZ09-0581 BIOS 4.00, Balanced and Automatic, an admitted FullPower330W adapter, and confirmed physical pad absence.",
+    "Production padless HyperBoost remains disabled until every reviewed sustained and lifecycle gate is satisfied."
+  ],
+  "productionAdmission": {
+    "padLessImmediateApplyReadbackRestoreValidated": true,
+    "postRestorationAbsenceValidated": true,
+    "padLessActivationAdmitted": false,
+    "reason": "Immediate exact-head transition and restoration evidence is complete, but sustained, adapter, low-power, and crash-recovery gates are independently required."
+  },
+  "notes": [
+    "capturedAtUtc records creation of the bounded semantic evidence record after the interactive run; the validator did not emit a timestamp.",
+    "USBPcap was not running.",
+    "The OpenBlade service and competing Razer applications remained inactive.",
+    "No Razer service was started, stopped, or restored by the validator."
+  ]
+}

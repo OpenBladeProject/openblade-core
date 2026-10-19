@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "status": "CapturedNotAdmitted",
+  "transport": {
+    "adapterPowerQuery": "07/8C:0000",
+    "batterySaverAutomatic": [
+      "0D/02:01010300",
+      "0D/02:01020300"
+    ],
+    "balancedAutomatic": [
+      "0D/02:01010000",
+      "0D/02:01020000"
+    ],
+    "sourceInputReports": {
+      "endpoint": "0x82",
+      "byteLength": 16,
+      "batteryCandidate": "05/33:0011",
+      "usbCOnlyCandidate": "05/33:0711",
+      "barrelAcCandidate": "05/33:1111"
+    }
+  },
+  "visibleCapabilities": {
+    "battery": {
+      "sourceLabel": "On Battery",
+      "selectedPreset": "Battery Saver",
+      "fan": "Auto (Default)",
+      "fixedFanAvailable": false
+    },
+    "usbCOnly": {
+      "sourceLabel": "Plugged In",
+      "selectedPreset": "Balanced",
+      "fan": "Auto (Default)",
+      "performanceAvailable": false,
+      "customAvailable": false,
+      "inadequatePowerWarningVisible": true
+    },
+    "barrelAc": {
+      "sourceLabel": "Plugged In",
+      "selectedPreset": "Balanced",
+      "fan": "Auto (Default)",
+      "performanceAvailable": true,
+      "customAvailable": true,
+      "inadequatePowerWarningVisible": false
+    }
+  },
+  "sessions": [
+    {
+      "transition": "BarrelAcToUsbCThroughBattery",
+      "captureSha256": "504C5F3F3E71B0A3D6B6AC4AA51528A9CB6CCFB68BB2F1748FD0C4852AD00CFD",
+      "transactionsSha256": "3C44B271B859873A4E1B2EA1CDD7A02F6871BD8EFCDD8E9CACAEAA9B498ECD70",
+      "byteLength": 14318,
+      "transactionCount": 59,
+      "adapterPowerQueryCount": 5,
+      "batterySaverPairCount": 1,
+      "balancedPairCount": 1,
+      "sourceInputReportValues": ["0011", "0711"]
+    },
+    {
+      "transition": "UsbCStableBaseline",
+      "captureSha256": "DF972057FF5780B3BF740FF7598DFC3BF95F3DD57BF82CB6C500A7313E2735E5",
+      "transactionsSha256": "283C8A2F5DFC8B760612F2B17AD7482C232F8E177FE364E90C909EA3C6C62619",
+      "byteLength": 8353,
+      "transactionCount": 46,
+      "adapterPowerQueryCount": 0,
+      "batterySaverPairCount": 0,
+      "balancedPairCount": 0,
+      "sourceInputReportValues": ["1111"]
+    },
+    {
+      "transition": "UsbCToBarrelAc",
+      "captureSha256": "E75B936026D850A23429EA0A466B8657C3714B00EAC4E0F214D462820E2C5094",
+      "transactionsSha256": "333AA539A701B6A21CCC31388390D94BB432EF8289F3464693D49FF6E04E7852",
+      "byteLength": 23065,
+      "transactionCount": 108,
+      "adapterPowerQueryCount": 5,
+      "batterySaverPairCount": 1,
+      "balancedPairCount": 1,
+      "sourceInputReportValues": ["0011", "1111"]
+    },
+    {
+      "transition": "FullExternalPowerToBattery",
+      "captureSha256": "10240E82BC3DB201F793581B94B5C2F031103F011DF6225F6482A19FF7EA7501",
+      "transactionsSha256": "0439EBBFAA27DA2DF28D1DC4DA31DF3AE2108806015641F15E5926B48A433833",
+      "byteLength": 12733,
+      "transactionCount": 62,
+      "adapterPowerQueryCount": 2,
+      "batterySaverPairCount": 1,
+      "balancedPairCount": 0,
+      "sourceInputReportValues": ["0011"]
+    },
+    {
+      "transition": "BatteryStableBaseline",
+      "captureSha256": "76882F8F43F75DD66DF19F0FA6E09DB4D5871F712F8D5C59F57FC6C898B3BAAF",
+      "transactionsSha256": "9FDB3FEEE6E9429C8E45CB0CBBA788C209CA4689F878C5E90F23F09E148F6C94",
+      "byteLength": 5647,
+      "transactionCount": 31,
+      "adapterPowerQueryCount": 0,
+      "batterySaverPairCount": 0,
+      "balancedPairCount": 0,
+      "sourceInputReportValues": []
+    },
+    {
+      "transition": "BatteryToUsbC",
+      "captureSha256": "8074CBDF2ED3BF90E7F5C6F60FF20A03F1BCC41FFFE37B8E22AEEF20E40ECF5D",
+      "transactionsSha256": "6DE27930608DD05B8537F2C98B93B8D4ADED39713E95E599F557D605328F2748",
+      "byteLength": 11701,
+      "transactionCount": 55,
+      "adapterPowerQueryCount": 3,
+      "batterySaverPairCount": 0,
+      "balancedPairCount": 1,
+      "sourceInputReportValues": ["0711"]
+    },
+    {
+      "transition": "UsbCToBattery",
+      "captureSha256": "0807E5281A65C5B0EC773B3ADE767E0C6E88C9DF896258E0FE065BA9D7704101",
+      "transactionsSha256": "8106B0A8050649E049EF76F8FA0EFA70CAA40639550B0C3E84AAA3ED71B1AF79",
+      "byteLength": 12733,
+      "transactionCount": 62,
+      "adapterPowerQueryCount": 2,
+      "batterySaverPairCount": 1,
+      "balancedPairCount": 0,
+      "sourceInputReportValues": ["0011"]
+    },
+    {
+      "transition": "BatteryToBarrelAc",
+      "captureSha256": "3F9B08C12DE4049452B8B12FF8FB2169DAC25591D376A9BA93572769504B39AD",
+      "transactionsSha256": "EDF48EC6E94752E8B2631F78DD76FCB24F2EFF4201F5724436C9FAEE74DB4CD0",
+      "byteLength": 13375,
+      "transactionCount": 63,
+      "adapterPowerQueryCount": 3,
+      "batterySaverPairCount": 0,
+      "balancedPairCount": 1,
+      "sourceInputReportValues": ["1111"]
+    },
+    {
+      "transition": "BarrelAcToBattery",
+      "captureSha256": "7AAB57DABA5C2E056364257EA1F5AD98BAE9C0FE453645D6AD3158F2AB59884F",
+      "transactionsSha256": "2EE6F77CA4687D7C883AB134F2B57D3CE27A51B9B584FA5C5EC73DF2BF34CD47",
+      "byteLength": 11431,
+      "transactionCount": 55,
+      "adapterPowerQueryCount": 2,
+      "batterySaverPairCount": 1,
+      "balancedPairCount": 0,
+      "sourceInputReportValues": ["0011"]
+    }
+  ],
+  "negativeEvidence": {
+    "exactUsbCPowerClassResponseCaptured": false,
+    "sourceInputReportsIndependentlyReadBack": false,
+    "independentThermalReadbackCaptured": false,
+    "openBladeTypedApplyPerformed": false,
+    "productionWired": false,
+    "failedBeforeReadySessionCount": 2
+  },
+  "corrections": [
+    "The first On Battery observation was the physical cable-free interval between disconnecting barrel AC and connecting USB-C, not delayed USB-C recognition.",
+    "The session originally labeled USB-C-to-AC restoration was a stable USB-C-only no-action baseline."
+  ]
+}

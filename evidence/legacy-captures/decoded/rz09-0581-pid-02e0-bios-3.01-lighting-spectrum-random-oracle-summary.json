@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "evidenceRole": "SynapseOracleCaptureAnalysis",
+  "target": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01"
+  },
+  "sourceCapture": {
+    "sanitizedFileName": "capture.pcap",
+    "sha256": "D0186AB4A14DBFAF9ABCE91BC39F30A05CF51E6D35C6AAD137D3DB6C8BAF7628",
+    "byteLength": 19406459,
+    "rawCaptureCommitted": false,
+    "gracefulStopConfirmed": true,
+    "decodable": true
+  },
+  "protocol": {
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "capturedKeySlotCount": 86
+  },
+  "spectrum": {
+    "runCount": 3,
+    "completeCycleCount": 3,
+    "periodsMilliseconds": [37716.720, 37685.435, 37724.251],
+    "meanPeriodMilliseconds": 37708.802,
+    "direction": "IncreasingHue",
+    "anchorMethod": "Nearest observed RGB sample at each 2 percent phase, averaged channel-by-channel across all three complete cycles",
+    "anchorsRgbHex": [
+      "FF1010", "FF250C", "FF3B09", "FF5206", "FF6803", "FF7E00",
+      "FAA100", "F6C700", "F1EC00", "EDFF00", "E8FF00", "E3FF00",
+      "DFFF00", "A4FF00", "63FF00", "21FF00", "00FF4E", "00FFFF",
+      "03E4FF", "07C8FF", "0BACFF", "0F90FF", "1374FF", "1858FF",
+      "1858FF", "1858FF", "1858FF", "1858FF", "1957FF", "1957FF",
+      "1F55FF", "3450FF", "494AFF", "5C45FF", "703FFF", "8539FF",
+      "9934FF", "AC2EFF", "C129FF", "D623FF", "EA1DFF", "FD18FF",
+      "FF17E7", "FF16CB", "FF15B1", "FF1495", "FF137B", "FF1260",
+      "FF1146", "FF102B", "FF1010"
+    ]
+  },
+  "randomBreathing": {
+    "boundedCycleCount": 256,
+    "peakToPeakIntervalCount": 255,
+    "minimumPeakToPeakMilliseconds": 6938.385,
+    "medianPeakToPeakMilliseconds": 7000.561,
+    "meanPeakToPeakMilliseconds": 7000.015,
+    "maximumPeakToPeakMilliseconds": 7078.478,
+    "consecutiveRepeatedPlateauCount": 12,
+    "selectionInference": "Independent uniform selection from the observed palette; consecutive repeats remain allowed",
+    "paletteRgbHex": [
+      "000080", "0000FF", "008000", "008080", "0080FF", "00FF00",
+      "00FF80", "00FFFF", "800000", "800080", "8000FF", "808000",
+      "8080FF", "80FF00", "80FF80", "80FFFF", "FF0000", "FF0080",
+      "FF00FF", "FF8000", "FF8080", "FF80FF", "FFFF00", "FFFF80"
+    ]
+  },
+  "validationBoundary": {
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false
+  }
+}

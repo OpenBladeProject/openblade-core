@@ -134,7 +134,7 @@ public sealed class McuVersionProtocolTests
     }
 
     private static string FixturePath() => RepositoryFile(
-        "captures",
+        "evidence", "legacy-captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-mcu-version-fixture.json");
 

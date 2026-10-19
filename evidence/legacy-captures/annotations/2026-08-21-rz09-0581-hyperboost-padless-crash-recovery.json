@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 2,
+  "evidenceProvenance": {
+    "controller": "OpenBlade installed validation Service 0.19.1+b071753a71b72980a134cf8f9530c3e8d9a15481 verified by OpenBlade.FirmwareSmoke 0.19.1+b071753a71b72980a134cf8f9530c3e8d9a15481",
+    "role": "OpenBladeTypedValidation",
+    "openBladeTypedApplyPerformed": true,
+    "openBladeReadbackConfirmed": true
+  },
+  "capturedAtUtc": "2026-08-20T19:01:58.4642420Z",
+  "device": {
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "4.00",
+    "ec": "1.04",
+    "mcu": "1.6.0.0"
+  },
+  "capture": {
+    "sha256": "CC47CE6A39ED62FCC0517D1399449A4D1AC6B30241001CE10CE2B2B688E4D117",
+    "byteLength": 926,
+    "rawCaptureCommitted": false,
+    "captureMode": "DeviceAddress",
+    "selectedDeviceCount": 0,
+    "stopMode": "Graceful",
+    "forcedShutdownDataLossDisclosed": false,
+    "decodable": true
+  },
+  "action": {
+    "kind": "SettingChange",
+    "subsystem": "Blade performance lifecycle",
+    "name": "Exact-head installed-service padless HyperBoost unexpected-exit recovery validation",
+    "value": "Balanced and Automatic to service-owned HyperBoost, one marker-bound forced termination of only the OpenBlade Service, SCM restart, one owned recovery, then stable read-only lifecycle verification",
+    "operatorConfirmed": true
+  },
+  "validation": {
+    "priorStateSaved": true,
+    "applyResult": "Applied successfully once through the exact installed validation Service while the cooling pad was physically absent.",
+    "readbackResult": "Confirmed mode 7 and durable service ownership before the unexpected-exit boundary.",
+    "restorationResult": "Restored successfully once by the restarted installed Service to the saved Balanced base with Automatic laptop fans.",
+    "restorationReadbackResult": "Confirmed the exact restored state twice, a retired ownership journal, the expected replaced-Service boundary, and exactly one recovery attempt and completion."
+  },
+  "sanitizedEvidence": [
+    {
+      "kind": "ExactInstalledPreflight",
+      "summary": "After a clean OpenBlade-only Service restart reset the validation manifest's per-process one-shot guard, a fresh baseline bound exact RZ09-0581 identity, BIOS 4.00 provenance, Balanced and Automatic, admitted full power, physical pad absence, and zero blocked or unconfirmed writes.",
+      "sourceRevision": "b071753a71b72980a134cf8f9530c3e8d9a15481",
+      "serviceProductVersion": "0.19.1+b071753a71b72980a134cf8f9530c3e8d9a15481",
+      "serviceExecutableSha256": "9D9FAACD0C1C7E7D577E4767E2608357920552DCAB6C45DAC99866D4608DEB48",
+      "validationServiceAssemblySha256": "96DB9E36F285DCE56586090EC238B832CF43DBC1522612CAF307E905C08A08C3",
+      "validationBuildManifestSha256": "0C5EA3F8DF27851045EC82CC7A13020105F6B438CB8CF7BD446F1BAF8B32F2F2",
+      "installedGenerationSha256": "DF3D9BB53C39E3365A6767B9B6697B659BA7D0F03F9B9F8811D60716F336B88F",
+      "baselineArtifactSha256": "C2F55D95189BC4EC89BE842DFFCC61BEFBCDA47A883D491BF093BC2DF684D8E5",
+      "requiresCoolingPad": false
+    },
+    {
+      "kind": "KnownNotAppliedOneShotGuard",
+      "summary": "An initial second-scenario arm in the already-used Service process was rejected by the validation manifest's per-process one-shot guard before the validation device command. No marker was created, HyperBoost was not confirmed, no cleanup was attempted, and a fresh baseline remained green. The Service was then restarted cleanly before the successful arm.",
+      "rejectedArmArtifactSha256": "21D1C9FF97CF9A34AD41DC5D8F769525DE3F267FB6B825A1CEA957982DA1E704",
+      "rejectedArmArtifactByteLength": 353,
+      "serviceRestartArtifactSha256": "60D333AB1468D0A0FB0B0DCB48D7DE1660E0FACA9505993AD2C7D415D8F7DCAE",
+      "serviceRestartArtifactByteLength": 226,
+      "hyperBoostConfirmed": false,
+      "markerCreated": false,
+      "cleanupAttempted": false,
+      "manualRecoveryRequired": false
+    },
+    {
+      "kind": "OwnedLifecycleArm",
+      "summary": "The restarted installed Service applied HyperBoost once, confirmed mode 7, finalized durable padless ownership, and created the private marker without cleanup or manual recovery.",
+      "armArtifactSha256": "8738199CB487060F70A98D2910390183866E442572E51D8EE8A4417415066425",
+      "armArtifactByteLength": 964,
+      "privateMarkerSha256": "05CA404E9697A41ADB7FEA53EBBE425690D092BFE340B3E74F73309D3452D49D",
+      "hyperBoostConfirmed": true,
+      "durableOwnershipConfirmed": true,
+      "cleanupAttempted": false,
+      "manualRecoveryRequired": false
+    },
+    {
+      "kind": "ExactUnexpectedExitBoundary",
+      "summary": "A bounded elevated helper verified the marker-bound OpenBlade Service identity and journal, forcibly terminated only that Service instance once, and confirmed SCM started one replacement instance from the same exact validation build.",
+      "boundaryArtifactSha256": "08AC7C406F6127CC2BE6BDCB271705218CEC84A770B60CD5DE184A3ABFCA5043",
+      "boundaryArtifactByteLength": 267,
+      "oldServiceExited": true,
+      "serviceInstanceReplaced": true,
+      "sameValidationBuildConfirmed": true
+    },
+    {
+      "kind": "InstalledRecoveryVerification",
+      "summary": "Read-only FirmwareSmoke verification confirmed stable Balanced and Automatic state, a retired journal, the exact installed generation, and exactly one matching Service recovery attempt and completion.",
+      "verificationArtifactSha256": "CC47CE6A39ED62FCC0517D1399449A4D1AC6B30241001CE10CE2B2B688E4D117",
+      "verificationArtifactByteLength": 926,
+      "exactInstalledGeneration": true,
+      "expectedServiceBoundary": true,
+      "exactBaseAndAutomaticConfirmed": true,
+      "journalRetired": true,
+      "recoveryAttemptsObserved": 1,
+      "recoveryCompletionsObserved": 1,
+      "stableSecondObservation": true,
+      "crashRecoveryValidated": true
+    },
+    {
+      "kind": "ArtifactIntegrityAndProductionRestore",
+      "summary": "Private marker, diagnostics, deployment, boundary, and verification files remain uncommitted. The exact production Service assembly was restored and a final read-only baseline confirmed Balanced, Automatic, zero blocked or unconfirmed writes, and a retired journal.",
+      "firmwareSmokeExecutableSha256": "CD7BAA9CA4E926CE7A4D552276F386E59B971467E950CE73C948A97B28A8B3EC",
+      "productionServiceAssemblySha256": "0FA1F32ED30366495559AEAE3C549F09A9548CE3422B59930C5191739E06F2CE",
+      "productionRestoreArtifactSha256": "84C379C04F1F9CE70CC92A5F6E2B2F1F1C15332EF2C350B529E0DC4ABCF44D71",
+      "validatorExitCode": 0,
+      "success": true
+    }
+  ],
+  "limitations": [
+    "This run validates one installed-Service unexpected-exit recovery on exact RZ09-0581 hardware with BIOS 4.00 provenance, Balanced and Automatic, an admitted full-power adapter, and confirmed physical pad absence.",
+    "The intentional crash boundary covered only the marker-bound OpenBlade Service. No Razer service or unrelated process was changed.",
+    "The companion exact-generation low-power annotation is required for cumulative production admission."
+  ],
+  "productionAdmission": {
+    "crashRecoveryValidated": true,
+    "lowPowerLifecycleValidated": true,
+    "padLessActivationAdmitted": true,
+    "reason": "The exact installed generation completed independent low-power and unexpected-exit recovery with one owned restoration, stable readback, and journal retirement in each scenario."
+  },
+  "notes": [
+    "FirmwareSmoke verification was read-only and issued no recovery write.",
+    "USBPcap was not running.",
+    "No Razer service was started, stopped, or restored.",
+    "Private lifecycle markers, diagnostics, local paths, service instance identifiers, and user identity are not committed."
+  ]
+}

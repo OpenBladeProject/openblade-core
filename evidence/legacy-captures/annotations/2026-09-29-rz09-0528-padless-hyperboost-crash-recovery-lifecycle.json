@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "evidenceKind": "InstalledUnexpectedExitLifecycle",
+  "evidenceProvenance": {
+    "controller": "OpenBlade installed developer lifecycle-validation Service 0.23.0-nightly.4+8ed9088a verified by OpenBlade.FirmwareSmoke 0.23.0-nightly.4+8ed9088a",
+    "role": "OpenBladeTypedValidation",
+    "sourceRevision": "8ed9088af1753c88973038b0440ee8e85156b248",
+    "installerSha256": "E76D0CEF23F753F02AD90D1BB98BAC5E42CFEC6073666831001ECC33AC0FF09D",
+    "serviceExecutableSha256": "DB01160980A6A7A49ADD3E475F909AFC6649B7DC1B9086F787604F4716EBFBA2",
+    "productionServiceAssemblySha256": "30477520926B9A30F9F5074637B926D0DCEC5BCA6815231F792C18089C8586AF",
+    "validationServiceAssemblySha256": "2247130A9E0EC41FFE60BE86528B1A87BA6B3D2E09B727D00BF0C548C5209893",
+    "validationBuildManifestSha256": "4438DFE2C6D8BB01F41D9D95D3D017BC1153E2ECF46AF50E53E8183516FB119A",
+    "readinessDescriptorSha256": "A18E7BA301C87A0BA41BA0F39FECDFC4FC3A43660AE5DE28077C2863E7165237",
+    "firmwareSmokeExecutableSha256": "D49003FA626D9CA18DF6543EB494466BC0A31F86A6108765E8174654D3FA381D",
+    "firmwareSmokeAssemblySha256": "6AB04DA4ED0A6F95F820FD6958888C3E440D132264C1681FF89913FF6904A31E",
+    "installedGenerationSha256": "0F1218B973F3AB674F9D04D84C6893F65D3778EDB45B08DD227796DB27F32B5D"
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "sku": "RZ09-05289EN4",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
+  },
+  "operatorConfirmation": {
+    "attended": true,
+    "fullPowerAdapterConnected": true,
+    "performanceAndAutomaticSelectedInTray": true,
+    "eachElevationApprovedByOperator": true,
+    "spokenPromptsUsed": true
+  },
+  "scenario": {
+    "transition": "Performance with Automatic fans to service-owned HyperBoost mode 7, one marker-bound forced termination of only the OpenBlade Service, SCM restart, one owned recovery by the restarted Service, then read-only verification",
+    "baseMode": "Performance",
+    "restoreIntent": {
+      "performance": "Performance",
+      "fans": "Automatic",
+      "customPerformance": null,
+      "gpuClockTuning": null
+    },
+    "requiresCoolingPad": false,
+    "padlessEligibilityObservedByService": "CoolingPadAbsent",
+    "activePowerSource": "PluggedIn",
+    "scmReplacementSeconds": 61.1,
+    "scmReplacementNote": "SCM used its third configured restart delay (60 s) because two earlier forced terminations fell inside the 86400 s failure-count reset period"
+  },
+  "validation": {
+    "arm": {
+      "success": true,
+      "hyperBoostConfirmed": true,
+      "durableOwnershipConfirmed": true,
+      "markerCreated": true,
+      "cleanupAttempted": false,
+      "manualRecoveryRequired": false
+    },
+    "boundary": {
+      "markerBoundInstanceVerified": true,
+      "ownershipJournalOwnedConfirmedBeforeTermination": true,
+      "onlyOpenBladeServiceTerminated": true,
+      "terminationCount": 1,
+      "oldInstanceExited": true,
+      "replacementFromSameValidationBuild": true
+    },
+    "verification": {
+      "success": true,
+      "exactInstalledGeneration": true,
+      "expectedProcessBoundary": true,
+      "exactRestoreIntentConfirmed": true,
+      "journalRetired": true,
+      "recoveryAttemptsObserved": 1,
+      "recoveryCompletionsObserved": 1,
+      "stableSecondObservation": true,
+      "readOnly": true
+    },
+    "postRecoveryState": {
+      "baselinePassed": true,
+      "performance": "Performance",
+      "fans": "Automatic",
+      "hyperBoostActive": false,
+      "externalChanges": [],
+      "writesBlocked": false,
+      "unconfirmedWrites": 0,
+      "activePowerSource": "PluggedIn"
+    }
+  },
+  "productionRestore": {
+    "restored": true,
+    "journalAbsentBeforeRestore": true,
+    "finalBaselinePassed": true,
+    "finalServiceProductVersion": "0.23.0-nightly.4+8ed9088a",
+    "finalPerformance": "Balanced",
+    "finalFans": "Automatic",
+    "finalExternalChanges": [],
+    "note": "The clean production-Service start applied the saved full-AC profile (Balanced); the Performance selection was a temporary tray setting, which a clean Service start does not keep"
+  },
+  "artifacts": [
+    {
+      "role": "FreshBaseline",
+      "sha256": "6B70480E77587D8BE3F947A67E3C3E6876660F842D3C64A4DA837C98ECBA5043",
+      "byteLength": 5815,
+      "committed": false
+    },
+    {
+      "role": "ValidationServiceSwapReport",
+      "sha256": "B9184CD1AD4D44E7FA12B569BFE8123AF14818FA40D869DE53A04E52B9E10D27",
+      "byteLength": 397,
+      "committed": false
+    },
+    {
+      "role": "LifecycleArm",
+      "sha256": "BF79FFCC8018344D45B50C06D441BDC38843E36EBC2D97011D0867161445E70E",
+      "byteLength": 2713,
+      "committed": false
+    },
+    {
+      "role": "PrivateLifecycleMarker",
+      "sha256": "FC72788FD024B89D4FC7C4D2166F63E6EA5701854234141D8A174DA8F1808DF4",
+      "byteLength": 2055,
+      "committed": false
+    },
+    {
+      "role": "UnexpectedExitBoundaryReport",
+      "sha256": "A399452F0F386851486AE7798EF29940A6D1AD5CD403A5EA6A3970F324E6DC46",
+      "byteLength": 639,
+      "committed": false
+    },
+    {
+      "role": "LifecycleVerification",
+      "sha256": "2CDDBC77903139A8F19E477746C7A1BA79DDF90F984ADF97E469DE7D96DDB406",
+      "byteLength": 2613,
+      "committed": false
+    },
+    {
+      "role": "PostRecoveryBaseline",
+      "sha256": "BCF56C5FBFD3BF9FD68865225D83CFBB8C49EDEF0E296180023A096C6E7ADF4A",
+      "byteLength": 5815,
+      "committed": false
+    },
+    {
+      "role": "ProductionRestoreReport",
+      "sha256": "7B81B51B7623A85DE35286FC3AC87BE1C3A6D7887606EC37D5F2CE8AC40E113A",
+      "byteLength": 218,
+      "committed": false
+    },
+    {
+      "role": "FinalBaseline",
+      "sha256": "A4D58A2851413DE64313D091146CEE28B9D3FC33DC6471C20A3F4E42BFFD67CE",
+      "byteLength": 5820,
+      "committed": false
+    }
+  ],
+  "priorAttempts": [
+    {
+      "build": "0.23.0-nightly.2+574666f9",
+      "verificationArtifactSha256": "668F6EED950BF356B3976663D5633A8B007CBDE3FE04E70205928843FBAC3CE5",
+      "verificationArtifactByteLength": 2611,
+      "hardwareRestored": true,
+      "journalRetired": true,
+      "recoveryAttemptsObserved": 1,
+      "recoveryCompletionsObserved": 1,
+      "failedChecks": [
+        "exactInstalledGeneration",
+        "exactRestoreIntentConfirmed"
+      ],
+      "latchedExternalChanges": [
+        "Performance",
+        "Fans"
+      ],
+      "cause": "The unexpected exit discarded the temporary Performance selection, so the Service reported its own recovery write as an external change",
+      "fixedBy": "OpenBladeProject/openblade-core#606",
+      "productionRestored": true
+    },
+    {
+      "build": "0.23.0-nightly.3+2edb9911",
+      "verificationArtifactSha256": "2B5D897532EB801DDD18D9E372EA28269A651DD85F58382A9FAD004E14FD14AA",
+      "verificationArtifactByteLength": 2610,
+      "hardwareRestored": true,
+      "journalRetired": true,
+      "recoveryAttemptsObserved": 1,
+      "recoveryCompletionsObserved": 1,
+      "failedChecks": [
+        "exactInstalledGeneration",
+        "exactRestoreIntentConfirmed"
+      ],
+      "latchedExternalChanges": [
+        "Performance",
+        "Fans"
+      ],
+      "cause": "Loading the active user configuration after recovery rebuilt automation and discarded the reinstated intent, and recovery-written Automatic fans were latched as drift",
+      "fixedBy": "OpenBladeProject/openblade-core#607",
+      "productionRestored": true
+    }
+  ],
+  "interpretation": {
+    "supports": "One installed-Service unexpected-exit recovery of OpenBlade-owned padless HyperBoost on exact RZ09-0528 hardware, restoring the recorded Performance and Automatic entry intent with matching desired state, no external changes, a retired journal, and exactly one recovery attempt and completion",
+    "crashRecoveryValidated": true,
+    "lowPowerLifecycleValidated": false,
+    "productionPadlessAdmitted": false,
+    "limits": "Covers one full-power-AC run with no GPU tuning or custom performance, and only the forced termination of the marker-bound OpenBlade Service. Low-power (sleep and resume) lifecycle validation is still required before any production admission. No USB capture was taken; no Razer service was started, stopped, or changed."
+  },
+  "sanitization": {
+    "rawOutputsExcluded": true,
+    "privateMarkerExcluded": true,
+    "diagnosticsExcluded": true,
+    "localPathsExcluded": true,
+    "processIdentityExcluded": true,
+    "transitionIdentifierExcluded": true,
+    "userIdentityExcluded": true,
+    "serialNumbersExcluded": true
+  }
+}

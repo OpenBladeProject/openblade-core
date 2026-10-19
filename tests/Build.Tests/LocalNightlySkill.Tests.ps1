@@ -73,7 +73,7 @@ Assert-ContainsAll `
         'build/PublishPayloadValidation.ps1',
         'build/NightlyChangelog.ps1',
         'full 40-character source SHA',
-        'OSSBlade/openblade-core',
+        'OpenBladeProject/openblade-core',
         'Before dispatch, list Nightly runs',
         'Do not manufacture a build revision',
         'OpenBladeVersion',

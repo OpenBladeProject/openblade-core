@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "vendorIdHex": "1532",
+    "productIdHex": "02C6",
+    "bios": "2.02"
+  },
+  "source": {
+    "capturePlane": "\\\\.\\USBPcap2",
+    "transientDeviceAddress": 3,
+    "transactionCount": 5796,
+    "rowReportCount": 4896,
+    "latchCount": 821,
+    "completeFrameCount": 816,
+    "discardedIncompleteFrameSets": 5,
+    "checksumFailures": 0,
+    "rawCaptureHashIncluded": false,
+    "uniqueIdentifiersIncluded": false
+  },
+  "protocol": {
+    "rowCommand": "03/0B",
+    "rowArguments": "FF <row 00-05> 00 10 <17 RGB>",
+    "latchCommand": "03/0A",
+    "latchArguments": "0500",
+    "layoutSlots": 102,
+    "activeSlots": 86,
+    "holeSlots": [
+      0,
+      17,
+      31,
+      34,
+      48,
+      51,
+      64,
+      65,
+      68,
+      70,
+      81,
+      82,
+      85,
+      89,
+      92,
+      93
+    ],
+    "matrixReadbackObserved": false
+  },
+  "reactive": {
+    "physicalKey": "J",
+    "matrixSlot": 59,
+    "color": "00FF00",
+    "operatorCorrelatedResponseSlots": [
+      59,
+      55,
+      44,
+      76,
+      38,
+      66
+    ],
+    "durations": [
+      {
+        "duration": "Short",
+        "onsetSeconds": 119.708151,
+        "activeMilliseconds": 404.428,
+        "frameCount": 10,
+        "peakGreen": 255,
+        "finalGreen": 23,
+        "matrixSlot": 59
+      },
+      {
+        "duration": "Medium",
+        "onsetSeconds": 221.427927,
+        "activeMilliseconds": 1403.087,
+        "frameCount": 32,
+        "peakGreen": 255,
+        "finalGreen": 7,
+        "matrixSlot": 59
+      },
+      {
+        "duration": "Long",
+        "onsetSeconds": 274.282113,
+        "activeMilliseconds": 1878.641,
+        "frameCount": 42,
+        "peakGreen": 255,
+        "finalGreen": 10,
+        "matrixSlot": 59
+      }
+    ],
+    "durationOrdering": "Short < Medium < Long"
+  },
+  "ripple": {
+    "physicalKey": "J",
+    "originMatrixSlot": 59,
+    "originColor": "00FF00",
+    "originSeconds": 321.760819,
+    "episodeFrameCount": 17,
+    "maximumSimultaneouslyLitSlots": 27,
+    "traversedActiveSlotCount": 86,
+    "traversedEveryActiveSlot": true
+  },
+  "operatorObservation": {
+    "allEffectsLookedVisuallyCorrect": true,
+    "finalKeyboardEffect": "Static",
+    "finalKeyboardColor": "00FF00",
+    "finalBrightnessPercent": 50,
+    "finalLogoMode": "Static"
+  },
+  "boundaries": [
+    "The operator visual observation is not a matrix GET or independent device readback.",
+    "Only J received a direct physical Reactive/Ripple origin correlation in this trace.",
+    "The remaining ordinary-key map is derived separately from the exact read-only PID 02C6 LampArray geometry.",
+    "No PCAP hash, serial number, or other unique identifier is included."
+  ]
+}

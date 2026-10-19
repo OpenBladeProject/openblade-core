@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "publicationStatus": "UserApprovedSanitizedEvidence",
+  "evidenceProvenance": {
+    "controller": "OpenBlade exact-device developer validation runner",
+    "role": "ReversibleValidation",
+    "sourceRevision": "7bd52a7ea5d2c31bbdb2359d3b92a29d507f0830",
+    "planSha256": "D6E14BCFF2FF64DB6B4548066E2580E0CF217B3D6B7F9B2A7E2EC857FC648B79"
+  },
+  "device": {
+    "modelNumber": "RZ09-0528",
+    "bios": "2.02"
+  },
+  "operatorConfirmation": {
+    "padUsbAndPowerDisconnected": true,
+    "usbC100WAndOriginalAdapterConnectedBeforeApply": true,
+    "onlyBarrelRemovedAndReconnected": true,
+    "usbCRemovedBeforeServiceRestart": true,
+    "noWorkload": true,
+    "attendedSpokenPromptsConfirmed": true
+  },
+  "validation": {
+    "success": true,
+    "thermalPair": {
+      "Target": "HyperBoostFromPerformance",
+      "Baseline": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "Candidate": {
+        "Thermal1Hex": "01010700",
+        "Thermal2Hex": "01020700"
+      },
+      "Restoration": {
+        "Thermal1Hex": "01010200",
+        "Thermal2Hex": "01020200"
+      },
+      "ApplyAttempted": true,
+      "ApplyAcknowledged": true,
+      "CandidateConfirmed": true,
+      "RestoreAttempted": true,
+      "RestoreAcknowledged": true,
+      "Restored": true,
+      "IndeterminatePartialWrite": false,
+      "ManualRecoveryRequired": false,
+      "Failure": "None",
+      "Success": true
+    },
+    "boundary": {
+      "destination": "UsbC100W",
+      "destinationPower": "0711",
+      "completed": true,
+      "destinationObserved": true,
+      "automaticReversionObserved": false,
+      "writesOffFullAcPerformed": false,
+      "operatorPrompts": {
+        "unplugPromptLatencyMilliseconds": 25.2,
+        "reconnectPromptLatencyMilliseconds": 77.7,
+        "unplugPromptToFirstCoherentUsbCSampleMilliseconds": 8636.6
+      },
+      "samples": [
+        {
+          "Phase": "EntryBeforeApply",
+          "ElapsedMilliseconds": 678.5519,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 2,
+          "Thermal2Mode": 2,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 45.2,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "EntryBeforeApply",
+          "ElapsedMilliseconds": 3254.0464,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 2,
+          "Thermal2Mode": 2,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 48.1,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 616.3035,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 48.1,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 2211.9554,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 45.5,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 3808.0894,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 44.4,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 5421.2195,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 43.4,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 7059.6207,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "0711",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 43,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "TransitionalDiscarded"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 8636.6722,
+          "FirmwarePowerBefore": "0711",
+          "FirmwarePowerAfter": "0711",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 43,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 10233.4146,
+          "FirmwarePowerBefore": "0711",
+          "FirmwarePowerAfter": "0711",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 43.2,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 11813.8782,
+          "FirmwarePowerBefore": "0711",
+          "FirmwarePowerAfter": "0711",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 44,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 13388.4015,
+          "FirmwarePowerBefore": "0711",
+          "FirmwarePowerAfter": "0711",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 43.4,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 14965.8017,
+          "FirmwarePowerBefore": "0711",
+          "FirmwarePowerAfter": "0711",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 43.1,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 16522.4842,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 43.1,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        },
+        {
+          "Phase": "Boundary",
+          "ElapsedMilliseconds": 18096.5094,
+          "FirmwarePowerBefore": "1111",
+          "FirmwarePowerAfter": "1111",
+          "Thermal1Mode": 7,
+          "Thermal2Mode": 7,
+          "WindowsAcBefore": true,
+          "WindowsAcAfter": true,
+          "CpuCelsius": 42.9,
+          "GpuCelsius": 39,
+          "GpuUtilizationPercent": 0,
+          "Classification": "Coherent"
+        }
+      ]
+    },
+    "finalGpuOffsetsZero": true,
+    "hardwareDisposed": true,
+    "externalTelemetryQuiesced": true,
+    "snapshotQuiesced": true
+  },
+  "preRestartFullAcProof": [
+    {
+      "WindowsAcBefore": true,
+      "WindowsAcAfter": true,
+      "FirmwarePower": "1111",
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    },
+    {
+      "WindowsAcBefore": true,
+      "WindowsAcAfter": true,
+      "FirmwarePower": "1111",
+      "Thermal1Hex": "01010200",
+      "Thermal2Hex": "01020200"
+    }
+  ],
+  "restoration": {
+    "ValidationExitCode": 0,
+    "IndependentPerformanceStateConfirmed": true,
+    "OriginalIntentRestored": true,
+    "OriginalRestoreExitCode": 0,
+    "RestorationPending": false,
+    "Failure": null,
+    "Errors": [],
+    "servicesReturnedToPriorState": true,
+    "gpuOffsetsIndependentlyZero": true
+  },
+  "interpretation": {
+    "cpuSource": "HWiNFO named CPU Tctl/Tdie with newly consumed row peaks",
+    "gpuSource": "NVML temperature and utilization",
+    "powerSource": "Firmware 07/8C bracket (1111 full AC with or without USB-C, 0711 100 W USB-C only) with Windows AC status before and after each sample; Windows reports online for both, so only 07/8C distinguishes them",
+    "elapsedBasis": "Entry samples are timed from preparation start; boundary samples from the unplug prompt arming. Intervals do not establish exact physical mode residency.",
+    "firmwareBehavior": "Paired mode 7 remained reported on 100 W USB-C during this short no-load interval; no automatic reversion was observed",
+    "productionPadlessAdmitted": false,
+    "usbCSetterAdmitted": false,
+    "usbCPowerLimitsEstablished": false,
+    "hyperBoostApplyOnUsbCTested": false,
+    "thermalSafetyEstablished": false,
+    "otherChargerClassesValidated": false,
+    "limits": "Single attended no-load barrel to 100 W USB-C to barrel transition with roughly 8 to 11 seconds on USB-C only (bounded by samples); no workload, sustained, power-limit, other charger, low-power, sleep or crash-recovery claim."
+  },
+  "sanitization": {
+    "rawOutputsExcluded": true,
+    "localPathsExcluded": true,
+    "deviceInstancePathsExcluded": true,
+    "serialNumbersExcluded": true,
+    "processIdentityExcluded": true,
+    "profileContentsExcluded": true
+  }
+}
