@@ -46,6 +46,8 @@ public sealed class ThxAudioStackCatalogTests
         Assert.Equal("FreshInstallCandidate", Text(catalog.GetProperty("provisioning"), "status"));
         Assert.Equal(profile.ActivePropertiesSha256, Text(catalog.GetProperty("activeConfiguration")
             .EnumerateArray().Single(file => Text(file, "fileName") == "thx_rznb12_props.dat"), "sha256"));
+        Assert.Equal(profile.SurroundConfigSha256, Text(catalog.GetProperty("activeConfiguration")
+            .EnumerateArray().Single(file => Text(file, "fileName") == "surround_714_config.json"), "sha256"));
     }
 
     [Theory]
@@ -76,6 +78,8 @@ public sealed class ThxAudioStackCatalogTests
                 Assert.Equal(inner.Sha256, Text(embedded, "sha256"));
                 Assert.Equal(ThxAudioProvisioningPackage.SignerThumbprint,
                     Text(embedded.GetProperty("authenticode"), "signerThumbprint"));
+                Assert.Equal(ThxAudioProvisioningPackage.SignerSubject,
+                    Text(embedded.GetProperty("authenticode"), "signerSubject"));
                 Assert.Equal(artifact.Arguments, embedded.GetProperty("arguments").EnumerateArray()
                     .Select(value => value.GetString()!).ToArray());
                 Assert.False(embedded.GetProperty("carrierExecutionAllowed").GetBoolean());

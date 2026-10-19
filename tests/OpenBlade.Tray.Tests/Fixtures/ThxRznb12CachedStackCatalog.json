@@ -184,7 +184,7 @@
       "tag": "thx-rznb12-4.2.37.1621",
       "asset": "THXAPO_rznb12_v4.2.37.1621-5117e8e-i2546a_MSHLKSIGN-2255eea3.3219a439.exe",
       "url": "https://github.com/OpenBladeProject/blade-driver-catalog/releases/download/thx-rznb12-4.2.37.1621/THXAPO_rznb12_v4.2.37.1621-5117e8e-i2546a_MSHLKSIGN-2255eea3.3219a439.exe",
-      "publicationStatus": "Planned",
+      "publicationStatus": "Published",
       "authorizedAudience": "Public users"
     }
   },
@@ -199,7 +199,7 @@
     "The THX package is not a replacement for the matching Realtek base audio driver.",
     "The exact model, present codec hardware ID, service and immutable configuration must match; shared native middleware does not make this stack universal.",
     "The base installer came from a Windows Installer cache. No public Razer download or Synapse manifest reference was established for it.",
-    "The planned catalog release asset records owner-reported written permission; the authorization document has not been independently reviewed.",
+    "The published catalog release asset records owner-reported written permission; the authorization document has not been independently reviewed.",
     "The signed outer wrapper is a verified carrier and must never be executed. Extract only the fixed pinned inner Burn bundle into a protected component directory using create-new semantics, then reverify its exact length, SHA-256 and THX Authenticode signer before fixed-argument execution.",
     "Fresh-install admission is conditional on a pristine THX state, the complete pinned base/updater/configuration stack, and successful reads of both Speakers and Headphones before any runtime mutation.",
     "Catalog applicability does not admit runtime use, and fresh installation plus physical audio behavior remain unvalidated."

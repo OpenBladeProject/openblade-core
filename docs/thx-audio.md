@@ -53,7 +53,7 @@ THX 2.6.5 SCU contains the model-specific PI490, SO690 and KI890 acoustic
 profiles and selects them from the Realtek subsystem ID. The original rule that
 creates the THX components and binds processing to the codec endpoints remains
 unverified, so fresh installation is blocked.
-The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/e65d43dcd5128291dfcc9b333d6cd3e93c2f9ad3/components/thx-legacy/2.6.5.0/stack.json)
+The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/f4dec7de7d8b3ece8fb3012428310746e37000f8/components/thx-legacy/2.6.5.0/stack.json)
 records verified packages and the remaining installation blockers. For recovery,
 use the exact laptop's Windows driver updates or
 [Razer recovery image](https://mysupport.razer.com/app/answers/detail/a_id/5997/).
