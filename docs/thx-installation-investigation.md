@@ -131,7 +131,10 @@ complete driver package. A bounded follow-up also found no audio installer on th
 and no result in the
 [Microsoft Update Catalog exact-version search](https://www.catalog.update.microsoft.com/Search.aspx?q=4.2.41.2499).
 These findings describe the sources reviewed, not every possible acquisition route.
-The THX installers also do not contain the Realtek base codec driver.
+The THX installers do not contain the base audio prerequisites. RZ09-0528 and
+RZ09-0530 use a matching Realtek HDA codec package; RZ09-0581 instead uses
+Windows inbox SDCA audio over Intel SST. Those prerequisites remain outside
+the current THX setup recipe.
 
 The 709/710 base-installer resources explicitly specify `/s /norestart`. Static
 inspection of both signed rznb11 configuration updater entry paths shows fixed
@@ -253,16 +256,30 @@ Both 6.0.9601.1 downloads contain the same 57,817,855-byte data file, SHA-256
 All three data files passed membership verification against their signed Windows
 catalogs.
 
-For reproducibility, these files start with `MDTR`. Little-endian 32-bit hardware
-and profile counts are at byte 8. The hardware table starts at byte 24 with a
-28-byte stride; its first field is the subsystem and fourth field is the profile
-index. The profile table starts at `24 + hardwareCount * 28 + 4`, also with a
-28-byte stride and a 16-byte ASCII name. Records 2402, 2376 and 2374 select
-profile indices 2428, 2397 and 2394 for the models above. The shared field value
-`0x250B` has no established meaning and is not evidence of a THX selector.
+The driver-backed parser review below corrects an earlier shifted interpretation
+of this format. Each file starts with a 16-byte `MDTR` header: file length at
+`+4`, hardware count at `+8` and profile-descriptor count at `+12`. Hardware
+rows begin at byte 16 with a 28-byte stride. The subsystem range is at row
+`+8/+12`; the selected zero-based profile index is at `+20`. Target row indices
+2402, 2376 and 2374 select profiles 2428, 2397 and 2394 respectively.
+The trailing `0x250B` at row `+24` is not read by the inspected selection loop.
 
-The profiles contain distinct Realtek EQ, DRC, amplifier and speaker-protection
-blocks. This establishes OEM codec tuning, not THX acoustic `deviceEQ` or a
+The descriptor table starts at `16 + hardwareCount * 28`. Each 28-byte descriptor
+contains payload offset at `+0`, count at `+4`, size at `+8` and its ASCII name
+at `+12..27`. Starting with the name and reading the following offset fields
+incorrectly selects the next descriptor's payload. The corrected Razer payloads
+are byte-identical across 6.0.9484.1, 6.0.9601.1 and 6.0.9909.1:
+
+| Profile | Total bytes | Record | SHA-256 |
+| --- | ---: | --- | --- |
+| Razer_2020 | 6,900 | One RTKAMPI record: 6,864 data bytes + 36-byte header | `BAC1AC6C25DC7AF6B51EC7AD0A474FA4D87E54B0096E9A1A334F7776B4A43D3C` |
+| Razer_3006 | 18,324 | One RTKAMPI record: 18,288 data bytes + 36-byte header | `42D19433C85388ABE861BF4A850D6B39B193905F60FA7B0824F99BBAABCDFC6E` |
+| Razer_3007 | 27,748 | One RTKAMPI record: 27,712 data bytes + 36-byte header | `BD0731A047C8EA9F68F82212CB8320AC2CD2995CEBE478C4BF896908AD1480E7` |
+
+The earlier RTSPKPT, RTEQEX and RTKHDRC payload attribution was wrong: those
+neighboring descriptors are MSI_13D7, Acer_1654 and MSI_13D3. The original full
+DAT hashes and exact Razer profile-name mappings remain correct. These corrected
+records establish distinct Realtek OEM data, not THX acoustic `deviceEQ` or a
 complete THX configuration. The AMD `HDXACPRazer.inf` declares the THX MFX
 capability GUID `{E82A5EE8-44D2-44C1-897E-AA5AFBF146BA}`; the reviewed Intel
 `HDXSSTRazer.inf` does not. Ordinary `ks.inf`/`wdmaudio.inf` Include/Needs are
@@ -408,19 +425,46 @@ This newer base package does not supply the missing FX extension.
 
 The 6.0.9909.1 `RTAIODAT.DAT` is 62,753,315 bytes, SHA-256
 `08653E16F4D5A7EA432538E6E480AD0F77D33D9878D5AAAE29C8A7781DD8C83D`.
-Its exact Razer profile payloads are byte-identical to those in 6.0.9484.1 and
-6.0.9601.1: 2020 and 3007 contain RTSPKPT/RTKAMPI subrecords; 3006 contains
-RTEQEX1/2 and RTKHDRC1/2. Whole-file ASCII, UTF-16 and binary-GUID searches
-found no explicit THX CompositeFX, endpoint-setting or APO CLSID declaration.
-The shared hardware-row field `0x250B` remains undecoded. A compact selector
-interpreted by driver code is still possible; marker absence does not establish
-that runtime integration through this file is impossible.
+Its corrected Razer payloads match the RTKAMPI hashes above. The corrected
+payload offsets are 55,217,121 (2020), 54,836,781 (3006) and 54,766,993 (3007).
+Whole-file ASCII, UTF-16 and binary-GUID searches found no explicit THX
+CompositeFX, endpoint-setting or APO CLSID declaration. This marker result is
+unchanged by the descriptor correction; it does not prove that computed or
+indirect runtime integration is impossible.
 
 Queries for the Realtek extension GUID, filename and exact codec IDs found no
 extension entry. Control queries for IDs in the recovered signed 2022 extension
 also returned only MEDIA packages. These searches therefore cannot prove that
 the needed newer extension never existed or is unavailable through privately
 targeted Windows Update delivery.
+
+The matching signed `RTKVHD64.sys` 6.0.9909.1 is 6,818,344 bytes, SHA-256
+`48C525F8E58DA40EE54BAE8EA95C44D6944A9D77E9EE98C500B90284257312CD`.
+It passed kernel-policy catalog membership verification. Bounded static analysis
+of six `.pdata` function extents used Ghidra with full-program analysis disabled;
+no vendor code was executed or loaded as a driver.
+
+The MDTR consumer at image VA `0x1406295D4` establishes the corrected row and
+descriptor layout above. `DCH_THX` consumers at `0x1404564E8` and
+`0x140473E6C` feed internal policy flags; no inspected dataflow connects those
+flags to the required THX CLSIDs. Interface registration at `0x1405E0D08`
+opens supplied `InterfaceSetting` sections and passes their contents into
+registry helpers. Its mixed-case `{D04E05A6-594B-4fb6-A80D-01AF5EED7D1D}`
+property-name comparisons are not evidence of THX CompositeFX values.
+A second bounded trace resolves the two helpers: `0x1405DEA18` recursively
+copies existing source registry values and subkeys; `0x1405E3988` sets or deletes
+caller-supplied typed values. The copy helper can carry CompositeFX properties
+13/14/19/20 when already supplied. Neither inspected helper derives THX CLSIDs
+from RTKAMPI tuning. The interface path uses `InterfaceSetting`, a conditional
+`SysRecFx` capture fallback, `%ws_ext` sections and separate `FriendlyName`
+handling. Output-specific section-list names come from unresolved adapter
+virtual methods, so the complete binding origin is still unproved.
+
+The smallest missing source is the original exact-model INF/AddReg declarations
+supplying the render output's `InterfaceSetting` list and referenced
+`FxProperties` subtree, including the actual THX CLSIDs. This trace does not
+exclude other runtime paths. Fresh legacy setup remains blocked on that binding
+source and the installation contract.
 
 If an exact-model recovery image becomes available, first inventory its ZIP and
 OEM provisioning files, then selectively extract the audio DriverStore packages,

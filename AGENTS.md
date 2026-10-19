@@ -322,9 +322,10 @@ inventing a page-specific appearance:
    exact host/codec/output ancestry and form-factor checks, guarded COM
    registrations, isolated synchronous helper lifetime and explicit readback.
    EQ, presets, automation and fresh legacy provisioning are not admitted;
-   SCU embeds exact-model acoustic tuning, but the original signed component
-   and endpoint binding rule remains unresolved. Do not invent SWC nodes,
-   change signed INFs or write guessed endpoint APO registrations.
+   SCU embeds exact-model acoustic tuning, and the catalog-authenticated THX
+   extension supplies exact-codec child-component declarations. The complete
+   endpoint FX binding and installation contract remain unresolved. Do not invent
+   SWC nodes, change signed INF directives or write guessed endpoint APO registrations.
    Discovery never activates COM. The native integration remains experimental
    until exact-model physical validation; see [legacy THX](docs/thx-legacy-interface.md).
    The optional experimental THX audio integration may use the already

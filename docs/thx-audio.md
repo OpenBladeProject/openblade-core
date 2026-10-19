@@ -21,7 +21,8 @@ curves, but have not been physically tested in OpenBlade.
 OpenBlade can download the supported THX client from Razer. On RZ09-0581,
 RZ09-0528 and RZ09-0530, it can also perform an experimental fresh installation
 of the matching THX driver, service and configuration without Synapse installed.
-A matching Realtek base audio driver must already be installed. RZ09-0581 setup
+The base audio drivers must already be installed: Realtek on RZ09-0528/RZ09-0530,
+or Intel SST and Windows inbox SDCA on RZ09-0581. RZ09-0581 setup
 uses the original signed 4.2.37.1621 installer recovered from the Windows cache
 and separately hosted by the driver catalog with owner-confirmed redistribution
 permission. Existing admitted stacks are retained. Pristine installation and
@@ -33,9 +34,9 @@ for the package and codec restrictions.
 
 | Model | Installed THX controls | Fresh THX setup |
 | --- | --- | --- |
-| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Experimental cached 4.2.37.1621 setup, matching Realtek driver required |
+| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Experimental cached 4.2.37.1621 setup; Windows SDCA and matching Intel SST required |
 | RZ09-0528, RZ09-0530 | rznb11 spatial audio, EQ and application profiles | Experimental, matching Realtek driver required |
-| RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed THX 2.6.5.0 service | THX component binding remains unverified |
+| RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed THX 2.6.5.0 service | Endpoint binding and installation sequence remain unverified |
 | RZ09-0328 | Factory audio uses Dolby Atmos; THX does not apply | Not applicable |
 
 On the three 2023 models, select the output currently used by Windows. OpenBlade
@@ -50,10 +51,11 @@ Razer documents the older driver and Store control app in
 [its THX setup guide](https://mysupport.razer.com/app/answers/detail/a_id/5798/).
 The exact Realtek packages contain model-specific OEM codec tuning. The public
 THX 2.6.5 SCU contains the model-specific PI490, SO690 and KI890 acoustic
-profiles and selects them from the Realtek subsystem ID. The original rule that
-creates the THX components and binds processing to the codec endpoints remains
-unverified, so fresh installation is blocked.
-The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/f4dec7de7d8b3ece8fb3012428310746e37000f8/components/thx-legacy/2.6.5.0/stack.json)
+profiles and selects them from the Realtek subsystem ID. A recovered signed
+THX extension supplies the exact-model component-association rules. The matching
+endpoint-effects binding and installation sequence remain unverified, so fresh
+installation is blocked.
+The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/18917d99b064aafd3eb8b7cbee308e099c455948/components/thx-legacy/2.6.5.0/stack.json)
 records verified packages and the remaining installation blockers. For recovery,
 use the exact laptop's Windows driver updates or
 [Razer recovery image](https://mysupport.razer.com/app/answers/detail/a_id/5997/).
@@ -167,7 +169,8 @@ It does not install Synapse or change the selected THX effects or presets throug
 the audio-control API.
 
 This setup path is for a fresh THX installation with the exact supported codec
-and an existing Realtek base audio driver. Connect AC power and close Synapse and
+and the matching base audio drivers described above. Connect AC power and close
+Synapse and
 THX Spatial Audio first. OpenBlade refuses to replace or repair an existing,
 partial or mismatched THX stack. The pristine-state requirement prevents the
 vendor installer and configuration updaters from overwriting existing THX user

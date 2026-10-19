@@ -38,7 +38,16 @@
           "sha256": "E84591EF1106343CE3200795CDFADDC4D6347F6F86E8E28012CEC82F130E5A32",
           "profileName": "Razer_2020",
           "scope": "RealtekCodec",
-          "thxIntegration": "NotEstablished"
+          "thxIntegration": "NotEstablished",
+          "profilePayload": {
+            "profileIndex": 2428,
+            "descriptorOffset": 137132,
+            "payloadOffset": 53267534,
+            "size": 6900,
+            "sha256": "BAC1AC6C25DC7AF6B51EC7AD0A474FA4D87E54B0096E9A1A334F7776B4A43D3C",
+            "recordCount": 1,
+            "recordType": "RTKAMPI"
+          }
         },
         "catalogSigner": {
           "status": "Valid",
@@ -85,7 +94,16 @@
           "sha256": "98509C3F66CA9D20B12DE14A8063C25502C439840193D501E80A857EA510F08B",
           "profileName": "Razer_3006",
           "scope": "RealtekCodec",
-          "thxIntegration": "NotEstablished"
+          "thxIntegration": "NotEstablished",
+          "profilePayload": {
+            "profileIndex": 2397,
+            "descriptorOffset": 140436,
+            "payloadOffset": 53506474,
+            "size": 18324,
+            "sha256": "42D19433C85388ABE861BF4A850D6B39B193905F60FA7B0824F99BBAABCDFC6E",
+            "recordCount": 1,
+            "recordType": "RTKAMPI"
+          }
         },
         "catalogSigner": {
           "status": "Valid",
@@ -132,7 +150,16 @@
           "sha256": "98509C3F66CA9D20B12DE14A8063C25502C439840193D501E80A857EA510F08B",
           "profileName": "Razer_3007",
           "scope": "RealtekCodec",
-          "thxIntegration": "NotEstablished"
+          "thxIntegration": "NotEstablished",
+          "profilePayload": {
+            "profileIndex": 2394,
+            "descriptorOffset": 140352,
+            "payloadOffset": 53436686,
+            "size": 27748,
+            "sha256": "BD0731A047C8EA9F68F82212CB8320AC2CD2995CEBE478C4BF896908AD1480E7",
+            "recordCount": 1,
+            "recordType": "RTKAMPI"
+          }
         },
         "catalogSigner": {
           "status": "Valid",
