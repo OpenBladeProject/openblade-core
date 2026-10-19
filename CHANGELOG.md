@@ -9,6 +9,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Simplify the SnapTap information popup in English, Russian, and Simplified Chinese, and fix its localization review snapshots. ([#818](https://github.com/OSSBlade/openblade-core/pull/818))
 
+### Fixed
+
+- Restore Blade 18 controls when an optional startup-lighting or keyboard-layout read fails during initialization. Preserve the actual failed query in diagnostics and include optional query failures in exported firmware diagnostics. ([#820](https://github.com/OpenBladeProject/openblade-core/pull/820))
+
 ## [0.37.0-nightly.94] - 2026-10-19
 
 ### Added

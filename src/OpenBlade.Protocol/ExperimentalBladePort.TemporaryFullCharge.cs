@@ -24,14 +24,6 @@ internal sealed partial class ExperimentalBladePort
         capabilities.SupportsTemporaryFullCharge && Volatile.Read(ref state.ReadAdmitted) == 0
             ? capabilities with { SupportsTemporaryFullCharge = false } : capabilities;
 
-    internal async Task InitializeBlade18TemporaryFullChargeAsync(CancellationToken token)
-    {
-        if (SupportsTemporaryFullChargeQuery)
-        {
-            _ = await QueryTemporaryFullChargeAsync(token).ConfigureAwait(false);
-        }
-    }
-
     public async Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken)
     {
         if (!SupportsTemporaryFullChargeQuery)

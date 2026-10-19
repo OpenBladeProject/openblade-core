@@ -214,14 +214,52 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(CancellationToken cancellationToken)
     {
+        ExperimentalBladePort? pending = null;
         try
         {
-            return await OpenCoreAsync(cancellationToken).ConfigureAwait(false);
+            HidSessionResult<IProductionBatteryPort> opened =
+                await OpenCoreAsync(cancellationToken).ConfigureAwait(false);
+            if (opened.Value is not ExperimentalBladePort port || opened.Failure is not null)
+            {
+                return opened;
+            }
+            pending = port;
+            try
+            {
+                await port.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
+                if (!port.IsRecoverySessionHealthy)
+                {
+                    throw new IOException("The optional keyboard-layout read left an unhealthy session.");
+                }
+            }
+            catch (IOException) when (!port.IsRecoverySessionHealthy)
+            {
+                // Layout is optional metadata, not admission for thermal/battery controls.
+                // A rejected GET poisons its session: drain it before one complete fresh
+                // admission, without repeating the failed metadata query or guessing a layout.
+                pending = null;
+                await port.DisposeAsync().ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!port.IsRecoverySessionDrained)
+                {
+                    throw new IOException("The optional keyboard-layout session did not drain.");
+                }
+                return await OpenCoreAsync(cancellationToken).ConfigureAwait(false);
+            }
+            pending = null;
+            return opened;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Admission uses GET commands only. A canceled probe cannot have applied a control write.
             return new(null, HidSessionFailureKind.Canceled);
+        }
+        finally
+        {
+            if (pending is not null)
+            {
+                await pending.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
@@ -336,9 +374,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             ExperimentalBladePort admitted = selected;
             admitted.EnableQueryRecording();
-            await admitted.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
-            await admitted.InitializeBlade18StartupAnimationAsync(cancellationToken).ConfigureAwait(false);
-            await admitted.InitializeBlade18TemporaryFullChargeAsync(cancellationToken).ConfigureAwait(false);
+            // Startup animation is queried independently by the service. Temporary full
+            // charge is read with battery state. Neither optional probe belongs in the
+            // shared port-open path; each control still requires its own real readback.
             selected = null;
             return new(admitted, null);
         }

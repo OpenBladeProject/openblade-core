@@ -618,7 +618,7 @@ internal sealed partial class ExperimentalBladePort(
                     : WriteSubmissionState.KnownNotApplied,
                     $"Experimental {operation} exchange failed: {result.Failure}.");
             }
-            if (result.Diagnostic?.Phase == HidSessionFailurePhase.SharedGateAdmission)
+            if (result.Diagnostic is not null)
             {
                 throw new NativeDeviceReadException(result.Failure.Value, result.Diagnostic, stateQuery: null);
             }

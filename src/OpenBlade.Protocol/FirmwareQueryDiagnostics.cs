@@ -172,8 +172,16 @@ internal sealed class FirmwareQueryDiagnostics
 
         if (command.AllowVariableResponseLength)
         {
-            return command is { ClassId: 0x0F, CommandId: 0x82, PayloadValidator: not null }
-                && arguments is [1, 5, 0];
+            if (command.PayloadValidator is null)
+            {
+                return false;
+            }
+            return (command.ClassId, command.CommandId) switch
+            {
+                (0x0F, 0x82) => arguments is [1, 5, 0],
+                (0x0F, 0x98) or (0x07, 0x8F) => arguments is [0],
+                _ => false,
+            };
         }
 
         return (command.ClassId, command.CommandId) switch
