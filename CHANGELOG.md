@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.37.3-nightly.96] - 2026-10-19
+
 ### Changed
 
 - Simplify the SnapTap information popup in English, Russian, and Simplified Chinese, and fix its localization review snapshots. ([#818](https://github.com/OSSBlade/openblade-core/pull/818))
@@ -12,6 +14,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Isolate failed battery and thermal state queries so unrelated controls stay available across Blade models. Keep optional GPU and sign-in checks from blocking state updates or Tray startup. ([#824](https://github.com/OpenBladeProject/openblade-core/pull/824))
+
 ## [0.37.1-nightly.95] - 2026-10-19
 
 ### Fixed
@@ -2148,7 +2151,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.37.1-nightly.95...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.37.3-nightly.96...HEAD
+[0.37.3-nightly.96]: https://github.com/OSSBlade/openblade-core/compare/v0.37.1-nightly.95...v0.37.3-nightly.96
 [0.37.1-nightly.95]: https://github.com/OSSBlade/openblade-core/compare/v0.37.0-nightly.94...v0.37.1-nightly.95
 [0.37.0-nightly.94]: https://github.com/OSSBlade/openblade-core/compare/v0.36.0-nightly.93...v0.37.0-nightly.94
 [0.36.0-nightly.93]: https://github.com/OSSBlade/openblade-core/compare/v0.33.1-nightly.92...v0.36.0-nightly.93
