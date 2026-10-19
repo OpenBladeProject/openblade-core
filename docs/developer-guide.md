@@ -189,6 +189,22 @@ failures identify the rejected battery or thermal query and its validation
 category. Thermal diagnostics distinguish each channel from channel agreement
 and custom CPU/GPU settings.
 
+A failed typed state getter leaves only its dependent control group unknown.
+Battery protection and temporary full charge share one battery baseline;
+performance, fan mode and HyperBoost share the thermal baseline. Remaining
+getters continue only after successful disposal and native retirement, on a
+freshly admitted session. Status, checksum, correlation, length, native I/O and
+exchange deadline failures retain their actual category; failed replies never
+supply state or default values. A later successful observation restores the
+available controls.
+
+Identity, interface selection, competing controllers, cancellation, unretired
+native work and ambiguous writes remain fail-closed safety boundaries. Every
+write still requires fresh admission and its own confirmed dependencies.
+Optional NVIDIA observations preserve the current managed confirmation without
+repeating thermal queries. Tray startup does not wait for the optional sign-in
+registration query; display, audio and other Session Agent observers keep their
+existing independent failure handling.
 `firmware-queries.json` retains results from supported firmware state queries
 on validated and experimental models. Each query and selector has its own
 latest observation, first and last failure, and last failure with a reply.

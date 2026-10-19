@@ -1596,7 +1596,10 @@ public sealed class WindowsRazerHidSessionTests
 
         try
         {
-            Assert.Equal(HidSessionFailureKind.Canceled, (await command).Failure);
+            HidSessionResult<ReadOnlyMemory<byte>> result = await command;
+            Assert.Equal(HidSessionFailureKind.Canceled, result.Failure);
+            Assert.Equal(HidSessionFailurePhase.SetCompletion, result.Diagnostic?.Phase);
+            Assert.Null(result.Diagnostic?.ProtocolValidationFailure);
             Assert.Single(io.Calls);
             Assert.Equal(RazerCommandSessionDisposition.RecoveryRequired, actor.Disposition);
             Assert.Equal(
@@ -1636,7 +1639,10 @@ public sealed class WindowsRazerHidSessionTests
 
         try
         {
-            Assert.Equal(HidSessionFailureKind.Timeout, (await command).Failure);
+            HidSessionResult<ReadOnlyMemory<byte>> result = await command;
+            Assert.Equal(HidSessionFailureKind.Timeout, result.Failure);
+            Assert.Equal(HidSessionFailurePhase.SetCompletion, result.Diagnostic?.Phase);
+            Assert.Null(result.Diagnostic?.ProtocolValidationFailure);
             Assert.Single(io.Calls);
             Assert.Equal(RazerCommandSessionDisposition.RecoveryRequired, actor.Disposition);
             Assert.Equal(

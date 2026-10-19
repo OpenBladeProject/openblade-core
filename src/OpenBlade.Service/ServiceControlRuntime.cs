@@ -16591,9 +16591,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         (await ReadObservedStateWithPartialAsync(device, cancellationToken)
             .ConfigureAwait(false)).State;
 
-    // A repeated content rejection of one getter is published as that
-    // subsystem being unknown while every other subsystem stays confirmed.
-    // Channel and safety failures still escape and fail the observation.
+    // An isolated getter failure leaves only dependent state unknown.
+    // Native ownership and admission failures still abort the observation.
+    // Preserve the existing bounded semantic-content retry.
     private static async Task<(ConfirmedDeviceState State, PartialDeviceStateRead? Partial)>
         ReadObservedStateWithPartialAsync(
         IBladeDevice device,
@@ -16602,6 +16602,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             return (await device.ReadStateAsync(cancellationToken).ConfigureAwait(false), null);
+        }
+        catch (Exception exception) when (
+            DeviceStateReadIsolation.PartialRead(exception) is { } partial
+            && exception is not RazerProtocolException
+            {
+                ValidationFailure: HidProtocolValidationFailure.PayloadValidator,
+            })
+        {
+            return (partial.State, partial);
         }
         catch (RazerProtocolException exception) when (
             exception.ValidationFailure == HidProtocolValidationFailure.PayloadValidator)
@@ -16613,7 +16622,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     await device.ReadStateAsync(cancellationToken).ConfigureAwait(false),
                     null);
             }
-            catch (RazerProtocolException retry) when (
+            catch (Exception retry) when (
                 DeviceStateReadIsolation.PartialRead(retry) is { } partial)
             {
                 return (partial.State, partial);

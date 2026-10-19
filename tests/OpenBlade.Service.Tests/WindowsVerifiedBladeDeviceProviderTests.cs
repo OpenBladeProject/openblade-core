@@ -616,17 +616,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         using var provider = ReadyProvider(factory);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
-        IOException error = await Assert.ThrowsAsync<IOException>(() => device.ReadStateAsync(default));
+        PartialDeviceStateReadException error = await Assert.ThrowsAsync<PartialDeviceStateReadException>(() => device.ReadStateAsync(default));
 
-        Assert.Contains("query=BatteryProtection", error.Message);
+        Assert.Contains("Battery protection query (07/92)", error.Message);
         Assert.Contains("phase=GetCompletion", error.Message);
         Assert.Contains("nativeError=31", error.Message);
         Assert.Contains("bytes=0", error.Message);
-        var cause = Assert.IsType<NativeDeviceReadException>(error.InnerException);
-        Assert.Equal(diagnostic, cause.Diagnostic);
-        Assert.Equal(DeviceStateQuery.BatteryProtection, cause.StateQuery);
+        DeviceStateReadFailure failure = Assert.Single(error.PartialState.Failures);
+        Assert.Equal(diagnostic, failure.Diagnostic);
+        Assert.Equal(DeviceStateQuery.BatteryProtection, failure.Query);
+        Assert.Null(error.PartialState.State.Battery);
+        Assert.Null(error.InnerException);
     }
-
     [Fact]
     public async Task ReadState_UnexpectedQueryFailureDoesNotExposeRawDetail()
     {

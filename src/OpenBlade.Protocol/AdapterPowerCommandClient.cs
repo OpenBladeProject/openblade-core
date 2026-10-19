@@ -41,6 +41,7 @@ internal sealed class AdapterPowerCommandClient
             return new(default, response.Failure)
             {
                 Diagnostic = response.Diagnostic,
+                NativeRetirement = response.NativeRetirement,
             };
         }
 

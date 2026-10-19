@@ -56,7 +56,11 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
             await QueryReadingAsync(transactionId, cancellationToken).ConfigureAwait(false);
         return reading.Failure is null
             ? new(reading.Value.Active, null)
-            : new(default, reading.Failure) { Diagnostic = reading.Diagnostic };
+            : new(default, reading.Failure)
+            {
+                Diagnostic = reading.Diagnostic,
+                NativeRetirement = reading.NativeRetirement,
+            };
     }
 
     public async Task<HidSessionResult<TemporaryFullChargeReading>> QueryReadingAsync(
@@ -72,7 +76,11 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
 
         if (response.Failure is not null)
         {
-            return new(default, response.Failure) { Diagnostic = response.Diagnostic };
+            return new(default, response.Failure)
+            {
+                Diagnostic = response.Diagnostic,
+                NativeRetirement = response.NativeRetirement,
+            };
         }
 
         return TemporaryFullChargeProtocol.TryDecodeQuery(
