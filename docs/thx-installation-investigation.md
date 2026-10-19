@@ -473,9 +473,21 @@ the SST and HAP variants used by the recovered THX extension. These functions
 select names from endpoint flags; they do not construct the FX property values.
 
 Both selectors first consult an override at adapter `+0xC08`. Its creator,
-`0x14059C620`, dispatches by codec family at `+0xC8C`. The applicable override
-and endpoint flags for subsystem suffixes 2020/3006/3007 remain unproved, so the
-fallback names are not confirmed runtime selections for those laptops.
+`0x14059C620`, dispatches by an OEM-table value at `+0xC8C`, separately from
+codec identification. The earlier codec-family attribution was incorrect.
+Selector `0x14013B34C` matches the Razer row at `0x14024F1A0` when
+`device+0x15C >> 16 == 0x1A58`, selecting dispatch `0x2A` and ID `0x22`.
+That dispatch calls factory `0x140475C14`, constructor `0x140473E6C` and vtable
+`0x1401D3100`. Both name slots point to `0x14000FCD0`, whose verified bytes
+`33 C0 C3` unconditionally return null. These two Razer methods supply neither
+endpoint names nor FX values; the base selectors use their existing fallback.
+
+The codec hardware ID establishes subsystem input `device+0x160`, while that
+OEM table tests `+0x15C`. Initialization copies between them only when the
+separate `+0x158` field is zero or `0xFFFFFFFF`. The identified Razer override's
+behavior is established, but universal live selection and endpoint flags remain
+unproved. The fallback names are not confirmed runtime selections for every
+installation of the three laptops. This trace stops at that finite boundary.
 
 The recovered THX extension already appends `OutAPO`/`HPAPO` settings to ordinary,
 SST or HAP topology lists. Their shared sections supply device types and the
@@ -522,6 +534,26 @@ The legacy service INF launches `VSSrvInit.exe` through `AddSoftware`. That
 `.NETFramework,Version=v4.0,Profile=Client`. The inspected modern MSI custom
 actions and `THXSetup` target .NET Framework 4.8. Bypassing a managed outer
 bootstrapper does not remove those inner custom-action requirements.
+
+Static decompilation resolves the initializer's own setup sequence: it starts
+`%SystemRoot%\System32\VSSrv.exe -service` without a shell, waits for that process,
+then starts `VSSrv` if stopped and waits for `Running`, with two-second pauses.
+Its registry access reads the optional log path; it contains no endpoint FX
+writer or Synapse launch. The initializer does not inspect the child exit code
+and its process/service waits are unbounded, so its exit alone cannot establish
+successful setup. The delegated native `-service` branch remains untraced.
+Microsoft's [AddSoftware contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-addsoftware-directive)
+queues this software after device installation without guaranteeing when or
+whether it runs. Consequently, a successful INF installation cannot by itself
+prove COM initialization; any future recipe needs independent service and COM
+readback before enabling controls.
+
+The matching `VSSrv.exe` resource `REGISTRY/101/1033` contains HKCR COM-class
+templates for its settings/APO-control objects and their type library; it does
+not contain an endpoint `InterfaceSetting`/`FxProperties` declaration. These
+static templates do not establish which registration branch runs, or exclude
+additional native behavior. COM registration and endpoint FX binding remain
+separate requirements; no native registration command was executed here.
 
 OpenBlade already requires Windows 11 24H2 or later. Microsoft's
 [Framework installation table](https://learn.microsoft.com/en-us/dotnet/framework/install/on-windows-and-server)
