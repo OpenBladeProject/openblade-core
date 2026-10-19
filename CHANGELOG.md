@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Install the matching THX driver and configuration directly from Razer on RZ09-0528 and RZ09-0530 without Synapse, with hash and signature verification. This experimental fresh setup requires the matching Realtek audio driver. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
+
 ## [0.37.0-nightly.94] - 2026-10-19
 
 ### Added
