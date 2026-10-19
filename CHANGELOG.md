@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.37.0-nightly.94] - 2026-10-19
+
 ### Added
 
 - Download the missing THX client directly from Razer with hash and signature verification, while preserving the matching audio driver requirements. Improve Chinese and Russian THX wording. ([#816](https://github.com/OpenBladeProject/openblade-core/pull/816))
@@ -2133,7 +2135,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.36.0-nightly.93...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.37.0-nightly.94...HEAD
+[0.37.0-nightly.94]: https://github.com/OSSBlade/openblade-core/compare/v0.36.0-nightly.93...v0.37.0-nightly.94
 [0.36.0-nightly.93]: https://github.com/OSSBlade/openblade-core/compare/v0.33.1-nightly.92...v0.36.0-nightly.93
 [0.33.1-nightly.92]: https://github.com/OSSBlade/openblade-core/compare/v0.30.0...v0.33.1-nightly.92
 [0.30.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.29.0-nightly.91...v0.30.0
