@@ -440,7 +440,7 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(
             BladeWriteFailurePhase.ThermalFinalConfirmationRead,
             error.FailurePhase);
-        Assert.IsType<TimeoutException>(error.InnerException);
+        Assert.IsAssignableFrom<TimeoutException>(error.InnerException);
         Assert.Equal(6, session.Commands.Count);
         Assert.Equal(
             ["01010700", "01020700"],

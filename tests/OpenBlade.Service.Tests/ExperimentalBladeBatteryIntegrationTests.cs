@@ -8,7 +8,7 @@ using static OpenBlade.Service.Tests.VerifiedBladeProviderFixture;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class ExperimentalBladeBatteryIntegrationTests
+public sealed partial class ExperimentalBladeBatteryIntegrationTests
 {
     [Fact]
     public async Task OptionalCapabilities_ArePromotedOnlyAfterSuccessfulExplicitReads()
@@ -67,14 +67,15 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
         using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
 
-        IOException failure = await Assert.ThrowsAsync<IOException>(() => device.ReadStateAsync(CancellationToken.None));
-        NativeDeviceReadException cause = Assert.IsType<NativeDeviceReadException>(failure.InnerException);
-        Assert.Equal(DeviceStateQuery.TemporaryFullCharge, cause.StateQuery);
-        Assert.Equal(HidSessionFailureKind.ProtocolFailure, cause.Failure);
-        Assert.Equal(HidProtocolValidationFailure.Status, cause.Diagnostic?.ProtocolValidationFailure);
-        Assert.Contains("query=TemporaryFullCharge", failure.Message);
-        Assert.Contains("failure=ProtocolFailure", failure.Message);
-        Assert.Contains("phase=ProtocolValidation", failure.Message);
+        RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
+            device.ReadStateAsync(CancellationToken.None));
+        PartialDeviceStateRead partial = Assert.IsType<PartialDeviceStateRead>(failure.PartialState);
+        Assert.Equal(DeviceStateQuery.TemporaryFullCharge, failure.StateQuery);
+        Assert.Equal(HidProtocolValidationFailure.Status, failure.ValidationFailure);
+        Assert.Equal(HidSessionFailurePhase.ProtocolValidation, failure.Diagnostic?.Phase);
+        Assert.Null(partial.State.Battery);
+        Assert.Equal(PerformancePreset.Balanced, partial.State.Performance);
+        Assert.Contains("Temporary full charge query (07/8F)", failure.Message);
         Assert.DoesNotContain("Battery state query failed.", failure.Message);
         Assert.Empty(io.Setters);
         Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
@@ -604,7 +605,10 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
     {
         private byte[] request = [];
         internal byte Raw { get; set; }
-        internal (byte Class, byte Id)? RejectedGetter { get; init; }
+        internal (byte Class, byte Id)? RejectedGetter { get; set; }
+        internal int GetterFailureKind { get; set; }
+        internal int GetterFailureAfter { get; set; }
+        private int matchingGetterCount;
         internal byte Mode { get; set; }
         internal byte Fan { get; set; }
         internal byte FirstTarget { get; set; } = 38;
@@ -697,9 +701,21 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                         false,
                         HidFeatureTermination.Completed));
                 }
+                bool rejectGetter = RejectedGetter is { } failed
+                    && request[7] == failed.Class && request[8] == failed.Id
+                    && ++matchingGetterCount > GetterFailureAfter;
+                if (rejectGetter && GetterFailureKind is 2 or 3)
+                {
+                    return Task.FromResult(new HidFeatureIoResult(
+                        GetterFailureKind == 2 ? new(false, 0, 31) : null,
+                        true,
+                        GetterFailureKind == 2 ? HidFeatureTermination.Completed : HidFeatureTermination.DeadlineExpired)
+                    {
+                        NativeRetirement = Task.CompletedTask,
+                    });
+                }
                 request.CopyTo(buffer, 0);
-                buffer[1] = RejectedGetter is { } rejected
-                    && buffer[7] == rejected.Class && buffer[8] == rejected.Id ? (byte)5 : (byte)2;
+                buffer[1] = rejectGetter && GetterFailureKind == 0 ? (byte)5 : (byte)2;
                 if (buffer[7] == 0x07 && buffer[8] == 0x92)
                 {
                     buffer[9] = Raw;
@@ -749,6 +765,10 @@ public sealed class ExperimentalBladeBatteryIntegrationTests
                 for (int index = 3; index < 89; index++)
                 {
                     buffer[89] ^= buffer[index];
+                }
+                if (rejectGetter && GetterFailureKind == 1)
+                {
+                    buffer[89] ^= 1;
                 }
             }
             return Task.FromResult(new HidFeatureIoResult(new(true, buffer.Length, 0), true,

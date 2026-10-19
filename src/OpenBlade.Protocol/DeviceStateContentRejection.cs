@@ -4,12 +4,9 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-// A content rejection is a transaction-matched reply with a successful status
-// and the contracted payload length whose bytes the closed decoder does not
-// admit. Only this category may isolate the subsystems that depend on one
-// device-state getter. Framing, checksum, correlation, status and length
-// failures, I/O, timeouts, identity, conflict and cancellation keep the
-// fail-closed whole-read behavior.
+// A content rejection is a fully correlated reply whose closed decoder rejects
+// its payload. Other exchange failures use separate structured diagnostics;
+// none may turn failed reply bytes into confirmed device state.
 internal static class DeviceStateContentRejection
 {
     internal const int MaximumRejectedPayloadBytes = 16;
@@ -121,11 +118,18 @@ internal static class DeviceStateContentRejection
 internal sealed record DeviceStateReadFailure(
     DeviceStateQuery Query,
     IReadOnlySet<DeviceSubsystem> Subsystems,
-    string Message);
+    string Message)
+{
+    internal HidProtocolValidationFailure? ValidationFailure { get; init; }
 
-// A combined read in which one or more getters were content-rejected while
-// every other getter completed on a freshly verified session. Fields that
-// depend on a rejected getter are null and must be treated as unknown.
+    internal HidSessionFailureDiagnostic? Diagnostic { get; init; }
+
+    internal string? RejectedPayloadHex { get; init; }
+}
+
+// A combined read with isolated getter failures. Remaining getters complete
+// only after safe native retirement and fresh admission. Dependent fields stay
+// null and must be treated as unknown.
 internal sealed record PartialDeviceStateRead
 {
     internal PartialDeviceStateRead(
@@ -171,6 +175,24 @@ internal sealed record PartialDeviceStateRead
         return messages.Length == 0 ? null : string.Join(" ", messages);
     }
 
+    internal Exception CreateException(IReadOnlySet<DeviceSubsystem>? dependencies = null)
+    {
+        DeviceStateReadFailure[] failures = dependencies is null
+            ? Failures.ToArray()
+            : Failures.Where(failure => failure.Subsystems.Any(dependencies.Contains)).ToArray();
+        DeviceStateReadFailure first = failures[0];
+        string message = string.Join(" ", failures.Select(failure => failure.Message));
+        return first.ValidationFailure is { } validation
+            ? new RazerProtocolException(message, validation)
+            {
+                StateQuery = first.Query,
+                Diagnostic = first.Diagnostic,
+                RejectedPayloadHex = first.RejectedPayloadHex,
+                PartialState = this,
+            }
+            : new PartialDeviceStateReadException(this, message);
+    }
+
     internal bool AffectsAny(IEnumerable<DeviceSubsystem> subsystems) =>
         subsystems.Any(UnavailableSubsystems.Contains);
 }
@@ -197,4 +219,14 @@ internal sealed class DeviceStateContentRejectedException : IOException
 
     internal string Description =>
         $"{DeviceStateContentRejection.QueryName(Query, "Device state query")} returned unrecognized payload {RejectedPayloadHex} ({HidProtocolValidationFailure.PayloadValidator}).";
+}
+
+// Consumers must explicitly opt into partial reads and name the state on which
+// their decision depends. Ordinary callers continue to fail closed.
+internal sealed class PartialDeviceStateReadException : IOException
+{
+    internal PartialDeviceStateReadException(PartialDeviceStateRead partialState, string? message = null)
+        : base(message ?? partialState.Message) => PartialState = partialState;
+
+    internal PartialDeviceStateRead PartialState { get; }
 }

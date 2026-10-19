@@ -687,6 +687,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     }
                     catch (RazerProtocolException exception) when (
                         attempt < MaximumStateReadAttempts - 1 &&
+                        exception.PartialState is null &&
                         exception.ValidationFailure is
                             HidProtocolValidationFailure.TransactionMismatch or
                             HidProtocolValidationFailure.CommandClassMismatch or
@@ -698,7 +699,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             cancellationToken).ConfigureAwait(false);
                     }
                     catch (Exception exception) when (
-                        exception is IOException or TimeoutException)
+                        exception is IOException or TimeoutException
+                        && DeviceStateReadIsolation.PartialRead(exception) is null)
                     {
                         observedTimeout |= exception is TimeoutException;
                         if (attempt >= MaximumStateReadAttempts - 1)
@@ -786,6 +788,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     }
                     catch (RazerProtocolException exception) when (
                         attempt < MaximumStateReadAttempts - 1 &&
+                        exception.PartialState is null &&
                         exception.ValidationFailure is
                             HidProtocolValidationFailure.TransactionMismatch or
                             HidProtocolValidationFailure.CommandClassMismatch or
@@ -797,7 +800,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             cancellationToken).ConfigureAwait(false);
                     }
                     catch (Exception exception) when (
-                        exception is IOException or TimeoutException)
+                        exception is IOException or TimeoutException
+                        && DeviceStateReadIsolation.PartialRead(exception) is null)
                     {
                         observedTimeout |= exception is TimeoutException;
                         if (attempt >= MaximumStateReadAttempts - 1)
@@ -822,6 +826,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 throw new OperationCanceledException(cancellationToken);
             }
+            catch (PartialDeviceStateReadException)
+            {
+                throw;
+            }
             catch (TimeoutException)
             {
                 throw new TimeoutException("Battery state query timed out.");
@@ -835,6 +843,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     StateQuery = exception.StateQuery,
                     RejectedPayloadHex = exception.RejectedPayloadHex,
                     PartialState = exception.PartialState,
+                    Diagnostic = exception.Diagnostic,
+                    NativeRetirement = exception.NativeRetirement,
                 };
             }
             catch (NativeDeviceReadException exception) when (exception.Diagnostic is not null || exception.StateQuery is not null)
@@ -988,19 +998,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     state,
                     lightingRead.OffConfirmationUnavailable,
                     failures.ToArray());
-                throw new RazerProtocolException(
-                    partial.Message,
-                    HidProtocolValidationFailure.PayloadValidator)
-                {
-                    StateQuery = failures[0].Query,
-                    PartialState = partial,
-                };
+                throw partial.CreateException();
             }
         }
 
-        // Each getter that receives a content rejection leaves only its own
-        // dependent fields unknown. Any other failure still escapes and fails
-        // the whole read exactly as before.
+        // A typed getter failure leaves only its dependent fields unknown.
+        // Admission, cancellation and unsafe native retirement still fail closed.
         private static async Task<(bool Read, T Value)> ReadIsolatedStateQueryAsync<T>(
             StatePortLease lease,
             DeviceStateQuery query,
@@ -1014,16 +1017,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 return (true, await ReadStateQueryAsync(query, () => readAsync(port))
                     .ConfigureAwait(false));
             }
-            catch (RazerProtocolException exception) when (
-                DeviceStateContentRejection.IsContentRejection(exception))
+            catch (Exception exception) when (DeviceStateReadIsolation.CanIsolate(exception))
             {
-                failures.Add(new DeviceStateReadFailure(
-                    exception.StateQuery!.Value,
-                    subsystems,
-                    DeviceStateContentRejection.Describe(exception, "Device state query")));
-                // The rejected exchange poisons this verified session; later
-                // getters run only on a fresh exact-device reopen.
-                await lease.RetireAsync().ConfigureAwait(false);
+                // Disposing the managed session alone does not prove a timed-out
+                // native call retired. Do not reopen or publish partial state
+                // while native ownership is pending, canceled or faulted.
+                await lease.RetireFailedQueryAsync(
+                    DeviceStateReadIsolation.NativeRetirement(exception)).ConfigureAwait(false);
+                failures.Add(DeviceStateReadIsolation.DescribeFailure(exception, query, subsystems));
                 return (false, default!);
             }
         }
@@ -1070,6 +1071,31 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
             }
 
+            internal async Task RetireFailedQueryAsync(Task? nativeRetirement)
+            {
+                try
+                {
+                    await RetireAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    throw new FailClosedDeviceException("The failed query session could not be safely disposed.");
+                }
+
+                if (nativeRetirement is not null && !nativeRetirement.IsCompletedSuccessfully)
+                {
+                    // Observe a fault without exposing native exception details.
+                    _ = nativeRetirement.Exception;
+                    throw new FailClosedDeviceException("The failed query's native operation has not safely retired.");
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             public async ValueTask DisposeAsync() =>
                 await RetireAsync().ConfigureAwait(false);
         }
@@ -1084,7 +1110,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
             catch (NativeDeviceReadException exception) when (exception.StateQuery is null)
             {
-                throw new NativeDeviceReadException(exception.Failure, exception.Diagnostic, query);
+                throw new NativeDeviceReadException(exception.Failure, exception.Diagnostic, query, exception.NativeRetirement);
+            }
+            catch (NativeDeviceReadTimeoutException exception) when (exception.StateQuery is null)
+            {
+                throw new NativeDeviceReadTimeoutException(exception.Diagnostic, query, exception.NativeRetirement);
             }
             catch (RazerProtocolException exception)
             {
@@ -1094,6 +1124,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     StateQuery = exception.StateQuery ?? query,
                     RejectedPayloadHex = exception.RejectedPayloadHex,
+                    Diagnostic = exception.Diagnostic,
+                    NativeRetirement = exception.NativeRetirement,
                 };
             }
         }
@@ -1998,37 +2030,54 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 initialConfirmed = confirmedManagedGpuClockOffsets;
             }
 
-            bool? gpuActive = await gpuActivitySource.IsActiveAsync(cancellationToken)
-                .ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            lock (gpuClockOffsetManagementSync)
+            try
             {
-                if (gpuClockOffsetManagementState !=
-                    GpuClockOffsetManagementState.Managed)
-                {
-                    return null;
-                }
+                bool? gpuActive = await gpuActivitySource.IsActiveAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
 
-                GpuClockOffsetCapabilities? confirmed =
-                    confirmedManagedGpuClockOffsets;
-                if (confirmed != initialConfirmed || gpuActive is not true)
+                lock (gpuClockOffsetManagementSync)
                 {
-                    return confirmed;
-                }
+                    if (gpuClockOffsetManagementState !=
+                        GpuClockOffsetManagementState.Managed)
+                    {
+                        return null;
+                    }
 
-                GpuClockOffsetCapabilities? observed = gpuClockOffsets.Query();
-                if (observed is null)
+                    GpuClockOffsetCapabilities? confirmed =
+                        confirmedManagedGpuClockOffsets;
+                    if (confirmed != initialConfirmed || gpuActive is not true)
+                    {
+                        return confirmed;
+                    }
+
+                    GpuClockOffsetCapabilities? observed = gpuClockOffsets.Query();
+                    if (observed is null)
+                    {
+                        return confirmed;
+                    }
+
+                    GpuClockOffsetCapabilities? refreshed = ApplyGpuPolicy(observed);
+                    confirmedManagedGpuClockOffsets = refreshed;
+                    return refreshed;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // An optional NVIDIA observation cannot invalidate confirmed
+                // thermal state. Recheck ownership after the failed await so
+                // concurrent relinquishment cannot resurrect stale offsets.
+                lock (gpuClockOffsetManagementSync)
                 {
-                    return confirmed;
+                    return gpuClockOffsetManagementState == GpuClockOffsetManagementState.Managed
+                        ? confirmedManagedGpuClockOffsets : null;
                 }
-
-                GpuClockOffsetCapabilities? refreshed = ApplyGpuPolicy(observed);
-                confirmedManagedGpuClockOffsets = refreshed;
-                return refreshed;
             }
         }
-
         private GpuClockOffsetCapabilities? QueryGpuClockOffsets()
         {
             lock (gpuClockOffsetManagementSync)

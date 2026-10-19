@@ -1628,6 +1628,7 @@ public sealed partial class MainViewModelTests
             registration);
 
         await viewModel.StartAsync();
+        await WaitUntilAsync(() => viewModel.StartupStateKnown);
 
         Assert.True(viewModel.StartupStateKnown);
         Assert.Equal(enabled, viewModel.StartAtSignIn);
@@ -1648,6 +1649,7 @@ public sealed partial class MainViewModelTests
             new FakeDiagnosticArchiveSaver(),
             registration);
         await viewModel.StartAsync();
+        await WaitUntilAsync(() => viewModel.StartupStateKnown);
 
         await ((AsyncRelayCommand)viewModel.SetStartAtSignInCommand).ExecuteAsync(true);
 
@@ -1670,6 +1672,7 @@ public sealed partial class MainViewModelTests
             new FakeDiagnosticArchiveSaver(),
             registration);
         await viewModel.StartAsync();
+        await WaitUntilAsync(() => viewModel.StartupStateKnown);
 
         await ((AsyncRelayCommand)viewModel.SetStartAtSignInCommand).ExecuteAsync(false);
 
@@ -2814,7 +2817,7 @@ public sealed partial class MainViewModelTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task FirstServiceState_IsReadyAfterFullSnapshotRegardlessOfStartupTiming(
+    public async Task StartAsync_DoesNotWaitForStartupRegistrationAndServiceStateRemainsIndependent(
         bool statusBeforeStartupRegistration)
     {
         var client = new FakeServiceClient();
@@ -2887,11 +2890,12 @@ public sealed partial class MainViewModelTests
         }
 
         Task startup = viewModel.StartAsync();
-        Assert.False(startup.IsCompleted);
+        await startup.WaitAsync(TimeSpan.FromSeconds(2));
+        await registration.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(1, client.WatchCalls);
+        Assert.False(viewModel.StartupStateKnown);
         if (!statusBeforeStartupRegistration)
         {
-            startupRead.SetResult(false);
-            await startup;
             Assert.False(viewModel.HasAppliedServiceState);
             client.Publish(initial);
         }
@@ -2904,12 +2908,9 @@ public sealed partial class MainViewModelTests
         Assert.Equal(PowerSource.Battery, applied.PowerSource);
         Assert.Equal(viewModel.BatterySourceLabel, applied.BatterySource);
         Assert.False(Assert.Single(advisoryChanges).Ready);
-        if (statusBeforeStartupRegistration)
-        {
-            Assert.False(startup.IsCompleted);
-            startupRead.SetResult(false);
-            await startup;
-        }
+        startupRead.SetResult(false);
+        await registration.ReadCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => viewModel.StartupStateKnown);
 
         client.Publish(initial with
         {
@@ -2940,6 +2941,64 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.IsConnected);
         Assert.True(viewModel.HasAppliedServiceState);
         Assert.Equal(1, Volatile.Read(ref readyNotifications));
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DoesNotWaitForPendingStartupRegistrationOrPublishLateResult()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        var startupRead = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var registration = new FakeStartupRegistration(false)
+        {
+            PendingRead = startupRead,
+            IgnoreReadCancellation = true,
+        };
+        var viewModel = new MainViewModel(
+            client,
+            dispatcher,
+            new FakeDiagnosticArchiveSaver(),
+            registration);
+
+        await viewModel.StartAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        await registration.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        int dispatcherCallsBeforeDisposal = dispatcher.CompletedCalls;
+
+        Task disposal = viewModel.DisposeAsync().AsTask();
+        try
+        {
+            await disposal.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            startupRead.SetResult(true);
+        }
+        await registration.ReadCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.False(viewModel.StartupStateKnown);
+        Assert.False(viewModel.StartAtSignIn);
+        Assert.Equal(dispatcherCallsBeforeDisposal, dispatcher.CompletedCalls);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DoesNotWaitForPendingStartupDispatcherOrPublishLateResult()
+    {
+        var dispatcher = new PendingDispatcher();
+        var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            dispatcher,
+            new FakeDiagnosticArchiveSaver(),
+            new FakeStartupRegistration(true));
+
+        await viewModel.StartAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        await dispatcher.InvocationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await viewModel.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        dispatcher.RunQueuedAction();
+
+        Assert.False(viewModel.StartupStateKnown);
+        Assert.False(viewModel.StartAtSignIn);
     }
 
     [Theory]
@@ -11010,6 +11069,32 @@ public sealed partial class MainViewModelTests
         }
     }
 
+    private sealed class PendingDispatcher : IUiDispatcher
+    {
+        private readonly TaskCompletionSource completion = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private Action? queuedAction;
+
+        public TaskCompletionSource InvocationStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task InvokeAsync(Action action, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Assert.Null(Interlocked.CompareExchange(ref queuedAction, action, null));
+            InvocationStarted.TrySetResult();
+            return completion.Task;
+        }
+
+        public void RunQueuedAction()
+        {
+            Action action = Interlocked.Exchange(ref queuedAction, null)
+                ?? throw new InvalidOperationException("No dispatcher action was queued.");
+            action();
+            completion.TrySetResult();
+        }
+    }
+
     private sealed class StubFirmwareUpdateClient : IRazerFirmwareUpdateClient
     {
         public Task<RazerPublishedFirmwareVersions> GetPublishedVersionsAsync(
@@ -11478,13 +11563,32 @@ public sealed partial class MainViewModelTests
         public bool Enabled { get; private set; } = enabled;
         public Exception? Failure { get; init; }
         public TaskCompletionSource<bool>? PendingRead { get; init; }
+        public bool IgnoreReadCancellation { get; init; }
+        public TaskCompletionSource ReadStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReadCompleted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         public List<bool> Requests { get; } = [];
 
-        public Task<bool> IsEnabledAsync(CancellationToken cancellationToken)
+        public async Task<bool> IsEnabledAsync(CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            return PendingRead?.Task.WaitAsync(cancellationToken)
-                ?? Task.FromResult(Enabled);
+            ReadStarted.TrySetResult();
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (PendingRead is null)
+                {
+                    return Enabled;
+                }
+
+                return IgnoreReadCancellation
+                    ? await PendingRead.Task
+                    : await PendingRead.Task.WaitAsync(cancellationToken);
+            }
+            finally
+            {
+                ReadCompleted.TrySetResult();
+            }
         }
 
         public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)

@@ -42,6 +42,10 @@ public sealed class RazerProtocolException : Exception
 
     internal string? RejectedPayloadHex { get; init; }
 
+    internal HidSessionFailureDiagnostic? Diagnostic { get; init; }
+
+    internal Task? NativeRetirement { get; init; }
+
     // Present only when the combined state read completed every other getter
     // after a content rejection. Callers that do not consume it keep the
     // fail-closed whole-read behavior of an ordinary protocol exception.
