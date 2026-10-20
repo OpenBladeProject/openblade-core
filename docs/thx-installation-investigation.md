@@ -115,10 +115,12 @@ Static reconstruction of the version-13 configuration reproduced the exact
 1,243-byte CRLF JSON and hash above. No updater or vendor native code was run.
 
 DriverStore presence alone is insufficient: the service uses active files in
-ProgramData. OpenBlade pins both immutable active files as well as the complete
-driver packages. Mutable `properties.json`, endpoint values, and preset
-selection files are excluded from hash admission because legitimate control
-changes update them. Unknown immutable payloads fail closed.
+ProgramData. Exact provisioning recipes verify their expected package and
+configuration outputs. Runtime API access instead verifies actual installed
+package/service bindings, Windows trust and typed responses. Compatible installed
+updates do not require new binary or configuration hash allowlists. Observed
+runtime fingerprints invalidate stale reads and registrations; normal settings
+and preset changes remain supported.
 
 ## Standalone provisioning follow-up (2026-10-19)
 

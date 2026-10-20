@@ -11,7 +11,12 @@ public sealed class LegacyThxAudioCommandTests
         ThxAudioCompatibility.Profiles.Single(value => value.ModelNumber == model);
     private static ThxAudioAdmission Available(string model = "RZ09-0483") =>
         new(ThxAudioAvailability.Available, null)
-        { ProductId = "thx-2.6.5", ModelNumber = model, MutationAllowed = true };
+        {
+            ProductId = "thx-2.6.5",
+            ModelNumber = model,
+            MutationAllowed = true,
+            DriverStackIdentity = "test-stack",
+        };
 
     [Fact]
     public void EverySupportedModelHasAnExplicitThxOrNonThxDecision()
@@ -129,6 +134,19 @@ public sealed class LegacyThxAudioCommandTests
         var command = new LegacyThxAudioCommand(() => fake,
             new Admission(new(ThxAudioAvailability.ControllerActive, "Controller active")), (_, _) => Output);
         var result = command.Execute(SetSpatial(), Available(), Profile());
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, result.Status);
+        Assert.Equal(0, fake.Writes);
+    }
+
+    [Fact]
+    public void RuntimeIdentityChangeBeforeSubmissionDoesNotWrite()
+    {
+        var fake = new Native(new LegacyThxAudioNativeState(Output, false, false));
+        var command = new LegacyThxAudioCommand(() => fake,
+            new Admission(Available() with { DriverStackIdentity = "updated-stack" }), (_, _) => Output);
+
+        ThxAudioHelperResponse result = command.Execute(SetSpatial(), Available(), Profile());
+
         Assert.Equal(ThxAudioOperationStatus.Unavailable, result.Status);
         Assert.Equal(0, fake.Writes);
     }

@@ -87,17 +87,18 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
                 ActiveProperties = propertiesEvidence,
                 SurroundConfiguration = surroundEvidence,
             };
-        if (!complete && exactCodec && properties && surround && ThxAudioCompatibility.TryResolveRunningDriverStack(
-            driverStore, runtimeProfile, WindowsThxAdmissionQueries.HasRunningPinnedService,
-            out ThxAudioDriverStack? installedStack, out _, out _)
-            && HasTrustedCatalogMembership(driverStore, installedStack!))
+        if (completedStep is null && exactCodec)
         {
-            // An already complete admitted build needs no replacement. The setup
-            // target remains the exact cached build when starting from pristine.
-            stackHashes = true;
-            catalogs = true;
-            service = true;
-            complete = true;
+            ThxDriverApiEvidence runtime = WindowsThxDriverApiDiscovery.Capture(runtimeProfile);
+            if (runtime.Trusted && WindowsThxAdmissionQueries.HasRunningPinnedService(
+                runtimeProfile.Stack.ServiceName, runtime.ServiceBinary))
+            {
+                // A catalog-bound installed API stack remains usable across vendor
+                // updates. Exact hashes below continue to guard only this setup
+                // transaction's acquisition and post-step checkpoints.
+                service = true;
+                return Snapshot(true, true);
+            }
         }
         if (complete)
         {

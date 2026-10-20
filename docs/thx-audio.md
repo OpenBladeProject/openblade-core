@@ -8,13 +8,12 @@ Synapse closed have been validated on RZ09-0581. The user also confirmed an
 audible spatial change on its built-in speakers after enabling Windows audio
 enhancements. Other outputs and rznb11 audible processing remain unvalidated.
 
-OpenBlade checks the exact laptop, present audio hardware IDs from the signed
-installer INF, and a complete pinned THX stack before connecting. RZ09-0581
-admits rznb12 4.2.41.2499 and the separately pinned 4.2.37.1621 build;
-RZ09-0528 and RZ09-0530 use the reviewed rznb11
-4.2.29.1159 driver stack with the official 4.2.37.1845 active configuration.
-The immutable properties archive and surround configuration are pinned too;
-mutable user settings remain editable. Other payloads are not yet admitted.
+OpenBlade checks the exact laptop, audio hardware, actual installed THX
+package/service bindings, Windows catalog trust and the typed API contract before
+connecting. RZ09-0581 uses the rznb12 family; RZ09-0528 and RZ09-0530 use rznb11.
+Compatible installed driver updates do not require new hashes or an OpenBlade
+release. The versions and configuration hashes cataloged below identify source
+evidence and exact installation recipes, rather than a runtime build allowlist.
 The two rznb11 models have vendor-backed controls and their own speaker EQ
 curves, but have not been physically tested in OpenBlade.
 
@@ -37,7 +36,7 @@ for the package and codec restrictions.
 | --- | --- | --- |
 | RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Experimental cached 4.2.37.1621 setup with reviewed Intel SST prerequisites; Windows SDCA required |
 | RZ09-0528, RZ09-0530 | rznb11 spatial audio, EQ and application profiles | Experimental, including the reviewed Realtek base driver when needed |
-| RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed THX 2.6.5.0 service | Endpoint binding and installation sequence remain unverified |
+| RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed legacy THX COM service | Endpoint binding and installation sequence remain unverified |
 | RZ09-0328 | Factory audio uses Dolby Atmos; THX does not apply | Not applicable |
 
 On the three 2023 models, select the output currently used by Windows. OpenBlade
@@ -46,7 +45,7 @@ form factor and exact Realtek codec ancestry before control. It does not switch
 the output or listening mode. EQ, presets and automatic audio profiles remain
 unavailable for this older THX version. Its native behavior has not been physically
 validated in OpenBlade. The Store control app and Synapse are not needed for this
-backend; the pinned factory audio components must already be installed.
+backend; trusted, correctly bound factory audio components must already be installed.
 
 Razer documents the older driver and Store control app in
 [its THX setup guide](https://mysupport.razer.com/app/answers/detail/a_id/5798/).
@@ -60,7 +59,7 @@ The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-c
 records verified packages and the remaining installation blockers. For recovery,
 use the exact laptop's Windows driver updates or
 [Razer recovery image](https://mysupport.razer.com/app/answers/detail/a_id/5997/).
-See the [legacy interface review](thx-legacy-interface.md) for the pinned native
+See the [legacy interface review](thx-legacy-interface.md) for the reviewed native
 contract and COM activation boundary.
 
 ## Use the controls
@@ -213,14 +212,16 @@ experimental. No rznb11 package may be substituted for rznb12.
 
 ## Component and process boundaries
 
-Admission pairs each exact model with its own product ID, signed-INF audio
-hardware IDs, service, and complete component hashes. It requires matching
-host names in both registry sources and the model's present USB identity.
-DriverStore directory suffixes are discovered; complete package hashes and
-the running service path must match without mixing directories or versions.
-Admission also checks the immutable properties archive and surround config in
-`ProgramData\thx\{productId}`. It does not hash mutable property values or
-preset selections, so normal user changes do not invalidate admission.
+Admission pairs each exact model with its product ID, audio hardware IDs,
+installed package, running service and API family. It requires matching host
+names in both registry sources and the model's present USB identity. The actual
+bound DriverStore packages and service image must pass Windows catalog trust
+and membership checks; a matching filename alone is insufficient. Observed installed
+package content and the service path identify the current runtime so updates
+invalidate cached registrations and reads. They are not compared with a
+release-maintained hash list. ProgramData configuration is unsigned API-managed
+data; typed responses establish whether the exposed settings can be read and
+controlled. Configuration and preset changes do not require new OpenBlade releases.
 For native reads and changes, the isolated helper performs full fresh admission;
 the dispatcher does not repeat those same scans. Discovery still performs full
 admission without loading native code. The DLL hash is checked again with the
@@ -229,14 +230,15 @@ and loading. Full native readback and pause-on-uncertainty remain unchanged.
 
 All three admitted models use the pinned `ThxV4Native_v1.1.1.0.dll`. The rznb11 middleware
 ABI and typed property operations match the reviewed rznb12 implementation;
-factory speaker curves remain model-specific. A new component build needs
-its own source review and admission. The cached rznb12 1621 build is a separate
-whole-stack exception with the same pinned 1846 active configuration and native
-client. Before its first mutation, the helper must successfully read both outputs,
-including every exposed property and preset list, for that exact stack identity.
-The original 1621 properties archive alone cannot admit control. Static contract
-comparison supports this experimental pairing; it does not prove native success
-or audible processing on the older build.
+factory speaker curves remain model-specific. A driver update may use the same
+API without a new source review for its binary hash. A changed API/ABI contract
+still requires review. Every mutation requires fresh admission and a successful
+typed read immediately before the setter, followed by explicit readback.
+For every modern V4 runtime identity, the first read covers both outputs,
+including every exposed property and preset list. This retains the recovered
+rznb12 pairing check without selecting builds by version or hash. Static contract
+comparison supports this experimental
+pairing; it does not prove native success or audible processing on that build.
 
 The explicit download uses the reviewed
 [Razer native client URL](https://app-assets.razer.com/files/synapse/devices/common/THX/ThxV4Native_v1.1.1.0.dll)
@@ -247,7 +249,7 @@ and Razer USA Ltd. signing certificate
 trust verification. The
 [catalog entry](https://github.com/OpenBladeProject/blade-driver-catalog/blob/89c12ae4d805a8102776f75b8e27d46084a137b9/components/thx-v4-native/1.1.1.0/component.json)
 records the same evidence as metadata; neither
-repository redistributes the DLL. Runtime pins are local and do not depend on
+repository redistributes the DLL. The native-client artifact pins are local and do not depend on
 the catalog being available.
 
 The catalog's applicability ledger reviews every supported OpenBlade model for
@@ -260,7 +262,7 @@ retain their exact device IDs even where common dependency files are identical.
 
 Adding a supported model requires reviewing all catalog entries and refreshing
 the offline fixtures under `tests/OpenBlade.Tray.Tests/Fixtures`. Tests compare
-the complete supported model list with that review and the runtime THX pins with
+the complete supported model list with that review and the exact THX installation recipes with
 the catalog descriptor. Catalog tests separately reject missing artifact reviews
 and mismatched applicability lists.
 
@@ -299,8 +301,8 @@ The explicitly launched setup helper above is a separate fixed operation.
 OpenBlade's existing hardware ownership and competing-controller checks are
 unchanged.
 
-Discovery checks exact host identity, present USB identity, and the pinned
-installed components without loading the native DLL. Each operation repeats
+Discovery checks exact host identity, present USB identity, installed package
+bindings and catalog trust without loading the native DLL. Each operation repeats
 admission. Successful setting changes require matching readback. A timeout,
 crash, or ambiguous mutation pauses further changes until the helper has exited
 and an explicit read reconciles the state. A failed request retires the helper

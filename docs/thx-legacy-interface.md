@@ -99,9 +99,10 @@ cannot admit an endpoint. No setter changes output selection or listening mode.
 Discovery must never construct this adapter. Explicit connection runs it only in
 the isolated helper, synchronously on one owning MTA pool thread. A buffered pipe read may complete
 synchronously on Main's STA thread, so the legacy request dispatch explicitly uses
-Task.Run; ConfigureAwait(false) alone does not establish an apartment. The adapter hashes and
-holds open the exact System32 VSSrv.exe, rejects relevant HKCU COM overrides,
-requires the pinned HKLM CLSID/AppID/TypeLib/interface registrations, and admits
+Task.Run; ConfigureAwait(false) alone does not establish an apartment. The adapter verifies
+the System32 VSSrv.exe against its bound signed package and holds it open,
+rejects relevant HKCU COM overrides, requires the reviewed HKLM
+CLSID/AppID/TypeLib/interface registrations, and admits
 only the [OLE universal marshaler](https://blogs.windows.com/windowsdeveloper/2017/04/13/com-server-ole-document-support-desktop-bridge/)
 through System32 oleaut32.dll. Unexpected paths, type-library resource suffixes,
 service arguments, redirects, custom proxies, or surrogate registrations fail
@@ -116,8 +117,10 @@ can activate the registered service if it exits between the check and activation
 this is not a guarantee that no service launch can occur. Registry checks also
 are not a security boundary against a concurrently hostile process running as
 the same user or an administrator. The adapter's file pin prevents replacement
-of the verified file while connecting. Parent admission additionally pins the
-installed driver/APO components and exact host/codec before any control.
+of the verified file while connecting. Parent admission additionally verifies the
+bound driver/APO packages and exact host/codec before any control. Changed
+component bytes invalidate cached admission; a compatible update does not need
+a new hash allowlist entry.
 
 Any failed/canceled mutation may already have been submitted, including an
 HRESULT error or oversized notification. Stop writes and reconcile through a

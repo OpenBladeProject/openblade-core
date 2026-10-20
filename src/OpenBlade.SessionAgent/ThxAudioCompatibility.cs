@@ -65,8 +65,9 @@ internal static class ThxAudioCompatibility
             ]),
         ]);
 
-    // Original signed rznb12 4.2.37.1621 package, separately reviewed for
-    // exact RZ09-0581. Never combine its package members with 4.2.41.2499.
+    // Original signed rznb12 4.2.37.1621 package retained as the exact
+    // provisioning transaction target for RZ09-0581. Runtime compatibility is
+    // established from the installed package binding and typed API reads.
     internal static readonly ThxAudioDriverStack Rznb12CachedStack = new(
         "thx_rznb12_service", "thx_rznb12_svc.exe",
         [
@@ -93,10 +94,9 @@ internal static class ThxAudioCompatibility
             ]),
         ]);
 
-    // Microsoft Update Catalog Windows 11 THX 2.6.5.0. These packages are
-    // admitted only when already installed with the exact model's codec.
-    // SCU embeds exact-model THX tuning, but fresh provisioning still requires
-    // the original signed component/endpoint binding rule.
+    // Microsoft Update Catalog Windows 11 THX 2.6.5.0 exact package recipe.
+    // Runtime admission uses the installed catalog-bound service/APO packages;
+    // these hashes remain for acquisition and provisioning verification only.
     internal static readonly ThxAudioDriverStack Legacy265Stack = new(
         "VSSrv", "VSSrv.exe",
         [
@@ -201,56 +201,9 @@ internal static class ThxAudioCompatibility
         { Backend = ThxAudioNativeBackend.Legacy265 },
     ];
 
-    internal static IEnumerable<ThxAudioDriverStack> GetRuntimeStacks(ThxAudioCompatibilityProfile profile)
-    {
-        yield return profile.Stack;
-        if (profile.ModelNumber == "RZ09-0581" && profile.ProductId == "rznb12"
-            && ReferenceEquals(profile.Stack, Rznb12Stack))
-        {
-            yield return Rznb12CachedStack;
-        }
-    }
-
     internal static ThxAudioDriverStack GetProvisioningStack(ThxAudioCompatibilityProfile profile) =>
         profile.ModelNumber == "RZ09-0581" && profile.ProductId == "rznb12"
             ? Rznb12CachedStack : profile.Stack;
-
-    internal static bool TryResolveRunningDriverStack(string driverStore, ThxAudioCompatibilityProfile profile,
-        Func<string, string, bool> hasRunningService, out ThxAudioDriverStack? matchedStack,
-        out string? serviceBinary, out string? error)
-    {
-        matchedStack = null;
-        serviceBinary = null;
-        error = null;
-        foreach (ThxAudioDriverStack candidate in GetRuntimeStacks(profile))
-        {
-            if (!TryResolveDriverStack(driverStore, candidate, out string? executable, out string? candidateError))
-            {
-                error ??= candidateError;
-                continue;
-            }
-            if (!hasRunningService(candidate.ServiceName, executable!))
-            {
-                error = WindowsThxAudioAdmissionSource.GetServiceFailure(candidate);
-                continue;
-            }
-            if (matchedStack is not null)
-            {
-                matchedStack = null;
-                serviceBinary = null;
-                error = "Multiple reviewed THX driver stacks claim the active service.";
-                return false;
-            }
-            matchedStack = candidate;
-            serviceBinary = executable;
-        }
-        if (matchedStack is null)
-        {
-            return false;
-        }
-        error = null;
-        return true;
-    }
 
     internal static bool MatchesHost(ThxAudioCompatibilityProfile profile,
         string? biosManufacturer, string? biosProduct, string? systemManufacturer, string? systemProduct) =>
@@ -269,31 +222,6 @@ internal static class ThxAudioCompatibility
     internal static bool MatchesCodec(ThxAudioCompatibilityProfile profile, IEnumerable<string> hardwareIds) =>
         hardwareIds.Any(actual => profile.CodecHardwareIds.Any(expected =>
             string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)));
-
-    internal static bool HasPinnedLegacySystemFiles(string systemDirectory, string registeredApoPath, out string? error)
-    {
-        // The INF installs either AVX2 or SSE2. Verify the actual registered
-        // runtime, not both mutually exclusive copy sections or a stale DLL.
-        foreach (ThxAudioPinnedFile file in Legacy265Stack.Packages[0].Files
-            .Where(file => file.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
-        {
-            if (!HasPinnedFile(Path.Combine(systemDirectory, file.Name), file.Sha256,
-                "legacy runtime", file.Name, out error))
-            {
-                return false;
-            }
-        }
-        ThxAudioPinnedFile? apo = Legacy265Stack.Packages[1].Files.SingleOrDefault(file =>
-            file.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(Path.GetFullPath(Path.Combine(systemDirectory, file.Name)),
-                registeredApoPath, StringComparison.OrdinalIgnoreCase));
-        if (apo is null)
-        {
-            error = "The legacy THX APO registration does not name a pinned System32 component.";
-            return false;
-        }
-        return HasPinnedFile(registeredApoPath, apo.Sha256, "legacy runtime", apo.Name, out error);
-    }
 
     internal static bool HasPinnedActiveConfiguration(string commonApplicationData,
         ThxAudioCompatibilityProfile profile) =>

@@ -215,9 +215,8 @@ internal sealed class ThxAudioHelperCommand(
         {
             return Unavailable(ThxAudioAvailability.AvailableReadOnly, "This THX stack requires model-specific write validation.");
         }
-        if (current.RequiresEndpointProbe && string.IsNullOrEmpty(current.DriverStackIdentity))
+        if (string.IsNullOrEmpty(current.DriverStackIdentity))
         {
-            probedStackIdentity = null;
             return Unavailable(
                 ThxAudioAvailability.ComponentsUnavailable,
                 "The THX driver stack identity is unavailable.");
@@ -243,10 +242,7 @@ internal sealed class ThxAudioHelperCommand(
         }
         if (request is not ThxHelperReadRequest
             && current.RequiresEndpointProbe
-            && !string.Equals(
-                probedStackIdentity,
-                current.DriverStackIdentity,
-                StringComparison.Ordinal))
+            && !string.Equals(probedStackIdentity, current.DriverStackIdentity, StringComparison.Ordinal))
         {
             return Unavailable(
                 ThxAudioAvailability.AvailableReadOnly,
@@ -254,14 +250,12 @@ internal sealed class ThxAudioHelperCommand(
         }
 
         native ??= createNative();
+        bool mayHaveSubmitted = false;
         try
         {
             if (request is ThxHelperReadRequest
                 && current.RequiresEndpointProbe
-                && !string.Equals(
-                    probedStackIdentity,
-                    current.DriverStackIdentity,
-                    StringComparison.Ordinal))
+                && !string.Equals(probedStackIdentity, current.DriverStackIdentity, StringComparison.Ordinal))
             {
                 ThxAudioState? requestedState = null;
                 foreach (ThxAudioEndpoint endpoint in RequiredEndpointProbeOrder)
@@ -276,12 +270,8 @@ internal sealed class ThxAudioHelperCommand(
                         return Failed("The THX service is not ready.");
                     }
 
-                    ThxAudioState probeState = ReadState(
-                        native,
-                        probeDevice,
-                        endpoint,
-                        current.ModelNumber,
-                        current.MutationAllowed);
+                    ThxAudioState probeState = ReadState(native, probeDevice, endpoint,
+                        current.ModelNumber, current.MutationAllowed);
                     if (endpoint == request.Endpoint)
                     {
                         requestedState = probeState;
@@ -293,8 +283,7 @@ internal sealed class ThxAudioHelperCommand(
                     ?? throw new InvalidDataException("The requested THX endpoint was not probed.")) with
                 {
                     SystemEffectsDisabled = ReadSystemEffectsDisabled(
-                        current.ProductId!,
-                        request.Endpoint),
+                        current.ProductId!, request.Endpoint),
                 };
                 return new ThxAudioHelperResponse(
                     ThxAudioHelperProtocol.Version,
@@ -314,6 +303,27 @@ internal sealed class ThxAudioHelperCommand(
             if (!native.CheckStatus(device))
             {
                 return Failed("The THX service is not ready.");
+            }
+
+            if (request is not ThxHelperReadRequest)
+            {
+                // Registration and service status are not write admission. Recheck the
+                // exact host, controller state, bound package identity, and selected
+                // typed endpoint immediately before the first possible mutation.
+                ThxAudioAdmission fresh = admission.Check();
+                if (!fresh.IsAvailable || !fresh.MutationAllowed
+                    || fresh.ProductId != current.ProductId
+                    || fresh.ModelNumber != current.ModelNumber
+                    || !string.Equals(fresh.DriverStackIdentity, current.DriverStackIdentity,
+                        StringComparison.Ordinal))
+                {
+                    return Unavailable(
+                        fresh.Availability,
+                        fresh.Error ?? "THX write admission changed.");
+                }
+
+                _ = ReadState(native, device, request.Endpoint, current.ModelNumber, current.MutationAllowed);
+                mayHaveSubmitted = true;
             }
 
             bool mutationAccepted = request switch
@@ -368,7 +378,7 @@ internal sealed class ThxAudioHelperCommand(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return request is ThxHelperReadRequest
+            return request is ThxHelperReadRequest || !mayHaveSubmitted
                 ? Failed($"THX state could not be read: {exception.GetType().Name}.")
                 : Indeterminate(
                     $"THX mutation readback failed: {exception.GetType().Name}.");

@@ -88,8 +88,8 @@ The existing Observer inventory records a trusted installed
 `RzDev_02a0.sys` with the same 1.0.0.73 version and a different SHA-256:
 `B77F49B11E4012C25A2815791684BE0A9F8DF0CE090797435FE2744CB6DE27A5`.
 The inventory contains no binary with which to determine whether that
-difference is limited to signing data. A version match cannot substitute
-for a reviewed content pin. Its scoped lower-filter and consumer-control
+difference is limited to signing data. Neither the version nor the hash
+establishes the missing API contract. Its scoped lower-filter and consumer-control
 records also do not establish complete keyboard and RzCommon topology.
 
 Static disassembly shows a different internal callback/context

@@ -5,8 +5,7 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $exporterPath = Join-Path $repository 'build\Export-RazerBrightnessDriverPackage.ps1'
-$transportPath = Join-Path $repository (
-    'src\OpenBlade.Service\WindowsRazerDisplayBrightnessHidTransport.cs')
+
 $documentationPath = Join-Path $repository 'docs\razer-brightness-driver-package.md'
 $attributesPath = Join-Path $repository '.gitattributes'
 
@@ -51,7 +50,6 @@ Assert-True ($parseErrors.Count -eq 0) `
     'The Razer driver package exporter must parse under Windows PowerShell.'
 
 $source = Get-Content -Raw -LiteralPath $exporterPath
-$transport = Get-Content -Raw -LiteralPath $transportPath
 $documentation = Get-Content -Raw -LiteralPath $documentationPath
 $attributeLines = @(Get-Content -LiteralPath $attributesPath)
 
@@ -102,13 +100,13 @@ foreach ($contract in @(
         "The exporter is missing safety contract '$contract'."
 }
 
-foreach ($runtimeHash in @(
+# Export hashes identify the fixed artifact recipe. Runtime API admission is
+# independently exercised by the discovery and transport tests.
+foreach ($artifactHash in @(
         '64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59',
         'BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787')) {
-    Assert-True ($source.IndexOf($runtimeHash, [StringComparison]::Ordinal) -ge 0) `
-        "The exporter is missing admitted runtime hash '$runtimeHash'."
-    Assert-True ($transport.IndexOf($runtimeHash, [StringComparison]::Ordinal) -ge 0) `
-        "The transport and exporter disagree on runtime hash '$runtimeHash'."
+    Assert-True ($source.IndexOf($artifactHash, [StringComparison]::Ordinal) -ge 0) `
+        "The exporter is missing exact artifact hash '$artifactHash'."
 }
 
 . $exporterPath

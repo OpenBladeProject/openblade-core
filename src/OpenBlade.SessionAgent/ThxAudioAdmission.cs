@@ -63,7 +63,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                 { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
             }
 
-            if (!HasPinnedComponents(profile, out string? componentError, out bool requiresEndpointProbe, out string stackIdentity))
+            if (!HasCompatibleComponents(profile, out string? componentError, out string stackIdentity))
             {
                 return new ThxAudioAdmission(
                     profile.Backend == ThxAudioNativeBackend.Legacy265
@@ -84,7 +84,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                 ProductId = profile.ProductId,
                 ModelNumber = profile.ModelNumber,
                 MutationAllowed = profile.MutationAllowed,
-                RequiresEndpointProbe = requiresEndpointProbe,
+                RequiresEndpointProbe = profile.Backend == ThxAudioNativeBackend.V4,
                 DriverStackIdentity = stackIdentity,
             };
         }
@@ -143,61 +143,35 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
     internal static bool IsExactUsbPnpDeviceId(string value) =>
         ThxAudioCompatibility.MatchesUsb(ThxAudioCompatibility.Profiles[0], value);
 
-    private static bool HasPinnedComponents(ThxAudioCompatibilityProfile profile, out string? error,
-        out bool requiresEndpointProbe, out string stackIdentity)
+    private static bool HasCompatibleComponents(ThxAudioCompatibilityProfile profile, out string? error,
+        out string stackIdentity)
     {
-        requiresEndpointProbe = false;
         stackIdentity = string.Empty;
-        if (profile.Backend == ThxAudioNativeBackend.Legacy265)
-        {
-            string legacyDriverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                "System32", "DriverStore", "FileRepository");
-            if (!ThxAudioCompatibility.TryResolveDriverStack(legacyDriverStore, profile.Stack, out _, out error)
-                || !ThxAudioCompatibility.HasPinnedLegacySystemFiles(Environment.SystemDirectory, GetLegacyApoPath(), out error))
-            {
-                return false;
-            }
-            if (!WindowsThxAdmissionQueries.HasRunningPinnedService("VSSrv", Path.Combine(Environment.SystemDirectory, "VSSrv.exe")))
-            {
-                error = GetServiceFailure(profile.Stack);
-                return false;
-            }
-            error = null;
-            return true;
-        }
-        if (!HasPinnedNativeDll(GetNativeDllPath(), out error))
+        if (profile.Backend == ThxAudioNativeBackend.V4 && !HasPinnedNativeDll(GetNativeDllPath(), out error))
         {
             return false;
         }
-        string driverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-            "System32", "DriverStore", "FileRepository");
-        try
+        ThxDriverApiEvidence evidence = WindowsThxDriverApiDiscovery.Capture(
+            profile,
+            profile.Backend == ThxAudioNativeBackend.Legacy265 ? GetLegacyApoPath() : null);
+        if (!evidence.Trusted)
         {
-            if (!ThxAudioCompatibility.TryResolveRunningDriverStack(driverStore, profile,
-                WindowsThxAdmissionQueries.HasRunningPinnedService, out ThxAudioDriverStack? matchedStack, out _, out error))
-            {
-                return false;
-            }
-            requiresEndpointProbe = ReferenceEquals(matchedStack, ThxAudioCompatibility.Rznb12CachedStack);
-            stackIdentity = matchedStack!.Packages.SelectMany(package => package.Files)
-                .Single(file => file.Name == matchedStack.ServiceExecutable).Sha256;
-        }
-        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception
-            or IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
-        {
-            error = GetServiceVerificationFailure(profile.Stack);
+            error = evidence.Error ?? "The installed THX API packages are unavailable.";
             return false;
         }
-        if (!ThxAudioCompatibility.HasPinnedActiveConfiguration(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), profile, out error))
+        if (!WindowsThxAdmissionQueries.HasRunningPinnedService(
+            profile.Stack.ServiceName,
+            evidence.ServiceBinary))
         {
+            error = GetServiceFailure(profile.Stack);
             return false;
         }
+        stackIdentity = evidence.Identity;
         error = null;
         return true;
     }
 
-    private static string GetLegacyApoPath()
+    internal static string GetLegacyApoPath()
     {
         // THXRTAPO.inf OUT_FX_MODE_HOST_CLSID. Read HKLM explicitly;
         // per-user COM registration cannot supply the admitted audio effect.

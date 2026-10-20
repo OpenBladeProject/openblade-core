@@ -9,15 +9,17 @@ internal sealed class LegacyThxAudioCommand(
     IThxAudioAdmissionSource admission,
     Func<ThxAudioCompatibilityProfile, ThxAudioEndpoint, string?> readDefaultOutput)
 {
-    private string? modelNumber;
+    private (string? ModelNumber, string DriverStackIdentity)? admittedIdentity;
 
     internal ThxAudioHelperResponse Execute(ThxAudioHelperRequest request,
         ThxAudioAdmission current, ThxAudioCompatibilityProfile profile)
     {
         bool mutation = request is not ThxHelperReadRequest;
-        if (modelNumber is not null && modelNumber != current.ModelNumber)
+        if (admittedIdentity is { } identity
+            && identity != (current.ModelNumber, current.DriverStackIdentity))
         {
-            return Result(ThxAudioOperationStatus.Unavailable, "The THX device identity changed.");
+            return Result(ThxAudioOperationStatus.Unavailable,
+                "The THX device or driver stack identity changed.");
         }
         if (mutation && request is not ThxHelperSetPropertyRequest { PropertyId: "spatial_enabled" })
         {
@@ -34,7 +36,7 @@ internal sealed class LegacyThxAudioCommand(
             // COM initialization and release stay on this synchronous request's
             // thread. The pipe loop may resume on another thread after an await.
             using ILegacyThxAudioNativeAdapter native = createNative();
-            modelNumber = current.ModelNumber;
+            admittedIdentity = (current.ModelNumber, current.DriverStackIdentity);
             LegacyThxAudioNativeState before = native.Read();
             VerifyOutput(before, profile, request.Endpoint);
             if (request is ThxHelperSetPropertyRequest spatial)
@@ -43,7 +45,9 @@ internal sealed class LegacyThxAudioCommand(
                 // hardware, component and controller checks immediately before submission.
                 ThxAudioAdmission fresh = admission.Check();
                 if (!fresh.IsAvailable || !fresh.MutationAllowed
-                    || fresh.ModelNumber != current.ModelNumber || fresh.ProductId != current.ProductId)
+                    || fresh.ModelNumber != current.ModelNumber || fresh.ProductId != current.ProductId
+                    || !string.Equals(fresh.DriverStackIdentity, current.DriverStackIdentity,
+                        StringComparison.Ordinal))
                 {
                     return new(ThxAudioHelperProtocol.Version, ThxAudioOperationStatus.Unavailable,
                         fresh.Availability, fresh.Error ?? "THX write admission changed.", null);

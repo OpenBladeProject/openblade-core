@@ -302,10 +302,11 @@ inventing a page-specific appearance:
    for RZ09-0581, `02C6` for RZ09-0528) when that stack is already installed
    or separately provisioned. Keep WMI fallback available, never mix one
    model's stack with another's, and never generalize a stack to an unadmitted
-   model or driver build. Developer export tooling does not authorize installer
+   model or API contract. Compatible installed driver updates follow the API
+   compatibility policy below. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
-   SnapTap may use the already installed, pinned RZ09-0581 (`02E0`) keyboard
+   SnapTap may use the already installed, trusted RZ09-0581 (`02E0`) keyboard
    driver stack through its typed A/D-only endpoint. Keep exact host, driver,
    keyboard-collection and container admission, supervised subscription lifetime,
    owned-hook restoration and uncertain-output recovery. It must not load the
@@ -316,9 +317,9 @@ inventing a page-specific appearance:
    Keep its durable journal, independent readback and stop-on-ambiguity behavior;
    never install from the input worker or bundle vendor binaries. Other models need
    separately reviewed driver evidence; see [SnapTap](docs/snap-tap.md).
-   The separately reviewed legacy THX 2.6.5.0 backend may offer manual spatial
+   The legacy THX COM backend, originally reviewed in 2.6.5.0, may offer manual spatial
    audio control on exact RZ09-0482 (`029D`), RZ09-0483 (`029F`) and RZ09-0484
-   (`02A0`) when their pinned service/APO stack is already installed. Keep its
+   (`02A0`) when their trusted, model-bound service/APO stack is already installed. Keep its
    exact host/codec/output ancestry and form-factor checks, guarded COM
    registrations, isolated synchronous helper lifetime and explicit readback.
    EQ, presets, automation and fresh legacy provisioning are not admitted;
@@ -329,7 +330,7 @@ inventing a page-specific appearance:
    Discovery never activates COM. The native integration remains experimental
    until exact-model physical validation; see [legacy THX](docs/thx-legacy-interface.md).
    The optional experimental THX audio integration may use the already
-   installed, pinned `rznb12` stack on exact RZ09-0581 (`02E0`) and the pinned
+   installed, trusted `rznb12` API stack on exact RZ09-0581 (`02E0`) and the trusted
    `rznb11` stack on exact RZ09-0528 (`02C6`) and RZ09-0530 (`02C5`). It is off
    by default, uses current-user typed Audio IPC and an isolated native helper,
    and never bundles THX drivers or services. An explicit elevated setup action
@@ -357,16 +358,20 @@ inventing a page-specific appearance:
    into a user-writable directory. Keep durable per-process intents bound to the
    whole recipe and independently verify installed catalogs/config/service. Never
    retry an uncertain submission or replace an existing admitted stack. Keep
-   4.2.41.2499 admitted as a separate whole stack; never mix package versions.
-   Cached 1621 additionally requires a successful complete read of both endpoints
-   tied to the freshly admitted stack identity before mutations. Its runtime and
-   pristine installation remain experimental until physically tested. An explicit user
+   each catalog version as an exact installation recipe. Runtime admission uses
+   the installed API contract and coherent bound packages, without a build allowlist.
+   Require a successful typed read tied to the freshly verified runtime identity
+   before mutations; an update invalidates cached registrations and reads. Each
+   modern V4 runtime identity requires a complete first read of both endpoints,
+   retaining the recovered 1621 pairing check without a build selector. The recovered
+   1621 runtime and pristine installation remain experimental until physically tested. An explicit user
    action may download only the pinned native client from its reviewed Razer
    HTTPS URL into OpenBlade's per-user component directory, after exact size,
    SHA-256, Windows Authenticode trust and signer verification. Publish it
    atomically; acquisition must not load native code or change audio settings.
    Keep the verified Synapse-installed client usable, and retain the full
-   model-specific stack admission and locked hash check before native loading.
+   model-specific API admission and locked verification of the OpenBlade-owned
+   native client before loading. Its artifact hash does not whitelist driver builds.
    Do not bundle or redistribute the DLL. Component discovery and
    shutdown must not change audio settings. Automatic changes, including
    startup reconciliation, require both the per-user integration preference
@@ -375,7 +380,7 @@ inventing a page-specific appearance:
    Preserve explicit readback and stop mutations after ambiguous submission
    until a successful explicit read. RZ09-0528 and RZ09-0530 remain
    source-backed experimental support until their native behavior is physically
-   validated. This exception admits no other laptop or component build. Keep
+   validated. This exception admits no other laptop or API contract family. Keep
    standalone native/audio validation separate from simulated tests; see
    [THX audio](docs/thx-audio.md).
 7. Prefer one shared implementation or presentation primitive over
@@ -389,6 +394,42 @@ inventing a page-specific appearance:
    gated UI even when the only honest access state is `ObservedOnly`. A missing
    backend or readback blocks mutation; it does not justify hiding the model
    difference or substituting another model's assumptions.
+
+### API-based driver compatibility
+
+Runtime access through an admitted Windows or vendor driver API must accept
+compatible installed driver updates without requiring an OpenBlade release.
+Do not use exact file hashes, package builds, minor versions or certificate
+thumbprints as runtime allowlists. Preserve the exact model, device, topology,
+service, endpoint and typed API/ABI contract admission for each backend.
+
+Verify the actual installed package and service binding, current Windows
+signature/catalog trust and required publisher, and catalog membership of the
+files used. Bind publisher identity to the signer from successful trust-provider
+state. Check the API/interface and validate bounded typed responses where that
+contract provides a read-only probe. Do not invent probing writes. Reject an
+untrusted, misbound or incompatible API with its concrete failure; a changed
+binary alone is not evidence of incompatibility or a missing dependency.
+
+Observed content fingerprints may identify a runtime instance, invalidate caches
+or detect replacement. They must not become a release-maintained whitelist.
+Revalidate the relevant binding and identity before mutations, keep verified
+files stable where they are loaded, and preserve ownership, explicit readback,
+uncertain-submission recovery and stop-on-ambiguity behavior. A compatible update
+may establish a fresh trusted runtime; it must not silently inherit stale reads
+or registrations. These checks do not claim physical validation of future builds.
+
+Keep exact source, size, hash and signature verification for downloaded/exported
+artifacts, catalog release assets, installer inputs, transactional recovery and
+OpenBlade-owned executable components. Catalog hashes identify those artifacts;
+they do not define which independently installed driver builds may expose a
+compatible API. Actual API/ABI or capability changes require contract review,
+rather than adding another binary hash to an allowlist.
+
+This policy covers THX, SnapTap and native-brightness driver integrations. It does
+not admit another model, a new firmware command or an unknown API, and it does
+not weaken raw HID/firmware semantic admission or authorize development-time
+hardware writes, installations, service changes or attended lifecycle tests.
 
 ### Tray async context
 

@@ -208,13 +208,36 @@ public sealed class ThxAudioHelperCommandTests
     }
 
     [Fact]
-    public async Task CachedStack_MutationBeforeEndpointProbeDoesNotCallNative()
+    public async Task Mutation_RechecksAdmissionAndRejectsChangedRuntimeIdentityBeforeWrite()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        int checks = 0;
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(
+            () => native,
+            new ChangingAdmission(() => Admitted() with
+            {
+                DriverStackIdentity = ++checks == 1 ? "stack-a" : "stack-b",
+            }),
+            new StringReader(RequestLines(SpatialRequest(true))),
+            output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, checks);
+        Assert.Empty(native.PropertyWrites);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable,
+            Assert.Single(ReadResponses(output)).Status);
+    }
+
+    [Fact]
+    public async Task ModernApi_MutationBeforeFamilyProbeDoesNotCallNative()
     {
         var native = new FakeNative { ApplyWritesToReadback = true };
         using var output = new StringWriter();
         var command = new ThxAudioHelperCommand(
             () => native,
-            new FixedAdmission(CachedAdmitted("cached-stack-a")),
+            new FixedAdmission(ProbeAdmitted("stack-a")),
             new StringReader(RequestLines(SpatialRequest(true))),
             output);
 
@@ -224,45 +247,43 @@ public sealed class ThxAudioHelperCommandTests
         Assert.Equal(ThxAudioOperationStatus.Unavailable, response.Status);
         Assert.Contains("Read both THX endpoints", response.Error!, StringComparison.Ordinal);
         Assert.Equal(0, native.AddCalls);
-        Assert.Equal(0, native.CheckStatusCalls);
         Assert.Empty(native.PropertyWrites);
-        Assert.Equal(0, native.SelectPresetCalls);
     }
 
     [Fact]
-    public async Task CachedStack_MissingIdentityFailsClosedBeforeNativeConstruction()
-    {
-        bool constructed = false;
-        using var output = new StringWriter();
-        var command = new ThxAudioHelperCommand(
-            () =>
-            {
-                constructed = true;
-                return new FakeNative();
-            },
-            new FixedAdmission(Admitted() with
-            {
-                RequiresEndpointProbe = true,
-            }),
-            new StringReader(RequestLines(ReadRequest())),
-            output);
-
-        await command.RunAsync(CancellationToken.None);
-
-        ThxAudioHelperResponse response = Assert.Single(ReadResponses(output));
-        Assert.Equal(ThxAudioOperationStatus.Unavailable, response.Status);
-        Assert.False(constructed);
-        Assert.Contains("identity is unavailable", response.Error!, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task CachedStack_ReadProbesBothEndpointsThenAllowsMutation()
+    public async Task ModernApi_FirstReadProbesBothEndpointsThenMutationUsesFreshSelectedRead()
     {
         var native = new FakeNative { ApplyWritesToReadback = true };
         using var output = new StringWriter();
         var command = new ThxAudioHelperCommand(
             () => native,
-            new FixedAdmission(CachedAdmitted("cached-stack-a")),
+            new FixedAdmission(ProbeAdmitted("stack-a")),
+            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
+            output);
+
+        await command.RunAsync(CancellationToken.None);
+
+        Assert.All(ReadResponses(output), response =>
+            Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status));
+        Assert.Equal(2, native.AddCalls);
+        Assert.Equal(3, native.CheckStatusCalls);
+        Assert.Equal(4, native.PresetListCalls);
+        Assert.Contains(native.RegisteredDevices,
+            value => value.Contains("speakers", StringComparison.Ordinal));
+        Assert.Contains(native.RegisteredDevices,
+            value => value.Contains("headphones", StringComparison.Ordinal));
+        Assert.Single(native.PropertyWrites);
+    }
+
+    [Fact]
+    public async Task ModernApi_ChangedObservedIdentityInvalidatesCompletedProbe()
+    {
+        var native = new FakeNative { ApplyWritesToReadback = true };
+        int checks = 0;
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(
+            () => native,
+            new ChangingAdmission(() => ProbeAdmitted(++checks == 1 ? "stack-a" : "stack-b")),
             new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
             output);
 
@@ -270,89 +291,46 @@ public sealed class ThxAudioHelperCommandTests
 
         ThxAudioHelperResponse[] responses = ReadResponses(output);
         Assert.Equal(2, responses.Length);
-        Assert.All(responses, response =>
-            Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status));
-        Assert.Equal(2, native.AddCalls);
-        Assert.Equal(3, native.CheckStatusCalls);
-        Assert.Equal(3, native.PresetListCalls);
-        Assert.Contains(native.RegisteredDevices,
-            value => value.Contains("speakers", StringComparison.Ordinal));
-        Assert.Contains(native.RegisteredDevices,
-            value => value.Contains("headphones", StringComparison.Ordinal));
-        Assert.Single(native.PropertyWrites);
-        Assert.True(native.Spatial);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, responses[0].Status);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, responses[1].Status);
+        Assert.Empty(native.PropertyWrites);
     }
 
     [Fact]
-    public async Task CachedStack_MalformedSecondEndpointDoesNotCompleteProbe()
+    public async Task Mutation_RequiresSuccessfulTypedPreReadBeforeWrite()
     {
-        var native = new FakeNative
-        {
-            ApplyWritesToReadback = true,
-            HeadphonesPresetListJson = "{malformed",
-        };
+        var native = new FakeNative { ThrowOnPropertyRead = true };
         using var output = new StringWriter();
         var command = new ThxAudioHelperCommand(
             () => native,
-            new FixedAdmission(CachedAdmitted("cached-stack-a")),
-            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
+            new FixedAdmission(Admitted()),
+            new StringReader(RequestLines(SpatialRequest(true))),
             output);
 
         await command.RunAsync(CancellationToken.None);
 
-        ThxAudioHelperResponse response = Assert.Single(ReadResponses(output));
-        Assert.Equal(ThxAudioOperationStatus.Failed, response.Status);
-        Assert.Equal(2, native.AddCalls);
-        Assert.Equal(2, native.CheckStatusCalls);
         Assert.Empty(native.PropertyWrites);
-        Assert.False(native.Spatial);
+        Assert.Equal(ThxAudioOperationStatus.Failed,
+            Assert.Single(ReadResponses(output)).Status);
     }
 
     [Fact]
-    public async Task CachedStack_ChangedIdentityRequiresNewEndpointProbe()
+    public async Task Mutation_ReadsTypedStateBeforeWriteAndAgainForReadback()
     {
         var native = new FakeNative { ApplyWritesToReadback = true };
-        int checks = 0;
-        using var changedOutput = new StringWriter();
-        var changedCommand = new ThxAudioHelperCommand(
+        using var output = new StringWriter();
+        var command = new ThxAudioHelperCommand(
             () => native,
-            new ChangingAdmission(() => CachedAdmitted(
-                ++checks == 1 ? "cached-stack-a" : "cached-stack-b")),
-            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
-            changedOutput);
-
-        await changedCommand.RunAsync(CancellationToken.None);
-
-        ThxAudioHelperResponse[] changedResponses = ReadResponses(changedOutput);
-        Assert.Equal(2, changedResponses.Length);
-        Assert.Equal(ThxAudioOperationStatus.Succeeded, changedResponses[0].Status);
-        Assert.Equal(ThxAudioOperationStatus.Unavailable, changedResponses[1].Status);
-        Assert.Empty(native.PropertyWrites);
-
-        using var unprobedOutput = new StringWriter();
-        var unprobedCommand = new ThxAudioHelperCommand(
-            () => native,
-            new FixedAdmission(CachedAdmitted("cached-stack-b")),
+            new FixedAdmission(Admitted()),
             new StringReader(RequestLines(SpatialRequest(true))),
-            unprobedOutput);
-        await unprobedCommand.RunAsync(CancellationToken.None);
-        Assert.Equal(
-            ThxAudioOperationStatus.Unavailable,
-            Assert.Single(ReadResponses(unprobedOutput)).Status);
-        Assert.Empty(native.PropertyWrites);
+            output);
 
-        using var reprobedOutput = new StringWriter();
-        var reprobedCommand = new ThxAudioHelperCommand(
-            () => native,
-            new FixedAdmission(CachedAdmitted("cached-stack-b")),
-            new StringReader(RequestLines(ReadRequest(), SpatialRequest(true))),
-            reprobedOutput);
-        await reprobedCommand.RunAsync(CancellationToken.None);
+        await command.RunAsync(CancellationToken.None);
 
-        Assert.All(ReadResponses(reprobedOutput), response =>
-            Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status));
+        Assert.Equal(2, native.PresetListCalls);
         Assert.Single(native.PropertyWrites);
-        Assert.True(native.Spatial);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded,
+            Assert.Single(ReadResponses(output)).Status);
     }
 
     [Fact]
@@ -549,7 +527,7 @@ public sealed class ThxAudioHelperCommandTests
         int exitCode = await command.RunAsync(CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(1, native.PresetListCalls);
+        Assert.Equal(2, native.PresetListCalls);
         Assert.Equal(0, native.SelectPresetCalls);
         Assert.Contains("\"status\":2", output.ToString(), StringComparison.Ordinal);
         Assert.Equal(1, native.RemoveCalls);
@@ -939,7 +917,7 @@ public sealed class ThxAudioHelperCommandTests
         Assert.Equal(0, await command.RunAsync(CancellationToken.None));
 
         Assert.Equal(1, created);
-        Assert.Equal(5, admissionChecks);
+        Assert.Equal(6, admissionChecks);
         Assert.Equal(5, native.CheckStatusCalls);
         Assert.Equal(2, native.AddCalls);
         Assert.Equal(2, native.RegisteredDevices.Distinct().Count());
@@ -1223,9 +1201,10 @@ public sealed class ThxAudioHelperCommandTests
         ProductId = "rznb12",
         ModelNumber = "RZ09-0581",
         MutationAllowed = true,
+        DriverStackIdentity = "test-stack",
     };
 
-    private static ThxAudioAdmission CachedAdmitted(string identity) => Admitted() with
+    private static ThxAudioAdmission ProbeAdmitted(string identity) => Admitted() with
     {
         RequiresEndpointProbe = true,
         DriverStackIdentity = identity,
@@ -1275,6 +1254,7 @@ public sealed class ThxAudioHelperCommandTests
         public int RemoveCalls { get; private set; }
         public int DisposeCalls { get; private set; }
         public bool CheckStatusResult { get; set; } = true;
+        public bool ThrowOnPropertyRead { get; set; }
         public List<string> RegisteredDevices { get; } = [];
         public List<string> RemovedDevices { get; } = [];
         public int PresetListCalls { get; private set; }
@@ -1307,22 +1287,29 @@ public sealed class ThxAudioHelperCommandTests
             return true;
         }
 
-        public string GetProperty(string deviceJson, string propertyId) => propertyId switch
+        public string GetProperty(string deviceJson, string propertyId)
         {
-            "spatial_enabled" => Spatial ? "true" : "false",
-            "eq_enabled" => Equalizer ? "true" : "false",
-            "volume_leveling_enabled" => NormalizationEnabled ? "true" : "false",
-            "volume_leveling_level" => Json(NormalizationLevel),
-            "voice_clarity_enabled" => VoiceClarityEnabled ? "true" : "false",
-            "voice_clarity_level" => Json(VoiceClarityLevel),
-            _ when propertyId.StartsWith("eq_band_", StringComparison.Ordinal)
-                && propertyId.EndsWith("_gain_db", StringComparison.Ordinal)
-                && int.TryParse(
-                    propertyId["eq_band_".Length..^"_gain_db".Length],
-                    out int index)
-                && index is >= 1 and <= 10 => Json(Gains[index - 1]),
-            _ => throw new InvalidOperationException(),
-        };
+            if (ThrowOnPropertyRead)
+            {
+                throw new InvalidDataException("Typed read failed.");
+            }
+            return propertyId switch
+            {
+                "spatial_enabled" => Spatial ? "true" : "false",
+                "eq_enabled" => Equalizer ? "true" : "false",
+                "volume_leveling_enabled" => NormalizationEnabled ? "true" : "false",
+                "volume_leveling_level" => Json(NormalizationLevel),
+                "voice_clarity_enabled" => VoiceClarityEnabled ? "true" : "false",
+                "voice_clarity_level" => Json(VoiceClarityLevel),
+                _ when propertyId.StartsWith("eq_band_", StringComparison.Ordinal)
+                    && propertyId.EndsWith("_gain_db", StringComparison.Ordinal)
+                    && int.TryParse(
+                        propertyId["eq_band_".Length..^"_gain_db".Length],
+                        out int index)
+                    && index is >= 1 and <= 10 => Json(Gains[index - 1]),
+                _ => throw new InvalidOperationException(),
+            };
+        }
 
         public bool SetProperty(
             string deviceJson,
@@ -1410,13 +1397,17 @@ public sealed class ThxAudioHelperCommandTests
         string input,
         StringWriter output) => new(
             () => native,
-            new FixedAdmission(new ThxAudioAdmission(ThxAudioAvailability.Available, null) { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true }),
+            new FixedAdmission(Admitted()),
             new StringReader(input),
             output);
 
     private sealed class FixedAdmission(ThxAudioAdmission value) : IThxAudioAdmissionSource
     {
-        public ThxAudioAdmission Check() => value;
+        public ThxAudioAdmission Check() => value with
+        {
+            DriverStackIdentity = value.DriverStackIdentity.Length == 0
+                ? "test-stack" : value.DriverStackIdentity,
+        };
     }
 
     private sealed class CountingAdmission(Action observed) : IThxAudioAdmissionSource
@@ -1424,7 +1415,7 @@ public sealed class ThxAudioHelperCommandTests
         public ThxAudioAdmission Check()
         {
             observed();
-            return new ThxAudioAdmission(ThxAudioAvailability.Available, null) { ProductId = "rznb12", ModelNumber = "RZ09-0581", MutationAllowed = true };
+            return Admitted();
         }
     }
 

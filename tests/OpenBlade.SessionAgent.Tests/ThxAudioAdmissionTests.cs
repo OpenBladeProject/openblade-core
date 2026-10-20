@@ -63,25 +63,20 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     }
 
     [Fact]
-    public void OnlyExactRznb12ProfileAdmitsBothWholeRuntimeBuildsAndTargetsCachedBuild()
+    public void ProvisioningKeepsExactCachedRznb12TransactionTarget()
     {
         ThxAudioCompatibilityProfile sonya12 = ThxAudioCompatibility.Profiles.Single(
             profile => profile.ModelNumber == "RZ09-0581");
-        ThxAudioDriverStack[] runtimeStacks = ThxAudioCompatibility.GetRuntimeStacks(sonya12).ToArray();
 
-        Assert.Equal(2, runtimeStacks.Length);
-        Assert.Same(sonya12.Stack, runtimeStacks[0]);
-        Assert.Same(ThxAudioCompatibility.Rznb12CachedStack, runtimeStacks[1]);
         Assert.Same(ThxAudioCompatibility.Rznb12CachedStack,
             ThxAudioCompatibility.GetProvisioningStack(sonya12));
         Assert.Equal("20349EFE0BAD4ADE84BF57EFC38A7D7B7DF82CCEF3555D17DC1B34142840F6DF",
-            runtimeStacks[1].Packages.SelectMany(package => package.Files)
-                .Single(file => file.Name == runtimeStacks[1].ServiceExecutable).Sha256);
+            ThxAudioCompatibility.Rznb12CachedStack.Packages.SelectMany(package => package.Files)
+                .Single(file => file.Name == ThxAudioCompatibility.Rznb12CachedStack.ServiceExecutable).Sha256);
 
         foreach (ThxAudioCompatibilityProfile profile in ThxAudioCompatibility.Profiles.Where(
             profile => !ReferenceEquals(profile, sonya12)))
         {
-            Assert.Same(profile.Stack, Assert.Single(ThxAudioCompatibility.GetRuntimeStacks(profile)));
             Assert.Same(profile.Stack, ThxAudioCompatibility.GetProvisioningStack(profile));
         }
     }
@@ -97,38 +92,6 @@ public sealed class ThxAudioAdmissionTests : IDisposable
 
         Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, first, out _));
         Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, second, out _));
-    }
-
-    [Fact]
-    public void CompleteStackWithMissingServiceIsRejected()
-    {
-        ThxAudioDriverStack stack = VariantStack("complete build");
-        WriteWholeStack(stack, "complete build");
-        int serviceChecks = 0;
-
-        Assert.False(ThxAudioCompatibility.TryResolveRunningDriverStack(directory, ProfileFor(stack),
-            (_, _) => { serviceChecks++; return false; }, out ThxAudioDriverStack? matched,
-            out string? binary, out string? error));
-        Assert.Equal(1, serviceChecks);
-        Assert.Null(matched);
-        Assert.Null(binary);
-        Assert.Equal(WindowsThxAudioAdmissionSource.GetServiceFailure(stack), error);
-    }
-
-    [Fact]
-    public void CompleteStackWithMismatchedServiceBinaryIsRejected()
-    {
-        ThxAudioDriverStack stack = VariantStack("complete build");
-        WriteWholeStack(stack, "complete build");
-        string observedBinary = Path.Combine(directory, "unreviewed", stack.ServiceExecutable);
-
-        Assert.False(ThxAudioCompatibility.TryResolveRunningDriverStack(directory, ProfileFor(stack),
-            (_, expectedBinary) => string.Equals(observedBinary, expectedBinary,
-                StringComparison.OrdinalIgnoreCase), out ThxAudioDriverStack? matched,
-            out string? binary, out string? error));
-        Assert.Null(matched);
-        Assert.Null(binary);
-        Assert.Equal(WindowsThxAudioAdmissionSource.GetServiceFailure(stack), error);
     }
 
     [Theory]
@@ -246,7 +209,7 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     [Theory]
     [InlineData("thx_rznb11_props.dat")]
     [InlineData("surround_714_config.json")]
-    public void MissingOrChangedActiveDefinitionBlocksAdmission(string fileName)
+    public void MissingOrChangedActiveDefinitionBlocksProvisioningCheckpoint(string fileName)
     {
         ThxAudioCompatibilityProfile profile = WriteActiveConfiguration("RZ09-0528");
         string file = Path.Combine(directory, "thx", "rznb11", fileName);
@@ -323,18 +286,6 @@ public sealed class ThxAudioAdmissionTests : IDisposable
             new("reviewed_svc.inf",
                 [File("reviewed_svc.inf"), File("reviewed_svc.exe"), File("reviewed_svc.cat")]),
         ]);
-    }
-
-    private static ThxAudioCompatibilityProfile ProfileFor(ThxAudioDriverStack stack) =>
-        new("RZ09-TEST", "Reviewed test host", "FFFF", "reviewed", ["REVIEWED\\CODEC"],
-            stack, true, true);
-
-    private void WriteWholeStack(ThxAudioDriverStack stack, string contents)
-    {
-        foreach (ThxAudioDriverPackage package in stack.Packages)
-        {
-            WritePackage(package.InfName + "_amd64_complete", package, contents);
-        }
     }
 
     private string WritePackage(string name, ThxAudioDriverPackage package, string contents = "fixture")

@@ -47,16 +47,13 @@ public sealed class RazerDisplayBrightnessHidTransportTests
     [Theory]
     [InlineData(
         "02E0",
-        "RzDev_02e0",
-        "BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787")]
+        "RzDev_02e0")]
     [InlineData(
         "02C6",
-        "RzDev_02c6",
-        "307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82")]
+        "RzDev_02c6")]
     public void ModelStacks_BindEveryIdentityToOneExactProduct(
         string productId,
-        string serviceName,
-        string driverSha256)
+        string serviceName)
     {
         RazerDisplayBrightnessDriverStack stack = Assert.Single(
             WindowsRazerDisplayBrightnessHidTransport.AdmittedStacks,
@@ -70,7 +67,6 @@ public sealed class RazerDisplayBrightnessHidTransportTests
         Assert.Equal($@"USB\VID_1532&PID_{productId}&MI_01\", stack.VirtualConsumerAncestorPrefix);
         Assert.Equal(serviceName, stack.VirtualConsumerServiceName);
         Assert.Equal(serviceName + ".sys", stack.DeviceDriverFileName);
-        Assert.Equal(driverSha256, stack.DeviceDriverSha256);
     }
 
     [Fact]

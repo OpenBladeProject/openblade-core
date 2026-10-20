@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
@@ -20,7 +19,6 @@ internal sealed record LegacyThxAudioNativeState(
 // Private helper only. Construction activates COM; ordinary discovery must never construct this.
 internal sealed class LegacyThxAudioNativeAdapter : ILegacyThxAudioNativeAdapter
 {
-    internal const string ServerSha256 = "DC709A34D2CB043505B200316B4CA1A51B9AE1FC917B55DD804D5F30841C868F";
     internal const string SettingsClass = "{087E4DB6-0519-4A63-9099-9201915E1371}";
     internal const string ThxClass = "{2CCFC059-A1C5-4408-BCE5-0B23690DA7A2}";
     internal const string SettingsInterface = "{392375FF-8204-4A26-B4C5-AF4B71ACA729}";
@@ -48,10 +46,6 @@ internal sealed class LegacyThxAudioNativeAdapter : ILegacyThxAudioNativeAdapter
         {
             string path = Path.Combine(Environment.SystemDirectory, "VSSrv.exe");
             serverPin = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (!Convert.ToHexString(SHA256.HashData(serverPin)).Equals(ServerSha256, StringComparison.Ordinal))
-            {
-                throw new InvalidDataException("The legacy THX service is not the pinned 2.6.5.0 build.");
-            }
             CheckRegistration(path);
             ThrowOnFailure(CoInitializeEx(0, 0));
             comInitialized = true;
