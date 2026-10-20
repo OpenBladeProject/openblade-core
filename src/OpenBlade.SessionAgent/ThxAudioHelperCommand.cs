@@ -9,7 +9,9 @@ internal sealed class ThxAudioHelperCommand(
     IThxAudioAdmissionSource admission,
     TextReader input,
     TextWriter output,
-    Func<string, ThxAudioEndpoint, bool?>? readSystemEffectsDisabled = null)
+    Func<string, ThxAudioEndpoint, bool?>? readSystemEffectsDisabled = null,
+    Func<ILegacyThxAudioNativeAdapter>? createLegacyNative = null,
+    Func<ThxAudioCompatibilityProfile, ThxAudioEndpoint, string?>? readLegacyOutput = null)
 {
     private const string PresetGroupId = "profile_presets";
     private const string SpatialPropertyId = "spatial_enabled";
@@ -22,6 +24,9 @@ internal sealed class ThxAudioHelperCommand(
 
     private static readonly int[] NativeEqualizerFrequenciesHz =
         [31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+    private static readonly ThxAudioEndpoint[] RequiredEndpointProbeOrder =
+        [ThxAudioEndpoint.Speakers, ThxAudioEndpoint.Headphones];
 
     private static readonly IReadOnlyDictionary<string, string> LogicalToNativePreset =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -101,8 +106,11 @@ internal sealed class ThxAudioHelperCommand(
     };
 
     private IThxAudioNativeAdapter? native;
-    private (string? ProductId, string? ModelNumber)? registeredIdentity;
+    private LegacyThxAudioCommand? legacy;
+    private (string? ProductId, string? ModelNumber, bool RequiresEndpointProbe, string DriverStackIdentity)?
+        registeredIdentity;
     private readonly Dictionary<ThxAudioEndpoint, string> registeredDevices = [];
+    private string? probedStackIdentity;
 
     internal async Task<int> RunAsync(CancellationToken cancellationToken)
     {
@@ -183,6 +191,21 @@ internal sealed class ThxAudioHelperCommand(
                 current.Error ?? "THX audio is unavailable.");
         }
 
+        ThxAudioCompatibilityProfile profile = ThxAudioCompatibility.Profiles.Single(value =>
+            value.ProductId == current.ProductId && value.ModelNumber == current.ModelNumber);
+        if (profile.Backend == ThxAudioNativeBackend.Legacy265)
+        {
+            // The legacy COM service has a different endpoint and setting contract.
+            // It must never load/register a device through the V4 JSON client.
+            legacy ??= new LegacyThxAudioCommand(
+                createLegacyNative ?? (static () => new LegacyThxAudioNativeAdapter()),
+                admission, readLegacyOutput ?? WindowsThxActiveOutput.ReadExactDefaultOutputId);
+            // A pre-buffered first pipe read can complete synchronously on
+            // Program.Main's STA thread. ConfigureAwait(false) alone does not
+            // guarantee MTA; construct/use/release COM together on a pool thread.
+            return Task.Run(() => legacy.Execute(request, current, profile)).GetAwaiter().GetResult();
+        }
+
         if ((current.ProductId, current.ModelNumber) is not
             (("rznb12", "RZ09-0581") or ("rznb11", "RZ09-0528") or ("rznb11", "RZ09-0530")))
         {
@@ -192,6 +215,12 @@ internal sealed class ThxAudioHelperCommand(
         {
             return Unavailable(ThxAudioAvailability.AvailableReadOnly, "This THX stack requires model-specific write validation.");
         }
+        if (string.IsNullOrEmpty(current.DriverStackIdentity))
+        {
+            return Unavailable(
+                ThxAudioAvailability.ComponentsUnavailable,
+                "The THX driver stack identity is unavailable.");
+        }
         if (request is ThxHelperSelectPresetRequest preset
             && preset.GainsDb.Count != (preset.Endpoint == ThxAudioEndpoint.Speakers
                 && current.ModelNumber == "RZ09-0581" ? 7 : 10))
@@ -200,38 +229,101 @@ internal sealed class ThxAudioHelperCommand(
         }
 
         if (registeredIdentity is { } identity
-            && identity != (current.ProductId, current.ModelNumber))
+            && identity != (
+                current.ProductId,
+                current.ModelNumber,
+                current.RequiresEndpointProbe,
+                current.DriverStackIdentity))
         {
+            probedStackIdentity = null;
             return Unavailable(
                 ThxAudioAvailability.ComponentsUnavailable,
-                "The THX device identity changed. Connect again before controlling audio.");
+                "The THX device or driver stack identity changed. Connect again before controlling audio.");
+        }
+        if (request is not ThxHelperReadRequest
+            && current.RequiresEndpointProbe
+            && !string.Equals(probedStackIdentity, current.DriverStackIdentity, StringComparison.Ordinal))
+        {
+            return Unavailable(
+                ThxAudioAvailability.AvailableReadOnly,
+                "Read both THX endpoints before controlling this driver stack.");
         }
 
         native ??= createNative();
+        bool mayHaveSubmitted = false;
         try
         {
-            if (!registeredDevices.TryGetValue(request.Endpoint, out string? device))
+            if (request is ThxHelperReadRequest
+                && current.RequiresEndpointProbe
+                && !string.Equals(probedStackIdentity, current.DriverStackIdentity, StringComparison.Ordinal))
             {
-                device = JsonSerializer.Serialize(
-                    new
-                    {
-                        productId = current.ProductId,
-                        endpointId = request.Endpoint == ThxAudioEndpoint.Speakers
-                            ? "speakers"
-                            : "headphones",
-                    });
-                if (!native.AddDevice(device))
+                ThxAudioState? requestedState = null;
+                foreach (ThxAudioEndpoint endpoint in RequiredEndpointProbeOrder)
                 {
-                    return Failed("The THX device could not be registered.");
+                    string? probeDevice = GetOrRegisterDevice(current, endpoint);
+                    if (probeDevice is null)
+                    {
+                        return Failed("The THX device could not be registered.");
+                    }
+                    if (!native.CheckStatus(probeDevice))
+                    {
+                        return Failed("The THX service is not ready.");
+                    }
+
+                    ThxAudioState probeState = ReadState(native, probeDevice, endpoint,
+                        current.ModelNumber, current.MutationAllowed);
+                    if (endpoint == request.Endpoint)
+                    {
+                        requestedState = probeState;
+                    }
                 }
-                // The pinned vendor client retains an IPC object per endpoint.
-                // Register each of the two typed endpoints once, not per setting.
-                registeredDevices.Add(request.Endpoint, device);
-                registeredIdentity = (current.ProductId, current.ModelNumber);
+
+                probedStackIdentity = current.DriverStackIdentity;
+                requestedState = (requestedState
+                    ?? throw new InvalidDataException("The requested THX endpoint was not probed.")) with
+                {
+                    SystemEffectsDisabled = ReadSystemEffectsDisabled(
+                        current.ProductId!, request.Endpoint),
+                };
+                return new ThxAudioHelperResponse(
+                    ThxAudioHelperProtocol.Version,
+                    ThxAudioOperationStatus.Succeeded,
+                    current.MutationAllowed
+                        ? ThxAudioAvailability.Available
+                        : ThxAudioAvailability.AvailableReadOnly,
+                    null,
+                    requestedState);
+            }
+
+            string? device = GetOrRegisterDevice(current, request.Endpoint);
+            if (device is null)
+            {
+                return Failed("The THX device could not be registered.");
             }
             if (!native.CheckStatus(device))
             {
                 return Failed("The THX service is not ready.");
+            }
+
+            if (request is not ThxHelperReadRequest)
+            {
+                // Registration and service status are not write admission. Recheck the
+                // exact host, controller state, bound package identity, and selected
+                // typed endpoint immediately before the first possible mutation.
+                ThxAudioAdmission fresh = admission.Check();
+                if (!fresh.IsAvailable || !fresh.MutationAllowed
+                    || fresh.ProductId != current.ProductId
+                    || fresh.ModelNumber != current.ModelNumber
+                    || !string.Equals(fresh.DriverStackIdentity, current.DriverStackIdentity,
+                        StringComparison.Ordinal))
+                {
+                    return Unavailable(
+                        fresh.Availability,
+                        fresh.Error ?? "THX write admission changed.");
+                }
+
+                _ = ReadState(native, device, request.Endpoint, current.ModelNumber, current.MutationAllowed);
+                mayHaveSubmitted = true;
             }
 
             bool mutationAccepted = request switch
@@ -286,11 +378,44 @@ internal sealed class ThxAudioHelperCommand(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return request is ThxHelperReadRequest
+            return request is ThxHelperReadRequest || !mayHaveSubmitted
                 ? Failed($"THX state could not be read: {exception.GetType().Name}.")
                 : Indeterminate(
                     $"THX mutation readback failed: {exception.GetType().Name}.");
         }
+    }
+
+    private string? GetOrRegisterDevice(
+        ThxAudioAdmission current,
+        ThxAudioEndpoint endpoint)
+    {
+        if (registeredDevices.TryGetValue(endpoint, out string? device))
+        {
+            return device;
+        }
+
+        device = JsonSerializer.Serialize(
+            new
+            {
+                productId = current.ProductId,
+                endpointId = endpoint == ThxAudioEndpoint.Speakers
+                    ? "speakers"
+                    : "headphones",
+            });
+        if (!native!.AddDevice(device))
+        {
+            return null;
+        }
+
+        // The pinned vendor client retains an IPC object per endpoint.
+        // Register each of the two typed endpoints once, not per setting.
+        registeredDevices.Add(endpoint, device);
+        registeredIdentity = (
+            current.ProductId,
+            current.ModelNumber,
+            current.RequiresEndpointProbe,
+            current.DriverStackIdentity);
+        return device;
     }
 
     private bool? ReadSystemEffectsDisabled(string productId, ThxAudioEndpoint endpoint)

@@ -8,24 +8,63 @@ Synapse closed have been validated on RZ09-0581. The user also confirmed an
 audible spatial change on its built-in speakers after enabling Windows audio
 enhancements. Other outputs and rznb11 audible processing remain unvalidated.
 
-OpenBlade checks the exact laptop, present audio hardware IDs from the signed
-installer INF, and a complete pinned THX stack before connecting. RZ09-0581
-uses rznb12 4.2.41.2499; RZ09-0528 and RZ09-0530 use the reviewed rznb11
-4.2.29.1159 driver stack with the official 4.2.37.1845 active configuration.
-The immutable properties archive and surround configuration are pinned too;
-mutable user settings remain editable. Other payloads are not yet admitted.
+OpenBlade checks the exact laptop, audio hardware, actual installed THX
+package/service bindings, Windows catalog trust and the typed API contract before
+connecting. RZ09-0581 uses the rznb12 family; RZ09-0528 and RZ09-0530 use rznb11.
+Compatible installed driver updates do not require new hashes or an OpenBlade
+release. The versions and configuration hashes cataloged below identify source
+evidence and exact installation recipes, rather than a runtime build allowlist.
 The two rznb11 models have vendor-backed controls and their own speaker EQ
 curves, but have not been physically tested in OpenBlade.
 
-OpenBlade can download the supported THX client from Razer. The matching audio
-driver, service and configuration must already be installed. Other Blade models are
-not yet supported. See the
+OpenBlade can download the supported THX client from Razer. On RZ09-0581,
+RZ09-0528 and RZ09-0530, it can also perform an experimental fresh installation
+of the matching THX driver, service and configuration without Synapse installed.
+Setup verifies the base audio bindings and can install the reviewed Realtek
+package on RZ09-0528/RZ09-0530 or Intel SST on RZ09-0581 from Microsoft Update.
+Windows inbox SDCA remains an OS prerequisite on RZ09-0581. RZ09-0581 setup
+uses the original signed 4.2.37.1621 installer recovered from the Windows cache
+and separately hosted by the driver catalog with owner-confirmed redistribution
+permission. Existing admitted stacks are retained. Pristine installation and
+runtime control on this cached build still need physical validation. See the
 [installation compatibility investigation](thx-installation-investigation.md)
 for the package and codec restrictions.
 
+## Coverage of supported laptops
+
+| Model | Installed THX controls | Fresh THX setup |
+| --- | --- | --- |
+| RZ09-0581 | rznb12 spatial audio, EQ and application profiles | Experimental cached 4.2.37.1621 setup with reviewed Intel SST prerequisites; Windows SDCA required |
+| RZ09-0528, RZ09-0530 | rznb11 spatial audio, EQ and application profiles | Experimental, including the reviewed Realtek base driver when needed |
+| RZ09-0482, RZ09-0483, RZ09-0484 | Experimental spatial toggle through the installed legacy THX COM service | Endpoint binding and installation sequence remain unverified |
+| RZ09-0328 | Factory audio uses Dolby Atmos; THX does not apply | Not applicable |
+
+On the three 2023 models, select the output currently used by Windows. OpenBlade
+checks the service's output identifier, Windows default output, speaker/headphone
+form factor and exact Realtek codec ancestry before control. It does not switch
+the output or listening mode. EQ, presets and automatic audio profiles remain
+unavailable for this older THX version. Its native behavior has not been physically
+validated in OpenBlade. The Store control app and Synapse are not needed for this
+backend; trusted, correctly bound factory audio components must already be installed.
+
+Razer documents the older driver and Store control app in
+[its THX setup guide](https://mysupport.razer.com/app/answers/detail/a_id/5798/).
+The exact Realtek packages contain model-specific OEM codec tuning. The public
+THX 2.6.5 SCU contains the model-specific PI490, SO690 and KI890 acoustic
+profiles and selects them from the Realtek subsystem ID. A recovered signed
+THX extension supplies the exact-model component-association rules. The matching
+endpoint-effects binding and installation sequence remain unverified, so fresh
+installation is blocked.
+The [legacy catalog evidence](https://github.com/OpenBladeProject/blade-driver-catalog/blob/18917d99b064aafd3eb8b7cbee308e099c455948/components/thx-legacy/2.6.5.0/stack.json)
+records verified packages and the remaining installation blockers. For recovery,
+use the exact laptop's Windows driver updates or
+[Razer recovery image](https://mysupport.razer.com/app/answers/detail/a_id/5997/).
+See the [legacy interface review](thx-legacy-interface.md) for the reviewed native
+contract and COM activation boundary.
+
 ## Use the controls
 
-1. Close Synapse, then select **THX Audio** in the left menu in OpenBlade.
+1. Select **THX Audio** in the left menu in OpenBlade. If Synapse is installed, close it first.
 2. Enable **Use installed THX audio**. OpenBlade checks the installed stack and
    reads the selected output automatically.
 3. Select **Speakers** or **Headphones** to read that output.
@@ -40,7 +79,7 @@ for the package and codec restrictions.
    finishes or a short pause in keyboard changes. Each row shows its level.
 
 RZ09-0581 speakers have seven EQ bands. The rznb11 models and all headphone
-outputs have ten. All bands support -12 to +12 dB.
+outputs on the three V4 models have ten. All bands support -12 to +12 dB.
 Editing Music keeps Music selected; Custom is also available as its own preset.
 An observed Default or application preset must be changed to one of the five
 EQ choices before editing. Preset selection applies the complete saved curve.
@@ -75,7 +114,7 @@ automation with the Session Agent. Unresolved foreground identity preserves
 the current state. Hosted applications whose executable cannot be identified
 are not yet supported for automatic switching.
 
-Application routing is available on all three admitted models. The rznb11
+Application routing is available on the three V4 models. The rznb11
 models use the same reviewed executable map and routing operations; their
 physical automation behavior remains unvalidated.
 
@@ -93,8 +132,10 @@ Read settings appears only after a failed operation, when an explicit read is
 needed for recovery. Loading replaces the status message in the same area.
 Automatic connections never clear an uncertain-write pause. If a change cannot
 be confirmed, use **Read settings** before trying another change. OpenBlade does not repeat an uncertain command. If the supported
-components are unavailable, the audio controls remain disabled. Uninstalling
-Synapse may remove required components; their retention has not been tested.
+components are unavailable, the audio controls remain disabled. The explicit
+setup action can provision the supported modern stacks with Synapse absent.
+Uninstalling Synapse from an existing installation may remove shared components;
+that retention path has not been tested.
 
 ## Report a detection problem
 
@@ -118,16 +159,69 @@ opened. If the Session Agent cannot be reached, the entry records that query
 failure instead. Exporting checks installed components without loading the THX
 native client or changing audio settings.
 
+## Install missing THX audio components
+
+On RZ09-0581, RZ09-0528 or RZ09-0530, select **Install THX audio** after a
+component check fails. OpenBlade verifies the client download, then asks for
+administrator permission to install the matching audio prerequisites, THX driver
+and configuration. It obtains base drivers from Microsoft Update and THX packages
+from Razer or the authorized catalog asset. Setup may interrupt playback and
+require a Windows restart. Synapse does not need to be installed.
+
+This path requires an exact supported audio controller and a fresh THX state.
+A recognized working base driver is retained. An unrecognized installed base
+build is preserved and blocks setup; export diagnostics for help. RZ09-0581 also
+requires trusted Windows inbox SDCA audio components. OpenBlade checks these OS
+components instead of copying or replacing them.
+
+Connect AC power and close Synapse and THX Spatial Audio first. OpenBlade refuses to replace or repair an existing,
+partial or mismatched THX stack. The pristine-state requirement prevents the
+vendor installer and configuration updaters from overwriting existing THX user
+settings. It is an installation safeguard, not a prerequisite for ordinary THX
+controls.
+
+After setup, select **Read settings** to connect. If setup requests a restart,
+restart Windows, then select **Install THX audio** to finish only the remaining
+steps. OpenBlade requires a recorded successful restart request, a new Windows
+boot identity and fresh stack verification before continuing; it never repeats
+the submitted step. If its result cannot be confirmed, stop and export
+diagnostics; OpenBlade keeps a durable installation record and does not replay
+an uncertain operation. It does not restart Windows automatically or remove
+packages as an automatic rollback.
+
+The helper accepts one fixed operation from the installed Session Agent. It
+checks the exact host in both registry sources, USB and controller identity,
+current session, AC power and competing controllers. It checks every device that
+the complete root INF could match, so another matching controller cannot become
+an incidental installation target. Downloads have pinned sizes and SHA-256;
+driver files additionally require Windows catalog trust and membership, while
+THX executables require the pinned Authenticode signer. Files remain locked in
+protected staging through verification and process execution. Each process has a
+flushed transaction intent. Base setup uses one named root INF and its declared
+CopyINF closure, followed by independent actual binding and codec ancestry checks.
+Success also requires the THX package and configuration hashes and running
+service's exact path; an installer exit code alone is insufficient.
+
+The rznb11 carrier manifest records `/s /norestart`; OpenBlade instead extracts
+its independently pinned inner Burn bundle and runs only `/quiet /norestart`. The
+properties and surround configuration updaters take no arguments, deploy fixed
+outputs and restart their THX service; their ignored service-command results are
+checked independently. This source-backed sequence has simulated failure tests
+but has not been installed on RZ09-0528 or RZ09-0530 during development. It remains
+experimental. No rznb11 package may be substituted for rznb12.
+
 ## Component and process boundaries
 
-Admission pairs each exact model with its own product ID, signed-INF audio
-hardware IDs, service, and complete component hashes. It requires matching
-host names in both registry sources and the model's present USB identity.
-DriverStore directory suffixes are discovered; complete package hashes and
-the running service path must match without mixing directories or versions.
-Admission also checks the immutable properties archive and surround config in
-`ProgramData\thx\{productId}`. It does not hash mutable property values or
-preset selections, so normal user changes do not invalidate admission.
+Admission pairs each exact model with its product ID, audio hardware IDs,
+installed package, running service and API family. It requires matching host
+names in both registry sources and the model's present USB identity. The actual
+bound DriverStore packages and service image must pass Windows catalog trust
+and membership checks; a matching filename alone is insufficient. Observed installed
+package content and the service path identify the current runtime so updates
+invalidate cached registrations and reads. They are not compared with a
+release-maintained hash list. ProgramData configuration is unsigned API-managed
+data; typed responses establish whether the exposed settings can be read and
+controlled. Configuration and preset changes do not require new OpenBlade releases.
 For native reads and changes, the isolated helper performs full fresh admission;
 the dispatcher does not repeat those same scans. Discovery still performs full
 admission without loading native code. The DLL hash is checked again with the
@@ -136,8 +230,15 @@ and loading. Full native readback and pause-on-uncertainty remain unchanged.
 
 All three admitted models use the pinned `ThxV4Native_v1.1.1.0.dll`. The rznb11 middleware
 ABI and typed property operations match the reviewed rznb12 implementation;
-factory speaker curves remain model-specific. A new component build needs
-its own source review and admission.
+factory speaker curves remain model-specific. A driver update may use the same
+API without a new source review for its binary hash. A changed API/ABI contract
+still requires review. Every mutation requires fresh admission and a successful
+typed read immediately before the setter, followed by explicit readback.
+For every modern V4 runtime identity, the first read covers both outputs,
+including every exposed property and preset list. This retains the recovered
+rznb12 pairing check without selecting builds by version or hash. Static contract
+comparison supports this experimental
+pairing; it does not prove native success or audible processing on that build.
 
 The explicit download uses the reviewed
 [Razer native client URL](https://app-assets.razer.com/files/synapse/devices/common/THX/ThxV4Native_v1.1.1.0.dll)
@@ -148,7 +249,7 @@ and Razer USA Ltd. signing certificate
 trust verification. The
 [catalog entry](https://github.com/OpenBladeProject/blade-driver-catalog/blob/89c12ae4d805a8102776f75b8e27d46084a137b9/components/thx-v4-native/1.1.1.0/component.json)
 records the same evidence as metadata; neither
-repository redistributes the DLL. Runtime pins are local and do not depend on
+repository redistributes the DLL. The native-client artifact pins are local and do not depend on
 the catalog being available.
 
 The catalog's applicability ledger reviews every supported OpenBlade model for
@@ -161,7 +262,7 @@ retain their exact device IDs even where common dependency files are identical.
 
 Adding a supported model requires reviewing all catalog entries and refreshing
 the offline fixtures under `tests/OpenBlade.Tray.Tests/Fixtures`. Tests compare
-the complete supported model list with that review and the runtime THX pins with
+the complete supported model list with that review and the exact THX installation recipes with
 the catalog descriptor. Catalog tests separately reject missing artifact reviews
 and mismatched applicability lists.
 
@@ -171,10 +272,10 @@ copy there and retains the verified Synapse-installed path as a fallback. Both
 paths use the same exact-model stack admission and locked hash check before
 loading. Discovery and startup do not initiate downloads. This change requires
 a coordinated full installation because the Session Agent's resolver changes;
-the Audio IPC contract remains unchanged.
+audio IPC is now version 2; update the Tray and Session Agent together.
 
 The tray stores an additive per-user opt-in preference. It uses a separate
-current-user/session Audio IPC endpoint, version 1. Saved audio uses profile
+current-user/session Audio IPC endpoint, version 2. Saved audio uses profile
 store schema 21, export schema 13, and service IPC version 68. Existing Display
 and GPU IPC versions are unchanged. Each power profile limits its application-rule
 list to 4 KiB of encoded JSON so all three profiles and maximum lighting settings
@@ -194,13 +295,14 @@ The native DLL stays mapped until the helper exits because its async
 callbacks can outlive client unregistration. Windows provides this lifetime
 through [module pinning](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandleexw).
 The client talks to the separately installed THX properties service, while
-the Windows Audio APO performs audio processing. The helper does not open
+the Windows Audio APO performs audio processing. The audio-control helper does not open
 the laptop control HID handle, launch Synapse, install drivers, or elevate.
+The explicitly launched setup helper above is a separate fixed operation.
 OpenBlade's existing hardware ownership and competing-controller checks are
 unchanged.
 
-Discovery checks exact host identity, present USB identity, and the pinned
-installed components without loading the native DLL. Each operation repeats
+Discovery checks exact host identity, present USB identity, installed package
+bindings and catalog trust without loading the native DLL. Each operation repeats
 admission. Successful setting changes require matching readback. A timeout,
 crash, or ambiguous mutation pauses further changes until the helper has exited
 and an explicit read reconciles the state. A failed request retires the helper
@@ -435,3 +537,8 @@ These gaps keep the integration experimental and prevent a production-ready
 claim; they do not block an experimental release with the limits stated here.
 Any UI preview must use a disconnected, simulated backend and must not connect
 to the installed Session Agent's THX endpoint.
+
+The legacy backend uses audio IPC v2 to mark EQ as observed-only rather than
+reporting a guessed switch value. A coordinated full installation is required;
+tray-only deployment cannot update this contract. Catalog and runtime tests
+require an explicit THX or non-THX review whenever a supported model is added.

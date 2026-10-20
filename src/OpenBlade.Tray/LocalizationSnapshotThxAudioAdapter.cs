@@ -4,7 +4,7 @@ using OpenBlade.Session;
 namespace OpenBlade.Tray;
 
 /// <summary>Disconnected UI data; never contacts a pipe or native component.</summary>
-internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = false, bool systemEffectsDisabled = false, string? detectionError = null) : IThxAudioAdapter
+internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = false, bool systemEffectsDisabled = false, string? detectionError = null, bool usesLegacy = false) : IThxAudioAdapter
 {
     public Task<SessionAudioResponse> DiscoverAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Response(null));
@@ -12,8 +12,17 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
     public Task<SessionAudioResponse> ConnectAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken) =>
         ReadAsync(endpoint, cancellationToken);
 
-    public Task<SessionAudioResponse> ReadAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken) =>
-        Task.FromResult(Response(new ThxAudioState(endpoint, true, true, "music",
+    public Task<SessionAudioResponse> ReadAsync(ThxAudioEndpoint endpoint, CancellationToken cancellationToken)
+    {
+        if (usesLegacy)
+        {
+            return Task.FromResult(Response(new ThxAudioState(endpoint, true, false, null, [])
+            {
+                Equalizer = ThxAudioFeatureAccess.ObservedOnly,
+                ApplicationProfiles = ThxAudioFeatureAccess.Unavailable,
+            }));
+        }
+        return Task.FromResult(Response(new ThxAudioState(endpoint, true, true, "music",
             [new("game", "Game"), new("movie", "Movie"), new("music", "Music"), new("voice", "Voice"), new("custom", "Custom")])
         {
             SystemEffectsDisabled = systemEffectsDisabled ? true : null,
@@ -28,6 +37,7 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
             FactoryPresetCurves = new[] { "game", "movie", "music", "voice", "custom" }
                 .Select(id => new ThxAudioPresetCurve(id, new double[endpoint == ThxAudioEndpoint.Speakers && !usesRznb11 ? 7 : 10])).ToArray(),
         }));
+    }
 
     public Task<SessionAudioResponse> SetSpatialAsync(ThxAudioEndpoint endpoint, bool enabled, CancellationToken cancellationToken) =>
         throw new InvalidOperationException("Audio mutations are disabled in the disconnected preview.");
@@ -44,7 +54,7 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
     private SessionAudioResponse Response(ThxAudioState? state) =>
         detectionError is not null
         ? new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
-            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, detectionError, null)
+            ThxAudioOperationStatus.Unavailable, usesLegacy ? ThxAudioAvailability.LegacyComponentsUnavailable : ThxAudioAvailability.ComponentsUnavailable, detectionError, null)
         : new(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
             ThxAudioAvailability.Available, null, state);
 }

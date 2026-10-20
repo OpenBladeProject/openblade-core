@@ -1,3 +1,5 @@
+using OpenBlade.Platform;
+
 namespace OpenBlade.SessionAgent.Tests;
 
 public sealed class RazerSnapTapDriverAdmissionTests
@@ -37,12 +39,12 @@ public sealed class RazerSnapTapDriverAdmissionTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void BothPinnedDriverHashesAreRequired(bool commonDriver)
+    public void BothInstalledPackagesMustBeTrusted(bool commonDriver)
     {
         RazerSnapTapDriverSnapshot snapshot = ExactSnapshot();
         snapshot = commonDriver
-            ? snapshot with { RzCommonSha256 = new string('0', 64) }
-            : snapshot with { RzDeviceSha256 = new string('0', 64) };
+            ? snapshot with { CommonDriver = RazerDriverApiPackageEvidence.Rejected }
+            : snapshot with { DeviceDriver = RazerDriverApiPackageEvidence.Rejected };
 
         Assert.False(RazerSnapTapDriverAdmission.TryAdmit(snapshot, out _));
     }
@@ -58,8 +60,8 @@ public sealed class RazerSnapTapDriverAdmissionTests
         RazerSnapTapDriverSnapshot exact = ExactSnapshot();
         RazerSnapTapDriverSnapshot snapshot = exact with
         {
-            RzCommonSha256 = commonMissing ? null : exact.RzCommonSha256,
-            RzDeviceSha256 = deviceMissing ? null : exact.RzDeviceSha256,
+            CommonDriver = commonMissing ? RazerDriverApiPackageEvidence.Missing : exact.CommonDriver,
+            DeviceDriver = deviceMissing ? RazerDriverApiPackageEvidence.Missing : exact.DeviceDriver,
             KeyboardDevices = [exact.KeyboardDevices[0] with { UpperFilters = [] }],
         };
         var admission = new RazerSnapTapDriverAdmission(() => snapshot);
@@ -72,13 +74,13 @@ public sealed class RazerSnapTapDriverAdmissionTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void WrongRemainingDriverHashDoesNotReportDriverMissing(bool commonMissing)
+    public void UntrustedRemainingDriverDoesNotReportDriverMissing(bool commonMissing)
     {
         RazerSnapTapDriverSnapshot exact = ExactSnapshot();
         RazerSnapTapDriverSnapshot snapshot = exact with
         {
-            RzCommonSha256 = commonMissing ? null : new string('0', 64),
-            RzDeviceSha256 = commonMissing ? new string('0', 64) : null,
+            CommonDriver = commonMissing ? RazerDriverApiPackageEvidence.Missing : RazerDriverApiPackageEvidence.Rejected,
+            DeviceDriver = commonMissing ? RazerDriverApiPackageEvidence.Rejected : RazerDriverApiPackageEvidence.Missing,
         };
         var admission = new RazerSnapTapDriverAdmission(() => snapshot);
 
@@ -92,8 +94,8 @@ public sealed class RazerSnapTapDriverAdmissionTests
         RazerSnapTapDriverSnapshot exact = ExactSnapshot();
         RazerSnapTapDriverSnapshot missing = exact with
         {
-            RzCommonSha256 = null,
-            RzDeviceSha256 = null,
+            CommonDriver = RazerDriverApiPackageEvidence.Missing,
+            DeviceDriver = RazerDriverApiPackageEvidence.Missing,
             KeyboardDevices = [exact.KeyboardDevices[0] with { UpperFilters = [] }],
         };
         RazerSnapTapKeyboardDevice keyboard = missing.KeyboardDevices[0];
@@ -202,7 +204,8 @@ public sealed class RazerSnapTapDriverAdmissionTests
         Assert.True(admission.TryGetEndpoint(out RazerSnapTapDriverEndpoint endpoint));
 
         Assert.True(admission.IsCurrent(endpoint));
-        current = current with { RzDeviceSha256 = new string('0', 64) };
+        current = current with { DeviceDriver = new(true, true, "updated-trusted-build") };
+        Assert.True(admission.TryGetEndpoint(out _));
         Assert.False(admission.IsCurrent(endpoint));
     }
 
@@ -240,12 +243,47 @@ public sealed class RazerSnapTapDriverAdmissionTests
             Assert.EndsWith(model.ModelNumber, profile.ProductName, StringComparison.Ordinal);
             Assert.Equal(model.ModelNumber == "RZ09-0581", profile.PhysicallyValidated);
             Assert.Equal(model.ModelNumber == "RZ09-0581", profile.AutomaticInstallationAvailable);
-            Assert.Equal(64, profile.DeviceSha256.Length);
+            Assert.Equal($@"HID\VID_1532&PID_{model.UsbProductId}&MI_01&COL01", profile.KeyboardHardwareId);
         }
     }
 
     public static IEnumerable<object[]> ReviewedProfiles() =>
         RazerSnapTapDriverProfiles.All.Select(profile => new object[] { profile.ProductId });
+
+    [Theory]
+    [MemberData(nameof(ReviewedProfiles))]
+    public void EveryModelAcceptsTrustedUpdatesButInvalidatesThePreviousSession(string productId)
+    {
+        RazerSnapTapDriverSnapshot current = ModelSnapshot(productId);
+        var admission = new RazerSnapTapDriverAdmission(() => current);
+        Assert.True(admission.TryGetEndpoint(out var endpoint));
+        current = current with
+        {
+            CommonDriver = new(true, true, "updated-trusted-common"),
+            DeviceDriver = new(true, true, $"updated-trusted-{productId}"),
+        };
+
+        Assert.True(admission.TryGetEndpoint(out var updated));
+        Assert.Equal(productId, updated.Profile.ProductId);
+        Assert.False(admission.IsCurrent(endpoint));
+        Assert.True(admission.IsCurrent(updated));
+    }
+
+    [Theory]
+    [MemberData(nameof(ReviewedProfiles))]
+    public void UntrustedPackageNeverBecomesMissingDriverInstallationAdvice(string productId)
+    {
+        RazerSnapTapDriverSnapshot current = ModelSnapshot(productId) with
+        {
+            DeviceDriver = RazerDriverApiPackageEvidence.Rejected,
+        };
+        var admission = new RazerSnapTapDriverAdmission(() => current);
+
+        Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure));
+        Assert.Equal(RazerSnapTapAdmissionFailure.DriverPackageUntrusted, failure);
+        Assert.False(admission.TryGetEndpoint(out _, out bool driverMissing));
+        Assert.False(driverMissing);
+    }
 
     [Theory]
     [MemberData(nameof(ReviewedProfiles))]
@@ -259,7 +297,6 @@ public sealed class RazerSnapTapDriverAdmissionTests
         foreach (RazerSnapTapDriverProfile other in RazerSnapTapDriverProfiles.All.Where(p => p.ProductId != productId))
         {
             RazerSnapTapDriverSnapshot foreign = ModelSnapshot(other.ProductId);
-            Assert.False(RazerSnapTapDriverAdmission.TryAdmit(snapshot with { RzDeviceSha256 = foreign.RzDeviceSha256 }, out _));
             Assert.False(RazerSnapTapDriverAdmission.TryAdmit(snapshot with { ControlDevices = foreign.ControlDevices }, out _));
             Assert.False(RazerSnapTapDriverAdmission.TryAdmit(snapshot with { KeyboardDevices = foreign.KeyboardDevices }, out _));
             Assert.False(RazerSnapTapDriverAdmission.TryAdmit(snapshot with { BiosProductName = foreign.BiosProductName }, out _));
@@ -268,7 +305,7 @@ public sealed class RazerSnapTapDriverAdmissionTests
 
     [Theory]
     [MemberData(nameof(ReviewedProfiles))]
-    public void EveryModelRetainsFreshSessionControllerHashAndTopologyGuards(string productId)
+    public void EveryModelRetainsFreshSessionControllerTrustAndTopologyGuards(string productId)
     {
         RazerSnapTapDriverSnapshot good = ModelSnapshot(productId);
         RazerSnapTapKeyboardDevice keyboard = good.KeyboardDevices[0];
@@ -281,8 +318,8 @@ public sealed class RazerSnapTapDriverAdmissionTests
             good with { ActiveConsoleSession = false },
             good with { ControllerObservationComplete = false },
             good with { CompetingControllerDetected = true },
-            good with { RzCommonSha256 = new string('0', 64) },
-            good with { RzDeviceSha256 = new string('0', 64) },
+            good with { CommonDriver = RazerDriverApiPackageEvidence.Rejected },
+            good with { DeviceDriver = RazerDriverApiPackageEvidence.Rejected },
             good with { ControlDevices = [] },
             good with { ControlDevices = [control, control] },
             good with { ControlDevices = [control with { Ancestors = [] }] },
@@ -312,7 +349,7 @@ public sealed class RazerSnapTapDriverAdmissionTests
         RazerSnapTapDriverSnapshot good = ModelSnapshot(productId);
         var admission = new RazerSnapTapDriverAdmission(() => good with
         {
-            RzDeviceSha256 = null,
+            DeviceDriver = RazerDriverApiPackageEvidence.Missing,
             KeyboardDevices = [good.KeyboardDevices[0] with { UpperFilters = [] }],
         });
         Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure));
@@ -321,11 +358,10 @@ public sealed class RazerSnapTapDriverAdmissionTests
     }
 
     [Fact]
-    public void ModelProfilesPinTheReviewedVendorFiltersAndKeepValidationProvenanceSeparate()
+    public void ModelProfilesSelectTheReviewedVendorFiltersAndKeepValidationProvenanceSeparate()
     {
         RazerSnapTapDriverProfile blade16 = Assert.Single(RazerSnapTapDriverProfiles.All, p => p.ProductId == "02C6");
         Assert.Equal("Blade 16 - RZ09-0528", blade16.ProductName);
-        Assert.Equal("307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82", blade16.DeviceSha256);
         Assert.Equal("RzDev_02c6.sys", blade16.DeviceFileName);
         Assert.False(blade16.AutomaticInstallationAvailable);
         Assert.False(blade16.PhysicallyValidated);
@@ -340,7 +376,7 @@ public sealed class RazerSnapTapDriverAdmissionTests
         {
             BiosProductName = profile.ProductName,
             SystemProductName = profile.ProductName,
-            RzDeviceSha256 = profile.DeviceSha256,
+            DeviceDriver = new(true, true, $"trusted-{productId}-device-build"),
             ControlDevices = [exact.ControlDevices[0] with
             {
                 DevicePath = exact.ControlDevices[0].DevicePath.Replace("02e0", productId.ToLowerInvariant()),
@@ -360,8 +396,8 @@ public sealed class RazerSnapTapDriverAdmissionTests
         "Blade 16 - RZ09-0581",
         "Razer",
         "Blade 16 - RZ09-0581",
-        RazerSnapTapDriverAdmission.RzCommonSha256,
-        "BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787",
+        new RazerDriverApiPackageEvidence(true, true, "current-common-build"),
+        new RazerDriverApiPackageEvidence(true, true, "current-device-build"),
         [new RazerSnapTapControlDevice(
             @"\\?\rzcontrol#vid_1532&pid_02e0&mi_00#laptop#{e3be005d-d130-4910-88ff-09ae02f680e9}",
             @"RZCONTROL\VID_1532&PID_02E0&MI_00\laptop",

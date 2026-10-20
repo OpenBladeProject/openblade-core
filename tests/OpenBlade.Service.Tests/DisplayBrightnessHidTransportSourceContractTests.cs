@@ -45,6 +45,13 @@ public sealed class RazerDisplayBrightnessHidTransportSourceContractTests
         Assert.Contains("SetupDiEnumDeviceInterfaces(", source, StringComparison.Ordinal);
         Assert.Contains("HasExactAncestor", source, StringComparison.Ordinal);
         Assert.Contains("ControlServiceName", source, StringComparison.Ordinal);
+        int controlAdmission = source.IndexOf("private static bool IsExactControlDevice(", StringComparison.Ordinal);
+        int commonTrust = source.IndexOf("WindowsRazerDriverApiDiscovery.Capture(", controlAdmission, StringComparison.Ordinal);
+        int consumerAdmission = source.IndexOf("private static DisplayBrightnessHidWriteResult ValidateVirtualConsumerDevice(", StringComparison.Ordinal);
+        int consumerTrust = source.IndexOf("WindowsRazerDriverApiDiscovery.Capture(", consumerAdmission, StringComparison.Ordinal);
+        Assert.True(commonTrust > controlAdmission);
+        Assert.True(consumerTrust > consumerAdmission && consumerTrust < writerStart);
+        Assert.DoesNotContain("GetExpectedHashStatus", source, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -3,7 +3,7 @@
   "reviewedAt": "2026-10-19",
   "coreSource": {
     "repository": "OpenBladeProject/openblade-core",
-    "commit": "8793f6ead3f6208973d9c3b25bdd129b2f4b817a",
+    "commit": "70e0e05dcc3f0dd65244422d403bb889d95a96b4",
     "path": "src/OpenBlade.Contracts/RazerBladeModelCatalog.cs"
   },
   "profiles": [
@@ -190,27 +190,27 @@
         },
         {
           "modelNumber": "RZ09-0484",
-          "status": "NotEstablished",
-          "evidence": "https://apps.razer.com/synapse/products/672/mw/manifest.json",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
           "vendorBuild": "2610090242",
           "vendorRevision": "8cb1e111267df5b957c71709163d36fdd47c99f5",
-          "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; the modern THX v4 native client is not applicable."
         },
         {
           "modelNumber": "RZ09-0483",
-          "status": "NotEstablished",
-          "evidence": "https://apps.razer.com/synapse/products/671/mw/manifest.json",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
           "vendorBuild": "2610090414",
           "vendorRevision": "dd891ee27b3290778f962f3f760eed2d25dbdca6",
-          "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; the modern THX v4 native client is not applicable."
         },
         {
           "modelNumber": "RZ09-0482",
-          "status": "NotEstablished",
-          "evidence": "https://apps.razer.com/synapse/products/669/mw/manifest.json",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
           "vendorBuild": "2608200925",
           "vendorRevision": "76a8f2534f94101018d4d3664f75cb6db83539d4",
-          "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; the modern THX v4 native client is not applicable."
         },
         {
           "modelNumber": "RZ09-0530",
@@ -222,11 +222,203 @@
         },
         {
           "modelNumber": "RZ09-0328",
-          "status": "NotEstablished",
-          "evidence": "https://apps.razer.com/synapse/products/597/mw/manifest.json",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/3641/",
           "vendorBuild": "2608200948",
           "vendorRevision": "c0877d27ea53c0c724bd71ca4df01007860db08c",
-          "reason": "No THX native client resource appears in the reviewed vendor manifest. This is not a runtime incompatibility claim."
+          "reason": "The exact-model specification identifies Dolby Atmos rather than THX; the modern THX native client is not applicable."
+        }
+      ]
+    },
+    {
+      "path": "components/thx-rznb11/4.2.29.1159/stack.json",
+      "kind": "UpstreamAudioStack",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "NotApplicable",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model uses the separately reviewed rznb12 family; rznb11 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "Applicable",
+          "evidence": "components/thx-rznb11/4.2.29.1159/stack.json#/applicableProfiles",
+          "reason": "Exact vendor product manifest, THX product family and signed extension-INF codec binding."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb11 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb11 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb11 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "Applicable",
+          "evidence": "components/thx-rznb11/4.2.29.1159/stack.json#/applicableProfiles",
+          "reason": "Exact vendor product manifest, THX product family and signed extension-INF codec binding."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/3641/",
+          "reason": "The exact-model specification identifies Dolby Atmos rather than THX; rznb11 is not applicable."
+        }
+      ]
+    },
+    {
+      "path": "components/thx-rznb12/4.2.37.1621/stack.json",
+      "kind": "UpstreamAudioStack",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "Applicable",
+          "evidence": "components/thx-rznb12/4.2.37.1621/stack.json#/applicableProfiles",
+          "reason": "The recovered signed carrier, protected inner Burn bundle, all three driver packages, official configuration updaters and immutable outputs are pinned for the exact RZ09-0581 codec subsystem. Fresh-install use remains conditional on a pristine state, the complete stack and both-endpoint read admission; catalog applicability does not claim physical validation."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "NotApplicable",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model uses the separately reviewed rznb11 family; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "NotApplicable",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model uses the separately reviewed rznb11 family; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/3641/",
+          "reason": "The exact-model specification identifies Dolby Atmos rather than THX; rznb12 is not applicable."
+        }
+      ]
+    },
+    {
+      "path": "components/thx-rznb12/4.2.41.2499/stack.json",
+      "kind": "UpstreamAudioStack",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "Applicable",
+          "evidence": "components/thx-rznb12/4.2.41.2499/stack.json#/applicableProfiles",
+          "reason": "Exact vendor product manifest, THX product family and signed extension-INF codec binding."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "NotApplicable",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model uses the separately reviewed rznb11 family; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/5798/",
+          "reason": "This 2023 model belongs to the separately reviewed legacy THX 2.6.5 generation; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "NotApplicable",
+          "evidence": "https://github.com/OpenBladeProject/openblade-core/blob/942c620e0c2b52be274e2ef99ea629ab1cb8dbb4/docs/thx-installation-investigation.md",
+          "reason": "This model uses the separately reviewed rznb11 family; rznb12 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/3641/",
+          "reason": "The exact-model specification identifies Dolby Atmos rather than THX; rznb12 is not applicable."
+        }
+      ]
+    },
+    {
+      "path": "components/thx-legacy/2.6.5.0/stack.json",
+      "kind": "LegacyAudioEvidence",
+      "review": [
+        {
+          "modelNumber": "RZ09-0581",
+          "status": "NotApplicable",
+          "evidence": "components/thx-rznb12/4.2.41.2499/stack.json#/applicableProfiles",
+          "reason": "This model uses the separately reviewed modern rznb12 family; legacy THX 2.6.5 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0528",
+          "status": "NotApplicable",
+          "evidence": "components/thx-rznb11/4.2.29.1159/stack.json#/applicableProfiles",
+          "reason": "This model uses the separately reviewed modern rznb11 family; legacy THX 2.6.5 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0484",
+          "status": "CandidateOnly",
+          "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
+          "reason": "Official THX specifications, exact Realtek tuning, model-specific THX SCU tuning and the signed exact-codec child-extension declarations are reviewed; complete endpoint FX/APO binding and the installation sequence remain unestablished."
+        },
+        {
+          "modelNumber": "RZ09-0483",
+          "status": "CandidateOnly",
+          "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
+          "reason": "Official THX specifications, exact Realtek tuning, model-specific THX SCU tuning and the signed exact-codec child-extension declarations are reviewed; complete endpoint FX/APO binding and the installation sequence remain unestablished."
+        },
+        {
+          "modelNumber": "RZ09-0482",
+          "status": "CandidateOnly",
+          "evidence": "components/thx-legacy/2.6.5.0/stack.json#/candidateProfiles",
+          "reason": "Official THX specifications, exact Realtek tuning, model-specific THX SCU tuning and the signed exact-codec child-extension declarations are reviewed; complete endpoint FX/APO binding and the installation sequence remain unestablished."
+        },
+        {
+          "modelNumber": "RZ09-0530",
+          "status": "NotApplicable",
+          "evidence": "components/thx-rznb11/4.2.29.1159/stack.json#/applicableProfiles",
+          "reason": "This model uses the separately reviewed modern rznb11 family; legacy THX 2.6.5 is not applicable."
+        },
+        {
+          "modelNumber": "RZ09-0328",
+          "status": "NotApplicable",
+          "evidence": "https://mysupport.razer.com/app/answers/detail/a_id/3641/",
+          "reason": "The exact-model specification identifies Dolby Atmos rather than THX; legacy THX 2.6.5 is not applicable."
         }
       ]
     }

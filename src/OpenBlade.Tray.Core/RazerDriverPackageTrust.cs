@@ -40,15 +40,28 @@ internal static class RazerDriverPackageTrust
         }
     }
 
+    internal static void VerifyCatalogMembers(string packageRoot, string catalogName,
+        IEnumerable<string> memberNames, CancellationToken cancellationToken, bool cacheOnly)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Windows is required to verify the driver catalog.");
+        }
+
+        string catalogPath = Path.Combine(packageRoot, catalogName);
+        RazerKeyboardDriverPackage.EnsureNoReparsePoints(catalogPath);
+        using var catalogHandle = File.OpenHandle(catalogPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        VerifyCatalogTrust(catalogPath, catalogHandle, cacheOnly);
+        foreach (string memberName in memberNames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            VerifyMember(catalogPath, Path.Combine(packageRoot, memberName), cacheOnly);
+        }
+    }
+
     private static void VerifyCatalog(string path, SafeFileHandle handle, bool cacheOnly)
     {
-        var fileInfo = new WinTrustFileInfo
-        {
-            Size = (uint)Marshal.SizeOf<WinTrustFileInfo>(),
-            Path = path,
-            Handle = handle.DangerousGetHandle(),
-        };
-        VerifyObject(fileInfo, 1, GenericVerify, cacheOnly);
+        VerifyCatalogTrust(path, handle, cacheOnly);
         // Windows validates the signature and timestamp above; these pins also enforce the
         // exact Hardware Compatibility Publisher identity recorded by the reviewed manifest.
 #pragma warning disable SYSLIB0057
@@ -61,6 +74,17 @@ internal static class RazerDriverPackageTrust
         {
             throw new CryptographicException("The driver catalog publisher does not match the reviewed Microsoft signature.");
         }
+    }
+
+    private static void VerifyCatalogTrust(string path, SafeFileHandle handle, bool cacheOnly)
+    {
+        var fileInfo = new WinTrustFileInfo
+        {
+            Size = (uint)Marshal.SizeOf<WinTrustFileInfo>(),
+            Path = path,
+            Handle = handle.DangerousGetHandle(),
+        };
+        VerifyObject(fileInfo, 1, GenericVerify, cacheOnly);
     }
 
     private static void VerifyMember(string catalogPath, string memberPath, bool cacheOnly)

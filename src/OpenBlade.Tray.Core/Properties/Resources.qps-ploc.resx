@@ -1693,4 +1693,43 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="THX component download failed." xml:space="preserve">
     <value>[!! THX cómpónént dównlóád fáíléd. ~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Install THX audio" xml:space="preserve">
+    <value>[!! Ínstáll THX áúdíó ~~~~~~ !!]</value>
+  </data>
+  <data name="Installing THX audio..." xml:space="preserve">
+    <value>[!! Ínstállíng THX áúdíó... ~~~~~~~ !!]</value>
+  </data>
+  <data name="THX audio is installed. Read the current settings to connect." xml:space="preserve">
+    <value>[!! THX áúdíó ís ínstálléd. Réád thé cúrrént séttíngs tó cónnéct. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade cannot install THX audio on this model yet." xml:space="preserve">
+    <value>[!! OpenBlade cánnót ínstáll THX áúdíó ón thís módél ýét. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX components are already present. OpenBlade cannot replace or repair them. Export diagnostics for help." xml:space="preserve">
+    <value>[!! THX cómpónénts áré álréádý présént. OpenBlade cánnót réplácé ór répáír thém. Éxpórt díágnóstícs fór hélp. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Restart Windows, then select Install THX audio to finish the remaining setup steps." xml:space="preserve">
+    <value>[!! Réstárt Windows, thén séléct Ínstáll THX áúdíó tó fínísh thé rémáíníng sétúp stéps. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX setup could not be confirmed. Do not run setup again. Export diagnostics for help." xml:space="preserve">
+    <value>[!! THX sétúp cóúld nót bé cónfírméd. Dó nót rún sétúp ágáín. Éxpórt díágnóstícs fór hélp. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Connect AC power before installing THX audio." xml:space="preserve">
+    <value>[!! Cónnéct ÁC pówér béfóré ínstállíng THX áúdíó. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before installing THX audio." xml:space="preserve">
+    <value>[!! Clósé Sýnápsé ánd THX Spátíál Áúdíó béfóré ínstállíng THX áúdíó. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX audio installation canceled." xml:space="preserve">
+    <value>[!! THX áúdíó ínstállátíón cáncéléd. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX audio setup is unavailable for this laptop or audio device." xml:space="preserve">
+    <value>[!! THX áúdíó sétúp ís únáváíláblé fór thís láptóp ór áúdíó dévícé. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="THX audio installation failed before changes were submitted." xml:space="preserve">
+    <value>[!! THX áúdíó ínstállátíón fáíléd béfóré chángés wéré súbmíttéd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót vérífý thé básé áúdíó drívérs. Éxpórt díágnóstícs fór hélp. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

@@ -29,16 +29,40 @@ internal static partial class WindowsThxActiveOutput
         return container == BuiltInContainer ? ThxAudioEndpoint.Speakers : ThxAudioEndpoint.Headphones;
     }
 
+    private static readonly PropertyKey FormFactor = new(new("1da5d803-d492-4edd-8c23-e0c0ffee7f0e"), 0);
+
     private static readonly PropertyKey ThxProduct = new(new("4a82dc8f-2acc-466f-b11a-3fbf40a339a0"), 0);
     private static readonly PropertyKey ThxEndpoint = new(new("4a82dc8f-2acc-466f-b11a-3fbf40a339a0"), 2);
 
-    private sealed record DefaultOutput(string Id, string? Name, Guid? Container, string? Product, string? Endpoint);
+    private sealed record DefaultOutput(string Id, string? Name, Guid? Container, string? Product, string? Endpoint, uint? FormFactor);
 
     internal static ThxAudioEndpoint? Read()
     {
+        if (WindowsThxAudioAdmissionSource.GetExactHostProfile()?.Backend != ThxAudioNativeBackend.V4)
+        {
+            // Legacy manual control uses explicit endpoint/codec ancestry below.
+            // Its automatic application-routing contract is not yet admitted.
+            return null;
+        }
         DefaultOutput? output = ReadDefaultOutput();
         return output is null ? null : Classify(output.Name, output.Container);
     }
+
+    internal static string? ReadExactDefaultOutputId(ThxAudioCompatibilityProfile profile, ThxAudioEndpoint endpoint)
+    {
+        DefaultOutput? output = ReadDefaultOutput();
+        return output is not null && ClassifyLegacyFormFactor(output.FormFactor) == endpoint
+            && WindowsThxAdmissionQueries.HasExactEndpointCodec(output.Id, profile) ? output.Id : null;
+    }
+
+    // Windows SDK EndpointFormFactor. Line-level, HDMI, SPDIF and unknown
+    // renderers cannot stand in for the selected speakers/headphones output.
+    internal static ThxAudioEndpoint? ClassifyLegacyFormFactor(uint? value) => value switch
+    {
+        1 => ThxAudioEndpoint.Speakers,
+        3 or 5 => ThxAudioEndpoint.Headphones,
+        _ => null,
+    };
 
     // Advisory only: a stored THX switch does not override Windows bypassing its APO.
     internal static bool? ReadSystemEffectsDisabled(string productId, ThxAudioEndpoint endpoint)
@@ -108,7 +132,7 @@ internal static partial class WindowsThxActiveOutput
             string? name = ReadString(properties, FriendlyName);
             Guid? container = ReadGuid(properties, ContainerId);
             return new DefaultOutput(endpointId, name, container,
-                ReadOptionalString(properties, ThxProduct), ReadOptionalString(properties, ThxEndpoint));
+                ReadOptionalString(properties, ThxProduct), ReadOptionalString(properties, ThxEndpoint), ReadOptionalUInt(properties, FormFactor));
         }
         catch
         {
@@ -172,6 +196,23 @@ internal static partial class WindowsThxActiveOutput
         }
     }
 
+    private static uint? ReadOptionalUInt(IPropertyStore properties, PropertyKey key)
+    {
+        PropVariant value = default;
+        try
+        {
+            Marshal.ThrowExceptionForHR(properties.GetValue(ref key, out value));
+            return value.Type == 19 ? value.UInt32 : null; // VT_UI4
+        }
+        catch
+        {
+            // Legacy classification requires this value, while V4 selection
+            // retains its own unchanged name/container contract.
+            return null;
+        }
+        finally { _ = PropVariantClear(ref value); }
+    }
+
     private static Guid? ReadGuid(IPropertyStore properties, PropertyKey key)
     {
         PropVariant value = default;
@@ -206,6 +247,7 @@ internal static partial class WindowsThxActiveOutput
     {
         [FieldOffset(0)] internal ushort Type;
         [FieldOffset(8)] internal nint Pointer;
+        [FieldOffset(8)] internal uint UInt32;
     }
 
     [DllImport("ole32.dll")]

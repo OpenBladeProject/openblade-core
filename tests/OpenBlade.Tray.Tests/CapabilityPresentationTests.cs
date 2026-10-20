@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using System.Xml.Linq;
 using OpenBlade.Contracts;
@@ -2030,6 +2032,31 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             2,
             window.Split("ThxViewModel.ConnectIfNeededAsync", StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
+    public void MainWindow_ThxNavigationIncludesEveryReviewedAudioBackend()
+    {
+        string window = ReadTraySource("MainWindow.xaml.cs");
+        int start = window.IndexOf("public Visibility ThxAudioNavigationVisibility =>", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        string gate = window[start..window.IndexOf(';', start)];
+        string[] actual = Regex.Matches(gate, "RZ09-[0-9]{4}")
+            .Select(match => match.Value).Order(StringComparer.Ordinal).ToArray();
+        var expected = new List<string>();
+        foreach ((string fixture, string profiles) in new[]
+        {
+            ("ThxRznb11StackCatalog.json", "applicableProfiles"),
+            ("ThxRznb12StackCatalog.json", "applicableProfiles"),
+            ("ThxLegacyStackCatalog.json", "candidateProfiles"),
+        })
+        {
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, "Fixtures", fixture)));
+            expected.AddRange(document.RootElement.GetProperty(profiles).EnumerateArray()
+                .Select(profile => profile.GetProperty("modelNumber").GetString()!));
+        }
+        Assert.Equal(expected.Order(StringComparer.Ordinal).ToArray(), actual);
     }
 
     [Fact]

@@ -6,7 +6,7 @@ Reviewed on 2026-10-20. Vendor files were inspected as data only. No driver was 
 
 Razer's [SnapTap support list](https://mysupport.razer.com/app/answers/detail/a_id/14658) describes support through Synapse 4 across its keyboards and laptops. Its [announcement](https://www.razer.com/newsroom/product-news/snap-tap-available-on-razer-blade-more-keyboards) specifies Synapse 4-compatible Blade laptops and explains that their processing runs in software. This supports a shared implementation; it does not specify the native driver ABI.
 
-OpenBlade shares one A/D processor, codec, transport, hook session, supervisor and recovery journal across reviewed driver profiles. Exact host identities, PID, filter binary hash and keyboard/control topology remain profile-specific. Installation availability and physical-validation provenance are separate from protocol compatibility. New driver builds still require review.
+OpenBlade shares one A/D processor, codec, transport, hook session, supervisor and recovery journal across reviewed driver profiles. Exact host identities, PID, filter service and keyboard/control topology remain profile-specific. Runtime admission verifies the installed package, its model/service declarations, Windows catalog trust and file membership. The binary hashes below identify reviewed sources, not runtime build allowlists. Compatible installed updates retain access; changed content invalidates cached admission and active sessions. Installation availability and physical-validation provenance remain separate from protocol compatibility.
 
 ## RZ09-0528 / 02C6
 
@@ -45,7 +45,7 @@ This establishes the filter-backed software mapping route for 02C6. It does not 
 
 Exact vendor manifests, signed installer packages, filter hashes, topology and product-specific SnapTap mappings for RZ09-0483, RZ09-0482, RZ09-0530, RZ09-0328 and RZ09-0484 are pinned in the [vendor artifact review](snap-tap-vendor-artifacts.md). The independent [filter ABI comparison](snap-tap-filter-abi.md) covers versions 1.0.0.71, 1.0.0.73 and 1.0.0.78.
 
-All five expose the same version-1 query interface, size `0x28`, GUID `{14CC0596-CFA5-4379-A5AB-FA24E681D040}`, keyboard type-2 registration, per-device association, original-output bypass and callback restoration. The three .73 filters share executable sections; 02C5's reviewed functions match 02C6 after address normalization; 0255's older compiler plumbing was traced independently. Together with the pinned common driver, this establishes one shared backend for all seven current OpenBlade models.
+All five expose the same version-1 query interface, size `0x28`, GUID `{14CC0596-CFA5-4379-A5AB-FA24E681D040}`, keyboard type-2 registration, per-device association, original-output bypass and callback restoration. The three .73 filters share executable sections; 02C5's reviewed functions match 02C6 after address normalization; 0255's older compiler plumbing was traced independently. Together with the reviewed common-driver API, this establishes one shared backend for all seven current OpenBlade models.
 
 The 0255 catalogs cover the legacy INF set; their parallel U INF variants are not catalog members. Setup for this and the other newly reviewed models stays vendor-managed. The review grants no installer or redistribution authority.
 

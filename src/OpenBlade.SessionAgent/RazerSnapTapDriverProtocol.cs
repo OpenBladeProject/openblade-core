@@ -28,7 +28,7 @@ internal sealed class RazerSnapTapHookSnapshot
     internal bool RecordEquals(ReadOnlySpan<byte> candidate) => candidate.SequenceEqual(record);
 }
 
-/// <summary>Fixed A/D codecs for the pinned RzCommon 1.0.0.76 contract.</summary>
+/// <summary>Fixed A/D codecs for the source-reviewed RzCommon API contract.</summary>
 internal static class RazerSnapTapDriverProtocol
 {
     internal const uint NotificationIoControlCode = 0x88883018;

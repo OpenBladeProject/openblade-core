@@ -13,6 +13,8 @@ internal sealed record ThxAudioAdmission(
     public string? ProductId { get; init; }
     public string? ModelNumber { get; init; }
     public bool MutationAllowed { get; init; }
+    public bool RequiresEndpointProbe { get; init; }
+    public string DriverStackIdentity { get; init; } = string.Empty;
     public bool IsAvailable =>
         Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly
         && ThxAudioCompatibility.Profiles.Any(profile =>
@@ -34,6 +36,7 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
 
     public ThxAudioAdmission Check()
     {
+        ThxAudioCompatibilityProfile? profile = null;
         try
         {
             using WindowsIdentity identity = WindowsIdentity.GetCurrent();
@@ -46,10 +49,10 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                 return Unsupported("THX audio requires an interactive Windows user session.");
             }
 
-            ThxAudioCompatibilityProfile? profile = GetExactHostProfile();
+            profile = GetExactHostProfile(out string? exclusionReason);
             if (profile is null || !WindowsThxAdmissionQueries.HasExactDeviceIdentities(profile))
             {
-                return Unsupported("The exact Razer model, USB identity, and signed-package audio codec could not be verified.");
+                return Unsupported(exclusionReason ?? "The exact Razer model, USB identity, and signed-package audio codec could not be verified.");
             }
 
             if (IsCompetingControllerRunning())
@@ -60,9 +63,13 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
                 { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
             }
 
-            if (!HasPinnedComponents(profile, out string? componentError))
+            if (!HasCompatibleComponents(profile, out string? componentError, out string stackIdentity))
             {
-                return Unavailable(componentError!) with { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
+                return new ThxAudioAdmission(
+                    profile.Backend == ThxAudioNativeBackend.Legacy265
+                        ? ThxAudioAvailability.LegacyComponentsUnavailable : ThxAudioAvailability.ComponentsUnavailable,
+                    componentError)
+                { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
             }
 
             if (!profile.ReadAllowed)
@@ -73,12 +80,22 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
             }
             return new ThxAudioAdmission(profile.MutationAllowed
                 ? ThxAudioAvailability.Available : ThxAudioAvailability.AvailableReadOnly, null)
-            { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber, MutationAllowed = profile.MutationAllowed };
+            {
+                ProductId = profile.ProductId,
+                ModelNumber = profile.ModelNumber,
+                MutationAllowed = profile.MutationAllowed,
+                RequiresEndpointProbe = profile.Backend == ThxAudioNativeBackend.V4,
+                DriverStackIdentity = stackIdentity,
+            };
         }
         catch (Exception exception)
         {
-            return Unavailable(
-                $"THX audio admission could not be verified: {exception.GetType().Name}.");
+            string error = $"THX audio admission could not be verified: {exception.GetType().Name}.";
+            return profile is null ? Unsupported(error) : new ThxAudioAdmission(
+                profile.Backend == ThxAudioNativeBackend.Legacy265
+                    ? ThxAudioAvailability.LegacyComponentsUnavailable : ThxAudioAvailability.ComponentsUnavailable,
+                error)
+            { ProductId = profile.ProductId, ModelNumber = profile.ModelNumber };
         }
     }
 
@@ -108,13 +125,17 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         return false;
     }
 
-    private static ThxAudioCompatibilityProfile? GetExactHostProfile()
+    internal static ThxAudioCompatibilityProfile? GetExactHostProfile() => GetExactHostProfile(out _);
+
+    private static ThxAudioCompatibilityProfile? GetExactHostProfile(out string? exclusionReason)
     {
         using RegistryKey localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
         string? biosManufacturer = ReadString(localMachine, BiosKey, "SystemManufacturer");
         string? biosProduct = ReadString(localMachine, BiosKey, "SystemProductName");
         string? systemManufacturer = ReadString(localMachine, SystemInformationKey, "SystemManufacturer");
         string? systemProduct = ReadString(localMachine, SystemInformationKey, "SystemProductName");
+        exclusionReason = biosManufacturer == "Razer" && systemManufacturer == "Razer" && biosProduct == systemProduct
+            ? ThxAudioCompatibility.ExcludedModels.SingleOrDefault(model => model.ProductName == biosProduct)?.Reason : null;
         return ThxAudioCompatibility.Profiles.SingleOrDefault(profile => ThxAudioCompatibility.MatchesHost(
             profile, biosManufacturer, biosProduct, systemManufacturer, systemProduct));
     }
@@ -122,43 +143,41 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
     internal static bool IsExactUsbPnpDeviceId(string value) =>
         ThxAudioCompatibility.MatchesUsb(ThxAudioCompatibility.Profiles[0], value);
 
-    private static bool HasPinnedComponents(ThxAudioCompatibilityProfile profile, out string? error)
+    private static bool HasCompatibleComponents(ThxAudioCompatibilityProfile profile, out string? error,
+        out string stackIdentity)
     {
-        if (!HasPinnedNativeDll(GetNativeDllPath(), out error))
+        stackIdentity = string.Empty;
+        if (profile.Backend == ThxAudioNativeBackend.V4 && !HasPinnedNativeDll(GetNativeDllPath(), out error))
         {
             return false;
         }
-        string driverStore = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-            "System32", "DriverStore", "FileRepository");
-        if (!ThxAudioCompatibility.TryResolveDriverStack(
-            driverStore, profile.Stack, out string? serviceBinary, out error))
+        ThxDriverApiEvidence evidence = WindowsThxDriverApiDiscovery.Capture(
+            profile,
+            profile.Backend == ThxAudioNativeBackend.Legacy265 ? GetLegacyApoPath() : null);
+        if (!evidence.Trusted)
         {
+            error = evidence.Error ?? "The installed THX API packages are unavailable.";
             return false;
         }
-        if (!ThxAudioCompatibility.HasPinnedActiveConfiguration(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), profile, out error))
-        {
-            return false;
-        }
-        bool serviceAvailable;
-        try
-        {
-            serviceAvailable = WindowsThxAdmissionQueries.HasRunningPinnedService(
-                profile.Stack.ServiceName, serviceBinary!);
-        }
-        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception
-            or IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
-        {
-            error = GetServiceVerificationFailure(profile.Stack);
-            return false;
-        }
-        if (!serviceAvailable)
+        if (!WindowsThxAdmissionQueries.HasRunningPinnedService(
+            profile.Stack.ServiceName,
+            evidence.ServiceBinary))
         {
             error = GetServiceFailure(profile.Stack);
             return false;
         }
+        stackIdentity = evidence.Identity;
         error = null;
         return true;
+    }
+
+    internal static string GetLegacyApoPath()
+    {
+        // THXRTAPO.inf OUT_FX_MODE_HOST_CLSID. Read HKLM explicitly;
+        // per-user COM registration cannot supply the admitted audio effect.
+        using RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+        using RegistryKey? key = machine.OpenSubKey(@"SOFTWARE\Classes\CLSID\{68650828-CA0F-4196-9096-5F50931AF10A}\InProcServer32");
+        return key?.GetValue(null) as string ?? string.Empty;
     }
 
     internal static string GetServiceFailure(ThxAudioDriverStack stack) =>
@@ -167,12 +186,16 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
     internal static string GetServiceVerificationFailure(ThxAudioDriverStack stack) =>
         $"THX service {stack.ServiceName} could not be verified against {stack.ServiceExecutable}.";
 
-    private static bool IsCompetingControllerRunning() =>
+    internal static bool IsCompetingControllerRunning() =>
         HasProcess("RazerAppEngine")
         || HasProcess("Razer Synapse Service")
         || HasProcess("RazerSynapseService")
         // Product 736 registers this exact standalone client as a competing
         // THX UI and presents a modal while it is running.
+        || HasProcess("THXSpatialAudioControl")
+        || HasProcess("thxspatialaudiosrv")
+        || HasProcess("thxsahelper")
+        || HasProcess("thxsahelper-discovery")
         || HasProcess("THXSpatialAudioClient")
         || WindowsThxAdmissionQueries.HasCompetingService();
 

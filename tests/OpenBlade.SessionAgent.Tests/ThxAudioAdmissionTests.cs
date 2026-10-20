@@ -27,7 +27,7 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     [Fact]
     public void CatalogKeepsExactModelCodecAndStackPairsSeparate()
     {
-        Assert.Equal(3, ThxAudioCompatibility.Profiles.Count);
+        Assert.Equal(6, ThxAudioCompatibility.Profiles.Count);
         ThxAudioCompatibilityProfile sonya12 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0581");
         ThxAudioCompatibilityProfile sonya11 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0528");
         ThxAudioCompatibilityProfile piper11 = ThxAudioCompatibility.Profiles.Single(profile => profile.ModelNumber == "RZ09-0530");
@@ -41,7 +41,7 @@ public sealed class ThxAudioAdmissionTests : IDisposable
             [@"SOUNDWIRE\SDCA_FUNCTION_11&MAN_025D&FUNC_0721&TYPE_0B&VER_01&ADR_04&SUBSYS_30101A58"]));
         Assert.False(ThxAudioCompatibility.MatchesCodec(sonya11, piper11.CodecHardwareIds));
         Assert.False(ThxAudioCompatibility.MatchesCodec(piper11, sonya11.CodecHardwareIds));
-        foreach (ThxAudioCompatibilityProfile profile in ThxAudioCompatibility.Profiles)
+        foreach (ThxAudioCompatibilityProfile profile in ThxAudioCompatibility.Profiles.Where(profile => profile.Backend == ThxAudioNativeBackend.V4))
         {
             Assert.True(ThxAudioCompatibility.MatchesCodec(profile, profile.CodecHardwareIds));
             Assert.Equal(32, Convert.FromHexString(profile.ActivePropertiesSha256).Length);
@@ -62,6 +62,38 @@ public sealed class ThxAudioAdmissionTests : IDisposable
             sonya11.Stack.Packages.SelectMany(package => package.Files).Single(file => file.Name == "thx_rznb11_props.dat").Sha256);
     }
 
+    [Fact]
+    public void ProvisioningKeepsExactCachedRznb12TransactionTarget()
+    {
+        ThxAudioCompatibilityProfile sonya12 = ThxAudioCompatibility.Profiles.Single(
+            profile => profile.ModelNumber == "RZ09-0581");
+
+        Assert.Same(ThxAudioCompatibility.Rznb12CachedStack,
+            ThxAudioCompatibility.GetProvisioningStack(sonya12));
+        Assert.Equal("20349EFE0BAD4ADE84BF57EFC38A7D7B7DF82CCEF3555D17DC1B34142840F6DF",
+            ThxAudioCompatibility.Rznb12CachedStack.Packages.SelectMany(package => package.Files)
+                .Single(file => file.Name == ThxAudioCompatibility.Rznb12CachedStack.ServiceExecutable).Sha256);
+
+        foreach (ThxAudioCompatibilityProfile profile in ThxAudioCompatibility.Profiles.Where(
+            profile => !ReferenceEquals(profile, sonya12)))
+        {
+            Assert.Same(profile.Stack, ThxAudioCompatibility.GetProvisioningStack(profile));
+        }
+    }
+
+    [Fact]
+    public void RuntimeResolutionDoesNotCombinePackagesFromDifferentBuilds()
+    {
+        ThxAudioDriverStack first = VariantStack("first build");
+        ThxAudioDriverStack second = VariantStack("second build");
+        WritePackage("reviewed_apo.inf_amd64_first", first.Packages[0], "first build");
+        WritePackage("reviewed_ext.inf_amd64_second", second.Packages[1], "second build");
+        WritePackage("reviewed_svc.inf_amd64_second", second.Packages[2], "second build");
+
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, first, out _));
+        Assert.False(ThxAudioCompatibility.TryResolveDriverStack(directory, second, out _));
+    }
+
     [Theory]
     [InlineData("rznb12", "RZ09-0581", true)]
     [InlineData("rznb11", "RZ09-0528", true)]
@@ -69,6 +101,11 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     [InlineData("rznb12", "RZ09-0528", false)]
     [InlineData("rznb11", "RZ09-0581", false)]
     [InlineData(null, "RZ09-0581", false)]
+    [InlineData("thx-2.6.5", "RZ09-0482", true)]
+    [InlineData("thx-2.6.5", "RZ09-0483", true)]
+    [InlineData("thx-2.6.5", "RZ09-0484", true)]
+    [InlineData("thx-2.6.5", "RZ09-0328", false)]
+    [InlineData("rznb11", "RZ09-0482", false)]
     public void NativeAvailabilityRequiresKnownProductModelPair(string? productId, string modelNumber, bool expected)
     {
         var admission = new ThxAudioAdmission(ThxAudioAvailability.Available, null)
@@ -172,7 +209,7 @@ public sealed class ThxAudioAdmissionTests : IDisposable
     [Theory]
     [InlineData("thx_rznb11_props.dat")]
     [InlineData("surround_714_config.json")]
-    public void MissingOrChangedActiveDefinitionBlocksAdmission(string fileName)
+    public void MissingOrChangedActiveDefinitionBlocksProvisioningCheckpoint(string fileName)
     {
         ThxAudioCompatibilityProfile profile = WriteActiveConfiguration("RZ09-0528");
         string file = Path.Combine(directory, "thx", "rznb11", fileName);
@@ -237,13 +274,27 @@ public sealed class ThxAudioAdmissionTests : IDisposable
             [new("reviewed_svc.inf", [new("reviewed_svc.inf", hash), new("reviewed_svc.exe", hash), new("reviewed_svc.cat", hash)])]);
     }
 
-    private string WritePackage(string name, ThxAudioDriverPackage package)
+    private static ThxAudioDriverStack VariantStack(string contents)
+    {
+        string hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(contents)));
+        ThxAudioPinnedFile File(string name) => new(name, hash);
+        return new("reviewed_service", "reviewed_svc.exe",
+        [
+            new("reviewed_apo.inf",
+                [File("reviewed_apo.inf"), File("reviewed_apo.dll"), File("reviewed_apo.cat")]),
+            new("reviewed_ext.inf", [File("reviewed_ext.inf"), File("reviewed_ext.cat")]),
+            new("reviewed_svc.inf",
+                [File("reviewed_svc.inf"), File("reviewed_svc.exe"), File("reviewed_svc.cat")]),
+        ]);
+    }
+
+    private string WritePackage(string name, ThxAudioDriverPackage package, string contents = "fixture")
     {
         string path = Path.Combine(directory, name);
         Directory.CreateDirectory(path);
         foreach (ThxAudioPinnedFile file in package.Files)
         {
-            File.WriteAllBytes(Path.Combine(path, file.Name), "fixture"u8.ToArray());
+            File.WriteAllText(Path.Combine(path, file.Name), contents);
         }
         return path;
     }

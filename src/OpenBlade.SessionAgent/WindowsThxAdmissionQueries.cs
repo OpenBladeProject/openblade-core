@@ -88,6 +88,40 @@ internal static class WindowsThxAdmissionQueries
         throw new InvalidDataException("The present-device inventory exceeded its admission bound.");
     }
 
+    internal static bool HasExactEndpointCodec(string endpointId, ThxAudioCompatibilityProfile profile)
+    {
+        if (!WindowsThxActiveOutput.TryGetRenderEndpointId(endpointId, out _)
+            || CM_Locate_DevNode(out uint node, @"SWD\MMDEVAPI\" + endpointId, 0) != 0)
+        {
+            return false;
+        }
+        var buffer = new byte[MaximumPropertyBytes];
+        // AudioEndpoint devnodes are children of their physical audio adapter.
+        // Inspect that actual ancestry instead of guessing from a friendly name.
+        for (int depth = 0; depth < 8; depth++)
+        {
+            if (CM_Get_Parent(out uint parent, node, 0) != 0)
+            {
+                return false;
+            }
+            node = parent;
+            DevicePropertyKey key = HardwareIds;
+            uint bytes = (uint)buffer.Length;
+            uint result = CM_Get_DevNode_Property(node, ref key, out uint type, buffer, ref bytes, 0);
+            if (result == 0 && ThxAudioCompatibility.MatchesCodec(profile, ParseHardwareIds(buffer, bytes, type)))
+            {
+                return true;
+            }
+            // Missing properties are ordinary for intermediate software nodes.
+            // Other failures, including a changing or oversized property, fail closed.
+            if (result is not (0 or 0x25)) // CR_NO_SUCH_VALUE
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
     internal static bool HasCompetingService()
     {
         using SafeServiceHandle manager = OpenManager();
@@ -113,6 +147,13 @@ internal static class WindowsThxAdmissionQueries
 
     internal static bool HasRunningPinnedService(string serviceName, string expectedBinary)
     {
+        return TryGetRunningServiceBinary(serviceName, out string? binary)
+            && string.Equals(binary, Path.GetFullPath(expectedBinary), StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool TryGetRunningServiceBinary(string serviceName, out string? binary)
+    {
+        binary = null;
         using SafeServiceHandle manager = OpenManager();
         using SafeServiceHandle service = OpenService(manager, serviceName, ServiceQueryConfig | ServiceQueryStatus);
         if (service.IsInvalid)
@@ -130,8 +171,8 @@ internal static class WindowsThxAdmissionQueries
             }
             ServiceConfiguration configuration = Marshal.PtrToStructure<ServiceConfiguration>(buffer);
             string path = ReadBufferString(buffer, MaximumServiceConfigBytes, configuration.BinaryPathName);
-            return string.Equals(NormalizeServiceBinary(path), Path.GetFullPath(expectedBinary),
-                StringComparison.OrdinalIgnoreCase) && IsRunning(service);
+            binary = NormalizeServiceBinary(path);
+            return binary.Length != 0 && IsRunningFromBinary(service, binary);
         }
         finally
         {
@@ -225,6 +266,51 @@ internal static class WindowsThxAdmissionQueries
         return status.CurrentState == ServiceRunning;
     }
 
+    private static bool IsRunningFromBinary(SafeServiceHandle service, string expectedBinary)
+    {
+        ServiceStatusProcess before = QueryServiceProcess(service);
+        if (before.CurrentState != ServiceRunning || before.ProcessId == 0
+            || (before.ServiceType & 0x30) != 0x10)
+        {
+            return false;
+        }
+        using SafeProcessHandle process = OpenProcess(0x1000, false, before.ProcessId);
+        if (process.IsInvalid && Marshal.GetLastWin32Error() == 5)
+        {
+            // Protected audio services can deny PROCESS_QUERY_LIMITED_INFORMATION
+            // to their interactive client. In that case SCM still supplies the
+            // configured catalog-bound binary and a service-owned PID. Require
+            // that running PID to remain stable around the observation; the
+            // isolated helper separately requires a successful typed API read.
+            ServiceStatusProcess protectedAfter = QueryServiceProcess(service);
+            return protectedAfter.CurrentState == ServiceRunning
+                && protectedAfter.ProcessId == before.ProcessId
+                && (protectedAfter.ServiceType & 0x30) == 0x10;
+        }
+        var image = new StringBuilder(32768);
+        uint length = (uint)image.Capacity;
+        if (process.IsInvalid || !QueryFullProcessImageNameW(process, 0, image, ref length)
+            || length == 0 || length >= image.Capacity)
+        {
+            throw NativeFailure();
+        }
+        ServiceStatusProcess after = QueryServiceProcess(service);
+        return after.CurrentState == ServiceRunning && after.ProcessId == before.ProcessId
+            && (after.ServiceType & 0x30) == 0x10
+            && string.Equals(Path.GetFullPath(image.ToString()), Path.GetFullPath(expectedBinary),
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ServiceStatusProcess QueryServiceProcess(SafeServiceHandle service)
+    {
+        if (!QueryServiceStatusEx(service, 0, out ServiceStatusProcess status,
+            (uint)Marshal.SizeOf<ServiceStatusProcess>(), out _))
+        {
+            throw NativeFailure();
+        }
+        return status;
+    }
+
     private static SafeServiceHandle OpenManager()
     {
         SafeServiceHandle manager = OpenSCManager(null, null, ScManagerConnect);
@@ -268,6 +354,20 @@ internal static class WindowsThxAdmissionQueries
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct ServiceStatusProcess
+    {
+        internal uint ServiceType;
+        internal uint CurrentState;
+        internal uint ControlsAccepted;
+        internal uint Win32ExitCode;
+        internal uint ServiceSpecificExitCode;
+        internal uint CheckPoint;
+        internal uint WaitHint;
+        internal uint ProcessId;
+        internal uint ServiceFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct ServiceConfiguration
     {
         internal uint ServiceType;
@@ -292,6 +392,16 @@ internal static class WindowsThxAdmissionQueries
         private SafeServiceHandle() : base(true) { }
         protected override bool ReleaseHandle() => CloseServiceHandle(handle);
     }
+
+    [DllImport("cfgmgr32.dll", EntryPoint = "CM_Locate_DevNodeW", CharSet = CharSet.Unicode)]
+    private static extern uint CM_Locate_DevNode(out uint node, string deviceId, uint flags);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern uint CM_Get_Parent(out uint parent, uint node, uint flags);
+
+    [DllImport("cfgmgr32.dll", EntryPoint = "CM_Get_DevNode_PropertyW")]
+    private static extern uint CM_Get_DevNode_Property(uint node, ref DevicePropertyKey key,
+        out uint type, [Out] byte[] buffer, ref uint bytes, uint flags);
 
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeDeviceInfoSet SetupDiGetClassDevs(IntPtr classGuid, string? enumerator, IntPtr parent, uint flags);
@@ -328,9 +438,23 @@ internal static class WindowsThxAdmissionQueries
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool QueryServiceStatus(SafeServiceHandle service, out ServiceStatus status);
 
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryServiceStatusEx(SafeServiceHandle service, int level,
+        out ServiceStatusProcess status, uint size, out uint needed);
+
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool QueryServiceConfig(SafeServiceHandle service, IntPtr buffer, int bufferSize, out uint bytesNeeded);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern SafeProcessHandle OpenProcess(uint access,
+        [MarshalAs(UnmanagedType.Bool)] bool inherit, uint processId);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageNameW(SafeProcessHandle process,
+        uint flags, StringBuilder path, ref uint size);
 
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

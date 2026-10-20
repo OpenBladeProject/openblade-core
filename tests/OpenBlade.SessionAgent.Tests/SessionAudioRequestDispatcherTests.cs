@@ -5,6 +5,109 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class SessionAudioRequestDispatcherTests
 {
     [Fact]
+    public async Task DiscoveryAddsSanitizedBaseProofWithoutMaskingThxFailureOrStartingWorker()
+    {
+        const string target = @"PCI\VEN_8086&DEV_E328\private-instance";
+        int queries = 0;
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(new FixedAdmission(new(
+            ThxAudioAvailability.ComponentsUnavailable, "THX is absent.")), worker, () =>
+        {
+            queries++;
+            return new(true, false, false, target,
+                $"Unverified {target} and USB\\VID_1532&PID_02E0\\private-other for {Environment.UserName}.\r\n" + new string('x', 1200));
+        });
+        SessionAudioResponse response = await dispatcher.DispatchAsync(
+            new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid()), CancellationToken.None);
+        Assert.Equal(1, queries);
+        Assert.Empty(worker.Requests);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, response.Status);
+        Assert.Equal("THX is absent.", response.Error);
+        Assert.NotNull(response.BaseAudio);
+        Assert.True(response.BaseAudio.ExactRoot);
+        Assert.False(response.BaseAudio.Ready);
+        Assert.False(response.BaseAudio.CanInstall);
+        Assert.Equal(SessionAudioIpc.MaximumBaseAudioDetailCharacters, response.BaseAudio.Detail.Length);
+        Assert.Contains("[REDACTED]", response.BaseAudio.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-instance", response.BaseAudio.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-other", response.BaseAudio.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(Environment.UserName, response.BaseAudio.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(response.BaseAudio.Detail, char.IsControl);
+    }
+
+    [Fact]
+    public async Task FailedBaseProofProviderDoesNotMaskSuccessfulDiscoveryOrAuthorizeMutation()
+    {
+        var worker = new RecordingWorker(State());
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), worker,
+            () => throw new IOException("Private detail must not escape."));
+        SessionAudioResponse response = await dispatcher.DispatchAsync(
+            new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid()), CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, response.Status);
+        Assert.Null(response.Error);
+        Assert.Equal(new ThxBaseAudioDiagnosticProof(false, false, false,
+            "The base-audio diagnostic query failed: IOException."), response.BaseAudio);
+        SessionAudioResponse mutation = await dispatcher.DispatchAsync(new SetThxSpatialRequest(
+            SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers, true), CancellationToken.None);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, mutation.Status);
+        Assert.Empty(worker.Requests);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NativeAndAutomationRequestsNeverQueryBaseProof(bool automation)
+    {
+        int queries = 0;
+        var dispatcher = new SessionAudioRequestDispatcher(Available(), new RecordingWorker(State()), () =>
+        {
+            queries++;
+            return new(true, true, false, "private-target", "Ready.");
+        });
+        SessionAudioRequest[] requests =
+        [
+            new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers),
+            new ConnectThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers),
+            new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioEndpoint.Speakers, true),
+        ];
+        foreach (SessionAudioRequest request in requests)
+        {
+            SessionAudioResponse response = automation
+                ? await dispatcher.DispatchAutomationAsync(request, CancellationToken.None)
+                : await dispatcher.DispatchAsync(request, CancellationToken.None);
+            Assert.Null(response.BaseAudio);
+        }
+        if (automation)
+        {
+            SessionAudioResponse discovery = await dispatcher.DispatchAutomationAsync(
+                new DiscoverThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid()), CancellationToken.None);
+            Assert.Null(discovery.BaseAudio);
+        }
+        Assert.Equal(0, queries);
+    }
+
+    [Theory]
+    [InlineData("RZ09-0528", true)]
+    [InlineData("RZ09-0530", true)]
+    [InlineData("RZ09-0581", true)]
+    [InlineData("RZ09-0482", false)]
+    [InlineData("RZ09-0483", false)]
+    [InlineData("RZ09-0484", false)]
+    [InlineData(null, false)]
+    public void ProductionBaseProofProviderOnlyQueriesReviewedModernProfiles(string? model, bool expected)
+    {
+        ThxAudioCompatibilityProfile? profile = ThxAudioCompatibility.Profiles.SingleOrDefault(p => p.ModelNumber == model);
+        int queries = 0;
+        ThxBaseAudioAdmissionSnapshot? result = SessionAudioRequestDispatcher.CaptureBaseAudioForDiagnostics(profile, _ =>
+        {
+            queries++;
+            return new(true, true, false, "private-target", "Ready.");
+        });
+        Assert.Equal(expected ? 1 : 0, queries);
+        Assert.Equal(expected, result is not null);
+    }
+
+    [Fact]
     public async Task FailedDiagnosticDiscoveryPreservesConfirmedStateAndUncertainWritePause()
     {
         var admission = new FixedAdmission(new ThxAudioAdmission(

@@ -88,8 +88,8 @@ The existing Observer inventory records a trusted installed
 `RzDev_02a0.sys` with the same 1.0.0.73 version and a different SHA-256:
 `B77F49B11E4012C25A2815791684BE0A9F8DF0CE090797435FE2744CB6DE27A5`.
 The inventory contains no binary with which to determine whether that
-difference is limited to signing data. A version match cannot substitute
-for a reviewed content pin. Its scoped lower-filter and consumer-control
+difference is limited to signing data. Neither the version nor the hash
+establishes the missing API contract. Its scoped lower-filter and consumer-control
 records also do not establish complete keyboard and RzCommon topology.
 
 Static disassembly shows a different internal callback/context
@@ -100,10 +100,12 @@ operations `0x88883010`, `0x88883014`, and `0x88883140`. These are distinct
 from the public SnapTap hook operations implemented by RzCommon. This
 comparison does not prove ABI compatibility or incompatibility.
 
-SnapTap remains unavailable pending review of the exact 02A0 keyboard
-suppression/output callbacks and their interface with the pinned RzCommon
-build. The existing [SnapTap backend](snap-tap.md) must retain its exact
-host, collection, container, component-hash, ownership, and recovery checks.
+The subsequent [exact filter review](snap-tap-driver-review.md) establishes the
+02A0 keyboard suppression/output callback contract consumed by RzCommon.
+The shared [SnapTap backend](snap-tap.md) is now available experimentally for
+RZ09-0484. It retains exact host, collection, container, trusted package binding,
+ownership and recovery checks. The hashes above identify inspected sources;
+compatible installed API updates do not need a new build allowlist.
 No package installation or replacement is implied by this investigation.
 
 ## THX uses an older control integration
@@ -118,17 +120,19 @@ also distinguishes 2023-and-older Blade models. Absence of THX resources in
 the product-672 Synapse manifest therefore does not mean that this laptop
 lacks THX audio.
 
-OpenBlade's current [THX integration](thx-audio.md) admits specific
-`rznb11` and `rznb12` component builds. No exact RZ09-0484 legacy APO,
-codec binding, client ABI, or complete component pins were recovered here.
-The existing Observer bundle does not provide that audio-stack inventory.
-Neither the shared THX client API nor another Blade's package authorizes
-adding this model to those profiles.
+The original Observer bundle did not provide an audio-stack inventory.
+The subsequent [legacy THX interface review](thx-legacy-interface.md) establishes
+an exact-model experimental COM backend for installed RZ09-0484 components,
+separate from the modern `rznb11` and `rznb12` APIs. Runtime admission verifies
+the actual bound service/APO catalogs and typed responses. The original endpoint
+FX binding and fresh-install sequence remain unresolved; another model's package
+does not supply that evidence.
 
-The remaining SnapTap and THX questions concern native components and
-source contracts. Another USB capture would not establish those missing
-contracts. Static findings do not establish physical input enforcement,
-audible audio processing, independent setting readback, or restoration.
+These native contracts are reviewed separately from firmware captures.
+Physical SnapTap and legacy THX validation on RZ09-0484 remains pending.
+Another USB capture would not establish the missing THX installation binding.
+Static findings do not establish physical input enforcement, audible audio
+processing, independent setting readback or restoration.
 
 ## Fan controls
 

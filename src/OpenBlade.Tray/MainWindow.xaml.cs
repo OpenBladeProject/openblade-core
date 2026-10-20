@@ -288,6 +288,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public Visibility ThxAudioNavigationVisibility => localizationSnapshotMode
         || RazerBladeModelCatalog.Find(ViewModel.DetectedFirmware?.ModelNumber)?.ModelNumber
             is "RZ09-0581" or "RZ09-0528" or "RZ09-0530"
+                or "RZ09-0482" or "RZ09-0483" or "RZ09-0484"
         ? Visibility.Visible : Visibility.Collapsed;
 
     public DisplaySettingsViewModel DisplayViewModel { get; }
@@ -313,10 +314,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     return "disconnected-preview";
                 }
                 throw new IOException("The downloaded THX component could not be verified.");
-            }, () => false);
+            }, () => false, async token =>
+            {
+                string? result = Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_INSTALL_STATE");
+                if (result == "installing")
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
+                return Enum.TryParse(result, out ThxAudioProvisioningResult outcome)
+                    ? outcome : ThxAudioProvisioningResult.Failed;
+            }, () => Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_INSTALL_STATE") is not null);
         }
 #endif
-        return new ThxAudioViewModel(adapter);
+        var installer = new ThxAudioInstallLauncher();
+        return new ThxAudioViewModel(adapter, installStack: installer.RequestAsync,
+            canInstallStack: ThxAudioInstallLauncher.IsSupportedHost);
     }
 
     private static IThxAudioAdapter CreateThxAudioAdapter(bool snapshotMode)
@@ -329,7 +341,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "rznb11", StringComparison.Ordinal), systemEffectsDisabled: string.Equals(
                 Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_EFFECTS_DISABLED"),
                 "1", StringComparison.Ordinal), detectionError:
-                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_ERROR"));
+                Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_ERROR"), usesLegacy: string.Equals(
+                    Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_STACK"), "legacy", StringComparison.Ordinal));
         }
 #endif
         return new SessionThxAudioAdapter();
@@ -359,6 +372,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         else if (downloadState is "downloaded" or "failed")
         {
             await ThxViewModel.DownloadComponentAsync();
+        }
+        string? installState = Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_THX_INSTALL_STATE");
+        if (installState == "installing")
+        {
+            _ = ThxViewModel.InstallStackAsync();
+            await Task.Delay(100);
+            ThxAudioProgress.UpdateLayout();
+            PauseSnapshotStoryboards(ThxAudioProgress);
+        }
+        else if (installState is not null && installState != "available")
+        {
+            await ThxViewModel.InstallStackAsync();
         }
         FrameworkElement target = ThxAudioSection;
         if (destination == "thx-audio-enhancements")
@@ -3518,6 +3543,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnThxReadSettings(object sender, RoutedEventArgs args) =>
         await RunHandlerAsync(ThxViewModel.RefreshAsync, nameof(OnThxReadSettings));
+
+    private async void OnThxInstallStack(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(ThxViewModel.InstallStackAsync, nameof(OnThxInstallStack));
 
     private async void OnThxDownloadComponent(object sender, RoutedEventArgs args) =>
         await RunHandlerAsync(ThxViewModel.DownloadComponentAsync, nameof(OnThxDownloadComponent));

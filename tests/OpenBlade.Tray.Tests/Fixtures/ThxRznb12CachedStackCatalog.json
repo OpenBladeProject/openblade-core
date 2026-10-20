@@ -1,0 +1,207 @@
+{
+  "$schema": "../../../schemas/upstream-audio-stack.schema.json",
+  "manifestType": "OpenBlade.RazerUpstreamAudioStackCatalogEntry",
+  "schemaVersion": 1,
+  "stack": {
+    "id": "thx-rznb12",
+    "productId": "rznb12",
+    "driverVersion": "4.2.37.1621",
+    "configurationVersion": "4.2.37.1846",
+    "serviceName": "thx_rznb12_service",
+    "serviceExecutable": "thx_rznb12_svc.exe"
+  },
+  "applicableProfiles": [
+    {
+      "modelNumber": "RZ09-0581",
+      "productName": "Razer Blade 16 (2026)",
+      "usbIdentity": { "vid": "1532", "pid": "02E0" },
+      "vendorProductId": 736,
+      "codecHardwareIds": [
+        "SOUNDWIRE\\SDCA_FUNCTION_11&MAN_025D&FUNC_0721&TYPE_0B&VER_01&ADR_04&SUBSYS_30101A58&AGGREGATEDSPEAKER",
+        "SOUNDWIRE\\SDCA_11&MAN_025D&FUNC_0721&TYPE_0B&VER_01&ADR_04&SUBSYS_30101A58&AGGREGATEDSPEAKER",
+        "SOUNDWIRE\\SDCA_FUNCTION_10&MAN_025D&FUNC_0721&TYPE_06&VER_01&ADR_01&LID_03&UID_00&SUBSYS_30101A58&DynamicEnumSpeaker0",
+        "SOUNDWIRE\\SDCA_FUNCTION_11&MAN_025D&FUNC_0721&TYPE_0B&VER_01&ADR_04&LID_03&UID_00&SUBSYS_30101A58&DYNAMICENUMSPEAKER0",
+        "SOUNDWIRE\\SDCA_FUNCTION_10&MAN_025D&FUNC_1320&TYPE_01&VER_01&ADR_04&LID_03&UID_00&SUBSYS_30101A58&DYNAMICENUMSPEAKER0",
+        "SOUNDWIRE\\SDCA_10&MAN_025D&FUNC_0721&TYPE_06&VER_01&ADR_01&LID_03&UID_00&SUBSYS_30101A58&DynamicEnumSpeaker0",
+        "SOUNDWIRE\\SDCA_11&MAN_025D&FUNC_0721&TYPE_0B&VER_01&ADR_04&LID_03&UID_00&SUBSYS_30101A58&DynamicEnumSpeaker0"
+      ]
+    }
+  ],
+  "driverPackages": [
+    {
+      "infName": "thx_rznb12_apo4.inf",
+      "catalogFile": "thx_rznb12_apo4.cat",
+      "files": [
+        { "name": "thx_rznb12_apo4_data.bin", "sha256": "A3E707295B5D83274F6CC2957B6620280D581B89D6EA91F1244898D90AC2B71A" },
+        { "name": "thx_rznb12_apo4_grpc.dll", "sha256": "E927352ADDE3055777956FD14B7F7C59F3B213B04632F198CCE5B8C9A34101C7" },
+        { "name": "thx_rznb12_apo4.cat", "sha256": "0CCD88E5DABA6C9C6788B4F623CEDB94FEB2239DB8296A5363199B590D99AC7B" },
+        { "name": "thx_rznb12_apo4.dll", "sha256": "B33AD0EF245F8E78C697E239CD21CE3485AD76E1A207918B440F574DA1BD9D9C" },
+        { "name": "thx_rznb12_apo4.inf", "sha256": "467F2BF8FBAB6049003DAFBAE7C8BB47CD9251BEB46A9AF3F41DE236C19E1488" }
+      ]
+    },
+    {
+      "infName": "thx_rznb12_ext.inf",
+      "catalogFile": "thx_rznb12_ext.cat",
+      "files": [
+        { "name": "thx_rznb12_ext.cat", "sha256": "A7698D49CC930770674D5EA223B5EBDF1E3546F3CC6D1AFF441D40E6FB55F4BF" },
+        { "name": "thx_rznb12_ext.inf", "sha256": "D336ADC5A91F2A54CC0E1596FCFE2F3F6A8FF2F9E8AD29F700AAD07FC28B7DA9" }
+      ]
+    },
+    {
+      "infName": "thx_rznb12_svc.inf",
+      "catalogFile": "thx_rznb12_svc.cat",
+      "files": [
+        { "name": "thx_rznb12_props.dat", "sha256": "FF587D74CE7763FCB2B0150B62A67237844B688647CE0434219B814608E12C07" },
+        { "name": "thx_rznb12_surround_714_patch.exe", "sha256": "0943D5D4EA86911313A479BE8B341F28A1547F671796E640EA59CE61A8751679" },
+        { "name": "thx_rznb12_svc.cat", "sha256": "B03977363841C14406F90883B93852CD37765B173930040CDE338DF5721797D7" },
+        { "name": "thx_rznb12_svc.exe", "sha256": "20349EFE0BAD4ADE84BF57EFC38A7D7B7DF82CCEF3555D17DC1B34142840F6DF" },
+        { "name": "thx_rznb12_svc.inf", "sha256": "2402A0E8DCF6BA2756D2803BDE6C858FF0D8859B12988163C229BCB94A6DDBC3" }
+      ]
+    }
+  ],
+  "activeConfiguration": [
+    { "fileName": "thx_rznb12_props.dat", "size": 478742, "sha256": "E2E69163AFFEAE1F4FD19E347EB92E63CA7CAA32C13E8E1500AA459D76823031", "sourceArtifactId": "PropertiesUpdater" },
+    { "fileName": "surround_714_config.json", "size": 1243, "sha256": "1AC5DC1DD9B6E60843E6E3076DC94F4C2492D9DB02600442AF276FD6A9CCFD6C", "sourceArtifactId": "SurroundUpdater" }
+  ],
+  "artifacts": [
+    {
+      "id": "BaseInstaller",
+      "role": "BaseInstaller",
+      "version": "4.2.37.1621",
+      "fileName": "THXAPO_rznb12_v4.2.37.1621-5117e8e-i2546a_MSHLKSIGN-2255eea3.3219a439.exe",
+      "size": 53720208,
+      "sha256": "32392A63FC704DFC4BFBE4F33ED038773BBDE21AC88C61BAEEA013E3F98E8CF2",
+      "sourceUrl": "https://github.com/OpenBladeProject/blade-driver-catalog/releases/download/thx-rznb12-4.2.37.1621/THXAPO_rznb12_v4.2.37.1621-5117e8e-i2546a_MSHLKSIGN-2255eea3.3219a439.exe",
+      "authenticode": {
+        "status": "Valid",
+        "signerSubject": "CN=THX LTD., O=THX LTD., L=Novato, S=California, C=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.1.3.6.1.4.1.311.60.2.1.3=US, SERIALNUMBER=6128649, OID.2.5.4.15=Private Organization",
+        "signerThumbprint": "B23FAAE4D5ADEDA77BCCD9F12F32C92D3FF755D5",
+        "issuer": "CN=GlobalSign GCC R45 EV CodeSigning CA 2020, O=GlobalSign nv-sa, C=BE"
+      },
+      "manifestReferences": [],
+      "sourceEvidence": {
+        "acquisition": "WindowsInstallerCache",
+        "observedAtUtc": "2026-10-19T17:58:42.9307429Z",
+        "publicVendorDownloadEstablished": false,
+        "catalogMembershipVerified": true,
+        "catalogMembersVerified": 9,
+        "vendorCodeExecuted": false
+      },
+      "embeddedInstaller": {
+        "containerFormat": "RawDeflate",
+        "compressedOffset": 577088,
+        "compressedLength": 52553413,
+        "fileName": "thx-rznb12-base.exe",
+        "size": 53145160,
+        "sha256": "DE47E110A3E528249EAF59FA7932C1A568183A38F7B52246EE395A0418B14620",
+        "authenticode": {
+          "status": "Valid",
+          "signerSubject": "CN=THX LTD., O=THX LTD., L=Novato, S=California, C=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.1.3.6.1.4.1.311.60.2.1.3=US, SERIALNUMBER=6128649, OID.2.5.4.15=Private Organization",
+          "signerThumbprint": "B23FAAE4D5ADEDA77BCCD9F12F32C92D3FF755D5"
+        },
+        "arguments": [
+          "/quiet",
+          "/norestart"
+        ],
+        "carrierExecutionAllowed": false,
+        "extractionDestination": "ProtectedComponentDirectory",
+        "outputCreation": "CreateNew"
+      }
+    },
+    {
+      "id": "PropertiesUpdater",
+      "role": "PropertiesUpdater",
+      "version": "4.2.37.1846",
+      "fileName": "thx_rznb12_properties_updater_4.2.37.1846.exe",
+      "size": 4375696,
+      "sha256": "5BBD258C599720B8C81ABB623CA512613081CD913BB2BDA68357F8C7713F845B",
+      "sourceUrl": "https://app-assets.razer.com/files/synapse/devices/common/THX/thx_rznb12_properties_updater_4.2.37.1846.exe",
+      "authenticode": {
+        "status": "Valid",
+        "signerSubject": "CN=THX LTD., O=THX LTD., L=Novato, S=California, C=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.1.3.6.1.4.1.311.60.2.1.3=US, SERIALNUMBER=6128649, OID.2.5.4.15=Private Organization",
+        "signerThumbprint": "B23FAAE4D5ADEDA77BCCD9F12F32C92D3FF755D5",
+        "issuer": "CN=GlobalSign GCC R45 EV CodeSigning CA 2020, O=GlobalSign nv-sa, C=BE"
+      },
+      "manifestReferences": [
+        { "vendorProductId": 736, "resourceName": "THXV4GameProfiles-02E0", "resourceVersion": "4.2.37.1846", "resourcePath": "thxv4common", "runOnInstall": "", "restartRequired": true }
+      ]
+    },
+    {
+      "id": "SurroundUpdater",
+      "role": "SurroundUpdater",
+      "version": "4.2.37.1846",
+      "fileName": "thx_rznb12_714_patcher_config_updater_4.2.37.1846.exe",
+      "size": 590992,
+      "sha256": "1F542677BCE9CE0D3235D9A441C6FD9C8182DC364180B5E8632B3A67A591895F",
+      "sourceUrl": "https://app-assets.razer.com/files/synapse/devices/common/THX/thx_rznb12_714_patcher_config_updater_4.2.37.1846.exe",
+      "authenticode": {
+        "status": "Valid",
+        "signerSubject": "CN=THX LTD., O=THX LTD., L=Novato, S=California, C=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.1.3.6.1.4.1.311.60.2.1.3=US, SERIALNUMBER=6128649, OID.2.5.4.15=Private Organization",
+        "signerThumbprint": "B23FAAE4D5ADEDA77BCCD9F12F32C92D3FF755D5",
+        "issuer": "CN=GlobalSign GCC R45 EV CodeSigning CA 2020, O=GlobalSign nv-sa, C=BE"
+      },
+      "manifestReferences": [
+        { "vendorProductId": 736, "resourceName": "THXV4Patcher714-02E0", "resourceVersion": "4.2.37.1846", "resourcePath": "thxv4common", "runOnInstall": "", "restartRequired": true }
+      ]
+    }
+  ],
+  "upstreamManifestEvidence": [
+    { "vendorProductId": 736, "url": "https://apps.razer.com/synapse/products/736/mw/manifest.json", "sha256": "93F02CD3DBD11BBF593696767AB45EA739DEBCD3A0D4F5AF9A081F383E82A1A1", "vendorCommit": "966bbb84c29adbb359389bbbe2af3fcdff397aa4", "resourceManifestVersion": "1.0.6" }
+  ],
+  "nativeClient": "components/thx-v4-native/1.1.1.0/component.json",
+  "provisioning": {
+    "status": "FreshInstallCandidate",
+    "requiresMatchingBaseAudioDriver": true,
+    "baseAudioDriverIncluded": false,
+    "existingStackReplacementAllowed": false,
+    "physicalInstallationValidation": "Pending",
+    "freshInstallAdmission": {
+      "mode": "ConditionalWholeStack",
+      "existingStackRequiredState": "Absent",
+      "completePinnedStackRequired": true,
+      "requiredPreMutationEndpointReads": [
+        "Speakers",
+        "Headphones"
+      ]
+    },
+    "blockers": []
+  },
+  "delivery": {
+    "method": "CatalogReleaseAsset",
+    "requiredVerification": [ "Size", "Sha256", "Authenticode", "InstalledDriverCatalogMembership", "InstalledStackReadback" ]
+  },
+  "redistribution": {
+    "status": "WrittenPermissionReportedFromRazerUSLtd",
+    "catalogContainsArtifact": false,
+    "catalogReleaseAsset": true,
+    "authorizationStoredOutsideRepository": true,
+    "reportedPermissionGrantor": "Razer US Ltd",
+    "permissionBasis": "ProjectOwnerStatement",
+    "independentDocumentReview": false,
+    "authorizedDeliveryMethod": "GitHub release asset",
+    "release": {
+      "repository": "OpenBladeProject/blade-driver-catalog",
+      "tag": "thx-rznb12-4.2.37.1621",
+      "asset": "THXAPO_rznb12_v4.2.37.1621-5117e8e-i2546a_MSHLKSIGN-2255eea3.3219a439.exe",
+      "url": "https://github.com/OpenBladeProject/blade-driver-catalog/releases/download/thx-rznb12-4.2.37.1621/THXAPO_rznb12_v4.2.37.1621-5117e8e-i2546a_MSHLKSIGN-2255eea3.3219a439.exe",
+      "publicationStatus": "Published",
+      "authorizedAudience": "Public users"
+    }
+  },
+  "privacy": {
+    "containsDriverBytes": false,
+    "containsSerial": false,
+    "containsUsername": false,
+    "containsLocalPath": false,
+    "containsFullInstanceId": false
+  },
+  "limitations": [
+    "The THX package is not a replacement for the matching Realtek base audio driver.",
+    "The exact model, present codec hardware ID, service and immutable configuration must match; shared native middleware does not make this stack universal.",
+    "The base installer came from a Windows Installer cache. No public Razer download or Synapse manifest reference was established for it.",
+    "The published catalog release asset records owner-reported written permission; the authorization document has not been independently reviewed.",
+    "The signed outer wrapper is a verified carrier and must never be executed. Extract only the fixed pinned inner Burn bundle into a protected component directory using create-new semantics, then reverify its exact length, SHA-256 and THX Authenticode signer before fixed-argument execution.",
+    "Fresh-install admission is conditional on a pristine THX state, the complete pinned base/updater/configuration stack, and successful reads of both Speakers and Headphones before any runtime mutation.",
+    "Catalog applicability does not admit runtime use, and fresh installation plus physical audio behavior remain unvalidated."
+  ]
+}

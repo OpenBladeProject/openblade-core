@@ -5,6 +5,17 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class WindowsThxActiveOutputTests
 {
     [Theory]
+    [InlineData(1u, ThxAudioEndpoint.Speakers)]
+    [InlineData(3u, ThxAudioEndpoint.Headphones)]
+    [InlineData(5u, ThxAudioEndpoint.Headphones)]
+    [InlineData(2u, null)]
+    [InlineData(8u, null)]
+    [InlineData(9u, null)]
+    [InlineData(null, null)]
+    public void LegacyOutputRequiresPhysicalSpeakerOrHeadphoneFormFactor(uint? formFactor, ThxAudioEndpoint? expected) =>
+        Assert.Equal(expected, WindowsThxActiveOutput.ClassifyLegacyFormFactor(formFactor));
+
+    [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
     [InlineData(2, null)]

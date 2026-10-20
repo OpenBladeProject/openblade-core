@@ -125,6 +125,7 @@ word-for-word templates. Add reviewed terms here as new audio controls appear.
 | Concept | Simplified Chinese | Russian |
 | --- | --- | --- |
 | THX audio effects | THX 音效 | Звук THX |
+| THX audio components (driver, service and configuration) | THX 音频组件 | Компоненты THX |
 | Spatial audio | 空间音效 | Пространственный звук |
 | Equalizer / preset | 均衡器 / 预设 | Эквалайзер / пресет |
 | Sound normalization | 音量均衡 | Выравнивание громкости |

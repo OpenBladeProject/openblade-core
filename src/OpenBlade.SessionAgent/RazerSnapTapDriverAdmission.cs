@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32;
+using OpenBlade.Platform;
 
 namespace OpenBlade.SessionAgent;
 
@@ -28,8 +29,8 @@ internal sealed record RazerSnapTapDriverSnapshot(
     string? BiosProductName,
     string? SystemManufacturer,
     string? SystemProductName,
-    string? RzCommonSha256,
-    string? RzDeviceSha256,
+    RazerDriverApiPackageEvidence CommonDriver,
+    RazerDriverApiPackageEvidence DeviceDriver,
     IReadOnlyList<RazerSnapTapControlDevice> ControlDevices,
     IReadOnlyList<RazerSnapTapKeyboardDevice> KeyboardDevices,
     bool CompetingControllerDetected,
@@ -45,7 +46,7 @@ internal enum RazerSnapTapAdmissionFailure
     CompetingController,
     DriverMissing,
     ManualDriverSetupRequired,
-    DriverHashMismatch,
+    DriverPackageUntrusted,
     DriverFilesUnavailable,
     ControlIdentityMismatch,
     KeyboardIdentityMismatch,
@@ -55,7 +56,6 @@ internal enum RazerSnapTapAdmissionFailure
 /// <summary>Fresh read-only admission for exact reviewed driver profiles.</summary>
 internal sealed class RazerSnapTapDriverAdmission
 {
-    internal const string RzCommonSha256 = RazerSnapTapDriverProfiles.CommonSha256;
     private readonly Func<RazerSnapTapDriverSnapshot> capture;
 
     internal RazerSnapTapDriverAdmission()
@@ -147,12 +147,12 @@ internal sealed class RazerSnapTapDriverAdmission
                 ? RazerSnapTapAdmissionFailure.DriverMissing
                 : RazerSnapTapAdmissionFailure.ManualDriverSetupRequired;
         }
-        if (!ExactHash(snapshot.RzCommonSha256, RzCommonSha256)
-            || !ExactHash(snapshot.RzDeviceSha256, profile.DeviceSha256))
+        if (!Trusted(snapshot.CommonDriver)
+            || !Trusted(snapshot.DeviceDriver))
         {
-            return snapshot.RzCommonSha256 is null || snapshot.RzDeviceSha256 is null
+            return !snapshot.CommonDriver.Installed || !snapshot.DeviceDriver.Installed
                 ? RazerSnapTapAdmissionFailure.DriverFilesUnavailable
-                : RazerSnapTapAdmissionFailure.DriverHashMismatch;
+                : RazerSnapTapAdmissionFailure.DriverPackageUntrusted;
         }
 
         RazerSnapTapControlDevice[] controls = snapshot.ControlDevices
@@ -180,7 +180,7 @@ internal sealed class RazerSnapTapDriverAdmission
             return RazerSnapTapAdmissionFailure.KeyboardIdentityMismatch;
         }
         string identity = string.Join('\n',
-            "Razer", profile.ProductName, RzCommonSha256, profile.DeviceSha256,
+            "Razer", profile.ProductName, snapshot.CommonDriver.Identity!, snapshot.DeviceDriver.Identity!,
             control.DevicePath.ToUpperInvariant(), control.InstanceId.ToUpperInvariant(),
             control.ContainerId.ToString("D"), keyboards[0].InstanceId.ToUpperInvariant());
         endpoint = new RazerSnapTapDriverEndpoint(control.DevicePath,
@@ -188,15 +188,15 @@ internal sealed class RazerSnapTapDriverAdmission
         return RazerSnapTapAdmissionFailure.None;
     }
 
-    private static bool ExactHash(string? actual, string expected) =>
-        actual is not null && string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+    private static bool Trusted(RazerDriverApiPackageEvidence evidence) =>
+        evidence.Installed && evidence.Trusted && !string.IsNullOrWhiteSpace(evidence.Identity);
 
     private static bool IsDriverMissing(RazerSnapTapDriverSnapshot snapshot, RazerSnapTapDriverProfile profile)
     {
-        bool commonMissing = snapshot.RzCommonSha256 is null;
-        bool deviceMissing = snapshot.RzDeviceSha256 is null;
-        if ((!commonMissing && !ExactHash(snapshot.RzCommonSha256, RzCommonSha256))
-            || (!deviceMissing && !ExactHash(snapshot.RzDeviceSha256, profile.DeviceSha256))
+        bool commonMissing = !snapshot.CommonDriver.Installed;
+        bool deviceMissing = !snapshot.DeviceDriver.Installed;
+        if ((!commonMissing && !Trusted(snapshot.CommonDriver))
+            || (!deviceMissing && !Trusted(snapshot.DeviceDriver))
             || (!commonMissing && !deviceMissing))
         {
             return false;
@@ -244,20 +244,26 @@ internal static class WindowsRazerSnapTapDriverDiscovery
     {
         using RegistryKey localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
         (bool competing, bool complete) = ObserveControllers();
-        string drivers = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "drivers");
         string? biosManufacturer = ReadRegistryString(localMachine, BiosKey, "SystemManufacturer");
         string? biosProduct = ReadRegistryString(localMachine, BiosKey, "SystemProductName");
         string? systemManufacturer = ReadRegistryString(localMachine, SystemInformationKey, "SystemManufacturer");
         string? systemProduct = ReadRegistryString(localMachine, SystemInformationKey, "SystemProductName");
         RazerSnapTapDriverProfile? profile = RazerSnapTapDriverProfiles.Find(
             biosManufacturer, biosProduct, systemManufacturer, systemProduct);
+        IReadOnlyList<RazerSnapTapControlDevice> controls = profile is null ? [] : ReadControls();
+        IReadOnlyList<RazerSnapTapKeyboardDevice> keyboards = profile is null ? [] : ReadKeyboards(profile);
+        RazerSnapTapControlDevice[] matchingControls = controls.Where(control =>
+            control.InstanceId.StartsWith(profile!.ControlInstancePrefix, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(control.ServiceName, "RzCommon", StringComparison.Ordinal)).ToArray();
+        string? controlInstance = matchingControls.Length == 1 ? matchingControls[0].InstanceId : null;
+        string? keyboardInstance = keyboards.Count == 1 ? keyboards[0].InstanceId : null;
         return new RazerSnapTapDriverSnapshot(
             biosManufacturer, biosProduct, systemManufacturer, systemProduct,
-            profile is null ? null : HashFile(Path.Combine(drivers, "RzCommon.sys")),
-            profile is null ? null : HashFile(Path.Combine(drivers, profile.DeviceFileName)),
-            profile is null ? [] : ReadControls(),
-            profile is null ? [] : ReadKeyboards(profile),
-            competing, complete, HasActiveConsoleSession());
+            profile is null ? RazerDriverApiPackageEvidence.Rejected
+                : WindowsRazerDriverApiDiscovery.Capture(controlInstance, "RzCommon", @"RAZER\DeviceContol"),
+            profile is null ? RazerDriverApiPackageEvidence.Rejected
+                : WindowsRazerDriverApiDiscovery.Capture(keyboardInstance, profile.DeviceService, profile.KeyboardHardwareId),
+            controls, keyboards, competing, complete, HasActiveConsoleSession());
     }
     internal static bool HasActiveConsoleSession() =>
         ProcessIdToSessionId((uint)Environment.ProcessId, out uint current)
@@ -270,19 +276,6 @@ internal static class WindowsRazerSnapTapDriverDiscovery
     {
         using RegistryKey? key = root.OpenSubKey(path, writable: false);
         return key?.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
-    }
-
-    private static string? HashFile(string path)
-    {
-        try
-        {
-            using FileStream stream = File.OpenRead(path);
-            return Convert.ToHexString(SHA256.HashData(stream));
-        }
-        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
-        {
-            return null;
-        }
     }
 
     private static (bool Detected, bool Complete) ObserveControllers()

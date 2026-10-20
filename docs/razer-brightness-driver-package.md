@@ -13,8 +13,12 @@ The ordinary OpenBlade installer does not install or remove Razer drivers.
 ## Runtime hardware scope
 
 The two native-brightness backends use separate, model-specific stacks. OpenBlade checks
-the full device ancestry, service name, and pinned driver hashes before using
-either one:
+the full device ancestry, service name, actual installed INF/service binding,
+Windows catalog trust and file membership before using either one. Compatible
+driver updates do not require new hashes in OpenBlade. Observed content
+fingerprints detect replacement and invalidate stale admission. Device and file
+identity checks run before each brightness write, including when reusing a
+discovered endpoint. Signature trust results use a bounded short-lived cache:
 
 | Laptop | USB PID | Device service |
 |---|---|---|
@@ -33,7 +37,7 @@ four model-specific signed INFs plus the shared control package:
 | `rzcommonu.inf` | `RAZER\DeviceContol` | Shared Razer control child |
 
 The last identifier is spelled `DeviceContol` in the signed Razer INF. The
-admitted `rzcommonu.inf`, SHA-256
+originally inspected `rzcommonu.inf`, SHA-256
 `DD3C8D65C7C3CCF2093FE70FB21FB8DC724E837880566BAE629B3104A5B1B37B`,
 contains `%RzCommon.DeviceDesc% = RzCommon_Device,RAZER\DeviceContol`
 verbatim. The generic RzCommon component does not make the full stack generic.
@@ -44,11 +48,12 @@ that hardware.
 
 RZ09-0528 uses its own signed Razer stack when it is already installed:
 `rzdevu_02c6_{dkm,vcon,kbd,mou}.inf`
-with the `RzDev_02c6` service, the same `RzCommon.sys` build, and the same
-`RZCONTROL`/`RZVIRTUAL` device shape on PID `02C6`. OpenBlade pins
-`RzDev_02c6.sys` SHA-256
-`307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82` and checks
-every identity against PID `02C6` only. The export tooling and catalog entry in
+with the `RzDev_02c6` service. The originally inspected packages used the same
+`RzCommon.sys` build and `RZCONTROL`/`RZVIRTUAL` device shape on PID `02C6`. The inspected
+`RzDev_02c6.sys` has SHA-256
+`307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82`.
+This is source provenance. Runtime admission checks every identity against PID
+`02C6` and the trusted API contract. The export tooling and catalog entry in
 this guide remain specific to `02E0`; OpenBlade does not bundle either stack.
 Every other model needs its own signed-package inventory and hardware
 validation.

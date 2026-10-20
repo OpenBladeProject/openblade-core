@@ -1603,4 +1603,43 @@ Details: {1}</value>
   <data name="THX component download failed." xml:space="preserve">
     <value>THX component download failed.</value>
   </data>
+  <data name="Install THX audio" xml:space="preserve">
+    <value>Install THX audio</value>
+  </data>
+  <data name="Installing THX audio..." xml:space="preserve">
+    <value>Installing THX audio...</value>
+  </data>
+  <data name="THX audio is installed. Read the current settings to connect." xml:space="preserve">
+    <value>THX audio is installed. Read the current settings to connect.</value>
+  </data>
+  <data name="OpenBlade cannot install THX audio on this model yet." xml:space="preserve">
+    <value>OpenBlade cannot install THX audio on this model yet.</value>
+  </data>
+  <data name="THX components are already present. OpenBlade cannot replace or repair them. Export diagnostics for help." xml:space="preserve">
+    <value>THX components are already present. OpenBlade cannot replace or repair them. Export diagnostics for help.</value>
+  </data>
+  <data name="Restart Windows, then select Install THX audio to finish the remaining setup steps." xml:space="preserve">
+    <value>Restart Windows, then select Install THX audio to finish the remaining setup steps.</value>
+  </data>
+  <data name="THX setup could not be confirmed. Do not run setup again. Export diagnostics for help." xml:space="preserve">
+    <value>THX setup could not be confirmed. Do not run setup again. Export diagnostics for help.</value>
+  </data>
+  <data name="Connect AC power before installing THX audio." xml:space="preserve">
+    <value>Connect AC power before installing THX audio.</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before installing THX audio." xml:space="preserve">
+    <value>Close Synapse and THX Spatial Audio before installing THX audio.</value>
+  </data>
+  <data name="THX audio installation canceled." xml:space="preserve">
+    <value>THX audio installation canceled.</value>
+  </data>
+  <data name="THX audio setup is unavailable for this laptop or audio device." xml:space="preserve">
+    <value>THX audio setup is unavailable for this laptop or audio device.</value>
+  </data>
+  <data name="THX audio installation failed before changes were submitted." xml:space="preserve">
+    <value>THX audio installation failed before changes were submitted.</value>
+  </data>
+  <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
+    <value>OpenBlade could not verify the base audio drivers. Export diagnostics for help.</value>
+  </data>
 </root>

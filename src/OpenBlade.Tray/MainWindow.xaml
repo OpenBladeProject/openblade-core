@@ -3195,7 +3195,7 @@
                                                 <TextBlock x:Uid="MainWindow_ThxAudioIntegrationTitle" Text="Use installed THX audio"
                                                            Style="{StaticResource CardTitleStyle}" />
                                                 <TextBlock x:Uid="MainWindow_ThxAudioDescription"
-                                                           Text="Experimental. Requires the supported THX components already installed."
+                                                           Text="Experimental. Requires compatible THX components for this laptop."
                                                            Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <ToggleSwitch x:Uid="MainWindow_ThxAudioIntegrationToggle" Grid.Column="1"
@@ -3248,6 +3248,16 @@
                                                     IsEnabled="{x:Bind ThxViewModel.CanDownloadComponent, Mode=OneWay}"
                                                     Click="OnThxDownloadComponent" />
                                         </StackPanel>
+                                        <StackPanel x:Name="ThxAudioStackInstallation" Spacing="8"
+                                                    Visibility="{x:Bind ThxViewModel.IsStackInstallationVisible, Mode=OneWay}">
+                                            <TextBlock x:Uid="MainWindow_ThxAudioStackInstallationDescription"
+                                                       Text="Install the matching audio drivers and THX components. Setup may interrupt playback and require a restart."
+                                                       TextWrapping="Wrap" Style="{StaticResource SecondaryTextStyle}" />
+                                            <Button x:Name="ThxAudioInstallStack" HorizontalAlignment="Left"
+                                                    Content="{x:Bind ThxViewModel.InstallStackButtonLabel, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind ThxViewModel.CanInstallStack, Mode=OneWay}"
+                                                    Click="OnThxInstallStack" />
+                                        </StackPanel>
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -3261,7 +3271,7 @@
                                                           IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
                                                           AutomationProperties.Name="THX Spatial Audio" Toggled="OnThxSpatialToggled" />
                                         </Grid>
-                                        <Grid ColumnSpacing="24">
+                                        <Grid ColumnSpacing="24" Visibility="{x:Bind ThxViewModel.ShowEqualizerControls, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
@@ -3271,10 +3281,10 @@
                                             <ToggleSwitch x:Uid="MainWindow_ThxAudioEqualizer" Grid.Column="1"
                                                           Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                           IsOn="{x:Bind ThxViewModel.EqualizerEnabled, Mode=OneWay}"
-                                                          IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind ThxViewModel.CanEditEqualizer, Mode=OneWay}"
                                                           AutomationProperties.Name="THX equalizer" Toggled="OnThxEqualizerToggled" />
                                         </Grid>
-                                        <Grid ColumnSpacing="16">
+                                        <Grid ColumnSpacing="16" Visibility="{x:Bind ThxViewModel.ShowEqualizerControls, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
@@ -3288,6 +3298,10 @@
                                                       SelectedItem="{x:Bind ThxViewModel.SelectedPreset, Mode=OneWay}"
                                                       IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}" SelectionChanged="OnThxPresetChanged" />
                                         </Grid>
+                                        <TextBlock x:Uid="MainWindow_ThxAudioLegacyEqualizerLimit"
+                                                   Text="Only spatial audio control is available for this THX version."
+                                                   Visibility="{x:Bind ThxViewModel.ShowEqualizerLimit, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         <TextBlock Text="{x:Bind ThxViewModel.ActiveProfileMessage, Mode=OneWay}"
                                                    Visibility="{x:Bind ThxViewModel.HasActiveApplicationProfile, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
@@ -3331,6 +3345,7 @@
                                     </StackPanel>
                                     <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,1">
                                         <Expander x:Name="ThxAudioEnhancements" x:Uid="MainWindow_ThxAudioEnhancements"
+                                                  Visibility="{x:Bind ThxViewModel.HasEnhancements, Mode=OneWay}"
                                                   Style="{StaticResource CardContentExpanderStyle}"
                                                   IsExpanded="False" AutomationProperties.Name="Enhancements">
                                             <Expander.Resources>
@@ -3413,7 +3428,8 @@
                                     </Border>
                                     <Expander x:Name="ThxAudioApplications" x:Uid="MainWindow_ThxAudioApplications"
                                               Style="{StaticResource CardContentExpanderStyle}"
-                                              IsExpanded="False" AutomationProperties.Name="Saved audio and applications">
+                                              IsExpanded="False" AutomationProperties.Name="Saved audio and applications"
+                                              IsEnabled="{x:Bind ThxViewModel.SupportsSavedAudio, Mode=OneWay}">
                                         <Expander.Resources>
                                             <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
                                             <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>

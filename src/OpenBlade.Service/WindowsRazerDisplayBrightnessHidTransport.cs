@@ -1,20 +1,19 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
+using OpenBlade.Platform;
 
 namespace OpenBlade.Service;
 
 /// <summary>
 /// One exact, hardware-validated Razer driver tuple for a single Blade model.
-/// Every device identity, ancestor, service, and driver hash belongs to the
+/// Every device identity, ancestor, service, and trusted package belongs to the
 /// same USB product ID, so one model's stack can never admit another's.
 /// </summary>
 internal sealed record RazerDisplayBrightnessDriverStack(
     string ProductId,
-    string VirtualConsumerServiceName,
-    string DeviceDriverSha256)
+    string VirtualConsumerServiceName)
 {
     internal string ControlInstanceIdPrefix =>
         $@"RZCONTROL\VID_1532&PID_{ProductId}&MI_00\";
@@ -34,15 +33,13 @@ internal sealed record RazerDisplayBrightnessDriverStack(
 internal sealed class WindowsRazerDisplayBrightnessHidTransport
     : IDisplayBrightnessHidTransport
 {
-    // Razer updates or another Blade model must be admitted independently.
+    // Updated trusted packages retain this typed API; each model keeps its own device contract.
     internal static readonly RazerDisplayBrightnessDriverStack Rz09_0581Stack = new(
         "02E0",
-        "RzDev_02e0",
-        "BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787");
+        "RzDev_02e0");
     internal static readonly RazerDisplayBrightnessDriverStack Rz09_0528Stack = new(
         "02C6",
-        "RzDev_02c6",
-        "307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82");
+        "RzDev_02c6");
     internal static readonly IReadOnlyList<RazerDisplayBrightnessDriverStack>
         AdmittedStacks = [Rz09_0581Stack, Rz09_0528Stack];
     internal static readonly Guid ControlInterfaceGuid = new(
@@ -54,8 +51,6 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
     internal const uint ConsumerControlInputType = 10;
     internal const int ControlBufferLength = 32;
     internal const int UsageOffset = 8;
-    internal const string RzCommonSha256 =
-        "64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59";
 
     private const uint GenericWrite = 0x40000000;
     private const uint FileShareRead = 0x00000001;
@@ -207,18 +202,6 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
     private static (string? Path, DisplayBrightnessHidWriteResult Result) ResolveDevicePath(
         RazerDisplayBrightnessDriverStack stack)
     {
-        DisplayBrightnessHidWriteStatus baselineStatus = GetDriverBaselineStatus(
-            stack,
-            out string? baselineFailure);
-        if (baselineStatus != DisplayBrightnessHidWriteStatus.Applied)
-        {
-            return (
-                null,
-                new DisplayBrightnessHidWriteResult(
-                    baselineStatus,
-                    baselineFailure));
-        }
-
         Guid interfaceGuid = ControlInterfaceGuid;
         IntPtr deviceSet = SetupDiGetClassDevs(
             ref interfaceGuid,
@@ -385,8 +368,13 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
                             deviceInfo.DeviceInstance,
                             stack.VirtualConsumerAncestorPrefix))
                     {
+                        RazerDriverApiPackageEvidence package = WindowsRazerDriverApiDiscovery.Capture(
+                            instanceId, stack.VirtualConsumerServiceName,
+                            $@"RZVIRTUAL\VID_1532&PID_{stack.ProductId}&MI_00&COL03");
                         return new DisplayBrightnessHidWriteResult(
-                            DisplayBrightnessHidWriteStatus.Applied);
+                            package.Trusted ? DisplayBrightnessHidWriteStatus.Applied : DisplayBrightnessHidWriteStatus.Unavailable,
+                            package.Trusted ? null : package.Failure
+                                ?? "The Razer Consumer Control driver installed package is missing or not trusted.");
                     }
                 }
                 catch (Exception exception) when (exception is
@@ -596,7 +584,14 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
                     deviceInfo.DeviceInstance,
                     stack.PhysicalInterfaceAncestorPrefix))
             {
-                return true;
+                RazerDriverApiPackageEvidence package = WindowsRazerDriverApiDiscovery.Capture(
+                    instanceId, ControlServiceName, @"RAZER\DeviceContol");
+                if (package.Trusted)
+                {
+                    return true;
+                }
+                failure = package.Failure ?? "The Razer control driver installed package is missing or not trusted.";
+                return false;
             }
 
             failure = "The Razer control interface has no admitted physical-device ancestor.";
@@ -648,58 +643,6 @@ internal sealed class WindowsRazerDisplayBrightnessHidTransport
         }
 
         return false;
-    }
-
-    private static DisplayBrightnessHidWriteStatus GetDriverBaselineStatus(
-        RazerDisplayBrightnessDriverStack stack,
-        out string? failure)
-    {
-        string drivers = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.System),
-            "drivers");
-        DisplayBrightnessHidWriteStatus common = GetExpectedHashStatus(
-            Path.Combine(drivers, "RzCommon.sys"),
-            RzCommonSha256,
-            out failure);
-        return common == DisplayBrightnessHidWriteStatus.Applied
-            ? GetExpectedHashStatus(
-                Path.Combine(drivers, stack.DeviceDriverFileName),
-                stack.DeviceDriverSha256,
-                out failure)
-            : common;
-    }
-
-    private static DisplayBrightnessHidWriteStatus GetExpectedHashStatus(
-        string path,
-        string expectedHash,
-        out string? failure)
-    {
-        failure = null;
-        if (!File.Exists(path))
-        {
-            failure = $"The admitted Razer driver file is missing: {Path.GetFileName(path)}.";
-            return DisplayBrightnessHidWriteStatus.Unavailable;
-        }
-
-        try
-        {
-            using FileStream stream = File.OpenRead(path);
-            byte[] actual = SHA256.HashData(stream);
-            if (CryptographicOperations.FixedTimeEquals(
-                    actual,
-                    Convert.FromHexString(expectedHash)))
-            {
-                return DisplayBrightnessHidWriteStatus.Applied;
-            }
-
-            failure = $"The installed {Path.GetFileName(path)} build is not admitted.";
-            return DisplayBrightnessHidWriteStatus.Unavailable;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            failure = exception.Message;
-            return DisplayBrightnessHidWriteStatus.Failed;
-        }
     }
 
     private static bool IsUnavailableOpenError(int error) => error is

@@ -1603,4 +1603,43 @@
   <data name="THX component download failed." xml:space="preserve">
     <value>Не удалось скачать компонент THX.</value>
   </data>
+  <data name="Install THX audio" xml:space="preserve">
+    <value>Установить компоненты THX</value>
+  </data>
+  <data name="Installing THX audio..." xml:space="preserve">
+    <value>Установка компонентов THX...</value>
+  </data>
+  <data name="THX audio is installed. Read the current settings to connect." xml:space="preserve">
+    <value>Компоненты THX установлены. Для подключения считайте текущие настройки.</value>
+  </data>
+  <data name="OpenBlade cannot install THX audio on this model yet." xml:space="preserve">
+    <value>OpenBlade пока не может установить компоненты THX на эту модель ноутбука.</value>
+  </data>
+  <data name="THX components are already present. OpenBlade cannot replace or repair them. Export diagnostics for help." xml:space="preserve">
+    <value>Компоненты THX уже есть на компьютере. OpenBlade не может заменить или восстановить их. Экспортируйте диагностику для разбора проблемы.</value>
+  </data>
+  <data name="Restart Windows, then select Install THX audio to finish the remaining setup steps." xml:space="preserve">
+    <value>Перезагрузите Windows, затем выберите «Установить компоненты THX», чтобы завершить оставшиеся шаги установки.</value>
+  </data>
+  <data name="THX setup could not be confirmed. Do not run setup again. Export diagnostics for help." xml:space="preserve">
+    <value>Не удалось подтвердить результат установки THX. Не запускайте её повторно. Экспортируйте диагностику для разбора проблемы.</value>
+  </data>
+  <data name="Connect AC power before installing THX audio." xml:space="preserve">
+    <value>Перед установкой компонентов THX подключите блок питания.</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before installing THX audio." xml:space="preserve">
+    <value>Перед установкой компонентов THX закройте Synapse и THX Spatial Audio.</value>
+  </data>
+  <data name="THX audio installation canceled." xml:space="preserve">
+    <value>Установка компонентов THX отменена.</value>
+  </data>
+  <data name="THX audio setup is unavailable for this laptop or audio device." xml:space="preserve">
+    <value>Установка компонентов THX недоступна для этого ноутбука или аудиоустройства.</value>
+  </data>
+  <data name="THX audio installation failed before changes were submitted." xml:space="preserve">
+    <value>Не удалось начать установку компонентов THX. Изменения системы не выполнялись.</value>
+  </data>
+  <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
+    <value>Не удалось проверить базовые аудиодрайверы. Экспортируйте данные диагностики, чтобы получить помощь.</value>
+  </data>
 </root>

@@ -29,4 +29,11 @@
     <Compile Include="..\..\src\OpenBlade.Tray\WindowsRegistryReader.cs"
              Link="WindowsRegistryReader.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\OpenBlade.Tray.Tests\Fixtures\ThxRznb11StackCatalog.json" Link="Fixtures\ThxRznb11StackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\OpenBlade.Tray.Tests\Fixtures\ThxRznb12StackCatalog.json" Link="Fixtures\ThxRznb12StackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\OpenBlade.Tray.Tests\Fixtures\ThxRznb12CachedStackCatalog.json" Link="Fixtures\ThxRznb12CachedStackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\OpenBlade.Tray.Tests\Fixtures\ThxBaseAudioPrerequisitesCatalog.json" Link="Fixtures\ThxBaseAudioPrerequisitesCatalog.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\OpenBlade.Tray.Tests\Fixtures\ThxLegacyStackCatalog.json" Link="Fixtures\ThxLegacyStackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

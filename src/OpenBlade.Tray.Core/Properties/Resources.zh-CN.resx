@@ -1603,4 +1603,43 @@
   <data name="THX component download failed." xml:space="preserve">
     <value>THX 组件下载失败。</value>
   </data>
+  <data name="Install THX audio" xml:space="preserve">
+    <value>安装 THX 音频组件</value>
+  </data>
+  <data name="Installing THX audio..." xml:space="preserve">
+    <value>正在安装 THX 音频组件…</value>
+  </data>
+  <data name="THX audio is installed. Read the current settings to connect." xml:space="preserve">
+    <value>THX 音频组件已安装。请读取当前设置以连接。</value>
+  </data>
+  <data name="OpenBlade cannot install THX audio on this model yet." xml:space="preserve">
+    <value>OpenBlade 暂时无法为此型号安装 THX 音频组件。</value>
+  </data>
+  <data name="THX components are already present. OpenBlade cannot replace or repair them. Export diagnostics for help." xml:space="preserve">
+    <value>检测到已有 THX 组件。OpenBlade 无法覆盖或修复这些组件，请导出诊断信息以便排查。</value>
+  </data>
+  <data name="Restart Windows, then select Install THX audio to finish the remaining setup steps." xml:space="preserve">
+    <value>请重启 Windows，然后选择“安装 THX 音频组件”以完成剩余的安装步骤。</value>
+  </data>
+  <data name="THX setup could not be confirmed. Do not run setup again. Export diagnostics for help." xml:space="preserve">
+    <value>无法确认 THX 安装结果。请勿再次安装，请导出诊断信息以便排查。</value>
+  </data>
+  <data name="Connect AC power before installing THX audio." xml:space="preserve">
+    <value>请连接电源适配器后再安装 THX 音频组件。</value>
+  </data>
+  <data name="Close Synapse and THX Spatial Audio before installing THX audio." xml:space="preserve">
+    <value>请退出 Synapse 和 THX Spatial Audio，再安装 THX 音频组件。</value>
+  </data>
+  <data name="THX audio installation canceled." xml:space="preserve">
+    <value>已取消安装 THX 音频组件。</value>
+  </data>
+  <data name="THX audio setup is unavailable for this laptop or audio device." xml:space="preserve">
+    <value>无法为此笔记本或音频设备安装 THX 音频组件。</value>
+  </data>
+  <data name="THX audio installation failed before changes were submitted." xml:space="preserve">
+    <value>THX 安装未能开始，尚未提交系统更改。</value>
+  </data>
+  <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
+    <value>OpenBlade 无法验证基础音频驱动。请导出诊断信息以便排查。</value>
+  </data>
 </root>

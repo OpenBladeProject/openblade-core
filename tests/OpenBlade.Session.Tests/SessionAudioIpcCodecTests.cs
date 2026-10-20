@@ -7,6 +7,76 @@ namespace OpenBlade.Session.Tests;
 public sealed class SessionAudioIpcCodecTests
 {
     [Fact]
+    public async Task BaseAudioProofRoundTripsAndAbsentFieldPreservesResponseShape()
+    {
+        var response = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, "THX is absent.", null);
+        using var absent = new MemoryStream();
+        await SessionAudioIpcCodec.WriteResponseAsync(absent, response);
+        Assert.DoesNotContain("baseAudio", Encoding.UTF8.GetString(absent.ToArray()), StringComparison.Ordinal);
+        absent.Position = 0;
+        Assert.Null((await SessionAudioIpcCodec.ReadResponseAsync(absent)).BaseAudio);
+
+        var proof = new ThxBaseAudioDiagnosticProof(true, false, true,
+            new string('x', SessionAudioIpc.MaximumBaseAudioDetailCharacters));
+        using var present = new MemoryStream();
+        await SessionAudioIpcCodec.WriteResponseAsync(present, response with { BaseAudio = proof });
+        present.Position = 0;
+        Assert.Equal(proof, (await SessionAudioIpcCodec.ReadResponseAsync(present)).BaseAudio);
+    }
+
+    [Theory]
+    [InlineData(false, true, false, "Ready without root")]
+    [InlineData(false, false, true, "Install without root")]
+    [InlineData(true, true, true, "Contradictory state")]
+    [InlineData(false, false, false, "")]
+    [InlineData(false, false, false, "line\nbreak")]
+    public async Task BaseAudioProofRejectsInvalidFlagsAndText(bool root, bool ready, bool install, string detail)
+    {
+        var response = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Unavailable, ThxAudioAvailability.ComponentsUnavailable, "Unavailable.", null)
+        { BaseAudio = new(root, ready, install, detail) };
+        using var stream = new MemoryStream();
+        await Assert.ThrowsAsync<InvalidDataException>(() => SessionAudioIpcCodec.WriteResponseAsync(stream, response));
+    }
+
+    [Fact]
+    public async Task BaseAudioProofRejectsOversizedIncomingTextAndNativeState()
+    {
+        var response = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Succeeded, ThxAudioAvailability.Available, null, null)
+        { BaseAudio = new(true, true, false, new string('x', SessionAudioIpc.MaximumBaseAudioDetailCharacters + 1)) };
+        byte[] payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(response,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        using var incoming = new MemoryStream();
+        byte[] prefix = new byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(prefix, payload.Length);
+        incoming.Write(prefix);
+        incoming.Write(payload);
+        incoming.Position = 0;
+        await Assert.ThrowsAsync<InvalidDataException>(() => SessionAudioIpcCodec.ReadResponseAsync(incoming));
+        using var outgoing = new MemoryStream();
+        await Assert.ThrowsAsync<InvalidDataException>(() => SessionAudioIpcCodec.WriteResponseAsync(outgoing,
+            response with { State = State(ThxAudioEndpoint.Speakers), BaseAudio = new(true, true, false, "Ready.") }));
+    }
+
+    [Fact]
+    public async Task ResponsePreservesLegacyEqAccessWithoutInventingAnEnabledState()
+    {
+        var response = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+            ThxAudioOperationStatus.Succeeded, ThxAudioAvailability.Available, null,
+            new ThxAudioState(ThxAudioEndpoint.Speakers, true, false, null, [])
+            { Equalizer = ThxAudioFeatureAccess.ObservedOnly, ApplicationProfiles = ThxAudioFeatureAccess.Unavailable });
+        using var stream = new MemoryStream();
+        await SessionAudioIpcCodec.WriteResponseAsync(stream, response, CancellationToken.None);
+        stream.Position = 0;
+        var decoded = await SessionAudioIpcCodec.ReadResponseAsync(stream, CancellationToken.None);
+        Assert.Equal(ThxAudioFeatureAccess.ObservedOnly, decoded.State!.Equalizer);
+        Assert.True(decoded.State.SpatialEnabled);
+        Assert.Empty(decoded.State.Presets);
+    }
+
+    [Fact]
     public async Task Response_RoundTripsRznb11TenBandSpeakers()
     {
         ThxAudioState baseline = State(ThxAudioEndpoint.Speakers);
@@ -17,7 +87,7 @@ public sealed class SessionAudioIpcCodecTests
             FactoryPresetCurves = baseline.FactoryPresetCurves.Select(curve =>
                 curve with { GainsDb = new[] { 0d, 0d, 0d }.Concat(curve.GainsDb).ToArray() }).ToArray(),
         };
-        var response = new SessionAudioResponse(1, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
+        var response = new SessionAudioResponse(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), ThxAudioOperationStatus.Succeeded,
             ThxAudioAvailability.Available, null, state);
         using var stream = new MemoryStream();
         await SessionAudioIpcCodec.WriteResponseAsync(stream, response);

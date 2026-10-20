@@ -2,7 +2,7 @@ using System.ComponentModel;
 
 namespace OpenBlade.SessionAgent;
 
-/// <summary>The fixed A/D contract of the pinned RzCommon keyboard endpoint.</summary>
+/// <summary>The fixed A/D contract of the trusted, model-bound RzCommon keyboard endpoint.</summary>
 internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, IDisposable
 {
     private readonly RazerSnapTapNativeIo io;

@@ -182,6 +182,7 @@ public static class SessionAudioIpcCodec
             && Enum.IsDefined(response.Availability)
             && validError
             && (response.State is null || ValidState(response.State))
+            && (response.BaseAudio is null || response.State is null && ValidBaseAudio(response.BaseAudio))
             && (response.Status == ThxAudioOperationStatus.Succeeded
                 ? response.Availability is ThxAudioAvailability.Available or ThxAudioAvailability.AvailableReadOnly
                     || response is { State: null, Availability: not ThxAudioAvailability.Available }
@@ -191,6 +192,12 @@ public static class SessionAudioIpcCodec
             throw new InvalidDataException("Session audio IPC response body is invalid.");
         }
     }
+
+    private static bool ValidBaseAudio(ThxBaseAudioDiagnosticProof proof) =>
+        (!(proof.Ready || proof.CanInstall) || proof.ExactRoot)
+        && !(proof.Ready && proof.CanInstall)
+        && ValidText(proof.Detail)
+        && proof.Detail.Length <= SessionAudioIpc.MaximumBaseAudioDetailCharacters;
 
     private static void ValidateEnvelope(int version, Guid requestId)
     {
@@ -207,6 +214,7 @@ public static class SessionAudioIpcCodec
     private static bool ValidState(ThxAudioState state) =>
         Enum.IsDefined(state.Endpoint)
         && Enum.IsDefined(state.ApplicationProfiles)
+        && Enum.IsDefined(state.Equalizer)
         && state.Presets is not null
         && state.Presets.Count <= SessionAudioIpc.MaximumPresets
         && (state.SelectedPresetId is null

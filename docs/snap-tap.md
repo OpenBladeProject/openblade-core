@@ -4,13 +4,13 @@ When A and D are held, the last pressed key takes priority. Releasing it restore
 
 Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. Release keys and mouse buttons to activate it. SnapTap is off by default and stays running when you close the visible Tray.
 
-If the driver is missing, choose **Install driver** and approve the Windows prompt. OpenBlade downloads and verifies the RZ09-0581 package from the driver catalog. If a restart is requested, restart Windows and follow the setup guide to complete any remaining steps. After a successful installation, turn SnapTap off and on. **Setup guide** opens the catalog instructions.
+On RZ09-0581, if the driver is missing, choose **Install driver** and approve the Windows prompt. OpenBlade downloads and verifies the RZ09-0581 package from the driver catalog. If a restart is requested, restart Windows and follow the setup guide to complete any remaining steps. After a successful installation, turn SnapTap off and on. **Setup guide** opens the catalog instructions.
 
 SnapTap uses the laptop keyboard through its model-specific Razer driver and the shared Razer control driver. The pair uses the A/D scan positions. The information button includes game compatibility details.
 
 ## Supported driver profiles
 
-| Model | PID | Filter build | SnapTap validation |
+| Model | PID | Reviewed source build | SnapTap validation |
 | --- | --- | --- | --- |
 | RZ09-0581 | 02E0 | 1.0.0.78 | Physically validated |
 | RZ09-0528 | 02C6 | 1.0.0.78 | Source-reviewed experimental |
@@ -20,15 +20,15 @@ SnapTap uses the laptop keyboard through its model-specific Razer driver and the
 | RZ09-0328 | 0255 | 1.0.0.71 | Source-reviewed experimental |
 | RZ09-0484 | 02A0 | 1.0.0.73 | Source-reviewed experimental |
 
-All profiles require the pinned `RzCommon.sys` 1.0.0.76 and the exact filter hashes in the [driver review](snap-tap-driver-review.md). Discovery selects the driver file and keyboard collection from the exact model profile. The experimental label describes pending physical SnapTap validation, independently of the laptop's other supported features.
+The builds and hashes in the [driver review](snap-tap-driver-review.md) identify the inspected API sources. Runtime admission requires trusted installed packages for the shared `RzCommon` service and the model-specific filter, with the reviewed typed API and topology. Compatible installed driver updates do not require a new build allowlist. Discovery selects the service and keyboard collection from the exact model profile. The experimental label describes pending physical SnapTap validation, independently of the laptop's other supported features.
 
-On models other than RZ09-0581, install the model's Razer keyboard driver through Synapse, then close Synapse and turn SnapTap off and on. OpenBlade's **Install driver** action remains specific to the separately reviewed RZ09-0581 package. A missing file, unreviewed build, incomplete topology and unsupported model are distinct admission failures; the exported `OpenBlade.SnapTap.log` records the rejected check. Downloading Synapse alone does not establish that the required driver stack is installed.
+On models other than RZ09-0581, install the model's Razer keyboard driver through Synapse, then close Synapse and turn SnapTap off and on. OpenBlade's **Install driver** action remains specific to the separately reviewed RZ09-0581 package. A missing file, untrusted package, incomplete topology and unsupported model are distinct admission failures; the exported `OpenBlade.SnapTap.log` records the rejected check. Downloading Synapse alone does not establish that the required driver stack is installed.
 
 ## Driver implementation
 
 The Session Agent starts an authenticated current-user supervisor, which starts a separate input worker. Parent image, user, session, process lifetime, preference and coordinated shutdown checks apply to both helpers. A per-user/session mutex prevents concurrent supervisors. A failed helper stays stopped until an explicit off/on transition.
 
-Admission requires both Windows host-identity sources to match one exact reviewed model, its PID-specific keyboard collection and control endpoint in the same device container, its sole reviewed keyboard upper filter, and pinned model-filter and common-driver content hashes. The active physical console session must own the worker. A competing mapping controller, non-console session or incomplete discovery rejects admission. New models and driver builds need their own driver review. SKU is diagnostic metadata.
+Admission requires both Windows host-identity sources to match one exact reviewed model, its PID-specific keyboard collection and control endpoint in the same device container, its sole reviewed keyboard upper filter, and trusted installed packages for the model filter and shared `RzCommon` driver. OpenBlade checks actual service images, signed INF hardware/service declarations and Windows catalog membership. Observed content fingerprints invalidate stale sessions; they are not a build allowlist. The active physical console session must own the worker. A competing mapping controller, non-console session or incomplete discovery rejects admission. New models and materially different API contracts need their own driver review. SKU is diagnostic metadata.
 
 The worker installs and independently enumerates only the two canonical A/D hook records. Existing A/D hooks prevent activation. It subscribes only after both records match. The driver consumes those physical events, so the priority processor explicitly forwards each accepted original event or emits the priority transition through the same typed driver output. There is one backend and no Windows-hook fallback.
 
@@ -40,7 +40,7 @@ Uncertain output stops further input writes. Closing the last subscribed file al
 
 ## Source and verification
 
-The protocol is pinned to `mapping_engine.dll` 1.3.16.5, SHA-256 `6EABDFDEDF797E042738B630D827C06F7A45DBE560EBAEC96C66698F88F3320A`, `RzCommon.sys` 1.0.0.76, SHA-256 `64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59`, and `RzDev_02e0.sys` 1.0.0.78, SHA-256 `BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787`. Other exact filter pins, signed package provenance, Synapse mappings and callback ABI comparisons are recorded in the [driver review](snap-tap-driver-review.md). No vendor binary is bundled or loaded into OpenBlade.
+The API contract was established from `mapping_engine.dll` 1.3.16.5, SHA-256 `6EABDFDEDF797E042738B630D827C06F7A45DBE560EBAEC96C66698F88F3320A`, `RzCommon.sys` 1.0.0.76, SHA-256 `64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59`, and `RzDev_02e0.sys` 1.0.0.78, SHA-256 `BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787`. These versions and hashes identify inspected sources rather than a runtime build allowlist. Other filter source hashes, signed package provenance, Synapse mappings and callback ABI comparisons are recorded in the [driver review](snap-tap-driver-review.md). No vendor binary is bundled or loaded into OpenBlade.
 
 The codecs include literal known-answer packets, exact response sizes, ignored undefined padding, fixed-pair validation and bounded enumeration. Hook-session tests exercise ordering, ownership, failure latching and subscription closure. Priority tests compare all 1,024 five-event sequences with an independent press-order oracle.
 
