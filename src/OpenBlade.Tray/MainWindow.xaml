@@ -1244,6 +1244,8 @@
                                               IsEnabled="{x:Bind CanEditGamingMode, Mode=OneWay}"
                                               AutomationProperties.Name="Gaming mode"
                                               IsOn="{x:Bind GamingModeToggleIsOn, Mode=OneWay}"
+                                              OnContent="{x:Bind TrayDashboardGamingModeLabel, Mode=OneWay}"
+                                              OffContent="{x:Bind TrayDashboardGamingModeLabel, Mode=OneWay}"
                                               Toggled="OnGamingModeToggled" />
                             </StackPanel>
                         </Grid>
@@ -1346,6 +1348,8 @@
                                                       IsEnabled="{x:Bind CanEditStartupAnimation, Mode=OneWay}"
                                                       AutomationProperties.Name="Startup animation"
                                                       IsOn="{x:Bind StartupAnimationToggleIsOn, Mode=OneWay}"
+                                                      OnContent="{x:Bind StartupAnimationStateLabel, Mode=OneWay}"
+                                                      OffContent="{x:Bind StartupAnimationStateLabel, Mode=OneWay}"
                                                       Toggled="OnStartupAnimationToggled" />
                                     </StackPanel>
                                 </Grid>

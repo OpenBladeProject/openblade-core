@@ -4,6 +4,26 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
+public enum Blade18FnDiagnosticStage
+{
+    FnReportObserved,
+    HookRawInputConfirmed,
+    ActionBlocked,
+    ActionQueued,
+    PendingActionsReset,
+    LatestActionSuperseded,
+    ExecutorStarted,
+    ExecutorCompleted,
+    ExecutorCanceled,
+    ExecutorFailed,
+}
+
+public sealed record Blade18FnDiagnostic(
+    Blade18FnDiagnosticStage Stage,
+    Blade18FnShortcut? Shortcut = null,
+    FunctionRowInputPhase? Phase = null,
+    string? FailureType = null);
+
 public interface IReactiveKeyboardSource : IDisposable
 {
     Task Completion { get; }
@@ -31,6 +51,8 @@ public sealed record ReactiveKeyboardSourceOptions(
     public Action ResetFunctionRowInput { get; init; } = () => { };
 
     public Func<byte?> ReadBlade18KeyboardLayoutId { get; init; } = () => null;
+
+    public Action<Blade18FnDiagnostic> ReportBlade18FnDiagnostic { get; init; } = _ => { };
 }
 
 public interface IReactiveKeyboardSourceFactory
@@ -48,7 +70,8 @@ public sealed record ServiceReactiveLightingLoopOptions(
     Func<FunctionRowInputEvent, CancellationToken, Task>? ExecuteFunctionRowInputAsync = null,
     Func<CancellationToken, Task>? ResetFunctionRowInputAsync = null,
     TimeSpan? PerformanceShortcutQuietPeriod = null,
-    Func<Blade18FnShortcut, CancellationToken, Task>? ExecuteBlade18FnShortcutAsync = null);
+    Func<Blade18FnShortcut, CancellationToken, Task>? ExecuteBlade18FnShortcutAsync = null,
+    Action<Blade18FnDiagnostic>? Blade18FnDiagnostic = null);
 
 /// <summary>
 /// Owns the one session-local Raw Input registration used by key-triggered
@@ -73,6 +96,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
+    private readonly Action<Blade18FnDiagnostic> reportBlade18FnDiagnostic;
     private readonly FunctionRowInputPump? functionRowInputPump;
     private readonly object performanceShortcutStateSync = new();
     private readonly SemaphoreSlim performanceShortcutPreviewGate = new(1, 1);
@@ -84,6 +108,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private PowerSource? previousPowerSource;
     private PerformancePreset? optimisticPerformancePreset;
     private long performanceShortcutGeneration;
+    private long blade18PerformanceShortcutGeneration;
     private bool performanceShortcutInFlight;
     private int inputConnected;
     private int keyTriggeredActive;
@@ -107,6 +132,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
         statusWatcher = options.StatusWatcher ?? serviceClient;
         errorHandler = options.ErrorHandler;
+        reportBlade18FnDiagnostic = options.Blade18FnDiagnostic ?? (_ => { });
         shortcutNotifications = options.ShortcutNotifications
             ?? NullPerformanceShortcutNotificationSink.Instance;
         pulsePump = new ReactiveKeyPulsePump(SendPulseAsync, errorHandler: ReportFailure);
@@ -275,7 +301,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             specialKeyPump?.ClearPending();
             defaultLaptopKeyPump?.ClearPending();
             CancelBlade18FnActions();
-            blade18FnShortcutPump?.ClearPending();
+            ClearPendingBlade18FnActions();
             functionRowInputPump?.Reset();
             return;
         }
@@ -338,10 +364,23 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                         if (shortcut == Blade18FnShortcut.Performance
                             || !IsBlade18FnInputAdmitted())
                         {
+                            ReportBlade18FnDiagnostic(new(
+                                Blade18FnDiagnosticStage.ActionBlocked,
+                                shortcut));
                             return;
                         }
-                        if (!blade18FnShortcutPump!.TryEnqueue(shortcut))
+                        if (blade18FnShortcutPump!.TryEnqueue(shortcut))
                         {
+                            ReportBlade18FnDiagnostic(new(
+                                Blade18FnDiagnosticStage.ActionQueued,
+                                shortcut));
+                        }
+                        else
+                        {
+                            ReportBlade18FnDiagnostic(new(
+                                Blade18FnDiagnosticStage.ExecutorFailed,
+                                shortcut,
+                                FailureType: "QueueRejected"));
                             ReportFailure(new InvalidOperationException(
                                 "Blade 18 Fn shortcut input could not keep up and skipped a key press."));
                         }
@@ -349,6 +388,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     IsBlade18FnInputAdmitted = IsBlade18FnInputAdmitted,
                     ReadBlade18KeyboardLayoutId = ReadBlade18KeyboardLayoutId,
                     ResetFunctionRowInput = () => functionRowInputPump?.Reset(),
+                    ReportBlade18FnDiagnostic = ReportBlade18FnDiagnostic,
                 });
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
@@ -612,12 +652,21 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         Interlocked.Exchange(ref blade18FnInputAdmitted, 0);
         Volatile.Read(ref source)?.ResetFunctionPInput();
         CancelBlade18FnActions();
-        blade18FnShortcutPump?.ClearPending();
+        ClearPendingBlade18FnActions();
         functionRowInputPump?.Reset();
         if (resetBlade18Performance)
         {
             CancelPendingPerformanceShortcut();
         }
+    }
+
+    private void ClearPendingBlade18FnActions()
+    {
+        blade18FnShortcutPump?.ClearPending();
+        // The pump does not reveal whether it held an item; report only that
+        // the reset may have cleared queued work.
+        ReportBlade18FnDiagnostic(new(
+            Blade18FnDiagnosticStage.PendingActionsReset));
     }
 
     private bool IsBlade18FnInputAdmitted() =>
@@ -665,17 +714,44 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             if (!IsBlade18FnInputAdmitted())
             {
+                ReportBlade18FnDiagnostic(new(
+                    Blade18FnDiagnosticStage.ActionBlocked,
+                    shortcut));
                 return;
             }
+            ReportBlade18FnDiagnostic(new(
+                Blade18FnDiagnosticStage.ExecutorStarted,
+                shortcut));
             try
             {
                 await executeBlade18FnShortcutAsync!(shortcut, linkedCancellation.Token)
                     .ConfigureAwait(false);
+                ReportBlade18FnDiagnostic(new(
+                    Blade18FnDiagnosticStage.ExecutorCompleted,
+                    shortcut));
             }
             catch (OperationCanceledException)
                 when (linkedCancellation.IsCancellationRequested
                     && !cancellationToken.IsCancellationRequested)
             {
+                ReportBlade18FnDiagnostic(new(
+                    Blade18FnDiagnosticStage.ExecutorCanceled,
+                    shortcut));
+            }
+            catch (OperationCanceledException)
+            {
+                ReportBlade18FnDiagnostic(new(
+                    Blade18FnDiagnosticStage.ExecutorCanceled,
+                    shortcut));
+                throw;
+            }
+            catch (Exception exception)
+            {
+                ReportBlade18FnDiagnostic(new(
+                    Blade18FnDiagnosticStage.ExecutorFailed,
+                    shortcut,
+                    FailureType: exception.GetType().Name));
+                throw;
             }
         }
     }
@@ -782,13 +858,28 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void QueuePerformanceShortcut(PerformanceShortcutSource source)
     {
-        if (source == PerformanceShortcutSource.FunctionP
-            && ReadVerifiedInputDeviceKind() == RazerBladeInputDeviceKind.Rz09_0484
-            && !IsBlade18FnInputAdmitted())
+        bool blade18FnPerformance = source == PerformanceShortcutSource.FunctionP
+            && ReadVerifiedInputDeviceKind() == RazerBladeInputDeviceKind.Rz09_0484;
+        if (blade18FnPerformance && !IsBlade18FnInputAdmitted())
         {
+            ReportBlade18FnDiagnostic(new(
+                Blade18FnDiagnosticStage.ActionBlocked,
+                Blade18FnShortcut.Performance));
             return;
         }
         PerformanceShortcutIntent intent = BeginPerformanceShortcut(source);
+        if (blade18FnPerformance)
+        {
+            long supersededGeneration = Interlocked.Exchange(
+                ref blade18PerformanceShortcutGeneration,
+                intent.Generation);
+            if (supersededGeneration != 0)
+            {
+                ReportBlade18FnDiagnostic(new(
+                    Blade18FnDiagnosticStage.LatestActionSuperseded,
+                    Blade18FnShortcut.Performance));
+            }
+        }
         if (intent.Target is { } selected)
         {
             _ = PublishPerformanceShortcutPreviewAsync(
@@ -807,9 +898,22 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
         if (!shortcutPump.TryEnqueue(intent))
         {
-            CancelPerformanceShortcut(intent);
+            CancelPerformanceShortcut(intent, reportCancellation: false);
+            if (TryCompleteBlade18PerformanceDiagnostic(intent.Generation))
+            {
+                ReportBlade18FnDiagnostic(new(
+                    Blade18FnDiagnosticStage.ExecutorFailed,
+                    Blade18FnShortcut.Performance,
+                    FailureType: "QueueRejected"));
+            }
             ReportFailure(new InvalidOperationException(
                 "Performance shortcut input could not be queued."));
+        }
+        else if (blade18FnPerformance)
+        {
+            ReportBlade18FnDiagnostic(new(
+                Blade18FnDiagnosticStage.ActionQueued,
+                Blade18FnShortcut.Performance));
         }
     }
 
@@ -821,9 +925,18 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
     }
 
-    private void CancelPerformanceShortcut(PerformanceShortcutIntent intent)
+    private void CancelPerformanceShortcut(
+        PerformanceShortcutIntent intent,
+        bool reportCancellation = true)
     {
         _ = CompletePerformanceShortcut(intent.Generation, applied: false);
+        if (reportCancellation
+            && TryCompleteBlade18PerformanceDiagnostic(intent.Generation))
+        {
+            ReportBlade18FnDiagnostic(new(
+                Blade18FnDiagnosticStage.ExecutorCanceled,
+                Blade18FnShortcut.Performance));
+        }
         if (intent.Target is not null)
         {
             _ = PublishPerformanceShortcutPreviewAsync(
@@ -837,6 +950,14 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         PerformanceShortcutIntent intent,
         CancellationToken cancellationToken)
     {
+        bool blade18FnPerformance =
+            Volatile.Read(ref blade18PerformanceShortcutGeneration) == intent.Generation;
+        if (blade18FnPerformance)
+        {
+            ReportBlade18FnDiagnostic(new(
+                Blade18FnDiagnosticStage.ExecutorStarted,
+                Blade18FnShortcut.Performance));
+        }
         ControlOperationResult? result = null;
         Exception? operationException = null;
         ServiceStatusSnapshot? refreshedStatus = null;
@@ -855,6 +976,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             _ = CompletePerformanceShortcut(intent.Generation, applied: false);
+            ReportBlade18PerformanceTerminal(
+                intent.Generation,
+                Blade18FnDiagnosticStage.ExecutorCanceled);
             throw;
         }
         catch (Exception exception)
@@ -882,6 +1006,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             result?.Status == ControlOperationStatus.Applied || confirmedApplied);
         if (confirmedApplied)
         {
+            ReportBlade18PerformanceTerminal(
+                intent.Generation,
+                Blade18FnDiagnosticStage.ExecutorCompleted);
             if (operationException is not null)
             {
                 ReportFailure(operationException);
@@ -890,6 +1017,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
         if (operationException is not null)
         {
+            ReportBlade18PerformanceTerminal(
+                intent.Generation,
+                Blade18FnDiagnosticStage.ExecutorFailed,
+                operationException.GetType().Name);
             if (latestIntent)
             {
                 TryShowPerformanceShortcutFailure(operationException.Message);
@@ -899,11 +1030,22 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 .Throw();
         }
 
-        ControlOperationResult completed = result
-            ?? throw new InvalidOperationException(
+        if (result is null)
+        {
+            ReportBlade18PerformanceTerminal(
+                intent.Generation,
+                Blade18FnDiagnosticStage.ExecutorFailed,
+                "MissingResult");
+            throw new InvalidOperationException(
                 "The performance shortcut completed without a result.");
+        }
+        ControlOperationResult completed = result;
         if (completed.Status == ControlOperationStatus.Failed)
         {
+            ReportBlade18PerformanceTerminal(
+                intent.Generation,
+                Blade18FnDiagnosticStage.ExecutorFailed,
+                "ControlOperationFailed");
             if (latestIntent)
             {
                 TryShowPerformanceShortcutFailure(completed.Message);
@@ -913,6 +1055,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
         if (completed.Status != ControlOperationStatus.Applied)
         {
+            ReportBlade18PerformanceTerminal(
+                intent.Generation,
+                completed.Status == ControlOperationStatus.Blocked
+                    ? Blade18FnDiagnosticStage.ActionBlocked
+                    : Blade18FnDiagnosticStage.ExecutorCompleted,
+                $"ControlOperation{completed.Status}");
             if (latestIntent && intent.Target is not null)
             {
                 TryShowPerformanceShortcutFailure(completed.Message);
@@ -920,6 +1068,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             return;
         }
 
+        ReportBlade18PerformanceTerminal(
+            intent.Generation,
+            Blade18FnDiagnosticStage.ExecutorCompleted);
         bool predictionMatched = intent.Target is not null;
         if (!predictionMatched)
         {
@@ -931,6 +1082,38 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             {
                 ReportFailure(exception);
             }
+        }
+    }
+
+    private bool TryCompleteBlade18PerformanceDiagnostic(long generation) =>
+        Interlocked.CompareExchange(
+            ref blade18PerformanceShortcutGeneration,
+            0,
+            generation) == generation;
+
+    private void ReportBlade18PerformanceTerminal(
+        long generation,
+        Blade18FnDiagnosticStage stage,
+        string? failureType = null)
+    {
+        if (TryCompleteBlade18PerformanceDiagnostic(generation))
+        {
+            ReportBlade18FnDiagnostic(new(
+                stage,
+                Blade18FnShortcut.Performance,
+                FailureType: failureType));
+        }
+    }
+
+    private void ReportBlade18FnDiagnostic(Blade18FnDiagnostic diagnostic)
+    {
+        try
+        {
+            reportBlade18FnDiagnostic(diagnostic);
+        }
+        catch
+        {
+            // Diagnostics must not affect input gating or action execution.
         }
     }
 

@@ -316,16 +316,135 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.DoesNotContain(session.Writes, item => item.CommandId == 7);
     }
 
-    [Fact]
-    public async Task MaximumFlagEchoWithoutApplication_PausesWrites()
+    [Theory]
+    [InlineData(0x029F, "")]
+    [InlineData(0x029F, "00")]
+    [InlineData(0x029F, "02")]
+    [InlineData(0x02A0, "")]
+    [InlineData(0x02A0, "00")]
+    [InlineData(0x02A0, "02")]
+    public async Task SourceBackedMaximumFans_BoundedStatusAckConfirmsWithIndependentGet(
+        int pid,
+        string ackHex)
     {
-        var session = new Session { Mode = 4, IgnoreMaximum = true };
+        var session = new Session
+        {
+            Mode = 4,
+            MaximumAckPayloadOverride = Convert.FromHexString(ackHex),
+        };
+        await using var port = Create(pid, session);
+
+        await port.SetCustomPerformanceAsync(
+            CustomPerformanceSettings.Default with { MaximumFans = true }, CancellationToken.None);
+
+        Assert.True(session.MaximumFans);
+        RazerCommandSpec setter = Assert.Single(session.Writes,
+            command => command.ClassId == 0x07 && command.CommandId == 0x0F);
+        Assert.True(setter.AllowVariableResponseLength);
+        Assert.NotNull(setter.PayloadValidator);
+        Assert.True(setter.PayloadValidator(Array.Empty<byte>()));
+        Assert.True(setter.PayloadValidator(new byte[] { 0 }));
+        Assert.False(setter.PayloadValidator(new byte[] { 0, 0 }));
+        int setterIndex = session.Commands.IndexOf(setter);
+        Assert.Contains(session.Commands.Skip(setterIndex + 1),
+            command => command.ClassId == 0x07 && command.CommandId == 0x8F);
+        Assert.Equal(1, session.MaximumSetAttempts);
+    }
+
+
+    [Fact]
+    public async Task Blade18MaximumFans_OversizedAckPausesWithoutReplay()
+    {
+        var session = new Session { Mode = 4, MaximumAckPayloadOverride = [0, 0] };
         var policy = new ExperimentalFeaturesPolicy(Model(0x02A0));
         await using var port = Create(0x02A0, session, policy);
-        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetCustomPerformanceAsync(
-            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low) { MaximumFans = true }, CancellationToken.None));
+        var requested = CustomPerformanceSettings.Default with { MaximumFans = true };
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(requested, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.False(policy.WritesAllowed);
-        Assert.Single(session.Writes);
+        Assert.Equal(1, session.MaximumSetAttempts);
+        int commandCount = session.Commands.Count;
+        BladeWriteException blocked = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(requested, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, blocked.SubmissionState);
+        Assert.Equal(commandCount, session.Commands.Count);
+        Assert.Equal(1, session.MaximumSetAttempts);
+    }
+
+    [Theory]
+    [InlineData(HidProtocolValidationFailure.Status)]
+    [InlineData(HidProtocolValidationFailure.TransactionMismatch)]
+    public async Task Blade18MaximumFans_StatusOrCorrelationFailurePausesWithoutReplay(
+        HidProtocolValidationFailure protocolFailure)
+    {
+        var session = new Session { Mode = 4, MaximumAckProtocolFailure = protocolFailure };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02A0));
+        await using var port = Create(0x02A0, session, policy);
+        var requested = CustomPerformanceSettings.Default with { MaximumFans = true };
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(requested, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(1, session.MaximumSetAttempts);
+        int commandCount = session.Commands.Count;
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(requested, CancellationToken.None));
+        Assert.Equal(commandCount, session.Commands.Count);
+        Assert.Equal(1, session.MaximumSetAttempts);
+    }
+
+    [Fact]
+    public async Task MaximumFlagAckWithoutApplication_PausesWritesWithoutReplay()
+    {
+        var session = new Session { Mode = 4, IgnoreMaximum = true, MaximumAckPayloadOverride = [] };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02A0));
+        await using var port = Create(0x02A0, session, policy);
+        var requested = CustomPerformanceSettings.Default with { MaximumFans = true };
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(requested, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(1, session.MaximumSetAttempts);
+        int commandCount = session.Commands.Count;
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(requested, CancellationToken.None));
+        Assert.Equal(commandCount, session.Commands.Count);
+        Assert.Equal(1, session.MaximumSetAttempts);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("10")]
+    public async Task Blade18MaximumFans_MalformedIndependentGetPausesWithoutReplay(string payloadHex)
+    {
+        var session = new Session
+        {
+            Mode = 4,
+            MaximumAckPayloadOverride = [],
+            MaximumReadbackPayloadOverride = Convert.FromHexString(payloadHex),
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02A0));
+        await using var port = Create(0x02A0, session, policy);
+        var requested = CustomPerformanceSettings.Default with { MaximumFans = true };
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(requested, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(1, session.MaximumSetAttempts);
+        int commandCount = session.Commands.Count;
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(requested, CancellationToken.None));
+        Assert.Equal(commandCount, session.Commands.Count);
+        Assert.Equal(1, session.MaximumSetAttempts);
     }
 
     [Theory]
@@ -358,15 +477,19 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Theory]
-    [InlineData(8)]
-    [InlineData(10)]
-    [InlineData(4)]
-    [InlineData(1)]
-    public async Task MaximumFans_OtherPowerModeBitsBlockBeforeAnyCustomWrite(byte flags)
+    [InlineData(0x029F, 8)]
+    [InlineData(0x029F, 10)]
+    [InlineData(0x029F, 4)]
+    [InlineData(0x029F, 1)]
+    [InlineData(0x02A0, 8)]
+    [InlineData(0x02A0, 10)]
+    [InlineData(0x02A0, 4)]
+    [InlineData(0x02A0, 1)]
+    public async Task MaximumFans_OtherPowerModeBitsBlockBeforeAnyCustomWrite(int pid, byte flags)
     {
         var session = new Session { Mode = 4, PowerModeControlFlags = flags };
-        var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
-        await using var port = Create(0x029F, session, policy);
+        var policy = new ExperimentalFeaturesPolicy(Model(pid));
+        await using var port = Create(pid, session, policy);
         var desired = CustomPerformanceSettings.Default with { MaximumFans = (flags & 2) == 0 };
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetCustomPerformanceAsync(desired, CancellationToken.None));
@@ -468,6 +591,18 @@ public sealed partial class ExperimentalThermalExpansionTests
         internal byte SecondTarget { get; set; } = 25;
         internal byte PowerModeControlFlags { get; set; }
         internal byte[]? PowerModePayloadOverride { get; init; }
+        internal byte[]? MaximumAckPayloadOverride { get; init; }
+        internal HidProtocolValidationFailure? MaximumAckProtocolFailure { get; init; }
+        internal byte[]? MaximumReadbackPayloadOverride { get; init; }
+        internal byte[]? FanModeAckPayloadOverride { get; init; }
+        internal byte[]? FanTargetAckPayloadOverride { get; init; }
+        internal HidProtocolValidationFailure? FanModeAckProtocolFailure { get; init; }
+        internal HidProtocolValidationFailure? FanTargetAckProtocolFailure { get; init; }
+        internal byte[]? FanModeReadbackPayloadOverride { get; init; }
+        internal byte[]? FanTargetReadbackPayloadOverride { get; init; }
+        internal byte[]? CustomLevelAckPayloadOverride { get; init; }
+        internal HidProtocolValidationFailure? CustomLevelAckProtocolFailure { get; init; }
+        internal byte[]? CustomLevelReadbackPayloadOverride { get; init; }
         internal byte[] AdapterPowerPayload { get; set; } = [0x11, 0x11];
         internal byte[] HyperBoostFirmware { get; init; } = [1, 5, 0, 0];
         internal bool MaximumFans
@@ -477,12 +612,22 @@ public sealed partial class ExperimentalThermalExpansionTests
         }
         internal byte? FanTargetClassOverride { get; init; }
         internal bool IgnoreFanTargets { get; init; }
+        internal bool IgnoreFanMode { get; init; }
+        internal bool IgnoreCustomLevels { get; init; }
         internal bool IgnoreMaximum { get; init; }
         internal bool ResetTargetsOnModeWrite { get; init; }
         internal Action<RazerCommandSpec>? BeforeSubmission { get; set; }
         internal bool IgnoreHyperBoost { get; init; }
         internal int? FailModeWrite { get; init; }
         private int modeWrites;
+        private bool maximumWriteSeen;
+        private bool fanModeWriteSeen;
+        private bool fanTargetWriteSeen;
+        private bool customLevelWriteSeen;
+        internal int MaximumSetAttempts { get; private set; }
+        internal int FanModeSetAttempts { get; private set; }
+        internal int FanTargetSetAttempts { get; private set; }
+        internal int CustomLevelSetAttempts { get; private set; }
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal IEnumerable<RazerCommandSpec> Writes => Commands.Where(item => item.CommandId < 0x80);
         internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
@@ -509,32 +654,107 @@ public sealed partial class ExperimentalThermalExpansionTests
             {
                 case (0x00, 0x87): payload = HyperBoostFirmware; break;
                 case (0x07, 0x8C): payload = AdapterPowerPayload; break;
-                case (0x0D, 0x82): payload = [0, payload[1], Mode, Fan]; break;
-                case (0x0D, 0x87): payload = [0, payload[1], payload[1] == 1 ? Cpu : Gpu]; break;
-                case (0x0D, 0x81): payload = [FanTargetClassOverride ?? payload[0], payload[1], payload[1] == 1 ? FirstTarget : SecondTarget]; break;
-                case (0x07, 0x8F): payload = PowerModePayloadOverride ?? [PowerModeControlFlags]; break;
+                case (0x0D, 0x82):
+                    payload = fanModeWriteSeen && FanModeReadbackPayloadOverride is not null
+                        ? FanModeReadbackPayloadOverride
+                        : [0, payload[1], Mode, Fan];
+                    break;
+                case (0x0D, 0x87):
+                    payload = customLevelWriteSeen && CustomLevelReadbackPayloadOverride is not null
+                        ? CustomLevelReadbackPayloadOverride
+                        : [0, payload[1], payload[1] == 1 ? Cpu : Gpu];
+                    break;
+                case (0x0D, 0x81):
+                    payload = fanTargetWriteSeen && FanTargetReadbackPayloadOverride is not null
+                        ? FanTargetReadbackPayloadOverride
+                        : [FanTargetClassOverride ?? payload[0], payload[1], payload[1] == 1 ? FirstTarget : SecondTarget];
+                    break;
+                case (0x07, 0x8F):
+                    payload = maximumWriteSeen && MaximumReadbackPayloadOverride is not null
+                        ? MaximumReadbackPayloadOverride
+                        : PowerModePayloadOverride ?? [PowerModeControlFlags];
+                    break;
                 case (0x0D, 0x02):
+                    FanModeSetAttempts++;
                     if (++modeWrites == FailModeWrite)
                     {
                         return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout));
                     }
-                    if (!IgnoreHyperBoost || payload[2] != 7) { Mode = payload[2]; Fan = payload[3]; }
+                    if (!IgnoreFanMode && (!IgnoreHyperBoost || payload[2] != 7)) { Mode = payload[2]; Fan = payload[3]; }
                     if (ResetTargetsOnModeWrite) { FirstTarget = 30; }
+                    fanModeWriteSeen = true;
+                    payload = FanModeAckPayloadOverride ?? payload;
+                    if (FanModeAckProtocolFailure is { } modeFailure)
+                    {
+                        return ProtocolFailure(modeFailure);
+                    }
                     break;
                 case (0x0D, 0x07):
-                    if (payload[1] == 1) { Cpu = payload[2]; } else { Gpu = payload[2]; }
+                    CustomLevelSetAttempts++;
+                    if (!IgnoreCustomLevels)
+                    {
+                        if (payload[1] == 1) { Cpu = payload[2]; } else { Gpu = payload[2]; }
+                    }
+                    customLevelWriteSeen = true;
+                    payload = CustomLevelAckPayloadOverride ?? payload;
+                    if (CustomLevelAckProtocolFailure is { } levelFailure)
+                    {
+                        return ProtocolFailure(levelFailure);
+                    }
                     break;
-                case (0x07, 0x0F): if (!IgnoreMaximum) { PowerModeControlFlags = payload[0]; } break;
+                case (0x07, 0x0F):
+                    MaximumSetAttempts++;
+                    if (!IgnoreMaximum) { PowerModeControlFlags = payload[0]; }
+                    maximumWriteSeen = true;
+                    payload = MaximumAckPayloadOverride ?? payload;
+                    if (MaximumAckProtocolFailure is { } failure)
+                    {
+                        return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(
+                            default, HidSessionFailureKind.ProtocolFailure)
+                        {
+                            Diagnostic = new(
+                                HidSessionFailurePhase.ProtocolValidation,
+                                HidSessionFailureKind.ProtocolFailure,
+                                null,
+                                91)
+                            {
+                                ProtocolValidationFailure = failure,
+                            },
+                        });
+                    }
+                    break;
                 case (0x0D, 0x01):
+                    FanTargetSetAttempts++;
                     if (!IgnoreFanTargets)
                     {
                         if (payload[1] == 1) { FirstTarget = payload[2]; } else { SecondTarget = payload[2]; }
+                    }
+                    fanTargetWriteSeen = true;
+                    payload = FanTargetAckPayloadOverride ?? payload;
+                    if (FanTargetAckProtocolFailure is { } targetFailure)
+                    {
+                        return ProtocolFailure(targetFailure);
                     }
                     break;
                 default: throw new InvalidOperationException($"Unexpected command {command.ClassId:X2}/{command.CommandId:X2}.");
             }
             return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(payload, null));
         }
+
+        private static Task<HidSessionResult<ReadOnlyMemory<byte>>> ProtocolFailure(
+            HidProtocolValidationFailure failure) => Task.FromResult(
+                new HidSessionResult<ReadOnlyMemory<byte>>(
+                    default, HidSessionFailureKind.ProtocolFailure)
+                {
+                    Diagnostic = new(
+                        HidSessionFailurePhase.ProtocolValidation,
+                        HidSessionFailureKind.ProtocolFailure,
+                        null,
+                        91)
+                    {
+                        ProtocolValidationFailure = failure,
+                    },
+                });
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

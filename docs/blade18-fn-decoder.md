@@ -156,3 +156,27 @@ each materially different action path and check restoration where applicable.
 
 No programmable M-key slots, remapping, function-key-primary writes, Gaming Mode,
 keyboard Driver mode or additional firmware capability follows from this decoder.
+
+## Offline diagnostic checkpoints
+
+The Session Agent's existing persistent log now records the first admitted Fn
+report and subsequent Fn state changes, confirmed hook/Raw Input correlation for
+Fn+P, Fn+R and Fn+T, and their queue/executor stages. Diagnostics record only
+closed shortcut/stage/phase identities and exception type names. They contain
+no arbitrary key codes, HID bytes, device handles, paths or exception messages.
+Repeated reports with unchanged Fn state do not add a record. Existing topology
+rejection reasons remain in the same log.
+
+The ordinary **About > Export diagnostics** ZIP appends these logs. A missing
+checkpoint narrows the input stage to investigate; it does not prove that a key
+or capability is absent. `ExecutorCompleted` means the executor or service call
+returned, not that physical application was independently established. `PendingActionsReset` records a reset that may have cleared queued Fn+R/Fn+T
+work, and `LatestActionSuperseded` records replacement of the latest Fn+P intent.
+These are aggregate checkpoints; discarded R/T items have no individual
+cancellation record. Active operations retain their available cancellation
+diagnostics.
+
+The checkpoints preserve the exact-host, local-session and exclusive-keyboard
+gates, confirmation before action, bounded queues and stop-on-ambiguity behavior.
+They require no new input observer, IPC field, firmware command or owner test
+round.

@@ -10,6 +10,7 @@ public sealed partial class MainViewModel
         left.DeviceVerified == right.DeviceVerified
         && left.UnsupportedLaptop == right.UnsupportedLaptop
         && left.ControlAccess == right.ControlAccess
+        && left.ObservationReason == right.ObservationReason
         && left.WritesBlocked == right.WritesBlocked
         && left.HyperBoostRestorePending == right.HyperBoostRestorePending
         && ThermalConvergenceEqual(left.ThermalConvergence, right.ThermalConvergence)
