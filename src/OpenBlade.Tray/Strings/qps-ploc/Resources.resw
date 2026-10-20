@@ -2263,4 +2263,13 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_ThxAudioComponentDownloadDescription.Text" xml:space="preserve">
     <value>[!! Dównlóád thé THX cómpónént fróm Razer. Thé THX áúdíó drívér múst álréádý bé ínstálléd. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="SnapTap_Status_Experimental" xml:space="preserve">
+    <value>[!! Éxpéríméntál drívér súppórt ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_ManualDriverSetup" xml:space="preserve">
+    <value>[!! Ínstáll thís láptóp’s Razer kéýbóárd drívér thróúgh Sýnápsé, thén túrn SnápTáp óff ánd ón. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Status_UnsupportedModel" xml:space="preserve">
+    <value>[!! SnápTáp drívér súppórt hás nót béén éstáblíshéd fór thís láptóp. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

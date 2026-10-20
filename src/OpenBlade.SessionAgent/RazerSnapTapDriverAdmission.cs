@@ -7,7 +7,8 @@ using Microsoft.Win32;
 
 namespace OpenBlade.SessionAgent;
 
-internal sealed record RazerSnapTapDriverEndpoint(string Path, string IdentityToken);
+internal sealed record RazerSnapTapDriverEndpoint(
+    string Path, string IdentityToken, RazerSnapTapDriverProfile Profile);
 
 internal sealed record RazerSnapTapControlDevice(
     string DevicePath,
@@ -35,27 +36,26 @@ internal sealed record RazerSnapTapDriverSnapshot(
     bool ControllerObservationComplete,
     bool ActiveConsoleSession);
 
-/// <summary>
-/// Read-only admission for the one reviewed RZ09-0581 Razer keyboard-driver
-/// tuple. The returned token lets a transport repeat all discovery immediately
-/// before opening the admitted path.
-/// </summary>
+internal enum RazerSnapTapAdmissionFailure
+{
+    None,
+    UnsupportedModel,
+    InactiveConsoleSession,
+    IncompleteControllerObservation,
+    CompetingController,
+    DriverMissing,
+    ManualDriverSetupRequired,
+    DriverHashMismatch,
+    DriverFilesUnavailable,
+    ControlIdentityMismatch,
+    KeyboardIdentityMismatch,
+    DiscoveryFailed,
+}
+
+/// <summary>Fresh read-only admission for exact reviewed driver profiles.</summary>
 internal sealed class RazerSnapTapDriverAdmission
 {
-    internal const string ExactManufacturer = "Razer";
-    internal const string ExactProductName = "Blade 16 - RZ09-0581";
-    internal const string RzCommonSha256 =
-        "64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59";
-    internal const string RzDeviceSha256 =
-        "BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787";
-
-    private const string ControlInstancePrefix = @"RZCONTROL\VID_1532&PID_02E0&MI_00\";
-    private const string ControlAncestorPrefix = @"USB\VID_1532&PID_02E0&MI_02\";
-    private const string KeyboardInstancePrefix = @"HID\VID_1532&PID_02E0&MI_01&COL01\";
-    private const string KeyboardAncestorPrefix = @"USB\VID_1532&PID_02E0&MI_01\";
-    private const string ControlService = "RzCommon";
-    private const string KeyboardFilter = "RzDev_02e0";
-
+    internal const string RzCommonSha256 = RazerSnapTapDriverProfiles.CommonSha256;
     private readonly Func<RazerSnapTapDriverSnapshot> capture;
 
     internal RazerSnapTapDriverAdmission()
@@ -71,24 +71,37 @@ internal sealed class RazerSnapTapDriverAdmission
     internal bool TryGetEndpoint(out RazerSnapTapDriverEndpoint endpoint)
         => TryGetEndpoint(out endpoint, out _);
 
-    internal bool TryGetEndpoint(
-        out RazerSnapTapDriverEndpoint endpoint,
-        out bool driverMissing)
+    internal bool TryGetEndpoint(out RazerSnapTapDriverEndpoint endpoint, out bool driverMissing)
+    {
+        bool admitted = TryGetEndpointWithFailure(out endpoint, out var failure);
+        driverMissing = failure is RazerSnapTapAdmissionFailure.DriverMissing
+            or RazerSnapTapAdmissionFailure.ManualDriverSetupRequired;
+        return admitted;
+    }
+
+    internal bool TryGetEndpointWithFailure(
+        out RazerSnapTapDriverEndpoint endpoint, out RazerSnapTapAdmissionFailure failure)
     {
         endpoint = null!;
-        driverMissing = false;
         try
         {
             RazerSnapTapDriverSnapshot snapshot = capture();
-            driverMissing = IsDriverMissing(snapshot);
-            return TryAdmit(snapshot, out endpoint);
+            failure = Evaluate(snapshot, out endpoint);
+            if (failure != RazerSnapTapAdmissionFailure.None)
+            {
+                Trace.TraceWarning("SnapTap driver admission rejected: {0}; host={1}.",
+                    failure, snapshot.BiosProductName);
+            }
+            return failure == RazerSnapTapAdmissionFailure.None;
         }
         catch (Exception exception) when (exception is
             Win32Exception or InvalidOperationException or IOException
             or UnauthorizedAccessException or CryptographicException
             or OverflowException)
         {
-            driverMissing = false;
+            failure = RazerSnapTapAdmissionFailure.DiscoveryFailed;
+            Trace.TraceWarning("SnapTap driver discovery failed: {0}; HRESULT=0x{1:X8}.",
+                exception.GetType().Name, exception.HResult);
             return false;
         }
     }
@@ -101,114 +114,108 @@ internal sealed class RazerSnapTapDriverAdmission
             && string.Equals(current.IdentityToken, endpoint.IdentityToken, StringComparison.Ordinal);
     }
 
-    internal static bool TryAdmit(
-        RazerSnapTapDriverSnapshot snapshot,
-        out RazerSnapTapDriverEndpoint endpoint)
+    internal static bool TryAdmit(RazerSnapTapDriverSnapshot snapshot, out RazerSnapTapDriverEndpoint endpoint) =>
+        Evaluate(snapshot, out endpoint) == RazerSnapTapAdmissionFailure.None;
+
+    internal static RazerSnapTapAdmissionFailure Evaluate(
+        RazerSnapTapDriverSnapshot snapshot, out RazerSnapTapDriverEndpoint endpoint)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         endpoint = null!;
-        if (!Exact(snapshot.BiosManufacturer, ExactManufacturer)
-            || !Exact(snapshot.BiosProductName, ExactProductName)
-            || !Exact(snapshot.SystemManufacturer, ExactManufacturer)
-            || !Exact(snapshot.SystemProductName, ExactProductName)
-            || !ExactHash(snapshot.RzCommonSha256, RzCommonSha256)
-            || !ExactHash(snapshot.RzDeviceSha256, RzDeviceSha256)
-            || !snapshot.ActiveConsoleSession
-            || !snapshot.ControllerObservationComplete
-            || snapshot.CompetingControllerDetected)
+        RazerSnapTapDriverProfile? profile = RazerSnapTapDriverProfiles.Find(
+            snapshot.BiosManufacturer, snapshot.BiosProductName,
+            snapshot.SystemManufacturer, snapshot.SystemProductName);
+        if (profile is null)
         {
-            return false;
+            return RazerSnapTapAdmissionFailure.UnsupportedModel;
+        }
+        if (!snapshot.ActiveConsoleSession)
+        {
+            return RazerSnapTapAdmissionFailure.InactiveConsoleSession;
+        }
+        if (!snapshot.ControllerObservationComplete)
+        {
+            return RazerSnapTapAdmissionFailure.IncompleteControllerObservation;
+        }
+        if (snapshot.CompetingControllerDetected)
+        {
+            return RazerSnapTapAdmissionFailure.CompetingController;
+        }
+        if (IsDriverMissing(snapshot, profile))
+        {
+            return profile.AutomaticInstallationAvailable
+                ? RazerSnapTapAdmissionFailure.DriverMissing
+                : RazerSnapTapAdmissionFailure.ManualDriverSetupRequired;
+        }
+        if (!ExactHash(snapshot.RzCommonSha256, RzCommonSha256)
+            || !ExactHash(snapshot.RzDeviceSha256, profile.DeviceSha256))
+        {
+            return snapshot.RzCommonSha256 is null || snapshot.RzDeviceSha256 is null
+                ? RazerSnapTapAdmissionFailure.DriverFilesUnavailable
+                : RazerSnapTapAdmissionFailure.DriverHashMismatch;
         }
 
         RazerSnapTapControlDevice[] controls = snapshot.ControlDevices
             .Where(control =>
                 control.ContainerId != Guid.Empty
-                && control.InstanceId.StartsWith(ControlInstancePrefix, StringComparison.OrdinalIgnoreCase)
-                && Exact(control.ServiceName, ControlService)
-                && HasAncestor(control.Ancestors, ControlAncestorPrefix))
+                && control.InstanceId.StartsWith(profile.ControlInstancePrefix, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(control.ServiceName, "RzCommon", StringComparison.Ordinal)
+                && HasAncestor(control.Ancestors, profile.ControlAncestorPrefix))
             .ToArray();
-        if (controls.Length != 1)
+        if (controls.Length != 1 || string.IsNullOrWhiteSpace(controls[0].DevicePath))
         {
-            return false;
+            return RazerSnapTapAdmissionFailure.ControlIdentityMismatch;
         }
-
         RazerSnapTapControlDevice control = controls[0];
         RazerSnapTapKeyboardDevice[] keyboards = snapshot.KeyboardDevices
             .Where(keyboard =>
                 keyboard.ContainerId == control.ContainerId
-                && keyboard.InstanceId.StartsWith(KeyboardInstancePrefix, StringComparison.OrdinalIgnoreCase)
-                && HasOnlyFilter(keyboard.UpperFilters, KeyboardFilter)
-                && HasAncestor(keyboard.Ancestors, KeyboardAncestorPrefix))
+                && keyboard.InstanceId.StartsWith(profile.KeyboardInstancePrefix, StringComparison.OrdinalIgnoreCase)
+                && keyboard.UpperFilters.Count == 1
+                && string.Equals(keyboard.UpperFilters[0], profile.DeviceService, StringComparison.OrdinalIgnoreCase)
+                && HasAncestor(keyboard.Ancestors, profile.KeyboardAncestorPrefix))
             .ToArray();
-        if (keyboards.Length != 1 || string.IsNullOrWhiteSpace(control.DevicePath))
+        if (keyboards.Length != 1)
         {
-            return false;
+            return RazerSnapTapAdmissionFailure.KeyboardIdentityMismatch;
         }
-
         string identity = string.Join('\n',
-            ExactManufacturer,
-            ExactProductName,
-            RzCommonSha256,
-            RzDeviceSha256,
-            control.DevicePath.ToUpperInvariant(),
-            control.InstanceId.ToUpperInvariant(),
-            control.ContainerId.ToString("D"),
-            keyboards[0].InstanceId.ToUpperInvariant());
-        endpoint = new RazerSnapTapDriverEndpoint(
-            control.DevicePath,
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))));
-        return true;
+            "Razer", profile.ProductName, RzCommonSha256, profile.DeviceSha256,
+            control.DevicePath.ToUpperInvariant(), control.InstanceId.ToUpperInvariant(),
+            control.ContainerId.ToString("D"), keyboards[0].InstanceId.ToUpperInvariant());
+        endpoint = new RazerSnapTapDriverEndpoint(control.DevicePath,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))), profile);
+        return RazerSnapTapAdmissionFailure.None;
     }
 
-    private static bool Exact(string? actual, string expected) =>
-        string.Equals(actual, expected, StringComparison.Ordinal);
-
     private static bool ExactHash(string? actual, string expected) =>
-        actual is not null
-        && string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+        actual is not null && string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsDriverMissing(RazerSnapTapDriverSnapshot snapshot)
+    private static bool IsDriverMissing(RazerSnapTapDriverSnapshot snapshot, RazerSnapTapDriverProfile profile)
     {
-        if (!Exact(snapshot.BiosManufacturer, ExactManufacturer)
-            || !Exact(snapshot.BiosProductName, ExactProductName)
-            || !Exact(snapshot.SystemManufacturer, ExactManufacturer)
-            || !Exact(snapshot.SystemProductName, ExactProductName)
-            || !snapshot.ActiveConsoleSession
-            || !snapshot.ControllerObservationComplete
-            || snapshot.CompetingControllerDetected)
-        {
-            return false;
-        }
-
         bool commonMissing = snapshot.RzCommonSha256 is null;
         bool deviceMissing = snapshot.RzDeviceSha256 is null;
         if ((!commonMissing && !ExactHash(snapshot.RzCommonSha256, RzCommonSha256))
-            || (!deviceMissing && !ExactHash(snapshot.RzDeviceSha256, RzDeviceSha256))
+            || (!deviceMissing && !ExactHash(snapshot.RzDeviceSha256, profile.DeviceSha256))
             || (!commonMissing && !deviceMissing))
         {
             return false;
         }
-
         RazerSnapTapKeyboardDevice[] keyboards = snapshot.KeyboardDevices
             .Where(keyboard => keyboard.InstanceId.StartsWith(
-                KeyboardInstancePrefix, StringComparison.OrdinalIgnoreCase))
+                profile.KeyboardInstancePrefix, StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        return keyboards.Length == 1
-            && keyboards[0].ContainerId != Guid.Empty
-            && HasAncestor(keyboards[0].Ancestors, KeyboardAncestorPrefix);
+        return keyboards.Length == 1 && keyboards[0].ContainerId != Guid.Empty
+            && HasAncestor(keyboards[0].Ancestors, profile.KeyboardAncestorPrefix);
     }
 
     private static bool HasAncestor(IEnumerable<string> ancestors, string prefix) =>
         ancestors.Any(ancestor => ancestor.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-
-    private static bool HasOnlyFilter(IReadOnlyList<string> filters, string expected) =>
-        filters.Count == 1 && string.Equals(filters[0], expected, StringComparison.OrdinalIgnoreCase);
 }
-
 internal static class WindowsRazerSnapTapDriverDiscovery
 {
     internal static readonly Guid ControlInterfaceGuid = new("E3BE005D-D130-4910-88FF-09AE02F680E9");
-    // RzDevU_02e0_Kbd.inf installs MI_01/COL01 in Class=Keyboard.
+    // The reviewed model-specific Kbd INFs install MI_01/COL01 in Class=Keyboard.
     // The generic HID setup class does not enumerate this keyboard collection.
     private static readonly Guid KeyboardClassGuid = new("4D36E96B-E325-11CE-BFC1-08002BE10318");
     private static readonly DevicePropertyKey ContainerIdKey = new(
@@ -238,20 +245,20 @@ internal static class WindowsRazerSnapTapDriverDiscovery
         using RegistryKey localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
         (bool competing, bool complete) = ObserveControllers();
         string drivers = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "drivers");
+        string? biosManufacturer = ReadRegistryString(localMachine, BiosKey, "SystemManufacturer");
+        string? biosProduct = ReadRegistryString(localMachine, BiosKey, "SystemProductName");
+        string? systemManufacturer = ReadRegistryString(localMachine, SystemInformationKey, "SystemManufacturer");
+        string? systemProduct = ReadRegistryString(localMachine, SystemInformationKey, "SystemProductName");
+        RazerSnapTapDriverProfile? profile = RazerSnapTapDriverProfiles.Find(
+            biosManufacturer, biosProduct, systemManufacturer, systemProduct);
         return new RazerSnapTapDriverSnapshot(
-            ReadRegistryString(localMachine, BiosKey, "SystemManufacturer"),
-            ReadRegistryString(localMachine, BiosKey, "SystemProductName"),
-            ReadRegistryString(localMachine, SystemInformationKey, "SystemManufacturer"),
-            ReadRegistryString(localMachine, SystemInformationKey, "SystemProductName"),
-            HashFile(Path.Combine(drivers, "RzCommon.sys")),
-            HashFile(Path.Combine(drivers, "RzDev_02e0.sys")),
-            ReadControls(),
-            ReadKeyboards(),
-            competing,
-            complete,
-            HasActiveConsoleSession());
+            biosManufacturer, biosProduct, systemManufacturer, systemProduct,
+            profile is null ? null : HashFile(Path.Combine(drivers, "RzCommon.sys")),
+            profile is null ? null : HashFile(Path.Combine(drivers, profile.DeviceFileName)),
+            profile is null ? [] : ReadControls(),
+            profile is null ? [] : ReadKeyboards(profile),
+            competing, complete, HasActiveConsoleSession());
     }
-
     internal static bool HasActiveConsoleSession() =>
         ProcessIdToSessionId((uint)Environment.ProcessId, out uint current)
         && IsActiveConsoleSession(current, WTSGetActiveConsoleSessionId());
@@ -353,7 +360,7 @@ internal static class WindowsRazerSnapTapDriverDiscovery
         }
     }
 
-    private static IReadOnlyList<RazerSnapTapKeyboardDevice> ReadKeyboards()
+    private static IReadOnlyList<RazerSnapTapKeyboardDevice> ReadKeyboards(RazerSnapTapDriverProfile profile)
     {
         Guid classGuid = KeyboardClassGuid;
         nint set = SetupDiGetClassDevs(ref classGuid, null, 0, DigcfPresent);
@@ -376,7 +383,7 @@ internal static class WindowsRazerSnapTapDriverDiscovery
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
                 string id = GetDeviceId(info.DeviceInstance);
-                if (!id.StartsWith(@"HID\VID_1532&PID_02E0&MI_01&COL01\", StringComparison.OrdinalIgnoreCase))
+                if (!id.StartsWith(profile.KeyboardInstancePrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

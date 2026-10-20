@@ -86,7 +86,8 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "localizationSnapshotMode\n"
-                + "            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch)\n"
+                + "            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch,\n"
+                + "                ExperimentalDriver: localizationSnapshotSnapTapExperimental)\n"
                 + "            : SnapTapStatusStore.Read()",
             source,
             StringComparison.Ordinal);

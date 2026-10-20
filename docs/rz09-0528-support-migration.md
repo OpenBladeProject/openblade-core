@@ -50,6 +50,8 @@ production support merely because a neighboring model implements it.
 
 ## Current capability surface
 
+The separately reviewed Windows-driver [SnapTap backend](snap-tap.md#supported-driver-profiles) is available experimentally with the exact 02C6 filter and shared control driver. Its source review establishes compatibility; physical SnapTap input and restoration validation remains pending and is not covered by the firmware ledger.
+
 | Area | Current scope |
 | --- | --- |
 | Identity | Exact model, BIOS, PID, control collection, firmware metadata, and relevant interfaces |

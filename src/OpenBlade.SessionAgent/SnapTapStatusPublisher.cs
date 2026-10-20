@@ -14,11 +14,13 @@ internal sealed class SnapTapStatusPublisher : IDisposable
             FullMode = BoundedChannelFullMode.DropOldest,
         });
     private readonly Task writer;
+    private readonly RazerSnapTapDriverProfile profile;
     private int failed;
     private SnapTapRuntimeState? lastState;
 
-    internal SnapTapStatusPublisher()
+    internal SnapTapStatusPublisher(RazerSnapTapDriverProfile profile)
     {
+        this.profile = profile;
         writer = Task.Run(async () =>
         {
             try
@@ -48,7 +50,9 @@ internal sealed class SnapTapStatusPublisher : IDisposable
         channel.Writer.TryWrite(new SnapTapRuntimeStatus(
             state,
             DateTimeOffset.UtcNow,
-            Environment.ProcessId));
+            Environment.ProcessId,
+            profile.ProductName,
+            !profile.PhysicallyValidated));
     }
 
     public void Dispose()
