@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Extend driver-backed SnapTap to all seven supported Blade models through one shared backend with exact driver profiles. Newly added models show experimental status and use their own Razer driver setup; diagnostics identify failed admission checks. ([#828](https://github.com/OSSBlade/openblade-core/pull/828))
+
 ### Fixed
 
 - Accept the vendor-backed performance, fan and Maximum Fans acknowledgement replies on experimental Blade 18 (2023) and Blade 16 (2023), retaining independent readback and write-pause recovery. ([#826](https://github.com/OpenBladeProject/openblade-core/pull/826))
