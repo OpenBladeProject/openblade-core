@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.39.0-nightly.97] - 2026-10-20
+
 ### Added
 
 - Add experimental spatial-audio control through the installed legacy THX COM service on Blade 14 RZ09-0482, Blade 16 RZ09-0483 and Blade 18 RZ09-0484. Review every supported model in the driver catalog; record the exact Realtek OEM codec tuning and keep legacy installation blocked until the endpoint effects binding and installation sequence are verified, and identify RZ09-0328 as Dolby Atmos. Add a developer-only read-only collector for the original legacy binding evidence. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
@@ -2167,7 +2169,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.37.3-nightly.96...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.39.0-nightly.97...HEAD
+[0.39.0-nightly.97]: https://github.com/OSSBlade/openblade-core/compare/v0.37.3-nightly.96...v0.39.0-nightly.97
 [0.37.3-nightly.96]: https://github.com/OSSBlade/openblade-core/compare/v0.37.1-nightly.95...v0.37.3-nightly.96
 [0.37.1-nightly.95]: https://github.com/OSSBlade/openblade-core/compare/v0.37.0-nightly.94...v0.37.1-nightly.95
 [0.37.0-nightly.94]: https://github.com/OSSBlade/openblade-core/compare/v0.36.0-nightly.93...v0.37.0-nightly.94
