@@ -618,7 +618,9 @@ public partial class App
             bool captureSnapTapFailure = string.Equals(
                 requestedPage, "laptop-snap-tap-failed", StringComparison.Ordinal);
             bool captureSnapTapEnabled = string.Equals(
-                requestedPage, "laptop-snap-tap-on", StringComparison.Ordinal);
+                requestedPage, "laptop-snap-tap-on", StringComparison.Ordinal)
+                || requestedPage is "laptop-snap-tap-manual-driver" or "laptop-snap-tap-unsupported"
+                    or "laptop-snap-tap-experimental";
             bool captureSnapTapInformation = string.Equals(
                 requestedPage, "laptop-snap-tap-info", StringComparison.Ordinal);
             bool captureSnapTapDriverMissing = requestedPage is "laptop-snap-tap-driver"
@@ -626,6 +628,9 @@ public partial class App
                 or "laptop-snap-tap-driver-restart" or "laptop-snap-tap-driver-failed";
             string? driverSetupState = requestedPage switch
             {
+                "laptop-snap-tap-manual-driver" => "manual",
+                "laptop-snap-tap-unsupported" => "unsupported",
+                "laptop-snap-tap-experimental" => "experimental",
                 "laptop-snap-tap-driver-installing" => "installing",
                 "laptop-snap-tap-driver-installed" => "installed",
                 "laptop-snap-tap-driver-restart" => "restart",
@@ -700,6 +705,13 @@ public partial class App
                 if (destination.StartsWith("thx-audio", StringComparison.Ordinal))
                 {
                     await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
+                    await WaitForSnapshotLayoutAsync();
+                }
+                if (destination == "laptop" && Environment.GetEnvironmentVariable(
+                    "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE")?.StartsWith(
+                        "one-shot-", StringComparison.Ordinal) == true)
+                {
+                    snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
                     await WaitForSnapshotLayoutAsync();
                 }
                 if (destination == "settings-experimental")
@@ -1314,14 +1326,17 @@ public partial class App
             return;
         }
         if (state is not ("read-failure" or "battery" or "unsupported"
-            or "direct-manual" or "battery-drift" or "keyboard"))
+            or "direct-manual" or "battery-drift" or "keyboard"
+            or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
         }
 
         // Snapshot windows never start the service client. These states exercise
         // the real UI with synthetic observations and perform no device access.
-        bool keyboard = state == "keyboard";
+        bool oneShot = state.StartsWith("one-shot-", StringComparison.Ordinal);
+        bool oneShotConfirmed = state == "one-shot-confirmed";
+        bool keyboard = state == "keyboard" || oneShot;
         bool directManual = state == "direct-manual";
         bool driftedBattery = state == "battery-drift";
         bool fullPower = directManual || driftedBattery || keyboard;
@@ -1334,13 +1349,20 @@ public partial class App
                 ? DeviceCapabilities.Unavailable()
                 : DeviceCapabilities.SafeTargetDefaults() with
                 {
-                    OneShotLaptopControls = keyboard
+                    OneShotLaptopControls = oneShot
                         ? new HashSet<OneShotLaptopControl>
                         {
+                            OneShotLaptopControl.StartupAnimation,
                             OneShotLaptopControl.FunctionKeyPrimary,
                             OneShotLaptopControl.GamingMode,
                         }
-                        : new HashSet<OneShotLaptopControl>(),
+                        : keyboard
+                            ? new HashSet<OneShotLaptopControl>
+                            {
+                                OneShotLaptopControl.FunctionKeyPrimary,
+                                OneShotLaptopControl.GamingMode,
+                            }
+                            : new HashSet<OneShotLaptopControl>(),
                     SupportsDirectManualFanTransitions = directManual,
                     ChargeLimits = driftedBattery
                         ? new HashSet<int> { 70, 80 }
@@ -1364,8 +1386,12 @@ public partial class App
             null, null, null, null, false)
         {
             UnsupportedLaptop = unsupported,
-            FunctionKeyPrimary = keyboard ? FunctionKeyPrimaryMode.FunctionKeys : null,
-            GamingModeEnabled = keyboard ? false : null,
+            ObservationReason = state == "one-shot-checking"
+                ? DeviceObservationReason.RefreshingControls : DeviceObservationReason.None,
+            StartupAnimationEnabled = oneShotConfirmed ? true : null,
+            FunctionKeyPrimary = keyboard && (!oneShot || oneShotConfirmed)
+                ? FunctionKeyPrimaryMode.FunctionKeys : null,
+            GamingModeEnabled = keyboard && (!oneShot || oneShotConfirmed) ? false : null,
             KeyboardDriverModeActive = keyboard ? true : null,
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(

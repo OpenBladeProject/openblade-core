@@ -48,6 +48,29 @@ public sealed class WindowsRazerDriverApiDiscoveryTests
     }
 
     [Theory]
+    [InlineData("02E0")]
+    [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
+    public void ExactModelFilterDeclarationRequiresItsOwnServiceAndKeyboardCollection(string productId)
+    {
+        string service = $"RzDev_{productId.ToLowerInvariant()}";
+        string hardwareId = $@"HID\VID_1532&PID_{productId}&MI_01&COL01";
+        string modelInf = Inf.Replace("RzDev_02e0", service, StringComparison.Ordinal)
+            .Replace("PID_02E0", $"PID_{productId}", StringComparison.Ordinal);
+
+        Assert.Equal("updated.cat", WindowsRazerDriverApiDiscovery.ValidateInfContract(
+            modelInf, service, hardwareId));
+        Assert.Throws<InvalidDataException>(() => WindowsRazerDriverApiDiscovery.ValidateInfContract(
+            modelInf, service, hardwareId.Replace("COL01", "COL03", StringComparison.Ordinal)));
+        Assert.Throws<InvalidDataException>(() => WindowsRazerDriverApiDiscovery.ValidateInfContract(
+            modelInf, "RzDev_other", hardwareId));
+    }
+
+    [Theory]
     [InlineData("PID_02E0", "PID_02C6")]
     [InlineData("COL01", "COL03")]
     [InlineData("AddService=RzDev_02e0", "AddService=Other")]

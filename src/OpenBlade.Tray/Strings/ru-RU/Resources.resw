@@ -2269,4 +2269,13 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_ThxAudioLegacyEqualizerLimit.Text" xml:space="preserve">
     <value>Для этой версии THX пока доступно только управление пространственным звуком.</value>
   </data>
+  <data name="SnapTap_Status_Experimental" xml:space="preserve">
+    <value>Экспериментальная поддержка драйвера</value>
+  </data>
+  <data name="SnapTap_Status_ManualDriverSetup" xml:space="preserve">
+    <value>Установите драйвер клавиатуры Razer для этого ноутбука через Synapse, затем выключите и снова включите SnapTap.</value>
+  </data>
+  <data name="SnapTap_Status_UnsupportedModel" xml:space="preserve">
+    <value>Поддержка SnapTap через драйвер этой модели ещё не подтверждена.</value>
+  </data>
 </root>

@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Management;
 using System.Text.Json;
+using OpenBlade.Contracts;
+using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
@@ -14,11 +16,19 @@ internal static class SnapTapDriverSupervisor
 
     internal static int Run(Func<bool> shouldStop)
     {
+        // Helpers bypass the main agent's logging setup. Use a separate file
+        // that the diagnostic exporter already includes, without logging from
+        // the input loop or contending with the agent's active log.
+        using IDisposable logging = PersistentTraceLog.RegisterDefault(
+            "OpenBlade.SnapTap", OpenBladeProductVersion.Read(typeof(SnapTapDriverSupervisor).Assembly));
         var admission = new RazerSnapTapDriverAdmission();
-        if (!admission.TryGetEndpoint(out var endpoint, out bool driverMissing))
+        if (!admission.TryGetEndpointWithFailure(out var endpoint, out var failure))
         {
-            return driverMissing ? 5 : 3;
+            return AdmissionExitCode(failure);
         }
+        Trace.TraceInformation("SnapTap driver admitted: {0}; PID={1}; provenance={2}.",
+            endpoint.Profile.ProductName, endpoint.Profile.ProductId,
+            endpoint.Profile.PhysicallyValidated ? "PhysicallyValidated" : "SourceReviewedExperimental");
         // This independent CreateFile remains unsubscribed. Duplicating the
         // worker's handle would retain its subscription after worker death.
         using var guardian = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint));
@@ -158,6 +168,15 @@ internal static class SnapTapDriverSupervisor
     internal static bool CanDiscardJournal(string? previousBoot, string currentBoot, IReadOnlyList<byte[]> hooks) =>
         !string.IsNullOrWhiteSpace(previousBoot) && !string.IsNullOrWhiteSpace(currentBoot)
         && !string.Equals(previousBoot, currentBoot, StringComparison.Ordinal) && !hooks.Any(IsAdHook);
+
+    internal static int AdmissionExitCode(RazerSnapTapAdmissionFailure failure) => failure switch
+    {
+        RazerSnapTapAdmissionFailure.None => 0,
+        RazerSnapTapAdmissionFailure.DriverMissing => 5,
+        RazerSnapTapAdmissionFailure.UnsupportedModel => 6,
+        RazerSnapTapAdmissionFailure.ManualDriverSetupRequired => 7,
+        _ => 3,
+    };
 
     private static string ReadBootIdentity()
     {

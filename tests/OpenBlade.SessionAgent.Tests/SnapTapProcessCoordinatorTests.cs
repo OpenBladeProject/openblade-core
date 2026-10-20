@@ -129,7 +129,7 @@ public sealed class SnapTapProcessCoordinatorTests
     public async Task NonzeroExitDuringStop_RemainsFailed()
     {
         var source = new Preference(true);
-        var child = new Child { StopExitCode = 7 };
+        var child = new Child { StopExitCode = 99 };
         var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
         using var cancel = new CancellationTokenSource();
         Task run = new SnapTapProcessCoordinator(source, () => child, statuses.Enqueue).RunAsync(cancel.Token);
@@ -193,6 +193,8 @@ public sealed class SnapTapProcessCoordinatorTests
     [InlineData(3, SnapTapRuntimeState.Unavailable)]
     [InlineData(4, SnapTapRuntimeState.RecoveryRequired)]
     [InlineData(5, SnapTapRuntimeState.DriverMissing)]
+    [InlineData(6, SnapTapRuntimeState.UnsupportedModel)]
+    [InlineData(7, SnapTapRuntimeState.ManualDriverSetupRequired)]
     public async Task DriverExitCondition_IsPublishedAndNeverAutomaticallyRetried(int code, SnapTapRuntimeState expected)
     {
         var source = new Preference(true);

@@ -9,10 +9,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Add experimental spatial-audio control through the installed legacy THX COM service on Blade 14 RZ09-0482, Blade 16 RZ09-0483 and Blade 18 RZ09-0484. Review every supported model in the driver catalog; record the exact Realtek OEM codec tuning and keep legacy installation blocked until the endpoint effects binding and installation sequence are verified, and identify RZ09-0328 as Dolby Atmos. Add a developer-only read-only collector for the original legacy binding evidence. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
 - Install the matching THX driver and configuration without Synapse on RZ09-0581, RZ09-0528 and RZ09-0530, using verified original installers from Razer or the driver catalog. Verify and extract the signed inner installer into protected staging before execution. Experimental fresh setup also verifies and provisions the reviewed Realtek or Intel base audio prerequisites, preserves unrecognized installed builds, and checks Windows inbox SDCA on RZ09-0581. RZ09-0581 uses the separately pinned cached THX build; clean installation remains physically unvalidated. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
+- Extend driver-backed SnapTap to all seven supported Blade models through one shared backend with exact driver profiles. Newly added models show experimental status and use their own Razer driver setup; diagnostics identify failed admission checks. ([#828](https://github.com/OSSBlade/openblade-core/pull/828))
 
 ### Changed
 
 - Accept compatible installed THX, SnapTap and native-brightness driver updates through their existing APIs without a driver-build hash allowlist. Verify actual package bindings, Windows catalog trust and typed contracts, invalidate stale runtime admission, and preserve download and installer hash checks. Record this compatibility policy in the agent guide. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819))
+
+### Fixed
+
+- Accept the vendor-backed performance, fan and Maximum Fans acknowledgement replies on experimental Blade 18 (2023) and Blade 16 (2023), retaining independent readback and write-pause recovery. ([#826](https://github.com/OpenBladeProject/openblade-core/pull/826))
+- Stop startup-animation and other firmware controls from loading indefinitely after an unconfirmed read, and report the specific shared admission check blocking experimental writes. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
+- Include Blade 18 Fn shortcut input and execution checkpoints in exported diagnostics, preserving the existing input safety checks. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
 
 ## [0.37.3-nightly.96] - 2026-10-19
 

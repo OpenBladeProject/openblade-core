@@ -2269,4 +2269,13 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_ThxAudioLegacyEqualizerLimit.Text" xml:space="preserve">
     <value>Only spatial audio control is available for this THX version.</value>
   </data>
+  <data name="SnapTap_Status_Experimental" xml:space="preserve">
+    <value>Experimental driver support</value>
+  </data>
+  <data name="SnapTap_Status_ManualDriverSetup" xml:space="preserve">
+    <value>Install this laptop’s Razer keyboard driver through Synapse, then turn SnapTap off and on.</value>
+  </data>
+  <data name="SnapTap_Status_UnsupportedModel" xml:space="preserve">
+    <value>SnapTap driver support has not been established for this laptop.</value>
+  </data>
 </root>

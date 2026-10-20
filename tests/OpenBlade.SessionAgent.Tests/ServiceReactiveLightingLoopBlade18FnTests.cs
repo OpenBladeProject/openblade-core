@@ -14,6 +14,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
         var factory = new RecordingSourceFactory();
         var failures = new ConcurrentQueue<Exception>();
         var actions = new ConcurrentQueue<Blade18FnShortcut>();
+        var diagnostics = new ConcurrentQueue<Blade18FnDiagnostic>();
         var refreshStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var refreshCanceled = new TaskCompletionSource(
@@ -48,7 +49,8 @@ public sealed partial class ServiceReactiveLightingLoopTests
                         refreshCanceled.TrySetResult();
                         throw;
                     }
-                }));
+                },
+                Blade18FnDiagnostic: diagnostics.Enqueue));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -70,6 +72,8 @@ public sealed partial class ServiceReactiveLightingLoopTests
         factory.Last.PublishBlade18FnShortcut(Blade18FnShortcut.Touchpad);
         await Task.Delay(50);
         Assert.Equal([Blade18FnShortcut.RefreshRate], actions);
+        Assert.Contains(diagnostics, item =>
+            item.Stage == Blade18FnDiagnosticStage.PendingActionsReset);
         Assert.Empty(failures);
 
         client.Publish(Blade18Status(revision: 3, powerSource: PowerSource.Battery));
@@ -79,10 +83,127 @@ public sealed partial class ServiceReactiveLightingLoopTests
         Assert.Equal(
             [Blade18FnShortcut.RefreshRate, Blade18FnShortcut.Touchpad],
             actions);
+        await WaitUntilAsync(() => diagnostics.Any(item =>
+            item.Stage == Blade18FnDiagnosticStage.ExecutorCompleted
+            && item.Shortcut == Blade18FnShortcut.Touchpad));
+        Assert.Contains(diagnostics, item =>
+            item.Stage == Blade18FnDiagnosticStage.ActionQueued
+            && item.Shortcut == Blade18FnShortcut.RefreshRate);
+        Assert.Contains(diagnostics, item =>
+            item.Stage == Blade18FnDiagnosticStage.ExecutorStarted
+            && item.Shortcut == Blade18FnShortcut.RefreshRate);
+        Assert.Contains(diagnostics, item =>
+            item.Stage == Blade18FnDiagnosticStage.ExecutorCanceled
+            && item.Shortcut == Blade18FnShortcut.RefreshRate);
+        Assert.Contains(diagnostics, item =>
+            item.Stage == Blade18FnDiagnosticStage.ActionBlocked
+            && item.Shortcut == Blade18FnShortcut.Touchpad);
 
         factory.Last.ResetFunctionRowInput();
         await WaitUntilAsync(
             () => Volatile.Read(ref functionRowResets) > resetsAfterPowerLoss);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task Blade18ShortcutFailureReportsClosedExecutorStage()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var failures = new ConcurrentQueue<Exception>();
+        var diagnostics = new ConcurrentQueue<Blade18FnDiagnostic>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            new ServiceReactiveLightingLoopOptions(
+                ErrorHandler: failures.Enqueue,
+                ExecuteBlade18FnShortcutAsync: (_, _) =>
+                    throw new InvalidOperationException("private failure text"),
+                Blade18FnDiagnostic: diagnostics.Enqueue));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Blade18Status());
+        await WaitUntilAsync(() => factory.Last?.IsBlade18FnInputAdmitted() is true);
+        factory.Last!.PublishBlade18FnShortcut(Blade18FnShortcut.RefreshRate);
+        await WaitUntilAsync(() => failures.Count == 1);
+
+        Blade18FnDiagnostic failure = Assert.Single(diagnostics, item =>
+            item.Stage == Blade18FnDiagnosticStage.ExecutorFailed);
+        Assert.Equal(Blade18FnShortcut.RefreshRate, failure.Shortcut);
+        Assert.Equal(nameof(InvalidOperationException), failure.FailureType);
+        Assert.DoesNotContain(diagnostics, item =>
+            string.Equals(item.FailureType, "private failure text", StringComparison.Ordinal));
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task Blade18FunctionPReportsQueueAndCompletionWithoutClaimingApplication()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var diagnostics = new ConcurrentQueue<Blade18FnDiagnostic>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            new ServiceReactiveLightingLoopOptions(
+                PerformanceShortcutQuietPeriod: TimeSpan.Zero,
+                ExecuteBlade18FnShortcutAsync: (_, _) => Task.CompletedTask,
+                Blade18FnDiagnostic: diagnostics.Enqueue));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Blade18Status());
+        await WaitUntilAsync(() => factory.Last?.IsBlade18FnInputAdmitted() is true);
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+        await WaitUntilAsync(() => diagnostics.Any(item =>
+            item.Stage == Blade18FnDiagnosticStage.ExecutorCompleted
+            && item.Shortcut == Blade18FnShortcut.Performance));
+
+        Assert.Contains(diagnostics, item =>
+            item.Stage == Blade18FnDiagnosticStage.ActionQueued
+            && item.Shortcut == Blade18FnShortcut.Performance);
+        Assert.Contains(diagnostics, item =>
+            item.Stage == Blade18FnDiagnosticStage.ExecutorStarted
+            && item.Shortcut == Blade18FnShortcut.Performance);
+        Assert.DoesNotContain(diagnostics, item =>
+            item.Stage.ToString().Contains("Applied", StringComparison.Ordinal));
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task Blade18FunctionPLatestIntentSupersessionIsObservable()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var diagnostics = new ConcurrentQueue<Blade18FnDiagnostic>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            new ServiceReactiveLightingLoopOptions(
+                PerformanceShortcutQuietPeriod: TimeSpan.FromMinutes(1),
+                ExecuteBlade18FnShortcutAsync: (_, _) => Task.CompletedTask,
+                Blade18FnDiagnostic: diagnostics.Enqueue));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Blade18Status());
+        await WaitUntilAsync(() => factory.Last?.IsBlade18FnInputAdmitted() is true);
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+        factory.Last.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+
+        await WaitUntilAsync(() => diagnostics.Any(item =>
+            item.Stage == Blade18FnDiagnosticStage.LatestActionSuperseded
+            && item.Shortcut == Blade18FnShortcut.Performance));
+        Assert.Equal(2, diagnostics.Count(item =>
+            item.Stage == Blade18FnDiagnosticStage.ActionQueued
+            && item.Shortcut == Blade18FnShortcut.Performance));
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);

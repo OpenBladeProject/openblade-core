@@ -79,6 +79,8 @@ public sealed class SnapTapProcessCoordinator(
                     bool unavailable = child.ExitCode == 3;
                     bool recoveryRequired = child.ExitCode == 4;
                     bool driverMissing = child.ExitCode == 5;
+                    bool unsupportedModel = child.ExitCode == 6;
+                    bool manualDriverSetup = child.ExitCode == 7;
                     DisposeChild(child);
                     child = null;
                     exited = null;
@@ -86,6 +88,8 @@ public sealed class SnapTapProcessCoordinator(
                     {
                         latched = true;
                         latched |= !Publish(recoveryRequired ? SnapTapRuntimeState.RecoveryRequired
+                            : unsupportedModel ? SnapTapRuntimeState.UnsupportedModel
+                            : manualDriverSetup ? SnapTapRuntimeState.ManualDriverSetupRequired
                             : driverMissing ? SnapTapRuntimeState.DriverMissing
                             : unavailable ? SnapTapRuntimeState.Unavailable : SnapTapRuntimeState.Failed);
                     }

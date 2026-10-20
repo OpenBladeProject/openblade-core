@@ -13,7 +13,7 @@ internal static class SnapTapDriverLoop
             return 3;
         }
         using EventWaitHandle heartbeat = EventWaitHandle.OpenExisting(SnapTapDriverSupervisor.HeartbeatName(parentId));
-        using var publisher = new SnapTapStatusPublisher();
+        using var publisher = new SnapTapStatusPublisher(endpoint.Profile);
         nint targetWindow = 0;
         nint targetLayout = 0;
         bool stopping = false;

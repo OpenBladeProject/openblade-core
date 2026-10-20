@@ -24,6 +24,90 @@ public sealed class Rz090484FnInputStateTests
     }
 
     [Fact]
+    public void Snapshot_ReportsFirstAdmittedReportAndOnlyHeldTransitions()
+    {
+        var state = new Rz090484FnInputState();
+        byte[] released = new byte[16];
+        released[0] = 4;
+        var diagnostics = new List<Blade18FnDiagnostic>();
+        Blade18FnReportObservation first = WindowsReactiveKeyboardSource.ObserveBlade18FnReport(
+            state,
+            RazerBladeInputDeviceKind.Rz09_0484,
+            1,
+            released,
+            true,
+            diagnostics.Add);
+        Assert.Equal(Blade18FnReportObservation.FirstReleased, first);
+        Assert.Equal(
+            new Blade18FnDiagnostic(
+                Blade18FnDiagnosticStage.FnReportObserved,
+                Phase: FunctionRowInputPhase.Up),
+            Assert.Single(diagnostics));
+        Assert.Equal(
+            Blade18FnReportObservation.None,
+            WindowsReactiveKeyboardSource.ObserveBlade18FnReport(
+                state,
+                RazerBladeInputDeviceKind.Rz09_0484,
+                1,
+                released,
+                true,
+                diagnostics.Add));
+        Assert.Single(diagnostics);
+
+        byte[] pressed = (byte[])released.Clone();
+        pressed[1] = 10;
+        Assert.Equal(
+            Blade18FnReportObservation.Pressed,
+            state.ObserveHid(RazerBladeInputDeviceKind.Rz09_0484, 1, pressed, true));
+        Assert.Equal(
+            Blade18FnReportObservation.None,
+            state.ObserveHid(RazerBladeInputDeviceKind.Rz09_0484, 1, pressed, true));
+        Assert.Equal(
+            Blade18FnReportObservation.Released,
+            state.ObserveHid(RazerBladeInputDeviceKind.Rz09_0484, 1, released, true));
+    }
+
+    [Fact]
+    public void DiagnosticEmissionRejectsRawUnsupportedAndUnadmittedReports()
+    {
+        var state = new Rz090484FnInputState();
+        var diagnostics = new List<Blade18FnDiagnostic>();
+        byte[] raw = new byte[16];
+        raw[0] = 5;
+
+        WindowsReactiveKeyboardSource.ObserveBlade18FnReport(
+            state, RazerBladeInputDeviceKind.Rz09_0484, 1, raw, true, diagnostics.Add);
+        raw[0] = 4;
+        WindowsReactiveKeyboardSource.ObserveBlade18FnReport(
+            state, RazerBladeInputDeviceKind.Rz09_0528, 1, raw, true, diagnostics.Add);
+        WindowsReactiveKeyboardSource.ObserveBlade18FnReport(
+            state, RazerBladeInputDeviceKind.Rz09_0484, 1, raw, false, diagnostics.Add);
+
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public void ThrowingDiagnosticSinkDoesNotPreventReportObservation()
+    {
+        var state = new Rz090484FnInputState();
+        byte[] pressed = new byte[16];
+        pressed[0] = 4;
+        pressed[1] = 10;
+
+        Blade18FnReportObservation observation =
+            WindowsReactiveKeyboardSource.ObserveBlade18FnReport(
+                state,
+                RazerBladeInputDeviceKind.Rz09_0484,
+                1,
+                pressed,
+                true,
+                _ => throw new InvalidOperationException("private"));
+
+        Assert.Equal(Blade18FnReportObservation.Pressed, observation);
+        Assert.True(state.FunctionHeld);
+    }
+
+    [Fact]
     public void Snapshot_DuplicatesAndOrderDoNotChangeHeldState()
     {
         var state = Held();

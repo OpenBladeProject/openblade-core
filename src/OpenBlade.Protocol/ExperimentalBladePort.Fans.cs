@@ -206,13 +206,18 @@ internal sealed partial class ExperimentalBladePort
                 PerformancePreset.Custom => 4,
                 _ => throw new IOException("Unrepresentable fan baseline."),
             };
+            bool acceptsStatusOnlyAck = UsesSourceBackedSetAckContract(model);
             if (baseline.Fans != (targets.HasValue ? FanMode.Fixed : FanMode.Automatic))
             {
                 foreach (byte zone in new byte[] { 1, 2 })
                 {
                     RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
                     await ExchangeAsync("Fans", 0x0D, 0x02, [1, zone, mode, targets.HasValue ? (byte)1 : (byte)0],
-                        true, cancellationToken, writeAdmission: SourceUnchanged).ConfigureAwait(false);
+                        true, cancellationToken,
+                        variableResponse: acceptsStatusOnlyAck,
+                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
+                        requireEcho: !acceptsStatusOnlyAck,
+                        writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                 }
                 // The mode flag changes before either retained target is
@@ -235,7 +240,11 @@ internal sealed partial class ExperimentalBladePort
                     int rpm = zone == 1 ? target.First : target.Second;
                     RequireWriteAdmission(fanMode: FanMode.Fixed);
                     await ExchangeAsync("FanTargets", 0x0D, 0x01, [1, zone, checked((byte)(rpm / 100))],
-                        true, cancellationToken, writeAdmission: SourceUnchanged).ConfigureAwait(false);
+                        true, cancellationToken,
+                        variableResponse: acceptsStatusOnlyAck,
+                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 3 : null,
+                        requireEcho: !acceptsStatusOnlyAck,
+                        writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                     saved = zone == 1 ? (rpm, saved.Second) : (saved.First, rpm);
                     // After the first zone write, the untouched zone can still

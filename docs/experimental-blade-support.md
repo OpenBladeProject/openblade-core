@@ -89,6 +89,8 @@ Battery Saver and Battery Balanced on battery power.
 
 ## Send a useful test report
 
+All five models also offer experimental [SnapTap](snap-tap.md#supported-driver-profiles) through their own reviewed Razer keyboard filters and the shared control driver. Install the model's driver through Synapse first. SnapTap's physical validation is separate from these models' firmware controls.
+
 1. Install the complete [pre-release](https://github.com/OpenBladeProject/openblade-core/releases).
    Note the version and detected model in **About**.
 2. Use **About → Export diagnostics** to save a baseline ZIP.

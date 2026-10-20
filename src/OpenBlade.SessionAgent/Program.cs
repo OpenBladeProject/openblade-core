@@ -309,7 +309,14 @@ internal static class Program
                         specialKeyExecutor.ExecuteDefaultAsync,
                         ExecuteFunctionRowInputAsync: functionRowActions.ExecuteAsync,
                         ResetFunctionRowInputAsync: functionRowActions.ResetAsync,
-                        ExecuteBlade18FnShortcutAsync: blade18FnActions.ExecuteAsync));
+                        ExecuteBlade18FnShortcutAsync: blade18FnActions.ExecuteAsync,
+                        Blade18FnDiagnostic: diagnostic =>
+                            System.Diagnostics.Trace.TraceInformation(
+                                "OpenBlade Blade 18 Fn diagnostic: stage={0}; shortcut={1}; phase={2}; failureType={3}.",
+                                diagnostic.Stage,
+                                diagnostic.Shortcut?.ToString() ?? "None",
+                                diagnostic.Phase?.ToString() ?? "None",
+                                diagnostic.FailureType ?? "None")));
                 using var powerTransitionRegistration =
                     WindowsSessionPowerNotificationRegistration.TryCreate(
                         powerTransitionRelay,
