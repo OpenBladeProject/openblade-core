@@ -305,8 +305,10 @@ inventing a page-specific appearance:
    model or driver build. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
-   SnapTap may use the already installed, pinned RZ09-0581 (`02E0`) keyboard
-   driver stack through its typed A/D-only endpoint. Keep exact host, driver,
+   SnapTap may use the already installed, pinned model-specific keyboard
+   driver profiles reviewed in [SnapTap](docs/snap-tap.md) through the shared
+   typed A/D-only backend. Newly reviewed models remain source-backed experimental
+   until their own physical SnapTap validation is complete. Keep exact host, driver,
    keyboard-collection and container admission, supervised subscription lifetime,
    owned-hook restoration and uncertain-output recovery. It must not load the
    Synapse mapping engine, acquire the service's HID handle, install or bundle

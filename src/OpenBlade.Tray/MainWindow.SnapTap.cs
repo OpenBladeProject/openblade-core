@@ -9,6 +9,7 @@ public sealed partial class MainWindow
     private bool snapTapDriverInstalling;
     private RazerDriverInstallOutcome? snapTapDriverInstallOutcome;
     private SnapTapRuntimeState localizationSnapshotSnapTapState = SnapTapRuntimeState.Off;
+    private bool localizationSnapshotSnapTapExperimental;
 
     internal void ShowLocalizationSnapshotSnapTap(bool showFailure = false, bool showEnabled = false, bool showDriverMissing = false, string? driverSetupState = null)
     {
@@ -19,6 +20,13 @@ public sealed partial class MainWindow
                 : showFailure ? SnapTapRuntimeState.Failed
                 : showEnabled ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Off;
             snapTapDriverInstalling = driverSetupState == "installing";
+            localizationSnapshotSnapTapState = driverSetupState switch
+            {
+                "manual" => SnapTapRuntimeState.ManualDriverSetupRequired,
+                "unsupported" => SnapTapRuntimeState.UnsupportedModel,
+                _ => localizationSnapshotSnapTapState,
+            };
+            localizationSnapshotSnapTapExperimental = driverSetupState == "experimental";
             snapTapDriverInstallOutcome = driverSetupState switch
             {
                 "installed" => RazerDriverInstallOutcome.Installed,
@@ -94,7 +102,8 @@ public sealed partial class MainWindow
     private void RefreshSnapTapStatus()
     {
         SnapTapRuntimeStatus? status = localizationSnapshotMode
-            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch)
+            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch,
+                ExperimentalDriver: localizationSnapshotSnapTapExperimental)
             : SnapTapStatusStore.Read();
         SnapTapStatusText.Text = snapTapDriverInstalling
             ? LocalizedResources.Get("SnapTap_Driver_Installing", "Installing driver…")
@@ -103,6 +112,10 @@ public sealed partial class MainWindow
             {
                 SnapTapRuntimeState.DriverMissing => LocalizedResources.Get(
                     "SnapTap_Status_DriverMissing", "SnapTap needs the Razer keyboard driver."),
+                SnapTapRuntimeState.UnsupportedModel => LocalizedResources.Get(
+                    "SnapTap_Status_UnsupportedModel", "SnapTap driver support has not been established for this laptop."),
+                SnapTapRuntimeState.ManualDriverSetupRequired => LocalizedResources.Get(
+                    "SnapTap_Status_ManualDriverSetup", "Install this laptop’s Razer keyboard driver through Synapse, then turn SnapTap off and on."),
                 SnapTapRuntimeState.RecoveryRequired => LocalizedResources.Get(
                     "SnapTap_Status_RecoveryRequired", "Restart Windows before enabling SnapTap again."),
                 SnapTapRuntimeState.Unavailable => LocalizedResources.Get(
@@ -111,6 +124,8 @@ public sealed partial class MainWindow
                     "SnapTap_Status_Starting", "Starting…"),
                 SnapTapRuntimeState.WaitingForRelease => LocalizedResources.Get(
                     "SnapTap_Status_WaitingForRelease", "Release keys and mouse buttons to activate."),
+                SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active when status.ExperimentalDriver => LocalizedResources.Get(
+                    "SnapTap_Status_Experimental", "Experimental driver support"),
                 SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active => string.Empty,
                 SnapTapRuntimeState.Paused => LocalizedResources.Get(
                     "SnapTap_Status_Paused", "Paused — input handling is unavailable."),

@@ -17,12 +17,16 @@ public enum SnapTapRuntimeState
     Unavailable,
     RecoveryRequired,
     DriverMissing,
+    UnsupportedModel,
+    ManualDriverSetupRequired,
 }
 
 public sealed record SnapTapRuntimeStatus(
     SnapTapRuntimeState State,
     DateTimeOffset UpdatedAt,
-    int ProcessId = 0);
+    int ProcessId = 0,
+    string? DriverModel = null,
+    bool ExperimentalDriver = false);
 
 public static class SnapTapStatusStore
 {
@@ -77,6 +81,7 @@ public static class SnapTapStatusStore
             return status.State is SnapTapRuntimeState.Off or SnapTapRuntimeState.Failed
                     or SnapTapRuntimeState.Unavailable or SnapTapRuntimeState.RecoveryRequired
                     or SnapTapRuntimeState.DriverMissing
+                    or SnapTapRuntimeState.UnsupportedModel or SnapTapRuntimeState.ManualDriverSetupRequired
                 || IsProcessCurrent(status)
                     ? status
                     : status with { State = SnapTapRuntimeState.Paused };

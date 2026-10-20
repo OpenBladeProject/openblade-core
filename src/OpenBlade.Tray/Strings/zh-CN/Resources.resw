@@ -2246,4 +2246,13 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_ThxAudioComponentDownloadDescription.Text" xml:space="preserve">
     <value>从 Razer 下载 THX 组件。需预先安装 THX 音频驱动程序。</value>
   </data>
+  <data name="SnapTap_Status_Experimental" xml:space="preserve">
+    <value>实验性驱动支持</value>
+  </data>
+  <data name="SnapTap_Status_ManualDriverSetup" xml:space="preserve">
+    <value>请通过 Synapse 安装此笔记本电脑的 Razer 键盘驱动程序，然后关闭并重新开启 SnapTap。</value>
+  </data>
+  <data name="SnapTap_Status_UnsupportedModel" xml:space="preserve">
+    <value>尚未确认此笔记本电脑的驱动程序是否支持 SnapTap。</value>
+  </data>
 </root>

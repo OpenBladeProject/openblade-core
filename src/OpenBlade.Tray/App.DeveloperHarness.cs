@@ -618,7 +618,9 @@ public partial class App
             bool captureSnapTapFailure = string.Equals(
                 requestedPage, "laptop-snap-tap-failed", StringComparison.Ordinal);
             bool captureSnapTapEnabled = string.Equals(
-                requestedPage, "laptop-snap-tap-on", StringComparison.Ordinal);
+                requestedPage, "laptop-snap-tap-on", StringComparison.Ordinal)
+                || requestedPage is "laptop-snap-tap-manual-driver" or "laptop-snap-tap-unsupported"
+                    or "laptop-snap-tap-experimental";
             bool captureSnapTapInformation = string.Equals(
                 requestedPage, "laptop-snap-tap-info", StringComparison.Ordinal);
             bool captureSnapTapDriverMissing = requestedPage is "laptop-snap-tap-driver"
@@ -626,6 +628,9 @@ public partial class App
                 or "laptop-snap-tap-driver-restart" or "laptop-snap-tap-driver-failed";
             string? driverSetupState = requestedPage switch
             {
+                "laptop-snap-tap-manual-driver" => "manual",
+                "laptop-snap-tap-unsupported" => "unsupported",
+                "laptop-snap-tap-experimental" => "experimental",
                 "laptop-snap-tap-driver-installing" => "installing",
                 "laptop-snap-tap-driver-installed" => "installed",
                 "laptop-snap-tap-driver-restart" => "restart",

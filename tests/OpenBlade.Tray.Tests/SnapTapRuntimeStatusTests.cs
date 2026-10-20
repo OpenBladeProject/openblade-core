@@ -9,6 +9,8 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
     [InlineData(SnapTapRuntimeState.Unavailable)]
     [InlineData(SnapTapRuntimeState.RecoveryRequired)]
     [InlineData(SnapTapRuntimeState.DriverMissing)]
+    [InlineData(SnapTapRuntimeState.UnsupportedModel)]
+    [InlineData(SnapTapRuntimeState.ManualDriverSetupRequired)]
     public void DriverTerminalConditionSurvivesHelperExit(SnapTapRuntimeState state)
     {
         var status = new SnapTapRuntimeStatus(state, DateTimeOffset.UtcNow);
@@ -16,6 +18,16 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
         Assert.Equal(status, SnapTapStatusStore.Read(StatusPath));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DriverProvenanceSurvivesStatusRoundTrip(bool experimental)
+    {
+        var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Unavailable, DateTimeOffset.UtcNow,
+            DriverModel: "Blade 16 - RZ09-0528", ExperimentalDriver: experimental);
+        SnapTapStatusStore.Write(status, StatusPath);
+        Assert.Equal(status, SnapTapStatusStore.Read(StatusPath));
+    }
     private readonly string directory = Path.Combine(
         Path.GetTempPath(), "OpenBlade.Tray.Tests", Guid.NewGuid().ToString("N"));
 
