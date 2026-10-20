@@ -26,6 +26,7 @@ internal sealed partial class ExperimentalBladePort
         }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
+        bool acceptsStatusOnlyAck = UsesSourceBackedSetAckContract(model);
         string operation = enabled ? "HyperBoost" : "HyperBoostRestore";
         try
         {
@@ -87,6 +88,9 @@ internal sealed partial class ExperimentalBladePort
                     }
                     RequireMaximumFansWriteBaseline(flags);
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0], true, cancellationToken,
+                        variableResponse: acceptsStatusOnlyAck,
+                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
+                        requireEcho: !acceptsStatusOnlyAck,
                         requireAdequateAdapter: true, writeAdmission: StillAdmitted).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false) != 0)
@@ -112,6 +116,9 @@ internal sealed partial class ExperimentalBladePort
                         "HyperBoost cooling-pad or power admission changed before submission.");
                 }
                 await ExchangeAsync(operation, 0x0D, 0x02, [1, selector, mode, 0], true, cancellationToken,
+                    variableResponse: acceptsStatusOnlyAck,
+                    payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
+                    requireEcho: !acceptsStatusOnlyAck,
                     requireAdequateAdapter: !balancedCleanup, writeAdmission: StillAdmitted).ConfigureAwait(false);
                 submitted = true;
             }

@@ -3335,6 +3335,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ApplyNavigationDestination(destination);
     }
 
+    internal void ShowLocalizationSnapshotOneShotControls() =>
+        KeyboardSection.StartBringIntoView(new BringIntoViewOptions
+        {
+            AnimationDesired = false,
+            VerticalAlignmentRatio = 0,
+        });
+
     internal void ShowLocalizationSnapshotSettingsAppearance()
     {
         SettingsAppearanceSection.StartBringIntoView();

@@ -356,3 +356,95 @@ Power Mode Control GET shapes that were accidentally omitted from earlier export
 A real temporary-full-charge query failure still leaves battery state unconfirmed;
 OpenBlade does not invent an inactive override. The fix needs the owner's normal
 OpenBlade checks for physical confirmation, not another Synapse capture.
+
+## Owner checks after initialization recovery, 2026-10-19
+
+The owner tested `0.37.1-nightly.95+b54c6b65` and supplied separate
+[fan-curve](https://github.com/user-attachments/files/33680970/blade-evidence-20261019-185828.Custom.Fan.Curve.zip)
+and [remaining-check](https://github.com/user-attachments/files/33680969/blade-evidence-20261019-190948.Every.other.setting.zip)
+bundles in [issue #739](https://github.com/OpenBladeProject/openblade-core/issues/739#issuecomment-6275137584).
+These are owner reports and Windows inventory, with no control-call or special-key
+observations. Factory-charger use is established by the maintainer's clarification.
+
+The Balanced fan curve reports a blocked experimental write and unconfirmed
+restoration. Silent fixed fans report an operation failure; Maximum Fans switches
+off after attempts with Boost/High and Low/Low separately. Fn+P and Fn+R do not
+act, while Fn+F2 works independently of OpenBlade. Startup animation remains
+loading. Temporary full charge was skipped at 100%; keyboard-effect checks have
+no finished report. None of these results establishes successful firmware
+application or restoration.
+
+Both inventories contain a `PC00.LPCB.TZRZ` PDH sample of 3182 tenths kelvin
+(45.05 degrees Celsius), while the other known TZRZ path fails. Equal idle
+samples do not prove a frozen CPU sensor or an exact CPU-package mapping.
+
+Offline fixes now distinguish each shared experimental write-admission guard rejection and
+stop one-shot firmware spinners after a completed unconfirmed read. Controls
+remain disabled until readback is confirmed; a later successful refresh restores
+them. The shared diagnostic and presentation fixes do not establish physical
+recovery of the reported fan, startup, shortcut or temperature behavior.
+Nightly .96 separately includes typed-query isolation from PR #824; it was
+published after these checks. Keep physical follow-up in #739 and use the
+existing source and evidence before considering any further owner request.
+
+### Owner follow-up
+
+Ask for one ZIP from **About > Export diagnostics**, with the existing settings
+left unchanged. There is no need to repeat the Observer checklist, reproduce a
+failed write, change CPU/GPU pairs, or discharge the battery for another test.
+The ordinary OpenBlade export includes cached device verification, confirmed
+state, experimental write-pause state, bounded command/query history, and the
+Session Agent's persistent logs. The Observer inventory bundles do not include
+that service recovery state. Pause further fan tests while restoration remains
+unconfirmed; use the export to identify the next concrete issue on our side.
+
+Treat Fn+F2 as the laptop's independent media-key behavior. Do not ask for another
+Fn capture unless the existing source, input-stage diagnostics and topology logs
+leave a specific unresolved gap. An inactive GPU or two equal idle thermal-zone
+samples do not justify a benchmark or sensor stress test. Temporary full charge
+was skipped, so it remains untested rather than a reported failure.
+
+## Source-backed setter acknowledgement correction
+
+The owner bundles do not retain the returned setter bodies, so they cannot prove
+why the fan operations failed. The pinned Synapse sources do establish a separate
+contract error: OpenBlade required performance, fan, custom-level and Maximum Fans setters to echo the
+request, although the vendor accepts a correlated successful status and only
+parses the optional payload. The correction accepts bounded acknowledgements:
+zero to four bytes for fan/performance mode, zero to three for fan targets and
+custom levels, and zero to one for Power Mode Control. Existing independent mode, target and Power Mode Control
+GETs still determine success. Invalid envelopes, failed status, mismatched
+transactions, oversized replies and failed readback retain write-pause behavior.
+No alternative write or replay follows an ambiguous result.
+
+Exact-model source pins, all below `https://apps.razer.com/synapse/products/`:
+
+| Product | Artifact under `<product>/mw/` | SHA-256 |
+| --- | --- | --- |
+| 672 / `02A0` | `rzDevice25.85ce8530211c29f3c304.js` | `DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24` |
+| 671 / `029F` | `main.2ceb8f5607c0e7a5901a.js` | `CACF8758BF8B4DF35B7D51536830149ED428960AFEDF08CC81367E75520551D1` |
+| 671 / `029F` | `rzDevice25LedMatrixBlade.44210ae56dcdfbe53eb0.js` | `C29BBE95CDF766A01919D6B09089E37302EECF321FA6B48158B830236852B565` |
+| 671 / `029F` | `rzDevice25LedMatrix.51b6086238084861d253.js` | `DBA943F8A628EF05463028DAC13D9CC745CA3201C971AE08E7C863D1A592AF1D` |
+| 671 / `029F` | `rzDevice25.5e330aa9fdf6f29eec62.js` | `41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9` |
+
+Product 672's public `setPowerModeControl` at character 141017 delegates through
+module 34836's `_w` export to the setter at 52955; module 31509 maps its header to
+`07/0F`. The fan parser/setter spans begin at 60353 and 61706, and its transport
+response handler at 117937 accepts successful status without comparing payload
+contents. Product 671's main selects `rzDevice25LedMatrixBlade` at character
+61506. Module 77127 inherits 71513, which inherits the base module 74503.
+That base's corresponding Power Mode setter is at 20394 and public fan setters
+at 141280 and 141463, with the same optional parsing and no echo requirement.
+The `0D/02` fan/performance parser and setter are at 2958/3448 (671) and
+61214/61706 (672); the `0D/07` custom-level parser and setter at 7082/7516 (671)
+and 65356/65792 (672) follow the same contract. The correction covers every
+existing caller with authoritative readback, including performance changes,
+Custom entry and levels, and the admitted 029F HyperBoost/Maximum Fans cleanup.
+Offsets are zero-based characters in the pinned minified files.
+
+The correction therefore covers `02A0` and `029F` through their reviewed source
+contracts. Other model reply contracts remain unchanged. It does not admit a
+new command or change the shared-mask pre-write guard: Maximum Fans still refuses
+to overwrite another active Power Mode Control bit. This source review does not
+establish that the owner's failed operations had this cause or that hardware
+recovery is complete. Keep issue #739 open for that distinction.

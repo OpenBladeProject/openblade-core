@@ -76,6 +76,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<SpecialKeySlot, bool> readSpecialKeyInputAdmitted;
     private readonly Action<Blade18FnShortcut>? publishBlade18FnShortcut;
     private readonly Func<bool> isBlade18FnInputAdmitted;
+    private readonly Action<Blade18FnDiagnostic> reportBlade18FnDiagnostic;
     private readonly Rz090484FnInputState blade18Fn = new();
     private readonly Blade18DefaultFnInputState blade18Keyboard = new();
     private readonly Blade18FnHookCorrelation blade18Correlation = new();
@@ -137,6 +138,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         resetFunctionRowInput = options.ResetFunctionRowInput;
         publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
         isBlade18FnInputAdmitted = options.IsBlade18FnInputAdmitted ?? (() => false);
+        reportBlade18FnDiagnostic = options.ReportBlade18FnDiagnostic;
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -209,6 +211,82 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             return;
         }
         PublishBlade18Input(input);
+    }
+
+    internal static Blade18FnReportObservation ObserveBlade18FnReport(
+        Rz090484FnInputState state,
+        RazerBladeInputDeviceKind deviceKind,
+        nint collection,
+        ReadOnlySpan<byte> report,
+        bool admitted,
+        Action<Blade18FnDiagnostic> reportDiagnostic)
+    {
+        Blade18FnReportObservation observation = state.ObserveHid(
+            deviceKind,
+            collection,
+            report,
+            admitted);
+        Blade18FnDiagnostic? diagnostic = observation switch
+        {
+            Blade18FnReportObservation.FirstReleased or Blade18FnReportObservation.Released =>
+                new(Blade18FnDiagnosticStage.FnReportObserved, Phase: FunctionRowInputPhase.Up),
+            Blade18FnReportObservation.Pressed =>
+                new(Blade18FnDiagnosticStage.FnReportObserved, Phase: FunctionRowInputPhase.Down),
+            _ => null,
+        };
+        if (diagnostic is not null)
+        {
+            ReportBlade18FnDiagnostic(reportDiagnostic, diagnostic);
+        }
+        return observation;
+    }
+
+    internal static void EmitAndRouteConfirmedBlade18Shortcut(
+        Blade18DefaultFnInputEvent input,
+        bool extended,
+        Action<Blade18FnDiagnostic> reportDiagnostic,
+        Action<Blade18DefaultFnInputEvent, bool> route)
+    {
+        if (TryGetBlade18FnShortcut(input.Action, out Blade18FnShortcut shortcut))
+        {
+            ReportBlade18FnDiagnostic(
+                reportDiagnostic,
+                new(
+                    Blade18FnDiagnosticStage.HookRawInputConfirmed,
+                    shortcut,
+                    input.Phase));
+        }
+        route(input, extended);
+    }
+
+    internal static bool TryGetBlade18FnShortcut(
+        Blade18DefaultFnAction action,
+        out Blade18FnShortcut shortcut)
+    {
+        shortcut = action switch
+        {
+            Blade18DefaultFnAction.Performance => Blade18FnShortcut.Performance,
+            Blade18DefaultFnAction.RefreshRate => Blade18FnShortcut.RefreshRate,
+            Blade18DefaultFnAction.Touchpad => Blade18FnShortcut.Touchpad,
+            _ => default,
+        };
+        return action is Blade18DefaultFnAction.Performance
+            or Blade18DefaultFnAction.RefreshRate
+            or Blade18DefaultFnAction.Touchpad;
+    }
+
+    private static void ReportBlade18FnDiagnostic(
+        Action<Blade18FnDiagnostic> reportDiagnostic,
+        Blade18FnDiagnostic diagnostic)
+    {
+        try
+        {
+            reportDiagnostic(diagnostic);
+        }
+        catch
+        {
+            // Diagnostics must not affect input gating or suppression.
+        }
     }
 
     private void PublishBlade18Input(Blade18DefaultFnInputEvent input)
@@ -825,7 +903,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 if (blade18Event is { } confirmed)
                 {
-                    ConfirmBlade18Input(confirmed, extended);
+                    EmitAndRouteConfirmedBlade18Shortcut(
+                        confirmed,
+                        extended,
+                        reportBlade18FnDiagnostic,
+                        ConfirmBlade18Input);
                 }
             }
             else
@@ -987,7 +1069,13 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             }
             if (blade18)
             {
-                blade18Fn.ObserveHid(deviceKind, collection, report, blade18Admitted);
+                ObserveBlade18FnReport(
+                    blade18Fn,
+                    deviceKind,
+                    collection,
+                    report,
+                    blade18Admitted,
+                    reportBlade18FnDiagnostic);
                 if (blade18Fn.IsAmbiguous)
                 {
                     CancelBlade18Input();

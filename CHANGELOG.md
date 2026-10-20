@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Accept the vendor-backed performance, fan and Maximum Fans acknowledgement replies on experimental Blade 18 (2023) and Blade 16 (2023), retaining independent readback and write-pause recovery. ([#826](https://github.com/OpenBladeProject/openblade-core/pull/826))
+- Stop startup-animation and other firmware controls from loading indefinitely after an unconfirmed read, and report the specific shared admission check blocking experimental writes. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
+- Include Blade 18 Fn shortcut input and execution checkpoints in exported diagnostics, preserving the existing input safety checks. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
+
 ## [0.37.3-nightly.96] - 2026-10-19
 
 ### Changed

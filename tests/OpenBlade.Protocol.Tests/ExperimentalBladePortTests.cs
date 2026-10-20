@@ -178,8 +178,127 @@ public sealed class ExperimentalBladePortTests
         var session = new Session();
         await using var port = new ExperimentalBladePort(session, new(), ExperimentalBladeModels.All[0],
             Enabled(), () => false, () => PowerSource.ExternalUnknown);
-        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetProtectionOffAsync(CancellationToken.None));
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetProtectionOffAsync(CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(
+            "OpenBlade can no longer confirm the exact admitted laptop identity. Refresh device detection before retrying.",
+            failure.Message);
         Assert.Empty(session.Commands);
+    }
+
+    [Fact]
+    public async Task SharedWriteAdmission_ReportsOrderedFreshGuardFailuresWithoutTraffic()
+    {
+        var session = new Session();
+        var policy = Enabled();
+        bool exactHostPresent = true;
+        bool sessionAdmitted = true;
+        int identityChecks = 0;
+        int sessionChecks = 0;
+        await using var port = new ExperimentalBladePort(session, new(), ExperimentalBladeModels.All[0],
+            policy,
+            () =>
+            {
+                identityChecks++;
+                return exactHostPresent;
+            },
+            () => PowerSource.ExternalUnknown);
+        port.SetAdditionalWriteAdmission(() =>
+        {
+            sessionChecks++;
+            return sessionAdmitted;
+        });
+
+        policy.RequireRecovery();
+        BladeWriteException recoveryFailure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetProtectionOffAsync(CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, recoveryFailure.SubmissionState);
+        Assert.Equal(
+            "Experimental writes are paused after an uncertain result. Check the current settings, then resume experimental controls.",
+            recoveryFailure.Message);
+        Assert.Equal(0, identityChecks);
+        Assert.Equal(0, sessionChecks);
+        Assert.Empty(session.Commands);
+
+        policy.CompleteRecovery();
+        exactHostPresent = false;
+        BladeWriteException identityFailure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetProtectionOffAsync(CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, identityFailure.SubmissionState);
+        Assert.Equal(
+            "OpenBlade can no longer confirm the exact admitted laptop identity. Refresh device detection before retrying.",
+            identityFailure.Message);
+        Assert.Equal(1, identityChecks);
+        Assert.Equal(0, sessionChecks);
+        Assert.Empty(session.Commands);
+
+        exactHostPresent = true;
+        sessionAdmitted = false;
+        BladeWriteException sessionFailure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetProtectionOffAsync(CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, sessionFailure.SubmissionState);
+        Assert.Equal(
+            "Additional write safety checks did not pass. Check Troubleshooting before retrying.",
+            sessionFailure.Message);
+        Assert.Equal(2, identityChecks);
+        Assert.Equal(1, sessionChecks);
+        Assert.Empty(session.Commands);
+
+        Assert.Equal(
+            ["RecoveryRequired", "ExactHostUnavailable", "AdditionalAdmissionRejected"],
+            policy.Snapshot().Observations
+                .Where(observation => observation.Operation == "WriteAdmission")
+                .Select(observation => observation.FailureCategory));
+    }
+
+    [Fact]
+    public async Task ThermalWriteAdmission_ReportsPowerSourceBeforeAnyTraffic()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+        var session = new Session();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = new ExperimentalBladePort(session, new(), model, policy,
+            () => true, () => PowerSource.Battery);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(
+                new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(
+            "Thermal writes require confirmed external power; the current source is Battery. Connect the factory charger and retry.",
+            failure.Message);
+        Assert.Empty(session.Commands);
+        ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations,
+            item => item.Operation == "WriteAdmission");
+        Assert.Equal("ExternalPowerNotConfirmed", observation.FailureCategory);
+        Assert.Equal("PowerSource=Battery", observation.ConfirmedValue);
+    }
+
+    [Fact]
+    public async Task OrdinaryFanWriteAdmission_ReportsModeAndPowerSourceBeforeAnyTraffic()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x029F);
+        var session = new Session();
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = new ExperimentalBladePort(session, new(), model, policy,
+            () => true, () => PowerSource.UsbC);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanTargetsAsync(2000, 2000, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(
+            "Fan mode Fixed is not admitted on UsbC power. Connect the factory charger or choose a fan mode admitted for that source.",
+            failure.Message);
+        Assert.Empty(session.Commands);
+        ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations,
+            item => item.Operation == "WriteAdmission");
+        Assert.Equal("FanModePowerSourceRejected", observation.FailureCategory);
+        Assert.Equal("FanMode=Fixed", observation.RequestedValue);
+        Assert.Equal("PowerSource=UsbC", observation.ConfirmedValue);
     }
 
     [Fact]

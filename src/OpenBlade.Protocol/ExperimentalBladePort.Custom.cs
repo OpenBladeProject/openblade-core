@@ -70,6 +70,7 @@ internal sealed partial class ExperimentalBladePort
         }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
+        bool acceptsStatusOnlyAck = UsesSourceBackedSetAckContract(model);
         string requested = FormatCustomPerformance(value);
         try
         {
@@ -129,7 +130,10 @@ internal sealed partial class ExperimentalBladePort
                     RequireWriteAdmission(thermal: true);
                     await ExchangeAsync("CustomPerformance", 0x0D, 0x02,
                         [1, selector, 4, baseline.Fans == FanMode.Fixed ? (byte)1 : (byte)0],
-                        true, cancellationToken).ConfigureAwait(false);
+                        true, cancellationToken,
+                        variableResponse: acceptsStatusOnlyAck,
+                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
+                        requireEcho: !acceptsStatusOnlyAck).ConfigureAwait(false);
                     submitted = true;
                 }
                 ProductionPerformanceFanState entered = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
@@ -165,7 +169,10 @@ internal sealed partial class ExperimentalBladePort
                 }
                 RequireWriteAdmission(thermal: true);
                 await ExchangeAsync("CustomPerformance", 0x0D, 0x07, [1, cluster, (byte)level],
-                    true, cancellationToken).ConfigureAwait(false);
+                    true, cancellationToken,
+                    variableResponse: acceptsStatusOnlyAck,
+                    payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 3 : null,
+                    requireEcho: !acceptsStatusOnlyAck).ConfigureAwait(false);
                 submitted = true;
                 CustomPerformanceSettings? observed = await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false);
                 if (observed is null || observed != expected)
@@ -181,9 +188,14 @@ internal sealed partial class ExperimentalBladePort
                 RequireMaximumFansWriteBaseline(
                     await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false));
                 RequireWriteAdmission(thermal: true);
+                // The same pinned helpers accept a correlated successful 07/0F ACK without echo
+                // (671 helper/public chars 20394/140294; 672 chars 52955/141017).
                 await ExchangeAsync("MaximumFans", 0x07, 0x0F,
                     [value.MaximumFans ? TemporaryFullChargeProtocol.MaximumFanSpeedBit : (byte)0],
-                    true, cancellationToken).ConfigureAwait(false);
+                    true, cancellationToken,
+                    variableResponse: acceptsStatusOnlyAck,
+                    payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
+                    requireEcho: !acceptsStatusOnlyAck).ConfigureAwait(false);
                 submitted = true;
                 if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false) != value.MaximumFans)
                 {
