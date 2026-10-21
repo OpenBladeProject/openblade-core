@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.41.0-nightly.98] - 2026-10-21
+
 ### Added
 
 - Add application profiles for exact game and app executables, with foreground or activated-process lifetime rules, separate power-source overrides, HDR and brightness settings, installed-game discovery, and profile import/export. Manual controls keep priority while automation continues in the Session Agent. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
@@ -2185,7 +2187,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.41.0-nightly.98...HEAD
+[0.41.0-nightly.98]: https://github.com/OSSBlade/openblade-core/compare/v0.40.0...v0.41.0-nightly.98
 [0.40.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.30.0...v0.40.0
 [0.39.0-nightly.97]: https://github.com/OSSBlade/openblade-core/compare/v0.37.3-nightly.96...v0.39.0-nightly.97
 [0.37.3-nightly.96]: https://github.com/OSSBlade/openblade-core/compare/v0.37.1-nightly.95...v0.37.3-nightly.96
