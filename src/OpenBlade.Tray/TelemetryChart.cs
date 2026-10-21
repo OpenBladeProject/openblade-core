@@ -1,10 +1,10 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Shapes;
-using ComboBox = Microsoft.UI.Xaml.Controls.ComboBox;
 using Brush = Microsoft.UI.Xaml.Media.Brush;
-using Point = Windows.Foundation.Point;
+using ComboBox = Microsoft.UI.Xaml.Controls.ComboBox;
 using HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment;
+using Point = Windows.Foundation.Point;
 
 namespace OpenBlade.Tray;
 

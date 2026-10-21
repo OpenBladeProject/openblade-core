@@ -3,13 +3,13 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
-using ComboBox = Microsoft.UI.Xaml.Controls.ComboBox;
 using Button = Microsoft.UI.Xaml.Controls.Button;
 using CheckBox = Microsoft.UI.Xaml.Controls.CheckBox;
-using ListView = Microsoft.UI.Xaml.Controls.ListView;
-using TextBox = Microsoft.UI.Xaml.Controls.TextBox;
-using Orientation = Microsoft.UI.Xaml.Controls.Orientation;
+using ComboBox = Microsoft.UI.Xaml.Controls.ComboBox;
 using HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment;
+using ListView = Microsoft.UI.Xaml.Controls.ListView;
+using Orientation = Microsoft.UI.Xaml.Controls.Orientation;
+using TextBox = Microsoft.UI.Xaml.Controls.TextBox;
 
 namespace OpenBlade.Tray;
 
