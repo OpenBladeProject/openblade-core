@@ -56,6 +56,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ApplyOneShotLaptopControlRequest), "applyOneShotLaptopControl")]
 [JsonDerivedType(typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade")]
 [JsonDerivedType(typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition")]
+[JsonDerivedType(typeof(ReportApplicationContextRequest), "reportApplicationContext")]
 public abstract record ServiceRequest(int Version, Guid RequestId);
 
 public sealed record GetStatusRequest(int Version, Guid RequestId)
@@ -97,6 +98,14 @@ public sealed record ExportDiagnosticsRequest(
     : ServiceRequest(Version, RequestId);
 
 public sealed record UpdateProfilesRequest(int Version, Guid RequestId, ProfileSet Profiles)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ReportApplicationContextRequest(
+    int Version,
+    Guid RequestId,
+    Guid InstanceId,
+    long Sequence,
+    string? ExecutablePath)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetPerformanceOverrideRequest(
@@ -477,6 +486,11 @@ public sealed record ServiceStatusSnapshot(
     public bool AllowExperimentalFeatures { get; init; }
 
     public bool ExperimentalWritesPaused { get; init; }
+
+    public Guid? ActiveApplicationProfileId { get; init; }
+
+    public LaptopBehaviorProfileSettings EffectiveLaptopBehavior { get; init; } =
+        LaptopBehaviorProfileSettings.Unconfigured();
 
     public bool IsExperimentalDevice { get; init; }
 

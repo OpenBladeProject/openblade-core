@@ -30,6 +30,11 @@ public interface IDisplayProfileApplier
         string colorProfileKey,
         CancellationToken cancellationToken = default);
 
+    Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+        PowerSource expectedPowerSource,
+        byte percent,
+        CancellationToken cancellationToken = default);
+
     Task<SessionDisplayExecutionResult> ApplyProfileAsync(
         PowerSource expectedPowerSource,
         DisplayProfileSettings settings,
@@ -106,6 +111,44 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
                 operationToken => controller.SetColorProfileAsync(
                     colorProfileKey,
                     operationToken)),
+            cancellationToken);
+    }
+
+    public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+        PowerSource expectedPowerSource,
+        byte percent,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(percent, (byte)100);
+        return RunExpectedAsync(
+            expectedPowerSource,
+            async (context, token) =>
+            {
+                DisplaySettingsSnapshot state = await controller.QueryAsync(token)
+                    .ConfigureAwait(false);
+                if (!state.IsAvailable || state.SupportedBrightnessLevels.Count == 0)
+                {
+                    return Failure("Display brightness is unavailable.", state);
+                }
+                byte target = DisplayBrightnessLevels.SelectNearest(
+                    percent,
+                    state.SupportedBrightnessLevels);
+                if (state.BrightnessPercent == target)
+                {
+                    return Success(state);
+                }
+                SessionDisplayExecutionResult result = await ExecuteSetterAsync(
+                    context,
+                    token,
+                    operationToken => controller.SetBrightnessAsync(target, operationToken))
+                    .ConfigureAwait(false);
+                return result.Succeeded && result.State.BrightnessPercent != target
+                    ? Failure(
+                        "Windows did not confirm the requested display brightness.",
+                        result.State,
+                        submissionMayHaveOccurred: true)
+                    : result;
+            },
             cancellationToken);
     }
 
@@ -204,6 +247,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
     {
         DisplaySettingsSnapshot state = await controller.QueryAsync(cancellationToken)
             .ConfigureAwait(false);
+        bool submitted = false;
         cancellationToken.ThrowIfCancellationRequested();
         if (!settings.IsConfigured)
         {
@@ -224,10 +268,12 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
             DisplayOperationResult result = await controller.SetRefreshAsync(
                 settings.RefreshRateKey,
                 cancellationToken).ConfigureAwait(false);
+            submitted |= result.Succeeded || result.SubmissionMayHaveOccurred;
             state = await ResolveStateAsync(result, cancellationToken).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                return Failure(result.Error ?? "Refresh-rate change failed.", state);
+                return Failure(result.Error ?? "Refresh-rate change failed.", state,
+                    submitted);
             }
             EnsureCurrent(expected, cancellationToken);
         }
@@ -240,10 +286,12 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
             DisplayOperationResult result = await controller.SetHdrAsync(
                 settings.HdrEnabled.Value,
                 cancellationToken).ConfigureAwait(false);
+            submitted |= result.Succeeded || result.SubmissionMayHaveOccurred;
             state = await ResolveStateAsync(result, cancellationToken).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                return Failure(result.Error ?? "HDR change failed.", state);
+                return Failure(result.Error ?? "HDR change failed.", state,
+                    submitted);
             }
             EnsureCurrent(expected, cancellationToken);
         }
@@ -259,17 +307,48 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
             DisplayOperationResult result = await controller.SetColorProfileAsync(
                 settings.ColorProfileKey,
                 cancellationToken).ConfigureAwait(false);
+            submitted |= result.Succeeded || result.SubmissionMayHaveOccurred;
             state = await ResolveStateAsync(result, cancellationToken).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                return Failure(result.Error ?? "Color-profile change failed.", state);
+                return Failure(result.Error ?? "Color-profile change failed.", state,
+                    submitted);
             }
             EnsureCurrent(expected, cancellationToken);
         }
 
+        if (settings.BrightnessPercent.HasValue)
+        {
+            if (state.SupportedBrightnessLevels.Count == 0)
+            {
+                return Failure("Display brightness is unavailable.", state);
+            }
+            byte target = DisplayBrightnessLevels.SelectNearest(
+                settings.BrightnessPercent.Value,
+                state.SupportedBrightnessLevels);
+            if (state.BrightnessPercent != target)
+            {
+                EnsureCurrent(expected, cancellationToken);
+                DisplayOperationResult result = await controller.SetBrightnessAsync(
+                    target,
+                    cancellationToken).ConfigureAwait(false);
+                submitted |= result.Succeeded || result.SubmissionMayHaveOccurred;
+                state = await ResolveStateAsync(result, cancellationToken).ConfigureAwait(false);
+                if (!result.Succeeded)
+                {
+                    return Failure(result.Error ?? "Brightness change failed.", state,
+                        submitted);
+                }
+                EnsureCurrent(expected, cancellationToken);
+            }
+        }
+
         return ProfileMatches(settings, state)
             ? Success(state)
-            : Failure("Windows did not confirm every requested display setting.", state);
+            : Failure(
+                "Windows did not confirm every requested display setting.",
+                state,
+                submitted);
     }
 
     private async Task<SessionDisplayExecutionResult> ExecuteSetterAsync(
@@ -284,7 +363,8 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (!result.Succeeded)
         {
-            return Failure(result.Error ?? "Display setting failed.", state);
+            return Failure(result.Error ?? "Display setting failed.", state,
+                result.SubmissionMayHaveOccurred);
         }
         EnsureCurrent(expected, cancellationToken);
         return Success(state);
@@ -365,7 +445,12 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
             || string.Equals(
                 settings.ColorProfileKey,
                 state.ActiveColorProfileId,
-                StringComparison.OrdinalIgnoreCase));
+                StringComparison.OrdinalIgnoreCase))
+        && (!settings.BrightnessPercent.HasValue
+            || state.SupportedBrightnessLevels.Count > 0
+            && state.BrightnessPercent == DisplayBrightnessLevels.SelectNearest(
+                settings.BrightnessPercent.Value,
+                state.SupportedBrightnessLevels));
 
     private static SessionDisplayExecutionResult Success(DisplaySettingsSnapshot state) =>
         new(SessionDisplayOperationStatus.Succeeded, null, state);
@@ -377,6 +462,11 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
 
     private static SessionDisplayExecutionResult Failure(
         string error,
-        DisplaySettingsSnapshot state) =>
-        new(SessionDisplayOperationStatus.Failed, error, state);
+        DisplaySettingsSnapshot state,
+        bool submissionMayHaveOccurred = false) =>
+        new(submissionMayHaveOccurred
+                ? SessionDisplayOperationStatus.Indeterminate
+                : SessionDisplayOperationStatus.Failed,
+            error,
+            state);
 }

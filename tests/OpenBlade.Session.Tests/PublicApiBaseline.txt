@@ -90,16 +90,21 @@ type sealed class OpenBlade.Session.DiscoverThxAudioRequest
   method virtual System.Boolean Equals(OpenBlade.Session.DiscoverThxAudioRequest other)
 type sealed class OpenBlade.Session.DisplayAutomationCheckpointStore
   ctor (System.String path)
+  method OpenBlade.Session.DisplayAutomationRecoveryState LoadRecovery()
   method System.Boolean Save(OpenBlade.Contracts.PowerSource source)
+  method System.Boolean SaveRecovery(OpenBlade.Session.DisplayAutomationRecoveryState state)
   method System.Nullable<OpenBlade.Contracts.PowerSource> Load()
 type sealed class OpenBlade.Session.DisplayAutomationCoordinator
   interface System.IAsyncDisposable
-  ctor (OpenBlade.Session.DisplayPowerContextState powerContext, OpenBlade.Session.IDisplayProfileApplier applier, System.Nullable<OpenBlade.Contracts.PowerSource> lastReconciledPowerSource = null, System.Action<OpenBlade.Contracts.PowerSource> recordReconciledPowerSource = null, System.Func<System.TimeSpan, System.Threading.CancellationToken, System.Threading.Tasks.Task> retryDelay = null)
+  ctor (OpenBlade.Session.DisplayPowerContextState powerContext, OpenBlade.Session.IDisplayProfileApplier applier, System.Nullable<OpenBlade.Contracts.PowerSource> lastReconciledPowerSource = null, System.Action<OpenBlade.Contracts.PowerSource> recordReconciledPowerSource = null, System.Func<System.TimeSpan, System.Threading.CancellationToken, System.Threading.Tasks.Task> retryDelay = null, OpenBlade.Session.DisplayAutomationRecoveryState recoveryState = null, System.Func<OpenBlade.Session.DisplayAutomationRecoveryState, System.Boolean> recordRecoveryState = null, System.Boolean recoveryStateInvalid = false)
   method OpenBlade.Session.DisplayAutomationObservation MarkUnavailable()
   method OpenBlade.Session.DisplayAutomationObservation Observe(OpenBlade.Contracts.ServiceStatusSnapshot status)
   method OpenBlade.Session.DisplayTransitionResult get_LastTransitionResult()
+  method System.Boolean BeginManualOperation(OpenBlade.Contracts.DisplayProfileSettings affectedSettings)
+  method System.Boolean ResumeAfterSuccessfulExplicitRead(OpenBlade.Display.DisplaySettingsSnapshot state)
   method System.Nullable<OpenBlade.Contracts.PowerSource> get_LastConfirmedPowerSource()
   method System.Threading.Tasks.Task WhenIdleAsync(System.Threading.CancellationToken cancellationToken = null)
+  method System.Void CompleteManualOperation(OpenBlade.Session.SessionDisplayOperationStatus status, OpenBlade.Display.DisplaySettingsSnapshot state)
   method virtual System.Threading.Tasks.ValueTask DisposeAsync()
   property OpenBlade.Session.DisplayTransitionResult LastTransitionResult { get; }
   property System.Nullable<OpenBlade.Contracts.PowerSource> LastConfirmedPowerSource { get; }
@@ -109,6 +114,56 @@ type enum OpenBlade.Session.DisplayAutomationObservation
   field const OpenBlade.Session.DisplayAutomationObservation IgnoredUnconfirmed = 0
   field const OpenBlade.Session.DisplayAutomationObservation SameSource = 2
   field const OpenBlade.Session.DisplayAutomationObservation TransitionScheduled = 3
+type sealed class OpenBlade.Session.DisplayAutomationRecoveryState
+  interface System.IEquatable<OpenBlade.Session.DisplayAutomationRecoveryState>
+  ctor (OpenBlade.Contracts.PowerSource LastReconciledPowerSource, System.Nullable<System.Guid> ApplicationProfileId, OpenBlade.Contracts.DisplayProfileSettings Baseline, System.Boolean OwnedRefreshRate, System.Boolean OwnedHdr, System.Boolean OwnedColorProfile, System.Boolean OwnedBrightness, System.Boolean ManualHold, System.Boolean AutomaticWritesPaused, System.Boolean UncertainRefreshRate, System.Boolean UncertainHdr, System.Boolean UncertainColorProfile, System.Boolean UncertainBrightness)
+  method OpenBlade.Contracts.DisplayProfileSettings get_Baseline()
+  method OpenBlade.Contracts.PowerSource get_LastReconciledPowerSource()
+  method OpenBlade.Session.DisplayAutomationRecoveryState <Clone>$()
+  method System.Boolean get_AutomaticWritesPaused()
+  method System.Boolean get_ManualHold()
+  method System.Boolean get_OwnedBrightness()
+  method System.Boolean get_OwnedColorProfile()
+  method System.Boolean get_OwnedHdr()
+  method System.Boolean get_OwnedRefreshRate()
+  method System.Boolean get_UncertainBrightness()
+  method System.Boolean get_UncertainColorProfile()
+  method System.Boolean get_UncertainHdr()
+  method System.Boolean get_UncertainRefreshRate()
+  method System.Nullable<System.Guid> get_ApplicationProfileId()
+  method System.Void Deconstruct(out OpenBlade.Contracts.PowerSource LastReconciledPowerSource, out System.Nullable<System.Guid> ApplicationProfileId, out OpenBlade.Contracts.DisplayProfileSettings Baseline, out System.Boolean OwnedRefreshRate, out System.Boolean OwnedHdr, out System.Boolean OwnedColorProfile, out System.Boolean OwnedBrightness, out System.Boolean ManualHold, out System.Boolean AutomaticWritesPaused, out System.Boolean UncertainRefreshRate, out System.Boolean UncertainHdr, out System.Boolean UncertainColorProfile, out System.Boolean UncertainBrightness)
+  method System.Void set_ApplicationProfileId(System.Nullable<System.Guid> value)
+  method System.Void set_AutomaticWritesPaused(System.Boolean value)
+  method System.Void set_Baseline(OpenBlade.Contracts.DisplayProfileSettings value)
+  method System.Void set_LastReconciledPowerSource(OpenBlade.Contracts.PowerSource value)
+  method System.Void set_ManualHold(System.Boolean value)
+  method System.Void set_OwnedBrightness(System.Boolean value)
+  method System.Void set_OwnedColorProfile(System.Boolean value)
+  method System.Void set_OwnedHdr(System.Boolean value)
+  method System.Void set_OwnedRefreshRate(System.Boolean value)
+  method System.Void set_UncertainBrightness(System.Boolean value)
+  method System.Void set_UncertainColorProfile(System.Boolean value)
+  method System.Void set_UncertainHdr(System.Boolean value)
+  method System.Void set_UncertainRefreshRate(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.DisplayAutomationRecoveryState left, OpenBlade.Session.DisplayAutomationRecoveryState right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.DisplayAutomationRecoveryState left, OpenBlade.Session.DisplayAutomationRecoveryState right)
+  method virtual System.Boolean Equals(OpenBlade.Session.DisplayAutomationRecoveryState other)
+  property OpenBlade.Contracts.DisplayProfileSettings Baseline { get; init; }
+  property OpenBlade.Contracts.PowerSource LastReconciledPowerSource { get; init; }
+  property System.Boolean AutomaticWritesPaused { get; init; }
+  property System.Boolean ManualHold { get; init; }
+  property System.Boolean OwnedBrightness { get; init; }
+  property System.Boolean OwnedColorProfile { get; init; }
+  property System.Boolean OwnedHdr { get; init; }
+  property System.Boolean OwnedRefreshRate { get; init; }
+  property System.Boolean UncertainBrightness { get; init; }
+  property System.Boolean UncertainColorProfile { get; init; }
+  property System.Boolean UncertainHdr { get; init; }
+  property System.Boolean UncertainRefreshRate { get; init; }
+  property System.Nullable<System.Guid> ApplicationProfileId { get; init; }
 type struct OpenBlade.Session.DisplayPowerContext
   interface System.IEquatable<OpenBlade.Session.DisplayPowerContext>
   ctor (OpenBlade.Contracts.PowerSource PowerSource, System.Int64 Generation)
@@ -139,6 +194,7 @@ type sealed class OpenBlade.Session.DisplayProfileApplier
   method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> ApplyProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, OpenBlade.Contracts.DisplayProfileSettings settings, System.Threading.CancellationToken cancellationToken = null)
   method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Int64 expectedGeneration, OpenBlade.Contracts.DisplayProfileSettings settings, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> QueryAsync(System.Threading.CancellationToken cancellationToken = null)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetBrightnessAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Byte percent, System.Threading.CancellationToken cancellationToken = null)
   method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetColorProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String colorProfileKey, System.Threading.CancellationToken cancellationToken = null)
   method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetHdrAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Boolean enabled, System.Threading.CancellationToken cancellationToken = null)
   method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetRefreshRateAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String refreshRateKey, System.Threading.CancellationToken cancellationToken = null)
@@ -169,6 +225,7 @@ type interface OpenBlade.Session.IDisplayProfileApplier
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> ApplyProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, OpenBlade.Contracts.DisplayProfileSettings settings, System.Threading.CancellationToken cancellationToken = null)
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Int64 expectedGeneration, OpenBlade.Contracts.DisplayProfileSettings settings, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> QueryAsync(System.Threading.CancellationToken cancellationToken = null)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetBrightnessAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Byte percent, System.Threading.CancellationToken cancellationToken = null)
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetColorProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String colorProfileKey, System.Threading.CancellationToken cancellationToken = null)
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetHdrAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Boolean enabled, System.Threading.CancellationToken cancellationToken = null)
   method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetRefreshRateAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String refreshRateKey, System.Threading.CancellationToken cancellationToken = null)
@@ -359,6 +416,66 @@ type sealed class OpenBlade.Session.SessionAudioResponse
   property System.Guid RequestId { get; init; }
   property System.Int32 Version { get; init; }
   property System.String Error { get; init; }
+type static class OpenBlade.Session.SessionBatteryIpc
+  field const System.Int32 MaximumErrorCharacters = 1024
+  field const System.Int32 MaximumMessageBytes = 262144
+  field const System.Int32 ProtocolVersion = 1
+  field const System.String PipeNameSuffix = ".Battery.v1"
+type static class OpenBlade.Session.SessionBatteryIpcCodec
+  method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Session.SessionBatteryRequest request, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task WriteResponseAsync(System.IO.Stream stream, OpenBlade.Session.SessionBatteryResponse response, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<OpenBlade.Session.SessionBatteryRequest> ReadRequestAsync(System.IO.Stream stream, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<OpenBlade.Session.SessionBatteryResponse> ReadResponseAsync(System.IO.Stream stream, System.Threading.CancellationToken cancellationToken = null)
+type enum OpenBlade.Session.SessionBatteryOperationStatus
+  field System.Int32 value__
+  field const OpenBlade.Session.SessionBatteryOperationStatus Failed = 2
+  field const OpenBlade.Session.SessionBatteryOperationStatus Succeeded = 0
+  field const OpenBlade.Session.SessionBatteryOperationStatus Unavailable = 1
+type static class OpenBlade.Session.SessionBatteryPipeEndpoint
+  method static OpenBlade.Session.SessionAgentPipeEndpoint Create(System.Security.Principal.SecurityIdentifier userSid, System.Int32 sessionId)
+type sealed class OpenBlade.Session.SessionBatteryRequest
+  interface System.IEquatable<OpenBlade.Session.SessionBatteryRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method OpenBlade.Session.SessionBatteryRequest <Clone>$()
+  method System.Guid get_RequestId()
+  method System.Int32 get_Version()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method System.Void set_RequestId(System.Guid value)
+  method System.Void set_Version(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionBatteryRequest left, OpenBlade.Session.SessionBatteryRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionBatteryRequest left, OpenBlade.Session.SessionBatteryRequest right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionBatteryRequest other)
+  property System.Guid RequestId { get; init; }
+  property System.Int32 Version { get; init; }
+type sealed class OpenBlade.Session.SessionBatteryResponse
+  interface System.IEquatable<OpenBlade.Session.SessionBatteryResponse>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.SessionBatteryOperationStatus Status, System.String Error, OpenBlade.Session.WindowsBatteryReport Report)
+  method OpenBlade.Session.SessionBatteryOperationStatus get_Status()
+  method OpenBlade.Session.SessionBatteryResponse <Clone>$()
+  method OpenBlade.Session.WindowsBatteryReport get_Report()
+  method System.Guid get_RequestId()
+  method System.Int32 get_Version()
+  method System.String get_Error()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.SessionBatteryOperationStatus Status, out System.String Error, out OpenBlade.Session.WindowsBatteryReport Report)
+  method System.Void set_Error(System.String value)
+  method System.Void set_Report(OpenBlade.Session.WindowsBatteryReport value)
+  method System.Void set_RequestId(System.Guid value)
+  method System.Void set_Status(OpenBlade.Session.SessionBatteryOperationStatus value)
+  method System.Void set_Version(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionBatteryResponse left, OpenBlade.Session.SessionBatteryResponse right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionBatteryResponse left, OpenBlade.Session.SessionBatteryResponse right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionBatteryResponse other)
+  property OpenBlade.Session.SessionBatteryOperationStatus Status { get; init; }
+  property OpenBlade.Session.WindowsBatteryReport Report { get; init; }
+  property System.Guid RequestId { get; init; }
+  property System.Int32 Version { get; init; }
+  property System.String Error { get; init; }
 type sealed class OpenBlade.Session.SessionDisplayExecutionResult
   interface System.IEquatable<OpenBlade.Session.SessionDisplayExecutionResult>
   ctor (OpenBlade.Session.SessionDisplayOperationStatus Status, System.String Error, OpenBlade.Display.DisplaySettingsSnapshot State)
@@ -383,7 +500,7 @@ type sealed class OpenBlade.Session.SessionDisplayExecutionResult
   property System.String Error { get; init; }
 type static class OpenBlade.Session.SessionDisplayIpc
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 1
+  field const System.Int32 ProtocolVersion = 2
   field const System.String PipeNamePrefix = "OpenBlade.Session.Display.v1"
 type static class OpenBlade.Session.SessionDisplayIpcCodec
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Session.SessionDisplayRequest request, System.Threading.CancellationToken cancellationToken = null)
@@ -394,6 +511,7 @@ type enum OpenBlade.Session.SessionDisplayOperationStatus
   field System.Int32 value__
   field const OpenBlade.Session.SessionDisplayOperationStatus Blocked = 1
   field const OpenBlade.Session.SessionDisplayOperationStatus Failed = 2
+  field const OpenBlade.Session.SessionDisplayOperationStatus Indeterminate = 3
   field const OpenBlade.Session.SessionDisplayOperationStatus Succeeded = 0
 type abstract class OpenBlade.Session.SessionDisplayRequest
   interface System.IEquatable<OpenBlade.Session.SessionDisplayRequest>
@@ -569,6 +687,25 @@ type sealed class OpenBlade.Session.SessionGpuResponse
   property System.Guid RequestId { get; init; }
   property System.Int32 Version { get; init; }
   property System.String Error { get; init; }
+type sealed class OpenBlade.Session.SetBrightnessRequest
+  base OpenBlade.Session.SessionDisplayRequest
+  interface System.IEquatable<OpenBlade.Session.SetBrightnessRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.PowerSource ExpectedPowerSource, System.Byte Percent)
+  method OpenBlade.Contracts.PowerSource get_ExpectedPowerSource()
+  method System.Byte get_Percent()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.PowerSource ExpectedPowerSource, out System.Byte Percent)
+  method System.Void set_ExpectedPowerSource(OpenBlade.Contracts.PowerSource value)
+  method System.Void set_Percent(System.Byte value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionDisplayRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.SetBrightnessRequest left, OpenBlade.Session.SetBrightnessRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SetBrightnessRequest left, OpenBlade.Session.SetBrightnessRequest right)
+  method virtual OpenBlade.Session.SetBrightnessRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.SetBrightnessRequest other)
+  property OpenBlade.Contracts.PowerSource ExpectedPowerSource { get; init; }
+  property System.Byte Percent { get; init; }
 type sealed class OpenBlade.Session.SetColorProfileRequest
   base OpenBlade.Session.SessionDisplayRequest
   interface System.IEquatable<OpenBlade.Session.SetColorProfileRequest>
@@ -926,13 +1063,17 @@ type sealed class OpenBlade.Session.ThxBaseAudioDiagnosticProof
   property System.String Detail { get; init; }
 type sealed class OpenBlade.Session.ThxForegroundObservation
   interface System.IEquatable<OpenBlade.Session.ThxForegroundObservation>
-  ctor (System.String ExecutableName, System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint = null)
+  ctor (System.String ExecutableName, System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint = null, System.String ExecutablePath = null, System.Int32 ProcessId = 0)
   method OpenBlade.Session.ThxForegroundObservation <Clone>$()
+  method System.Int32 get_ProcessId()
   method System.Nullable<OpenBlade.Session.ThxAudioEndpoint> get_Endpoint()
   method System.String get_ExecutableName()
-  method System.Void Deconstruct(out System.String ExecutableName, out System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint)
+  method System.String get_ExecutablePath()
+  method System.Void Deconstruct(out System.String ExecutableName, out System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint, out System.String ExecutablePath, out System.Int32 ProcessId)
   method System.Void set_Endpoint(System.Nullable<OpenBlade.Session.ThxAudioEndpoint> value)
   method System.Void set_ExecutableName(System.String value)
+  method System.Void set_ExecutablePath(System.String value)
+  method System.Void set_ProcessId(System.Int32 value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -941,8 +1082,105 @@ type sealed class OpenBlade.Session.ThxForegroundObservation
   method static System.Boolean op_Inequality(OpenBlade.Session.ThxForegroundObservation left, OpenBlade.Session.ThxForegroundObservation right)
   method virtual System.Boolean Equals(OpenBlade.Session.ThxForegroundObservation other)
   property OpenBlade.Session.ThxForegroundObservation Unknown { get; }
+  property System.Int32 ProcessId { get; init; }
   property System.Nullable<OpenBlade.Session.ThxAudioEndpoint> Endpoint { get; init; }
   property System.String ExecutableName { get; init; }
+  property System.String ExecutablePath { get; init; }
+type enum OpenBlade.Session.WindowsBatteryActivity
+  field System.Int32 value__
+  field const OpenBlade.Session.WindowsBatteryActivity Active = 1
+  field const OpenBlade.Session.WindowsBatteryActivity ConnectedStandby = 2
+  field const OpenBlade.Session.WindowsBatteryActivity Suspended = 3
+  field const OpenBlade.Session.WindowsBatteryActivity Unknown = 0
+type enum OpenBlade.Session.WindowsBatteryPowerSource
+  field System.Int32 value__
+  field const OpenBlade.Session.WindowsBatteryPowerSource Ac = 2
+  field const OpenBlade.Session.WindowsBatteryPowerSource Battery = 1
+  field const OpenBlade.Session.WindowsBatteryPowerSource Unknown = 0
+type sealed class OpenBlade.Session.WindowsBatteryReport
+  interface System.IEquatable<OpenBlade.Session.WindowsBatteryReport>
+  ctor (OpenBlade.Session.WindowsBatteryReportSource source, System.DateTimeOffset generatedAtUtc, System.DateTimeOffset windowStartUtc, System.DateTimeOffset windowEndUtc, OpenBlade.Session.WindowsBatteryStatus status, System.Collections.Generic.IReadOnlyList<OpenBlade.Session.WindowsBatteryReportInterval> intervals)
+  field const System.Int32 MaximumIntervals = 512
+  method OpenBlade.Session.WindowsBatteryReport <Clone>$()
+  method OpenBlade.Session.WindowsBatteryReportSource get_Source()
+  method OpenBlade.Session.WindowsBatteryStatus get_Status()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Session.WindowsBatteryReportInterval> get_Intervals()
+  method System.DateTimeOffset get_GeneratedAtUtc()
+  method System.DateTimeOffset get_WindowEndUtc()
+  method System.DateTimeOffset get_WindowStartUtc()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.WindowsBatteryReport left, OpenBlade.Session.WindowsBatteryReport right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.WindowsBatteryReport left, OpenBlade.Session.WindowsBatteryReport right)
+  method virtual System.Boolean Equals(OpenBlade.Session.WindowsBatteryReport other)
+  property OpenBlade.Session.WindowsBatteryReportSource Source { get; }
+  property OpenBlade.Session.WindowsBatteryStatus Status { get; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Session.WindowsBatteryReportInterval> Intervals { get; }
+  property System.DateTimeOffset GeneratedAtUtc { get; }
+  property System.DateTimeOffset WindowEndUtc { get; }
+  property System.DateTimeOffset WindowStartUtc { get; }
+type sealed class OpenBlade.Session.WindowsBatteryReportInterval
+  interface System.IEquatable<OpenBlade.Session.WindowsBatteryReportInterval>
+  ctor (System.DateTimeOffset StartUtc, System.DateTimeOffset EndUtc, OpenBlade.Session.WindowsBatteryPowerSource PowerSource, OpenBlade.Session.WindowsBatteryActivity Activity, System.Nullable<System.Int64> StartChargeMilliwattHours, System.Nullable<System.Int64> FullChargeCapacityMilliwattHours, System.Nullable<System.Int64> DischargeMilliwattHours, System.Nullable<System.Double> StartChargePercent)
+  method OpenBlade.Session.WindowsBatteryActivity get_Activity()
+  method OpenBlade.Session.WindowsBatteryPowerSource get_PowerSource()
+  method OpenBlade.Session.WindowsBatteryReportInterval <Clone>$()
+  method System.DateTimeOffset get_EndUtc()
+  method System.DateTimeOffset get_StartUtc()
+  method System.Nullable<System.Double> get_StartChargePercent()
+  method System.Nullable<System.Int64> get_DischargeMilliwattHours()
+  method System.Nullable<System.Int64> get_FullChargeCapacityMilliwattHours()
+  method System.Nullable<System.Int64> get_StartChargeMilliwattHours()
+  method System.Void Deconstruct(out System.DateTimeOffset StartUtc, out System.DateTimeOffset EndUtc, out OpenBlade.Session.WindowsBatteryPowerSource PowerSource, out OpenBlade.Session.WindowsBatteryActivity Activity, out System.Nullable<System.Int64> StartChargeMilliwattHours, out System.Nullable<System.Int64> FullChargeCapacityMilliwattHours, out System.Nullable<System.Int64> DischargeMilliwattHours, out System.Nullable<System.Double> StartChargePercent)
+  method System.Void set_Activity(OpenBlade.Session.WindowsBatteryActivity value)
+  method System.Void set_DischargeMilliwattHours(System.Nullable<System.Int64> value)
+  method System.Void set_EndUtc(System.DateTimeOffset value)
+  method System.Void set_FullChargeCapacityMilliwattHours(System.Nullable<System.Int64> value)
+  method System.Void set_PowerSource(OpenBlade.Session.WindowsBatteryPowerSource value)
+  method System.Void set_StartChargeMilliwattHours(System.Nullable<System.Int64> value)
+  method System.Void set_StartChargePercent(System.Nullable<System.Double> value)
+  method System.Void set_StartUtc(System.DateTimeOffset value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.WindowsBatteryReportInterval left, OpenBlade.Session.WindowsBatteryReportInterval right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.WindowsBatteryReportInterval left, OpenBlade.Session.WindowsBatteryReportInterval right)
+  method virtual System.Boolean Equals(OpenBlade.Session.WindowsBatteryReportInterval other)
+  property OpenBlade.Session.WindowsBatteryActivity Activity { get; init; }
+  property OpenBlade.Session.WindowsBatteryPowerSource PowerSource { get; init; }
+  property System.DateTimeOffset EndUtc { get; init; }
+  property System.DateTimeOffset StartUtc { get; init; }
+  property System.Nullable<System.Double> StartChargePercent { get; init; }
+  property System.Nullable<System.Int64> DischargeMilliwattHours { get; init; }
+  property System.Nullable<System.Int64> FullChargeCapacityMilliwattHours { get; init; }
+  property System.Nullable<System.Int64> StartChargeMilliwattHours { get; init; }
+type enum OpenBlade.Session.WindowsBatteryReportSource
+  field System.Int32 value__
+  field const OpenBlade.Session.WindowsBatteryReportSource WindowsPowerCfg = 0
+type sealed class OpenBlade.Session.WindowsBatteryStatus
+  interface System.IEquatable<OpenBlade.Session.WindowsBatteryStatus>
+  ctor (System.Nullable<System.Int64> DesignCapacityMilliwattHours, System.Nullable<System.Int64> FullChargeCapacityMilliwattHours, System.Nullable<System.Double> HealthPercent, System.Nullable<System.Int32> CycleCount)
+  method OpenBlade.Session.WindowsBatteryStatus <Clone>$()
+  method System.Nullable<System.Double> get_HealthPercent()
+  method System.Nullable<System.Int32> get_CycleCount()
+  method System.Nullable<System.Int64> get_DesignCapacityMilliwattHours()
+  method System.Nullable<System.Int64> get_FullChargeCapacityMilliwattHours()
+  method System.Void Deconstruct(out System.Nullable<System.Int64> DesignCapacityMilliwattHours, out System.Nullable<System.Int64> FullChargeCapacityMilliwattHours, out System.Nullable<System.Double> HealthPercent, out System.Nullable<System.Int32> CycleCount)
+  method System.Void set_CycleCount(System.Nullable<System.Int32> value)
+  method System.Void set_DesignCapacityMilliwattHours(System.Nullable<System.Int64> value)
+  method System.Void set_FullChargeCapacityMilliwattHours(System.Nullable<System.Int64> value)
+  method System.Void set_HealthPercent(System.Nullable<System.Double> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.WindowsBatteryStatus left, OpenBlade.Session.WindowsBatteryStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.WindowsBatteryStatus left, OpenBlade.Session.WindowsBatteryStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Session.WindowsBatteryStatus other)
+  property System.Nullable<System.Double> HealthPercent { get; init; }
+  property System.Nullable<System.Int32> CycleCount { get; init; }
+  property System.Nullable<System.Int64> DesignCapacityMilliwattHours { get; init; }
+  property System.Nullable<System.Int64> FullChargeCapacityMilliwattHours { get; init; }
 type sealed class OpenBlade.Session.WindowsPowerModeApplyResult
   interface System.IEquatable<OpenBlade.Session.WindowsPowerModeApplyResult>
   ctor (System.Boolean Succeeded, System.Boolean Changed, System.Nullable<OpenBlade.Contracts.WindowsPowerMode> ConfiguredMode, System.String Error)

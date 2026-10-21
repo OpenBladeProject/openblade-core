@@ -11048,21 +11048,31 @@ public sealed partial class MainViewModelTests
 
     private sealed class RecordingDispatcher : IUiDispatcher
     {
+        private readonly object invocationSync = new();
+        private Action? afterInvoke;
+        private int calls;
         private int completedCalls;
 
-        public int Calls { get; private set; }
+        public int Calls => Volatile.Read(ref calls);
 
         public int CompletedCalls => Volatile.Read(ref completedCalls);
 
-        public Action? AfterInvoke { get; set; }
+        public Action? AfterInvoke
+        {
+            get => Volatile.Read(ref afterInvoke);
+            set => Volatile.Write(ref afterInvoke, value);
+        }
 
         public Task InvokeAsync(Action action, CancellationToken token)
         {
-            token.ThrowIfCancellationRequested();
-            Calls++;
-            action();
-            Interlocked.Increment(ref completedCalls);
-            AfterInvoke?.Invoke();
+            lock (invocationSync)
+            {
+                token.ThrowIfCancellationRequested();
+                calls++;
+                action();
+                completedCalls++;
+                AfterInvoke?.Invoke();
+            }
             return Task.CompletedTask;
         }
     }

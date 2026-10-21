@@ -20,6 +20,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     private readonly Func<string, CancellationToken, PreparedDisplayMutation> prepareRefresh;
     private readonly Func<bool, CancellationToken, PreparedDisplayMutation> prepareHdr;
     private readonly Func<string, CancellationToken, PreparedDisplayMutation> prepareColorProfile;
+    private readonly Func<byte, CancellationToken, PreparedDisplayMutation> prepareBrightness;
     private bool disposed;
 
     public WindowsDisplaySettingsController()
@@ -30,11 +31,13 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     internal WindowsDisplaySettingsController(
         Func<string, CancellationToken, PreparedDisplayMutation> prepareRefresh,
         Func<bool, CancellationToken, PreparedDisplayMutation> prepareHdr,
-        Func<string, CancellationToken, PreparedDisplayMutation> prepareColorProfile)
+        Func<string, CancellationToken, PreparedDisplayMutation> prepareColorProfile,
+        Func<byte, CancellationToken, PreparedDisplayMutation>? prepareBrightness = null)
     {
         this.prepareRefresh = prepareRefresh ?? throw new ArgumentNullException(nameof(prepareRefresh));
         this.prepareHdr = prepareHdr ?? throw new ArgumentNullException(nameof(prepareHdr));
         this.prepareColorProfile = prepareColorProfile ?? throw new ArgumentNullException(nameof(prepareColorProfile));
+        this.prepareBrightness = prepareBrightness ?? PrepareBrightness;
     }
 
     public async Task<DisplaySettingsSnapshot> QueryAsync(CancellationToken cancellationToken = default)
@@ -78,6 +81,61 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         return RunMutationAsync(token => prepareColorProfile(id, token), cancellationToken);
     }
 
+    public Task<DisplayOperationResult> SetBrightnessAsync(
+        byte percent,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(percent, (byte)100);
+        return RunMutationAsync(token => prepareBrightness(percent, token), cancellationToken);
+    }
+
+    private static PreparedDisplayMutation PrepareBrightness(byte percent, CancellationToken cancellationToken)
+    {
+        DisplayTopology topology = QueryTopology();
+        DisplayTarget target = GetSingleInternalTarget(topology);
+        DisplaySettingsSnapshot before = BuildSnapshot(topology, target, cancellationToken);
+        DisplayBrightnessReading? brightness = WindowsDisplayBrightness.Query(target.MonitorDevicePath, cancellationToken);
+        if (brightness is null || target.MonitorDevicePath is not { } monitorPath)
+        {
+            return new(() => DisplayOperationResult.Failure(
+                "Windows did not report brightness control for the internal display.", before,
+                submissionMayHaveOccurred: false));
+        }
+        byte level = WindowsDisplayBrightness.SelectLevel(percent, brightness.Levels);
+        if (brightness.Percent == level)
+        {
+            return new(() => DisplayOperationResult.Success(before));
+        }
+        return new(() =>
+        {
+            bool submitted = false;
+            try
+            {
+                DisplayTarget current = GetSingleInternalTarget(QueryTopology());
+                if (!string.Equals(current.MonitorDevicePath, monitorPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return DisplayOperationResult.Failure(
+                        "The internal display changed before the brightness operation.", before,
+                        submissionMayHaveOccurred: false);
+                }
+                // Once Windows may have received the setter, retain the operation
+                // through independent readback. An uncertain result is never replayed.
+                WindowsDisplayBrightness.Set(monitorPath, brightness, level, CancellationToken.None,
+                    () => submitted = true);
+                DisplaySettingsSnapshot after = QueryCore(CancellationToken.None);
+                return after.BrightnessPercent == level
+                    ? DisplayOperationResult.Success(after)
+                    : DisplayOperationResult.Failure("Windows did not confirm the requested brightness.", after);
+            }
+            catch (Exception exception)
+            {
+                return DisplayOperationResult.Failure(
+                    $"The brightness change failed: {exception.Message}",
+                    TryQuerySnapshot(CancellationToken.None), submitted);
+            }
+        });
+    }
+
     private async Task<DisplayOperationResult> RunMutationAsync(
         Func<CancellationToken, PreparedDisplayMutation> prepare,
         CancellationToken cancellationToken)
@@ -110,7 +168,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         DisplayRefreshOption? requested = before.RefreshOptions.FirstOrDefault(option => option.Key == key);
         if (requested is null)
         {
-            return new(() => DisplayOperationResult.Failure("That refresh-rate option is not available for the internal display.", before));
+            return new(() => DisplayOperationResult.Failure("That refresh-rate option is not available for the internal display.", before, submissionMayHaveOccurred: false));
         }
         if (string.Equals(before.CurrentRefreshKey, key, StringComparison.Ordinal))
         {
@@ -121,30 +179,38 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             DisplayTopology requestedTopology = original.Copy();
             DisplayTarget requestedTarget = GetSingleInternalTarget(requestedTopology);
             PrepareBoostState(requestedTopology, requestedTarget, requested.IsDynamic, requested.DesktopHertz);
-            return new(() =>
-            {
-                try
-                {
-                    ApplyTopology(requestedTopology);
-                    DisplaySettingsSnapshot after = QueryCore(CancellationToken.None);
-                    if (!string.Equals(after.CurrentRefreshKey, key, StringComparison.Ordinal))
-                    {
-                        TryRestoreTopology(original);
-                        return DisplayOperationResult.Failure(
-                            "Windows did not confirm the requested refresh-rate mode, so OpenBlade attempted to restore the previous display configuration.",
-                            QueryCore(CancellationToken.None));
-                    }
-                    return DisplayOperationResult.Success(after);
-                }
-                catch (Exception exception)
-                {
-                    TryRestoreTopology(original);
-                    return DisplayOperationResult.Failure(
-                        $"The refresh-rate change failed and OpenBlade attempted to restore the previous display configuration: {exception.Message}",
-                        TryQuerySnapshot(CancellationToken.None));
-                }
-            });
+            return new(() => ExecuteRefreshMutation(key, () => ApplyTopology(requestedTopology),
+                () => QueryCore(CancellationToken.None)));
         });
+    }
+
+    internal static DisplayOperationResult ExecuteRefreshMutation(string key,
+        Action submit, Func<DisplaySettingsSnapshot> read)
+    {
+        string? failure = null;
+        try
+        {
+            submit();
+        }
+        catch (Exception exception)
+        {
+            failure = $"The refresh-rate change failed: {exception.Message}";
+        }
+        DisplaySettingsSnapshot? after = null;
+        try
+        {
+            after = read();
+        }
+        catch (Exception exception)
+        {
+            failure ??= $"The refresh-rate change could not be confirmed: {exception.Message}";
+        }
+        // Submission may have happened even when Windows returns an error.
+        // Reconcile read-only; a guessed rollback would be a second write.
+        return failure is null && string.Equals(after?.CurrentRefreshKey, key, StringComparison.Ordinal)
+            ? DisplayOperationResult.Success(after!)
+            : DisplayOperationResult.Failure(failure ?? "Windows did not confirm the requested refresh-rate mode.",
+                after, submissionMayHaveOccurred: true);
     }
 
     internal static PreparedDisplayMutation PrepareRefreshAfterSnapshot(
@@ -161,7 +227,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             // snapshot without submitting a restoration for an unapplied change.
             return new(() => DisplayOperationResult.Failure(
                 $"The refresh-rate configuration could not be prepared: {exception.Message}",
-                before));
+                before, submissionMayHaveOccurred: false));
         }
     }
 
@@ -176,7 +242,10 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             // Preserve the controller's typed HDR failure/reconciliation contract
             // when native preparation fails before a mutation is submitted.
             return new(() => ResolveHdrMutationResult(
-                enabled, exception.Message, TryQuerySnapshot(CancellationToken.None)));
+                enabled, exception.Message, TryQuerySnapshot(CancellationToken.None)) with
+            {
+                SubmissionMayHaveOccurred = false,
+            });
         }
     }
 
@@ -188,7 +257,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         DisplaySettingsSnapshot before = BuildSnapshot(topology, target, cancellationToken);
         if (!current.HdrSupported)
         {
-            return new(() => DisplayOperationResult.Failure("HDR is not supported for the active internal display.", before));
+            return new(() => DisplayOperationResult.Failure("HDR is not supported for the active internal display.", before, submissionMayHaveOccurred: false));
         }
         if (current.HdrEnabled == enabled)
         {
@@ -242,12 +311,12 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         DisplaySettingsSnapshot state = BuildSnapshot(topology, target, cancellationToken);
         if (!state.ColorProfilesEnabled)
         {
-            return new(() => DisplayOperationResult.Failure("Color profiles are unavailable while HDR is on.", state));
+            return new(() => DisplayOperationResult.Failure("Color profiles are unavailable while HDR is on.", state, submissionMayHaveOccurred: false));
         }
         DisplayColorProfile? requested = state.ColorProfiles.FirstOrDefault(profile => ProfilesMatch(profile.Id, id));
         if (requested is null)
         {
-            return new(() => DisplayOperationResult.Failure("That color profile is not available for the internal display.", state));
+            return new(() => DisplayOperationResult.Failure("That color profile is not available for the internal display.", state, submissionMayHaveOccurred: false));
         }
         if (ProfilesMatch(requested.Id, state.ActiveColorProfileId))
         {
@@ -356,6 +425,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             .OrderBy(profile => ProfileSortOrder(profile.Name))
             .ThenBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
+        DisplayBrightnessReading? brightness = WindowsDisplayBrightness.Query(target.MonitorDevicePath, cancellationToken);
 
         return new DisplaySettingsSnapshot(
             true,
@@ -371,8 +441,12 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             profiles,
             currentRefreshKey is null
                 ? "The current refresh-rate mode was not reported as available by Windows."
-                : null,
-            advancedColor.BitsPerColorChannel);
+                    : null,
+            advancedColor.BitsPerColorChannel)
+        {
+            BrightnessPercent = brightness?.Percent,
+            SupportedBrightnessLevels = brightness?.Levels ?? [],
+        };
     }
 
     private static DisplayTopology QueryTopology()
@@ -904,19 +978,6 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             topology.Modes,
             commonFlags | WindowsDisplayNative.SdcApply | WindowsDisplayNative.SdcSaveToDatabase);
         ThrowIfWin32Error(applyResult, "Windows could not apply the requested display configuration");
-    }
-
-    private static void TryRestoreTopology(DisplayTopology original)
-    {
-        try
-        {
-            ValidateTopology(original);
-            ApplyTopology(original);
-        }
-        catch
-        {
-            // The original operation error remains more useful than a best-effort rollback error.
-        }
     }
 
     private static DisplaySettingsSnapshot? TryQuerySnapshot(CancellationToken cancellationToken)

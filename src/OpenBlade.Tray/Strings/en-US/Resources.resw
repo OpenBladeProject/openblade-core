@@ -2284,4 +2284,367 @@ OpenBlade did not retry any stop request.</value>
   <data name="Touchpad_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Touchpad</value>
   </data>
+  <data name="Applications_Add.Content" xml:space="preserve">
+    <value>Add application</value>
+  </data>
+  <data name="Applications_CopyPowerProfile" xml:space="preserve">
+    <value>Copy saved controls from this power profile</value>
+  </data>
+  <data name="Applications_Description.Text" xml:space="preserve">
+    <value>Apply settings for a game or application. Each power source has its own overrides.</value>
+  </data>
+  <data name="Applications_Discover.Content" xml:space="preserve">
+    <value>Discover installed games</value>
+  </data>
+  <data name="Applications_Empty.Text" xml:space="preserve">
+    <value>No application profiles. Your power-source profiles remain active.</value>
+  </data>
+  <data name="Applications_FanAutomatic" xml:space="preserve">
+    <value>Automatic</value>
+  </data>
+  <data name="Applications_FanCurve" xml:space="preserve">
+    <value>Manual curve (saved points)</value>
+  </data>
+  <data name="Applications_FanFixed" xml:space="preserve">
+    <value>Fixed</value>
+  </data>
+  <data name="Applications_FanMaximum" xml:space="preserve">
+    <value>Maximum</value>
+  </data>
+  <data name="Applications_Title.Text" xml:space="preserve">
+    <value>Application profiles</value>
+  </data>
+  <data name="Applications_UnavailableSetting" xml:space="preserve">
+    <value>{0} (currently unavailable)</value>
+  </data>
+  <data name="BatteryHistory_AC" xml:space="preserve">
+    <value>AC power</value>
+  </data>
+  <data name="BatteryHistory_Active" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="BatteryHistory_Battery" xml:space="preserve">
+    <value>Battery</value>
+  </data>
+  <data name="BatteryHistory_Description.Text" xml:space="preserve">
+    <value>The last 24 hours from Windows' battery report. Unknown periods remain unknown.</value>
+  </data>
+  <data name="BatteryHistory_Health" xml:space="preserve">
+    <value>Full charge {0} · Design {1} · Health {2} · Cycles {3}</value>
+  </data>
+  <data name="BatteryHistory_Interval" xml:space="preserve">
+    <value>{0} – {1} · {2} · {3} · Charge {4} · Discharged {5}</value>
+  </data>
+  <data name="BatteryHistory_Load.Content" xml:space="preserve">
+    <value>Load battery history</value>
+  </data>
+  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
+    <value>Load Windows' battery report to inspect the last 24 hours.</value>
+  </data>
+  <data name="BatteryHistory_SourceTime" xml:space="preserve">
+    <value>Windows battery report · Generated {0}</value>
+  </data>
+  <data name="BatteryHistory_Standby" xml:space="preserve">
+    <value>Connected standby</value>
+  </data>
+  <data name="BatteryHistory_Suspended" xml:space="preserve">
+    <value>Suspended</value>
+  </data>
+  <data name="BatteryHistory_Title.Text" xml:space="preserve">
+    <value>Battery history</value>
+  </data>
+  <data name="BatteryHistory_Unknown" xml:space="preserve">
+    <value>Unknown</value>
+  </data>
+  <data name="BatteryPreset_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="BatteryPreset_Change" xml:space="preserve">
+    <value>{0}: {1} → {2}</value>
+  </data>
+  <data name="BatteryPreset_Description" xml:space="preserve">
+    <value>Save these changes to the battery profile. Manual controls and application overrides keep their priority.</value>
+  </data>
+  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
+    <value>Long battery life</value>
+  </data>
+  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
+    <value>Preview supported battery-profile changes before saving.</value>
+  </data>
+  <data name="BatteryPreset_NoChanges" xml:space="preserve">
+    <value>The supported battery settings already match this preset.</value>
+  </data>
+  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
+    <value>Preview preset</value>
+  </data>
+  <data name="BatteryPreset_Save" xml:space="preserve">
+    <value>Save to battery profile</value>
+  </data>
+  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
+    <value>The battery profile changed or could not be saved. Close this preview and try again.</value>
+  </data>
+  <data name="BatteryPreset_Title" xml:space="preserve">
+    <value>Long battery life</value>
+  </data>
+  <data name="BatteryTimeline_AC" xml:space="preserve">
+    <value>AC</value>
+  </data>
+  <data name="BatteryTimeline_Battery" xml:space="preserve">
+    <value>Battery</value>
+  </data>
+  <data name="BatteryTimeline_Unknown" xml:space="preserve">
+    <value>Unknown</value>
+  </data>
+  <data name="Feature_061b9b48e177" xml:space="preserve">
+    <value>Power source</value>
+  </data>
+  <data name="Feature_0d94e35e8475" xml:space="preserve">
+    <value>Until the activated process exits</value>
+  </data>
+  <data name="Feature_155db46f9362" xml:space="preserve">
+    <value>Fans</value>
+  </data>
+  <data name="Feature_19ad9b4c6b5c" xml:space="preserve">
+    <value>Fixed fan speed (RPM)</value>
+  </data>
+  <data name="Feature_207f5db133a0" xml:space="preserve">
+    <value>Copy this power profile's lighting</value>
+  </data>
+  <data name="Feature_3a29f5ccc091" xml:space="preserve">
+    <value>Color profile</value>
+  </data>
+  <data name="Feature_3ca3281778c2" xml:space="preserve">
+    <value>No readings are available for this metric.</value>
+  </data>
+  <data name="Feature_3d621a53b31e" xml:space="preserve">
+    <value>While in foreground</value>
+  </data>
+  <data name="Feature_42d94a35c548" xml:space="preserve">
+    <value>Metric</value>
+  </data>
+  <data name="Feature_4696d358d054" xml:space="preserve">
+    <value>Min {0} · Max {1} · Average {2} · {3} readings</value>
+  </data>
+  <data name="Feature_496960c3c1f5" xml:space="preserve">
+    <value>Battery</value>
+  </data>
+  <data name="Feature_50accd740fa2" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Feature_51e2604e2aaf" xml:space="preserve">
+    <value>Choose</value>
+  </data>
+  <data name="Feature_5f81f632042a" xml:space="preserve">
+    <value>Suggestions from Steam, Epic Games, Xbox and Battle.net. Select the game's executable and review its path.</value>
+  </data>
+  <data name="Feature_612a36db4fc9" xml:space="preserve">
+    <value>Keep this application's saved lighting</value>
+  </data>
+  <data name="Feature_6141eef71a99" xml:space="preserve">
+    <value>Fan 1 speed</value>
+  </data>
+  <data name="Feature_6c455cda31d0" xml:space="preserve">
+    <value>Live service · {0}</value>
+  </data>
+  <data name="Feature_6cc5df35f033" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Feature_6fce74ac10dd" xml:space="preserve">
+    <value>Choose an executable</value>
+  </data>
+  <data name="Feature_72539d6acd07" xml:space="preserve">
+    <value>CSV files</value>
+  </data>
+  <data name="Feature_73998e0f0da8" xml:space="preserve">
+    <value>Telemetry chart. Use the sample slider for exact values.</value>
+  </data>
+  <data name="Feature_73e7c4edf7e7" xml:space="preserve">
+    <value>Waiting for readings</value>
+  </data>
+  <data name="Feature_7837e2a6dec5" xml:space="preserve">
+    <value>Match one exact executable. Unset values inherit the current power-source profile. Manual controls keep priority. The most recently activated running application stays active after you switch away.</value>
+  </data>
+  <data name="Feature_7a0afacfb221" xml:space="preserve">
+    <value>Inherit power profile</value>
+  </data>
+  <data name="Feature_7d021f67142c" xml:space="preserve">
+    <value>No sample selected.</value>
+  </data>
+  <data name="Feature_7f1c35cb6572" xml:space="preserve">
+    <value>Select telemetry sample</value>
+  </data>
+  <data name="Feature_847ced6ca02b" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="Feature_877cb5a94232" xml:space="preserve">
+    <value>Plugged in</value>
+  </data>
+  <data name="Feature_8f1c7cba79a7" xml:space="preserve">
+    <value>Local CSV replay · {0}</value>
+  </data>
+  <data name="Feature_905c2bc1b6eb" xml:space="preserve">
+    <value>GPU temperature</value>
+  </data>
+  <data name="Feature_94d954185187" xml:space="preserve">
+    <value>Stale</value>
+  </data>
+  <data name="Feature_96ad4bd0f7ba" xml:space="preserve">
+    <value>Profile</value>
+  </data>
+  <data name="Feature_9c7c8919be0e" xml:space="preserve">
+    <value>Gaming mode</value>
+  </data>
+  <data name="Feature_9cb7099bc130" xml:space="preserve">
+    <value>Display brightness (%)</value>
+  </data>
+  <data name="Feature_9cc01faad79c" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Feature_9d2725011acd" xml:space="preserve">
+    <value>Keyboard lighting</value>
+  </data>
+  <data name="Feature_a4873a62f9e5" xml:space="preserve">
+    <value>Discover installed games</value>
+  </data>
+  <data name="Feature_a66522394a37" xml:space="preserve">
+    <value>The profile could not be saved. Review the service status and try again.</value>
+  </data>
+  <data name="Feature_a72204aa94d0" xml:space="preserve">
+    <value>Recording locally to {0}. Sampling continues while this window is hidden.</value>
+  </data>
+  <data name="Feature_ac3492bfbd41" xml:space="preserve">
+    <value>Application profile</value>
+  </data>
+  <data name="Feature_af4123249281" xml:space="preserve">
+    <value>Executable path</value>
+  </data>
+  <data name="Feature_b26de372b4b0" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Feature_b4c2f503b194" xml:space="preserve">
+    <value>Unavailable</value>
+  </data>
+  <data name="Feature_b5c358cef921" xml:space="preserve">
+    <value>Record telemetry to CSV</value>
+  </data>
+  <data name="Feature_c0774c185060" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Feature_c1db83d165ed" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Feature_c43fb5f4da35" xml:space="preserve">
+    <value>No installed game executables were found. Use Add application to browse manually.</value>
+  </data>
+  <data name="Feature_c650cc78b7fe" xml:space="preserve">
+    <value>Battery power</value>
+  </data>
+  <data name="Feature_c7f01a7da8db" xml:space="preserve">
+    <value>No power-source or profile changes in this range.</value>
+  </data>
+  <data name="Feature_c83928a24959" xml:space="preserve">
+    <value>Active profile: {0}</value>
+  </data>
+  <data name="Feature_c83b7fc012ef" xml:space="preserve">
+    <value>Fan 2 speed</value>
+  </data>
+  <data name="Feature_c88a6043293f" xml:space="preserve">
+    <value>Override display brightness</value>
+  </data>
+  <data name="Feature_ce6bbac0215e" xml:space="preserve">
+    <value>Browse for executable</value>
+  </data>
+  <data name="Feature_d6db2da1a792" xml:space="preserve">
+    <value>Recording is off. Readings stay in memory until you explicitly record a CSV.</value>
+  </data>
+  <data name="Feature_d7c76cf63323" xml:space="preserve">
+    <value>HDR</value>
+  </data>
+  <data name="Feature_e09ca605b555" xml:space="preserve">
+    <value>Open telemetry CSV</value>
+  </data>
+  <data name="Feature_ea008cd08808" xml:space="preserve">
+    <value>USB-C</value>
+  </data>
+  <data name="Feature_f04321b95415" xml:space="preserve">
+    <value>Fresh</value>
+  </data>
+  <data name="Feature_f7e6729d30cf" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Feature_f8d2f2cd53a8" xml:space="preserve">
+    <value>CPU temperature</value>
+  </data>
+  <data name="Feature_f8ed8576f5a9" xml:space="preserve">
+    <value>Activation</value>
+  </data>
+  <data name="Feature_fb51849e03f2" xml:space="preserve">
+    <value>Refresh rate</value>
+  </data>
+  <data name="Feature_fb8bc434078d" xml:space="preserve">
+    <value>Performance</value>
+  </data>
+  <data name="MainWindow_BatteryHistoryRowsText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Windows battery history intervals</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessDescription.Text" xml:space="preserve">
+    <value>Save a separate brightness for each power source.</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessEditor.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Display brightness in percent</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessTitle.Text" xml:space="preserve">
+    <value>Display brightness</value>
+  </data>
+  <data name="MainWindow_ProfileDisplayBrightnessCompactTitle.Text" xml:space="preserve">
+    <value>Display brightness</value>
+  </data>
+  <data name="MainWindow_ProfileDisplayBrightnessTitle.Text" xml:space="preserve">
+    <value>Display brightness</value>
+  </data>
+  <data name="Navigation_Telemetry" xml:space="preserve">
+    <value>Telemetry</value>
+  </data>
+  <data name="Telemetry_All.Content" xml:space="preserve">
+    <value>All retained readings</value>
+  </data>
+  <data name="Telemetry_Description.Text" xml:space="preserve">
+    <value>Inspect temperatures, fans and battery power over time. Missing readings remain gaps.</value>
+  </data>
+  <data name="Telemetry_EventsTitle.Text" xml:space="preserve">
+    <value>Power and profile changes</value>
+  </data>
+  <data name="Telemetry_Last15.Content" xml:space="preserve">
+    <value>Last 15 minutes</value>
+  </data>
+  <data name="Telemetry_Last5.Content" xml:space="preserve">
+    <value>Last 5 minutes</value>
+  </data>
+  <data name="Telemetry_Last60.Content" xml:space="preserve">
+    <value>Last hour</value>
+  </data>
+  <data name="Telemetry_Live.Content" xml:space="preserve">
+    <value>Return to live</value>
+  </data>
+  <data name="Telemetry_Navigation.Content" xml:space="preserve">
+    <value>Telemetry</value>
+  </data>
+  <data name="Telemetry_Open.Content" xml:space="preserve">
+    <value>Open CSV replay</value>
+  </data>
+  <data name="Telemetry_Range.Header" xml:space="preserve">
+    <value>Time range</value>
+  </data>
+  <data name="Telemetry_Record.Content" xml:space="preserve">
+    <value>Record CSV</value>
+  </data>
+  <data name="Telemetry_Stop.Content" xml:space="preserve">
+    <value>Stop recording</value>
+  </data>
+  <data name="Telemetry_Title.Text" xml:space="preserve">
+    <value>Telemetry</value>
+  </data>
+  <data name="Telemetry_ActionFailed" xml:space="preserve">
+    <value>Telemetry operation failed: {0}</value>
+  </data>
 </root>

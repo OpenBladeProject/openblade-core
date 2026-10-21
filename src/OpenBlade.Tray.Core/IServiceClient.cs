@@ -30,6 +30,13 @@ public interface IServiceClient : IServiceStatusWatcher
                 ControlOperationStatus.Blocked,
                 "Session power transition reporting is unavailable."));
 
+    Task<ControlOperationResult> ReportApplicationContextAsync(
+        ReportApplicationContextRequest request,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Application profile reporting is unavailable."));
+
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
     Task<ServiceStatusSnapshot> ObserveStateAsync(

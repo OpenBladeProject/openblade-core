@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 13;
+    public const int CurrentSchemaVersion = 14;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -39,6 +39,7 @@ public static class ProfileExportSerializer
         ValidateBatteryProtection(profiles);
         ValidateWindowsPowerModes(profiles.WindowsPowerModes);
         ValidateThxAudio(profiles);
+        ValidateApplicationProfiles(profiles);
         if (string.IsNullOrWhiteSpace(applicationVersion))
         {
             throw new ArgumentException(
@@ -83,16 +84,22 @@ public static class ProfileExportSerializer
             11 => DeserializeVersion11(json),
             12 => DeserializeVersion11(json),
             13 => DeserializeVersion11(json),
+            14 => DeserializeCurrentShape(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} is not supported by this version of OpenBlade."),
         };
+        if (schemaVersion < CurrentSchemaVersion)
+        {
+            profiles = ClearSchema14Settings(profiles);
+        }
         if (schemaVersion <= 10)
         {
             ValidateLegacyBatteryPolicy(profiles);
         }
         ValidateThxAudio(profiles);
+        ValidateApplicationProfiles(profiles);
         return profiles;
     }
 
@@ -191,7 +198,7 @@ public static class ProfileExportSerializer
 
     private static ProfileSet DeserializeVersion11(string json)
     {
-        return DeserializeCurrentShape(json);
+        return ClearApplicationProfiles(DeserializeCurrentShape(json));
     }
 
     private static ProfileSet DeserializeCurrentShape(string json)
@@ -204,6 +211,26 @@ public static class ProfileExportSerializer
         ValidateWindowsPowerModes(profiles.WindowsPowerModes);
         return profiles;
     }
+
+    private static ProfileSet ClearApplicationProfiles(ProfileSet profiles) => profiles with
+    {
+        ApplicationProfiles = [],
+    };
+
+    private static ProfileSet ClearSchema14Settings(ProfileSet profiles) =>
+        ClearApplicationProfiles(profiles) with
+        {
+            PluggedIn = ClearSchema14Settings(profiles.PluggedIn),
+            Battery = ClearSchema14Settings(profiles.Battery),
+            UsbC = ClearSchema14Settings(profiles.UsbC),
+        };
+
+    private static PowerProfile ClearSchema14Settings(PowerProfile profile) => profile with
+    {
+        Display = profile.Display is null
+            ? null
+            : profile.Display with { BrightnessPercent = null },
+    };
 
     private static void ValidateLegacyBatteryPolicy(ProfileSet profiles)
     {
@@ -323,6 +350,57 @@ public static class ProfileExportSerializer
                 "The profile file contains an undefined Windows power mode association.");
         }
     }
+
+    private static void ValidateApplicationProfiles(ProfileSet profiles)
+    {
+        if (profiles.ApplicationProfiles is null
+            || profiles.ApplicationProfiles.Count > ApplicationProfileDefinition.MaximumProfiles)
+        {
+            throw new InvalidDataException("The application profile collection is invalid.");
+        }
+        var ids = new HashSet<Guid>();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (ApplicationProfileDefinition? profile in profiles.ApplicationProfiles)
+        {
+            string normalized;
+            try
+            {
+                normalized = profile is null
+                    ? string.Empty
+                    : ApplicationProfileDefinition.NormalizeExecutablePath(profile.ExecutablePath);
+            }
+            catch (Exception exception) when (exception is
+                ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                throw new InvalidDataException("An application profile executable path is invalid.", exception);
+            }
+            if (profile is null
+                || profile.Id == Guid.Empty
+                || !ids.Add(profile.Id)
+                || string.IsNullOrWhiteSpace(profile.Name)
+                || profile.Name.Length > ApplicationProfileDefinition.MaximumNameLength
+                || profile.Name.Any(char.IsControl)
+                || !Enum.IsDefined(profile.ActivationMode)
+                || profile.Overrides?.IsConfigured != true
+                || !string.Equals(profile.ExecutablePath, normalized, StringComparison.Ordinal)
+                || !paths.Add(normalized)
+                || !ValidDisplay(profile.Overrides.PluggedIn?.Display)
+                || !ValidDisplay(profile.Overrides.Battery?.Display)
+                || !ValidDisplay(profile.Overrides.UsbC?.Display))
+            {
+                throw new InvalidDataException("The profile file contains an invalid application profile.");
+            }
+        }
+        if (!ValidDisplay(profiles.PluggedIn.Display)
+            || !ValidDisplay(profiles.Battery.Display)
+            || !ValidDisplay(profiles.UsbC.Display))
+        {
+            throw new InvalidDataException("The profile file contains invalid display brightness.");
+        }
+    }
+
+    private static bool ValidDisplay(DisplayProfileSettings? display) =>
+        display?.BrightnessPercent is not > 100;
 
     private static ProfileSet NormalizeAudioMeterDecay(ProfileSet profiles) => profiles with
     {

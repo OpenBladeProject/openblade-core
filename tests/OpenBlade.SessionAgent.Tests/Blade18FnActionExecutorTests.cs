@@ -321,6 +321,12 @@ public sealed class Blade18FnActionExecutorTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
             PowerSource expectedPowerSource,
             DisplayProfileSettings settings,

@@ -3,7 +3,11 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Session;
 
-public sealed record ThxForegroundObservation(string? ExecutableName, ThxAudioEndpoint? Endpoint = null)
+public sealed record ThxForegroundObservation(
+    string? ExecutableName,
+    ThxAudioEndpoint? Endpoint = null,
+    string? ExecutablePath = null,
+    int ProcessId = 0)
 {
     public static ThxForegroundObservation Unknown { get; } = new((string?)null);
 }

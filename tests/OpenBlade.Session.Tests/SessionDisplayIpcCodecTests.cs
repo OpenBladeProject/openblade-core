@@ -26,6 +26,11 @@ public sealed class SessionDisplayIpcCodecTests
             Guid.NewGuid(),
             PowerSource.UsbC,
             "sRGB_CTR.icm"),
+        new SetBrightnessRequest(
+            SessionDisplayIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            PowerSource.PluggedIn,
+            75),
         new ApplyDisplayProfileRequest(
             SessionDisplayIpc.ProtocolVersion,
             Guid.NewGuid(),

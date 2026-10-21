@@ -28,7 +28,7 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         var store = new ProfileStore(Path.Combine(directory, "profiles.json"), ProfileSetValidator.CreateForDeviceCapabilities(caps));
         await store.SaveAsync(profiles, CancellationToken.None);
         Assert.Equal(custom, (await store.LoadAsync(CancellationToken.None)).Profiles.PluggedIn.CustomPerformance);
-        Assert.Contains("\"schemaVersion\": 21", await File.ReadAllTextAsync(Path.Combine(directory, "profiles.json")));
+        Assert.Contains("\"schemaVersion\": 22", await File.ReadAllTextAsync(Path.Combine(directory, "profiles.json")));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         ProfileLoadResult result = await new ProfileStore(path).LoadAsync(CancellationToken.None);
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.False(result.Profiles.PluggedIn.CustomPerformance!.MaximumFans);
-        Assert.Contains("\"schemaVersion\": 21", await File.ReadAllTextAsync(path));
+        Assert.Contains("\"schemaVersion\": 22", await File.ReadAllTextAsync(path));
     }
 
     [Theory]

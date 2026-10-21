@@ -127,6 +127,9 @@ internal static class Program
         SessionAgentPipeEndpoint audioEndpoint = SessionAgentPipeEndpoint.CreateAudio(
             userSid,
             sessionId);
+        SessionAgentPipeEndpoint batteryEndpoint = SessionBatteryPipeEndpoint.Create(
+            userSid,
+            sessionId);
         SessionAgentEventEndpoint eventEndpoint =
             SessionAgentEventEndpoint.Create(userSid, sessionId);
         if (!TryAcquireStartupOwnership(
@@ -163,6 +166,16 @@ internal static class Program
             return 0;
         }
         await using SessionAgentPipeOwner acquiredAudioOwner = audioOwner!;
+        if (!SessionAgentPipeOwner.TryAcquire(
+                batteryEndpoint,
+                userSid,
+                out SessionAgentPipeOwner? batteryOwner))
+        {
+            Trace.TraceInformation(
+                "The current user's battery session-agent pipe is already owned.");
+            return 0;
+        }
+        await using SessionAgentPipeOwner acquiredBatteryOwner = batteryOwner!;
         var applicationRestartRegistration =
             new WindowsApplicationRestartRegistration();
         _ = applicationRestartRegistration.TryRegister();
@@ -188,24 +201,40 @@ internal static class Program
                     powerTransitionServiceClient.ReportSessionPowerTransitionAsync);
                 var powerContext = new DisplayPowerContextState();
                 using var applier = new DisplayProfileApplier(controller, powerContext);
-                var checkpointStore = new DisplayAutomationCheckpointStore(
-                    Path.Combine(
+                string displayCheckpointPath = Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "OpenBlade",
-                        "display-automation.json"));
+                        "display-automation.json");
+                var checkpointStore = new DisplayAutomationCheckpointStore(displayCheckpointPath);
+                DisplayAutomationRecoveryState? recoveryState =
+                    checkpointStore.LoadRecovery();
+                PowerSource? legacyDisplaySource = checkpointStore.Load();
+                bool recoveryStateInvalid = File.Exists(displayCheckpointPath)
+                    && recoveryState is null && !legacyDisplaySource.HasValue;
                 await using var coordinator = new DisplayAutomationCoordinator(
                     powerContext,
                     applier,
-                    checkpointStore.Load(),
-                    source =>
+                    lastReconciledPowerSource: legacyDisplaySource,
+                    recoveryState: recoveryState,
+                    recordRecoveryState: state =>
                     {
-                        if (!checkpointStore.Save(source))
+                        bool saved = checkpointStore.SaveRecovery(state);
+                        if (!saved)
                         {
                             System.Diagnostics.Trace.TraceWarning(
-                                "OpenBlade could not save the display automation checkpoint.");
+                                "OpenBlade could not save the display automation recovery checkpoint.");
                         }
+                        return saved;
+                    },
+                    recoveryStateInvalid: recoveryStateInvalid);
+                var dispatcher = new SessionDisplayRequestDispatcher(
+                    applier,
+                    coordinator.BeginManualOperation,
+                    coordinator.CompleteManualOperation,
+                    state =>
+                    {
+                        _ = coordinator.ResumeAfterSuccessfulExplicitRead(state);
                     });
-                var dispatcher = new SessionDisplayRequestDispatcher(applier);
                 await using var server = new SessionDisplayPipeServer(acquiredOwner, dispatcher);
                 using var gpuAppManager = new WindowsGpuAppManager();
                 var gpuDispatcher = new SessionGpuRequestDispatcher(gpuAppManager);
@@ -220,6 +249,11 @@ internal static class Program
                 await using var audioServer = new SessionAudioPipeServer(
                     acquiredAudioOwner,
                     audioDispatcher);
+                var batteryProvider = new WindowsBatteryReportProvider();
+                var batteryDispatcher = new SessionBatteryRequestDispatcher(batteryProvider);
+                await using var batteryServer = new SessionBatteryPipeServer(
+                    acquiredBatteryOwner,
+                    batteryDispatcher);
                 string preferencesPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "OpenBlade",
@@ -262,8 +296,14 @@ internal static class Program
                 await using var statusServiceClient = new ServiceClient();
                 await using var statusFeed = new SharedServiceStatusFeed(
                     statusServiceClient);
+                await using var applicationProfileServiceClient = new ServiceClient();
+                await using var applicationProfileReporter = new ApplicationProfileReporter(
+                    applicationProfileServiceClient.ReportApplicationContextAsync);
                 var audioAutomation = new ServiceThxAudioAutomationLoop(
-                    statusFeed, new WindowsThxForegroundSource(), audioAutomationCoordinator);
+                    statusFeed,
+                    new WindowsThxForegroundSource(),
+                    audioAutomationCoordinator,
+                    applicationProfileReporter);
                 var automation = new ServiceDisplayAutomationLoop(
                     statusFeed,
                     coordinator);
@@ -381,6 +421,7 @@ internal static class Program
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task gpuServerTask = gpuServer.RunAsync(lifetime.Token);
                 Task audioServerTask = audioServer.RunAsync(lifetime.Token);
+                Task batteryServerTask = batteryServer.RunAsync(lifetime.Token);
                 Task audioAutomationTask = audioAutomation.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task powerModeAutomationTask = powerModeAutomation.RunAsync(lifetime.Token);
@@ -397,6 +438,7 @@ internal static class Program
                     serverTask,
                     gpuServerTask,
                     audioServerTask,
+                    batteryServerTask,
                     audioAutomationTask,
                     statusFeedTask,
                     specialKeyBindingsTask,

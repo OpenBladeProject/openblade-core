@@ -1067,6 +1067,57 @@ public sealed partial class ServiceReactiveLightingLoopTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
 
+    [Fact]
+    public async Task EffectiveLaptopBehaviorTakesPrecedenceOverPowerProfile()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        ServiceStatusSnapshot status = Status(
+            LightingRendererOwnershipState.Static);
+        client.Publish(status with
+        {
+            GamingModeEnabled = true,
+            KeyboardDriverModeActive = true,
+            Profiles = status.Profiles with
+            {
+                PluggedIn = status.Profiles.PluggedIn with
+                {
+                    LaptopBehavior = new LaptopBehaviorProfileSettings(
+                        StartupAnimationEnabled: null,
+                        FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
+                        GamingModeEnabled: true)
+                    {
+                        GamingModeKeyPolicy = new GamingModeKeyPolicy(
+                            BlockWindowsKey: true,
+                            BlockAltTab: false),
+                    },
+                },
+            },
+            EffectiveLaptopBehavior = new LaptopBehaviorProfileSettings(
+                StartupAnimationEnabled: null,
+                FunctionKeyPrimary: FunctionKeyPrimaryMode.MultimediaKeys,
+                GamingModeEnabled: true)
+            {
+                GamingModeKeyPolicy = new GamingModeKeyPolicy(
+                    BlockWindowsKey: false,
+                    BlockAltTab: true),
+            },
+        });
+
+        await WaitUntilAsync(
+            () => factory.Last?.ReadFunctionKeyPrimaryMode()
+                    == FunctionKeyPrimaryMode.MultimediaKeys
+                && factory.Last!.ReadGamingModeKeyPolicy()
+                    == new GamingModeKeyPolicy(false, true));
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     private static ServiceStatusSnapshot Status(LightingRendererOwnershipState ownership)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();

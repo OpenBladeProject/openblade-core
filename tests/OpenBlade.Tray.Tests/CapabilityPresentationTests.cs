@@ -1366,11 +1366,19 @@ public sealed class CapabilityPresentationTests
         XElement[] retainedDropdowns = document.Descendants()
             .Where(element => element.Name.LocalName == "ComboBox")
             .ToArray();
-        Assert.Equal(2, retainedDropdowns.Length);
+        Assert.Equal(3, retainedDropdowns.Length);
         Assert.Contains(retainedDropdowns, element =>
             Attribute(element, "AutomationProperties.Name") == "Profile to review");
         Assert.Contains(retainedDropdowns, element =>
             Attribute(element, "SelectionChanged") == "OnSpecialKeyActionSelectionChanged");
+        XElement telemetryRange = Assert.Single(retainedDropdowns, element =>
+            Attribute(element, "Name") == "TelemetryRange");
+        Assert.Equal("Time range", Attribute(telemetryRange, "Header"));
+        Assert.Equal("1", Attribute(telemetryRange, "SelectedIndex"));
+        Assert.Equal("OnTelemetryRangeChanged", Attribute(telemetryRange, "SelectionChanged"));
+        Assert.Equal(
+            4,
+            telemetryRange.Elements().Count(element => element.Name.LocalName == "ComboBoxItem"));
     }
 
     [Fact]
@@ -1382,6 +1390,7 @@ public sealed class CapabilityPresentationTests
                  {
                      "HomePage",
                      "ProfilesPage",
+                     "TelemetryPage",
                      "LaptopPage",
                      "ThxAudioPage",
                      "LightingPage",
@@ -1407,7 +1416,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_DisplayPageUsesSettingsRowsAndHdrGatesColorProfiles()
+    public void MainWindow_DisplayPageUsesSettingsRowsAndGatesAvailableControls()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         XElement display = NamedElement(document, "ScrollViewer", "DisplayPage");
@@ -1418,7 +1427,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Content") == "Display"
             && Attribute(element, "Tag") == "display");
         Assert.Equal(
-            2,
+            3,
             displayTemplate.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Single(displayTemplate.Descendants(), element =>
@@ -1452,6 +1461,16 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("OnDisplayPickerOpened", Attribute(color, "DropDownOpened"));
         Assert.Equal("OnDisplayPickerClosed", Attribute(color, "DropDownClosed"));
         Assert.Equal("OnDisplayColorProfileChanged", Attribute(color, "SelectionChanged"));
+
+        XElement brightness = Assert.Single(displayTemplate.Descendants(), element =>
+            element.Name.LocalName == "NumberBox"
+            && Attribute(element, "AutomationProperties.Name") == "Display brightness in percent");
+        Assert.Equal("0", Attribute(brightness, "Minimum"));
+        Assert.Equal("100", Attribute(brightness, "Maximum"));
+        Assert.Equal(
+            "{x:Bind CanChangeBrightness, Mode=OneWay}",
+            Attribute(brightness, "IsEnabled"));
+        Assert.Equal("OnDisplayBrightnessChanged", Attribute(brightness, "ValueChanged"));
     }
 
     [Fact]
@@ -2380,8 +2399,8 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "ContentTemplate")
                     == "{StaticResource CompactProfileValuePresentationTemplate}")
             .ToArray();
-        Assert.Equal(60, comparisonValues.Length);
-        Assert.Equal(20, compactValues.Length);
+        Assert.Equal(63, comparisonValues.Length);
+        Assert.Equal(21, compactValues.Length);
         string[] expectedProperties =
         [
             "PowerMode",
@@ -2398,6 +2417,7 @@ public sealed class CapabilityPresentationTests
             "DisplayRefreshRate",
             "DisplayHdr",
             "DisplayColorProfile",
+            "DisplayBrightness",
             "FunctionKeyBehavior",
             "GamingMode",
             "GamingModeWindowsKey",

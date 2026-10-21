@@ -533,12 +533,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             }
 
             LaptopBehaviorProfileSettings behavior =
-                status.ActivePowerSource is
-                    PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
-                    ? status.Profiles
-                        .ForPowerSource(status.ActivePowerSource)
-                        .EffectiveLaptopBehavior
-                    : LaptopBehaviorProfileSettings.Unconfigured();
+                LaptopBehaviorFromStatus(status);
             bool gamingModeActive = hostGaming
                 ? status.ControlAccess == SessionControlAccess.Active
                     && !status.WritesBlocked
@@ -781,10 +776,27 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             return null;
         }
 
-        return status.Profiles
-            .ForPowerSource(status.ActivePowerSource)
-            .EffectiveLaptopBehavior
-            .FunctionKeyPrimary;
+        return LaptopBehaviorFromStatus(status).FunctionKeyPrimary;
+    }
+
+    private static LaptopBehaviorProfileSettings LaptopBehaviorFromStatus(
+        ServiceStatusSnapshot status)
+    {
+        if (status.ActivePowerSource is not (
+            PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+        {
+            return LaptopBehaviorProfileSettings.Unconfigured();
+        }
+
+        // EffectiveLaptopBehavior carries application-profile overrides. Older
+        // snapshots did not populate it, so preserve their per-power profile
+        // fallback without replacing a configured effective value.
+        LaptopBehaviorProfileSettings? effective = status.EffectiveLaptopBehavior;
+        return effective?.IsConfigured is true
+            ? effective
+            : status.Profiles
+                .ForPowerSource(status.ActivePowerSource)
+                .EffectiveLaptopBehavior;
     }
 
     private FunctionKeyPrimaryMode? ReadFunctionKeyPrimaryMode()

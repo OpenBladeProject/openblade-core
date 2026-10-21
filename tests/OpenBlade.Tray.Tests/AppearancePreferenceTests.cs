@@ -21,6 +21,7 @@ public sealed class AppearancePreferenceTests
                 PrimaryNavigationItemKind.Display,
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
+                PrimaryNavigationItemKind.Telemetry,
             ],
             result);
     }
@@ -42,6 +43,23 @@ public sealed class AppearancePreferenceTests
     }
 
     [Fact]
+    public void NavigationNormalizationMigratesTheFormerSixItemDefaultOrder()
+    {
+        IReadOnlyList<PrimaryNavigationItemKind> result =
+            PrimaryNavigationPreferenceDefaults.Normalize(
+            [
+                PrimaryNavigationItemKind.Profiles,
+                PrimaryNavigationItemKind.Display,
+                PrimaryNavigationItemKind.Laptop,
+                PrimaryNavigationItemKind.ThxAudio,
+                PrimaryNavigationItemKind.Lighting,
+                PrimaryNavigationItemKind.Settings,
+            ]);
+
+        Assert.Equal(PrimaryNavigationPreferenceDefaults.Items, result);
+    }
+
+    [Fact]
     public void NavigationDefaultsPlaceThxAudioAfterLaptopBeforeLighting()
     {
         Assert.Equal(
@@ -51,6 +69,7 @@ public sealed class AppearancePreferenceTests
                 PrimaryNavigationItemKind.Laptop,
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
+                PrimaryNavigationItemKind.Telemetry,
                 PrimaryNavigationItemKind.Settings,
             ],
             PrimaryNavigationPreferenceDefaults.Items);
@@ -68,7 +87,7 @@ public sealed class AppearancePreferenceTests
     }
 
     [Fact]
-    public void NavigationAddsThxAudioWithoutMovingCustomizedExistingItems()
+    public void NavigationAddsNewPagesWithoutMovingCustomizedExistingItems()
     {
         PrimaryNavigationItemKind[] customized =
         [
@@ -78,16 +97,19 @@ public sealed class AppearancePreferenceTests
             PrimaryNavigationItemKind.Laptop,
             PrimaryNavigationItemKind.Display,
         ];
-        IReadOnlyList<PrimaryNavigationItemKind> migrated = PrimaryNavigationPreferenceDefaults.Normalize(customized);
+        IReadOnlyList<PrimaryNavigationItemKind> migrated =
+            PrimaryNavigationPreferenceDefaults.Normalize(customized);
         Assert.Equal(customized, migrated.Take(customized.Length));
-        Assert.Equal(PrimaryNavigationItemKind.ThxAudio, migrated[^1]);
+        Assert.Equal(
+            [PrimaryNavigationItemKind.ThxAudio, PrimaryNavigationItemKind.Telemetry],
+            migrated.Skip(customized.Length));
         Assert.Equal(migrated, PrimaryNavigationPreferenceDefaults.Normalize(migrated));
     }
 
     [Fact]
     public void ExistingSerializedNavigationIntegersKeepTheirMeaning()
     {
-        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, new[]
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5, 6 }, new[]
         {
             (int)PrimaryNavigationItemKind.Profiles,
             (int)PrimaryNavigationItemKind.Laptop,
@@ -95,6 +117,7 @@ public sealed class AppearancePreferenceTests
             (int)PrimaryNavigationItemKind.Display,
             (int)PrimaryNavigationItemKind.Settings,
             (int)PrimaryNavigationItemKind.ThxAudio,
+            (int)PrimaryNavigationItemKind.Telemetry,
         });
     }
 

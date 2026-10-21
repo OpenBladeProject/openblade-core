@@ -10,6 +10,7 @@ public enum SettingValueSource
 {
     ConfirmedFirmwareState,
     PowerProfile,
+    ApplicationProfile,
     TemporaryOverride,
     PersistentOverride,
 }

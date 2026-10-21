@@ -40,4 +40,7 @@ public sealed record ProfilePresentation(
     ProfileValuePresentation GamingMode,
     ProfileValuePresentation GamingModeWindowsKey,
     ProfileValuePresentation GamingModeAltTab,
-    ProfileValuePresentation StartupAnimation);
+    ProfileValuePresentation StartupAnimation)
+{
+    public ProfileValuePresentation DisplayBrightness { get; init; } = new(string.Empty, string.Empty, string.Empty);
+}

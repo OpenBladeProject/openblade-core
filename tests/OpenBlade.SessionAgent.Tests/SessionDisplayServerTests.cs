@@ -86,6 +86,63 @@ public sealed class SessionDisplayServerTests
     }
 
     [Fact]
+    public async Task DispatcherReportsSuccessfulReadsAndManualMutationCertainty()
+    {
+        var applier = new RecordingApplier();
+        int manualStarts = 0;
+        int successfulReads = 0;
+        var completions = new List<SessionDisplayOperationStatus>();
+        var dispatcher = new SessionDisplayRequestDispatcher(
+            applier,
+            _ =>
+            {
+                manualStarts++;
+                return true;
+            },
+            (status, _) => completions.Add(status),
+            _ => successfulReads++);
+
+        await dispatcher.DispatchAsync(
+            new QueryDisplayRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid()),
+            CancellationToken.None);
+        applier.Status = SessionDisplayOperationStatus.Indeterminate;
+        await dispatcher.DispatchAsync(
+            new SetHdrRequest(
+                SessionDisplayIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                PowerSource.PluggedIn,
+                true),
+            CancellationToken.None);
+
+        Assert.Equal(1, successfulReads);
+        Assert.Equal(1, manualStarts);
+        Assert.Equal([SessionDisplayOperationStatus.Indeterminate], completions);
+    }
+
+    [Fact]
+    public async Task DispatcherBlocksMutationWhenManualCheckpointIsNotAcknowledged()
+    {
+        var applier = new RecordingApplier();
+        bool completed = false;
+        var dispatcher = new SessionDisplayRequestDispatcher(
+            applier,
+            _ => false,
+            (_, _) => completed = true);
+
+        SessionDisplayResponse response = await dispatcher.DispatchAsync(
+            new SetHdrRequest(
+                SessionDisplayIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                PowerSource.PluggedIn,
+                true),
+            CancellationToken.None);
+
+        Assert.Equal(SessionDisplayOperationStatus.Blocked, response.Status);
+        Assert.Equal(["query"], applier.Calls);
+        Assert.False(completed);
+    }
+
+    [Fact]
     public async Task ServeConnection_UsesStrictCodecAndWritesTypedResponse()
     {
         var applier = new RecordingApplier();
@@ -246,6 +303,8 @@ public sealed class SessionDisplayServerTests
     private sealed class RecordingApplier : IDisplayProfileApplier
     {
         public List<string> Calls { get; } = [];
+        public SessionDisplayOperationStatus Status { get; set; } =
+            SessionDisplayOperationStatus.Succeeded;
 
         public Task<SessionDisplayExecutionResult> QueryAsync(CancellationToken cancellationToken = default)
         {
@@ -280,6 +339,15 @@ public sealed class SessionDisplayServerTests
             return Result();
         }
 
+        public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"brightness:{expectedPowerSource}:{percent}");
+            return Result();
+        }
+
         public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
             PowerSource expectedPowerSource,
             DisplayProfileSettings settings,
@@ -295,10 +363,12 @@ public sealed class SessionDisplayServerTests
             DisplayProfileSettings settings,
             CancellationToken cancellationToken) => Result();
 
-        private static Task<SessionDisplayExecutionResult> Result() => Task.FromResult(
+        private Task<SessionDisplayExecutionResult> Result() => Task.FromResult(
             new SessionDisplayExecutionResult(
-                SessionDisplayOperationStatus.Succeeded,
-                null,
+                Status,
+                Status == SessionDisplayOperationStatus.Succeeded
+                    ? null
+                    : "The write may have been submitted.",
                 new DisplaySettingsSnapshot(
                     true,
                     "Internal display",
@@ -363,6 +433,11 @@ public sealed class SessionDisplayServerTests
         public Task<SessionDisplayExecutionResult> SetColorProfileAsync(
             PowerSource expectedPowerSource,
             string colorProfileKey,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
