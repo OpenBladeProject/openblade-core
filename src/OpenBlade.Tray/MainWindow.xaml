@@ -1244,8 +1244,6 @@
                                               IsEnabled="{x:Bind CanEditGamingMode, Mode=OneWay}"
                                               AutomationProperties.Name="Gaming mode"
                                               IsOn="{x:Bind GamingModeToggleIsOn, Mode=OneWay}"
-                                              OnContent="{x:Bind TrayDashboardGamingModeLabel, Mode=OneWay}"
-                                              OffContent="{x:Bind TrayDashboardGamingModeLabel, Mode=OneWay}"
                                               Toggled="OnGamingModeToggled" />
                             </StackPanel>
                         </Grid>
