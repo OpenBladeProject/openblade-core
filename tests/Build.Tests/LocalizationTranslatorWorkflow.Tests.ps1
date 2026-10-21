@@ -245,6 +245,59 @@ try {
         Assert-True ($profileContext.Screenshots.Split(';') -ccontains $profileScreenshot) `
             "Profile rows must reference '$profileScreenshot'."
     }
+    foreach ($featureContext in @(
+            @{
+                Key = 'Applications_Title.Text'
+                Screenshots = @(
+                    'context/tray/main-profiles-applications.png',
+                    'context/tray/main-profiles-applications-empty.png',
+                    'context/tray/main-profiles-application-editor.png')
+            },
+            @{
+                Key = 'Telemetry_Title.Text'
+                Screenshots = @(
+                    'context/tray/main-telemetry.png',
+                    'context/tray/main-telemetry-empty.png')
+            },
+            @{
+                Key = 'BatteryHistory_Title.Text'
+                Screenshots = @('context/tray/main-laptop-battery-history.png')
+            },
+            @{
+                Key = 'MainWindow_DisplayBrightnessTitle.Text'
+                Screenshots = @(
+                    'context/tray/main-display-brightness-known.png',
+                    'context/tray/main-display-brightness-unavailable.png')
+            },
+            @{
+                Key = 'Application profiles'
+                Screenshots = @(
+                    'context/tray/main-profiles-applications.png',
+                    'context/tray/main-profiles-applications-empty.png',
+                    'context/tray/main-profiles-application-editor.png')
+            },
+            @{
+                Key = 'Telemetry recording reached its limit and was saved to {0}.'
+                Screenshots = @(
+                    'context/tray/main-telemetry.png',
+                    'context/tray/main-telemetry-empty.png')
+            },
+            @{
+                Key = 'Battery history'
+                Screenshots = @('context/tray/main-laptop-battery-history.png')
+            },
+            @{
+                Key = 'Display brightness'
+                Screenshots = @(
+                    'context/tray/main-display-brightness-known.png',
+                    'context/tray/main-display-brightness-unavailable.png')
+            })) {
+        $featureRow = @($rows | Where-Object Key -ceq $featureContext.Key)[0]
+        foreach ($featureScreenshot in $featureContext.Screenshots) {
+            Assert-True ($featureRow.Screenshots.Split(';') -ccontains $featureScreenshot) `
+                "'$($featureContext.Key)' must reference '$featureScreenshot'."
+        }
+    }
     $snapTapContext = @($rows | Where-Object Key -ceq 'SnapTap_InfoInput.Text')[0]
     foreach ($snapTapScreenshot in @(
             'context/tray/main-laptop-snap-tap-info.png',
