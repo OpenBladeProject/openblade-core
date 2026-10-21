@@ -2278,4 +2278,10 @@ OpenBlade did not retry any stop request.</value>
   <data name="SnapTap_Status_UnsupportedModel" xml:space="preserve">
     <value>SnapTap driver support has not been established for this laptop.</value>
   </data>
+  <data name="Touchpad_Title.Text" xml:space="preserve">
+    <value>Touchpad</value>
+  </data>
+  <data name="Touchpad_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Touchpad</value>
+  </data>
 </root>

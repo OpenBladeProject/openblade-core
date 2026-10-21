@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add a Touchpad switch on the Laptop page to turn the Windows Precision Touchpad on or off, with confirmed state and English, Russian and Chinese text. Remove redundant On/Off text beside the Gaming mode switch. ([#830](https://github.com/OSSBlade/openblade-core/pull/830))
+
 ## [0.39.0-nightly.97] - 2026-10-20
 
 ### Added

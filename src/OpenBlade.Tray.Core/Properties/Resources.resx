@@ -1642,4 +1642,13 @@ Details: {1}</value>
   <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
     <value>OpenBlade could not verify the base audio drivers. Export diagnostics for help.</value>
   </data>
+  <data name="Turn the touchpad on or off." xml:space="preserve">
+    <value>Turn the touchpad on or off.</value>
+  </data>
+  <data name="Touchpad state unavailable." xml:space="preserve">
+    <value>Touchpad state unavailable.</value>
+  </data>
+  <data name="The touchpad change could not be confirmed. Check Windows Settings." xml:space="preserve">
+    <value>The touchpad change could not be confirmed. Check Windows Settings.</value>
+  </data>
 </root>

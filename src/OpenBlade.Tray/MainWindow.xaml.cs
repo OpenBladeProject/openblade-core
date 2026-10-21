@@ -138,9 +138,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         bool localizationSnapshotMode = false,
         UiLanguagePreference? initialLanguageOverride = null,
         UiPreferenceStore? preferenceStore = null,
-        UpdateCheckInterval? initialUpdateCheckConsentOverride = null)
+        UpdateCheckInterval? initialUpdateCheckConsentOverride = null,
+        ITouchpadController? touchpadController = null)
     {
         this.localizationSnapshotMode = localizationSnapshotMode;
+        TouchpadViewModel = new(touchpadController ?? new WindowsTouchpadController());
+        if (localizationSnapshotMode && touchpadController is not null)
+        {
+            TouchpadViewModel.Refresh();
+        }
         this.initialLanguageOverride = initialLanguageOverride;
         this.initialUpdateCheckConsentOverride = initialUpdateCheckConsentOverride;
         this.processorPolicy = processorPolicy
@@ -282,6 +288,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     }
 
     public MainViewModel ViewModel { get; }
+
+    public TouchpadViewModel TouchpadViewModel { get; }
 
     public ThxAudioViewModel ThxViewModel { get; }
 
@@ -436,7 +444,22 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         WindowsProcessorEfficiencyPolicy.Discover(),
         new WindowsStartupRegistration(),
         showNotification: null,
-        localizationSnapshotMode: true);
+        localizationSnapshotMode: true,
+        touchpadController: new SnapshotTouchpadController());
+
+    private sealed class SnapshotTouchpadController : ITouchpadController
+    {
+        public bool? ReadEnabled() => Environment.GetEnvironmentVariable(
+            "OPENBLADE_TOUCHPAD_SNAPSHOT_STATE") switch
+        {
+            "off" => false,
+            "unavailable" => null,
+            _ => true,
+        };
+
+        public void Toggle() => throw new InvalidOperationException(
+            "Touchpad snapshots must not send input.");
+    }
 
     private static string ReadPresentedProductVersion(bool localizationSnapshotMode)
     {
@@ -3411,6 +3434,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (Volatile.Read(ref disposed) == 0 && LaptopPage.Visibility == Visibility.Visible)
         {
             RefreshSnapTapStatus();
+            if (!localizationSnapshotMode)
+            {
+                TouchpadViewModel.Refresh();
+            }
         }
         if (Volatile.Read(ref disposed) != 0
             || (DisplayPage.Visibility != Visibility.Visible
@@ -3434,6 +3461,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (windowVisible && LaptopPage.Visibility == Visibility.Visible)
         {
             RefreshSnapTapStatus();
+            if (!localizationSnapshotMode)
+            {
+                TouchpadViewModel.Refresh();
+            }
         }
         bool shouldRefresh = windowVisible
             && (DisplayPage.Visibility == Visibility.Visible
@@ -3726,6 +3757,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             () => DisplayViewModel.SelectColorProfileAsync(option),
             nameof(OnDisplayColorProfileChanged));
         selector.SelectedItem = DisplayViewModel.SelectedColorProfile;
+    }
+
+    private async void OnTouchpadToggled(object sender, RoutedEventArgs args)
+    {
+        if (localizationSnapshotMode || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle || !TouchpadViewModel.CanEdit
+            || toggle.IsOn == TouchpadViewModel.IsOn)
+        {
+            return;
+        }
+        await RunHandlerAsync(
+            () => TouchpadViewModel.SetEnabledAsync(toggle.IsOn), nameof(OnTouchpadToggled));
+        toggle.IsOn = TouchpadViewModel.IsOn;
     }
 
     private Task RefreshDisplaySettingsAsync()

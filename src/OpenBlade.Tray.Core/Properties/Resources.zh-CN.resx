@@ -1642,4 +1642,13 @@
   <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
     <value>OpenBlade 无法验证基础音频驱动。请导出诊断信息以便排查。</value>
   </data>
+  <data name="Turn the touchpad on or off." xml:space="preserve">
+    <value>开启或关闭触摸板。</value>
+  </data>
+  <data name="Touchpad state unavailable." xml:space="preserve">
+    <value>无法获取触摸板状态。</value>
+  </data>
+  <data name="The touchpad change could not be confirmed. Check Windows Settings." xml:space="preserve">
+    <value>无法确认触摸板状态是否已更改。请检查 Windows 设置。</value>
+  </data>
 </root>

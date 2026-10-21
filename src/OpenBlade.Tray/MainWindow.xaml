@@ -1244,8 +1244,6 @@
                                               IsEnabled="{x:Bind CanEditGamingMode, Mode=OneWay}"
                                               AutomationProperties.Name="Gaming mode"
                                               IsOn="{x:Bind GamingModeToggleIsOn, Mode=OneWay}"
-                                              OnContent="{x:Bind TrayDashboardGamingModeLabel, Mode=OneWay}"
-                                              OffContent="{x:Bind TrayDashboardGamingModeLabel, Mode=OneWay}"
                                               Toggled="OnGamingModeToggled" />
                             </StackPanel>
                         </Grid>
@@ -3035,6 +3033,28 @@
                                                     ContentTemplate="{StaticResource KeyboardBehaviorRowsTemplate}"
                                                     HorizontalContentAlignment="Stretch"
                                                     Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
+                                    <Border x:Name="TouchpadRow" Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                                <TextBlock x:Uid="Touchpad_Title" Text="Touchpad"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="{x:Bind TouchpadViewModel.Description, Mode=OneWay}"
+                                                           Style="{StaticResource SecondaryTextStyle}"
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ToggleSwitch x:Name="TouchpadToggle" x:Uid="Touchpad_Toggle"
+                                                          Grid.Column="1" VerticalAlignment="Center"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          AutomationProperties.Name="Touchpad"
+                                                          IsOn="{x:Bind TouchpadViewModel.IsOn, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind TouchpadViewModel.CanEdit, Mode=OneWay}"
+                                                          Toggled="OnTouchpadToggled" />
+                                        </Grid>
+                                    </Border>
                                     <Border x:Name="SnapTapRow" Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>

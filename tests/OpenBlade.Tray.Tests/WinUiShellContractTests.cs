@@ -43,7 +43,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(row, "Style"));
         XElement rows = Assert.Single(card.Elements());
         Assert.Equal("StackPanel", rows.Name.LocalName);
-        Assert.Equal([keyboardBehavior, row], rows.Elements().ToArray());
+        Assert.Equal([keyboardBehavior, NamedElement(document, "Border", "TouchpadRow"), row], rows.Elements().ToArray());
         Assert.Equal([keyboardHeader, card], keyboardSection.Elements().ToArray());
         Assert.Equal(
             "{StaticResource KeyboardBehaviorRowsTemplate}",
