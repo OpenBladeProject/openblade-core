@@ -2278,4 +2278,10 @@ OpenBlade повторно проверит этот список и остан�
   <data name="SnapTap_Status_UnsupportedModel" xml:space="preserve">
     <value>Поддержка SnapTap через драйвер этой модели ещё не подтверждена.</value>
   </data>
+  <data name="Touchpad_Title.Text" xml:space="preserve">
+    <value>Сенсорная панель</value>
+  </data>
+  <data name="Touchpad_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Сенсорная панель</value>
+  </data>
 </root>

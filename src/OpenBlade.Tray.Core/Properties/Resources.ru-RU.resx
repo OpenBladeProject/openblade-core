@@ -1642,4 +1642,13 @@
   <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
     <value>Не удалось проверить базовые аудиодрайверы. Экспортируйте данные диагностики, чтобы получить помощь.</value>
   </data>
+  <data name="Turn the touchpad on or off." xml:space="preserve">
+    <value>Включение и отключение сенсорной панели.</value>
+  </data>
+  <data name="Touchpad state unavailable." xml:space="preserve">
+    <value>Не удалось определить состояние сенсорной панели.</value>
+  </data>
+  <data name="The touchpad change could not be confirmed. Check Windows Settings." xml:space="preserve">
+    <value>Не удалось подтвердить изменение состояния сенсорной панели. Проверьте параметры Windows.</value>
+  </data>
 </root>

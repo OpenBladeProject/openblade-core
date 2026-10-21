@@ -3426,6 +3426,24 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "Text") == "{x:Bind AccessLabel, Mode=OneWay}");
     }
 
+    [Fact]
+    public void MainWindowTouchpadUsesConfirmedStateAndSharedSettingsPresentation()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement row = NamedElement(document, "Border", "TouchpadRow");
+        Assert.Equal("{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
+        XElement grid = Assert.Single(row.Elements());
+        Assert.Equal("20", Attribute(grid, "ColumnSpacing"));
+        XElement toggle = NamedElement(document, "ToggleSwitch", "TouchpadToggle");
+        Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", Attribute(toggle, "Style"));
+        Assert.Equal("{x:Bind TouchpadViewModel.IsOn, Mode=OneWay}", Attribute(toggle, "IsOn"));
+        Assert.Equal("{x:Bind TouchpadViewModel.CanEdit, Mode=OneWay}", Attribute(toggle, "IsEnabled"));
+        Assert.Equal("Touchpad", Attribute(toggle, "AutomationProperties.Name"));
+        Assert.Contains(row.Descendants(), element => element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{x:Bind TouchpadViewModel.Description, Mode=OneWay}"
+            && Attribute(element, "TextWrapping") == "Wrap");
+    }
+
     private static string ReadMainWindowXaml() => ReadTraySource("MainWindow.xaml");
 
     private static string? Attribute(XElement element, string localName) =>

@@ -2261,4 +2261,10 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="SnapTap_Status_UnsupportedModel" xml:space="preserve">
     <value>尚未确认此笔记本电脑的驱动程序是否支持 SnapTap。</value>
   </data>
+  <data name="Touchpad_Title.Text" xml:space="preserve">
+    <value>触摸板</value>
+  </data>
+  <data name="Touchpad_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>触摸板</value>
+  </data>
 </root>

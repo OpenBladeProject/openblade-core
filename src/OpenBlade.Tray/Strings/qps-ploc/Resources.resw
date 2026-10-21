@@ -2278,4 +2278,10 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SnapTap_Status_UnsupportedModel" xml:space="preserve">
     <value>[!! SnápTáp drívér súppórt hás nót béén éstáblíshéd fór thís láptóp. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Touchpad_Title.Text" xml:space="preserve">
+    <value>[!! Tóúchpád ~~~ !!]</value>
+  </data>
+  <data name="Touchpad_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Tóúchpád ~~~ !!]</value>
+  </data>
 </root>

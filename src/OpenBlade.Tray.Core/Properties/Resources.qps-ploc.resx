@@ -1732,4 +1732,13 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="OpenBlade could not verify the base audio drivers. Export diagnostics for help." xml:space="preserve">
     <value>[!! OpenBlade cóúld nót vérífý thé básé áúdíó drívérs. Éxpórt díágnóstícs fór hélp. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Turn the touchpad on or off." xml:space="preserve">
+    <value>[!! Túrn thé tóúchpád ón ór óff. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Touchpad state unavailable." xml:space="preserve">
+    <value>[!! Tóúchpád státé únáváíláblé. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The touchpad change could not be confirmed. Check Windows Settings." xml:space="preserve">
+    <value>[!! Thé tóúchpád chángé cóúld nót bé cónfírméd. Chéck Windows Séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>
