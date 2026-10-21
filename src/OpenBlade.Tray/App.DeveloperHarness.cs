@@ -592,6 +592,7 @@ public partial class App
             {
                 "home",
                 "profiles",
+                "telemetry",
                 "laptop",
                 "thx-audio",
                 "thx-audio-headphones",
@@ -615,6 +616,11 @@ public partial class App
                 "profiles-wide",
                 StringComparison.Ordinal);
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
+            bool captureFeatureSnapshot = requestedPage is
+                "profiles-applications" or "profiles-applications-empty"
+                or "profiles-application-editor" or "telemetry-empty"
+                or "laptop-battery-history" or "display-brightness-known"
+                or "display-brightness-unavailable";
             bool captureSnapTapFailure = string.Equals(
                 requestedPage, "laptop-snap-tap-failed", StringComparison.Ordinal);
             bool captureSnapTapEnabled = string.Equals(
@@ -642,6 +648,7 @@ public partial class App
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
+                && !captureFeatureSnapshot
                 && !captureSnapTap
                 && !string.Equals(
                     requestedPage,
@@ -651,7 +658,7 @@ public partial class App
                 throw new InvalidOperationException(
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
-            IEnumerable<string> destinations = captureProfilesVariant || captureSnapTap
+            IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -677,21 +684,43 @@ public partial class App
                             StringComparison.Ordinal)
                             ? new Windows.Graphics.SizeInt32(1600, 900)
                             : new Windows.Graphics.SizeInt32(1120, 820);
-                if (destination == "thx-audio-headphones")
+                if (destination is "profiles-applications"
+                    or "profiles-applications-empty"
+                    or "profiles-application-editor")
+                {
+                    snapshotSize = new Windows.Graphics.SizeInt32(800, 900);
+                }
+                if (destination == "profiles-application-editor")
+                {
+                    snapshotSize = new Windows.Graphics.SizeInt32(800, 1800);
+                }
+                else if (destination is "telemetry" or "telemetry-empty")
+                {
+                    snapshotSize = new Windows.Graphics.SizeInt32(1120, 1120);
+                }
+                else if (destination == "laptop-battery-history")
+                {
+                    snapshotSize = new Windows.Graphics.SizeInt32(1120, 940);
+                }
+                else if (destination == "thx-audio-headphones")
                 {
                     snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                 }
                 snapshotMainWindow.AppWindow.Resize(snapshotSize);
                 await WaitForSnapshotLayoutAsync();
-                string navigationDestination = destination is "settings-appearance" or "settings-experimental"
-                    ? "settings"
-                    : captureSnapTap
-                        ? "laptop"
-                    : destination.StartsWith("thx-audio", StringComparison.Ordinal)
-                        ? "thx-audio"
-                    : captureProfilesVariant
-                        ? "profiles"
-                        : destination;
+                string navigationDestination = destination switch
+                {
+                    "settings-appearance" or "settings-experimental" => "settings",
+                    "profiles-applications" or "profiles-applications-empty"
+                        or "profiles-application-editor" => "profiles",
+                    "telemetry-empty" => "telemetry",
+                    "laptop-battery-history" => "laptop",
+                    "display-brightness-known" or "display-brightness-unavailable" => "display",
+                    _ when captureSnapTap => "laptop",
+                    _ when destination.StartsWith("thx-audio", StringComparison.Ordinal) => "thx-audio",
+                    _ when captureProfilesVariant => "profiles",
+                    _ => destination,
+                };
                 snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
                 await WaitForSnapshotLayoutAsync();
                 if (string.Equals(
@@ -724,6 +753,11 @@ public partial class App
                     snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
                     await WaitForSnapshotLayoutAsync();
                 }
+                if (captureFeatureSnapshot || destination == "telemetry")
+                {
+                    snapshotMainWindow.ShowLocalizationSnapshotFeature(destination);
+                    await WaitForSnapshotLayoutAsync();
+                }
                 if (captureSnapTapInformation)
                 {
                     await SaveFlyoutSnapshotAsync(
@@ -731,9 +765,19 @@ public partial class App
                         snapshotMainWindow.GetLocalizationSnapshotSnapTapInformation(),
                         Path.Combine(resolvedDirectory, "snap-tap-information.png"));
                 }
-                await SaveSnapshotAsync(
-                    snapshotMainWindow.Content,
-                    Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                if (destination == "profiles-application-editor")
+                {
+                    await SaveFlyoutSnapshotAsync(
+                        snapshotMainWindow,
+                        snapshotMainWindow.CreateLocalizationSnapshotApplicationEditor(),
+                        Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                }
+                else
+                {
+                    await SaveSnapshotAsync(
+                        snapshotMainWindow.Content,
+                        Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                }
             }
 
             if (string.IsNullOrWhiteSpace(requestedPage)

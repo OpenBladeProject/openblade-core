@@ -133,6 +133,8 @@ public static class SessionDisplayIpcCodec
             SetHdrRequest value => IsConfirmed(value.ExpectedPowerSource),
             SetColorProfileRequest value =>
                 IsConfirmed(value.ExpectedPowerSource) && ValidKey(value.ColorProfileKey),
+            SetBrightnessRequest value =>
+                IsConfirmed(value.ExpectedPowerSource) && value.Percent <= 100,
             ApplyDisplayProfileRequest value =>
                 IsConfirmed(value.ExpectedPowerSource) && ValidSettings(value.Settings),
             _ => false,
@@ -180,7 +182,8 @@ public static class SessionDisplayIpcCodec
     private static bool ValidSettings(DisplayProfileSettings? settings) =>
         settings is not null
         && (settings.RefreshRateKey is null || ValidKey(settings.RefreshRateKey))
-        && (settings.ColorProfileKey is null || ValidKey(settings.ColorProfileKey));
+        && (settings.ColorProfileKey is null || ValidKey(settings.ColorProfileKey))
+        && settings.BrightnessPercent is not > 100;
 
     private static bool ValidSnapshot(DisplaySettingsSnapshot? state) =>
         state is not null
@@ -188,8 +191,12 @@ public static class SessionDisplayIpcCodec
         && state.Height >= 0
         && state.RefreshOptions is not null
         && state.ColorProfiles is not null
+        && state.SupportedBrightnessLevels is not null
         && state.RefreshOptions.Count <= 64
         && state.ColorProfiles.Count <= 64
+        && state.SupportedBrightnessLevels.Count <= 101
+        && state.SupportedBrightnessLevels.All(level => level <= 100)
+        && state.BrightnessPercent is not > 100
         && (state.CurrentRefreshKey is null || ValidKey(state.CurrentRefreshKey))
         && (state.ActiveColorProfileId is null || ValidKey(state.ActiveColorProfileId))
         && (state.Message is null || state.Message.Length <= MaximumTextLength)

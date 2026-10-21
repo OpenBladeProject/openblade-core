@@ -13,7 +13,7 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 21;
+    internal const int CurrentSchemaVersion = 22;
     internal const int AutomaticExperimentalSupportSchemaVersion = 19;
     internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
     internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
@@ -232,6 +232,10 @@ public sealed class ProfileStore
                 migrated |= normalized != profiles;
                 profiles = normalized;
             }
+            if (schemaVersion < CurrentSchemaVersion)
+            {
+                profiles = ClearSchema22Settings(profiles);
+            }
             migrated |= schemaVersion != CurrentSchemaVersion;
         }
         else if (schemaVersion == LegacySchemaVersion)
@@ -273,6 +277,21 @@ public sealed class ProfileStore
         validator.ValidateStoredCustomIntent(profiles);
         return profiles;
     }
+
+    private static ProfileSet ClearSchema22Settings(ProfileSet profiles) => profiles with
+    {
+        ApplicationProfiles = [],
+        PluggedIn = ClearSchema22Settings(profiles.PluggedIn),
+        Battery = ClearSchema22Settings(profiles.Battery),
+        UsbC = ClearSchema22Settings(profiles.UsbC),
+    };
+
+    private static PowerProfile ClearSchema22Settings(PowerProfile profile) => profile with
+    {
+        Display = profile.Display is null
+            ? null
+            : profile.Display with { BrightnessPercent = null },
+    };
 
     internal static void ValidateLegacyBatteryPolicy(ProfileSet profiles)
     {

@@ -77,7 +77,11 @@ public static class ProfilePresentationFactory
                     .BlockAltTab)),
             Value(
                 TrayText.Get("Startup animation"),
-                FormatOptionalToggle(presentedStartupAnimation)));
+                FormatOptionalToggle(presentedStartupAnimation)))
+        {
+            DisplayBrightness = Value(TrayText.Get("Display brightness"), display.BrightnessPercent is byte brightness
+                ? TrayText.Format("{0}%", brightness) : TrayText.Get("Not set")),
+        };
     }
 
     private static string FormatOptionalToggle(bool? value) => value switch
@@ -155,7 +159,10 @@ public static class ProfilePresentationFactory
             MarkPending(saved.GamingMode, pending.GamingMode),
             MarkPending(saved.GamingModeWindowsKey, pending.GamingModeWindowsKey),
             MarkPending(saved.GamingModeAltTab, pending.GamingModeAltTab),
-            MarkPending(saved.StartupAnimation, pending.StartupAnimation));
+            MarkPending(saved.StartupAnimation, pending.StartupAnimation))
+        {
+            DisplayBrightness = MarkPending(saved.DisplayBrightness, pending.DisplayBrightness),
+        };
     }
 
     public static ProfileValuePresentation MarkPending(
@@ -211,6 +218,10 @@ public static class ProfilePresentationFactory
         if (!string.IsNullOrWhiteSpace(value.ColorProfileKey))
         {
             settings.Add(value.ColorProfileKey);
+        }
+        if (value.BrightnessPercent is byte brightness)
+        {
+            settings.Add(TrayText.Format("Brightness {0}%", brightness));
         }
         return settings.Count == 0
             ? TrayText.Get("Not set")

@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using OpenBlade.Session;
 using OpenBlade.Tray;
 
@@ -6,36 +7,40 @@ namespace OpenBlade.SessionAgent;
 internal sealed class ServiceThxAudioAutomationLoop(
     IServiceStatusWatcher statusWatcher,
     IThxForegroundSource foregroundSource,
-    ThxAudioAutomationCoordinator coordinator)
+    ThxAudioAutomationCoordinator coordinator,
+    ApplicationProfileReporter applicationProfiles)
 {
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task status = ObserveStatusAsync(lifetime.Token);
         Task foreground = ObserveForegroundAsync(lifetime.Token);
+        Task profiles = applicationProfiles.RunAsync(lifetime.Token);
+        Task completed = await Task.WhenAny(status, foreground, profiles).ConfigureAwait(false);
+        Exception? terminalFailure = completed.IsFaulted
+            ? completed.Exception?.GetBaseException()
+            : null;
+        bool endedUnexpectedly = !cancellationToken.IsCancellationRequested
+            && terminalFailure is null;
+        TryObserveThx(coordinator.MarkUnavailable);
+        await lifetime.CancelAsync().ConfigureAwait(false);
         try
         {
-            await Task.WhenAny(status, foreground).ConfigureAwait(false);
-        }
-        finally
-        {
-            coordinator.MarkUnavailable();
-            await lifetime.CancelAsync().ConfigureAwait(false);
-        }
-        try
-        {
-            await Task.WhenAll(status, foreground).ConfigureAwait(false);
+            await Task.WhenAll(status, foreground, profiles).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
         }
-        // Losing the source disables only this optional feature; it must not
-        // terminate input/display/lighting features supervised by Program.
-        catch (Exception exception)
+        catch (Exception) when (terminalFailure is not null || endedUnexpectedly)
         {
-            System.Diagnostics.Trace.TraceWarning("THX application automation stopped: {0}", exception.Message);
         }
-        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        if (terminalFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(terminalFailure).Throw();
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new InvalidOperationException(
+            "Session foreground and application-profile observation stopped unexpectedly.");
     }
 
     private async Task ObserveStatusAsync(CancellationToken cancellationToken)
@@ -45,11 +50,12 @@ internal sealed class ServiceThxAudioAutomationLoop(
         {
             if (update is ServiceWatchUpdate.Connected connected)
             {
-                coordinator.Observe(connected.Status);
+                TryObserveThx(() => coordinator.Observe(connected.Status));
+                applicationProfiles.Observe(connected.Status);
             }
             else
             {
-                coordinator.MarkUnavailable();
+                TryObserveThx(coordinator.MarkUnavailable);
             }
         }
     }
@@ -59,7 +65,22 @@ internal sealed class ServiceThxAudioAutomationLoop(
         await foreach (ThxForegroundObservation observation in foregroundSource.WatchAsync(cancellationToken)
             .WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            coordinator.ObserveForeground(observation);
+            TryObserveThx(() => coordinator.ObserveForeground(observation));
+            applicationProfiles.ObserveForeground(observation);
+        }
+    }
+
+    private static void TryObserveThx(Action observe)
+    {
+        try
+        {
+            observe();
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Trace.TraceWarning(
+                "THX application automation observation failed: {0}",
+                exception.Message);
         }
     }
 }

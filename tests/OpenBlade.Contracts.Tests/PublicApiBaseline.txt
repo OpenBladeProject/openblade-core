@@ -76,6 +76,104 @@ type sealed class OpenBlade.Contracts.AmbientLightingFrame
   method virtual System.Boolean Equals(OpenBlade.Contracts.AmbientLightingFrame other)
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.RgbColor> Slots { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.Int32> LayoutHoleSlots { get; }
+type enum OpenBlade.Contracts.ApplicationActivationMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ApplicationActivationMode Foreground = 0
+  field const OpenBlade.Contracts.ApplicationActivationMode WhileRunningAfterActivation = 1
+type sealed class OpenBlade.Contracts.ApplicationPowerProfileOverride
+  interface System.IEquatable<OpenBlade.Contracts.ApplicationPowerProfileOverride>
+  ctor ()
+  method OpenBlade.Contracts.ApplicationPowerProfileOverride <Clone>$()
+  method OpenBlade.Contracts.CustomPerformanceSettings get_CustomPerformance()
+  method OpenBlade.Contracts.DisplayProfileSettings get_Display()
+  method OpenBlade.Contracts.FanControlSettings get_FanControl()
+  method OpenBlade.Contracts.GamingModeKeyPolicy get_GamingModeKeyPolicy()
+  method OpenBlade.Contracts.GpuClockTuningSettings get_GpuClockTuning()
+  method OpenBlade.Contracts.LightingSettings get_Lighting()
+  method System.Boolean get_IsConfigured()
+  method System.Nullable<OpenBlade.Contracts.FanMode> get_Fans()
+  method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_Performance()
+  method System.Nullable<System.Boolean> get_GamingModeEnabled()
+  method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
+  method System.Void set_Display(OpenBlade.Contracts.DisplayProfileSettings value)
+  method System.Void set_FanControl(OpenBlade.Contracts.FanControlSettings value)
+  method System.Void set_Fans(System.Nullable<OpenBlade.Contracts.FanMode> value)
+  method System.Void set_GamingModeEnabled(System.Nullable<System.Boolean> value)
+  method System.Void set_GamingModeKeyPolicy(OpenBlade.Contracts.GamingModeKeyPolicy value)
+  method System.Void set_GpuClockTuning(OpenBlade.Contracts.GpuClockTuningSettings value)
+  method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
+  method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ApplicationPowerProfileOverride left, OpenBlade.Contracts.ApplicationPowerProfileOverride right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ApplicationPowerProfileOverride left, OpenBlade.Contracts.ApplicationPowerProfileOverride right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ApplicationPowerProfileOverride other)
+  property OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance { get; init; }
+  property OpenBlade.Contracts.DisplayProfileSettings Display { get; init; }
+  property OpenBlade.Contracts.FanControlSettings FanControl { get; init; }
+  property OpenBlade.Contracts.GamingModeKeyPolicy GamingModeKeyPolicy { get; init; }
+  property OpenBlade.Contracts.GpuClockTuningSettings GpuClockTuning { get; init; }
+  property OpenBlade.Contracts.LightingSettings Lighting { get; init; }
+  property System.Boolean IsConfigured { get; }
+  property System.Nullable<OpenBlade.Contracts.FanMode> Fans { get; init; }
+  property System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance { get; init; }
+  property System.Nullable<System.Boolean> GamingModeEnabled { get; init; }
+type sealed class OpenBlade.Contracts.ApplicationProfileDefinition
+  interface System.IEquatable<OpenBlade.Contracts.ApplicationProfileDefinition>
+  ctor (System.Guid Id, System.String Name, System.String ExecutablePath, OpenBlade.Contracts.ApplicationActivationMode ActivationMode, OpenBlade.Contracts.ApplicationProfileOverrideSet Overrides, System.Boolean Enabled = true)
+  field const System.Int32 MaximumExecutablePathLength = 32767
+  field const System.Int32 MaximumNameLength = 80
+  field const System.Int32 MaximumProfiles = 128
+  method OpenBlade.Contracts.ApplicationActivationMode get_ActivationMode()
+  method OpenBlade.Contracts.ApplicationProfileDefinition <Clone>$()
+  method OpenBlade.Contracts.ApplicationProfileOverrideSet get_Overrides()
+  method System.Boolean get_Enabled()
+  method System.Guid get_Id()
+  method System.String get_ExecutablePath()
+  method System.String get_Name()
+  method System.Void Deconstruct(out System.Guid Id, out System.String Name, out System.String ExecutablePath, out OpenBlade.Contracts.ApplicationActivationMode ActivationMode, out OpenBlade.Contracts.ApplicationProfileOverrideSet Overrides, out System.Boolean Enabled)
+  method System.Void set_ActivationMode(OpenBlade.Contracts.ApplicationActivationMode value)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_ExecutablePath(System.String value)
+  method System.Void set_Id(System.Guid value)
+  method System.Void set_Name(System.String value)
+  method System.Void set_Overrides(OpenBlade.Contracts.ApplicationProfileOverrideSet value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ApplicationProfileDefinition left, OpenBlade.Contracts.ApplicationProfileDefinition right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ApplicationProfileDefinition left, OpenBlade.Contracts.ApplicationProfileDefinition right)
+  method static System.String NormalizeExecutablePath(System.String value)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ApplicationProfileDefinition other)
+  property OpenBlade.Contracts.ApplicationActivationMode ActivationMode { get; init; }
+  property OpenBlade.Contracts.ApplicationProfileOverrideSet Overrides { get; init; }
+  property System.Boolean Enabled { get; init; }
+  property System.Guid Id { get; init; }
+  property System.String ExecutablePath { get; init; }
+  property System.String Name { get; init; }
+type sealed class OpenBlade.Contracts.ApplicationProfileOverrideSet
+  interface System.IEquatable<OpenBlade.Contracts.ApplicationProfileOverrideSet>
+  ctor ()
+  method OpenBlade.Contracts.ApplicationPowerProfileOverride ForPowerSource(OpenBlade.Contracts.PowerSource source)
+  method OpenBlade.Contracts.ApplicationPowerProfileOverride get_Battery()
+  method OpenBlade.Contracts.ApplicationPowerProfileOverride get_PluggedIn()
+  method OpenBlade.Contracts.ApplicationPowerProfileOverride get_UsbC()
+  method OpenBlade.Contracts.ApplicationProfileOverrideSet <Clone>$()
+  method System.Boolean get_IsConfigured()
+  method System.Void set_Battery(OpenBlade.Contracts.ApplicationPowerProfileOverride value)
+  method System.Void set_PluggedIn(OpenBlade.Contracts.ApplicationPowerProfileOverride value)
+  method System.Void set_UsbC(OpenBlade.Contracts.ApplicationPowerProfileOverride value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ApplicationProfileOverrideSet left, OpenBlade.Contracts.ApplicationProfileOverrideSet right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ApplicationProfileOverrideSet left, OpenBlade.Contracts.ApplicationProfileOverrideSet right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ApplicationProfileOverrideSet other)
+  property OpenBlade.Contracts.ApplicationPowerProfileOverride Battery { get; init; }
+  property OpenBlade.Contracts.ApplicationPowerProfileOverride PluggedIn { get; init; }
+  property OpenBlade.Contracts.ApplicationPowerProfileOverride UsbC { get; init; }
+  property System.Boolean IsConfigured { get; }
 type sealed class OpenBlade.Contracts.ApplyOneShotLaptopControl
   interface System.IEquatable<OpenBlade.Contracts.ApplyOneShotLaptopControl>
   ctor (OpenBlade.Contracts.OneShotLaptopControl Control, System.Nullable<System.Boolean> Enabled = null, System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyMode = null)
@@ -711,9 +809,11 @@ type sealed class OpenBlade.Contracts.DisplayProfileSettings
   method OpenBlade.Contracts.DisplayProfileSettings <Clone>$()
   method System.Boolean get_IsConfigured()
   method System.Nullable<System.Boolean> get_HdrEnabled()
+  method System.Nullable<System.Byte> get_BrightnessPercent()
   method System.String get_ColorProfileKey()
   method System.String get_RefreshRateKey()
   method System.Void Deconstruct(out System.String RefreshRateKey, out System.Nullable<System.Boolean> HdrEnabled, out System.String ColorProfileKey)
+  method System.Void set_BrightnessPercent(System.Nullable<System.Byte> value)
   method System.Void set_ColorProfileKey(System.String value)
   method System.Void set_HdrEnabled(System.Nullable<System.Boolean> value)
   method System.Void set_RefreshRateKey(System.String value)
@@ -726,6 +826,7 @@ type sealed class OpenBlade.Contracts.DisplayProfileSettings
   method virtual System.Boolean Equals(OpenBlade.Contracts.DisplayProfileSettings other)
   property System.Boolean IsConfigured { get; }
   property System.Nullable<System.Boolean> HdrEnabled { get; init; }
+  property System.Nullable<System.Byte> BrightnessPercent { get; init; }
   property System.String ColorProfileKey { get; init; }
   property System.String RefreshRateKey { get; init; }
 type sealed class OpenBlade.Contracts.ExperimentalControlObservation
@@ -1458,7 +1559,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 70
+  field const System.Int32 ProtocolVersion = 71
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1646,7 +1747,9 @@ type sealed class OpenBlade.Contracts.ProfileSet
   method OpenBlade.Contracts.PowerProfile get_UsbC()
   method OpenBlade.Contracts.ProfileSet <Clone>$()
   method OpenBlade.Contracts.WindowsPowerModeAssociations get_WindowsPowerModes()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ApplicationProfileDefinition> get_ApplicationProfiles()
   method System.Void Deconstruct(out OpenBlade.Contracts.PowerProfile PluggedIn, out OpenBlade.Contracts.PowerProfile Battery, out OpenBlade.Contracts.PowerProfile UsbC, out OpenBlade.Contracts.BatteryPolicy BatteryPolicy, out OpenBlade.Contracts.LightingPowerPolicy LightingPowerPolicy)
+  method System.Void set_ApplicationProfiles(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ApplicationProfileDefinition> value)
   method System.Void set_Battery(OpenBlade.Contracts.PowerProfile value)
   method System.Void set_BatteryPolicy(OpenBlade.Contracts.BatteryPolicy value)
   method System.Void set_LightingPowerPolicy(OpenBlade.Contracts.LightingPowerPolicy value)
@@ -1666,6 +1769,7 @@ type sealed class OpenBlade.Contracts.ProfileSet
   property OpenBlade.Contracts.PowerProfile PluggedIn { get; init; }
   property OpenBlade.Contracts.PowerProfile UsbC { get; init; }
   property OpenBlade.Contracts.WindowsPowerModeAssociations WindowsPowerModes { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ApplicationProfileDefinition> ApplicationProfiles { get; init; }
 type sealed class OpenBlade.Contracts.PulseReactiveKeyRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.PulseReactiveKeyRequest>
@@ -1819,6 +1923,28 @@ type sealed class OpenBlade.Contracts.RecoverHyperBoostRestoreRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.RecoverHyperBoostRestoreRequest left, OpenBlade.Contracts.RecoverHyperBoostRestoreRequest right)
   method virtual OpenBlade.Contracts.RecoverHyperBoostRestoreRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.RecoverHyperBoostRestoreRequest other)
+type sealed class OpenBlade.Contracts.ReportApplicationContextRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ReportApplicationContextRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Guid InstanceId, System.Int64 Sequence, System.String ExecutablePath)
+  method System.Guid get_InstanceId()
+  method System.Int64 get_Sequence()
+  method System.String get_ExecutablePath()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Guid InstanceId, out System.Int64 Sequence, out System.String ExecutablePath)
+  method System.Void set_ExecutablePath(System.String value)
+  method System.Void set_InstanceId(System.Guid value)
+  method System.Void set_Sequence(System.Int64 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ReportApplicationContextRequest left, OpenBlade.Contracts.ReportApplicationContextRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ReportApplicationContextRequest left, OpenBlade.Contracts.ReportApplicationContextRequest right)
+  method virtual OpenBlade.Contracts.ReportApplicationContextRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ReportApplicationContextRequest other)
+  property System.Guid InstanceId { get; init; }
+  property System.Int64 Sequence { get; init; }
+  property System.String ExecutablePath { get; init; }
 type sealed class OpenBlade.Contracts.ReportSessionPowerTransitionRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.ReportSessionPowerTransitionRequest>
@@ -2050,6 +2176,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.FirmwareCompatibilityStatus get_FirmwareCompatibility()
   method OpenBlade.Contracts.FirmwareVersions get_Firmware()
   method OpenBlade.Contracts.KeyboardLightingControlMode get_KeyboardLightingControlMode()
+  method OpenBlade.Contracts.LaptopBehaviorProfileSettings get_EffectiveLaptopBehavior()
   method OpenBlade.Contracts.LightingRefreshRate get_LightingRefreshRate()
   method OpenBlade.Contracts.LightingRendererOwnershipState get_LightingRendererOwnership()
   method OpenBlade.Contracts.LiveReadings get_LiveReadings()
@@ -2084,11 +2211,13 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Nullable<System.Boolean> get_GamingModeEnabled()
   method System.Nullable<System.Boolean> get_KeyboardDriverModeActive()
   method System.Nullable<System.Boolean> get_StartupAnimationEnabled()
+  method System.Nullable<System.Guid> get_ActiveApplicationProfileId()
   method System.String get_ControllerDetectionWarning()
   method System.String get_ExperimentalSupportSource()
   method System.String get_Message()
   method System.String get_ServiceVersion()
   method System.Void Deconstruct(out System.Int64 Revision, out System.Boolean DeviceVerified, out System.Boolean WritesBlocked, out System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, out System.String ControllerDetectionWarning, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges, out System.String Message, out OpenBlade.Contracts.DeviceCapabilities Capabilities, out OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState, out OpenBlade.Contracts.ProfileSet Profiles, out OpenBlade.Contracts.DesiredDeviceState DesiredState, out OpenBlade.Contracts.PowerSource ActivePowerSource, out OpenBlade.Contracts.LiveReadings LiveReadings, out OpenBlade.Contracts.PerformanceOverride PerformanceOverride, out OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride, out OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> LightingOverride, out System.Boolean FullChargeOverride, out OpenBlade.Contracts.FirmwareVersions Firmware, out System.String ServiceVersion, out OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions, out System.Nullable<System.Boolean> StartupAnimationEnabled, out System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary, out System.Nullable<System.Boolean> GamingModeEnabled, out System.Boolean AlwaysOverrideExternalLightingChanges, out System.Nullable<System.Boolean> KeyboardDriverModeActive, out OpenBlade.Contracts.BatteryHealthStatus BatteryHealth, out OpenBlade.Contracts.KeyboardLightingControlMode KeyboardLightingControlMode, out OpenBlade.Contracts.SessionControlAccess ControlAccess, out System.Boolean AllowUntestedFirmware, out OpenBlade.Contracts.FirmwareCompatibilityStatus FirmwareCompatibility, out OpenBlade.Contracts.DisplayBrightnessHidAvailability DisplayBrightnessHidAvailability, out OpenBlade.Contracts.LightingRefreshRate LightingRefreshRate)
+  method System.Void set_ActiveApplicationProfileId(System.Nullable<System.Guid> value)
   method System.Void set_ActivePowerSource(OpenBlade.Contracts.PowerSource value)
   method System.Void set_AllowExperimentalFeatures(System.Boolean value)
   method System.Void set_AllowUntestedFirmware(System.Boolean value)
@@ -2103,6 +2232,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_DesiredState(OpenBlade.Contracts.DesiredDeviceState value)
   method System.Void set_DeviceVerified(System.Boolean value)
   method System.Void set_DisplayBrightnessHidAvailability(OpenBlade.Contracts.DisplayBrightnessHidAvailability value)
+  method System.Void set_EffectiveLaptopBehavior(OpenBlade.Contracts.LaptopBehaviorProfileSettings value)
   method System.Void set_ExperimentalSupportSource(System.String value)
   method System.Void set_ExperimentalWritesPaused(System.Boolean value)
   method System.Void set_ExternalChanges(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
@@ -2154,6 +2284,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.FirmwareCompatibilityStatus FirmwareCompatibility { get; init; }
   property OpenBlade.Contracts.FirmwareVersions Firmware { get; init; }
   property OpenBlade.Contracts.KeyboardLightingControlMode KeyboardLightingControlMode { get; init; }
+  property OpenBlade.Contracts.LaptopBehaviorProfileSettings EffectiveLaptopBehavior { get; init; }
   property OpenBlade.Contracts.LightingRefreshRate LightingRefreshRate { get; init; }
   property OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership { get; init; }
   property OpenBlade.Contracts.LiveReadings LiveReadings { get; init; }
@@ -2187,6 +2318,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property System.Nullable<System.Boolean> GamingModeEnabled { get; init; }
   property System.Nullable<System.Boolean> KeyboardDriverModeActive { get; init; }
   property System.Nullable<System.Boolean> StartupAnimationEnabled { get; init; }
+  property System.Nullable<System.Guid> ActiveApplicationProfileId { get; init; }
   property System.String ControllerDetectionWarning { get; init; }
   property System.String ExperimentalSupportSource { get; init; }
   property System.String Message { get; init; }
@@ -2505,10 +2637,11 @@ type sealed class OpenBlade.Contracts.SetThermalControlPolicyRequest
   property OpenBlade.Contracts.ThermalControlPolicy Policy { get; init; }
 type enum OpenBlade.Contracts.SettingValueSource
   field System.Int32 value__
+  field const OpenBlade.Contracts.SettingValueSource ApplicationProfile = 2
   field const OpenBlade.Contracts.SettingValueSource ConfirmedFirmwareState = 0
-  field const OpenBlade.Contracts.SettingValueSource PersistentOverride = 3
+  field const OpenBlade.Contracts.SettingValueSource PersistentOverride = 4
   field const OpenBlade.Contracts.SettingValueSource PowerProfile = 1
-  field const OpenBlade.Contracts.SettingValueSource TemporaryOverride = 2
+  field const OpenBlade.Contracts.SettingValueSource TemporaryOverride = 3
 type sealed class OpenBlade.Contracts.ShutdownOpenBladeRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.ShutdownOpenBladeRequest>

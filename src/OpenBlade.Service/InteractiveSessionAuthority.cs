@@ -106,12 +106,13 @@ public static class ServiceRequestAccessPolicy
                         : null);
         }
 
-        if (request is ReportSessionPowerTransitionRequest)
+        if (request is ReportSessionPowerTransitionRequest
+            or ReportApplicationContextRequest)
         {
             return new ServiceRequestAccessDecision(GetAccess(client, authority),
                 IsActiveLocalInteractiveClient(client, authority)
                     ? null
-                    : "Session power notifications require the active local interactive Windows session.");
+                    : "Session automation reports require the active local interactive Windows session.");
         }
 
         if (request is SetThermalControlPolicyRequest

@@ -198,7 +198,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "OpenBlade visible observation failed: {0}",
                 exception),
             observationIntervalProvider: () =>
-                ViewModel.LiveReadingsObservationInterval);
+                ViewModel.RequiresTelemetryObservation
+                    ? ViewModel.TelemetryExpectedSampleInterval
+                    : ViewModel.LiveReadingsObservationInterval);
         trayObservationLoop = new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade on-demand tray telemetry refresh failed: {0}",
@@ -216,6 +218,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
+        BatteryHistoryViewModel.PropertyChanged += OnBatteryHistoryPropertyChanged;
+        RefreshBatteryHistoryPresentation();
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
         trayDashboardEditor.EditAccepted += OnTrayDashboardEditorEditAccepted;
         trayDashboardEditor.AvailabilityChanged += UpdateTrayDashboardEditorAvailability;
@@ -703,6 +707,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         gpuAppCleanupCoordinator.Cancel();
+        featureLifetime.Cancel();
+        BatteryHistoryViewModel.PropertyChanged -= OnBatteryHistoryPropertyChanged;
 
         Task? activeInitialization;
         lock (initializationSync)
@@ -787,9 +793,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await DisposeComponentSafelyAsync(
             "display view model",
             DisplayViewModel.DisposeAsync);
+        await DisposeComponentSafelyAsync("battery history view model", BatteryHistoryViewModel.DisposeAsync);
         await DisposeComponentSafelyAsync(
             "main view model",
             ViewModel.DisposeAsync);
+        featureLifetime.Dispose();
     }
 
     private static async ValueTask DisposeComponentSafelyAsync(
@@ -1085,6 +1093,30 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             && !notificationCoordinator.ObservationReady)
         {
             PrimeNotificationObservation();
+        }
+
+        if (args.PropertyName is nameof(MainViewModel.ApplicationProfiles)
+            or nameof(MainViewModel.ActiveApplicationProfileName))
+        {
+            RefreshApplicationProfiles();
+        }
+
+        if (args.PropertyName is nameof(MainViewModel.TelemetryHistorySnapshot)
+            or nameof(MainViewModel.LatestTelemetryFreshness))
+        {
+            if (ViewModel.TelemetryReplaySession is null)
+            {
+                RefreshTelemetryPresentation();
+            }
+        }
+        if (args.PropertyName is nameof(MainViewModel.IsTelemetryRecording)
+            or nameof(MainViewModel.TelemetryReplaySession) or nameof(MainViewModel.TelemetryErrorMessage))
+        {
+            RefreshTelemetryPresentation();
+        }
+        if (args.PropertyName == nameof(MainViewModel.RequiresTelemetryObservation))
+        {
+            UpdateActiveObservationLoop();
         }
 
         if (args.PropertyName == nameof(MainViewModel.SelectedWindowsPowerModeOption))
@@ -3298,6 +3330,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ProfilesPage.Visibility = destination == "profiles"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        TelemetryPage.Visibility = destination == "telemetry" ? Visibility.Visible : Visibility.Collapsed;
+        ViewModel.SetTelemetryPresentationActive(!localizationSnapshotMode && windowVisible && destination == "telemetry");
+        if (destination == "telemetry")
+        {
+            RefreshTelemetryPresentation();
+        }
         LaptopPage.Visibility = destination == "laptop"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -3327,6 +3365,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         UpdateGpuAppObservationState();
         if (destination == "profiles")
         {
+            RefreshApplicationProfiles();
             dispatcherQueue.TryEnqueue(
                 DispatcherQueuePriority.Low,
                 () => UpdateProfilesLayout());
@@ -3371,6 +3410,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             "home" => HomeNavigationItem,
             "profiles" => ProfilesNavigationItem,
+            "telemetry" => TelemetryNavigationItem,
             "laptop" => LaptopNavigationItem,
             "thx-audio" => ThxAudioNavigationItem,
             "lighting" => LightingNavigationItem,
@@ -3483,27 +3523,39 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void WakeActiveObservationLoop()
     {
-        if (windowVisible || trayDashboardVisible)
+        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation)
         {
             visibleObservationLoop.StartOrWake();
         }
     }
 
-    private Task ObserveVisibleSurfacesAsync(CancellationToken cancellationToken)
+    private async Task ObserveVisibleSurfacesAsync(CancellationToken cancellationToken)
     {
         bool dashboardVisible = Volatile.Read(ref trayDashboardVisible);
-        return dashboardVisible
-            ? ViewModel.ObserveTrayDashboardStateAsync(
-                includeMainDashboardReadings: Volatile.Read(ref windowVisible),
-                dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
-                    ref trayDashboardLiveReadingSensors),
-                cancellationToken)
-            : ViewModel.ObserveStateAsync(cancellationToken);
+        try
+        {
+            await (dashboardVisible
+                ? ViewModel.ObserveTrayDashboardStateAsync(
+                    includeMainDashboardReadings: Volatile.Read(ref windowVisible),
+                    dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
+                        ref trayDashboardLiveReadingSensors), cancellationToken)
+                : ViewModel.ObserveStateAsync(cancellationToken)).ConfigureAwait(false);
+        }
+        finally
+        {
+            dispatcherQueue.TryEnqueue(() =>
+            {
+                if (Volatile.Read(ref disposed) == 0)
+                {
+                    ViewModel.RefreshTelemetryFreshness();
+                }
+            });
+        }
     }
 
     private void UpdateActiveObservationLoop()
     {
-        if (windowVisible || trayDashboardVisible)
+        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation)
         {
             visibleObservationLoop.StartOrWake();
         }
@@ -3545,13 +3597,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         UpdateActiveObservationLoop();
     }
 
-    private void UpdateDashboardTelemetryPresentationState() =>
+    private void UpdateDashboardTelemetryPresentationState()
+    {
         ViewModel.SetDashboardTelemetryPresentationActive(
             windowVisible && HomePage.Visibility == Visibility.Visible);
+        ViewModel.SetTelemetryPresentationActive(!localizationSnapshotMode && windowVisible && TelemetryPage.Visibility == Visibility.Visible);
+    }
 
     public void RequestTrayTelemetryRefresh()
     {
         if (windowVisible
+            || ViewModel.RequiresTelemetryObservation
             || !ViewModel.HasEnabledTrayHoverLiveReadings)
         {
             return;
@@ -3733,6 +3789,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             () => DisplayViewModel.SetHdrEnabledAsync(requested),
             nameof(OnDisplayHdrToggled));
         toggle.IsOn = DisplayViewModel.IsHdrEnabled;
+    }
+
+    private async void OnDisplayBrightnessChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (localizationSnapshotMode || Volatile.Read(ref disposed) != 0
+            || !DisplayViewModel.CanChangeBrightness || !double.IsFinite(args.NewValue)
+            || args.NewValue < 0 || args.NewValue > 100
+            || Math.Round(args.NewValue) == DisplayViewModel.BrightnessPercent)
+        {
+            return;
+        }
+        byte requested = checked((byte)Math.Round(args.NewValue));
+        await RunHandlerAsync(() => DisplayViewModel.SetBrightnessAsync(requested), nameof(OnDisplayBrightnessChanged));
+        sender.Value = DisplayViewModel.BrightnessValue;
     }
 
     private async void OnDisplayColorProfileChanged(
@@ -5005,6 +5075,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         kind switch
         {
             PrimaryNavigationItemKind.Profiles => ProfilesNavigationItem,
+            PrimaryNavigationItemKind.Telemetry => TelemetryNavigationItem,
             PrimaryNavigationItemKind.Laptop => LaptopNavigationItem,
             PrimaryNavigationItemKind.ThxAudio => ThxAudioNavigationItem,
             PrimaryNavigationItemKind.Lighting => LightingNavigationItem,
@@ -5017,6 +5088,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         kind switch
         {
             PrimaryNavigationItemKind.Profiles => LocalizedResources.Get("Navigation_Profiles", "Profiles"),
+            PrimaryNavigationItemKind.Telemetry => LocalizedResources.Get("Navigation_Telemetry", "Telemetry"),
             PrimaryNavigationItemKind.Laptop => LocalizedResources.Get("Navigation_Laptop", "Laptop"),
             PrimaryNavigationItemKind.ThxAudio => LocalizedResources.Get("Navigation_ThxAudio", "THX Audio"),
             PrimaryNavigationItemKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
@@ -5225,10 +5297,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         pageSectionPresentations[PageSectionKind.ProfilesComparison] =
             ProfilesComparisonSection;
+        pageSectionPresentations[PageSectionKind.ProfilesApplications] = ApplicationProfilesSection;
         pageSectionPresentations[PageSectionKind.DisplayControls] = DisplayCard;
         pageSectionPresentations[PageSectionKind.LaptopPowerMode] = PowerModeCard;
         pageSectionPresentations[PageSectionKind.LaptopFans] = FansCard;
         pageSectionPresentations[PageSectionKind.LaptopBattery] = BatteryCard;
+        pageSectionPresentations[PageSectionKind.LaptopBatteryHistory] = BatteryHistorySection;
         pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =
             KeyboardSection;
         pageSectionPresentations[PageSectionKind.LaptopStartupAnimation] =

@@ -73,6 +73,13 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
                 settings),
             token);
 
+    public Task<DisplaySettingsSnapshot> SetBrightnessAsync(
+        PowerSource expectedPowerSource,
+        byte percent,
+        CancellationToken token) => SendAsync(
+            requestId => new SetBrightnessRequest(SessionDisplayIpc.ProtocolVersion,
+                requestId, expectedPowerSource, percent), token);
+
     private async Task<DisplaySettingsSnapshot> SendAsync(
         Func<Guid, SessionDisplayRequest> createRequest,
         CancellationToken cancellationToken)
@@ -157,7 +164,11 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
         state.DisplayName,
         state.Width,
         state.Height,
-        state.BitsPerColorChannel);
+        state.BitsPerColorChannel)
+    {
+        BrightnessPercent = state.BrightnessPercent,
+        SupportedBrightnessLevels = state.SupportedBrightnessLevels,
+    };
 
     private static DisplaySettingsSnapshot Unavailable(
         string message,

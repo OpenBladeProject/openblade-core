@@ -5,6 +5,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add application profiles for exact game and app executables, with foreground or activated-process lifetime rules, separate power-source overrides, HDR and brightness settings, installed-game discovery, and profile import/export. Manual controls keep priority while automation continues in the Session Agent. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+- Add telemetry charts with raw-sample statistics, missing-reading gaps, power/profile events, source and freshness labels, and explicit bounded local CSV recording and replay. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+- Add per-source display brightness, Windows battery history with capacity and activity details, and a previewable Long battery life preset. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+
+### Fixed
+
+- Preserve display ownership and uncertainty across application changes, manual controls, cancellation and restart. Require acknowledged recovery checkpoints and complete readback before resuming uncertain automation, and stop guessed refresh-rate rollback. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+
 ## [0.40.0] - 2026-10-21
 
 ### Added

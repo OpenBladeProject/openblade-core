@@ -110,6 +110,7 @@ public sealed class WindowsDisplayMutationCancellationTests
 
         Assert.False(result.Succeeded);
         Assert.Same(before, result.State);
+        Assert.False(result.SubmissionMayHaveOccurred);
         Assert.Contains("validation rejected", result.Error);
         Assert.DoesNotContain("restor", result.Error, StringComparison.OrdinalIgnoreCase);
     }

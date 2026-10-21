@@ -19,7 +19,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task LegacyNumericNavigationPreservesCustomOrderAndPersistsThxAudio()
+    public async Task LegacyNumericNavigationPreservesCustomOrderAndPersistsNewItems()
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "navigation-preferences.json");
@@ -35,6 +35,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             PrimaryNavigationItemKind.Profiles,
             PrimaryNavigationItemKind.Lighting,
             PrimaryNavigationItemKind.ThxAudio,
+            PrimaryNavigationItemKind.Telemetry,
         ];
         Assert.Equal(expected, loaded.EffectivePrimaryNavigationItems);
         await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
@@ -638,6 +639,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 PrimaryNavigationItemKind.Profiles,
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
+                PrimaryNavigationItemKind.Telemetry,
             ],
             reloaded.EffectivePrimaryNavigationItems);
         Assert.Equal(AppAccentColorMode.Custom, reloaded.EffectiveAccentColorMode);

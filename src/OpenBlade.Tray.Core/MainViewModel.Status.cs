@@ -36,6 +36,8 @@ public sealed partial class MainViewModel
         && left.Profiles == right.Profiles
         && left.DesiredState == right.DesiredState
         && left.ActivePowerSource == right.ActivePowerSource
+        && left.ActiveApplicationProfileId == right.ActiveApplicationProfileId
+        && left.EffectiveLaptopBehavior == right.EffectiveLaptopBehavior
         && left.PerformanceOverride == right.PerformanceOverride
         && left.FanOverride == right.FanOverride
         && left.FanControlOverride == right.FanControlOverride

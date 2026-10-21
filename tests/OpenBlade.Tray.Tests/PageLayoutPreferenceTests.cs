@@ -47,6 +47,7 @@ public sealed class PageLayoutPreferenceTests
                 PageSectionKind.LaptopPowerMode,
                 PageSectionKind.LaptopFans,
                 PageSectionKind.LaptopBattery,
+                PageSectionKind.LaptopBatteryHistory,
                 PageSectionKind.LaptopKeyboardBehavior,
                 PageSectionKind.LaptopStartupAnimation,
             ],

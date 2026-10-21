@@ -46,6 +46,10 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ReportSessionPowerTransitionRequest request,
         CancellationToken token) => SendMutationAsync(request, token);
 
+    public Task<ControlOperationResult> ReportApplicationContextAsync(
+        ReportApplicationContextRequest request,
+        CancellationToken token) => SendMutationAsync(request, token);
+
     public async Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
     {
         var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());

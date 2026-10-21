@@ -1741,4 +1741,52 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="The touchpad change could not be confirmed. Check Windows Settings." xml:space="preserve">
     <value>[!! Thé tóúchpád chángé cóúld nót bé cónfírméd. Chéck Windows Séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Display brightness is unavailable." xml:space="preserve">
+    <value>[!! Díspláý bríghtnéss ís únáváíláblé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Display brightness" xml:space="preserve">
+    <value>[!! Díspláý bríghtnéss ~~~~~~ !!]</value>
+  </data>
+  <data name="Brightness {0}%" xml:space="preserve">
+    <value>[!! Bríghtnéss {0}% ~~~~ !!]</value>
+  </data>
+  <data name="Application profiles" xml:space="preserve">
+    <value>[!! Ápplícátíón prófílés ~~~~~~~ !!]</value>
+  </data>
+  <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
+    <value>[!! Ápplý óvérrídés fór án éxáct gámé ór ápplícátíón éxécútáblé. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Battery history" xml:space="preserve">
+    <value>[!! Báttérý hístórý ~~~~~ !!]</value>
+  </data>
+  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
+    <value>[!! Révíéw Windows báttérý hístórý ánd prévíéw á lóng báttérý lífé prését. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Enter a name of up to 80 characters." xml:space="preserve">
+    <value>[!! Éntér á námé óf úp tó 80 cháráctérs. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose an application activation mode." xml:space="preserve">
+    <value>[!! Chóósé án ápplícátíón áctívátíón módé. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Choose at least one application profile setting." xml:space="preserve">
+    <value>[!! Chóósé át léást óné ápplícátíón prófílé séttíng. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Unknown application" xml:space="preserve">
+    <value>[!! Únknówn ápplícátíón ~~~~~~~ !!]</value>
+  </data>
+  <data name="Power-source profile" xml:space="preserve">
+    <value>[!! Pówér-sóúrcé prófílé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Battery history is unavailable." xml:space="preserve">
+    <value>[!! Báttérý hístórý ís únáváíláblé. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The telemetry recording could not be finalized. The partial recording remains at {0}. {1}" xml:space="preserve">
+    <value>[!! Thé télémétrý récórdíng cóúld nót bé fínálízéd. Thé pártíál récórdíng rémáíns át {0}. {1} ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry recording stopped. The partial recording remains at {0}. {1}" xml:space="preserve">
+    <value>[!! Télémétrý récórdíng stóppéd. Thé pártíál récórdíng rémáíns át {0}. {1} ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry recording reached its limit and was saved to {0}." xml:space="preserve">
+    <value>[!! Télémétrý récórdíng réáchéd íts límít ánd wás sávéd tó {0}. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

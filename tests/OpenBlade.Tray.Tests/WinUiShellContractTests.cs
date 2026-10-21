@@ -1891,6 +1891,36 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void DisplayBrightnessUsesSharedRowPresentationAndBoundedAccessibleEditor()
+    {
+        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement title = document.Descendants().Single(element => (string?)element.Attribute(x + "Uid") == "MainWindow_DisplayBrightnessTitle");
+        XElement reference = document.Descendants().Single(element => (string?)element.Attribute(x + "Uid") == "MainWindow_TextBlockCPU");
+        XElement row = title.Ancestors().First(element => element.Name.LocalName == "Border");
+        XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
+        Assert.Equal(reference.Attribute("Style")?.Value, title.Attribute("Style")?.Value);
+        Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", referenceRow.Attribute("Style")?.Value);
+        Assert.Equal("{StaticResource SettingsLastRowStyle}", row.Attribute("Style")?.Value);
+        XElement lastStyle = document.Descendants().Single(element => (string?)element.Attribute(x + "Key") == "SettingsLastRowStyle");
+        Assert.Equal("{StaticResource SettingsRowStyle}", lastStyle.Attribute("BasedOn")?.Value);
+        XElement ordinaryStyle = document.Descendants().Single(element => (string?)element.Attribute(x + "Key") == "SettingsRowStyle");
+        XElement neutralStyle = document.Descendants().Single(element => (string?)element.Attribute(x + "Key") == "SettingsNeutralSubcardStyle");
+        foreach (string property in new[] { "Background", "local:SettingsCardPointerVisual.IsEnabled", "local:SettingsCardPointerVisual.PointerOverBackground" })
+        {
+            Assert.Equal(
+                neutralStyle.Elements().Single(element => (string?)element.Attribute("Property") == property).Attribute("Value")?.Value,
+                ordinaryStyle.Elements().Single(element => (string?)element.Attribute("Property") == property).Attribute("Value")?.Value);
+        }
+        Assert.Null(row.Attribute("Background"));
+        Assert.Null(row.Attribute("Height"));
+        XElement editor = row.Descendants().Single(element => element.Name.LocalName == "NumberBox");
+        Assert.Equal("0", editor.Attribute("Minimum")?.Value);
+        Assert.Equal("100", editor.Attribute("Maximum")?.Value);
+        Assert.Contains(editor.Attributes(), attribute => attribute.Name.LocalName == "AutomationProperties.Name" && !string.IsNullOrWhiteSpace(attribute.Value));
+    }
+
+    [Fact]
     public void ReactiveRawInputBelongsToAlwaysRunningSessionAgent()
     {
         string source = ReadRepositoryFile(
@@ -2433,7 +2463,10 @@ public sealed class WinUiShellContractTests
             bool isThxInstallerHostReader = file.EndsWith(
                 "ThxAudioInstallLauncher.cs",
                 StringComparison.OrdinalIgnoreCase);
-            if (!isRegistryReader && !isShellThemeSource && !isThxInstallerHostReader)
+            bool isInstalledApplicationReader = file.EndsWith(
+                "InstalledApplicationDiscovery.cs",
+                StringComparison.OrdinalIgnoreCase);
+            if (!isRegistryReader && !isShellThemeSource && !isThxInstallerHostReader && !isInstalledApplicationReader)
             {
                 Assert.DoesNotContain(
                     "Microsoft.Win32",
@@ -4219,7 +4252,7 @@ public sealed class WinUiShellContractTests
             popupPositioner,
             StringComparison.Ordinal);
         Assert.DoesNotContain("trayDashboardObservationLoop", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("private Task ObserveVisibleSurfacesAsync(", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("private async Task ObserveVisibleSurfacesAsync(", mainWindow, StringComparison.Ordinal);
         Assert.Contains("windowVisible || trayDashboardVisible", mainWindow, StringComparison.Ordinal);
         Assert.Contains("UpdateActiveObservationLoop();", mainWindow, StringComparison.Ordinal);
         Assert.Contains("ViewModel.ObserveTrayDashboardStateAsync", mainWindow, StringComparison.Ordinal);

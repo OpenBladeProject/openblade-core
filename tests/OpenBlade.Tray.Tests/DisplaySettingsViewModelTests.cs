@@ -310,6 +310,7 @@ public sealed class DisplaySettingsViewModelTests
         await viewModel.RefreshAsync();
         IReadOnlyList<DisplayRefreshRateOption> refreshOptions = viewModel.RefreshRateOptions;
         IReadOnlyList<DisplayColorProfileOption> colorOptions = viewModel.ColorProfileOptions;
+        IReadOnlyList<byte> brightnessLevels = viewModel.SupportedBrightnessLevels;
         List<string?> notifications = [];
         viewModel.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
         adapter.SetExternalState(
@@ -319,11 +320,14 @@ public sealed class DisplaySettingsViewModelTests
 
         Assert.Same(refreshOptions, viewModel.RefreshRateOptions);
         Assert.Same(colorOptions, viewModel.ColorProfileOptions);
+        Assert.Same(brightnessLevels, viewModel.SupportedBrightnessLevels);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.RefreshRateOptions), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.ColorProfileOptions), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.SupportedBrightnessLevels), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.IsBusy), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeRefreshRate), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeHdr), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeBrightness), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeColorProfile), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanCaptureCurrentSettings), notifications);
     }

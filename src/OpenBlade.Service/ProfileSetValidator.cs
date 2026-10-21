@@ -185,6 +185,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateLightingPowerPolicy(profiles.UsbC.LightingPowerPolicy);
         ValidateLightingPowerPolicy(profiles.LightingPowerPolicy);
         ValidateWindowsPowerModes(profiles.WindowsPowerModes);
+        ValidateApplicationProfiles(profiles, validateCustomCapabilities);
     }
 
     public void ValidatePreferences(BatteryAutomationPreferences preferences)
@@ -532,6 +533,103 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         ValidateDisplayKey(display.RefreshRateKey, name, "refresh rate");
         ValidateDisplayKey(display.ColorProfileKey, name, "color profile");
+        if (display.BrightnessPercent is > 100)
+        {
+            throw Invalid($"The {name} display brightness must be from 0 to 100 percent.");
+        }
+    }
+
+    private void ValidateApplicationProfiles(
+        ProfileSet profiles,
+        bool validateCustomCapabilities)
+    {
+        if (profiles.ApplicationProfiles is null
+            || profiles.ApplicationProfiles.Count > ApplicationProfileDefinition.MaximumProfiles)
+        {
+            throw Invalid("The application profile collection is missing or too large.");
+        }
+
+        var ids = new HashSet<Guid>();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int index = 0; index < profiles.ApplicationProfiles.Count; index++)
+        {
+            ApplicationProfileDefinition? application = profiles.ApplicationProfiles[index];
+            string name = $"application profile {index + 1}";
+            if (application is null || application.Id == Guid.Empty || !ids.Add(application.Id))
+            {
+                throw Invalid($"The {name} identifier is missing or duplicated.");
+            }
+            if (string.IsNullOrWhiteSpace(application.Name)
+                || application.Name.Length > ApplicationProfileDefinition.MaximumNameLength
+                || application.Name.Any(char.IsControl))
+            {
+                throw Invalid($"The {name} name is invalid.");
+            }
+            if (!Enum.IsDefined(application.ActivationMode)
+                || application.Overrides is null
+                || !application.Overrides.IsConfigured)
+            {
+                throw Invalid($"The {name} activation or overrides are invalid.");
+            }
+
+            string normalizedPath;
+            try
+            {
+                normalizedPath = ApplicationProfileDefinition.NormalizeExecutablePath(
+                    application.ExecutablePath);
+            }
+            catch (Exception exception) when (exception is
+                ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                throw Invalid($"The {name} executable path is invalid: {exception.Message}");
+            }
+            if (!string.Equals(normalizedPath, application.ExecutablePath, StringComparison.Ordinal)
+                || !paths.Add(normalizedPath))
+            {
+                throw Invalid($"The {name} executable path is not normalized or is duplicated.");
+            }
+
+            ValidateApplicationOverride(
+                application.Overrides.PluggedIn,
+                profiles.PluggedIn,
+                $"{name} plugged-in override",
+                PowerSource.PluggedIn,
+                validateCustomCapabilities);
+            ValidateApplicationOverride(
+                application.Overrides.Battery,
+                profiles.Battery,
+                $"{name} battery override",
+                PowerSource.Battery,
+                validateCustomCapabilities);
+            ValidateApplicationOverride(
+                application.Overrides.UsbC,
+                profiles.UsbC,
+                $"{name} low-power override",
+                PowerSource.UsbC,
+                validateCustomCapabilities);
+        }
+    }
+
+    private void ValidateApplicationOverride(
+        ApplicationPowerProfileOverride? value,
+        PowerProfile baseline,
+        string name,
+        PowerSource source,
+        bool validateCustomCapabilities)
+    {
+        if (value is null)
+        {
+            return;
+        }
+        if (!value.IsConfigured)
+        {
+            throw Invalid($"The {name} is empty.");
+        }
+        ValidateProfile(
+            ApplicationProfileResolution.Apply(baseline, value),
+            name,
+            source,
+            validateCustomCapabilities);
     }
 
     private static void ValidateLaptopBehavior(

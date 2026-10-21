@@ -2039,7 +2039,7 @@
                                                       Toggled="OnDisplayHdrToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -2064,6 +2064,27 @@
                                                                         DropDownOpened="OnDisplayPickerOpened"
                                                                         DropDownClosed="OnDisplayPickerClosed"
                                                                         SelectionChanged="OnDisplayColorProfileChanged" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock x:Uid="MainWindow_DisplayBrightnessTitle" Text="Display brightness"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock x:Uid="MainWindow_DisplayBrightnessDescription" Text="Save a separate brightness for each power source."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <NumberBox x:Uid="MainWindow_DisplayBrightnessEditor" Grid.Column="1" Width="120"
+                                                   Minimum="0" Maximum="100" SmallChange="5" LargeChange="10"
+                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center"
+                                                   AutomationProperties.Name="Display brightness in percent"
+                                                   Value="{x:Bind BrightnessValue, Mode=OneWay}"
+                                                   IsEnabled="{x:Bind CanChangeBrightness, Mode=OneWay}"
+                                                   ValueChanged="OnDisplayBrightnessChanged" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -2172,6 +2193,9 @@
                                    Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}"
                                    AutomationProperties.Name="Lighting has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem x:Uid="Telemetry_Navigation" x:Name="TelemetryNavigationItem" Content="Telemetry" Tag="telemetry">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D9;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="MainWindow_SettingsNavigationItemText" x:Name="SettingsNavigationItem"
                                     Content="Settings"
@@ -2821,6 +2845,15 @@
                                             <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                         </Grid>
                                     </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_ProfileDisplayBrightnessTitle" Text="Display brightness" Style="{StaticResource CardTitleStyle}" />
+                                            <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                            <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
                             </Border>
 
@@ -2936,6 +2969,9 @@
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Uid="MainWindow_TextBlockColorProfile3" Text="Color profile" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Uid="MainWindow_ProfileDisplayBrightnessCompactTitle" Text="Display brightness" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Uid="MainWindow_TextBlockDisplayTurnsOff2" Text="Display turns off" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
@@ -2960,7 +2996,65 @@
                             </Border>
                         </StackPanel>
                         </StackPanel>
+                        <StackPanel x:Name="ApplicationProfilesSection">
+                            <TextBlock x:Uid="Applications_Title" Text="Application profiles" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock x:Uid="Applications_Description"
+                                       Text="Apply settings for a game or application. Each power source has its own overrides."
+                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+                                <Button x:Uid="Applications_Add" Content="Add application" Click="OnAddApplicationProfile" />
+                                <Button x:Uid="Applications_Discover" Content="Discover installed games" Click="OnDiscoverApplications" />
+                            </StackPanel>
+                            <TextBlock x:Name="ActiveApplicationProfileText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border x:Name="ApplicationProfilesEmpty" Style="{StaticResource SettingsEditorSubcardStyle}">
+                                        <TextBlock x:Uid="Applications_Empty" Text="No application profiles. Your power-source profiles remain active."
+                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    </Border>
+                                    <StackPanel x:Name="ApplicationProfileRows" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="TelemetryPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch"
+                              HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollMode="Enabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28" Spacing="16"
+                                Width="{Binding ElementName=TelemetryPage, Path=ViewportWidth, Mode=OneWay}">
+                        <TextBlock x:Uid="Telemetry_Title" Text="Telemetry" Style="{StaticResource PageHeaderTitleStyle}" />
+                        <TextBlock x:Uid="Telemetry_Description"
+                                   Text="Inspect temperatures, fans and battery power over time. Missing readings remain gaps."
+                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="TelemetrySourceText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        <Grid ColumnSpacing="8" RowSpacing="8">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <Button x:Uid="Telemetry_Record" x:Name="TelemetryRecordButton" Content="Record CSV" Click="OnStartTelemetryRecording" HorizontalAlignment="Stretch" />
+                            <Button x:Uid="Telemetry_Stop" x:Name="TelemetryStopButton" Content="Stop recording" Click="OnStopTelemetryRecording" HorizontalAlignment="Stretch" Grid.Column="1" />
+                            <Button x:Uid="Telemetry_Open" Content="Open CSV replay" Click="OnOpenTelemetryReplay" HorizontalAlignment="Stretch" Grid.Row="1" />
+                            <Button x:Uid="Telemetry_Live" x:Name="TelemetryLiveButton" Content="Return to live" Click="OnCloseTelemetryReplay" HorizontalAlignment="Stretch" Grid.Row="1" Grid.Column="1" />
+                        </Grid>
+                        <TextBlock x:Name="TelemetryRecordingText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="TelemetryErrorText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                        <ComboBox x:Uid="Telemetry_Range" x:Name="TelemetryRange" Header="Time range" SelectedIndex="1"
+                                  HorizontalAlignment="Stretch" SelectionChanged="OnTelemetryRangeChanged">
+                            <ComboBoxItem x:Uid="Telemetry_Last5" Content="Last 5 minutes" />
+                            <ComboBoxItem x:Uid="Telemetry_Last15" Content="Last 15 minutes" />
+                            <ComboBoxItem x:Uid="Telemetry_Last60" Content="Last hour" />
+                            <ComboBoxItem x:Uid="Telemetry_All" Content="All retained readings" />
+                        </ComboBox>
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                <local:TelemetryChart x:Name="TelemetryPlot" PlotStroke="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                      GridStroke="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                            </Border>
+                        </Border>
+                        <TextBlock x:Uid="Telemetry_EventsTitle" Text="Power and profile changes" Style="{StaticResource CardTitleStyle}" />
+                        <TextBlock x:Name="TelemetryEventsText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                     </StackPanel>
                 </ScrollViewer>
 
@@ -3023,6 +3117,47 @@
                         </local:ResponsivePageHeader>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
+                        <StackPanel x:Name="BatteryHistorySection">
+                            <TextBlock x:Uid="BatteryHistory_Title" Text="Battery history" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                        <StackPanel Spacing="12">
+                                            <TextBlock x:Uid="BatteryHistory_Description" Text="The last 24 hours from Windows' battery report. Unknown periods remain unknown."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Button x:Uid="BatteryHistory_Load" x:Name="BatteryHistoryLoadButton" Content="Load battery history" Click="OnLoadBatteryHistory" />
+                                                <ProgressRing x:Name="BatteryHistoryProgress" Width="24" Height="24" IsActive="False" />
+                                            </StackPanel>
+                                            <TextBlock x:Name="BatteryHistorySummary" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="BatteryHealthText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="BatteryHistoryError" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                            <local:BatteryTimeline x:Name="BatteryHistoryTimeline"
+                                                                   AccentStroke="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                                   UnknownStroke="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                   SegmentBackground="{ThemeResource ControlFillColorDefaultBrush}" />
+                                            <ListView x:Uid="MainWindow_BatteryHistoryRowsText" x:Name="BatteryHistoryRows" MaxHeight="280" SelectionMode="None"
+                                                      AutomationProperties.Name="Windows battery history intervals">
+                                                <ListView.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,4"
+                                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                                    </DataTemplate>
+                                                </ListView.ItemTemplate>
+                                            </ListView>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock x:Uid="BatteryPreset_Heading" Text="Long battery life" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock x:Uid="BatteryPreset_Hint" Text="Preview supported battery-profile changes before saving."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                            <Button x:Uid="BatteryPreset_Preview" Content="Preview preset" Click="OnPreviewLongBatteryLife" HorizontalAlignment="Left" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                         <StackPanel x:Name="KeyboardSection">
                             <TextBlock x:Name="KeyboardHeader" x:Uid="SnapTap_KeyboardHeader"
                                        Text="Keyboard" Style="{StaticResource SectionHeaderStyle}" />

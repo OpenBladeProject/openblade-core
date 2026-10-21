@@ -16,6 +16,12 @@ public sealed class ControlRequestHandlerTests
             new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles),
+            new ReportApplicationContextRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                1,
+                @"C:\Games\game.exe"),
             new SetPerformanceOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<PerformancePreset>(PerformancePreset.Silent, OverrideLifetime.Persistent)),
             new CyclePerformanceShortcutRequest(
@@ -117,7 +123,8 @@ public sealed class ControlRequestHandlerTests
         ];
         string[] expectedCalls =
         [
-            "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
+            "GetStatus", "GetStatus", "UpdateProfiles", "ReportApplicationContext",
+            "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
@@ -641,6 +648,15 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) =>
             Record("UpdateProfiles");
+
+        public Task<ControlOperationResult> ReportApplicationContextAsync(
+            ReportApplicationContextRequest request,
+            Func<bool> stillControlsSession,
+            CancellationToken token)
+        {
+            Assert.True(stillControlsSession());
+            return Record("ReportApplicationContext");
+        }
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) =>
             Record("SetPerformanceOverride");

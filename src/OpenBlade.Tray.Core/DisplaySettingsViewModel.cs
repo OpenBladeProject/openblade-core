@@ -35,7 +35,11 @@ public sealed record DisplaySettingsSnapshot(
     int Width = 0,
     int Height = 0,
     int? BitsPerColorChannel = null,
-    DisplaySettingsFailureKind FailureKind = DisplaySettingsFailureKind.None);
+    DisplaySettingsFailureKind FailureKind = DisplaySettingsFailureKind.None)
+{
+    public byte? BrightnessPercent { get; init; }
+    public IReadOnlyList<byte> SupportedBrightnessLevels { get; init; } = [];
+}
 
 public sealed class DisplayProfileSettingsChangedEventArgs(
     PowerSource powerSource,
@@ -73,6 +77,14 @@ public interface IDisplaySettingsAdapter
         PowerSource expectedPowerSource,
         DisplayProfileSettings settings,
         CancellationToken token);
+
+    async Task<DisplaySettingsSnapshot> SetBrightnessAsync(
+        PowerSource expectedPowerSource, byte percent, CancellationToken token) =>
+        (await GetStateAsync(token).ConfigureAwait(false)) with
+        {
+            OperationSucceeded = false,
+            StatusMessage = TrayText.Get("Display brightness is unavailable."),
+        };
 }
 
 public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
@@ -142,6 +154,8 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private bool isAvailable;
     private bool isHdrSupported;
     private bool isHdrEnabled;
+    private byte? brightnessPercent;
+    private IReadOnlyList<byte> supportedBrightnessLevels = [];
     private int pendingWriteCount;
     private PowerSource activePowerSource = PowerSource.ExternalUnknown;
     private DisplayProfileSettings activeProfileSettings =
@@ -337,6 +351,28 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     public bool CanChangeHdr =>
         HasConfirmedPowerSource && IsAvailable && IsHdrSupported && !IsBusy;
 
+    public byte? BrightnessPercent
+    {
+        get => brightnessPercent;
+        private set
+        {
+            if (SetField(ref brightnessPercent, value))
+            {
+                OnPropertyChanged(nameof(CurrentProfileSettings));
+                OnPropertyChanged(nameof(BrightnessValue));
+                NotifyProfileRelationshipChanged();
+                NotifyControlStateChanged();
+            }
+        }
+    }
+
+    public IReadOnlyList<byte> SupportedBrightnessLevels => supportedBrightnessLevels;
+
+    public double BrightnessValue => BrightnessPercent.HasValue ? BrightnessPercent.Value : double.NaN;
+
+    public bool CanChangeBrightness => HasConfirmedPowerSource && IsAvailable && !IsBusy
+        && BrightnessPercent.HasValue && SupportedBrightnessLevels.Count > 0;
+
     public bool CanChangeColorProfile =>
         HasConfirmedPowerSource
         && IsAvailable
@@ -382,6 +418,9 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             SelectedRefreshRate?.Key,
             IsHdrSupported ? IsHdrEnabled : null,
             SelectedColorProfile?.Key)
+        {
+            BrightnessPercent = BrightnessPercent,
+        }
         : DisplayProfileSettings.Unconfigured();
 
     private bool HasSaveableUnsetProfileField =>
@@ -392,7 +431,8 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             && IsHdrSupported
             || ActiveProfileSettings.ColorProfileKey is null
             && !IsHdrEnabled
-            && SelectedColorProfile is not null);
+            && SelectedColorProfile is not null
+            || !ActiveProfileSettings.BrightnessPercent.HasValue && BrightnessPercent.HasValue);
 
     private bool CurrentSettingsMatchActiveProfile =>
         ActiveProfileSettings.IsConfigured
@@ -404,6 +444,8 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 StringComparison.Ordinal))
         && (!ActiveProfileSettings.HdrEnabled.HasValue
             || ActiveProfileSettings.HdrEnabled == IsHdrEnabled)
+        && (!ActiveProfileSettings.BrightnessPercent.HasValue
+            || ResolveBrightnessLevel(ActiveProfileSettings.BrightnessPercent.Value) == BrightnessPercent)
         && (ActiveProfileSettings.ColorProfileKey is null
             || ActiveProfileSettings.HdrEnabled is true
             || (!IsHdrEnabled
@@ -515,6 +557,35 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 }
             });
     }
+
+    public Task SetBrightnessAsync(byte percent, CancellationToken token = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(percent, (byte)100);
+        if (!CanChangeBrightness)
+        {
+            return Task.CompletedTask;
+        }
+        byte target = ResolveBrightnessLevel(percent);
+        if (target == BrightnessPercent)
+        {
+            return Task.CompletedTask;
+        }
+        PowerSource sourceAtStart = ActivePowerSource;
+        DisplayProfileSettings previous = CurrentProfileSettings;
+        return RunSerializedAsync(DisplayOperation.BrightnessChange,
+            operationToken => adapter.SetBrightnessAsync(sourceAtStart, target, operationToken), token,
+            state =>
+            {
+                if (state.OperationSucceeded && state.BrightnessPercent == target)
+                {
+                    RaiseUserSettingsChanged(sourceAtStart, previous);
+                }
+            });
+    }
+
+    private byte ResolveBrightnessLevel(byte requested) => SupportedBrightnessLevels
+        .Where(level => level <= 100).OrderBy(level => Math.Abs(level - requested))
+        .ThenBy(level => level).Select(level => (byte?)level).FirstOrDefault() ?? requested;
 
     public Task SelectColorProfileAsync(
         DisplayColorProfileOption? option,
@@ -696,6 +767,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         Refresh,
         RefreshRateChange,
         HdrChange,
+        BrightnessChange,
         ColorProfileChange,
         ProfileApply,
     }
@@ -740,6 +812,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 StringComparison.Ordinal))
         && (!settings.HdrEnabled.HasValue
             || settings.HdrEnabled == state.IsHdrEnabled)
+        && (!settings.BrightnessPercent.HasValue
+            || state.BrightnessPercent == state.SupportedBrightnessLevels
+                .Where(level => level <= 100).OrderBy(level => Math.Abs(level - settings.BrightnessPercent.Value))
+                .ThenBy(level => level).Select(level => (byte?)level).FirstOrDefault())
         && (settings.ColorProfileKey is null
             || settings.HdrEnabled is true
             || (!state.IsHdrEnabled
@@ -782,6 +858,16 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         IsAvailable = state.IsAvailable;
         IsHdrSupported = state.IsHdrSupported;
         IsHdrEnabled = state.IsHdrEnabled;
+        IReadOnlyList<byte> brightnessLevels = StableOptionCollection.ReuseEquivalent(
+            supportedBrightnessLevels, state.SupportedBrightnessLevels ?? []);
+        if (!ReferenceEquals(supportedBrightnessLevels, brightnessLevels))
+        {
+            supportedBrightnessLevels = brightnessLevels;
+            OnPropertyChanged(nameof(SupportedBrightnessLevels));
+            OnPropertyChanged(nameof(CanChangeBrightness));
+            NotifyProfileRelationshipChanged();
+        }
+        BrightnessPercent = state.BrightnessPercent;
         StatusMessage = !state.OperationSucceeded
             ? FailureMessage(state.FailureKind, isRefresh)
             : state.IsAvailable
@@ -854,6 +940,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     {
         OnPropertyChanged(nameof(CanChangeRefreshRate));
         OnPropertyChanged(nameof(CanChangeHdr));
+        OnPropertyChanged(nameof(CanChangeBrightness));
         OnPropertyChanged(nameof(CanChangeColorProfile));
         OnPropertyChanged(nameof(CanCaptureCurrentSettings));
         OnPropertyChanged(nameof(CanSaveCurrentSettingsToProfile));

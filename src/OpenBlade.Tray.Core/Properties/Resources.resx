@@ -1651,4 +1651,52 @@ Details: {1}</value>
   <data name="The touchpad change could not be confirmed. Check Windows Settings." xml:space="preserve">
     <value>The touchpad change could not be confirmed. Check Windows Settings.</value>
   </data>
+  <data name="Display brightness is unavailable." xml:space="preserve">
+    <value>Display brightness is unavailable.</value>
+  </data>
+  <data name="Display brightness" xml:space="preserve">
+    <value>Display brightness</value>
+  </data>
+  <data name="Brightness {0}%" xml:space="preserve">
+    <value>Brightness {0}%</value>
+  </data>
+  <data name="Application profiles" xml:space="preserve">
+    <value>Application profiles</value>
+  </data>
+  <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
+    <value>Apply overrides for an exact game or application executable.</value>
+  </data>
+  <data name="Battery history" xml:space="preserve">
+    <value>Battery history</value>
+  </data>
+  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
+    <value>Review Windows battery history and preview a long battery life preset.</value>
+  </data>
+  <data name="Enter a name of up to 80 characters." xml:space="preserve">
+    <value>Enter a name of up to 80 characters.</value>
+  </data>
+  <data name="Choose an application activation mode." xml:space="preserve">
+    <value>Choose an application activation mode.</value>
+  </data>
+  <data name="Choose at least one application profile setting." xml:space="preserve">
+    <value>Choose at least one application profile setting.</value>
+  </data>
+  <data name="Unknown application" xml:space="preserve">
+    <value>Unknown application</value>
+  </data>
+  <data name="Power-source profile" xml:space="preserve">
+    <value>Power-source profile</value>
+  </data>
+  <data name="Battery history is unavailable." xml:space="preserve">
+    <value>Battery history is unavailable.</value>
+  </data>
+  <data name="The telemetry recording could not be finalized. The partial recording remains at {0}. {1}" xml:space="preserve">
+    <value>The telemetry recording could not be finalized. The partial recording remains at {0}. {1}</value>
+  </data>
+  <data name="Telemetry recording stopped. The partial recording remains at {0}. {1}" xml:space="preserve">
+    <value>Telemetry recording stopped. The partial recording remains at {0}. {1}</value>
+  </data>
+  <data name="Telemetry recording reached its limit and was saved to {0}." xml:space="preserve">
+    <value>Telemetry recording reached its limit and was saved to {0}.</value>
+  </data>
 </root>

@@ -1651,4 +1651,52 @@
   <data name="The touchpad change could not be confirmed. Check Windows Settings." xml:space="preserve">
     <value>无法确认触摸板状态是否已更改。请检查 Windows 设置。</value>
   </data>
+  <data name="Display brightness is unavailable." xml:space="preserve">
+    <value>显示器亮度不可用。</value>
+  </data>
+  <data name="Display brightness" xml:space="preserve">
+    <value>显示器亮度</value>
+  </data>
+  <data name="Brightness {0}%" xml:space="preserve">
+    <value>亮度 {0}%</value>
+  </data>
+  <data name="Application profiles" xml:space="preserve">
+    <value>应用配置</value>
+  </data>
+  <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
+    <value>为指定的游戏或应用可执行文件应用覆盖设置。</value>
+  </data>
+  <data name="Battery history" xml:space="preserve">
+    <value>电池历史记录</value>
+  </data>
+  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
+    <value>查看 Windows 电池历史记录并预览延长电池续航预设。</value>
+  </data>
+  <data name="Enter a name of up to 80 characters." xml:space="preserve">
+    <value>请输入不超过 80 个字符的名称。</value>
+  </data>
+  <data name="Choose an application activation mode." xml:space="preserve">
+    <value>请选择应用程序激活方式。</value>
+  </data>
+  <data name="Choose at least one application profile setting." xml:space="preserve">
+    <value>请至少选择一项应用配置设置。</value>
+  </data>
+  <data name="Unknown application" xml:space="preserve">
+    <value>未知应用</value>
+  </data>
+  <data name="Power-source profile" xml:space="preserve">
+    <value>电源配置</value>
+  </data>
+  <data name="Battery history is unavailable." xml:space="preserve">
+    <value>电池历史记录不可用。</value>
+  </data>
+  <data name="Telemetry recording reached its limit and was saved to {0}." xml:space="preserve">
+    <value>遥测记录已达到上限，已保存到 {0}。</value>
+  </data>
+  <data name="The telemetry recording could not be finalized. The partial recording remains at {0}. {1}" xml:space="preserve">
+    <value>无法完成遥测记录。未完成的记录仍保存在 {0}。{1}</value>
+  </data>
+  <data name="Telemetry recording stopped. The partial recording remains at {0}. {1}" xml:space="preserve">
+    <value>遥测记录已停止。未完成的记录仍保存在 {0}。{1}</value>
+  </data>
 </root>

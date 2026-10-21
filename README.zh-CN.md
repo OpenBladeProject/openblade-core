@@ -54,6 +54,10 @@ OpenBlade 是一款免费的 Razer Blade 笔记本管理工具，在 Windows 系
 - 电源模式、自动或固定风扇转速、自定义风扇曲线，以及 NVIDIA GPU 频率偏移。
 - 使用全功率电源适配器供电时，可开启 HyperBoost，支持搭配 Razer 散热底座或单独使用。
 - 充电上限、电池健康信息，以及按供电方式分别保存设置。
+- [应用配置](docs/application-profiles.md)：按游戏或应用的完整可执行文件路径匹配，
+  支持 HDR，并可为不同供电方式分别设置覆盖项。
+- [传感器历史图表和本地 CSV 记录](docs/telemetry-and-battery-history.md)、
+  Windows 电池历史，以及可先预览再保存的长续航预设。
 - 键盘和顶盖标志灯效、响应灯效、静音指示，
   并支持 Razer `.chroma` 文件和可分享的 `.oblight` 预设。
 - 显示配置、亮度调节、功能键行的行为设置，以及通过 Fn 使用的 M1 至 M5 快捷键。

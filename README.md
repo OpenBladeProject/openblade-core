@@ -53,6 +53,10 @@ to collect and submit evidence for your model.
 - HyperBoost on full-power AC, with or without the Razer cooling pad.
 - Charge limits, battery health, and separate settings for each
   power source.
+- [Application profiles](docs/application-profiles.md) for exact game or app executables,
+  including HDR and separate overrides for each power source.
+- [Telemetry charts and local CSV recording](docs/telemetry-and-battery-history.md),
+  Windows battery history, and a previewable long battery life preset.
 - Keyboard and lid-logo effects, reactive lighting, mute indicators,
   and support for Razer `.chroma` files and shared `.oblight` presets.
 - Display profiles, brightness controls, function-row
