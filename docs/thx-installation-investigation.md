@@ -69,20 +69,26 @@ coefficients differ. A matching common data blob does not establish stack
 compatibility.
 
 The APO and service are Windows audio components; the THX client association
-is separate. Together with the Synapse-closed validation in
-[THX audio](thx-audio.md), this supports controlling an already installed,
-correctly matched stack without Synapse running. Retention after Synapse
-uninstall and audible processing outside the confirmed RZ09-0581 built-in
-speaker spatial check remain unvalidated.
+is separate. Alongside the local Synapse-closed validation in
+[THX audio](thx-audio.md), two
+[community reports](thx-audio.md#community-reports-with-synapse-absent) confirm
+THX operating with Synapse absent and audio components already installed. The
+RZ09-0528 reporter used `0.39.0-nightly.97+ef7532fe` and confirmed audible presets
+and EQ; the second report was relayed by the maintainer without an exact model
+or build. Neither user used **Install THX audio**. Fresh installation through
+OpenBlade remains untested, and these reports do not establish a controlled
+Synapse-uninstall retention result.
 
 OpenBlade now admits experimental manual controls and application routing for
 exact RZ09-0528 and RZ09-0530 identities with their own reviewed rznb11 base stack and signed-INF
 codec match. The 709/710/736 middleware native ABI and property operations
 are byte-identical around the reviewed calls. Each model uses its own speaker
 factory EQ vectors; headphone vectors are identical in the three definitions.
-Only RZ09-0581 has physical round-trip evidence. RZ09-0528 and RZ09-0530 remain
-source-backed experimental support; no native calls or writes on those models
-occurred here, and their support is not production-ready.
+Only RZ09-0581 has local physical round-trip evidence. The RZ09-0528 community
+report adds runtime and audible-processing evidence, without output-specific
+coverage or installation validation. RZ09-0530 still has no physical runtime
+evidence. Both rznb11 models remain experimental; no native calls or writes on
+those models occurred during this investigation.
 
 The reviewed Synapse middleware resources for RZ09-0328/-0482/-0483/-0484
 do not supply a THX installer. The three 2023 models use the separate legacy

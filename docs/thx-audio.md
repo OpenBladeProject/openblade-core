@@ -6,7 +6,7 @@ or Blade 14 RZ09-0530 (`1532:02C5`). The integration is experimental and off
 by default. Reading settings and reversible speaker and headphone changes with
 Synapse closed have been validated on RZ09-0581. The user also confirmed an
 audible spatial change on its built-in speakers after enabling Windows audio
-enhancements. Other outputs and rznb11 audible processing remain unvalidated.
+enhancements. Audible processing on its other outputs remains unvalidated.
 
 OpenBlade checks the exact laptop, audio hardware, actual installed THX
 package/service bindings, Windows catalog trust and the typed API contract before
@@ -15,7 +15,8 @@ Compatible installed driver updates do not require new hashes or an OpenBlade
 release. The versions and configuration hashes cataloged below identify source
 evidence and exact installation recipes, rather than a runtime build allowlist.
 The two rznb11 models have vendor-backed controls and their own speaker EQ
-curves, but have not been physically tested in OpenBlade.
+curves. RZ09-0528 also has the community runtime evidence below; RZ09-0530
+has not been physically tested in OpenBlade.
 
 OpenBlade can download the supported THX client from Razer. On RZ09-0581,
 RZ09-0528 and RZ09-0530, it can also perform an experimental fresh installation
@@ -61,6 +62,24 @@ use the exact laptop's Windows driver updates or
 [Razer recovery image](https://mysupport.razer.com/app/answers/detail/a_id/5997/).
 See the [legacy interface review](thx-legacy-interface.md) for the reviewed native
 contract and COM activation boundary.
+
+## Community reports with Synapse absent
+
+As of 2026-10-21, two community reports confirm THX working with Synapse absent:
+
+- **RZ09-0528:** On `0.39.0-nightly.97+ef7532fe`, the
+  [reporter confirmed working THX presets and EQ with audible differences](https://github.com/OpenBladeProject/openblade-core/issues/808#issuecomment-6301880818).
+  They [clarified that Synapse was absent during that test](https://github.com/OpenBladeProject/openblade-core/issues/808#issuecomment-6306554499)
+  and was reinstalled only afterward for comparison. The tested outputs were
+  not specified.
+- **Second report, relayed by the maintainer:** THX worked with Synapse absent
+  on a laptop described as a Razer Blade 2025. Its exact RZ09 model, OpenBlade
+  build and individual controls tested have not been supplied. This report is
+  recorded in the [maintainer's update to #808](https://github.com/OpenBladeProject/openblade-core/issues/808#issuecomment-6323561225).
+
+Both reports used audio components already present on the laptops. Neither user
+needed **Install THX audio**. These reports confirm Synapse-free runtime
+operation; **fresh installation through OpenBlade remains untested**.
 
 ## Use the controls
 
@@ -135,7 +154,7 @@ be confirmed, use **Read settings** before trying another change. OpenBlade does
 components are unavailable, the audio controls remain disabled. The explicit
 setup action can provision the supported modern stacks with Synapse absent.
 Uninstalling Synapse from an existing installation may remove shared components;
-that retention path has not been tested.
+a controlled uninstall-retention test remains outstanding.
 
 ## Report a detection problem
 
@@ -527,11 +546,14 @@ The inspected middleware SHA-256 was
 ## Remaining experimental validation
 
 The RZ09-0581 reversible round trips above and the user's audible built-in
-speaker spatial check remain the recorded physical evidence. Other outputs,
-native behavior on RZ09-0528 and RZ09-0530, live known-foreground switching,
-Immersive/Competitive selection, active-headphone output detection, speaker
-normalization writes, and interruption recovery remain unvalidated. No broader
-playback or audio-quality test was performed by the runtime runs.
+speaker spatial check are local physical evidence. The
+[community reports](#community-reports-with-synapse-absent) add Synapse-free
+runtime evidence, including audible presets and EQ on RZ09-0528; they do not
+establish output-specific coverage or fresh installation. Native behavior on
+RZ09-0530, live known-foreground switching, Immersive/Competitive selection,
+active-headphone output detection, speaker normalization writes, and interruption
+recovery remain unvalidated. No broader playback or audio-quality test was
+performed by the local runtime runs. Fresh installation remains untested.
 
 These gaps keep the integration experimental and prevent a production-ready
 claim; they do not block an experimental release with the limits stated here.
