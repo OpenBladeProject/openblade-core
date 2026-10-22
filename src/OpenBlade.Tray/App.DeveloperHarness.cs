@@ -82,6 +82,7 @@ public partial class App
 public partial class App
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
+    private const string CaptionThemeSmokeArgument = "--caption-theme-smoke";
     private const string ResponsivePageHeaderSmokeArgument =
         "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
@@ -153,6 +154,11 @@ public partial class App
                     LiveLocalizationSmokePreferencePathVariable));
             return true;
         }
+        if (commandLineArguments is [_, CaptionThemeSmokeArgument, string captionReportPath])
+        {
+            _ = RunCaptionThemeSmokeAsync(captionReportPath);
+            return true;
+        }
         if (commandLineArguments is [_, XamlStartupSmokeArgument, string smokeReportPath])
         {
             try
@@ -171,6 +177,58 @@ public partial class App
         }
 
         return false;
+    }
+
+    private static async Task RunCaptionThemeSmokeAsync(string reportPath)
+    {
+        try
+        {
+            MainWindow window = MainWindow.CreateLocalizationSnapshot();
+            var root = (FrameworkElement)window.Content;
+            ShowNoninteractiveSnapshotWindow(window);
+            await WaitForSnapshotLayoutAsync();
+            System.Reflection.MethodInfo applyTheme = typeof(MainWindow).GetMethod(
+                "ApplyTheme",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("The window theme hook was not found.");
+
+            async Task VerifyAsync(string phase)
+            {
+                await WaitForSnapshotLayoutAsync();
+                TitleBarTheme expected = root.ActualTheme == ElementTheme.Dark
+                    ? TitleBarTheme.Dark : TitleBarTheme.Light;
+                RequireResponsiveSelector(
+                    root.ActualTheme is ElementTheme.Light or ElementTheme.Dark
+                        && window.AppWindow.TitleBar.PreferredTheme == expected,
+                    $"{phase}: native captions did not match the resolved XAML theme.");
+                File.AppendAllText(reportPath,
+                    $"{phase}: XAML={root.ActualTheme}, captions={expected}{Environment.NewLine}");
+            }
+
+            File.WriteAllText(reportPath, "caption theme synchronization" + Environment.NewLine);
+            foreach (ThemePreference preference in new[]
+                { ThemePreference.Dark, ThemePreference.Light, ThemePreference.FollowWindows })
+            {
+                applyTheme.Invoke(window, [preference]);
+                await VerifyAsync(preference.ToString());
+            }
+            // Change only the resolved XAML theme, leaving the saved preference alone.
+            // This exercises the ActualThemeChanged path independently of ApplyTheme.
+            foreach (ElementTheme theme in new[] { ElementTheme.Dark, ElementTheme.Light })
+            {
+                root.RequestedTheme = theme;
+                await VerifyAsync("resolved theme change " + theme);
+            }
+            await window.DisposeAsync();
+            window.Close();
+            File.AppendAllText(reportPath, "completed" + Environment.NewLine);
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            File.AppendAllText(reportPath, exception.ToString());
+            Environment.Exit(1);
+        }
     }
 
     private void RunXamlStartupSmoke(
