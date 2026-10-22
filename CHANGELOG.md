@@ -7,13 +7,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Use sliders with percentage readouts for display brightness and application brightness overrides. Show Unavailable for the live display control when its brightness reading is unknown.
-- Move application profile editing and installed-game discovery into full-width pages with Back and Save actions, searchable game groups, executable icons and fewer duplicate suggestions. Keep actual game executables available alongside distinct launchers or bootstrappers.
-- Add timestamp and value axes, a vertical crosshair, same-sample readings and keyboard inspection controls to telemetry charts. Show the selected time window and missing data without interpolation.
+- Use sliders with percentage readouts for display brightness and application brightness overrides. Show Unavailable for the live display control when its brightness reading is unknown. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+- Move application profile editing and installed-game discovery into full-width pages with Back and Save actions, searchable game groups, executable icons and fewer duplicate suggestions. Keep actual game executables available alongside distinct launchers or bootstrappers. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+- Add timestamp and value axes, a vertical crosshair, same-sample readings and keyboard inspection controls to telemetry charts. Show the selected time window and missing data without interpolation. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
 
 ### Fixed
 
-- Avoid rebuilding hidden telemetry charts while recording continues in the background.
+- Avoid rebuilding hidden telemetry charts while recording continues in the background. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
 
 ## [0.41.0-nightly.98] - 2026-10-21
 

@@ -1463,14 +1463,15 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("OnDisplayColorProfileChanged", Attribute(color, "SelectionChanged"));
 
         XElement brightness = Assert.Single(displayTemplate.Descendants(), element =>
-            element.Name.LocalName == "NumberBox"
+            element.Name.LocalName == "Slider"
             && Attribute(element, "AutomationProperties.Name") == "Display brightness in percent");
         Assert.Equal("0", Attribute(brightness, "Minimum"));
         Assert.Equal("100", Attribute(brightness, "Maximum"));
         Assert.Equal(
             "{x:Bind CanChangeBrightness, Mode=OneWay}",
             Attribute(brightness, "IsEnabled"));
-        Assert.Equal("OnDisplayBrightnessChanged", Attribute(brightness, "ValueChanged"));
+        Assert.Equal("OnDisplayBrightnessSliderValueChanged", Attribute(brightness, "ValueChanged"));
+        Assert.Equal("{x:Bind HasBrightnessReading, Mode=OneWay}", Attribute(brightness.Parent!, "Visibility"));
     }
 
     [Fact]
