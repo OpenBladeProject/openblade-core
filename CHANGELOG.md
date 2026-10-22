@@ -5,6 +5,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Compare telemetry sensors in separate temperature, power and fan-speed lanes with a shared time axis and an analysis table. Choose visible metrics and custom colors, drag the time window or edit precise bounds, and inspect exact raw-sample values and range statistics. Pinned moments stay fixed as live readings arrive. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+
+### Changed
+
+- Standardize app typography around the native WinUI type scale and shared command sizing. Telemetry table headers use strong text while body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+
 ## [0.41.1-nightly.99] - 2026-10-22
 
 ### Changed
