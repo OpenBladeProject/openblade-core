@@ -3,8 +3,15 @@
 Open **Telemetry** to inspect battery power, CPU/GPU temperatures or either fan's
 speed. Choose a metric and time range. The chart shows minimum, maximum and
 average values from the original readings; drawing fewer points does not change
-the statistics. Missing readings and pauses in observation remain gaps. Use the
-sample slider with the keyboard to inspect a timestamp and exact value.
+the statistics. The horizontal axis shows actual timestamps across the selected
+time range, including empty spans before or after the available readings. Missing
+readings and pauses in observation remain gaps.
+
+Hover or touch the chart to inspect a moment. A vertical crosshair selects the
+nearest original reading, and the readout shows its timestamp and all available
+metrics together. Use **Previous sample** and **Next sample** with the keyboard
+for the same inspection. The selected moment stays fixed as new readings arrive;
+choose **Follow latest** to return to the newest reading.
 
 The page identifies live data, stale data and local CSV replay. Power-source and
 active-profile changes appear below the chart. Available sensors depend on the

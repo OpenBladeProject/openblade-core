@@ -1,5 +1,17 @@
 # Application profiles
 
+Use **Add application** to open the profile editor as a full page. Review the
+exact executable path, choose an activation rule and configure overrides for
+each power source, then select **Save profile**. Back and Cancel leave the editor
+without saving its draft. Validation errors remain beside the editor and keep
+the draft available for correction.
+
+**Discover installed games** opens a searchable list grouped by installed game.
+Each executable shows its filename, full path and a locally extracted icon when
+available. Duplicate paths and redundant helper entries are filtered, while
+meaningful executable variants stay selectable within their game group. Choosing
+an entry fills the editor; discovery never starts the executable.
+
 Open **Profiles > Application profiles** to assign settings to a game or app.
 Choose **Add application** and browse to its `.exe`, or choose **Discover installed games**
 to review suggestions from Steam, Epic Games, Xbox and Battle.net. Discovery reads

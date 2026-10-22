@@ -8,11 +8,25 @@ namespace OpenBlade.Tray;
 public sealed partial class MainWindow
 {
     private string? telemetryActionError;
-    private void RefreshTelemetryPresentation()
+    private bool telemetryPresentationDirty = true;
+
+    private void RefreshTelemetryPresentation(DateTimeOffset? rangeEndOverride = null)
     {
+        if (!localizationSnapshotMode
+            && (!windowVisible || TelemetryPage.Visibility != Visibility.Visible))
+        {
+            telemetryPresentationDirty = true;
+            return;
+        }
+
         bool replay = ViewModel.DisplayedTelemetrySource == TelemetrySource.LocalCsvReplay;
-        DateTimeOffset? end = replay ? ViewModel.DisplayedTelemetrySessionMetadata?.EndedAtUtc
-            ?? ViewModel.LatestTelemetrySample?.TimestampUtc : null;
+        TelemetrySessionMetadata? metadata = ViewModel.DisplayedTelemetrySessionMetadata;
+        DateTimeOffset end = rangeEndOverride ?? (replay
+            ? metadata?.EndedAtUtc
+                ?? ViewModel.LatestTelemetrySample?.TimestampUtc
+                ?? metadata?.StartedAtUtc
+                ?? DateTimeOffset.UtcNow
+            : DateTimeOffset.UtcNow);
         TimeSpan? range = TelemetryRange.SelectedIndex switch
         {
             0 => TimeSpan.FromMinutes(5),
@@ -20,28 +34,49 @@ public sealed partial class MainWindow
             2 => TimeSpan.FromHours(1),
             _ => null,
         };
-        DateTimeOffset? start = range is { } duration ? (end ?? DateTimeOffset.UtcNow) - duration : null;
-        TelemetryHistorySnapshot snapshot = ViewModel.GetTelemetrySnapshot(start, end);
-        TelemetryPlot.Update(snapshot);
+        DateTimeOffset? requestedStart = range is { } duration
+            ? end - duration
+            : replay ? metadata?.StartedAtUtc : null;
+        TelemetryHistorySnapshot snapshot = ViewModel.GetTelemetrySnapshot(requestedStart, end);
+        DateTimeOffset? sourceStart = replay ? metadata?.StartedAtUtc : snapshot.RangeStartUtc;
+        TelemetryChartTimeWindow visibleWindow = TelemetryChartTimeWindow.Resolve(
+            end,
+            range,
+            sourceStart);
+        TelemetryPlot.Update(snapshot, visibleWindow.StartUtc, visibleWindow.EndUtc);
         TelemetrySourceText.Text = replay
-            ? LocalizedResources.Format("Feature_8f1c7cba79a7", "Local CSV replay · {0}", ViewModel.DisplayedTelemetrySessionMetadata?.OriginPath ?? string.Empty)
-            : LocalizedResources.Format("Feature_6c455cda31d0", "Live service · {0}", ViewModel.LatestTelemetryFreshness switch
+            ? LocalizedResources.Format(
+                "TelemetryUI_ReplaySource",
+                "CSV replay · {0}",
+                metadata?.OriginPath ?? string.Empty)
+            : LocalizedResources.Format("TelemetryUI_LiveSource", "Live · {0}", ViewModel.LatestTelemetryFreshness switch
             {
-                TelemetryFreshness.Fresh => LocalizedResources.Get("Feature_f04321b95415", "Fresh"),
-                TelemetryFreshness.Stale => LocalizedResources.Get("Feature_94d954185187", "Stale"),
-                _ => LocalizedResources.Get("Feature_73e7c4edf7e7", "Waiting for readings"),
+                TelemetryFreshness.Fresh => LocalizedResources.Get("TelemetryUI_Fresh", "Fresh"),
+                TelemetryFreshness.Stale => LocalizedResources.Get("TelemetryUI_Stale", "Stale"),
+                _ => LocalizedResources.Get("TelemetryUI_WaitingForReadings", "Waiting for readings"),
             });
         TelemetryRecordButton.IsEnabled = !localizationSnapshotMode && !ViewModel.IsTelemetryRecording && !replay;
         TelemetryStopButton.IsEnabled = ViewModel.IsTelemetryRecording;
         TelemetryLiveButton.IsEnabled = replay;
         TelemetryRecordingText.Text = ViewModel.IsTelemetryRecording
-            ? LocalizedResources.Format("Feature_a72204aa94d0", "Recording locally to {0}. Sampling continues while this window is hidden.", ViewModel.TelemetryRecordingPath ?? string.Empty)
-            : LocalizedResources.Get("Feature_d6db2da1a792", "Recording is off. Readings stay in memory until you explicitly record a CSV.");
+            ? LocalizedResources.Format(
+                "TelemetryUI_RecordingActive",
+                "Recording · {0}. Sampling continues while this window is hidden.",
+                ViewModel.TelemetryRecordingPath ?? string.Empty)
+            : LocalizedResources.Get(
+                "TelemetryUI_RecordingOff",
+                "Recording off · readings stay in memory until you record a CSV.");
         TelemetryErrorText.Text = telemetryActionError ?? ViewModel.TelemetryErrorMessage;
+        TelemetryErrorText.Visibility = string.IsNullOrWhiteSpace(TelemetryErrorText.Text)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
         TelemetryEventsText.Text = snapshot.Events.Count == 0
-            ? LocalizedResources.Get("Feature_c7f01a7da8db", "No power-source or profile changes in this range.")
+            ? LocalizedResources.Get(
+                "TelemetryUI_NoEvents",
+                "No power or profile changes in this range.")
             : string.Join(Environment.NewLine, snapshot.Events.TakeLast(12).Select(marker =>
-                $"{marker.TimestampUtc.ToLocalTime():G} · {(marker.Kind == TelemetryEventKind.PowerSourceChanged ? LocalizedResources.Get("Feature_061b9b48e177", "Power source") : LocalizedResources.Get("Feature_96ad4bd0f7ba", "Profile"))}: {marker.PreviousValue} → {marker.CurrentValue}"));
+                $"{marker.TimestampUtc.ToLocalTime():G} · {(marker.Kind == TelemetryEventKind.PowerSourceChanged ? LocalizedResources.Get("TelemetryUI_PowerSource", "Power source") : LocalizedResources.Get("TelemetryUI_Profile", "Profile"))}: {marker.PreviousValue} → {marker.CurrentValue}"));
+        telemetryPresentationDirty = false;
     }
 
     private void OnTelemetryRangeChanged(object sender, SelectionChangedEventArgs args)
@@ -60,9 +95,9 @@ public sealed partial class MainWindow
                 SuggestedFileName = $"OpenBlade-telemetry-{DateTime.Now:yyyy-MM-dd-HHmmss}",
                 DefaultFileExtension = ".csv",
                 ShowOverwritePrompt = true,
-                Title = LocalizedResources.Get("Feature_b5c358cef921", "Record telemetry to CSV"),
+                Title = LocalizedResources.Get("TelemetryUI_RecordCsvTitle", "Record telemetry to CSV"),
             };
-            picker.FileTypeChoices.Add(LocalizedResources.Get("Feature_72539d6acd07", "CSV files"), [".csv"]);
+            picker.FileTypeChoices.Add(LocalizedResources.Get("TelemetryUI_CsvFiles", "CSV files"), [".csv"]);
             if (await picker.PickSaveFileAsync() is { } result)
             {
                 await ViewModel.StartTelemetryRecordingAsync(result.Path, CancellationToken.None);
@@ -82,7 +117,10 @@ public sealed partial class MainWindow
     private async void OnOpenTelemetryReplay(object sender, RoutedEventArgs args) =>
         await RunTelemetryActionAsync(async () =>
         {
-            var picker = new FileOpenPicker(AppWindow.Id) { Title = LocalizedResources.Get("Feature_e09ca605b555", "Open telemetry CSV") };
+            var picker = new FileOpenPicker(AppWindow.Id)
+            {
+                Title = LocalizedResources.Get("TelemetryUI_OpenCsvTitle", "Open telemetry CSV"),
+            };
             picker.FileTypeFilter.Add(".csv");
             if (await picker.PickSingleFileAsync() is { } result)
             {
@@ -111,7 +149,7 @@ public sealed partial class MainWindow
         {
             Trace.TraceError("OpenBlade {0} failed: {1}", label, exception);
             telemetryActionError = string.IsNullOrWhiteSpace(ViewModel.TelemetryErrorMessage)
-                ? LocalizedResources.Format("Telemetry_ActionFailed", "Telemetry operation failed: {0}", exception.Message)
+                ? LocalizedResources.Format("TelemetryUI_ActionFailed", "Telemetry operation failed: {0}", exception.Message)
                 : ViewModel.TelemetryErrorMessage;
         }
         finally

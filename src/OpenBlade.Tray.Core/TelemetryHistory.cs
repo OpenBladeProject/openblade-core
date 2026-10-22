@@ -23,6 +23,8 @@ public sealed record TelemetryHistorySnapshot(
 {
     public TimeSpan? ExpectedSampleInterval { get; init; }
 
+    public IReadOnlyList<TelemetrySample> RawSamples { get; init; } = [];
+
     public TimeSpan? MaximumContinuousGap => ExpectedSampleInterval * 2;
 }
 
@@ -144,6 +146,7 @@ public sealed class TelemetryHistory
             selectedEvents)
         {
             ExpectedSampleInterval = expectedSampleInterval,
+            RawSamples = selected,
         };
     }
 

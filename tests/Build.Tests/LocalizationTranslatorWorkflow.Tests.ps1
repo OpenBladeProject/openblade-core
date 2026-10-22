@@ -251,7 +251,16 @@ try {
                 Screenshots = @(
                     'context/tray/main-profiles-applications.png',
                     'context/tray/main-profiles-applications-empty.png',
-                    'context/tray/main-profiles-application-editor.png')
+                    'context/tray/main-profiles-application-editor.png',
+                    'context/tray/main-profiles-application-editor-controls.png',
+                    'context/tray/main-profiles-application-discovery.png',
+                    'context/tray/main-profiles-application-discovery-empty.png')
+            },
+            @{
+                Key = 'ApplicationsUI_SearchLabel'
+                Screenshots = @(
+                    'context/tray/main-profiles-application-discovery.png',
+                    'context/tray/main-profiles-application-discovery-empty.png')
             },
             @{
                 Key = 'Telemetry_Title.Text'
@@ -262,6 +271,12 @@ try {
             @{
                 Key = 'BatteryHistory_Title.Text'
                 Screenshots = @('context/tray/main-laptop-battery-history.png')
+            },
+            @{
+                Key = 'TelemetryUI_NextSample'
+                Screenshots = @(
+                    'context/tray/main-telemetry.png',
+                    'context/tray/main-telemetry-empty.png')
             },
             @{
                 Key = 'MainWindow_DisplayBrightnessTitle.Text'

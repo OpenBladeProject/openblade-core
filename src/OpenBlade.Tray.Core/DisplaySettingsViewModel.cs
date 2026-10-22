@@ -360,6 +360,9 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             {
                 OnPropertyChanged(nameof(CurrentProfileSettings));
                 OnPropertyChanged(nameof(BrightnessValue));
+                OnPropertyChanged(nameof(BrightnessSliderValue));
+                OnPropertyChanged(nameof(HasBrightnessReading));
+                OnPropertyChanged(nameof(IsBrightnessUnavailable));
                 NotifyProfileRelationshipChanged();
                 NotifyControlStateChanged();
             }
@@ -369,6 +372,12 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     public IReadOnlyList<byte> SupportedBrightnessLevels => supportedBrightnessLevels;
 
     public double BrightnessValue => BrightnessPercent.HasValue ? BrightnessPercent.Value : double.NaN;
+
+    public double BrightnessSliderValue => BrightnessPercent ?? 0;
+
+    public bool HasBrightnessReading => BrightnessPercent.HasValue;
+
+    public bool IsBrightnessUnavailable => !HasBrightnessReading;
 
     public bool CanChangeBrightness => HasConfirmedPowerSource && IsAvailable && !IsBusy
         && BrightnessPercent.HasValue && SupportedBrightnessLevels.Count > 0;
