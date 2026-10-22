@@ -616,7 +616,10 @@ public partial class App
                 "profiles-wide",
                 StringComparison.Ordinal);
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
-            bool captureFeatureSnapshot = requestedPage is
+            bool captureTelemetryVariant = requestedPage is
+                "telemetry-analysis" or "telemetry-narrow" or "telemetry-dark"
+                or "telemetry-range" or "telemetry-metrics" or "telemetry-color";
+            bool captureFeatureSnapshot = captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                 or "profiles-application-discovery-empty" or "telemetry-empty"
@@ -699,7 +702,12 @@ public partial class App
                 {
                     snapshotSize = new Windows.Graphics.SizeInt32(1120, 900);
                 }
-                else if (destination is "telemetry" or "telemetry-empty")
+                else if (destination == "telemetry-narrow")
+                {
+                    snapshotSize = new Windows.Graphics.SizeInt32(800, 1120);
+                }
+                else if (destination == "telemetry"
+                    || destination.StartsWith("telemetry-", StringComparison.Ordinal))
                 {
                     snapshotSize = new Windows.Graphics.SizeInt32(1120, 1120);
                 }
@@ -712,6 +720,12 @@ public partial class App
                     snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                 }
                 snapshotMainWindow.AppWindow.Resize(snapshotSize);
+                if (destination == "telemetry-dark"
+                    && snapshotMainWindow.Content is XamlGrid telemetryRoot)
+                {
+                    telemetryRoot.RequestedTheme = ElementTheme.Dark;
+                    telemetryRoot.Background = new SolidColorBrush(Microsoft.UI.Colors.Black);
+                }
                 await WaitForSnapshotLayoutAsync();
                 string navigationDestination = destination switch
                 {
@@ -719,7 +733,7 @@ public partial class App
                     "profiles-applications" or "profiles-applications-empty"
                         or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                         or "profiles-application-discovery-empty" => "profiles",
-                    "telemetry-empty" => "telemetry",
+                    _ when destination.StartsWith("telemetry-", StringComparison.Ordinal) => "telemetry",
                     "laptop-battery-history" => "laptop",
                     "display-brightness-known" or "display-brightness-unavailable" => "display",
                     _ when captureSnapTap => "laptop",
@@ -809,6 +823,18 @@ public partial class App
                         snapshotMainWindow,
                         snapshotMainWindow.GetLocalizationSnapshotSnapTapInformation(),
                         Path.Combine(resolvedDirectory, "snap-tap-information.png"));
+                }
+                if (destination is "telemetry-metrics" or "telemetry-color")
+                {
+                    await SaveFlyoutSnapshotAsync(
+                        snapshotMainWindow,
+                        snapshotMainWindow.GetLocalizationSnapshotTelemetryFlyout(
+                            color: destination == "telemetry-color"),
+                        Path.Combine(resolvedDirectory, $"{destination}.png"));
+                }
+                if (captureTelemetryVariant || destination is "telemetry" or "telemetry-empty")
+                {
+                    snapshotMainWindow.VerifyLocalizationSnapshotTelemetry();
                 }
                 await SaveSnapshotAsync(
                     snapshotMainWindow.Content,

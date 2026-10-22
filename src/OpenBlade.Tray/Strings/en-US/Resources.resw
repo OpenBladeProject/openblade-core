@@ -2509,23 +2509,11 @@ OpenBlade did not retry any stop request.</value>
   <data name="Navigation_Telemetry" xml:space="preserve">
     <value>Telemetry</value>
   </data>
-  <data name="Telemetry_All.Content" xml:space="preserve">
-    <value>All retained readings</value>
-  </data>
   <data name="Telemetry_Description.Text" xml:space="preserve">
     <value>Inspect temperatures, fans and battery power over time. Missing readings remain gaps.</value>
   </data>
   <data name="Telemetry_EventsTitle.Text" xml:space="preserve">
     <value>Power and profile changes</value>
-  </data>
-  <data name="Telemetry_Last15.Content" xml:space="preserve">
-    <value>Last 15 minutes</value>
-  </data>
-  <data name="Telemetry_Last5.Content" xml:space="preserve">
-    <value>Last 5 minutes</value>
-  </data>
-  <data name="Telemetry_Last60.Content" xml:space="preserve">
-    <value>Last hour</value>
   </data>
   <data name="Telemetry_Live.Content" xml:space="preserve">
     <value>Return to live</value>
@@ -2535,9 +2523,6 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="Telemetry_Open.Content" xml:space="preserve">
     <value>Open CSV replay</value>
-  </data>
-  <data name="Telemetry_Range.Header" xml:space="preserve">
-    <value>Time range</value>
   </data>
   <data name="Telemetry_Record.Content" xml:space="preserve">
     <value>Record CSV</value>
@@ -2626,32 +2611,20 @@ OpenBlade did not retry any stop request.</value>
   <data name="TelemetryUI_FollowLatest" xml:space="preserve">
     <value>Follow latest</value>
   </data>
-  <data name="TelemetryUI_FollowingLatest" xml:space="preserve">
-    <value>Following latest · {0}</value>
-  </data>
   <data name="TelemetryUI_Fresh" xml:space="preserve">
     <value>Fresh</value>
   </data>
   <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
     <value>GPU temperature</value>
   </data>
-  <data name="TelemetryUI_InspectingSample" xml:space="preserve">
-    <value>Inspecting {0} · selection stays fixed</value>
-  </data>
   <data name="TelemetryUI_LiveSource" xml:space="preserve">
     <value>Live · {0}</value>
-  </data>
-  <data name="TelemetryUI_Metric" xml:space="preserve">
-    <value>Metric</value>
   </data>
   <data name="TelemetryUI_NextSample" xml:space="preserve">
     <value>Next sample</value>
   </data>
   <data name="TelemetryUI_NoEvents" xml:space="preserve">
     <value>No power or profile changes in this range.</value>
-  </data>
-  <data name="TelemetryUI_NoReadings" xml:space="preserve">
-    <value>No readings are available for this metric.</value>
   </data>
   <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
     <value>No sample selected.</value>
@@ -2683,9 +2656,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="TelemetryUI_Stale" xml:space="preserve">
     <value>Stale</value>
   </data>
-  <data name="TelemetryUI_Statistics" xml:space="preserve">
-    <value>Min {0} · Max {1} · Average {2} · {3} readings</value>
-  </data>
   <data name="TelemetryUI_Unavailable" xml:space="preserve">
     <value>Unavailable</value>
   </data>
@@ -2694,5 +2664,101 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
     <value>Unavailable</value>
+  </data>
+  <data name="TelemetryUI_AnalysisTitle" xml:space="preserve">
+    <value>Selected sample and range statistics</value>
+  </data>
+  <data name="TelemetryUI_ApplyColor" xml:space="preserve">
+    <value>Apply color</value>
+  </data>
+  <data name="TelemetryUI_ColorPattern" xml:space="preserve">
+    <value>Line patterns also identify each metric.</value>
+  </data>
+  <data name="TelemetryUI_ColorPreference" xml:space="preserve">
+    <value>Colors and visible metrics are saved for this user.</value>
+  </data>
+  <data name="TelemetryUI_DefaultColor" xml:space="preserve">
+    <value>Default color</value>
+  </data>
+  <data name="TelemetryUI_FanLane" xml:space="preserve">
+    <value>Fan speed (RPM)</value>
+  </data>
+  <data name="TelemetryUI_Following" xml:space="preserve">
+    <value>Following latest</value>
+  </data>
+  <data name="TelemetryUI_FullRange" xml:space="preserve">
+    <value>Full range</value>
+  </data>
+  <data name="TelemetryUI_InspectHint" xml:space="preserve">
+    <value>Hover to inspect. Click to pin a sample.</value>
+  </data>
+  <data name="TelemetryUI_InvalidRangeTime" xml:space="preserve">
+    <value>Enter a valid date and time.</value>
+  </data>
+  <data name="TelemetryUI_MetricColor" xml:space="preserve">
+    <value>{0} color</value>
+  </data>
+  <data name="TelemetryUI_MetricsAndColors" xml:space="preserve">
+    <value>Metrics and colors</value>
+  </data>
+  <data name="TelemetryUI_Pinned" xml:space="preserve">
+    <value>Pinned</value>
+  </data>
+  <data name="TelemetryUI_PowerLane" xml:space="preserve">
+    <value>Battery power (W)</value>
+  </data>
+  <data name="TelemetryUI_RangeAutomation" xml:space="preserve">
+    <value>Visible time range. Drag its edges or edit the start and end time fields.</value>
+  </data>
+  <data name="TelemetryUI_RangeEnd" xml:space="preserve">
+    <value>End</value>
+  </data>
+  <data name="TelemetryUI_RangeHint" xml:space="preserve">
+    <value>Drag either edge to resize, or drag the selected window to move it. You can also edit the start and end times.</value>
+  </data>
+  <data name="TelemetryUI_RangeOverview" xml:space="preserve">
+    <value>Visible time range · {0}</value>
+  </data>
+  <data name="TelemetryUI_RangeScope" xml:space="preserve">
+    <value>Range · {0} to {1}</value>
+  </data>
+  <data name="TelemetryUI_RangeStart" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="TelemetryUI_RangeStatistics" xml:space="preserve">
+    <value>Range statistics</value>
+  </data>
+  <data name="TelemetryUI_ReadingCounts" xml:space="preserve">
+    <value>{0} readings · {1} missing</value>
+  </data>
+  <data name="TelemetryUI_ResetColors" xml:space="preserve">
+    <value>Reset colors</value>
+  </data>
+  <data name="TelemetryUI_SelectedMoment" xml:space="preserve">
+    <value>Selected moment · {0}</value>
+  </data>
+  <data name="TelemetryUI_TableAverage" xml:space="preserve">
+    <value>Average</value>
+  </data>
+  <data name="TelemetryUI_TableMaximum" xml:space="preserve">
+    <value>Max</value>
+  </data>
+  <data name="TelemetryUI_TableMetric" xml:space="preserve">
+    <value>Metric</value>
+  </data>
+  <data name="TelemetryUI_TableMinimum" xml:space="preserve">
+    <value>Min</value>
+  </data>
+  <data name="TelemetryUI_TableMoment" xml:space="preserve">
+    <value>At sample</value>
+  </data>
+  <data name="TelemetryUI_TableReadings" xml:space="preserve">
+    <value>Readings</value>
+  </data>
+  <data name="TelemetryUI_Temperatures" xml:space="preserve">
+    <value>Temperatures (°C)</value>
+  </data>
+  <data name="TelemetryUI_VisibleTimeRange" xml:space="preserve">
+    <value>Visible time range</value>
   </data>
 </root>

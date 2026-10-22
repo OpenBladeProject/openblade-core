@@ -63,7 +63,8 @@ public sealed record UiPreferences(
     bool LabFeaturesEnabled = false,
     UiLanguagePreference Language = UiLanguagePreference.FollowSystem,
     bool ThxAudioIntegrationEnabled = false,
-    bool SnapTapEnabled = false)
+    bool SnapTapEnabled = false,
+    IReadOnlyList<TelemetryChartMetricPreference>? TelemetryChartMetrics = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -124,6 +125,10 @@ public sealed record UiPreferences(
 
     public IReadOnlyList<LiveReadingItemKind> EffectiveDashboardTelemetryItems =>
         TelemetryPreferenceDefaults.NormalizeDashboardItems(DashboardTelemetryItems);
+
+    [JsonIgnore]
+    public IReadOnlyList<TelemetryChartMetricPreference> EffectiveTelemetryChartMetrics =>
+        TelemetryChartPreferenceDefaults.Normalize(TelemetryChartMetrics);
 
     public IReadOnlyList<TrayHoverLabelItemPreference> EffectiveTrayHoverLabelItems =>
         TelemetryPreferenceDefaults.NormalizeTrayHoverItems(

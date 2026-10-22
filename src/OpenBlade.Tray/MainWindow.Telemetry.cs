@@ -27,23 +27,11 @@ public sealed partial class MainWindow
                 ?? metadata?.StartedAtUtc
                 ?? DateTimeOffset.UtcNow
             : DateTimeOffset.UtcNow);
-        TimeSpan? range = TelemetryRange.SelectedIndex switch
-        {
-            0 => TimeSpan.FromMinutes(5),
-            1 => TimeSpan.FromMinutes(15),
-            2 => TimeSpan.FromHours(1),
-            _ => null,
-        };
-        DateTimeOffset? requestedStart = range is { } duration
-            ? end - duration
-            : replay ? metadata?.StartedAtUtc : null;
+        // The chart owns the visible window; the overview needs the complete bounded history.
+        DateTimeOffset? requestedStart = null;
         TelemetryHistorySnapshot snapshot = ViewModel.GetTelemetrySnapshot(requestedStart, end);
         DateTimeOffset? sourceStart = replay ? metadata?.StartedAtUtc : snapshot.RangeStartUtc;
-        TelemetryChartTimeWindow visibleWindow = TelemetryChartTimeWindow.Resolve(
-            end,
-            range,
-            sourceStart);
-        TelemetryPlot.Update(snapshot, visibleWindow.StartUtc, visibleWindow.EndUtc);
+        TelemetryPlot.Update(snapshot, sourceStart ?? end, end, metadata?.SessionId);
         TelemetrySourceText.Text = replay
             ? LocalizedResources.Format(
                 "TelemetryUI_ReplaySource",
@@ -70,21 +58,19 @@ public sealed partial class MainWindow
         TelemetryErrorText.Visibility = string.IsNullOrWhiteSpace(TelemetryErrorText.Text)
             ? Visibility.Collapsed
             : Visibility.Visible;
-        TelemetryEventsText.Text = snapshot.Events.Count == 0
-            ? LocalizedResources.Get(
-                "TelemetryUI_NoEvents",
-                "No power or profile changes in this range.")
-            : string.Join(Environment.NewLine, snapshot.Events.TakeLast(12).Select(marker =>
-                $"{marker.TimestampUtc.ToLocalTime():G} · {(marker.Kind == TelemetryEventKind.PowerSourceChanged ? LocalizedResources.Get("TelemetryUI_PowerSource", "Power source") : LocalizedResources.Get("TelemetryUI_Profile", "Profile"))}: {marker.PreviousValue} → {marker.CurrentValue}"));
+        RefreshTelemetryEvents();
         telemetryPresentationDirty = false;
     }
 
-    private void OnTelemetryRangeChanged(object sender, SelectionChangedEventArgs args)
+    private void RefreshTelemetryEvents()
     {
-        if (TelemetryPlot is not null && TelemetrySourceText is not null)
-        {
-            RefreshTelemetryPresentation();
-        }
+        IReadOnlyList<TelemetryEvent> events = TelemetryPlot.VisibleEvents;
+        TelemetryEventsText.Text = events.Count == 0
+            ? LocalizedResources.Get(
+                "TelemetryUI_NoEvents",
+                "No power or profile changes in this range.")
+            : string.Join(Environment.NewLine, events.TakeLast(12).Select(marker =>
+                $"{marker.TimestampUtc.ToLocalTime():G} · {(marker.Kind == TelemetryEventKind.PowerSourceChanged ? LocalizedResources.Get("TelemetryUI_PowerSource", "Power source") : LocalizedResources.Get("TelemetryUI_Profile", "Profile"))}: {marker.PreviousValue} → {marker.CurrentValue}"));
     }
 
     private async void OnStartTelemetryRecording(object sender, RoutedEventArgs args) =>

@@ -53,6 +53,16 @@ public sealed partial class MainWindow
             case "telemetry-empty":
                 ApplyTelemetryFixture(populated: false);
                 break;
+            case "telemetry-analysis":
+            case "telemetry-narrow":
+            case "telemetry-dark":
+            case "telemetry-range":
+            case "telemetry-metrics":
+            case "telemetry-color":
+                ApplyTelemetryFixture(populated: true);
+                TelemetryPlot.ShowLocalizationSnapshotInspection(0.4);
+                TelemetryPlot.ShowLocalizationSnapshotLayout(destination);
+                break;
             case "laptop-battery-history":
                 ApplyBatteryHistoryFixture();
                 BatteryHistorySection.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
@@ -68,6 +78,12 @@ public sealed partial class MainWindow
                     nameof(destination), destination, "Unknown feature snapshot route.");
         }
     }
+
+    internal void VerifyLocalizationSnapshotTelemetry() =>
+        TelemetryPlot.VerifyLocalizationSnapshotAnalysis();
+
+    internal Flyout GetLocalizationSnapshotTelemetryFlyout(bool color) =>
+        TelemetryPlot.GetLocalizationSnapshotFlyout(color);
 
     private void ShowLocalizationSnapshotApplicationEditorFixture()
     {
@@ -195,7 +211,6 @@ public sealed partial class MainWindow
 
     private void ApplyTelemetryFixture(bool populated)
     {
-        TelemetryRange.SelectedIndex = 3;
         if (populated)
         {
             FieldInfo historyField = typeof(MainViewModel).GetField(

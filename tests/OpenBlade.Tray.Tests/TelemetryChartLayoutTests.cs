@@ -175,7 +175,7 @@ public sealed class TelemetryChartLayoutTests
     }
 
     [Fact]
-    public void ChartUsesCrosshairAndVisibleSampleControlsInsteadOfAStandaloneSlider()
+    public void ChartUsesUnitLanesAndRawSampleAnalysisWithSharedTypography()
     {
         string source = File.ReadAllText(Path.Combine(
             RepositoryRoot,
@@ -183,24 +183,34 @@ public sealed class TelemetryChartLayoutTests
             "OpenBlade.Tray",
             "TelemetryChart.cs"));
 
-        Assert.Contains("Line crosshair", source, StringComparison.Ordinal);
-        Assert.Contains("plot.PointerMoved += OnPlotPointerMoved", source, StringComparison.Ordinal);
-        Assert.Contains("plot.PointerPressed += OnPlotPointerPressed", source, StringComparison.Ordinal);
+        string analysis = File.ReadAllText(Path.Combine(RepositoryRoot,
+            "src", "OpenBlade.Tray", "TelemetryChart.Analysis.cs"));
+        string range = File.ReadAllText(Path.Combine(RepositoryRoot,
+            "src", "OpenBlade.Tray", "TelemetryChart.Range.cs"));
+        Assert.Contains("Line Crosshair", source, StringComparison.Ordinal);
+        Assert.Contains("OnPlotPointerMoved(lane, args)", source, StringComparison.Ordinal);
+        Assert.Contains("OnPlotPointerPressed(lane, args)", source, StringComparison.Ordinal);
         Assert.Contains("previousSampleButton.Click", source, StringComparison.Ordinal);
         Assert.Contains("nextSampleButton.Click", source, StringComparison.Ordinal);
         Assert.Contains("followLatestButton.Click", source, StringComparison.Ordinal);
-        Assert.Contains("MinHeight = 44", source, StringComparison.Ordinal);
+        Assert.Contains("AppTypography.CommandButton", source, StringComparison.Ordinal);
         Assert.Contains(
             "TelemetryChartSelection.FindNearestSampleIndex(rawSamples, target)",
             source,
             StringComparison.Ordinal);
         Assert.Contains("sample.Value(choice.Metric)", source, StringComparison.Ordinal);
-        Assert.Contains("scale.CreateTimeTicks(tickCount)", source, StringComparison.Ordinal);
-        Assert.Contains("visibleStartUtc ?? snapshot.RangeStartUtc", source, StringComparison.Ordinal);
-        string drawMethod = source[source.IndexOf("private void Draw()", StringComparison.Ordinal)..source.IndexOf("private int ResolveSelectedIndex", StringComparison.Ordinal)];
-        Assert.DoesNotContain("rawSamples.Count == 0", drawMethod, StringComparison.Ordinal);
+        Assert.Contains("lane.Scale.CreateTimeTicks(tickCount)", source, StringComparison.Ordinal);
+        Assert.Contains("TelemetryChartViewport.BuildSnapshot", source, StringComparison.Ordinal);
+        Assert.Contains("new([choices[0], choices[1]]", source, StringComparison.Ordinal);
+        Assert.Contains("new([choices[3], choices[4]]", source, StringComparison.Ordinal);
+        Assert.Contains("AppTypography.Data", analysis, StringComparison.Ordinal);
+        Assert.Contains("stats?.MissingCount", analysis, StringComparison.Ordinal);
+        Assert.Contains("overview.CapturePointer", range, StringComparison.Ordinal);
+        Assert.Contains("CommitRangeTime(input)", range, StringComparison.Ordinal);
+        Assert.Contains("rangeDragBaseline", range, StringComparison.Ordinal);
+        Assert.DoesNotContain("FontSize =", source + analysis + range, StringComparison.Ordinal);
         Assert.Contains("ShowLocalizationSnapshotInspection", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Slider", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ComboBox", source + range, StringComparison.Ordinal);
     }
 
     private static string RepositoryRoot => Path.GetFullPath(Path.Combine(

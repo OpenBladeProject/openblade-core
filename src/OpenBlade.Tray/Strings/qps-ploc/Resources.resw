@@ -2509,23 +2509,11 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="Navigation_Telemetry" xml:space="preserve">
     <value>[!! Télémétrý ~~~~ !!]</value>
   </data>
-  <data name="Telemetry_All.Content" xml:space="preserve">
-    <value>[!! Áll rétáínéd réádíngs ~~~~~~~ !!]</value>
-  </data>
   <data name="Telemetry_Description.Text" xml:space="preserve">
     <value>[!! Ínspéct témpérátúrés, fáns ánd báttérý pówér óvér tímé. Míssíng réádíngs rémáín gáps. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Telemetry_EventsTitle.Text" xml:space="preserve">
     <value>[!! Pówér ánd prófílé chángés ~~~~~~~~ !!]</value>
-  </data>
-  <data name="Telemetry_Last15.Content" xml:space="preserve">
-    <value>[!! Lást 15 mínútés ~~~~ !!]</value>
-  </data>
-  <data name="Telemetry_Last5.Content" xml:space="preserve">
-    <value>[!! Lást 5 mínútés ~~~~ !!]</value>
-  </data>
-  <data name="Telemetry_Last60.Content" xml:space="preserve">
-    <value>[!! Lást hóúr ~~~ !!]</value>
   </data>
   <data name="Telemetry_Live.Content" xml:space="preserve">
     <value>[!! Rétúrn tó lívé ~~~~~ !!]</value>
@@ -2535,9 +2523,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="Telemetry_Open.Content" xml:space="preserve">
     <value>[!! Ópén CSV répláý ~~~~~ !!]</value>
-  </data>
-  <data name="Telemetry_Range.Header" xml:space="preserve">
-    <value>[!! Tímé rángé ~~~~ !!]</value>
   </data>
   <data name="Telemetry_Record.Content" xml:space="preserve">
     <value>[!! Récórd CSV ~~~~ !!]</value>
@@ -2626,32 +2611,20 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="TelemetryUI_FollowLatest" xml:space="preserve">
     <value>[!! Fóllów látést ~~~~~ !!]</value>
   </data>
-  <data name="TelemetryUI_FollowingLatest" xml:space="preserve">
-    <value>[!! Fóllówíng látést · {0} ~~~~~~ !!]</value>
-  </data>
   <data name="TelemetryUI_Fresh" xml:space="preserve">
     <value>[!! Frésh ~~ !!]</value>
   </data>
   <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
     <value>[!! GPÚ témpérátúré ~~~~~ !!]</value>
   </data>
-  <data name="TelemetryUI_InspectingSample" xml:space="preserve">
-    <value>[!! Ínspéctíng {0} · séléctíón stáýs fíxéd ~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="TelemetryUI_LiveSource" xml:space="preserve">
     <value>[!! Lívé · {0} ~~ !!]</value>
-  </data>
-  <data name="TelemetryUI_Metric" xml:space="preserve">
-    <value>[!! Métríc ~~~ !!]</value>
   </data>
   <data name="TelemetryUI_NextSample" xml:space="preserve">
     <value>[!! Néxt sámplé ~~~~ !!]</value>
   </data>
   <data name="TelemetryUI_NoEvents" xml:space="preserve">
     <value>[!! Nó pówér ór prófílé chángés ín thís rángé. ~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="TelemetryUI_NoReadings" xml:space="preserve">
-    <value>[!! Nó réádíngs áré áváíláblé fór thís métríc. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
     <value>[!! Nó sámplé séléctéd. ~~~~~~ !!]</value>
@@ -2683,9 +2656,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="TelemetryUI_Stale" xml:space="preserve">
     <value>[!! Stálé ~~ !!]</value>
   </data>
-  <data name="TelemetryUI_Statistics" xml:space="preserve">
-    <value>[!! Mín {0} · Máx {1} · Ávérágé {2} · {3} réádíngs ~~~~~~~~ !!]</value>
-  </data>
   <data name="TelemetryUI_Unavailable" xml:space="preserve">
     <value>[!! Únáváíláblé ~~~~ !!]</value>
   </data>
@@ -2694,5 +2664,101 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
     <value>[!! Únáváíláblé ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_AnalysisTitle" xml:space="preserve">
+    <value>[!! Séléctéd sámplé ánd rángé státístícs ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ApplyColor" xml:space="preserve">
+    <value>[!! Ápplý cólór ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ColorPattern" xml:space="preserve">
+    <value>[!! Líné páttérns álsó ídéntífý éách métríc. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ColorPreference" xml:space="preserve">
+    <value>[!! Cólórs ánd vísíblé métrícs áré sávéd fór thís úsér. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_DefaultColor" xml:space="preserve">
+    <value>[!! Défáúlt cólór ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_FanLane" xml:space="preserve">
+    <value>[!! Fán spééd (RPM) ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Following" xml:space="preserve">
+    <value>[!! Fóllówíng látést ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_FullRange" xml:space="preserve">
+    <value>[!! Fúll rángé ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_InspectHint" xml:space="preserve">
+    <value>[!! Hóvér tó ínspéct. Clíck tó pín á sámplé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_InvalidRangeTime" xml:space="preserve">
+    <value>[!! Éntér á válíd dáté ánd tímé. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_MetricColor" xml:space="preserve">
+    <value>[!! {0} cólór ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_MetricsAndColors" xml:space="preserve">
+    <value>[!! Métrícs ánd cólórs ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Pinned" xml:space="preserve">
+    <value>[!! Pínnéd ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_PowerLane" xml:space="preserve">
+    <value>[!! Báttérý pówér (W) ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeAutomation" xml:space="preserve">
+    <value>[!! Vísíblé tímé rángé. Drág íts édgés ór édít thé stárt ánd énd tímé fíélds. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeEnd" xml:space="preserve">
+    <value>[!! Énd ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeHint" xml:space="preserve">
+    <value>[!! Drág éíthér édgé tó résízé, ór drág thé séléctéd wíndów tó móvé ít. Ýóú cán álsó édít thé stárt ánd énd tímés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeOverview" xml:space="preserve">
+    <value>[!! Vísíblé tímé rángé · {0} ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeScope" xml:space="preserve">
+    <value>[!! Rángé · {0} tó {1} ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeStart" xml:space="preserve">
+    <value>[!! Stárt ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeStatistics" xml:space="preserve">
+    <value>[!! Rángé státístícs ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ReadingCounts" xml:space="preserve">
+    <value>[!! {0} réádíngs · {1} míssíng ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ResetColors" xml:space="preserve">
+    <value>[!! Rését cólórs ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_SelectedMoment" xml:space="preserve">
+    <value>[!! Séléctéd mómént · {0} ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableAverage" xml:space="preserve">
+    <value>[!! Ávérágé ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableMaximum" xml:space="preserve">
+    <value>[!! Máx ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableMetric" xml:space="preserve">
+    <value>[!! Métríc ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableMinimum" xml:space="preserve">
+    <value>[!! Mín ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableMoment" xml:space="preserve">
+    <value>[!! Át sámplé ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableReadings" xml:space="preserve">
+    <value>[!! Réádíngs ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Temperatures" xml:space="preserve">
+    <value>[!! Témpérátúrés (°C) ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_VisibleTimeRange" xml:space="preserve">
+    <value>[!! Vísíblé tímé rángé ~~~~~~ !!]</value>
   </data>
 </root>

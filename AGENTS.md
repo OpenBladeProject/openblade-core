@@ -245,6 +245,37 @@ inventing a page-specific appearance:
   unchanged evidence; inspect only states affected by the change. A deliberate
   exception needs a concrete design reason in the PR and its focused test.
 
+## Typography
+
+Use the application typography roles in `Themes/Typography.xaml`. They inherit
+the native WinUI type ramp so the system font, language fallback, text scaling,
+and high-contrast behavior remain authoritative:
+
+- `AppPageTitleTextStyle` for page titles and `AppSectionTitleTextStyle` for
+  major sections.
+- `AppBodyTextStyle` for ordinary text and table cells, and
+  `AppBodyStrongTextStyle` for card titles and table column headers.
+- `AppCaptionTextStyle` for units, timestamps, chart axes, and supporting
+  metadata. It uses the theme's secondary text brush.
+- `AppDataTextStyle` for numeric readings and table values. It uses regular body
+  text with tabular numerals. Keep all table body cells regular; reserve strong
+  text for headers.
+- `AppCommandButtonStyle` for full-size string page commands. Its shared
+  `AppCommandTextTemplate` wraps and centers localized body text while the
+  button keeps native focus behavior, a 40-DIP minimum height, and shared
+  padding. Icon and custom-content buttons retain their component style.
+
+Keep local layout styles as aliases based on these application roles. Do not
+copy the native role's current `FontSize`, set a fixed line height, or introduce
+a new font family. Let translated and scaled text wrap instead of fixing row
+heights. Runtime-created text uses `AppTypography.Apply`; runtime-created
+buttons resolve the command style through `AppTypography.RequireStyle`.
+
+The existing tray quick-controls popup may retain its compact 12-DIP and 11-DIP
+text until that surface is migrated and rendered independently. A new raw font
+size needs a concrete constrained-surface reason and focused visual evidence.
+See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
+
 ## Architecture rules
 
 1. The service is the sole owner of the laptop control HID handle. It exposes

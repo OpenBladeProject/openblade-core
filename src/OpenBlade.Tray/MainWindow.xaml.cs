@@ -289,6 +289,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             exception => Trace.TraceError(
                 "OpenBlade preference save failed: {0}",
                 exception));
+        TelemetryPlot.PreferencesChanged += (_, _) =>
+        {
+            if (!localizationSnapshotMode)
+            {
+                QueuePreferenceSave();
+            }
+        };
+        TelemetryPlot.VisibleRangeChanged += (_, _) => RefreshTelemetryEvents();
         AppWindow.Closing += OnClosing;
     }
 
@@ -878,6 +886,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
+            TelemetryPlot.ApplyPreferences(preferences.EffectiveTelemetryChartMetrics);
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
             initialLanguage = initialLanguageOverride ?? preferences.EffectiveLanguage;
@@ -1432,7 +1441,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
                 Language: ViewModel.LanguagePreference,
                 SnapTapEnabled: snapTapEnabled,
-                ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled));
+                ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled,
+                TelemetryChartMetrics: TelemetryPlot.MetricPreferences));
         }
         catch (ObjectDisposedException)
         {

@@ -2509,23 +2509,11 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Navigation_Telemetry" xml:space="preserve">
     <value>Телеметрия</value>
   </data>
-  <data name="Telemetry_All.Content" xml:space="preserve">
-    <value>Все сохранённые показания</value>
-  </data>
   <data name="Telemetry_Description.Text" xml:space="preserve">
     <value>Просматривайте температуру, работу вентиляторов и мощность аккумулятора во времени. Отсутствующие показания отображаются как пропуски.</value>
   </data>
   <data name="Telemetry_EventsTitle.Text" xml:space="preserve">
     <value>Изменения питания и профиля</value>
-  </data>
-  <data name="Telemetry_Last15.Content" xml:space="preserve">
-    <value>Последние 15 минут</value>
-  </data>
-  <data name="Telemetry_Last5.Content" xml:space="preserve">
-    <value>Последние 5 минут</value>
-  </data>
-  <data name="Telemetry_Last60.Content" xml:space="preserve">
-    <value>Последний час</value>
   </data>
   <data name="Telemetry_Live.Content" xml:space="preserve">
     <value>Вернуться к текущим данным</value>
@@ -2535,9 +2523,6 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="Telemetry_Open.Content" xml:space="preserve">
     <value>Открыть воспроизведение CSV</value>
-  </data>
-  <data name="Telemetry_Range.Header" xml:space="preserve">
-    <value>Диапазон времени</value>
   </data>
   <data name="Telemetry_Record.Content" xml:space="preserve">
     <value>Записать CSV</value>
@@ -2626,32 +2611,20 @@ OpenBlade повторно проверит этот список и остан�
   <data name="TelemetryUI_FollowLatest" xml:space="preserve">
     <value>К последним данным</value>
   </data>
-  <data name="TelemetryUI_FollowingLatest" xml:space="preserve">
-    <value>Последние данные · {0}</value>
-  </data>
   <data name="TelemetryUI_Fresh" xml:space="preserve">
     <value>Актуальные данные</value>
   </data>
   <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
     <value>Температура GPU</value>
   </data>
-  <data name="TelemetryUI_InspectingSample" xml:space="preserve">
-    <value>Просмотр {0} · выбор закреплён</value>
-  </data>
   <data name="TelemetryUI_LiveSource" xml:space="preserve">
     <value>Текущие данные · {0}</value>
-  </data>
-  <data name="TelemetryUI_Metric" xml:space="preserve">
-    <value>Показатель</value>
   </data>
   <data name="TelemetryUI_NextSample" xml:space="preserve">
     <value>Следующий отсчёт</value>
   </data>
   <data name="TelemetryUI_NoEvents" xml:space="preserve">
     <value>В этом диапазоне не было изменений источника питания или профиля.</value>
-  </data>
-  <data name="TelemetryUI_NoReadings" xml:space="preserve">
-    <value>Для этого показателя нет данных.</value>
   </data>
   <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
     <value>Отсчёт не выбран.</value>
@@ -2683,14 +2656,107 @@ OpenBlade повторно проверит этот список и остан�
   <data name="TelemetryUI_Stale" xml:space="preserve">
     <value>Устаревшие данные</value>
   </data>
-  <data name="TelemetryUI_Statistics" xml:space="preserve">
-    <value>Мин. {0} · Макс. {1} · Среднее {2} · Отсчётов: {3}</value>
-  </data>
   <data name="TelemetryUI_Unavailable" xml:space="preserve">
     <value>Недоступно</value>
   </data>
   <data name="TelemetryUI_WaitingForReadings" xml:space="preserve">
     <value>Ожидание данных</value>
+  </data>
+  <data name="TelemetryUI_AnalysisTitle" xml:space="preserve">
+    <value>Выбранный отсчёт и статистика диапазона</value>
+  </data>
+  <data name="TelemetryUI_ApplyColor" xml:space="preserve">
+    <value>Применить цвет</value>
+  </data>
+  <data name="TelemetryUI_ColorPattern" xml:space="preserve">
+    <value>Для различения показателей также используются типы линий.</value>
+  </data>
+  <data name="TelemetryUI_ColorPreference" xml:space="preserve">
+    <value>Цвета и отображаемые показатели сохраняются для этого пользователя.</value>
+  </data>
+  <data name="TelemetryUI_DefaultColor" xml:space="preserve">
+    <value>Цвет по умолчанию</value>
+  </data>
+  <data name="TelemetryUI_FanLane" xml:space="preserve">
+    <value>Скорость вентиляторов (RPM)</value>
+  </data>
+  <data name="TelemetryUI_Following" xml:space="preserve">
+    <value>Отображаются последние данные</value>
+  </data>
+  <data name="TelemetryUI_FullRange" xml:space="preserve">
+    <value>Весь диапазон</value>
+  </data>
+  <data name="TelemetryUI_InspectHint" xml:space="preserve">
+    <value>Наведите указатель для просмотра. Щёлкните, чтобы закрепить отсчёт.</value>
+  </data>
+  <data name="TelemetryUI_InvalidRangeTime" xml:space="preserve">
+    <value>Введите допустимые дату и время.</value>
+  </data>
+  <data name="TelemetryUI_MetricColor" xml:space="preserve">
+    <value>Цвет показателя «{0}»</value>
+  </data>
+  <data name="TelemetryUI_MetricsAndColors" xml:space="preserve">
+    <value>Показатели и цвета</value>
+  </data>
+  <data name="TelemetryUI_Pinned" xml:space="preserve">
+    <value>Закреплён</value>
+  </data>
+  <data name="TelemetryUI_PowerLane" xml:space="preserve">
+    <value>Мощность аккумулятора (W)</value>
+  </data>
+  <data name="TelemetryUI_RangeAutomation" xml:space="preserve">
+    <value>Видимый диапазон времени. Перетащите его границы или измените значения времени начала и окончания.</value>
+  </data>
+  <data name="TelemetryUI_RangeEnd" xml:space="preserve">
+    <value>Окончание</value>
+  </data>
+  <data name="TelemetryUI_RangeHint" xml:space="preserve">
+    <value>Перетащите любую границу, чтобы изменить размер, или перетащите выбранное окно, чтобы переместить его. Время начала и окончания также можно изменить.</value>
+  </data>
+  <data name="TelemetryUI_RangeOverview" xml:space="preserve">
+    <value>Видимый диапазон времени · {0}</value>
+  </data>
+  <data name="TelemetryUI_RangeScope" xml:space="preserve">
+    <value>Диапазон · от {0} до {1}</value>
+  </data>
+  <data name="TelemetryUI_RangeStart" xml:space="preserve">
+    <value>Начало</value>
+  </data>
+  <data name="TelemetryUI_RangeStatistics" xml:space="preserve">
+    <value>Статистика диапазона</value>
+  </data>
+  <data name="TelemetryUI_ReadingCounts" xml:space="preserve">
+    <value>Отсчёты: {0} · пропущено: {1}</value>
+  </data>
+  <data name="TelemetryUI_ResetColors" xml:space="preserve">
+    <value>Сбросить цвета</value>
+  </data>
+  <data name="TelemetryUI_SelectedMoment" xml:space="preserve">
+    <value>Выбранный момент · {0}</value>
+  </data>
+  <data name="TelemetryUI_TableAverage" xml:space="preserve">
+    <value>Среднее</value>
+  </data>
+  <data name="TelemetryUI_TableMaximum" xml:space="preserve">
+    <value>Макс.</value>
+  </data>
+  <data name="TelemetryUI_TableMetric" xml:space="preserve">
+    <value>Показатель</value>
+  </data>
+  <data name="TelemetryUI_TableMinimum" xml:space="preserve">
+    <value>Мин.</value>
+  </data>
+  <data name="TelemetryUI_TableMoment" xml:space="preserve">
+    <value>В момент отсчёта</value>
+  </data>
+  <data name="TelemetryUI_TableReadings" xml:space="preserve">
+    <value>Отсчёты</value>
+  </data>
+  <data name="TelemetryUI_Temperatures" xml:space="preserve">
+    <value>Температуры (°C)</value>
+  </data>
+  <data name="TelemetryUI_VisibleTimeRange" xml:space="preserve">
+    <value>Видимый диапазон времени</value>
   </data>
   <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
     <value>Недоступно</value>

@@ -20,7 +20,7 @@
 
             <Style x:Key="PageTitleStyle"
                    TargetType="TextBlock"
-                   BasedOn="{StaticResource TitleTextBlockStyle}">
+                   BasedOn="{StaticResource AppPageTitleTextStyle}">
                 <Setter Property="Margin" Value="0,0,0,20" />
             </Style>
             <Style x:Key="PageHeaderTitleStyle"
@@ -31,7 +31,7 @@
             </Style>
             <Style x:Key="SectionHeaderStyle"
                    TargetType="TextBlock"
-                   BasedOn="{StaticResource SubtitleTextBlockStyle}">
+                   BasedOn="{StaticResource AppSectionTitleTextStyle}">
                 <Setter Property="Margin" Value="0,20,0,10" />
             </Style>
             <Style x:Key="CardStyle" TargetType="Border">
@@ -193,10 +193,10 @@
             </Style>
             <Style x:Key="CardTitleStyle"
                    TargetType="TextBlock"
-                   BasedOn="{StaticResource BodyStrongTextBlockStyle}" />
+                   BasedOn="{StaticResource AppBodyStrongTextStyle}" />
             <Style x:Key="SecondaryTextStyle"
                    TargetType="TextBlock"
-                   BasedOn="{StaticResource BodyTextBlockStyle}">
+                   BasedOn="{StaticResource AppBodyTextStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
@@ -3141,20 +3141,13 @@
                         <Grid ColumnSpacing="8" RowSpacing="8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                            <Button x:Uid="Telemetry_Record" x:Name="TelemetryRecordButton" Content="Record CSV" Click="OnStartTelemetryRecording" HorizontalAlignment="Stretch" />
-                            <Button x:Uid="Telemetry_Stop" x:Name="TelemetryStopButton" Content="Stop recording" Click="OnStopTelemetryRecording" HorizontalAlignment="Stretch" Grid.Column="1" />
-                            <Button x:Uid="Telemetry_Open" Content="Open CSV replay" Click="OnOpenTelemetryReplay" HorizontalAlignment="Stretch" Grid.Row="1" />
-                            <Button x:Uid="Telemetry_Live" x:Name="TelemetryLiveButton" Content="Return to live" Click="OnCloseTelemetryReplay" HorizontalAlignment="Stretch" Grid.Row="1" Grid.Column="1" />
+                            <Button x:Uid="Telemetry_Record" x:Name="TelemetryRecordButton" Content="Record CSV" Style="{StaticResource AppCommandButtonStyle}" Click="OnStartTelemetryRecording" HorizontalAlignment="Stretch" />
+                            <Button x:Uid="Telemetry_Stop" x:Name="TelemetryStopButton" Content="Stop recording" Style="{StaticResource AppCommandButtonStyle}" Click="OnStopTelemetryRecording" HorizontalAlignment="Stretch" Grid.Column="1" />
+                            <Button x:Uid="Telemetry_Open" Content="Open CSV replay" Style="{StaticResource AppCommandButtonStyle}" Click="OnOpenTelemetryReplay" HorizontalAlignment="Stretch" Grid.Row="1" />
+                            <Button x:Uid="Telemetry_Live" x:Name="TelemetryLiveButton" Content="Return to live" Style="{StaticResource AppCommandButtonStyle}" Click="OnCloseTelemetryReplay" HorizontalAlignment="Stretch" Grid.Row="1" Grid.Column="1" />
                         </Grid>
                         <TextBlock x:Name="TelemetryRecordingText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                         <TextBlock x:Name="TelemetryErrorText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                        <ComboBox x:Uid="Telemetry_Range" x:Name="TelemetryRange" Header="Time range" SelectedIndex="1"
-                                  HorizontalAlignment="Stretch" SelectionChanged="OnTelemetryRangeChanged">
-                            <ComboBoxItem x:Uid="Telemetry_Last5" Content="Last 5 minutes" />
-                            <ComboBoxItem x:Uid="Telemetry_Last15" Content="Last 15 minutes" />
-                            <ComboBoxItem x:Uid="Telemetry_Last60" Content="Last hour" />
-                            <ComboBoxItem x:Uid="Telemetry_All" Content="All retained readings" />
-                        </ComboBox>
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <Border Style="{StaticResource SettingsEditorSubcardStyle}">
                                 <local:TelemetryChart x:Name="TelemetryPlot" PlotStroke="{ThemeResource AccentTextFillColorPrimaryBrush}"

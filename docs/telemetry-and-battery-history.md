@@ -1,17 +1,28 @@
 # Telemetry and battery history
 
-Open **Telemetry** to inspect battery power, CPU/GPU temperatures or either fan's
-speed. Choose a metric and time range. The chart shows minimum, maximum and
-average values from the original readings; drawing fewer points does not change
-the statistics. The horizontal axis shows actual timestamps across the selected
-time range, including empty spans before or after the available readings. Missing
-readings and pauses in observation remain gaps.
+Open **Telemetry** to compare battery power, CPU/GPU temperatures and fan speed.
+Temperature, power and fan speed use separate scales with a shared time axis.
+Use **Metrics and colors** to choose visible sensors and their colors; these
+preferences are saved for your Windows user. Missing readings and pauses remain
+gaps. Line patterns help distinguish paired sensors alongside their colors.
 
-Hover or touch the chart to inspect a moment. A vertical crosshair selects the
-nearest original reading, and the readout shows its timestamp and all available
-metrics together. Use **Previous sample** and **Next sample** with the keyboard
-for the same inspection. The selected moment stays fixed as new readings arrive;
-choose **Follow latest** to return to the newest reading.
+Hover over a chart to inspect the nearest original sample. The vertical
+crosshair and **At sample** column show the same timestamp across every metric.
+Click to pin it, or use **Previous sample** and **Next sample** with the keyboard.
+A pinned moment and its time window stay fixed as readings arrive. Choose
+**Follow latest** to follow the newest readings again.
+
+The analysis table shows each metric's minimum, average, maximum and available
+reading count within the visible range. Counts expose missing readings in their
+tooltips and accessible labels. All statistics use the original readings; drawing
+fewer points does not change them. On a narrow window, expand **Range statistics**
+for the minimum, average and maximum.
+
+Drag either edge of the overview to resize the visible range, or drag its center
+to move it. The start and end fields allow precise keyboard edits, including
+fractional seconds and a UTC offset. The chart keeps the selected time bounds,
+including empty spans before or after readings. Edited ranges stay fixed until
+you choose **Follow latest** or **Full range**.
 
 The page identifies live data, stale data and local CSV replay. Power-source and
 active-profile changes appear below the chart. Available sensors depend on the
