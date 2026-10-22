@@ -2413,17 +2413,8 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Feature_3a29f5ccc091" xml:space="preserve">
     <value>Цветовой профиль</value>
   </data>
-  <data name="Feature_3ca3281778c2" xml:space="preserve">
-    <value>Для этого показателя нет данных.</value>
-  </data>
   <data name="Feature_3d621a53b31e" xml:space="preserve">
     <value>Пока приложение на переднем плане</value>
-  </data>
-  <data name="Feature_42d94a35c548" xml:space="preserve">
-    <value>Показатель</value>
-  </data>
-  <data name="Feature_4696d358d054" xml:space="preserve">
-    <value>Мин. {0} · Макс. {1} · Среднее {2} · Показаний: {3}</value>
   </data>
   <data name="Feature_496960c3c1f5" xml:space="preserve">
     <value>Аккумулятор</value>
@@ -2431,20 +2422,8 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Feature_50accd740fa2" xml:space="preserve">
     <value>Выкл.</value>
   </data>
-  <data name="Feature_51e2604e2aaf" xml:space="preserve">
-    <value>Выбрать</value>
-  </data>
-  <data name="Feature_5f81f632042a" xml:space="preserve">
-    <value>Предложения из Steam, Epic Games, Xbox и Battle.net. Выберите исполняемый файл игры и проверьте его путь.</value>
-  </data>
   <data name="Feature_612a36db4fc9" xml:space="preserve">
     <value>Оставить сохранённую подсветку этого приложения</value>
-  </data>
-  <data name="Feature_6141eef71a99" xml:space="preserve">
-    <value>Скорость вентилятора 1</value>
-  </data>
-  <data name="Feature_6c455cda31d0" xml:space="preserve">
-    <value>Данные службы · {0}</value>
   </data>
   <data name="Feature_6cc5df35f033" xml:space="preserve">
     <value>Имя</value>
@@ -2452,44 +2431,14 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Feature_6fce74ac10dd" xml:space="preserve">
     <value>Выберите исполняемый файл</value>
   </data>
-  <data name="Feature_72539d6acd07" xml:space="preserve">
-    <value>Файлы CSV</value>
-  </data>
-  <data name="Feature_73998e0f0da8" xml:space="preserve">
-    <value>График телеметрии. Для просмотра точных значений используйте ползунок точек данных.</value>
-  </data>
-  <data name="Feature_73e7c4edf7e7" xml:space="preserve">
-    <value>Ожидание показаний</value>
-  </data>
-  <data name="Feature_7837e2a6dec5" xml:space="preserve">
-    <value>Выберите конкретный исполняемый файл. Незаданные значения наследуются из текущего профиля питания. Ручные настройки имеют приоритет. Профиль последнего активированного приложения продолжает действовать, пока это приложение работает.</value>
-  </data>
   <data name="Feature_7a0afacfb221" xml:space="preserve">
     <value>Наследовать профиль питания</value>
-  </data>
-  <data name="Feature_7d021f67142c" xml:space="preserve">
-    <value>Точка данных не выбрана.</value>
-  </data>
-  <data name="Feature_7f1c35cb6572" xml:space="preserve">
-    <value>Выбрать точку телеметрии</value>
   </data>
   <data name="Feature_847ced6ca02b" xml:space="preserve">
     <value>Включён</value>
   </data>
   <data name="Feature_877cb5a94232" xml:space="preserve">
     <value>Питание от сети</value>
-  </data>
-  <data name="Feature_8f1c7cba79a7" xml:space="preserve">
-    <value>Локальное воспроизведение CSV · {0}</value>
-  </data>
-  <data name="Feature_905c2bc1b6eb" xml:space="preserve">
-    <value>Температура ГП</value>
-  </data>
-  <data name="Feature_94d954185187" xml:space="preserve">
-    <value>Устаревшие</value>
-  </data>
-  <data name="Feature_96ad4bd0f7ba" xml:space="preserve">
-    <value>Профиль</value>
   </data>
   <data name="Feature_9c7c8919be0e" xml:space="preserve">
     <value>Игровой режим</value>
@@ -2503,17 +2452,8 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Feature_9d2725011acd" xml:space="preserve">
     <value>Подсветка клавиатуры</value>
   </data>
-  <data name="Feature_a4873a62f9e5" xml:space="preserve">
-    <value>Найти установленные игры</value>
-  </data>
   <data name="Feature_a66522394a37" xml:space="preserve">
     <value>Не удалось сохранить профиль. Проверьте состояние службы и повторите попытку.</value>
-  </data>
-  <data name="Feature_a72204aa94d0" xml:space="preserve">
-    <value>Локальная запись в {0}. Сбор данных продолжается, пока это окно скрыто.</value>
-  </data>
-  <data name="Feature_ac3492bfbd41" xml:space="preserve">
-    <value>Профиль приложения</value>
   </data>
   <data name="Feature_af4123249281" xml:space="preserve">
     <value>Путь к исполняемому файлу</value>
@@ -2521,32 +2461,8 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Feature_b26de372b4b0" xml:space="preserve">
     <value>Удалить</value>
   </data>
-  <data name="Feature_b4c2f503b194" xml:space="preserve">
-    <value>Недоступно</value>
-  </data>
-  <data name="Feature_b5c358cef921" xml:space="preserve">
-    <value>Записать телеметрию в CSV</value>
-  </data>
-  <data name="Feature_c0774c185060" xml:space="preserve">
-    <value>Отмена</value>
-  </data>
-  <data name="Feature_c1db83d165ed" xml:space="preserve">
-    <value>Сохранить</value>
-  </data>
-  <data name="Feature_c43fb5f4da35" xml:space="preserve">
-    <value>Исполняемые файлы установленных игр не найдены. Нажмите «Добавить приложение», чтобы выбрать файл вручную.</value>
-  </data>
-  <data name="Feature_c650cc78b7fe" xml:space="preserve">
-    <value>Мощность аккумулятора</value>
-  </data>
-  <data name="Feature_c7f01a7da8db" xml:space="preserve">
-    <value>В этом диапазоне нет изменений источника питания или профиля.</value>
-  </data>
   <data name="Feature_c83928a24959" xml:space="preserve">
     <value>Активный профиль: {0}</value>
-  </data>
-  <data name="Feature_c83b7fc012ef" xml:space="preserve">
-    <value>Скорость вентилятора 2</value>
   </data>
   <data name="Feature_c88a6043293f" xml:space="preserve">
     <value>Переопределить яркость дисплея</value>
@@ -2554,26 +2470,14 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Feature_ce6bbac0215e" xml:space="preserve">
     <value>Выбрать исполняемый файл</value>
   </data>
-  <data name="Feature_d6db2da1a792" xml:space="preserve">
-    <value>Запись выключена. Показания остаются в памяти, пока вы явно не начнёте запись в CSV.</value>
-  </data>
   <data name="Feature_d7c76cf63323" xml:space="preserve">
     <value>HDR</value>
-  </data>
-  <data name="Feature_e09ca605b555" xml:space="preserve">
-    <value>Открыть CSV для воспроизведения</value>
   </data>
   <data name="Feature_ea008cd08808" xml:space="preserve">
     <value>USB-C</value>
   </data>
-  <data name="Feature_f04321b95415" xml:space="preserve">
-    <value>Актуальные</value>
-  </data>
   <data name="Feature_f7e6729d30cf" xml:space="preserve">
     <value>Изменить</value>
-  </data>
-  <data name="Feature_f8d2f2cd53a8" xml:space="preserve">
-    <value>Температура ЦП</value>
   </data>
   <data name="Feature_f8ed8576f5a9" xml:space="preserve">
     <value>Активация</value>
@@ -2644,7 +2548,151 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Telemetry_Title.Text" xml:space="preserve">
     <value>Телеметрия</value>
   </data>
-  <data name="Telemetry_ActionFailed" xml:space="preserve">
-    <value>Не удалось выполнить действие с данными датчиков: {0}</value>
+  <data name="ApplicationsUI_BackToProfiles" xml:space="preserve">
+    <value>Назад к профилям</value>
+  </data>
+  <data name="ApplicationsUI_BrightnessPercent" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="ApplicationsUI_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
+    <value>Исполняемых файлов: {0} · Установленных игр: {1}</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
+    <value>Выберите исполняемый файл игры. Перед сохранением профиля проверьте полный путь.</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryEmpty" xml:space="preserve">
+    <value>Установленные игры не найдены. Нажмите «Добавить приложение», чтобы выбрать исполняемый файл вручную.</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLimitedCount" xml:space="preserve">
+    <value>Показаны первые {0} файлов. Уточните поиск, чтобы найти остальные.</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLoading" xml:space="preserve">
+    <value>Поиск установленных игр…</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryNoMatches" xml:space="preserve">
+    <value>По вашему запросу игры не найдены.</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryTitle" xml:space="preserve">
+    <value>Поиск установленных игр</value>
+  </data>
+  <data name="ApplicationsUI_EditProfileTitle" xml:space="preserve">
+    <value>Изменить профиль приложения</value>
+  </data>
+  <data name="ApplicationsUI_EditorDescription" xml:space="preserve">
+    <value>Профиль привязан к одному конкретному исполняемому файлу. Неуказанные параметры берутся из профиля для текущего источника питания. Ручные настройки имеют приоритет.</value>
+  </data>
+  <data name="ApplicationsUI_NewProfileTitle" xml:space="preserve">
+    <value>Добавить профиль приложения</value>
+  </data>
+  <data name="ApplicationsUI_SaveProfile" xml:space="preserve">
+    <value>Сохранить профиль</value>
+  </data>
+  <data name="ApplicationsUI_SearchLabel" xml:space="preserve">
+    <value>Поиск по установленным играм</value>
+  </data>
+  <data name="ApplicationsUI_SearchPlaceholder" xml:space="preserve">
+    <value>Название, лаунчер или исполняемый файл</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutable" xml:space="preserve">
+    <value>Выбрать</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutableNamed" xml:space="preserve">
+    <value>Выбрать {0}</value>
+  </data>
+  <data name="TelemetryUI_ActionFailed" xml:space="preserve">
+    <value>Операция с телеметрией не выполнена: {0}</value>
+  </data>
+  <data name="TelemetryUI_BatteryPower" xml:space="preserve">
+    <value>Мощность аккумулятора</value>
+  </data>
+  <data name="TelemetryUI_ChartAutomationName" xml:space="preserve">
+    <value>Временная шкала телеметрии. Наведите указатель на график или используйте кнопки отсчётов для просмотра точных значений.</value>
+  </data>
+  <data name="TelemetryUI_CpuTemperature" xml:space="preserve">
+    <value>Температура CPU</value>
+  </data>
+  <data name="TelemetryUI_CsvFiles" xml:space="preserve">
+    <value>Файлы CSV</value>
+  </data>
+  <data name="TelemetryUI_Fan1Speed" xml:space="preserve">
+    <value>Скорость вентилятора 1</value>
+  </data>
+  <data name="TelemetryUI_Fan2Speed" xml:space="preserve">
+    <value>Скорость вентилятора 2</value>
+  </data>
+  <data name="TelemetryUI_FollowLatest" xml:space="preserve">
+    <value>К последним данным</value>
+  </data>
+  <data name="TelemetryUI_FollowingLatest" xml:space="preserve">
+    <value>Последние данные · {0}</value>
+  </data>
+  <data name="TelemetryUI_Fresh" xml:space="preserve">
+    <value>Актуальные данные</value>
+  </data>
+  <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
+    <value>Температура GPU</value>
+  </data>
+  <data name="TelemetryUI_InspectingSample" xml:space="preserve">
+    <value>Просмотр {0} · выбор закреплён</value>
+  </data>
+  <data name="TelemetryUI_LiveSource" xml:space="preserve">
+    <value>Текущие данные · {0}</value>
+  </data>
+  <data name="TelemetryUI_Metric" xml:space="preserve">
+    <value>Показатель</value>
+  </data>
+  <data name="TelemetryUI_NextSample" xml:space="preserve">
+    <value>Следующий отсчёт</value>
+  </data>
+  <data name="TelemetryUI_NoEvents" xml:space="preserve">
+    <value>В этом диапазоне не было изменений источника питания или профиля.</value>
+  </data>
+  <data name="TelemetryUI_NoReadings" xml:space="preserve">
+    <value>Для этого показателя нет данных.</value>
+  </data>
+  <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
+    <value>Отсчёт не выбран.</value>
+  </data>
+  <data name="TelemetryUI_OpenCsvTitle" xml:space="preserve">
+    <value>Открыть CSV с телеметрией</value>
+  </data>
+  <data name="TelemetryUI_PowerSource" xml:space="preserve">
+    <value>Источник питания</value>
+  </data>
+  <data name="TelemetryUI_PreviousSample" xml:space="preserve">
+    <value>Предыдущий отсчёт</value>
+  </data>
+  <data name="TelemetryUI_Profile" xml:space="preserve">
+    <value>Профиль</value>
+  </data>
+  <data name="TelemetryUI_RecordCsvTitle" xml:space="preserve">
+    <value>Записать телеметрию в CSV</value>
+  </data>
+  <data name="TelemetryUI_RecordingActive" xml:space="preserve">
+    <value>Запись · {0}. Сбор данных продолжается, даже когда окно скрыто.</value>
+  </data>
+  <data name="TelemetryUI_RecordingOff" xml:space="preserve">
+    <value>Запись отключена · без записи в CSV данные хранятся только в памяти.</value>
+  </data>
+  <data name="TelemetryUI_ReplaySource" xml:space="preserve">
+    <value>Воспроизведение CSV · {0}</value>
+  </data>
+  <data name="TelemetryUI_Stale" xml:space="preserve">
+    <value>Устаревшие данные</value>
+  </data>
+  <data name="TelemetryUI_Statistics" xml:space="preserve">
+    <value>Мин. {0} · Макс. {1} · Среднее {2} · Отсчётов: {3}</value>
+  </data>
+  <data name="TelemetryUI_Unavailable" xml:space="preserve">
+    <value>Недоступно</value>
+  </data>
+  <data name="TelemetryUI_WaitingForReadings" xml:space="preserve">
+    <value>Ожидание данных</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
+    <value>Недоступно</value>
   </data>
 </root>

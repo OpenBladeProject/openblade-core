@@ -2413,17 +2413,8 @@ OpenBlade did not retry any stop request.</value>
   <data name="Feature_3a29f5ccc091" xml:space="preserve">
     <value>Color profile</value>
   </data>
-  <data name="Feature_3ca3281778c2" xml:space="preserve">
-    <value>No readings are available for this metric.</value>
-  </data>
   <data name="Feature_3d621a53b31e" xml:space="preserve">
     <value>While in foreground</value>
-  </data>
-  <data name="Feature_42d94a35c548" xml:space="preserve">
-    <value>Metric</value>
-  </data>
-  <data name="Feature_4696d358d054" xml:space="preserve">
-    <value>Min {0} · Max {1} · Average {2} · {3} readings</value>
   </data>
   <data name="Feature_496960c3c1f5" xml:space="preserve">
     <value>Battery</value>
@@ -2431,20 +2422,8 @@ OpenBlade did not retry any stop request.</value>
   <data name="Feature_50accd740fa2" xml:space="preserve">
     <value>Off</value>
   </data>
-  <data name="Feature_51e2604e2aaf" xml:space="preserve">
-    <value>Choose</value>
-  </data>
-  <data name="Feature_5f81f632042a" xml:space="preserve">
-    <value>Suggestions from Steam, Epic Games, Xbox and Battle.net. Select the game's executable and review its path.</value>
-  </data>
   <data name="Feature_612a36db4fc9" xml:space="preserve">
     <value>Keep this application's saved lighting</value>
-  </data>
-  <data name="Feature_6141eef71a99" xml:space="preserve">
-    <value>Fan 1 speed</value>
-  </data>
-  <data name="Feature_6c455cda31d0" xml:space="preserve">
-    <value>Live service · {0}</value>
   </data>
   <data name="Feature_6cc5df35f033" xml:space="preserve">
     <value>Name</value>
@@ -2452,44 +2431,14 @@ OpenBlade did not retry any stop request.</value>
   <data name="Feature_6fce74ac10dd" xml:space="preserve">
     <value>Choose an executable</value>
   </data>
-  <data name="Feature_72539d6acd07" xml:space="preserve">
-    <value>CSV files</value>
-  </data>
-  <data name="Feature_73998e0f0da8" xml:space="preserve">
-    <value>Telemetry chart. Use the sample slider for exact values.</value>
-  </data>
-  <data name="Feature_73e7c4edf7e7" xml:space="preserve">
-    <value>Waiting for readings</value>
-  </data>
-  <data name="Feature_7837e2a6dec5" xml:space="preserve">
-    <value>Match one exact executable. Unset values inherit the current power-source profile. Manual controls keep priority. The most recently activated running application stays active after you switch away.</value>
-  </data>
   <data name="Feature_7a0afacfb221" xml:space="preserve">
     <value>Inherit power profile</value>
-  </data>
-  <data name="Feature_7d021f67142c" xml:space="preserve">
-    <value>No sample selected.</value>
-  </data>
-  <data name="Feature_7f1c35cb6572" xml:space="preserve">
-    <value>Select telemetry sample</value>
   </data>
   <data name="Feature_847ced6ca02b" xml:space="preserve">
     <value>Enabled</value>
   </data>
   <data name="Feature_877cb5a94232" xml:space="preserve">
     <value>Plugged in</value>
-  </data>
-  <data name="Feature_8f1c7cba79a7" xml:space="preserve">
-    <value>Local CSV replay · {0}</value>
-  </data>
-  <data name="Feature_905c2bc1b6eb" xml:space="preserve">
-    <value>GPU temperature</value>
-  </data>
-  <data name="Feature_94d954185187" xml:space="preserve">
-    <value>Stale</value>
-  </data>
-  <data name="Feature_96ad4bd0f7ba" xml:space="preserve">
-    <value>Profile</value>
   </data>
   <data name="Feature_9c7c8919be0e" xml:space="preserve">
     <value>Gaming mode</value>
@@ -2503,17 +2452,8 @@ OpenBlade did not retry any stop request.</value>
   <data name="Feature_9d2725011acd" xml:space="preserve">
     <value>Keyboard lighting</value>
   </data>
-  <data name="Feature_a4873a62f9e5" xml:space="preserve">
-    <value>Discover installed games</value>
-  </data>
   <data name="Feature_a66522394a37" xml:space="preserve">
     <value>The profile could not be saved. Review the service status and try again.</value>
-  </data>
-  <data name="Feature_a72204aa94d0" xml:space="preserve">
-    <value>Recording locally to {0}. Sampling continues while this window is hidden.</value>
-  </data>
-  <data name="Feature_ac3492bfbd41" xml:space="preserve">
-    <value>Application profile</value>
   </data>
   <data name="Feature_af4123249281" xml:space="preserve">
     <value>Executable path</value>
@@ -2521,32 +2461,8 @@ OpenBlade did not retry any stop request.</value>
   <data name="Feature_b26de372b4b0" xml:space="preserve">
     <value>Delete</value>
   </data>
-  <data name="Feature_b4c2f503b194" xml:space="preserve">
-    <value>Unavailable</value>
-  </data>
-  <data name="Feature_b5c358cef921" xml:space="preserve">
-    <value>Record telemetry to CSV</value>
-  </data>
-  <data name="Feature_c0774c185060" xml:space="preserve">
-    <value>Cancel</value>
-  </data>
-  <data name="Feature_c1db83d165ed" xml:space="preserve">
-    <value>Save</value>
-  </data>
-  <data name="Feature_c43fb5f4da35" xml:space="preserve">
-    <value>No installed game executables were found. Use Add application to browse manually.</value>
-  </data>
-  <data name="Feature_c650cc78b7fe" xml:space="preserve">
-    <value>Battery power</value>
-  </data>
-  <data name="Feature_c7f01a7da8db" xml:space="preserve">
-    <value>No power-source or profile changes in this range.</value>
-  </data>
   <data name="Feature_c83928a24959" xml:space="preserve">
     <value>Active profile: {0}</value>
-  </data>
-  <data name="Feature_c83b7fc012ef" xml:space="preserve">
-    <value>Fan 2 speed</value>
   </data>
   <data name="Feature_c88a6043293f" xml:space="preserve">
     <value>Override display brightness</value>
@@ -2554,26 +2470,14 @@ OpenBlade did not retry any stop request.</value>
   <data name="Feature_ce6bbac0215e" xml:space="preserve">
     <value>Browse for executable</value>
   </data>
-  <data name="Feature_d6db2da1a792" xml:space="preserve">
-    <value>Recording is off. Readings stay in memory until you explicitly record a CSV.</value>
-  </data>
   <data name="Feature_d7c76cf63323" xml:space="preserve">
     <value>HDR</value>
-  </data>
-  <data name="Feature_e09ca605b555" xml:space="preserve">
-    <value>Open telemetry CSV</value>
   </data>
   <data name="Feature_ea008cd08808" xml:space="preserve">
     <value>USB-C</value>
   </data>
-  <data name="Feature_f04321b95415" xml:space="preserve">
-    <value>Fresh</value>
-  </data>
   <data name="Feature_f7e6729d30cf" xml:space="preserve">
     <value>Edit</value>
-  </data>
-  <data name="Feature_f8d2f2cd53a8" xml:space="preserve">
-    <value>CPU temperature</value>
   </data>
   <data name="Feature_f8ed8576f5a9" xml:space="preserve">
     <value>Activation</value>
@@ -2644,7 +2548,151 @@ OpenBlade did not retry any stop request.</value>
   <data name="Telemetry_Title.Text" xml:space="preserve">
     <value>Telemetry</value>
   </data>
-  <data name="Telemetry_ActionFailed" xml:space="preserve">
+  <data name="ApplicationsUI_BackToProfiles" xml:space="preserve">
+    <value>Back to profiles</value>
+  </data>
+  <data name="ApplicationsUI_BrightnessPercent" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="ApplicationsUI_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
+    <value>Matching executables: {0} · Installed games: {1}</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
+    <value>Choose an executable from a detected game. Review the exact path before saving the profile.</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryEmpty" xml:space="preserve">
+    <value>No installed games were found. Use Add application to choose an executable manually.</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLimitedCount" xml:space="preserve">
+    <value>Showing the first {0} executable matches. Narrow the search to see more.</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLoading" xml:space="preserve">
+    <value>Looking for installed games…</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryNoMatches" xml:space="preserve">
+    <value>No installed games match this search.</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryTitle" xml:space="preserve">
+    <value>Discover installed games</value>
+  </data>
+  <data name="ApplicationsUI_EditProfileTitle" xml:space="preserve">
+    <value>Edit application profile</value>
+  </data>
+  <data name="ApplicationsUI_EditorDescription" xml:space="preserve">
+    <value>Match one exact executable. Unset settings inherit the current power-source profile, and manual controls keep priority.</value>
+  </data>
+  <data name="ApplicationsUI_NewProfileTitle" xml:space="preserve">
+    <value>Add application profile</value>
+  </data>
+  <data name="ApplicationsUI_SaveProfile" xml:space="preserve">
+    <value>Save profile</value>
+  </data>
+  <data name="ApplicationsUI_SearchLabel" xml:space="preserve">
+    <value>Search installed games</value>
+  </data>
+  <data name="ApplicationsUI_SearchPlaceholder" xml:space="preserve">
+    <value>Name, launcher, or executable</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutable" xml:space="preserve">
+    <value>Use</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutableNamed" xml:space="preserve">
+    <value>Use {0}</value>
+  </data>
+  <data name="TelemetryUI_ActionFailed" xml:space="preserve">
     <value>Telemetry operation failed: {0}</value>
+  </data>
+  <data name="TelemetryUI_BatteryPower" xml:space="preserve">
+    <value>Battery power</value>
+  </data>
+  <data name="TelemetryUI_ChartAutomationName" xml:space="preserve">
+    <value>Telemetry timeline. Point to the chart or use the sample buttons for exact readings.</value>
+  </data>
+  <data name="TelemetryUI_CpuTemperature" xml:space="preserve">
+    <value>CPU temperature</value>
+  </data>
+  <data name="TelemetryUI_CsvFiles" xml:space="preserve">
+    <value>CSV files</value>
+  </data>
+  <data name="TelemetryUI_Fan1Speed" xml:space="preserve">
+    <value>Fan 1 speed</value>
+  </data>
+  <data name="TelemetryUI_Fan2Speed" xml:space="preserve">
+    <value>Fan 2 speed</value>
+  </data>
+  <data name="TelemetryUI_FollowLatest" xml:space="preserve">
+    <value>Follow latest</value>
+  </data>
+  <data name="TelemetryUI_FollowingLatest" xml:space="preserve">
+    <value>Following latest · {0}</value>
+  </data>
+  <data name="TelemetryUI_Fresh" xml:space="preserve">
+    <value>Fresh</value>
+  </data>
+  <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
+    <value>GPU temperature</value>
+  </data>
+  <data name="TelemetryUI_InspectingSample" xml:space="preserve">
+    <value>Inspecting {0} · selection stays fixed</value>
+  </data>
+  <data name="TelemetryUI_LiveSource" xml:space="preserve">
+    <value>Live · {0}</value>
+  </data>
+  <data name="TelemetryUI_Metric" xml:space="preserve">
+    <value>Metric</value>
+  </data>
+  <data name="TelemetryUI_NextSample" xml:space="preserve">
+    <value>Next sample</value>
+  </data>
+  <data name="TelemetryUI_NoEvents" xml:space="preserve">
+    <value>No power or profile changes in this range.</value>
+  </data>
+  <data name="TelemetryUI_NoReadings" xml:space="preserve">
+    <value>No readings are available for this metric.</value>
+  </data>
+  <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
+    <value>No sample selected.</value>
+  </data>
+  <data name="TelemetryUI_OpenCsvTitle" xml:space="preserve">
+    <value>Open telemetry CSV</value>
+  </data>
+  <data name="TelemetryUI_PowerSource" xml:space="preserve">
+    <value>Power source</value>
+  </data>
+  <data name="TelemetryUI_PreviousSample" xml:space="preserve">
+    <value>Previous sample</value>
+  </data>
+  <data name="TelemetryUI_Profile" xml:space="preserve">
+    <value>Profile</value>
+  </data>
+  <data name="TelemetryUI_RecordCsvTitle" xml:space="preserve">
+    <value>Record telemetry to CSV</value>
+  </data>
+  <data name="TelemetryUI_RecordingActive" xml:space="preserve">
+    <value>Recording · {0}. Sampling continues while this window is hidden.</value>
+  </data>
+  <data name="TelemetryUI_RecordingOff" xml:space="preserve">
+    <value>Recording off · readings stay in memory until you record a CSV.</value>
+  </data>
+  <data name="TelemetryUI_ReplaySource" xml:space="preserve">
+    <value>CSV replay · {0}</value>
+  </data>
+  <data name="TelemetryUI_Stale" xml:space="preserve">
+    <value>Stale</value>
+  </data>
+  <data name="TelemetryUI_Statistics" xml:space="preserve">
+    <value>Min {0} · Max {1} · Average {2} · {3} readings</value>
+  </data>
+  <data name="TelemetryUI_Unavailable" xml:space="preserve">
+    <value>Unavailable</value>
+  </data>
+  <data name="TelemetryUI_WaitingForReadings" xml:space="preserve">
+    <value>Waiting for readings</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
+    <value>Unavailable</value>
   </data>
 </root>

@@ -1437,7 +1437,8 @@ public sealed class WinUiShellContractTests
             "SelectedItem=\"{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Equal(7, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
+        XElement settingsHeader = NamedElement(XDocument.Parse(xaml), "Grid", "SettingsPageHeader");
+        Assert.Equal("0,0,0,20", settingsHeader.Attribute("Margin")?.Value);
         Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}\"",
             xaml,
@@ -1914,9 +1915,23 @@ public sealed class WinUiShellContractTests
         }
         Assert.Null(row.Attribute("Background"));
         Assert.Null(row.Attribute("Height"));
-        XElement editor = row.Descendants().Single(element => element.Name.LocalName == "NumberBox");
+        XElement editor = row.Descendants().Single(element => element.Name.LocalName == "Slider");
         Assert.Equal("0", editor.Attribute("Minimum")?.Value);
         Assert.Equal("100", editor.Attribute("Maximum")?.Value);
+        XElement lightingEditor = document.Descendants().Single(element =>
+            (string?)element.Attribute(x + "Name") == "DashboardLightingBrightnessSlider");
+        Assert.Equal(lightingEditor.Attribute("Style")?.Value, editor.Attribute("Style")?.Value);
+        Assert.Equal("1", editor.Attribute("StepFrequency")?.Value);
+        Assert.Equal("True", editor.Attribute("IsThumbToolTipEnabled")?.Value);
+        Assert.Equal("{x:Bind BrightnessSliderValue, Mode=OneWay}", editor.Attribute("Value")?.Value);
+        Assert.Equal("{x:Bind CanChangeBrightness, Mode=OneWay}", editor.Attribute("IsEnabled")?.Value);
+        Assert.Equal("OnDisplayBrightnessSliderLoaded", editor.Attribute("Loaded")?.Value);
+        Assert.Equal("OnDisplayBrightnessSliderUnloaded", editor.Attribute("Unloaded")?.Value);
+        Assert.Equal("{x:Bind HasBrightnessReading, Mode=OneWay}", editor.Parent?.Attribute("Visibility")?.Value);
+        XElement unavailable = row.Descendants().Single(element =>
+            (string?)element.Attribute(x + "Uid") == "MainWindow_DisplayBrightnessUnavailableText");
+        Assert.Equal("{x:Bind IsBrightnessUnavailable, Mode=OneWay}", unavailable.Attribute("Visibility")?.Value);
+        Assert.DoesNotContain(row.Descendants(), element => element.Name.LocalName == "NumberBox");
         Assert.Contains(editor.Attributes(), attribute => attribute.Name.LocalName == "AutomationProperties.Name" && !string.IsNullOrWhiteSpace(attribute.Value));
     }
 

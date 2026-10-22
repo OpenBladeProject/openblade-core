@@ -2396,17 +2396,8 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Feature_3a29f5ccc091" xml:space="preserve">
     <value>颜色配置文件</value>
   </data>
-  <data name="Feature_3ca3281778c2" xml:space="preserve">
-    <value>此指标没有可用读数。</value>
-  </data>
   <data name="Feature_3d621a53b31e" xml:space="preserve">
     <value>位于前台时</value>
-  </data>
-  <data name="Feature_42d94a35c548" xml:space="preserve">
-    <value>指标</value>
-  </data>
-  <data name="Feature_4696d358d054" xml:space="preserve">
-    <value>最小值 {0} · 最大值 {1} · 平均值 {2} · {3} 个读数</value>
   </data>
   <data name="Feature_496960c3c1f5" xml:space="preserve">
     <value>电池</value>
@@ -2414,20 +2405,8 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Feature_50accd740fa2" xml:space="preserve">
     <value>关</value>
   </data>
-  <data name="Feature_51e2604e2aaf" xml:space="preserve">
-    <value>选择</value>
-  </data>
-  <data name="Feature_5f81f632042a" xml:space="preserve">
-    <value>来自 Steam、Epic Games、Xbox 和 Battle.net 的建议。请选择游戏的可执行文件并确认其路径。</value>
-  </data>
   <data name="Feature_612a36db4fc9" xml:space="preserve">
     <value>保留为此应用保存的灯光设置</value>
-  </data>
-  <data name="Feature_6141eef71a99" xml:space="preserve">
-    <value>风扇 1 转速</value>
-  </data>
-  <data name="Feature_6c455cda31d0" xml:space="preserve">
-    <value>实时服务 · {0}</value>
   </data>
   <data name="Feature_6cc5df35f033" xml:space="preserve">
     <value>名称</value>
@@ -2435,44 +2414,14 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Feature_6fce74ac10dd" xml:space="preserve">
     <value>选择可执行文件</value>
   </data>
-  <data name="Feature_72539d6acd07" xml:space="preserve">
-    <value>CSV 文件</value>
-  </data>
-  <data name="Feature_73998e0f0da8" xml:space="preserve">
-    <value>遥测图表。使用数据点滑块查看精确值。</value>
-  </data>
-  <data name="Feature_73e7c4edf7e7" xml:space="preserve">
-    <value>正在等待读数</value>
-  </data>
-  <data name="Feature_7837e2a6dec5" xml:space="preserve">
-    <value>匹配一个指定的可执行文件。未设置的值继承当前电源配置。手动控制始终优先。切换到其他窗口后，最近激活且仍在运行的应用配置会继续生效。</value>
-  </data>
   <data name="Feature_7a0afacfb221" xml:space="preserve">
     <value>继承电源配置</value>
-  </data>
-  <data name="Feature_7d021f67142c" xml:space="preserve">
-    <value>未选择数据点。</value>
-  </data>
-  <data name="Feature_7f1c35cb6572" xml:space="preserve">
-    <value>选择遥测数据点</value>
   </data>
   <data name="Feature_847ced6ca02b" xml:space="preserve">
     <value>已启用</value>
   </data>
   <data name="Feature_877cb5a94232" xml:space="preserve">
     <value>交流电源</value>
-  </data>
-  <data name="Feature_8f1c7cba79a7" xml:space="preserve">
-    <value>本地 CSV 回放 · {0}</value>
-  </data>
-  <data name="Feature_905c2bc1b6eb" xml:space="preserve">
-    <value>GPU 温度</value>
-  </data>
-  <data name="Feature_94d954185187" xml:space="preserve">
-    <value>已过时</value>
-  </data>
-  <data name="Feature_96ad4bd0f7ba" xml:space="preserve">
-    <value>配置</value>
   </data>
   <data name="Feature_9c7c8919be0e" xml:space="preserve">
     <value>游戏模式</value>
@@ -2486,17 +2435,8 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Feature_9d2725011acd" xml:space="preserve">
     <value>键盘灯光</value>
   </data>
-  <data name="Feature_a4873a62f9e5" xml:space="preserve">
-    <value>查找已安装的游戏</value>
-  </data>
   <data name="Feature_a66522394a37" xml:space="preserve">
     <value>无法保存配置。请检查服务状态后重试。</value>
-  </data>
-  <data name="Feature_a72204aa94d0" xml:space="preserve">
-    <value>正在将数据记录到 {0}。隐藏此窗口后仍会继续采样。</value>
-  </data>
-  <data name="Feature_ac3492bfbd41" xml:space="preserve">
-    <value>应用配置</value>
   </data>
   <data name="Feature_af4123249281" xml:space="preserve">
     <value>可执行文件路径</value>
@@ -2504,32 +2444,8 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Feature_b26de372b4b0" xml:space="preserve">
     <value>删除</value>
   </data>
-  <data name="Feature_b4c2f503b194" xml:space="preserve">
-    <value>不可用</value>
-  </data>
-  <data name="Feature_b5c358cef921" xml:space="preserve">
-    <value>将遥测数据记录到 CSV</value>
-  </data>
-  <data name="Feature_c0774c185060" xml:space="preserve">
-    <value>取消</value>
-  </data>
-  <data name="Feature_c1db83d165ed" xml:space="preserve">
-    <value>保存</value>
-  </data>
-  <data name="Feature_c43fb5f4da35" xml:space="preserve">
-    <value>未找到已安装游戏的可执行文件。请使用“添加应用”手动选择。</value>
-  </data>
-  <data name="Feature_c650cc78b7fe" xml:space="preserve">
-    <value>电池功率</value>
-  </data>
-  <data name="Feature_c7f01a7da8db" xml:space="preserve">
-    <value>此时间范围内没有电源或配置变化。</value>
-  </data>
   <data name="Feature_c83928a24959" xml:space="preserve">
     <value>活动配置：{0}</value>
-  </data>
-  <data name="Feature_c83b7fc012ef" xml:space="preserve">
-    <value>风扇 2 转速</value>
   </data>
   <data name="Feature_c88a6043293f" xml:space="preserve">
     <value>覆盖显示器亮度</value>
@@ -2537,26 +2453,14 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Feature_ce6bbac0215e" xml:space="preserve">
     <value>浏览可执行文件</value>
   </data>
-  <data name="Feature_d6db2da1a792" xml:space="preserve">
-    <value>记录已停止。只有明确开始记录 CSV 后，读数才会写入文件；此前仅保留在内存中。</value>
-  </data>
   <data name="Feature_d7c76cf63323" xml:space="preserve">
     <value>HDR</value>
-  </data>
-  <data name="Feature_e09ca605b555" xml:space="preserve">
-    <value>打开遥测 CSV</value>
   </data>
   <data name="Feature_ea008cd08808" xml:space="preserve">
     <value>USB-C</value>
   </data>
-  <data name="Feature_f04321b95415" xml:space="preserve">
-    <value>最新</value>
-  </data>
   <data name="Feature_f7e6729d30cf" xml:space="preserve">
     <value>编辑</value>
-  </data>
-  <data name="Feature_f8d2f2cd53a8" xml:space="preserve">
-    <value>CPU 温度</value>
   </data>
   <data name="Feature_f8ed8576f5a9" xml:space="preserve">
     <value>激活方式</value>
@@ -2627,7 +2531,151 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Telemetry_Title.Text" xml:space="preserve">
     <value>遥测</value>
   </data>
-  <data name="Telemetry_ActionFailed" xml:space="preserve">
-    <value>传感器记录操作失败：{0}</value>
+  <data name="ApplicationsUI_BackToProfiles" xml:space="preserve">
+    <value>返回配置方案</value>
+  </data>
+  <data name="ApplicationsUI_BrightnessPercent" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="ApplicationsUI_Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
+    <value>匹配的可执行文件：{0} · 已安装的游戏：{1}</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
+    <value>选择检测到的游戏的可执行文件。保存配置前请确认完整路径。</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryEmpty" xml:space="preserve">
+    <value>未找到已安装的游戏。请使用“添加应用程序”手动选择可执行文件。</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLimitedCount" xml:space="preserve">
+    <value>仅显示前 {0} 个可执行文件。请缩小搜索范围以查看更多结果。</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLoading" xml:space="preserve">
+    <value>正在查找已安装的游戏…</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryNoMatches" xml:space="preserve">
+    <value>没有符合搜索条件的已安装游戏。</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryTitle" xml:space="preserve">
+    <value>查找已安装的游戏</value>
+  </data>
+  <data name="ApplicationsUI_EditProfileTitle" xml:space="preserve">
+    <value>编辑应用配置</value>
+  </data>
+  <data name="ApplicationsUI_EditorDescription" xml:space="preserve">
+    <value>此应用配置仅匹配一个指定的可执行文件路径。未设置的选项沿用当前电源配置方案，手动设置优先。</value>
+  </data>
+  <data name="ApplicationsUI_NewProfileTitle" xml:space="preserve">
+    <value>添加应用配置</value>
+  </data>
+  <data name="ApplicationsUI_SaveProfile" xml:space="preserve">
+    <value>保存配置</value>
+  </data>
+  <data name="ApplicationsUI_SearchLabel" xml:space="preserve">
+    <value>搜索已安装的游戏</value>
+  </data>
+  <data name="ApplicationsUI_SearchPlaceholder" xml:space="preserve">
+    <value>名称、启动器或可执行文件</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutable" xml:space="preserve">
+    <value>选择</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutableNamed" xml:space="preserve">
+    <value>选择 {0}</value>
+  </data>
+  <data name="TelemetryUI_ActionFailed" xml:space="preserve">
+    <value>遥测操作失败：{0}</value>
+  </data>
+  <data name="TelemetryUI_BatteryPower" xml:space="preserve">
+    <value>电池功率</value>
+  </data>
+  <data name="TelemetryUI_ChartAutomationName" xml:space="preserve">
+    <value>遥测时间轴。将指针移至图表上，或使用采样按钮查看精确读数。</value>
+  </data>
+  <data name="TelemetryUI_CpuTemperature" xml:space="preserve">
+    <value>CPU 温度</value>
+  </data>
+  <data name="TelemetryUI_CsvFiles" xml:space="preserve">
+    <value>CSV 文件</value>
+  </data>
+  <data name="TelemetryUI_Fan1Speed" xml:space="preserve">
+    <value>风扇 1 转速</value>
+  </data>
+  <data name="TelemetryUI_Fan2Speed" xml:space="preserve">
+    <value>风扇 2 转速</value>
+  </data>
+  <data name="TelemetryUI_FollowLatest" xml:space="preserve">
+    <value>跟随最新读数</value>
+  </data>
+  <data name="TelemetryUI_FollowingLatest" xml:space="preserve">
+    <value>跟随最新读数 · {0}</value>
+  </data>
+  <data name="TelemetryUI_Fresh" xml:space="preserve">
+    <value>最新</value>
+  </data>
+  <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
+    <value>GPU 温度</value>
+  </data>
+  <data name="TelemetryUI_InspectingSample" xml:space="preserve">
+    <value>正在查看 {0} · 已固定选择</value>
+  </data>
+  <data name="TelemetryUI_LiveSource" xml:space="preserve">
+    <value>实时数据 · {0}</value>
+  </data>
+  <data name="TelemetryUI_Metric" xml:space="preserve">
+    <value>指标</value>
+  </data>
+  <data name="TelemetryUI_NextSample" xml:space="preserve">
+    <value>下一条采样</value>
+  </data>
+  <data name="TelemetryUI_NoEvents" xml:space="preserve">
+    <value>此时间范围内没有供电方式或配置方案变化。</value>
+  </data>
+  <data name="TelemetryUI_NoReadings" xml:space="preserve">
+    <value>此指标暂无读数。</value>
+  </data>
+  <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
+    <value>未选择采样。</value>
+  </data>
+  <data name="TelemetryUI_OpenCsvTitle" xml:space="preserve">
+    <value>打开遥测 CSV</value>
+  </data>
+  <data name="TelemetryUI_PowerSource" xml:space="preserve">
+    <value>供电方式</value>
+  </data>
+  <data name="TelemetryUI_PreviousSample" xml:space="preserve">
+    <value>上一条采样</value>
+  </data>
+  <data name="TelemetryUI_Profile" xml:space="preserve">
+    <value>配置方案</value>
+  </data>
+  <data name="TelemetryUI_RecordCsvTitle" xml:space="preserve">
+    <value>将遥测记录到 CSV</value>
+  </data>
+  <data name="TelemetryUI_RecordingActive" xml:space="preserve">
+    <value>正在记录 · {0}。隐藏此窗口后仍会继续采样。</value>
+  </data>
+  <data name="TelemetryUI_RecordingOff" xml:space="preserve">
+    <value>未记录 · 开始 CSV 记录前，读数仅保存在内存中。</value>
+  </data>
+  <data name="TelemetryUI_ReplaySource" xml:space="preserve">
+    <value>CSV 回放 · {0}</value>
+  </data>
+  <data name="TelemetryUI_Stale" xml:space="preserve">
+    <value>已过期</value>
+  </data>
+  <data name="TelemetryUI_Statistics" xml:space="preserve">
+    <value>最低 {0} · 最高 {1} · 平均 {2} · {3} 条读数</value>
+  </data>
+  <data name="TelemetryUI_Unavailable" xml:space="preserve">
+    <value>不可用</value>
+  </data>
+  <data name="TelemetryUI_WaitingForReadings" xml:space="preserve">
+    <value>正在等待读数</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
+    <value>不可用</value>
   </data>
 </root>

@@ -6,11 +6,6 @@ using Microsoft.Win32;
 
 namespace OpenBlade.Tray;
 
-internal sealed record InstalledApplicationCandidate(string Name, string ExecutablePath, string Launcher)
-{
-    public string Label => $"{Name} · {Launcher}\n{ExecutablePath}";
-}
-
 /// <summary>Bounded, read-only suggestions. A candidate has no authority until explicitly saved.</summary>
 internal static class InstalledApplicationDiscovery
 {
@@ -73,15 +68,16 @@ internal static class InstalledApplicationDiscovery
                 {
                     continue;
                 }
-                using JsonDocument document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 16 });
-                JsonElement item = document.RootElement;
-                if (item.TryGetProperty("InstallLocation", out JsonElement root)
-                    && item.TryGetProperty("LaunchExecutable", out JsonElement executable)
-                    && item.TryGetProperty("DisplayName", out JsonElement name)
-                    && root.GetString() is { } install && executable.GetString() is { } relative
-                    && TryChild(install, relative, out string path))
+                if (ApplicationDiscoveryCatalog.TryReadEpicManifest(
+                        json, out EpicApplicationManifest? item)
+                    && item is not null
+                    && TryChild(item.InstallRoot, item.DeclaredExecutable, out string path))
                 {
-                    Add(name.GetString() ?? Path.GetFileNameWithoutExtension(path), path, "Epic Games");
+                    AddExecutables(
+                        item.InstallRoot,
+                        item.DisplayName,
+                        "Epic Games",
+                        declaredExecutable: path);
                 }
             }
             catch (Exception exception) when (IsDiscoveryFailure(exception)) { }
@@ -113,7 +109,7 @@ internal static class InstalledApplicationDiscovery
                         if (executable.Attribute("Name")?.Value is { } relative
                             && TryChild(root, relative, out string path))
                         {
-                            Add(Path.GetFileName(game), path, "Xbox");
+                            Add(Path.GetFileName(game), path, "Xbox", root);
                         }
                     }
                 }
@@ -149,7 +145,7 @@ internal static class InstalledApplicationDiscovery
         return candidates.Values.OrderBy(candidate => candidate.Name, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(candidate => candidate.ExecutablePath, StringComparer.OrdinalIgnoreCase).ToArray();
 
-        void Add(string name, string path, string launcher)
+        void Add(string name, string path, string launcher, string installRoot)
         {
             if (candidates.Count >= MaximumCandidates || name.Any(char.IsControl))
             {
@@ -160,14 +156,20 @@ internal static class InstalledApplicationDiscovery
                 string normalized = OpenBlade.Contracts.ApplicationProfileDefinition.NormalizeExecutablePath(path);
                 if (File.Exists(normalized))
                 {
-                    candidates.TryAdd(normalized, new(name, normalized, launcher));
+                    candidates.TryAdd(normalized, new(name, normalized, launcher,
+                        Path.TrimEndingDirectorySeparator(Path.GetFullPath(installRoot))));
                 }
             }
             catch (ArgumentException) { }
         }
 
-        void AddExecutables(string root, string name, string launcher)
+        void AddExecutables(
+            string root,
+            string name,
+            string launcher,
+            string? declaredExecutable = null)
         {
+            var executablePaths = new List<string>();
             var directories = new Queue<(string Path, int Depth)>();
             directories.Enqueue((root, 0));
             int visited = 0;
@@ -177,12 +179,7 @@ internal static class InstalledApplicationDiscovery
                 token.ThrowIfCancellationRequested();
                 foreach (string path in EnumerateFiles(current.Path, "*.exe", 64, token))
                 {
-                    string file = Path.GetFileNameWithoutExtension(path);
-                    if (!file.Contains("uninstall", StringComparison.OrdinalIgnoreCase)
-                        && !file.Contains("setup", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Add(name, path, launcher);
-                    }
+                    executablePaths.Add(path);
                 }
                 if (current.Depth < 3)
                 {
@@ -195,6 +192,15 @@ internal static class InstalledApplicationDiscovery
                         }
                     }
                 }
+            }
+
+            IReadOnlyList<string> selected = declaredExecutable is null
+                ? ApplicationDiscoveryCatalog.SelectExecutableVariants(root, name, executablePaths)
+                : ApplicationDiscoveryCatalog.SelectEpicExecutableVariants(
+                    root, name, declaredExecutable, executablePaths);
+            foreach (string path in selected)
+            {
+                Add(name, path, launcher, root);
             }
         }
     }

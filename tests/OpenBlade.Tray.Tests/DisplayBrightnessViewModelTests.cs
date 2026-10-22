@@ -5,6 +5,37 @@ namespace OpenBlade.Tray.Tests;
 public sealed class DisplayBrightnessViewModelTests
 {
     [Fact]
+    public async Task SliderPresentation_HidesFiniteFallbackWhenReadingIsUnavailable()
+    {
+        var adapter = new BrightnessAdapter();
+        await using var viewModel = new DisplaySettingsViewModel(adapter) { ActivePowerSource = PowerSource.Battery };
+        Assert.Equal(0, viewModel.BrightnessSliderValue);
+        Assert.Null(viewModel.BrightnessPercent);
+        Assert.False(viewModel.HasBrightnessReading);
+        Assert.True(viewModel.IsBrightnessUnavailable);
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(70, viewModel.BrightnessSliderValue);
+        Assert.True(viewModel.HasBrightnessReading);
+        Assert.False(viewModel.IsBrightnessUnavailable);
+        Assert.Contains(nameof(DisplaySettingsViewModel.BrightnessSliderValue), changed);
+        changed.Clear();
+        adapter.State = adapter.State with { BrightnessPercent = null, SupportedBrightnessLevels = [] };
+        await viewModel.RefreshAsync();
+        Assert.Equal(0, viewModel.BrightnessSliderValue);
+        Assert.Null(viewModel.BrightnessPercent);
+        Assert.False(viewModel.HasBrightnessReading);
+        Assert.True(viewModel.IsBrightnessUnavailable);
+        Assert.False(viewModel.CanChangeBrightness);
+        Assert.Contains(nameof(DisplaySettingsViewModel.BrightnessSliderValue), changed);
+        Assert.Contains(nameof(DisplaySettingsViewModel.HasBrightnessReading), changed);
+        Assert.Equal(0, adapter.Writes);
+    }
+
+    [Fact]
     public async Task BrightnessChange_ConfirmsSupportedLevelAndStagesPriorReadback()
     {
         var adapter = new BrightnessAdapter();

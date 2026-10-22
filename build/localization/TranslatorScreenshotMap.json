@@ -26,6 +26,9 @@
     "tray/main-profiles-applications.png",
     "tray/main-profiles-applications-empty.png",
     "tray/main-profiles-application-editor.png",
+    "tray/main-profiles-application-editor-controls.png",
+    "tray/main-profiles-application-discovery.png",
+    "tray/main-profiles-application-discovery-empty.png",
     "tray/main-profiles-narrow.png",
     "tray/main-profiles-wide.png",
     "tray/main-settings-appearance.png",
@@ -38,14 +41,14 @@
     {
       "surface": "tray",
       "match": "key",
-      "pattern": "^(?:Applications_|Feature_(?:061b9b48e177|0d94e35e8475|155db46f9362|19ad9b4c6b5c|207f5db133a0|3a29f5ccc091|3d621a53b31e|496960c3c1f5|50accd740fa2|51e2604e2aaf|5f81f632042a|612a36db4fc9|6cc5df35f033|6fce74ac10dd|7837e2a6dec5|7a0afacfb221|847ced6ca02b|877cb5a94232|96ad4bd0f7ba|9c7c8919be0e|9cb7099bc130|9cc01faad79c|9d2725011acd|a4873a62f9e5|a66522394a37|ac3492bfbd41|af4123249281|b26de372b4b0|b4c2f503b194|c0774c185060|c1db83d165ed|c43fb5f4da35|c83928a24959|c88a6043293f|ce6bbac0215e|d7c76cf63323|ea008cd08808|f7e6729d30cf|f8ed8576f5a9|fb51849e03f2|fb8bc434078d))",
-      "context": "Application profile list, empty state, and editor shown with disconnected sample applications.",
-      "screenshots": ["tray/main-profiles-applications.png", "tray/main-profiles-applications-empty.png", "tray/main-profiles-application-editor.png"]
+      "pattern": "^(?:Applications(?:UI)?_|Feature_(?:061b9b48e177|0d94e35e8475|155db46f9362|19ad9b4c6b5c|207f5db133a0|3a29f5ccc091|3d621a53b31e|496960c3c1f5|50accd740fa2|51e2604e2aaf|5f81f632042a|612a36db4fc9|6cc5df35f033|6fce74ac10dd|7837e2a6dec5|7a0afacfb221|847ced6ca02b|877cb5a94232|96ad4bd0f7ba|9c7c8919be0e|9cb7099bc130|9cc01faad79c|9d2725011acd|a4873a62f9e5|a66522394a37|ac3492bfbd41|af4123249281|b26de372b4b0|b4c2f503b194|c0774c185060|c1db83d165ed|c43fb5f4da35|c83928a24959|c88a6043293f|ce6bbac0215e|d7c76cf63323|ea008cd08808|f7e6729d30cf|f8ed8576f5a9|fb51849e03f2|fb8bc434078d))",
+      "context": "Application profile list, pushed editor and grouped game discovery shown with disconnected fixtures and empty states.",
+      "screenshots": ["tray/main-profiles-applications.png", "tray/main-profiles-applications-empty.png", "tray/main-profiles-application-editor.png", "tray/main-profiles-application-editor-controls.png", "tray/main-profiles-application-discovery.png", "tray/main-profiles-application-discovery-empty.png"]
     },
     {
       "surface": "tray",
       "match": "key",
-      "pattern": "^(?:Telemetry_|Navigation_Telemetry$|Feature_(?:3ca3281778c2|42d94a35c548|4696d358d054|6141eef71a99|6c455cda31d0|72539d6acd07|73998e0f0da8|73e7c4edf7e7|7d021f67142c|7f1c35cb6572|8f1c7cba79a7|905c2bc1b6eb|94d954185187|a72204aa94d0|b5c358cef921|c650cc78b7fe|c7f01a7da8db|c83b7fc012ef|d6db2da1a792|e09ca605b555|f04321b95415|f8d2f2cd53a8))",
+      "pattern": "^(?:Telemetry(?:UI)?_|Navigation_Telemetry$|Feature_(?:3ca3281778c2|42d94a35c548|4696d358d054|6141eef71a99|6c455cda31d0|72539d6acd07|73998e0f0da8|73e7c4edf7e7|7d021f67142c|7f1c35cb6572|8f1c7cba79a7|905c2bc1b6eb|94d954185187|a72204aa94d0|b5c358cef921|c650cc78b7fe|c7f01a7da8db|c83b7fc012ef|d6db2da1a792|e09ca605b555|f04321b95415|f8d2f2cd53a8))",
       "context": "Telemetry page shown with deterministic readings, events, gaps, and its empty state.",
       "screenshots": ["tray/main-telemetry.png", "tray/main-telemetry-empty.png"]
     },

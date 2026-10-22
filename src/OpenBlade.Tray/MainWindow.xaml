@@ -2078,13 +2078,33 @@
                                             <TextBlock x:Uid="MainWindow_DisplayBrightnessDescription" Text="Save a separate brightness for each power source."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <NumberBox x:Uid="MainWindow_DisplayBrightnessEditor" Grid.Column="1" Width="120"
-                                                   Minimum="0" Maximum="100" SmallChange="5" LargeChange="10"
-                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center"
-                                                   AutomationProperties.Name="Display brightness in percent"
-                                                   Value="{x:Bind BrightnessValue, Mode=OneWay}"
-                                                   IsEnabled="{x:Bind CanChangeBrightness, Mode=OneWay}"
-                                                   ValueChanged="OnDisplayBrightnessChanged" />
+                                        <Grid Grid.Column="1" ColumnSpacing="12" Width="240" VerticalAlignment="Center"
+                                              Visibility="{x:Bind HasBrightnessReading, Mode=OneWay}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="40" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Uid="MainWindow_DisplayBrightnessEditor" x:Name="DisplayBrightnessSlider"
+                                                    Style="{StaticResource InlineCardSliderStyle}"
+                                                    Minimum="0" Maximum="100" StepFrequency="1" SmallChange="1" LargeChange="10"
+                                                    IsThumbToolTipEnabled="True"
+                                                    AutomationProperties.Name="Display brightness in percent"
+                                                    Value="{x:Bind BrightnessSliderValue, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind CanChangeBrightness, Mode=OneWay}"
+                                                    Loaded="OnDisplayBrightnessSliderLoaded"
+                                                    Unloaded="OnDisplayBrightnessSliderUnloaded"
+                                                    ValueChanged="OnDisplayBrightnessSliderValueChanged" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Value, ElementName=DisplayBrightnessSlider}"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock x:Uid="MainWindow_DisplayBrightnessUnavailableText" Grid.Column="1"
+                                                   Text="Unavailable" Style="{StaticResource SecondaryTextStyle}"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{x:Bind IsBrightnessUnavailable, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -3017,6 +3037,94 @@
                             </Border>
                         </StackPanel>
                         </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="ApplicationProfileEditorPage" Visibility="Collapsed"
+                              HorizontalContentAlignment="Stretch"
+                              HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollMode="Enabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=ApplicationProfileEditorPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
+                        <Grid ColumnSpacing="12" Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="ApplicationProfileEditorBackButton"
+                                    Click="OnExitApplicationSubpage"
+                                    MinWidth="40" MinHeight="40"
+                                    VerticalAlignment="Center" />
+                            <TextBlock x:Name="ApplicationProfileEditorTitle" Grid.Column="1"
+                                       Style="{StaticResource PageHeaderTitleStyle}"
+                                       VerticalAlignment="Center" TextWrapping="Wrap" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                                        VerticalAlignment="Center">
+                                <Button x:Name="ApplicationProfileCancelButton"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                        Click="OnExitApplicationSubpage" />
+                                <Button x:Name="ApplicationProfileSaveButton"
+                                        Click="OnSaveApplicationProfile" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock x:Name="ApplicationProfileEditorDescription"
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   TextWrapping="Wrap" Margin="0,0,0,16" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <ContentControl x:Name="ApplicationProfileEditorForm" HorizontalContentAlignment="Stretch">
+                                <StackPanel x:Name="ApplicationProfileEditorFields" />
+                            </ContentControl>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="ApplicationDiscoveryPage" Visibility="Collapsed"
+                              HorizontalContentAlignment="Stretch"
+                              HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollMode="Enabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28"
+                                Width="{Binding ElementName=ApplicationDiscoveryPage, Path=ViewportWidth, Mode=OneWay}"
+                                HorizontalAlignment="Stretch">
+                        <Grid ColumnSpacing="12" Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="ApplicationDiscoveryBackButton"
+                                    Click="OnExitApplicationSubpage"
+                                    MinWidth="40" MinHeight="40"
+                                    VerticalAlignment="Center" />
+                            <TextBlock x:Name="ApplicationDiscoveryTitle" Grid.Column="1"
+                                       Style="{StaticResource PageHeaderTitleStyle}"
+                                       VerticalAlignment="Center" TextWrapping="Wrap" />
+                            <Button x:Name="ApplicationDiscoveryCancelButton" Grid.Column="2"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                    Click="OnExitApplicationSubpage"
+                                    VerticalAlignment="Center" />
+                        </Grid>
+                        <TextBlock x:Name="ApplicationDiscoveryDescription"
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   TextWrapping="Wrap" Margin="0,0,0,16" />
+                        <TextBox x:Name="ApplicationDiscoverySearchBox"
+                                 TextChanged="OnApplicationDiscoverySearchChanged"
+                                 Margin="0,0,0,12" />
+                        <Grid ColumnSpacing="8" Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ProgressRing x:Name="ApplicationDiscoveryProgress"
+                                          Width="20" Height="20" IsActive="False"
+                                          Visibility="Collapsed" />
+                            <TextBlock x:Name="ApplicationDiscoveryStatus" Grid.Column="1"
+                                       Style="{StaticResource SecondaryTextStyle}"
+                                       TextWrapping="Wrap" VerticalAlignment="Center"
+                                       AutomationProperties.LiveSetting="Polite" />
+                        </Grid>
+                        <StackPanel x:Name="ApplicationDiscoveryResults" />
                     </StackPanel>
                 </ScrollViewer>
 

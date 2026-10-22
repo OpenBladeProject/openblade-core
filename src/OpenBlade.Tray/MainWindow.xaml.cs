@@ -218,6 +218,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
+        InitializeApplicationProfilePages();
         BatteryHistoryViewModel.PropertyChanged += OnBatteryHistoryPropertyChanged;
         RefreshBatteryHistoryPresentation();
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
@@ -707,6 +708,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         gpuAppCleanupCoordinator.Cancel();
+        CancelApplicationDiscovery();
         featureLifetime.Cancel();
         BatteryHistoryViewModel.PropertyChanged -= OnBatteryHistoryPropertyChanged;
 
@@ -3319,6 +3321,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyNavigationDestination(string destination)
     {
+        ResetApplicationSubpageNavigation();
         if (trayDashboardCustomizationActive && destination != "settings")
         {
             EndTrayDashboardCustomization(showSettingsOverview: false);
@@ -3601,7 +3604,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         ViewModel.SetDashboardTelemetryPresentationActive(
             windowVisible && HomePage.Visibility == Visibility.Visible);
-        ViewModel.SetTelemetryPresentationActive(!localizationSnapshotMode && windowVisible && TelemetryPage.Visibility == Visibility.Visible);
+        bool telemetryActive = !localizationSnapshotMode
+            && windowVisible
+            && TelemetryPage.Visibility == Visibility.Visible;
+        ViewModel.SetTelemetryPresentationActive(telemetryActive);
+        if (!telemetryActive)
+        {
+            telemetryPresentationDirty = true;
+        }
+        else if (telemetryPresentationDirty)
+        {
+            RefreshTelemetryPresentation();
+        }
     }
 
     public void RequestTrayTelemetryRefresh()
@@ -3789,20 +3803,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             () => DisplayViewModel.SetHdrEnabledAsync(requested),
             nameof(OnDisplayHdrToggled));
         toggle.IsOn = DisplayViewModel.IsHdrEnabled;
-    }
-
-    private async void OnDisplayBrightnessChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
-    {
-        if (localizationSnapshotMode || Volatile.Read(ref disposed) != 0
-            || !DisplayViewModel.CanChangeBrightness || !double.IsFinite(args.NewValue)
-            || args.NewValue < 0 || args.NewValue > 100
-            || Math.Round(args.NewValue) == DisplayViewModel.BrightnessPercent)
-        {
-            return;
-        }
-        byte requested = checked((byte)Math.Round(args.NewValue));
-        await RunHandlerAsync(() => DisplayViewModel.SetBrightnessAsync(requested), nameof(OnDisplayBrightnessChanged));
-        sender.Value = DisplayViewModel.BrightnessValue;
     }
 
     private async void OnDisplayColorProfileChanged(

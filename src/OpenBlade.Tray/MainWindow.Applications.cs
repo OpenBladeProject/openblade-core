@@ -7,8 +7,9 @@ using Button = Microsoft.UI.Xaml.Controls.Button;
 using CheckBox = Microsoft.UI.Xaml.Controls.CheckBox;
 using ComboBox = Microsoft.UI.Xaml.Controls.ComboBox;
 using HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment;
-using ListView = Microsoft.UI.Xaml.Controls.ListView;
+using Image = Microsoft.UI.Xaml.Controls.Image;
 using Orientation = Microsoft.UI.Xaml.Controls.Orientation;
+using Slider = Microsoft.UI.Xaml.Controls.Slider;
 using TextBox = Microsoft.UI.Xaml.Controls.TextBox;
 
 namespace OpenBlade.Tray;
@@ -16,6 +17,19 @@ namespace OpenBlade.Tray;
 public sealed partial class MainWindow
 {
     private readonly CancellationTokenSource featureLifetime = new();
+    private CancellationTokenSource? discoveryIconLifetime;
+    private CancellationTokenSource? applicationDiscoveryLifetime;
+    private IReadOnlyList<InstalledApplicationCandidate> discoveredApplications = [];
+    private ApplicationProfileDraft? applicationProfileDraft;
+    private Action? saveApplicationSourceEditor;
+    private TextBox? applicationProfileNameEditor;
+    private TextBox? applicationProfilePathEditor;
+    private ComboBox? applicationProfileActivationEditor;
+    private TextBlock? applicationProfileValidationText;
+    private Border? applicationProfileValidationRow;
+    private int applicationProfileEditorGeneration;
+    private int? applicationProfileSaveGeneration;
+    private int applicationDiscoveryGeneration;
     private sealed record ApplicationChoice<T>(T? Value, string Label) where T : struct;
     private sealed record ApplicationTextChoice(string? Value, string Label);
     private sealed class ApplicationSourceEditorState
@@ -31,6 +45,37 @@ public sealed partial class MainWindow
         _ => LocalizedResources.Get("Applications_FanMaximum", "Maximum"),
     };
 
+    private void InitializeApplicationProfilePages()
+    {
+        ApplicationProfileEditorBackButton.Content = new SymbolIcon(Symbol.Back);
+        ApplicationDiscoveryBackButton.Content = new SymbolIcon(Symbol.Back);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            ApplicationProfileEditorBackButton,
+            LocalizedResources.Get("ApplicationsUI_BackToProfiles", "Back to profiles"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            ApplicationDiscoveryBackButton,
+            LocalizedResources.Get("ApplicationsUI_BackToProfiles", "Back to profiles"));
+        ToolTipService.SetToolTip(ApplicationProfileEditorBackButton,
+            LocalizedResources.Get("ApplicationsUI_BackToProfiles", "Back to profiles"));
+        ToolTipService.SetToolTip(ApplicationDiscoveryBackButton,
+            LocalizedResources.Get("ApplicationsUI_BackToProfiles", "Back to profiles"));
+        ApplicationProfileCancelButton.Content =
+            LocalizedResources.Get("ApplicationsUI_Cancel", "Cancel");
+        ApplicationDiscoveryCancelButton.Content =
+            LocalizedResources.Get("ApplicationsUI_Cancel", "Cancel");
+        ApplicationProfileSaveButton.Content =
+            LocalizedResources.Get("ApplicationsUI_SaveProfile", "Save profile");
+        ApplicationDiscoveryTitle.Text =
+            LocalizedResources.Get("ApplicationsUI_DiscoveryTitle", "Discover installed games");
+        ApplicationDiscoveryDescription.Text = LocalizedResources.Get(
+            "ApplicationsUI_DiscoveryDescription",
+            "Choose an executable from a detected game. Review the exact path before saving the profile.");
+        ApplicationDiscoverySearchBox.Header =
+            LocalizedResources.Get("ApplicationsUI_SearchLabel", "Search installed games");
+        ApplicationDiscoverySearchBox.PlaceholderText =
+            LocalizedResources.Get("ApplicationsUI_SearchPlaceholder", "Name, launcher, or executable");
+    }
+
     private void RefreshApplicationProfiles()
     {
         if (Volatile.Read(ref disposed) != 0)
@@ -38,8 +83,9 @@ public sealed partial class MainWindow
             return;
         }
         ApplicationProfileRows.Children.Clear();
-        foreach (ApplicationProfileDefinition profile in ViewModel.ApplicationProfiles)
+        for (int profileIndex = 0; profileIndex < ViewModel.ApplicationProfiles.Count; profileIndex++)
         {
+            ApplicationProfileDefinition profile = ViewModel.ApplicationProfiles[profileIndex];
             var title = new TextBlock { Text = profile.Name, TextWrapping = TextWrapping.Wrap, Style = (Style)Root.Resources["CardTitleStyle"] };
             var path = new TextBlock
             {
@@ -52,6 +98,7 @@ public sealed partial class MainWindow
                 Header = LocalizedResources.Get("Feature_847ced6ca02b", "Enabled"),
                 IsOn = profile.Enabled,
                 IsEnabled = ViewModel.CanControlHardware,
+                HorizontalAlignment = HorizontalAlignment.Right,
             };
             enabled.Toggled += async (_, _) => await RunHandlerAsync(async () =>
             {
@@ -64,17 +111,34 @@ public sealed partial class MainWindow
                 RefreshApplicationProfiles();
             }, nameof(RefreshApplicationProfiles));
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            AddAction(LocalizedResources.Get("Feature_f7e6729d30cf", "Edit"), async () => await EditApplicationProfileAsync(profile));
+            AddAction(LocalizedResources.Get("Feature_f7e6729d30cf", "Edit"), () =>
+            {
+                ShowApplicationProfileEditor(profile);
+                return Task.CompletedTask;
+            });
             AddAction(LocalizedResources.Get("Feature_b26de372b4b0", "Delete"), async () =>
                 _ = await ViewModel.RemoveApplicationProfileAsync(profile.Id, featureLifetime.Token));
-            var body = new StackPanel { Spacing = 8 };
-            body.Children.Add(title);
-            body.Children.Add(path);
-            body.Children.Add(enabled);
-            body.Children.Add(actions);
+            var profileText = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+            profileText.Children.Add(title);
+            profileText.Children.Add(path);
+            var profileActions = new StackPanel
+            {
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            profileActions.Children.Add(enabled);
+            profileActions.Children.Add(actions);
+            var body = new Grid { ColumnSpacing = 20 };
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(profileActions, 1);
+            body.Children.Add(profileText);
+            body.Children.Add(profileActions);
             ApplicationProfileRows.Children.Add(new Border
             {
-                Style = (Style)Root.Resources["SettingsEditorSubcardStyle"],
+                Style = (Style)Root.Resources[profileIndex == ViewModel.ApplicationProfiles.Count - 1
+                    ? "SettingsLastNeutralSubcardStyle" : "SettingsNeutralSubcardStyle"],
                 Child = body,
             });
 
@@ -94,55 +158,55 @@ public sealed partial class MainWindow
             ? Visibility.Visible : Visibility.Collapsed;
         ActiveApplicationProfileText.Text = LocalizedResources.Format("Feature_c83928a24959", "Active profile: {0}",
             ViewModel.ActiveApplicationProfileName);
+        if (ApplicationProfileEditorPage.Visibility == Visibility.Visible)
+        {
+            ApplicationProfileSaveButton.IsEnabled = !localizationSnapshotMode
+                && ViewModel.CanControlHardware
+                && applicationProfileSaveGeneration != applicationProfileEditorGeneration;
+        }
     }
 
-    private async void OnAddApplicationProfile(object sender, RoutedEventArgs args) =>
-        await RunHandlerAsync(() => EditApplicationProfileAsync(null), nameof(OnAddApplicationProfile));
+    private void OnAddApplicationProfile(object sender, RoutedEventArgs args) =>
+        ShowApplicationProfileEditor(existing: null);
 
     private async void OnDiscoverApplications(object sender, RoutedEventArgs args) =>
         await RunHandlerAsync(async () =>
         {
+            ShowApplicationDiscoveryPage();
             if (localizationSnapshotMode)
+            {
+                discoveredApplications = [];
+                RenderApplicationDiscoveryResults();
+                return;
+            }
+            ApplicationDiscoveryProgress.IsActive = true;
+            ApplicationDiscoveryProgress.Visibility = Visibility.Visible;
+            ApplicationDiscoveryStatus.Text = LocalizedResources.Get(
+                "ApplicationsUI_DiscoveryLoading", "Looking for installed games…");
+            CancellationTokenSource discoveryLifetime = applicationDiscoveryLifetime!;
+            CancellationToken discoveryToken = discoveryLifetime.Token;
+            int discoveryGeneration = applicationDiscoveryGeneration;
+            IReadOnlyList<InstalledApplicationCandidate> results;
+            try
+            {
+                results = await InstalledApplicationDiscovery.DiscoverAsync(discoveryToken);
+                discoveryToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException) when (discoveryToken.IsCancellationRequested)
             {
                 return;
             }
-            IReadOnlyList<InstalledApplicationCandidate> candidates =
-                await InstalledApplicationDiscovery.DiscoverAsync(featureLifetime.Token);
-            var list = new ListView
+            if (discoveryGeneration != applicationDiscoveryGeneration
+                || !ReferenceEquals(applicationDiscoveryLifetime, discoveryLifetime)
+                || ApplicationDiscoveryPage.Visibility != Visibility.Visible)
             {
-                ItemsSource = candidates,
-                DisplayMemberPath = "Label",
-                SelectionMode = ListViewSelectionMode.Single,
-                MaxHeight = Math.Max(240, Root.ActualHeight - 260),
-                MinWidth = 320,
-            };
-            var panel = new StackPanel { Spacing = 12 };
-            panel.Children.Add(new TextBlock
-            {
-                Text = candidates.Count == 0
-                    ? LocalizedResources.Get("Feature_c43fb5f4da35", "No installed game executables were found. Use Add application to browse manually.")
-                    : LocalizedResources.Get("Feature_5f81f632042a", "Suggestions from Steam, Epic Games, Xbox and Battle.net. Select the game's executable and review its path."),
-                TextWrapping = TextWrapping.Wrap,
-            });
-            panel.Children.Add(list);
-            var dialog = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = LocalizedResources.Get("Feature_a4873a62f9e5", "Discover installed games"),
-                Content = panel,
-                PrimaryButtonText = LocalizedResources.Get("Feature_51e2604e2aaf", "Choose"),
-                CloseButtonText = LocalizedResources.Get("Feature_c0774c185060", "Cancel"),
-                IsPrimaryButtonEnabled = false,
-            };
-            list.SelectionChanged += (_, _) => dialog.IsPrimaryButtonEnabled = list.SelectedItem is not null;
-            if (await ShowContentDialogAsync(dialog) == ContentDialogResult.Primary
-                && list.SelectedItem is InstalledApplicationCandidate selected)
-            {
-                await EditApplicationProfileAsync(null, selected.ExecutablePath, selected.Name);
+                return;
             }
+            discoveredApplications = results;
+            RenderApplicationDiscoveryResults();
         }, nameof(OnDiscoverApplications));
 
-    private async Task EditApplicationProfileAsync(ApplicationProfileDefinition? existing,
+    private void ShowApplicationProfileEditor(ApplicationProfileDefinition? existing,
         string? suggestedPath = null, string? suggestedName = null)
     {
         var draft = new ApplicationProfileDraft(existing);
@@ -151,9 +215,31 @@ public sealed partial class MainWindow
             draft.ExecutablePath = suggestedPath;
             draft.Name = suggestedName ?? Path.GetFileNameWithoutExtension(suggestedPath);
         }
+        ShowApplicationProfileEditor(draft, isExisting: existing is not null);
+    }
+
+    private void ShowApplicationProfileEditor(ApplicationProfileDraft draft, bool isExisting)
+    {
+        CancelApplicationDiscovery();
+        applicationProfileEditorGeneration = unchecked(applicationProfileEditorGeneration + 1);
+        applicationProfileSaveGeneration = null;
+        applicationProfileDraft = draft;
+        ApplicationProfileEditorForm.IsEnabled = true;
+        ApplicationProfileEditorTitle.Text = isExisting
+            ? LocalizedResources.Get("ApplicationsUI_EditProfileTitle", "Edit application profile")
+            : LocalizedResources.Get("ApplicationsUI_NewProfileTitle", "Add application profile");
+        ApplicationProfileEditorDescription.Text = LocalizedResources.Get(
+            "ApplicationsUI_EditorDescription",
+            "Match one exact executable. Unset settings inherit the current power-source profile, and manual controls keep priority.");
         var name = new TextBox { Header = LocalizedResources.Get("Feature_6cc5df35f033", "Name"), Text = draft.Name, MaxLength = 80 };
         var path = new TextBox { Header = LocalizedResources.Get("Feature_af4123249281", "Executable path"), Text = draft.ExecutablePath };
-        var browse = new Button { Content = LocalizedResources.Get("Feature_ce6bbac0215e", "Browse for executable") };
+        applicationProfileNameEditor = name;
+        applicationProfilePathEditor = path;
+        var browse = new Button
+        {
+            Content = LocalizedResources.Get("Feature_ce6bbac0215e", "Browse for executable"),
+            IsEnabled = !localizationSnapshotMode,
+        };
         browse.Click += async (_, _) => await RunHandlerAsync(async () =>
         {
             var picker = new FileOpenPicker(AppWindow.Id) { Title = LocalizedResources.Get("Feature_6fce74ac10dd", "Choose an executable") };
@@ -167,7 +253,7 @@ public sealed partial class MainWindow
                     name.Text = Path.GetFileNameWithoutExtension(selected.Path);
                 }
             }
-        }, nameof(EditApplicationProfileAsync));
+        }, nameof(ShowApplicationProfileEditor));
         var activation = new ComboBox
         {
             Header = LocalizedResources.Get("Feature_f8ed8576f5a9", "Activation"),
@@ -181,6 +267,7 @@ public sealed partial class MainWindow
             },
             SelectedIndex = draft.ActivationMode == ApplicationActivationMode.Foreground ? 0 : 1,
         };
+        applicationProfileActivationEditor = activation;
         var source = new ComboBox
         {
             Header = LocalizedResources.Get("Feature_061b9b48e177", "Power source"),
@@ -197,66 +284,356 @@ public sealed partial class MainWindow
         var editor = new StackPanel();
         PowerSource editingSource = PowerSource.PluggedIn;
         Action saveSource = BuildApplicationSourceEditor(editor, draft, editingSource);
+        saveApplicationSourceEditor = saveSource;
         source.SelectionChanged += (_, _) =>
         {
             saveSource();
             editingSource = ((ApplicationChoice<PowerSource>)source.SelectedItem).Value!.Value;
             saveSource = BuildApplicationSourceEditor(editor, draft, editingSource);
+            saveApplicationSourceEditor = saveSource;
         };
         var error = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        applicationProfileValidationText = error;
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetLiveSetting(error,
             Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
-        var panel = new StackPanel { Spacing = 12, MinWidth = 320 };
-        panel.Children.Add(new TextBlock
+        ApplicationProfileEditorFields.Children.Clear();
+        AddEditorRow(name);
+        AddEditorRow(new StackPanel { Spacing = 8, Children = { path, browse } });
+        AddEditorRow(activation);
+        AddEditorRow(source);
+        ApplicationProfileEditorFields.Children.Add(editor);
+        applicationProfileValidationRow = AddEditorRow(error);
+        applicationProfileValidationRow.Visibility = Visibility.Collapsed;
+        ApplicationProfileSaveButton.IsEnabled = !localizationSnapshotMode
+            && ViewModel.CanControlHardware;
+        ProfilesPage.Visibility = Visibility.Collapsed;
+        ApplicationDiscoveryPage.Visibility = Visibility.Collapsed;
+        ApplicationProfileEditorPage.Visibility = Visibility.Visible;
+        ApplicationProfileEditorPage.ChangeView(null, 0, null, disableAnimation: true);
+        name.Focus(FocusState.Programmatic);
+
+        Border AddEditorRow(UIElement child)
         {
-            Text = LocalizedResources.Get("Feature_7837e2a6dec5", "Match one exact executable. Unset values inherit the current power-source profile. Manual controls keep priority. The most recently activated running application stays active after you switch away."),
-            TextWrapping = TextWrapping.Wrap,
-            Style = (Style)Root.Resources["SecondaryTextStyle"],
-        });
-        panel.Children.Add(name);
-        panel.Children.Add(path);
-        panel.Children.Add(browse);
-        panel.Children.Add(activation);
-        panel.Children.Add(source);
-        panel.Children.Add(editor);
-        panel.Children.Add(error);
-        var dialog = new ContentDialog
-        {
-            XamlRoot = Root.XamlRoot,
-            Title = LocalizedResources.Get("Feature_ac3492bfbd41", "Application profile"),
-            PrimaryButtonText = LocalizedResources.Get("Feature_c1db83d165ed", "Save"),
-            CloseButtonText = LocalizedResources.Get("Feature_c0774c185060", "Cancel"),
-            DefaultButton = ContentDialogButton.Primary,
-            IsPrimaryButtonEnabled = !localizationSnapshotMode,
-            Content = new ScrollViewer { Content = panel, MaxHeight = Math.Max(240, Root.ActualHeight - 220) },
-        };
-        dialog.PrimaryButtonClick += async (_, args) =>
-        {
-            ContentDialogButtonClickDeferral deferral = args.GetDeferral();
-            try
+            var row = new Border
             {
-                saveSource();
-                draft.Name = name.Text;
-                draft.ExecutablePath = path.Text;
-                draft.ActivationMode = ((ApplicationChoice<ApplicationActivationMode>)activation.SelectedItem).Value!.Value;
-                if (!await ViewModel.SaveApplicationProfileAsync(draft.Build(), featureLifetime.Token))
+                Style = (Style)Root.Resources["SettingsEditorSubcardStyle"],
+                Child = child,
+            };
+            ApplicationProfileEditorFields.Children.Add(row);
+            return row;
+        }
+    }
+
+    private async void OnSaveApplicationProfile(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(SaveApplicationProfileEditorAsync, nameof(OnSaveApplicationProfile));
+
+    private async Task SaveApplicationProfileEditorAsync()
+    {
+        if (applicationProfileDraft is null || applicationProfileNameEditor is null
+            || applicationProfilePathEditor is null || applicationProfileActivationEditor is null
+            || applicationProfileValidationText is null)
+        {
+            return;
+        }
+
+        int editorGeneration = applicationProfileEditorGeneration;
+        ApplicationProfileDraft submittedDraft = applicationProfileDraft;
+        if (applicationProfileSaveGeneration == editorGeneration)
+        {
+            return;
+        }
+        applicationProfileSaveGeneration = editorGeneration;
+        ApplicationProfileSaveButton.IsEnabled = false;
+        ApplicationProfileEditorForm.IsEnabled = false;
+        SetApplicationProfileValidation(string.Empty);
+        try
+        {
+            saveApplicationSourceEditor?.Invoke();
+            submittedDraft.Name = applicationProfileNameEditor.Text;
+            submittedDraft.ExecutablePath = applicationProfilePathEditor.Text;
+            submittedDraft.ActivationMode =
+                ((ApplicationChoice<ApplicationActivationMode>)applicationProfileActivationEditor.SelectedItem).Value!.Value;
+            if (!await ViewModel.SaveApplicationProfileAsync(
+                    submittedDraft.Build(), featureLifetime.Token))
+            {
+                if (IsCurrentApplicationProfileEditor(submittedDraft, editorGeneration))
                 {
-                    error.Text = LocalizedResources.Get("Feature_a66522394a37", "The profile could not be saved. Review the service status and try again.");
-                    args.Cancel = true;
+                    SetApplicationProfileValidation(LocalizedResources.Get(
+                        "Feature_a66522394a37",
+                        "The profile could not be saved. Review the service status and try again."));
                 }
+                return;
             }
-            catch (ArgumentException exception)
+
+            if (IsCurrentApplicationProfileEditor(submittedDraft, editorGeneration))
             {
-                error.Text = exception.Message;
-                args.Cancel = true;
+                ShowApplicationProfilesOverview();
             }
-            finally
+        }
+        catch (ArgumentException exception)
+        {
+            if (IsCurrentApplicationProfileEditor(submittedDraft, editorGeneration))
             {
-                deferral.Complete();
+                SetApplicationProfileValidation(exception.Message);
             }
+        }
+        finally
+        {
+            if (IsCurrentApplicationProfileEditor(submittedDraft, editorGeneration))
+            {
+                applicationProfileSaveGeneration = null;
+                ApplicationProfileEditorForm.IsEnabled = true;
+                ApplicationProfileSaveButton.IsEnabled = !localizationSnapshotMode
+                    && ViewModel.CanControlHardware;
+            }
+        }
+    }
+
+    private bool IsCurrentApplicationProfileEditor(
+        ApplicationProfileDraft draft,
+        int generation) =>
+        generation == applicationProfileEditorGeneration
+        && ReferenceEquals(draft, applicationProfileDraft)
+        && ApplicationProfileEditorPage.Visibility == Visibility.Visible;
+
+    private void OnExitApplicationSubpage(object sender, RoutedEventArgs args) =>
+        ShowApplicationProfilesOverview();
+
+    private void SetApplicationProfileValidation(string message)
+    {
+        if (applicationProfileValidationText is null || applicationProfileValidationRow is null)
+        {
+            return;
+        }
+        applicationProfileValidationText.Text = message;
+        applicationProfileValidationRow.Visibility = string.IsNullOrEmpty(message)
+            ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OnApplicationDiscoverySearchChanged(object sender, TextChangedEventArgs args) =>
+        RenderApplicationDiscoveryResults();
+
+    private void ShowApplicationDiscoveryPage()
+    {
+        CancelApplicationDiscovery();
+        applicationDiscoveryLifetime = CancellationTokenSource.CreateLinkedTokenSource(featureLifetime.Token);
+        discoveredApplications = [];
+        ApplicationDiscoverySearchBox.Text = string.Empty;
+        ApplicationDiscoveryResults.Children.Clear();
+        ApplicationDiscoveryProgress.IsActive = false;
+        ApplicationDiscoveryProgress.Visibility = Visibility.Collapsed;
+        ProfilesPage.Visibility = Visibility.Collapsed;
+        ApplicationProfileEditorPage.Visibility = Visibility.Collapsed;
+        ApplicationDiscoveryPage.Visibility = Visibility.Visible;
+        ApplicationDiscoveryPage.ChangeView(null, 0, null, disableAnimation: true);
+        ApplicationDiscoverySearchBox.Focus(FocusState.Programmatic);
+    }
+
+    private void RenderApplicationDiscoveryResults()
+    {
+        if (ApplicationDiscoveryPage.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        CancelDiscoveryIconLoading();
+        discoveryIconLifetime = CancellationTokenSource.CreateLinkedTokenSource(featureLifetime.Token);
+        CancellationToken iconToken = discoveryIconLifetime.Token;
+        ApplicationDiscoveryProgress.IsActive = false;
+        ApplicationDiscoveryProgress.Visibility = Visibility.Collapsed;
+        ApplicationDiscoveryResults.Children.Clear();
+        IReadOnlyList<InstalledApplicationGroup> groups = ApplicationDiscoveryCatalog.Group(
+            discoveredApplications, ApplicationDiscoverySearchBox.Text);
+        int totalExecutables = groups.Sum(group => group.Executables.Count);
+        if (totalExecutables == 0)
+        {
+            ApplicationDiscoveryStatus.Text = discoveredApplications.Count == 0
+                ? LocalizedResources.Get("ApplicationsUI_DiscoveryEmpty",
+                    "No installed games were found. Use Add application to choose an executable manually.")
+                : LocalizedResources.Get("ApplicationsUI_DiscoveryNoMatches",
+                    "No installed games match this search.");
+            return;
+        }
+
+        const int maximumRenderedExecutables = 80;
+        int rendered = 0;
+        foreach (InstalledApplicationGroup group in groups)
+        {
+            InstalledApplicationCandidate[] visible = group.Executables
+                .Take(maximumRenderedExecutables - rendered)
+                .ToArray();
+            if (visible.Length == 0)
+            {
+                break;
+            }
+            rendered += visible.Length;
+            ApplicationDiscoveryResults.Children.Add(BuildApplicationDiscoveryGroup(group, visible, iconToken));
+        }
+        ApplicationDiscoveryStatus.Text = totalExecutables > maximumRenderedExecutables
+            ? LocalizedResources.Format("ApplicationsUI_DiscoveryLimitedCount",
+                "Showing the first {0} executable matches. Narrow the search to see more.", maximumRenderedExecutables)
+            : LocalizedResources.Format("ApplicationsUI_DiscoveryCount",
+                "Matching executables: {0} · Installed games: {1}", totalExecutables, groups.Count);
+    }
+
+    private Border BuildApplicationDiscoveryGroup(
+        InstalledApplicationGroup group,
+        IReadOnlyList<InstalledApplicationCandidate> candidates,
+        CancellationToken iconToken)
+    {
+        var stack = new StackPanel();
+        var heading = new StackPanel { Spacing = 3 };
+        heading.Children.Add(new TextBlock
+        {
+            Text = group.Name,
+            Style = (Style)Root.Resources["CardTitleStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        });
+        heading.Children.Add(new TextBlock
+        {
+            Text = $"{group.Launcher} · {group.InstallRoot}",
+            Style = (Style)Root.Resources["SecondaryTextStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        });
+        stack.Children.Add(new Border
+        {
+            Style = (Style)Root.Resources["SettingsEditorSubcardStyle"],
+            Child = heading,
+        });
+        for (int index = 0; index < candidates.Count; index++)
+        {
+            InstalledApplicationCandidate candidate = candidates[index];
+            var image = new Image
+            {
+                Width = 40,
+                Height = 40,
+                Stretch = Stretch.Uniform,
+                Visibility = Visibility.Collapsed,
+            };
+            var fallback = new FontIcon { Glyph = "\uE7C3", FontSize = 24 };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                image, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                fallback, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            var iconHost = new Grid { Width = 40, Height = 40 };
+            iconHost.Children.Add(fallback);
+            iconHost.Children.Add(image);
+            var label = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            label.Children.Add(new TextBlock
+            {
+                Text = candidate.ExecutableName,
+                Style = (Style)Root.Resources["CardTitleStyle"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+            label.Children.Add(new TextBlock
+            {
+                Text = candidate.ExecutablePath,
+                Style = (Style)Root.Resources["SecondaryTextStyle"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+            var choose = new Button
+            {
+                Content = LocalizedResources.Get("ApplicationsUI_UseExecutable", "Use"),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(choose,
+                LocalizedResources.Format("ApplicationsUI_UseExecutableNamed", "Use {0}", candidate.ExecutableName));
+            choose.Click += (_, _) => ShowApplicationProfileEditor(
+                existing: null, candidate.ExecutablePath, candidate.Name);
+            var row = new Grid { ColumnSpacing = 12 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(label, 1);
+            Grid.SetColumn(choose, 2);
+            row.Children.Add(iconHost);
+            row.Children.Add(label);
+            row.Children.Add(choose);
+            stack.Children.Add(new Border
+            {
+                Style = (Style)Root.Resources[index == candidates.Count - 1
+                    ? "SettingsLastNeutralSubcardStyle" : "SettingsNeutralSubcardStyle"],
+                Child = row,
+            });
+            if (!localizationSnapshotMode)
+            {
+                _ = LoadApplicationDiscoveryIconAsync(image, fallback, candidate.ExecutablePath, iconToken);
+            }
+        }
+
+        return new Border
+        {
+            Style = (Style)Root.Resources["SettingsGroupStyle"],
+            Child = stack,
         };
-        _ = await ShowContentDialogAsync(dialog);
+    }
+
+    private static async Task LoadApplicationDiscoveryIconAsync(
+        Image image,
+        FontIcon fallback,
+        string executablePath,
+        CancellationToken token)
+    {
+        try
+        {
+            if (await ApplicationExecutableIconLoader.LoadAsync(executablePath, token) is { } source)
+            {
+                image.Source = source;
+                image.Visibility = Visibility.Visible;
+                fallback.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private void ShowApplicationProfilesOverview()
+    {
+        ResetApplicationSubpageNavigation();
+        ProfilesPage.Visibility = Visibility.Visible;
         RefreshApplicationProfiles();
+    }
+
+    private void ResetApplicationSubpageNavigation()
+    {
+        CancelApplicationDiscovery();
+        applicationProfileEditorGeneration = unchecked(applicationProfileEditorGeneration + 1);
+        applicationProfileSaveGeneration = null;
+        ApplicationProfileEditorPage.Visibility = Visibility.Collapsed;
+        ApplicationDiscoveryPage.Visibility = Visibility.Collapsed;
+        applicationProfileDraft = null;
+        saveApplicationSourceEditor = null;
+        applicationProfileNameEditor = null;
+        applicationProfilePathEditor = null;
+        applicationProfileActivationEditor = null;
+        applicationProfileValidationText = null;
+        applicationProfileValidationRow = null;
+    }
+
+    private void CancelDiscoveryIconLoading()
+    {
+        discoveryIconLifetime?.Cancel();
+        discoveryIconLifetime?.Dispose();
+        discoveryIconLifetime = null;
+    }
+
+    private void CancelApplicationDiscovery()
+    {
+        applicationDiscoveryGeneration = unchecked(applicationDiscoveryGeneration + 1);
+        CancelDiscoveryIconLoading();
+        applicationDiscoveryLifetime?.Cancel();
+        applicationDiscoveryLifetime?.Dispose();
+        applicationDiscoveryLifetime = null;
+    }
+
+    internal void ShowLocalizationSnapshotApplicationEditor(ApplicationProfileDraft draft) =>
+        ShowApplicationProfileEditor(draft, isExisting: false);
+
+    internal void ShowLocalizationSnapshotApplicationDiscovery(
+        IReadOnlyList<InstalledApplicationCandidate> candidates)
+    {
+        ShowApplicationDiscoveryPage();
+        discoveredApplications = candidates;
+        RenderApplicationDiscoveryResults();
     }
 
     private Action BuildApplicationSourceEditor(StackPanel host, ApplicationProfileDraft draft, PowerSource source,
@@ -329,15 +706,38 @@ public sealed partial class MainWindow
             IsChecked = current.Display?.BrightnessPercent.HasValue == true,
             IsEnabled = DisplayViewModel.BrightnessPercent.HasValue,
         };
-        var brightness = new NumberBox
+        var brightness = new Slider
         {
-            Header = LocalizedResources.Get("Feature_9cb7099bc130", "Display brightness (%)"),
             Minimum = 0,
             Maximum = 100,
-            SmallChange = 5,
+            StepFrequency = 5,
             Value = current.Display?.BrightnessPercent ?? DisplayViewModel.BrightnessPercent ?? 50,
-            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
+            IsEnabled = brightnessEnabled.IsChecked == true && DisplayViewModel.BrightnessPercent.HasValue,
+            Style = (Style)Root.Resources["InlineCardSliderStyle"],
         };
+        var brightnessValue = new TextBlock
+        {
+            MinWidth = 44,
+            TextAlignment = TextAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(brightness,
+            LocalizedResources.Get("Feature_9cb7099bc130", "Display brightness (%)"));
+        void UpdateBrightnessValue() => brightnessValue.Text =
+            LocalizedResources.Format("ApplicationsUI_BrightnessPercent", "{0}%", Math.Round(brightness.Value));
+        brightness.ValueChanged += (_, _) => UpdateBrightnessValue();
+        brightnessEnabled.Checked += (_, _) => brightness.IsEnabled = DisplayViewModel.BrightnessPercent.HasValue;
+        brightnessEnabled.Unchecked += (_, _) => brightness.IsEnabled = false;
+        UpdateBrightnessValue();
+        var brightnessEditor = new StackPanel { Spacing = 8 };
+        brightnessEditor.Children.Add(brightnessEnabled);
+        var brightnessRow = new Grid { ColumnSpacing = 12 };
+        brightnessRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        brightnessRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(brightnessValue, 1);
+        brightnessRow.Children.Add(brightness);
+        brightnessRow.Children.Add(brightnessValue);
+        brightnessEditor.Children.Add(brightnessRow);
         var lighting = new ComboBox
         {
             Header = LocalizedResources.Get("Feature_9d2725011acd", "Keyboard lighting"),
@@ -353,7 +753,7 @@ public sealed partial class MainWindow
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         Add(performance); Add(fans); Add(rpm); Add(gaming); Add(hdr); Add(refresh); Add(color);
-        Add(brightnessEnabled); Add(brightness); Add(lighting);
+        Add(brightnessEditor); Add(lighting);
         editorState.Save = () =>
         {
             PerformancePreset? selectedPerformance = ((ApplicationChoice<PerformancePreset>)performance.SelectedItem).Value;

@@ -36,12 +36,19 @@ public sealed partial class MainWindow
                 ApplicationProfilesSection.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
                 break;
             case "profiles-application-editor":
+            case "profiles-application-editor-controls":
                 ApplyApplicationProfileFixture(populated: true);
                 ApplyDisplayFixture(brightnessAvailable: true);
-                ApplicationProfilesSection.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
+                ShowLocalizationSnapshotApplicationEditorFixture();
+                break;
+            case "profiles-application-discovery":
+            case "profiles-application-discovery-empty":
+                ApplyApplicationProfileFixture(populated: false);
+                ShowLocalizationSnapshotApplicationDiscoveryFixture(destination != "profiles-application-discovery-empty");
                 break;
             case "telemetry":
                 ApplyTelemetryFixture(populated: true);
+                TelemetryPlot.ShowLocalizationSnapshotInspection(0.4, focusNextSampleButton: true);
                 break;
             case "telemetry-empty":
                 ApplyTelemetryFixture(populated: false);
@@ -62,14 +69,8 @@ public sealed partial class MainWindow
         }
     }
 
-    internal Flyout CreateLocalizationSnapshotApplicationEditor()
+    private void ShowLocalizationSnapshotApplicationEditorFixture()
     {
-        if (!localizationSnapshotMode)
-        {
-            throw new InvalidOperationException(
-                "The application editor fixture requires disconnected snapshot mode.");
-        }
-
         var draft = new ApplicationProfileDraft
         {
             Name = "Creative rendering and competitive game profile with a long localized name",
@@ -81,101 +82,42 @@ public sealed partial class MainWindow
             Performance = PerformancePreset.Performance,
             Fans = FanMode.Automatic,
             GamingModeEnabled = true,
-            Display = new DisplayProfileSettings("fixed-60", false, "srgb")
-            {
-                BrightnessPercent = 65,
-            },
+            Display = new DisplayProfileSettings("fixed-60", false, "srgb") { BrightnessPercent = 65 },
         });
+        ShowLocalizationSnapshotApplicationEditor(draft);
+    }
 
-        var editor = new StackPanel();
-        _ = BuildApplicationSourceEditor(editor, draft, PowerSource.PluggedIn);
-        var panel = new StackPanel
-        {
-            Spacing = 12,
-            Width = 400,
-        };
-        panel.Children.Add(new TextBlock
-        {
-            Text = LocalizedResources.Get("Feature_ac3492bfbd41", "Application profile"),
-            Style = (Style)Root.Resources["CardTitleStyle"],
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = LocalizedResources.Get(
-                "Feature_7837e2a6dec5",
-                "Match one exact executable. Unset values inherit the current power-source profile. Manual controls keep priority. The most recently activated running application stays active after you switch away."),
-            TextWrapping = TextWrapping.Wrap,
-            Style = (Style)Root.Resources["SecondaryTextStyle"],
-        });
-        panel.Children.Add(new TextBox
-        {
-            Header = LocalizedResources.Get("Feature_6cc5df35f033", "Name"),
-            Text = draft.Name,
-            IsReadOnly = true,
-            TextWrapping = TextWrapping.Wrap,
-        });
-        panel.Children.Add(new TextBox
-        {
-            Header = LocalizedResources.Get("Feature_af4123249281", "Executable path"),
-            Text = draft.ExecutablePath,
-            IsReadOnly = true,
-            TextWrapping = TextWrapping.Wrap,
-        });
-        panel.Children.Add(new ComboBox
-        {
-            Header = LocalizedResources.Get("Feature_f8ed8576f5a9", "Activation"),
-            ItemsSource = new[]
-            {
-                LocalizedResources.Get(
-                    "Feature_0d94e35e8475",
-                    "Until the activated process exits"),
-            },
-            SelectedIndex = 0,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        });
-        panel.Children.Add(new ComboBox
-        {
-            Header = LocalizedResources.Get("Feature_061b9b48e177", "Power source"),
-            ItemsSource = new[]
-            {
-                LocalizedResources.Get("Feature_877cb5a94232", "Plugged in"),
-            },
-            SelectedIndex = 0,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        });
-        panel.Children.Add(editor);
-        var actions = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
-        actions.Children.Add(new Button
-        {
-            Content = LocalizedResources.Get("Feature_c0774c185060", "Cancel"),
-            IsEnabled = false,
-        });
-        actions.Children.Add(new Button
-        {
-            Content = LocalizedResources.Get("Feature_c1db83d165ed", "Save"),
-            IsEnabled = false,
-        });
-        panel.Children.Add(actions);
+    internal void ShowLocalizationSnapshotApplicationEditorControls() =>
+        ApplicationProfileEditorPage.ChangeView(
+            null, ApplicationProfileEditorPage.ScrollableHeight, null, disableAnimation: true);
 
-        var presenterStyle = new Style(typeof(FlyoutPresenter))
+    internal void VerifyLocalizationSnapshotApplicationEditorLock()
+    {
+        ApplicationProfileEditorForm.IsEnabled = false;
+        if (applicationProfileNameEditor is null || applicationProfileNameEditor.IsEnabled
+            || !ApplicationProfileEditorBackButton.IsEnabled || !ApplicationProfileCancelButton.IsEnabled)
         {
-            BasedOn = (Style)Microsoft.UI.Xaml.Application.Current.Resources["DefaultFlyoutPresenterStyle"],
-        };
-        presenterStyle.Setters.Add(new Setter(FrameworkElement.MaxHeightProperty, 1720d));
-        return new Flyout
+            throw new InvalidOperationException("The saving form must lock its fields while keeping Back and Cancel available.");
+        }
+        ApplicationProfileEditorForm.IsEnabled = true;
+        if (!applicationProfileNameEditor.IsEnabled)
         {
-            FlyoutPresenterStyle = presenterStyle,
-            Content = new ScrollViewer
-            {
-                Content = panel,
-                MaxHeight = 1640,
-            },
-        };
+            throw new InvalidOperationException("The application form did not unlock.");
+        }
+    }
+
+    private void ShowLocalizationSnapshotApplicationDiscoveryFixture(bool populated)
+    {
+        IReadOnlyList<InstalledApplicationCandidate> candidates = populated
+            ? [
+                new("Elden Ring", @"C:\Games\Elden Ring\Game\eldenring.exe", "Steam", @"C:\Games\Elden Ring"),
+                new("Elden Ring", @"C:\Games\Elden Ring\Game\eldenring.exe", "Steam", @"C:\Games\Elden Ring"),
+                new("Baldur's Gate 3", @"C:\Games\Baldurs Gate 3\bin\bg3.exe", "Steam", @"C:\Games\Baldurs Gate 3"),
+                new("Baldur's Gate 3", @"C:\Games\Baldurs Gate 3\bin\bg3_dx11.exe", "Steam", @"C:\Games\Baldurs Gate 3"),
+                new("Control Ultimate Edition", @"C:\Games\Control\Control_DX12.exe", "Epic Games", @"C:\Games\Control"),
+                new("Creative rendering and competitive game with a long installed title", @"C:\XboxGames\Creative Rendering\Content\Game.exe", "Xbox", @"C:\XboxGames\Creative Rendering"),
+            ] : [];
+        ShowLocalizationSnapshotApplicationDiscovery(candidates);
     }
 
     private void ApplyApplicationProfileFixture(bool populated)
@@ -266,8 +208,11 @@ public sealed partial class MainWindow
             [
                 Sample(0, PowerSource.Battery, "Battery profile", 42_000, 2_350, 2_280, 67, 59),
                 Sample(2, PowerSource.Battery, "Creative rendering profile", 48_500, 2_780, 2_690, 73, 64),
+                Sample(14, PowerSource.Battery, "Creative rendering profile", 45_000, 2_920, 2_840, 75, 66)
+                    with { CpuTemperatureCelsius = null, Fan2Rpm = null },
                 Sample(20, PowerSource.PluggedIn, "Creative rendering profile", -18_000, 3_120, 3_050, 78, 69),
                 Sample(22, PowerSource.PluggedIn, "Plugged-in profile", -24_000, 2_600, 2_520, 70, 62),
+                Sample(28, PowerSource.PluggedIn, "Plugged-in profile", -22_000, 2_450, 2_400, 68, 61),
             ];
             foreach (TelemetrySample sample in samples)
             {
@@ -279,7 +224,7 @@ public sealed partial class MainWindow
                 ?? throw new InvalidOperationException("Latest telemetry fixture hook was not found.");
             latestField.SetValue(ViewModel, samples[^1]);
         }
-        RefreshTelemetryPresentation();
+        RefreshTelemetryPresentation(rangeEndOverride: FeatureSnapshotTime.AddSeconds(35));
 
         static TelemetrySample Sample(
             int seconds,

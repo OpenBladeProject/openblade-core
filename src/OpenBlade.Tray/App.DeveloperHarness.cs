@@ -618,7 +618,8 @@ public partial class App
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
             bool captureFeatureSnapshot = requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
-                or "profiles-application-editor" or "telemetry-empty"
+                or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
+                or "profiles-application-discovery-empty" or "telemetry-empty"
                 or "laptop-battery-history" or "display-brightness-known"
                 or "display-brightness-unavailable";
             bool captureSnapTapFailure = string.Equals(
@@ -690,9 +691,13 @@ public partial class App
                 {
                     snapshotSize = new Windows.Graphics.SizeInt32(800, 900);
                 }
-                if (destination == "profiles-application-editor")
+                if (destination is "profiles-application-editor" or "profiles-application-editor-controls")
                 {
-                    snapshotSize = new Windows.Graphics.SizeInt32(800, 1800);
+                    snapshotSize = new Windows.Graphics.SizeInt32(1120, 1100);
+                }
+                else if (destination is "profiles-application-discovery" or "profiles-application-discovery-empty")
+                {
+                    snapshotSize = new Windows.Graphics.SizeInt32(1120, 900);
                 }
                 else if (destination is "telemetry" or "telemetry-empty")
                 {
@@ -712,7 +717,8 @@ public partial class App
                 {
                     "settings-appearance" or "settings-experimental" => "settings",
                     "profiles-applications" or "profiles-applications-empty"
-                        or "profiles-application-editor" => "profiles",
+                        or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
+                        or "profiles-application-discovery-empty" => "profiles",
                     "telemetry-empty" => "telemetry",
                     "laptop-battery-history" => "laptop",
                     "display-brightness-known" or "display-brightness-unavailable" => "display",
@@ -755,8 +761,47 @@ public partial class App
                 }
                 if (captureFeatureSnapshot || destination == "telemetry")
                 {
+                    if (destination == "display-brightness-unavailable")
+                    {
+                        // Verify the known-to-unknown binding transition after template realization.
+                        snapshotMainWindow.ShowLocalizationSnapshotFeature("display-brightness-known");
+                        await WaitForSnapshotLayoutAsync();
+                    }
                     snapshotMainWindow.ShowLocalizationSnapshotFeature(destination);
                     await WaitForSnapshotLayoutAsync();
+                    if (destination is "profiles-application-editor" or "profiles-application-editor-controls")
+                    {
+                        snapshotMainWindow.VerifyLocalizationSnapshotApplicationEditorLock();
+                    }
+                    if (destination is "display-brightness-known" or "display-brightness-unavailable")
+                    {
+                        var slider = FindPerformanceSmokeDescendant<Microsoft.UI.Xaml.Controls.Slider>(
+                            snapshotMainWindow.Content, "DisplayBrightnessSlider")
+                            ?? throw new InvalidOperationException("The brightness slider was not realized.");
+                        Visibility expected = destination == "display-brightness-known"
+                            ? Visibility.Visible : Visibility.Collapsed;
+                        if (slider.Parent is not XamlGrid host || host.Visibility != expected)
+                        {
+                            throw new InvalidOperationException("Brightness availability did not update the rendered slider host.");
+                        }
+                    }
+                    if (destination == "profiles-application-editor-controls")
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotApplicationEditorControls();
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (destination == "profiles-application-discovery")
+                    {
+                        // Exercise real icon decoding using only this known local executable.
+                        // Fictional game fixtures keep their neutral fallback icons.
+                        var icon = await ApplicationExecutableIconLoader.LoadAsync(
+                            Environment.ProcessPath!, CancellationToken.None)
+                            ?? throw new InvalidOperationException("The local executable icon did not decode.");
+                        if (icon.PixelWidth <= 0 || icon.PixelHeight <= 0)
+                        {
+                            throw new InvalidOperationException("The decoded executable icon was empty.");
+                        }
+                    }
                 }
                 if (captureSnapTapInformation)
                 {
@@ -765,19 +810,9 @@ public partial class App
                         snapshotMainWindow.GetLocalizationSnapshotSnapTapInformation(),
                         Path.Combine(resolvedDirectory, "snap-tap-information.png"));
                 }
-                if (destination == "profiles-application-editor")
-                {
-                    await SaveFlyoutSnapshotAsync(
-                        snapshotMainWindow,
-                        snapshotMainWindow.CreateLocalizationSnapshotApplicationEditor(),
-                        Path.Combine(resolvedDirectory, $"main-{destination}.png"));
-                }
-                else
-                {
-                    await SaveSnapshotAsync(
-                        snapshotMainWindow.Content,
-                        Path.Combine(resolvedDirectory, $"main-{destination}.png"));
-                }
+                await SaveSnapshotAsync(
+                    snapshotMainWindow.Content,
+                    Path.Combine(resolvedDirectory, $"main-{destination}.png"));
             }
 
             if (string.IsNullOrWhiteSpace(requestedPage)
