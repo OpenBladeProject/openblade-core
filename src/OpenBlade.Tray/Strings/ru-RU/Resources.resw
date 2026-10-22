@@ -2558,7 +2558,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Отмена</value>
   </data>
   <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
-    <value>Найдено файлов: {0}. Установленных игр: {1}.</value>
+    <value>Исполняемых файлов: {0} · Установленных игр: {1}</value>
   </data>
   <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
     <value>Выберите исполняемый файл игры. Перед сохранением профиля проверьте полный путь.</value>
@@ -2582,7 +2582,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Изменить профиль приложения</value>
   </data>
   <data name="ApplicationsUI_EditorDescription" xml:space="preserve">
-    <value>Профиль привязан к одному исполняемому файлу. Неуказанные параметры берутся из профиля текущего источника питания. Ручные настройки имеют приоритет.</value>
+    <value>Профиль привязан к одному конкретному исполняемому файлу. Неуказанные параметры берутся из профиля для текущего источника питания. Ручные настройки имеют приоритет.</value>
   </data>
   <data name="ApplicationsUI_NewProfileTitle" xml:space="preserve">
     <value>Добавить профиль приложения</value>
@@ -2606,7 +2606,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Операция с телеметрией не выполнена: {0}</value>
   </data>
   <data name="TelemetryUI_BatteryPower" xml:space="preserve">
-    <value>Мощность батареи</value>
+    <value>Мощность аккумулятора</value>
   </data>
   <data name="TelemetryUI_ChartAutomationName" xml:space="preserve">
     <value>Временная шкала телеметрии. Наведите указатель на график или используйте кнопки отсчётов для просмотра точных значений.</value>

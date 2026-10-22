@@ -2558,7 +2558,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Cancel</value>
   </data>
   <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
-    <value>{0} executable matches in {1} installed games.</value>
+    <value>Matching executables: {0} · Installed games: {1}</value>
   </data>
   <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
     <value>Choose an executable from a detected game. Review the exact path before saving the profile.</value>

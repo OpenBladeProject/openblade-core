@@ -2558,7 +2558,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Cáncél ~~~ !!]</value>
   </data>
   <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
-    <value>[!! {0} éxécútáblé mátchés ín {1} ínstálléd gámés. ~~~~~~~~~~~~ !!]</value>
+    <value>[!! Mátchíng éxécútáblés: {0} · Ínstálléd gámés: {1} ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
     <value>[!! Chóósé án éxécútáblé fróm á détéctéd gámé. Révíéw thé éxáct páth béfóré sávíng thé prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>

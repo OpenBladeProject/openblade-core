@@ -473,7 +473,7 @@ public sealed partial class MainWindow
             ? LocalizedResources.Format("ApplicationsUI_DiscoveryLimitedCount",
                 "Showing the first {0} executable matches. Narrow the search to see more.", maximumRenderedExecutables)
             : LocalizedResources.Format("ApplicationsUI_DiscoveryCount",
-                "{0} executable matches in {1} installed games.", totalExecutables, groups.Count);
+                "Matching executables: {0} · Installed games: {1}", totalExecutables, groups.Count);
     }
 
     private Border BuildApplicationDiscoveryGroup(

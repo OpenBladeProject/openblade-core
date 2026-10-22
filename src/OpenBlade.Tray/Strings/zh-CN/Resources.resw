@@ -2541,7 +2541,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>取消</value>
   </data>
   <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
-    <value>共 {1} 款已安装游戏，匹配 {0} 个可执行文件。</value>
+    <value>匹配的可执行文件：{0} · 已安装的游戏：{1}</value>
   </data>
   <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
     <value>选择检测到的游戏的可执行文件。保存配置前请确认完整路径。</value>
@@ -2562,13 +2562,13 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>查找已安装的游戏</value>
   </data>
   <data name="ApplicationsUI_EditProfileTitle" xml:space="preserve">
-    <value>编辑应用程序配置</value>
+    <value>编辑应用配置</value>
   </data>
   <data name="ApplicationsUI_EditorDescription" xml:space="preserve">
-    <value>此配置只匹配一个确切的可执行文件路径。未设置的选项沿用当前电源配置方案，手动设置优先。</value>
+    <value>此应用配置仅匹配一个指定的可执行文件路径。未设置的选项沿用当前电源配置方案，手动设置优先。</value>
   </data>
   <data name="ApplicationsUI_NewProfileTitle" xml:space="preserve">
-    <value>添加应用程序配置</value>
+    <value>添加应用配置</value>
   </data>
   <data name="ApplicationsUI_SaveProfile" xml:space="preserve">
     <value>保存配置</value>
@@ -2622,7 +2622,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>正在查看 {0} · 已固定选择</value>
   </data>
   <data name="TelemetryUI_LiveSource" xml:space="preserve">
-    <value>实时 · {0}</value>
+    <value>实时数据 · {0}</value>
   </data>
   <data name="TelemetryUI_Metric" xml:space="preserve">
     <value>指标</value>
@@ -2631,7 +2631,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>下一条采样</value>
   </data>
   <data name="TelemetryUI_NoEvents" xml:space="preserve">
-    <value>此时间范围内没有电源或方案变化。</value>
+    <value>此时间范围内没有供电方式或配置方案变化。</value>
   </data>
   <data name="TelemetryUI_NoReadings" xml:space="preserve">
     <value>此指标暂无读数。</value>
@@ -2643,13 +2643,13 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>打开遥测 CSV</value>
   </data>
   <data name="TelemetryUI_PowerSource" xml:space="preserve">
-    <value>电源</value>
+    <value>供电方式</value>
   </data>
   <data name="TelemetryUI_PreviousSample" xml:space="preserve">
     <value>上一条采样</value>
   </data>
   <data name="TelemetryUI_Profile" xml:space="preserve">
-    <value>配置</value>
+    <value>配置方案</value>
   </data>
   <data name="TelemetryUI_RecordCsvTitle" xml:space="preserve">
     <value>将遥测记录到 CSV</value>
