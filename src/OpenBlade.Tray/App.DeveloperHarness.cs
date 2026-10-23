@@ -1249,10 +1249,66 @@ public partial class App
             }
         }
 
+        if (element is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar scrollBar
+            && scrollBar.IsLoaded && scrollBar.ActualWidth > 0 && scrollBar.ActualHeight > 0)
+        {
+            // The viewer's NoIndicator state changes IndicatorMode, but the
+            // child scrollbar still runs its own delayed rest-state storyboard.
+            // Complete that native storyboard instead of changing layout or opacity.
+            CompleteSnapshotScrollBarRestState(scrollBar);
+        }
+
         int childCount = VisualTreeHelper.GetChildrenCount(element);
         for (int index = 0; index < childCount; index++)
         {
             SetSnapshotScrollIndicatorsToRest(VisualTreeHelper.GetChild(element, index));
+        }
+    }
+
+    private static void CompleteSnapshotScrollBarRestState(
+        Microsoft.UI.Xaml.Controls.Primitives.ScrollBar scrollBar)
+    {
+        if (!VisualStateManager.GoToState(scrollBar, "Collapsed", useTransitions: false)
+            || !VisualStateManager.GoToState(scrollBar, "NoIndicator", useTransitions: false))
+        {
+            throw new InvalidOperationException(
+                "A realized snapshot ScrollBar has no native rest states.");
+        }
+
+        bool indicatorStateCompleted = false;
+        int childCount = VisualTreeHelper.GetChildrenCount(scrollBar);
+        for (int index = 0; index < childCount; index++)
+        {
+            if (VisualTreeHelper.GetChild(scrollBar, index) is not FrameworkElement root)
+            {
+                continue;
+            }
+
+            foreach (VisualStateGroup group in VisualStateManager.GetVisualStateGroups(root))
+            {
+                if (group.Name is not ("ScrollingIndicatorStates" or "ConsciousStates"))
+                {
+                    continue;
+                }
+
+                string expectedState = group.Name == "ScrollingIndicatorStates"
+                    ? "NoIndicator"
+                    : "Collapsed";
+                if (group.CurrentState?.Name != expectedState)
+                {
+                    throw new InvalidOperationException(
+                        "A snapshot ScrollBar did not enter its native rest state.");
+                }
+
+                group.CurrentState.Storyboard?.SkipToFill();
+                indicatorStateCompleted |= group.Name == "ScrollingIndicatorStates";
+            }
+        }
+
+        if (!indicatorStateCompleted)
+        {
+            throw new InvalidOperationException(
+                "A realized snapshot ScrollBar has no indicator-state storyboard root.");
         }
     }
 

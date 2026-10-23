@@ -4,6 +4,8 @@ public sealed class LocalizationSnapshotPixelCanonicalizerTests
 {
     private const byte Selected = 0xF7;
     private const byte Background = 0xFF;
+    private const byte CornerFill = 0xC7;
+    private const byte CornerFringe = 0xD7;
 
     [Theory]
     [InlineData(0)]
@@ -26,6 +28,116 @@ public sealed class LocalizationSnapshotPixelCanonicalizerTests
             3);
 
         AssertPixel(pixels, 3, 1, 1, Background);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(3, true)]
+    public void CanonicalizeConvergesRetainedFilledRoundedCornerFringe(
+        int rotations,
+        bool mirrored)
+    {
+        string[] referenceRows =
+        [
+            "WWCCCCCCC",
+            "WWFCCCCCC",
+            "WWFCCCCCC",
+            "WWWCCCCCC",
+            "WWWWFCCCC",
+            "WWWWWWWWW",
+            "WWWWWWWWW",
+            "WWWWWWWWW",
+            "WWWWWWWWW",
+        ];
+        string[] actualRows =
+        {
+            "WWCCCCCCC",
+            "WWFCCCCCC",
+            "WWWCCCCCC",
+            "WWWCCCCCC",
+            "WWWWWCCCC",
+            "WWWWWWWWW",
+            "WWWWWWWWW",
+            "WWWWWWWWW",
+            "WWWWWWWWW",
+        };
+        string[] transformedReference = Rotate(
+            mirrored ? Mirror(referenceRows) : referenceRows,
+            rotations);
+        string[] transformedActual = Rotate(
+            mirrored ? Mirror(actualRows) : actualRows,
+            rotations);
+        byte[] reference = CreatePixels(transformedReference);
+        byte[] actual = CreatePixels(transformedActual);
+        byte[] originalReference = (byte[])reference.Clone();
+
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(
+            reference,
+            9,
+            9);
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(
+            actual,
+            9,
+            9);
+
+        Assert.Equal(reference, actual);
+        Assert.False(originalReference.AsSpan().SequenceEqual(reference));
+        byte[] once = (byte[])reference.Clone();
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(
+            reference,
+            9,
+            9);
+        Assert.Equal(once, reference);
+    }
+
+    [Fact]
+    public void CanonicalizePreservesThinAchromaticGlyphStroke()
+    {
+        string[] rows = Pad(
+        [
+            "WWCWW",
+            "WWCWW",
+            "WWFWW",
+            "WWCWW",
+            "WWCWW",
+        ]);
+        byte[] pixels = CreatePixels(rows);
+        byte[] original = (byte[])pixels.Clone();
+
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(
+            pixels,
+            9,
+            9);
+
+        Assert.Equal(original, pixels);
+    }
+
+    [Fact]
+    public void CanonicalizePreservesColoredRoundedChartDetail()
+    {
+        string[] rows = Pad(
+        [
+            "WWCCC",
+            "WWFCC",
+            "WWFCC",
+            "WWWCC",
+            "WWWWF",
+        ]);
+        byte[] pixels = CreateColoredPixels(rows);
+        byte[] original = (byte[])pixels.Clone();
+
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(
+            pixels,
+            9,
+            9);
+
+        Assert.Equal(original, pixels);
     }
 
     [Fact]
@@ -217,12 +329,40 @@ public sealed class LocalizationSnapshotPixelCanonicalizerTests
                     'W' => Background,
                     'G' => Selected,
                     'D' => 0x77,
+                    'C' => CornerFill,
+                    'F' => CornerFringe,
                     _ => throw new InvalidOperationException(),
                 };
                 int index = ((y * width) + x) * 4;
                 pixels[index] = value;
                 pixels[index + 1] = value;
                 pixels[index + 2] = value;
+                pixels[index + 3] = 0xFF;
+            }
+        }
+
+        return pixels;
+    }
+
+    private static byte[] CreateColoredPixels(IReadOnlyList<string> rows)
+    {
+        int width = rows[0].Length;
+        byte[] pixels = new byte[checked(width * rows.Count * 4)];
+        for (int y = 0; y < rows.Count; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                (byte blue, byte green, byte red) = rows[y][x] switch
+                {
+                    'W' => (Background, Background, Background),
+                    'C' => ((byte)0x17, (byte)0x67, (byte)0x97),
+                    'F' => ((byte)0x27, (byte)0x77, (byte)0xA7),
+                    _ => throw new InvalidOperationException(),
+                };
+                int index = ((y * width) + x) * 4;
+                pixels[index] = blue;
+                pixels[index + 1] = green;
+                pixels[index + 2] = red;
                 pixels[index + 3] = 0xFF;
             }
         }
@@ -288,6 +428,24 @@ public sealed class LocalizationSnapshotPixelCanonicalizerTests
         }
 
         return result;
+    }
+
+    private static string[] Mirror(IReadOnlyList<string> rows)
+    {
+        return rows.Select(row => new string(row.Reverse().ToArray())).ToArray();
+    }
+
+    private static string[] Pad(IReadOnlyList<string> rows)
+    {
+        string blank = new('W', rows.Count + 4);
+        return
+        [
+            blank,
+            blank,
+            .. rows.Select(row => $"WW{row}WW"),
+            blank,
+            blank,
+        ];
     }
 
     private static void AssertPixel(
