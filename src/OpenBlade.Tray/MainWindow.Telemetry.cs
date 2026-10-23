@@ -28,10 +28,9 @@ public sealed partial class MainWindow
                 ?? DateTimeOffset.UtcNow
             : DateTimeOffset.UtcNow);
         // The chart owns the visible window; the overview needs the complete bounded history.
-        DateTimeOffset? requestedStart = null;
-        TelemetryHistorySnapshot snapshot = ViewModel.GetTelemetrySnapshot(requestedStart, end);
+        TelemetryHistorySnapshot snapshot = ViewModel.GetTelemetrySnapshot(rangeEndUtc: end);
         DateTimeOffset? sourceStart = replay ? metadata?.StartedAtUtc : snapshot.RangeStartUtc;
-        TelemetryPlot.Update(snapshot, sourceStart ?? end, end, metadata?.SessionId);
+        TelemetryPlot.Update(snapshot, sourceStart ?? end, end, ViewModel.DisplayedTelemetrySourceSessionId);
         TelemetrySourceText.Text = replay
             ? LocalizedResources.Format(
                 "TelemetryUI_ReplaySource",
@@ -58,7 +57,6 @@ public sealed partial class MainWindow
         TelemetryErrorText.Visibility = string.IsNullOrWhiteSpace(TelemetryErrorText.Text)
             ? Visibility.Collapsed
             : Visibility.Visible;
-        RefreshTelemetryEvents();
         telemetryPresentationDirty = false;
     }
 

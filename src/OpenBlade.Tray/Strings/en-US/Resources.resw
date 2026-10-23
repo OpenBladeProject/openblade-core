@@ -2761,4 +2761,13 @@ OpenBlade did not retry any stop request.</value>
   <data name="TelemetryUI_VisibleTimeRange" xml:space="preserve">
     <value>Visible time range</value>
   </data>
+  <data name="TelemetryUI_RangeHistoryExpired" xml:space="preserve">
+    <value>Older readings are no longer kept. The visible time range was adjusted.</value>
+  </data>
+  <data name="TelemetryUI_RangeTimeAdjusted" xml:space="preserve">
+    <value>Adjusted to the available time range.</value>
+  </data>
+  <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
+    <value>Selected reading is no longer kept.</value>
+  </data>
 </root>

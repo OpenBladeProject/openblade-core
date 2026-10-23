@@ -113,7 +113,10 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await WaitForAsync(() => viewModel.IsConnected);
         viewModel.LiveReadingsEnabled = false;
 
+        Assert.Null(viewModel.DisplayedTelemetrySourceSessionId);
         await viewModel.StartTelemetryRecordingAsync(path, CancellationToken.None);
+        Assert.NotNull(viewModel.DisplayedTelemetrySessionMetadata);
+        Assert.Null(viewModel.DisplayedTelemetrySourceSessionId);
         Assert.True(viewModel.IsTelemetryRecording);
         Assert.True(viewModel.RequiresTelemetryObservation);
         client.Observation = Status(2, withReadings: true);
@@ -121,6 +124,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         Assert.Equal(path, await viewModel.StopTelemetryRecordingAsync(CancellationToken.None));
 
         Assert.False(viewModel.IsTelemetryRecording);
+        Assert.Null(viewModel.DisplayedTelemetrySourceSessionId);
         Assert.False(viewModel.RequiresTelemetryObservation);
         Assert.Equal([LiveReadingSensors.All], client.Requests);
         TelemetrySessionDocument replay = await TelemetryCsv.ReadAsync(path);
@@ -130,6 +134,10 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await viewModel.OpenTelemetryReplayAsync(path, CancellationToken.None);
         Assert.Equal(TelemetrySource.LocalCsvReplay, viewModel.DisplayedTelemetrySource);
         Assert.Equal(TelemetryFreshness.Replay, viewModel.LatestTelemetryFreshness);
+        Assert.Equal(replay.Metadata.SessionId, viewModel.DisplayedTelemetrySourceSessionId);
+        Assert.Equal(1, viewModel.TelemetryHistorySnapshot.RawSampleCount);
+        viewModel.CloseTelemetryReplay();
+        Assert.Null(viewModel.DisplayedTelemetrySourceSessionId);
         Assert.Equal(1, viewModel.TelemetryHistorySnapshot.RawSampleCount);
     }
 

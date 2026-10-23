@@ -16,7 +16,20 @@ public sealed partial class TelemetryChart
             timeRange = range.MoveStart(range.SourceStartUtc.AddSeconds(2), TimeSpan.FromSeconds(1))
                 .MoveEnd(range.SourceStartUtc.AddSeconds(22), TimeSpan.FromSeconds(1));
             RebuildViewport();
+            rangeEndInput.Text = FormatRangeTime(range.SourceEndUtc.AddSeconds(1));
+            CommitRangeTime(rangeEndInput);
             overview.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0.25 });
+        }
+        else if (destination is "telemetry-expired" or "telemetry-retention"
+            && retainedSnapshot is { } retained && timeRange is { } current && rawSamples.Count > 1)
+        {
+            localizationSnapshotInspectionFraction = null;
+            selectedSampleIndex = destination == "telemetry-expired" ? 0 : rawSamples.Count - 1;
+            PinSelection();
+            DateTimeOffset newStart = rawSamples[1].TimestampUtc;
+            TelemetryHistorySnapshot trimmed = TelemetryChartViewport.BuildSnapshot(retained, newStart, current.SourceEndUtc);
+            Update(trimmed, newStart, current.SourceEndUtc.AddSeconds(1), sourceSessionId);
+            analysisPanel.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0.5 });
         }
         else if (destination is "telemetry-analysis" or "telemetry-narrow" or "telemetry-dark")
         {
@@ -50,6 +63,11 @@ public sealed partial class TelemetryChart
             throw new InvalidOperationException("Disconnected telemetry snapshots did not pin displayed timestamps to UTC.");
         }
         TelemetryTimeRangeSelection savedRange = timeRange;
+        HistorySelectionNotice savedNotice = historySelectionNotice;
+        bool savedPinned = samplePinned;
+        bool savedFollow = followLatest;
+        bool savedFullRange = showAllRetained;
+        int savedIndex = selectedSampleIndex;
         DateTimeOffset? selected = SelectedSample?.TimestampUtc;
         foreach (MetricChoice choice in choices)
         {
@@ -78,9 +96,14 @@ public sealed partial class TelemetryChart
                 throw new InvalidOperationException("A pinned telemetry moment or range moved with an incoming live update.");
             }
             timeRange = savedRange;
+            historySelectionNotice = savedNotice;
+            samplePinned = savedPinned;
+            followLatest = savedFollow;
+            showAllRetained = savedFullRange;
+            selectedSampleIndex = savedIndex;
             RebuildViewport();
         }
-        else
+        else if (historySelectionNotice != HistorySelectionNotice.SampleExpired)
         {
             PinSelection();
             if (samplePinned || !followLatest || !timeRange.FollowLatest)
@@ -94,12 +117,113 @@ public sealed partial class TelemetryChart
         {
             throw new InvalidOperationException("Telemetry time bounds lost precision or their UTC offset.");
         }
+        VerifyLocalizationSnapshotRangeInteractions();
         var extreme = TelemetryTimeRangeSelection.Create(DateTimeOffset.MinValue, DateTimeOffset.MaxValue);
         _ = ApplyRangeDrag(extreme, RangeDragKind.Start, -extreme.Duration.Ticks);
         _ = ApplyRangeDrag(extreme, RangeDragKind.End, extreme.Duration.Ticks);
+        if (historySelectionNotice != savedNotice)
+        {
+            throw new InvalidOperationException("Telemetry verification changed the visible retention notice.");
+        }
         if (SelectedSample is null && lanes.SelectMany(lane => lane.Markers.Values).Any(marker => marker.Visibility == Visibility.Visible))
         {
             throw new InvalidOperationException("An empty telemetry chart contains a phantom selected sample marker.");
+        }
+    }
+
+    private void VerifyLocalizationSnapshotRangeInteractions()
+    {
+        if (retainedSnapshot is not { } savedRetained || timeRange is not { } savedRange || rawSamples.Count < 2)
+        {
+            return;
+        }
+        IReadOnlyList<TelemetrySample> savedRaw = rawSamples;
+        int savedIndex = selectedSampleIndex;
+        bool savedFollow = followLatest;
+        bool savedPinned = samplePinned;
+        bool savedFullRange = showAllRetained;
+        HistorySelectionNotice savedNotice = historySelectionNotice;
+        Visibility savedValidationVisibility = rangeValidation.Visibility;
+        string savedValidationText = rangeValidation.Text;
+        double? savedFraction = localizationSnapshotInspectionFraction;
+        localizationSnapshotInspectionFraction = null;
+        try
+        {
+            selectedSampleIndex = 0;
+            PinSelection();
+            SelectTimeRange(ApplyRangeDrag(savedRange, RangeDragKind.Pan, 0));
+            RebuildViewport();
+            if (samplePinned || followLatest || timeRange.FollowLatest)
+            {
+                throw new InvalidOperationException("Changing the telemetry range pinned a sample or resumed following.");
+            }
+            InspectAtFraction(1);
+            if (SelectedSample?.TimestampUtc != rawSamples[^1].TimestampUtc)
+            {
+                throw new InvalidOperationException("Hover inspection did not resume after a telemetry range edit.");
+            }
+
+            PinSelection();
+            rangeStartInput.Text = FormatRangeTime(timeRange.EndUtc.AddSeconds(1));
+            CommitRangeTime(rangeStartInput);
+            if (samplePinned || rangeValidation.Visibility != Visibility.Visible)
+            {
+                throw new InvalidOperationException("A clamped time edit pinned a sample or omitted its adjustment message.");
+            }
+
+            timeRange = savedRange;
+            rawSamples = savedRaw;
+            selectedSampleIndex = 0;
+            historySelectionNotice = HistorySelectionNotice.None;
+            PinSelection();
+            DateTimeOffset retainedStart = savedRaw[1].TimestampUtc;
+            TelemetryHistorySnapshot trimmed = TelemetryChartViewport.BuildSnapshot(
+                savedRetained, retainedStart, savedRange.SourceEndUtc);
+            Update(trimmed, retainedStart, savedRange.SourceEndUtc.AddSeconds(1), sourceSessionId);
+            if (SelectedSample is not null || samplePinned
+                || historySelectionNotice != HistorySelectionNotice.SampleExpired
+                || !followLatestButton.IsEnabled || !nextSampleButton.IsEnabled)
+            {
+                throw new InvalidOperationException("An expired pinned sample was replaced or has no keyboard recovery.");
+            }
+            Update(trimmed, retainedStart, savedRange.SourceEndUtc.AddSeconds(2), sourceSessionId);
+            if (SelectedSample is not null || historySelectionNotice != HistorySelectionNotice.SampleExpired)
+            {
+                throw new InvalidOperationException("An expired selection silently changed on the next live update.");
+            }
+            InspectAtFraction(1);
+            if (SelectedSample is null || historySelectionNotice != HistorySelectionNotice.None)
+            {
+                throw new InvalidOperationException("Hover could not recover after the pinned reading expired.");
+            }
+
+            retainedSnapshot = savedRetained;
+            timeRange = savedRange;
+            rawSamples = savedRaw;
+            selectedSampleIndex = savedRaw.Count - 1;
+            PinSelection();
+            DateTimeOffset surviving = SelectedSample!.TimestampUtc;
+            Update(trimmed, retainedStart, savedRange.SourceEndUtc.AddSeconds(1), sourceSessionId);
+            if (SelectedSample?.TimestampUtc != surviving || !samplePinned
+                || historySelectionNotice != HistorySelectionNotice.RangeAdjusted)
+            {
+                throw new InvalidOperationException("Retention lost a surviving pin or hid the range adjustment.");
+            }
+        }
+        finally
+        {
+            retainedSnapshot = savedRetained;
+            timeRange = savedRange;
+            rawSamples = savedRaw;
+            selectedSampleIndex = savedIndex;
+            followLatest = savedFollow;
+            samplePinned = savedPinned;
+            showAllRetained = savedFullRange;
+            historySelectionNotice = savedNotice;
+            rangeValidation.Visibility = savedValidationVisibility;
+            rangeValidation.Text = savedValidationText;
+            localizationSnapshotInspectionFraction = savedFraction;
+            RebuildViewport();
         }
     }
 }

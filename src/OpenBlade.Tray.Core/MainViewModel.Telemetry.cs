@@ -51,6 +51,9 @@ public sealed partial class MainViewModel
     public TelemetrySessionMetadata? DisplayedTelemetrySessionMetadata =>
         TelemetryReplaySession?.Metadata ?? telemetryRecording?.Metadata;
 
+    // Recording changes the CSV destination, while the live data source stays the same.
+    public Guid? DisplayedTelemetrySourceSessionId => TelemetryReplaySession?.Metadata.SessionId;
+
     public TelemetrySource DisplayedTelemetrySource =>
         TelemetryReplaySession is null
             ? TelemetrySource.LiveService
@@ -366,6 +369,7 @@ public sealed partial class MainViewModel
     private void NotifyTelemetryViewChanged()
     {
         Notify(nameof(TelemetryReplaySession));
+        Notify(nameof(DisplayedTelemetrySourceSessionId));
         Notify(nameof(DisplayedTelemetrySessionMetadata));
         Notify(nameof(DisplayedTelemetrySource));
         Notify(nameof(LatestTelemetrySample));

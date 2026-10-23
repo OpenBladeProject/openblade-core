@@ -58,6 +58,7 @@ public sealed partial class TelemetryChart
                 return;
             }
 
+            historySelectionNotice = HistorySelectionNotice.None;
             showAllRetained = true;
             timeRange = TelemetryTimeRangeSelection.Create(timeRange.SourceStartUtc, timeRange.SourceEndUtc);
             followLatest = true;
@@ -144,13 +145,13 @@ public sealed partial class TelemetryChart
             return;
         }
         DateTimeOffset requested = parsed.ToUniversalTime();
-        timeRange = ReferenceEquals(input, rangeStartInput)
+        SelectTimeRange(isStart
             ? timeRange.MoveStart(requested, TimeSpan.FromSeconds(1))
-            : timeRange.MoveEnd(requested, TimeSpan.FromSeconds(1));
-        showAllRetained = false;
-        followLatest = false;
-        samplePinned = true;
-        rangeValidation.Visibility = Visibility.Collapsed;
+            : timeRange.MoveEnd(requested, TimeSpan.FromSeconds(1)));
+        DateTimeOffset applied = isStart ? timeRange.StartUtc : timeRange.EndUtc;
+        rangeValidation.Text = LocalizedResources.Get("TelemetryUI_RangeTimeAdjusted",
+            "Adjusted to the available time range.");
+        rangeValidation.Visibility = applied == requested ? Visibility.Collapsed : Visibility.Visible;
         string formatted = FormatRangeTime(isStart ? timeRange.StartUtc : timeRange.EndUtc);
         input.Text = formatted;
         if (isStart)
@@ -162,6 +163,16 @@ public sealed partial class TelemetryChart
             displayedRangeEnd = formatted;
         }
         RebuildViewport();
+    }
+
+    private void SelectTimeRange(TelemetryTimeRangeSelection selection)
+    {
+        timeRange = selection.SetFollowLatest(false);
+        showAllRetained = false;
+        followLatest = false;
+        samplePinned = false;
+        historySelectionNotice = HistorySelectionNotice.None;
+        rangeValidation.Visibility = Visibility.Collapsed;
     }
 
     private static string FormatRangeTime(DateTimeOffset value) =>
@@ -271,10 +282,7 @@ public sealed partial class TelemetryChart
 
         double fraction = (args.GetCurrentPoint(overview).Position.X - rangeDragOriginX) / (overview.ActualWidth - 16);
         long ticks = (long)Math.Round((baseline.SourceEndUtc - baseline.SourceStartUtc).Ticks * Math.Clamp(fraction, -1, 1));
-        timeRange = ApplyRangeDrag(baseline, rangeDragKind, ticks);
-        showAllRetained = false;
-        followLatest = false;
-        samplePinned = true;
+        SelectTimeRange(ApplyRangeDrag(baseline, rangeDragKind, ticks));
         if (!viewportDrawQueued)
         {
             viewportDrawQueued = true;

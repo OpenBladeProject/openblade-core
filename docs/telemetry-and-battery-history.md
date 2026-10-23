@@ -10,7 +10,9 @@ Hover over a chart to inspect the nearest original sample. The vertical
 crosshair and **At sample** column show the same timestamp across every metric.
 Click to pin it, or use **Previous sample** and **Next sample** with the keyboard.
 A pinned moment and its time window stay fixed as readings arrive. Choose
-**Follow latest** to follow the newest readings again.
+**Follow latest** to follow the newest readings again. If a pinned reading ages
+out of the retained history, the chart clears it and says so. Hover, use
+**Next sample**, or choose **Follow latest** to inspect available readings.
 
 The analysis table shows each metric's minimum, average, maximum and available
 reading count within the visible range. Counts expose missing readings in their
@@ -22,7 +24,9 @@ Drag either edge of the overview to resize the visible range, or drag its center
 to move it. The start and end fields allow precise keyboard edits, including
 fractional seconds and a UTC offset. The chart keeps the selected time bounds,
 including empty spans before or after readings. Edited ranges stay fixed until
-you choose **Follow latest** or **Full range**.
+you choose **Follow latest** or **Full range**. If older readings expire, the
+chart shows the available range and explains the adjustment. Starting or stopping
+a CSV recording keeps the current selection.
 
 The page identifies live data, stale data and local CSV replay. Power-source and
 active-profile changes appear below the chart. Available sensors depend on the

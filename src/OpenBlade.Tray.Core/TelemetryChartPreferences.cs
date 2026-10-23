@@ -1,9 +1,58 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace OpenBlade.Tray;
 
 public sealed record TelemetryChartMetricPreference(
+    [property: JsonConverter(typeof(TelemetryChartMetricPreferenceJsonConverter))]
     TelemetryMetric Metric,
     bool IsVisible = true,
     string? ColorHex = null);
+
+internal sealed class TelemetryChartMetricPreferenceJsonConverter : JsonConverter<TelemetryMetric>
+{
+    private const int UnsupportedMetric = -1;
+
+    public TelemetryChartMetricPreferenceJsonConverter()
+    {
+    }
+
+    public override TelemetryMetric Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            string? name = reader.GetString();
+            return Enum.TryParse(name, ignoreCase: true, out TelemetryMetric metric)
+                && Enum.IsDefined(metric)
+                    ? metric
+                    : (TelemetryMetric)UnsupportedMetric;
+        }
+
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int value))
+        {
+            return (TelemetryMetric)value;
+        }
+
+        throw new JsonException("A telemetry chart metric must be a name or integer.");
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        TelemetryMetric value,
+        JsonSerializerOptions options)
+    {
+        if (Enum.IsDefined(value))
+        {
+            writer.WriteStringValue(value.ToString());
+            return;
+        }
+
+        writer.WriteNumberValue((int)value);
+    }
+}
 
 /// <summary>Bounded per-user presentation choices, independent of telemetry capture.</summary>
 public static class TelemetryChartPreferenceDefaults

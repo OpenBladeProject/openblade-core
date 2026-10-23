@@ -2761,4 +2761,13 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
     <value>Недоступно</value>
   </data>
+  <data name="TelemetryUI_RangeHistoryExpired" xml:space="preserve">
+    <value>Более ранние показания больше не хранятся. Видимый временной диапазон скорректирован.</value>
+  </data>
+  <data name="TelemetryUI_RangeTimeAdjusted" xml:space="preserve">
+    <value>Время скорректировано с учётом доступного интервала.</value>
+  </data>
+  <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
+    <value>Выбранное показание больше не хранится.</value>
+  </data>
 </root>

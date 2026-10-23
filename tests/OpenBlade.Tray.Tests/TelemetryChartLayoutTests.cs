@@ -67,7 +67,7 @@ public sealed class TelemetryChartLayoutTests
             "&& (!windowVisible || TelemetryPage.Visibility != Visibility.Visible)",
             StringComparison.Ordinal);
         int snapshotRead = telemetrySource.IndexOf(
-            "ViewModel.GetTelemetrySnapshot(requestedStart, end)",
+            "ViewModel.GetTelemetrySnapshot(rangeEndUtc: end)",
             StringComparison.Ordinal);
         Assert.True(visibilityGuard >= 0);
         Assert.True(snapshotRead > visibilityGuard);

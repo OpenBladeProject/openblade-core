@@ -68,6 +68,9 @@ public sealed partial class TelemetryChart : Grid
     private int selectedSampleIndex = -1;
     private bool followLatest = true;
     private bool samplePinned;
+    private HistorySelectionNotice historySelectionNotice;
+
+    private enum HistorySelectionNotice { None, RangeAdjusted, SampleExpired }
     private bool updatingPreferences;
     private bool viewportDrawQueued;
     private double plotLeft = 64;
@@ -178,6 +181,7 @@ public sealed partial class TelemetryChart : Grid
         bool reset = sourceSessionId != sessionId;
         sourceSessionId = sessionId;
         retainedSnapshot = value;
+        TelemetryTimeRangeSelection? previousRange = timeRange;
         if (reset)
         {
             rangeDragBaseline = null;
@@ -189,12 +193,20 @@ public sealed partial class TelemetryChart : Grid
         {
             timeRange = timeRange is null || showAllRetained
                 ? TelemetryTimeRangeSelection.Create(start, end)
-                : timeRange.UpdateSource(start, end, reset);
+                : timeRange.UpdateSource(start, end);
+            if (!reset && previousRange is { FollowLatest: false }
+                && (timeRange.StartUtc != previousRange.StartUtc || timeRange.EndUtc != previousRange.EndUtc)
+                && historySelectionNotice != HistorySelectionNotice.SampleExpired)
+            {
+                historySelectionNotice = HistorySelectionNotice.RangeAdjusted;
+            }
         }
         if (reset)
         {
             samplePinned = false;
             followLatest = true;
+            historySelectionNotice = HistorySelectionNotice.None;
+            rangeValidation.Visibility = Visibility.Collapsed;
         }
         RebuildViewport();
     }
@@ -239,7 +251,14 @@ public sealed partial class TelemetryChart : Grid
         DateTimeOffset? selected = SelectedSample?.TimestampUtc;
         snapshot = TelemetryChartViewport.BuildSnapshot(retainedSnapshot, timeRange.StartUtc, timeRange.EndUtc);
         rawSamples = snapshot.RawSamples;
-        selectedSampleIndex = rawSamples.Count == 0 ? -1
+        if (samplePinned && selected is { } pinned
+            && !rawSamples.Any(sample => sample.TimestampUtc == pinned))
+        {
+            samplePinned = false;
+            followLatest = false;
+            historySelectionNotice = HistorySelectionNotice.SampleExpired;
+        }
+        selectedSampleIndex = rawSamples.Count == 0 || historySelectionNotice == HistorySelectionNotice.SampleExpired ? -1
             : followLatest ? rawSamples.Count - 1
             : selected is { } target ? TelemetryChartSelection.FindNearestSampleIndex(rawSamples, target) : 0;
         Draw();
@@ -392,15 +411,22 @@ public sealed partial class TelemetryChart : Grid
     {
         TelemetrySample? sample = SelectedSample;
         previousSampleButton.IsEnabled = selectedSampleIndex > 0;
-        nextSampleButton.IsEnabled = selectedSampleIndex >= 0 && selectedSampleIndex < rawSamples.Count - 1;
-        followLatestButton.IsEnabled = sample is not null && (!followLatest || timeRange?.FollowLatest != true);
+        nextSampleButton.IsEnabled = rawSamples.Count > 0 && selectedSampleIndex < rawSamples.Count - 1;
+        followLatestButton.IsEnabled = retainedSnapshot?.RawSamples.Count > 0 && (!followLatest || timeRange?.FollowLatest != true);
         inspectionState.Text = sample is null
-            ? LocalizedResources.Get("TelemetryUI_NoSampleSelected", "No sample selected.")
+            ? historySelectionNotice == HistorySelectionNotice.SampleExpired
+                ? LocalizedResources.Get("TelemetryUI_SelectedReadingExpired", "Selected reading is no longer kept.")
+                : LocalizedResources.Get("TelemetryUI_NoSampleSelected", "No sample selected.")
             : LocalizedResources.Format("TelemetryUI_SelectedMoment", "Selected moment · {0}", PresentationTimestamp.ForDisplay(sample.TimestampUtc).ToString("G"));
         inspectionMode.Text = followLatest
             ? LocalizedResources.Get("TelemetryUI_Following", "Following latest")
             : samplePinned ? LocalizedResources.Get("TelemetryUI_Pinned", "Pinned")
             : LocalizedResources.Get("TelemetryUI_InspectHint", "Hover to inspect. Click to pin a sample.");
+        if (historySelectionNotice == HistorySelectionNotice.RangeAdjusted)
+        {
+            inspectionMode.Text += " · " + LocalizedResources.Get("TelemetryUI_RangeHistoryExpired",
+                "Older readings are no longer kept. The visible time range was adjusted.");
+        }
         tableMomentText.Text = $"{inspectionState.Text} · {inspectionMode.Text}";
         UpdateAnalysisValues(sample);
         foreach (Lane lane in lanes)
@@ -472,6 +498,7 @@ public sealed partial class TelemetryChart : Grid
 
         DateTimeOffset target = TelemetryChartScale.Create(timeRange.StartUtc, timeRange.EndUtc, 0, 1)
             .TimestampAtFraction(fraction);
+        historySelectionNotice = HistorySelectionNotice.None;
         selectedSampleIndex = TelemetryChartSelection.FindNearestSampleIndex(rawSamples, target);
         followLatest = false;
         UpdateInspection();
@@ -484,6 +511,7 @@ public sealed partial class TelemetryChart : Grid
             return;
         }
 
+        historySelectionNotice = HistorySelectionNotice.None;
         selectedSampleIndex = Math.Clamp(selectedSampleIndex + offset, 0, rawSamples.Count - 1);
         PinSelection();
     }
@@ -494,6 +522,7 @@ public sealed partial class TelemetryChart : Grid
         {
             return;
         }
+        historySelectionNotice = HistorySelectionNotice.None;
         followLatest = false;
         samplePinned = true;
         showAllRetained = false;
@@ -503,6 +532,7 @@ public sealed partial class TelemetryChart : Grid
 
     private void FollowLatest()
     {
+        historySelectionNotice = HistorySelectionNotice.None;
         timeRange = timeRange?.SetFollowLatest(true);
         followLatest = true;
         samplePinned = false;

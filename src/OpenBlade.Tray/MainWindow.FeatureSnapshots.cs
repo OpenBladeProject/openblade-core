@@ -59,6 +59,8 @@ public sealed partial class MainWindow
             case "telemetry-range":
             case "telemetry-metrics":
             case "telemetry-color":
+            case "telemetry-expired":
+            case "telemetry-retention":
                 ApplyTelemetryFixture(populated: true);
                 TelemetryPlot.ShowLocalizationSnapshotInspection(0.4);
                 TelemetryPlot.ShowLocalizationSnapshotLayout(destination);

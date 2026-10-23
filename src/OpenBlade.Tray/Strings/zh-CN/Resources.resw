@@ -2744,4 +2744,13 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
     <value>不可用</value>
   </data>
+  <data name="TelemetryUI_RangeHistoryExpired" xml:space="preserve">
+    <value>较早的读数已不再保留。可见时间范围已调整。</value>
+  </data>
+  <data name="TelemetryUI_RangeTimeAdjusted" xml:space="preserve">
+    <value>已调整至可用时间范围内。</value>
+  </data>
+  <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
+    <value>所选读数已不再保留。</value>
+  </data>
 </root>

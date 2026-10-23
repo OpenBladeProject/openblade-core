@@ -63,4 +63,45 @@ public sealed class TelemetryChartPreferenceTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task UnknownNamedMetricPreservesOtherPreferencesAndValidMetricEntries()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"OpenBlade-telemetry-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "theme": "Dark",
+                  "startMinimized": true,
+                  "customAccentColor": "#123456",
+                  "telemetryChartMetrics": [
+                    { "metric": "Fan3Rpm", "isVisible": false, "colorHex": "#112233" },
+                    { "metric": 99, "isVisible": false, "colorHex": "#445566" },
+                    { "metric": "Fan1Rpm", "isVisible": false, "colorHex": "#aabbcc" }
+                  ]
+                }
+                """);
+
+            UiPreferences loaded = await new UiPreferenceStore(path).LoadAsync();
+
+            Assert.Equal(ThemePreference.Dark, loaded.Theme);
+            Assert.True(loaded.StartMinimized);
+            Assert.Equal("#123456", loaded.CustomAccentColor);
+            IReadOnlyList<TelemetryChartMetricPreference> metrics =
+                loaded.EffectiveTelemetryChartMetrics;
+            Assert.Equal(5, metrics.Count);
+            Assert.All(metrics, value => Assert.True(Enum.IsDefined(value.Metric)));
+            Assert.True(metrics.Single(value =>
+                value.Metric == TelemetryMetric.CpuTemperatureCelsius).IsVisible);
+            TelemetryChartMetricPreference fan = metrics.Single(value =>
+                value.Metric == TelemetryMetric.Fan1Rpm);
+            Assert.False(fan.IsVisible);
+            Assert.Equal("#AABBCC", fan.ColorHex);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

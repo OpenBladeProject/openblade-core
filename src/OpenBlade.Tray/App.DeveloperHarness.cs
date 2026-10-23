@@ -676,7 +676,8 @@ public partial class App
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
             bool captureTelemetryVariant = requestedPage is
                 "telemetry-analysis" or "telemetry-narrow" or "telemetry-dark"
-                or "telemetry-range" or "telemetry-metrics" or "telemetry-color";
+                or "telemetry-range" or "telemetry-metrics" or "telemetry-color"
+                or "telemetry-expired" or "telemetry-retention";
             bool captureFeatureSnapshot = captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"

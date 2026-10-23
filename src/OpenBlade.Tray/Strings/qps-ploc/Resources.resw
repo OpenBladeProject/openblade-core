@@ -2761,4 +2761,13 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="TelemetryUI_VisibleTimeRange" xml:space="preserve">
     <value>[!! Vísíblé tímé rángé ~~~~~~ !!]</value>
   </data>
+  <data name="TelemetryUI_RangeHistoryExpired" xml:space="preserve">
+    <value>[!! Óldér réádíngs áré nó lóngér képt. Thé vísíblé tímé rángé wás ádjústéd. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeTimeAdjusted" xml:space="preserve">
+    <value>[!! Ádjústéd tó thé áváíláblé tímé rángé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
+    <value>[!! Séléctéd réádíng ís nó lóngér képt. ~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

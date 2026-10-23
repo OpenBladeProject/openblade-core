@@ -129,6 +129,8 @@ try {
             'telemetry-narrow',
             'telemetry-dark',
             'telemetry-range',
+            'telemetry-expired',
+            'telemetry-retention',
             'telemetry-metrics',
             'telemetry-color',
             'laptop',
