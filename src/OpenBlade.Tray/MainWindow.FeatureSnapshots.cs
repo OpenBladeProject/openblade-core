@@ -46,6 +46,9 @@ public sealed partial class MainWindow
                 ApplyApplicationProfileFixture(populated: false);
                 ShowLocalizationSnapshotApplicationDiscoveryFixture(destination != "profiles-application-discovery-empty");
                 break;
+            case "telemetry-disabled":
+                RefreshTelemetryPresentation(FeatureSnapshotTime);
+                break;
             case "telemetry":
                 ApplyTelemetryFixture(populated: true);
                 TelemetryPlot.ShowLocalizationSnapshotInspection(0.4, focusNextSampleButton: true);
@@ -89,6 +92,16 @@ public sealed partial class MainWindow
 
     internal void VerifyLocalizationSnapshotTelemetry()
     {
+        TelemetryPageHeader.VerifyLocalizationSnapshotLayout();
+        if (!ViewModel.TelemetryEnabled)
+        {
+            if (TelemetryEnabledToggle.IsOn || TelemetryContent.Visibility != Visibility.Collapsed
+                || TelemetryDisabledText.Visibility != Visibility.Visible)
+            {
+                throw new InvalidOperationException("Disabled telemetry still presents collection controls.");
+            }
+            return;
+        }
         TelemetrySourceHeader.VerifyLocalizationSnapshotLayout();
         foreach ((Microsoft.UI.Xaml.Controls.Button button, TextBlock label) in new[]
         {
@@ -104,6 +117,21 @@ public sealed partial class MainWindow
                 || origin.Y + label.ActualHeight > button.ActualHeight + 0.5)
             {
                 throw new InvalidOperationException("A contextual source command did not render its complete localized label.");
+            }
+        }
+        Microsoft.UI.Xaml.Controls.Button[] visibleCommands = new[]
+        {
+            TelemetryRecordButton, TelemetryStopButton, TelemetryLiveButton, TelemetryOpenButton,
+        }.Where(button => button.Visibility == Visibility.Visible).ToArray();
+        double naturalWidth = visibleCommands.Sum(button => button.DesiredSize.Width)
+            + Math.Max(0, visibleCommands.Length - 1) * 8;
+        if (naturalWidth <= TelemetrySourceCommands.ActualWidth)
+        {
+            double[] tops = visibleCommands.Select(button => button.TransformToVisual(TelemetrySourceCommands)
+                .TransformPoint(new Windows.Foundation.Point()).Y).ToArray();
+            if (tops.Length > 1 && tops.Max() - tops.Min() > 0.5)
+            {
+                throw new InvalidOperationException("Commands that fit their measured width wrapped at native DPI.");
             }
         }
         VerifyLocalizationSnapshotTelemetrySourceState();

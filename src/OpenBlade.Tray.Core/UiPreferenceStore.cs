@@ -64,7 +64,8 @@ public sealed record UiPreferences(
     UiLanguagePreference Language = UiLanguagePreference.FollowSystem,
     bool ThxAudioIntegrationEnabled = false,
     bool SnapTapEnabled = false,
-    IReadOnlyList<TelemetryChartMetricPreference>? TelemetryChartMetrics = null)
+    IReadOnlyList<TelemetryChartMetricPreference>? TelemetryChartMetrics = null,
+    bool TelemetryEnabled = false)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -110,7 +111,8 @@ public sealed record UiPreferences(
         LastNotifiedFirmwareSignature: null,
         TrayDashboard: TrayDashboardPreferenceDefaults.Preference,
         LabFeaturesEnabled: false,
-        Language: UiLanguagePreference.FollowSystem);
+        Language: UiLanguagePreference.FollowSystem,
+        TelemetryEnabled: false);
 
     public UiLanguagePreference EffectiveLanguage =>
         UiLanguagePreferencePolicy.Normalize(Language);

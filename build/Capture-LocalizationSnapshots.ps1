@@ -125,6 +125,7 @@ try {
             'profiles-application-discovery-empty',
             'telemetry',
             'telemetry-empty',
+            'telemetry-disabled',
             'telemetry-analysis',
             'telemetry-narrow',
             'telemetry-controls-narrow',

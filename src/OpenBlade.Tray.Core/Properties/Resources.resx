@@ -1699,4 +1699,7 @@ Details: {1}</value>
   <data name="Telemetry recording reached its limit and was saved to {0}." xml:space="preserve">
     <value>Telemetry recording reached its limit and was saved to {0}.</value>
   </data>
+  <data name="Telemetry is disabled." xml:space="preserve">
+    <value>Telemetry is disabled.</value>
+  </data>
 </root>

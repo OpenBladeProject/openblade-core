@@ -2753,4 +2753,13 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
     <value>所选读数已不再保留。</value>
   </data>
+  <data name="Telemetry_Enable.Text" xml:space="preserve">
+    <value>启用遥测</value>
+  </data>
+  <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>启用遥测</value>
+  </data>
+  <data name="Telemetry_Disabled.Text" xml:space="preserve">
+    <value>启用遥测以收集传感器历史数据并将数据记录到 CSV 文件。</value>
+  </data>
 </root>

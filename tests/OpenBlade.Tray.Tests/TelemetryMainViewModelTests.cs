@@ -13,11 +13,299 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         $"OpenBlade.TelemetryViewModel.Tests-{Guid.NewGuid():N}");
 
     [Fact]
+    public async Task DisabledByDefault_DoesNotDemandOrCaptureUntilEnabled()
+    {
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(Start);
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.StartAsync();
+        client.Publish(Status(1));
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
+        viewModel.LiveReadingsEnabled = false;
+        viewModel.SetTelemetryPresentationActive(true);
+        client.Observation = Status(2, withReadings: true);
+
+        Assert.False(viewModel.TelemetryEnabled);
+        Assert.False(viewModel.RequiresTelemetryObservation);
+        await viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        Assert.Empty(client.Requests);
+        Assert.Equal(0, viewModel.TelemetryHistorySnapshot.RawSampleCount);
+
+        await viewModel.SetTelemetryEnabledAsync(true);
+        Assert.True(viewModel.RequiresTelemetryObservation);
+        await viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        Assert.Equal([LiveReadingSensors.All], client.Requests);
+        Assert.Equal(1, viewModel.TelemetryHistorySnapshot.RawSampleCount);
+    }
+
+    [Fact]
+    public async Task Disabled_RejectsRecordingAndReplayBeforeOpeningTheirSources()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new ImmediateDispatcher(),
+            new MutableTimeProvider(Start));
+        bool recordingFactoryCalled = false;
+        viewModel.SetTelemetryRecordingFactoryForTests((_, _, _, _) =>
+        {
+            recordingFactoryCalled = true;
+            return Task.FromResult<ITelemetryRecordingSession>(new GatedRecordingSession());
+        });
+
+        InvalidOperationException recordingException =
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                viewModel.StartTelemetryRecordingAsync("disabled.csv", CancellationToken.None));
+        InvalidOperationException replayException =
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                viewModel.OpenTelemetryReplayAsync("missing.csv", CancellationToken.None));
+
+        Assert.Equal(TrayText.Get("Telemetry is disabled."), recordingException.Message);
+        Assert.Equal(TrayText.Get("Telemetry is disabled."), replayException.Message);
+        Assert.False(recordingFactoryCalled);
+        Assert.False(viewModel.IsTelemetryRecording);
+        Assert.Null(viewModel.TelemetryReplaySession);
+    }
+
+    [Fact]
+    public async Task Disposed_RejectsTelemetryEnableRecordingAndReplay()
+    {
+        var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new ImmediateDispatcher(),
+            new MutableTimeProvider(Start));
+        await viewModel.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            viewModel.SetTelemetryEnabledAsync(true));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            viewModel.StartTelemetryRecordingAsync("disposed.csv", CancellationToken.None));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            viewModel.OpenTelemetryReplayAsync("disposed.csv", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DisposeDuringReplayRead_DoesNotPublishReplay()
+    {
+        var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new ImmediateDispatcher(),
+            new MutableTimeProvider(Start));
+        await viewModel.SetTelemetryEnabledAsync(true);
+        var readStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRead = new TaskCompletionSource<TelemetrySessionDocument>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.SetTelemetryReplayReaderForTests(async (_, _, _) =>
+        {
+            readStarted.TrySetResult();
+            return await allowRead.Task;
+        });
+
+        Task replay = viewModel.OpenTelemetryReplayAsync("replay.csv", CancellationToken.None);
+        await readStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await viewModel.DisposeAsync();
+        allowRead.TrySetResult(new TelemetrySessionDocument(
+            TelemetrySessionMetadata.CreateLive(Start),
+            [],
+            []));
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => replay);
+        Assert.Null(viewModel.TelemetryReplaySession);
+    }
+
+    [Fact]
+    public async Task DisposeDuringRecordingStart_DoesNotPublishRecording()
+    {
+        var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new ImmediateDispatcher(),
+            new MutableTimeProvider(Start));
+        await viewModel.SetTelemetryEnabledAsync(true);
+        var recording = new GatedRecordingSession();
+        var factoryStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowFactory = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.SetTelemetryRecordingFactoryForTests(async (_, _, _, _) =>
+        {
+            factoryStarted.TrySetResult();
+            await allowFactory.Task;
+            return recording;
+        });
+
+        Task start = viewModel.StartTelemetryRecordingAsync(
+            "disposed.csv",
+            CancellationToken.None);
+        await factoryStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task dispose = viewModel.DisposeAsync().AsTask();
+        allowFactory.TrySetResult();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => start);
+        await dispose.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(recording.DisposeCalled.Task.IsCompletedSuccessfully);
+        Assert.False(viewModel.IsTelemetryRecording);
+    }
+
+    [Fact]
+    public async Task Disable_DrainsAcceptedAppendAndFinalizesActiveRecording()
+    {
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(Start);
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
+        await viewModel.StartAsync();
+        client.Publish(Status(1));
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
+        viewModel.LiveReadingsEnabled = false;
+        var recording = new GatedRecordingSession();
+        viewModel.SetTelemetryRecordingFactoryForTests(
+            (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(recording));
+        await viewModel.StartTelemetryRecordingAsync("accepted.csv", CancellationToken.None);
+        client.Observation = Status(2, withReadings: true);
+        Task observation = viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        await recording.AppendStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Task disable = viewModel.SetTelemetryEnabledAsync(false);
+        await WaitForAsync(() => !viewModel.IsTelemetryRecording);
+
+        Assert.False(viewModel.TelemetryEnabled);
+        Assert.False(viewModel.RequiresTelemetryObservation);
+        Assert.False(recording.StopCalled.Task.IsCompleted);
+        recording.AllowAppend.TrySetResult();
+        await observation;
+        await disable.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(recording.StopCalled.Task.IsCompletedSuccessfully);
+        Assert.Single(recording.AppendedSamples);
+    }
+
+    [Fact]
+    public async Task Disable_QueuesOffPreferenceBeforeBlockedRecordingFinalization()
+    {
+        string preferencePath = Path.Combine(directory, "preferences.json");
+        var preferenceStore = new UiPreferenceStore(preferencePath);
+        await preferenceStore.SaveAsync(new UiPreferences(
+            ThemePreference.FollowWindows,
+            TelemetryEnabled: true));
+        Exception? saveFailure = null;
+        var preferenceSaveQueue = new UiPreferenceSaveQueue(
+            preferenceStore.SaveAsync,
+            exception => saveFailure = exception);
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(
+            client,
+            new ImmediateDispatcher(),
+            new MutableTimeProvider(Start));
+        await viewModel.SetTelemetryEnabledAsync(true);
+        bool telemetryToggleInProgress = false;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (telemetryToggleInProgress
+                && args.PropertyName == nameof(MainViewModel.TelemetryEnabled))
+            {
+                preferenceSaveQueue.Enqueue(new UiPreferences(
+                    ThemePreference.FollowWindows,
+                    TelemetryEnabled: viewModel.TelemetryEnabled));
+            }
+        };
+        await viewModel.StartAsync();
+        client.Publish(Status(1));
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
+        var recording = new GatedRecordingSession(gateStop: true);
+        viewModel.SetTelemetryRecordingFactoryForTests(
+            (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(recording));
+        await viewModel.StartTelemetryRecordingAsync("blocked.csv", CancellationToken.None);
+        client.Observation = Status(2, withReadings: true);
+        Task observation = viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        await recording.AppendStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        telemetryToggleInProgress = true;
+        Task disable = viewModel.SetTelemetryEnabledAsync(false);
+        await WaitForAsync(() => !viewModel.TelemetryEnabled);
+        await preferenceSaveQueue.DisposeAsync();
+
+        Assert.False((await preferenceStore.LoadAsync()).TelemetryEnabled);
+        Assert.Null(saveFailure);
+        Assert.False(disable.IsCompleted);
+        Assert.False(recording.StopCalled.Task.IsCompleted);
+
+        recording.AllowAppend.TrySetResult();
+        await observation;
+        await recording.StopCalled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(disable.IsCompleted);
+        recording.AllowStop.TrySetResult();
+        await disable.WaitAsync(TimeSpan.FromSeconds(5));
+        telemetryToggleInProgress = false;
+    }
+
+    [Fact]
+    public async Task Disable_StopFailureLeavesFeatureOffAndPartialPathRecoverable()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new ImmediateDispatcher(),
+            new MutableTimeProvider(Start));
+        await viewModel.SetTelemetryEnabledAsync(true);
+        var recording = new GatedRecordingSession(
+            partialPath: "failed.csv.partial",
+            stopFailure: new IOException("Disk full."));
+        viewModel.SetTelemetryRecordingFactoryForTests(
+            (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(recording));
+        await viewModel.StartTelemetryRecordingAsync("failed.csv", CancellationToken.None);
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(() =>
+            viewModel.SetTelemetryEnabledAsync(false));
+
+        Assert.Equal("Disk full.", exception.Message);
+        Assert.False(viewModel.TelemetryEnabled);
+        Assert.False(viewModel.IsTelemetryRecording);
+        Assert.Contains("failed.csv.partial", viewModel.TelemetryErrorMessage,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Disable_RacingRecordingStartWaitsAndFinalizesCreatedSession()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new ImmediateDispatcher(),
+            new MutableTimeProvider(Start));
+        await viewModel.SetTelemetryEnabledAsync(true);
+        var recording = new GatedRecordingSession(destinationPath: "raced.csv");
+        var factoryStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowFactory = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.SetTelemetryRecordingFactoryForTests(async (_, _, _, _) =>
+        {
+            factoryStarted.TrySetResult();
+            await allowFactory.Task;
+            return recording;
+        });
+
+        Task start = viewModel.StartTelemetryRecordingAsync(
+            "raced.csv",
+            CancellationToken.None);
+        await factoryStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task disable = viewModel.SetTelemetryEnabledAsync(false);
+        Assert.False(viewModel.TelemetryEnabled);
+        Assert.False(disable.IsCompleted);
+
+        allowFactory.TrySetResult();
+        await start.WaitAsync(TimeSpan.FromSeconds(5));
+        await disable.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(recording.StopCalled.Task.IsCompletedSuccessfully);
+        Assert.False(viewModel.IsTelemetryRecording);
+        Assert.False(viewModel.TelemetryEnabled);
+    }
+
+    [Fact]
     public async Task ActivePresentation_RequestsAllSensorsAndCapturesEachRevisionOnce()
     {
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         await viewModel.StartAsync();
         client.Publish(Status(1));
         await WaitForAsync(() => viewModel.HasAppliedServiceState);
@@ -46,6 +334,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         await viewModel.StartAsync();
         client.Publish(Status(1));
         await WaitForAsync(() => viewModel.HasAppliedServiceState);
@@ -79,6 +368,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await TelemetryCsv.WriteAsync(path, new(metadata, [sample], [marker]));
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), new MutableTimeProvider(Start));
+        await viewModel.SetTelemetryEnabledAsync(true);
         await viewModel.StartAsync();
         client.Publish(Status(1));
         await WaitForAsync(() => viewModel.HasAppliedServiceState);
@@ -96,7 +386,9 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         Assert.Null(viewModel.LatestTelemetrySample);
         Assert.Null(viewModel.LatestTelemetryFreshness);
         Assert.Equal(0, viewModel.GetTelemetrySnapshot().RawSampleCount);
-        viewModel.CloseTelemetryReplay();
+        await viewModel.SetTelemetryEnabledAsync(false);
+        Assert.Null(viewModel.TelemetryReplaySession);
+        Assert.False(viewModel.TelemetryEnabled);
         Assert.NotNull(viewModel.LatestTelemetrySample);
     }
 
@@ -108,6 +400,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         await viewModel.StartAsync();
         client.Publish(Status(1));
         await WaitForAsync(() => viewModel.HasAppliedServiceState);
@@ -147,6 +440,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         await viewModel.StartAsync();
         client.Publish(Status(1));
         await WaitForAsync(() => viewModel.HasAppliedServiceState);
@@ -175,6 +469,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         var failed = new GatedRecordingSession(
             partialPath: "failed.csv.partial",
             stopFailure: new IOException("Disk full."));
@@ -206,6 +501,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         var failed = new GatedRecordingSession(
             destinationPath: "failed.csv",
             partialPath: "failed.csv.partial");
@@ -239,6 +535,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         var completed = new GatedRecordingSession(destinationPath: "capacity.csv");
         viewModel.SetTelemetryRecordingFactoryForTests(
             (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(completed));
@@ -269,6 +566,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
             client,
             new ImmediateDispatcher(),
             new MutableTimeProvider(Start));
+        await viewModel.SetTelemetryEnabledAsync(true);
         var failed = new GatedRecordingSession(
             disposeFailure: new IOException("Writer failed while shutting down."));
         viewModel.SetTelemetryRecordingFactoryForTests(
@@ -285,6 +583,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         var recording = new GatedRecordingSession(gateStop: true);
         viewModel.SetTelemetryRecordingFactoryForTests(
             (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(recording));
@@ -320,6 +619,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(Start);
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
         await viewModel.StartAsync();
         client.Publish(Status(1));
         await WaitForAsync(() => viewModel.HasAppliedServiceState);
@@ -499,6 +799,9 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         public TaskCompletionSource AllowStop { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public TaskCompletionSource DisposeCalled { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
         public List<TelemetrySample> AppendedSamples { get; } = [];
 
         public bool IsActive => active;
@@ -543,6 +846,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         {
             active = false;
             AllowAppend.TrySetResult();
+            DisposeCalled.TrySetResult();
             if (disposeFailure is not null)
             {
                 return ValueTask.FromException(disposeFailure);

@@ -1,6 +1,10 @@
 # Telemetry and battery history
 
-Open **Telemetry** to compare battery power, CPU/GPU temperatures and fan speed.
+Open **Telemetry** and turn on **Enable telemetry** to compare battery power,
+CPU/GPU temperatures and fan speed. Telemetry is off by default; the switch is
+saved for your Windows user. Turning it off stops history collection and finishes
+an active CSV recording. Existing CSV files remain available when you turn it
+back on. Dashboard live readings use their own preference.
 Temperature, power and fan speed use separate scales with a shared time axis.
 Use the **Metrics and colors** gear to choose visible sensors and their colors; these
 preferences are saved for your Windows user. Missing readings and pauses remain

@@ -3133,10 +3133,24 @@
                               VerticalScrollMode="Enabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="28,20,28,28" Spacing="16"
                                 Width="{Binding ElementName=TelemetryPage, Path=ViewportWidth, Mode=OneWay}">
-                        <TextBlock x:Uid="Telemetry_Title" Text="Telemetry" Style="{StaticResource PageHeaderTitleStyle}" />
+                        <local:ContextualToolbar x:Name="TelemetryPageHeader">
+                            <TextBlock x:Uid="Telemetry_Title" Text="Telemetry" Style="{StaticResource PageHeaderTitleStyle}"
+                                       local:ContextualToolbar.Role="Context" />
+                            <StackPanel Orientation="Horizontal" Spacing="12" local:ContextualToolbar.Role="Actions">
+                                <TextBlock x:Uid="Telemetry_Enable" Text="Enable telemetry" Style="{StaticResource AppBodyTextStyle}" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="TelemetryEnabledToggle" x:Uid="Telemetry_EnableToggle"
+                                              Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnTelemetryEnabledToggled"
+                                              AutomationProperties.Name="Enable telemetry" />
+                            </StackPanel>
+                        </local:ContextualToolbar>
                         <TextBlock x:Uid="Telemetry_Description"
                                    Text="Inspect temperatures, fans and battery power over time. Missing readings remain gaps."
                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="TelemetryDisabledText" x:Uid="Telemetry_Disabled"
+                                   Text="Enable telemetry to collect sensor history and record data to CSV files."
+                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="TelemetryErrorText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                        <StackPanel x:Name="TelemetryContent" Spacing="16" Visibility="Collapsed">
                         <local:ContextualToolbar x:Name="TelemetrySourceHeader">
                             <StackPanel x:Name="TelemetrySourceContext"
                                         local:ContextualToolbar.Role="Context"
@@ -3197,7 +3211,6 @@
                                 </Button>
                             </local:ContentWrapPanel>
                         </local:ContextualToolbar>
-                        <TextBlock x:Name="TelemetryErrorText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <Border Style="{StaticResource SettingsEditorSubcardStyle}">
                                 <local:TelemetryChart x:Name="TelemetryPlot" PlotStroke="{ThemeResource AccentTextFillColorPrimaryBrush}"
@@ -3206,6 +3219,7 @@
                         </Border>
                         <TextBlock x:Uid="Telemetry_EventsTitle" Text="Power and profile changes" Style="{StaticResource CardTitleStyle}" />
                         <TextBlock x:Name="TelemetryEventsText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 

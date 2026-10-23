@@ -2770,4 +2770,13 @@ OpenBlade повторно проверит этот список и остан�
   <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
     <value>Выбранное показание больше не хранится.</value>
   </data>
+  <data name="Telemetry_Enable.Text" xml:space="preserve">
+    <value>Включить телеметрию</value>
+  </data>
+  <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Включить телеметрию</value>
+  </data>
+  <data name="Telemetry_Disabled.Text" xml:space="preserve">
+    <value>Включите телеметрию, чтобы собирать историю показаний и записывать данные в CSV.</value>
+  </data>
 </root>

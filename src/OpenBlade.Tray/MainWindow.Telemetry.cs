@@ -11,6 +11,35 @@ public sealed partial class MainWindow
 {
     private string? telemetryActionError;
     private bool telemetryPresentationDirty = true;
+    private bool telemetryToggleSynchronizing;
+    private bool telemetryToggleInProgress;
+
+    private async void OnTelemetryEnabledToggled(object sender, RoutedEventArgs args)
+    {
+        if (telemetryToggleSynchronizing || TelemetryEnabledToggle.IsOn == ViewModel.TelemetryEnabled)
+        {
+            return;
+        }
+        telemetryToggleInProgress = true;
+        TelemetryEnabledToggle.IsEnabled = false;
+        try
+        {
+            await RunTelemetryActionAsync(
+                () => ViewModel.SetTelemetryEnabledAsync(TelemetryEnabledToggle.IsOn),
+                nameof(OnTelemetryEnabledToggled));
+        }
+        finally
+        {
+            telemetryToggleInProgress = false;
+            if (Volatile.Read(ref disposed) == 0)
+            {
+                TelemetryEnabledToggle.IsEnabled = true;
+                UpdateDashboardTelemetryPresentationState();
+                UpdateActiveObservationLoop();
+                RefreshTelemetryPresentation();
+            }
+        }
+    }
 
     private void RefreshTelemetryPresentation(DateTimeOffset? rangeEndOverride = null)
     {
@@ -18,6 +47,21 @@ public sealed partial class MainWindow
             && (!windowVisible || TelemetryPage.Visibility != Visibility.Visible))
         {
             telemetryPresentationDirty = true;
+            return;
+        }
+
+        bool enabled = ViewModel.TelemetryEnabled;
+        telemetryToggleSynchronizing = true;
+        try { TelemetryEnabledToggle.IsOn = enabled; }
+        finally { telemetryToggleSynchronizing = false; }
+        TelemetryContent.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        TelemetryDisabledText.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+        TelemetryErrorText.Text = telemetryActionError ?? ViewModel.TelemetryErrorMessage;
+        TelemetryErrorText.Visibility = string.IsNullOrWhiteSpace(TelemetryErrorText.Text)
+            ? Visibility.Collapsed : Visibility.Visible;
+        if (!enabled)
+        {
+            telemetryPresentationDirty = false;
             return;
         }
 
@@ -70,7 +114,7 @@ public sealed partial class MainWindow
         TelemetryLiveButton.Visibility = replay
             ? Visibility.Visible
             : Visibility.Collapsed;
-        TelemetryRecordButton.IsEnabled = !localizationSnapshotMode && !recording && !replay;
+        TelemetryRecordButton.IsEnabled = enabled && !recording && !replay;
         TelemetryStopButton.IsEnabled = recording;
         TelemetryLiveButton.IsEnabled = replay;
         string recordingOff = LocalizedResources.Get(
@@ -86,10 +130,6 @@ public sealed partial class MainWindow
         TelemetryRecordingText.Visibility = recording
             ? Visibility.Visible
             : Visibility.Collapsed;
-        TelemetryErrorText.Text = telemetryActionError ?? ViewModel.TelemetryErrorMessage;
-        TelemetryErrorText.Visibility = string.IsNullOrWhiteSpace(TelemetryErrorText.Text)
-            ? Visibility.Collapsed
-            : Visibility.Visible;
         telemetryPresentationDirty = false;
     }
 

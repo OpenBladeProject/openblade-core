@@ -35,6 +35,7 @@
     "tray/main-settings.png",
     "tray/main-telemetry.png",
     "tray/main-telemetry-empty.png",
+    "tray/main-telemetry-disabled.png",
     "tray/main-telemetry-analysis.png",
     "tray/main-telemetry-narrow.png",
     "tray/main-telemetry-controls-narrow.png",
@@ -63,8 +64,8 @@
       "surface": "tray",
       "match": "key",
       "pattern": "^(?:Telemetry(?:UI)?_|Navigation_Telemetry$|Feature_(?:3ca3281778c2|42d94a35c548|4696d358d054|6141eef71a99|6c455cda31d0|72539d6acd07|73998e0f0da8|73e7c4edf7e7|7d021f67142c|7f1c35cb6572|8f1c7cba79a7|905c2bc1b6eb|94d954185187|a72204aa94d0|b5c358cef921|c650cc78b7fe|c7f01a7da8db|c83b7fc012ef|d6db2da1a792|e09ca605b555|f04321b95415|f8d2f2cd53a8))",
-      "context": "Telemetry page shown with deterministic readings, gaps, analysis statistics, a draggable exact-time range, contextual recording and replay controls, compact source controls at narrow width, a right-edge hover readout, dark layout, and per-user metric visibility and color flyouts.",
-      "screenshots": ["tray/main-telemetry.png", "tray/main-telemetry-empty.png", "tray/main-telemetry-analysis.png", "tray/main-telemetry-narrow.png", "tray/main-telemetry-controls-narrow.png", "tray/main-telemetry-hover-edge.png", "tray/main-telemetry-dark.png", "tray/main-telemetry-range.png", "tray/main-telemetry-expired.png", "tray/main-telemetry-retention.png", "tray/main-telemetry-recording.png", "tray/main-telemetry-replay.png", "tray/main-telemetry-metrics.png", "tray/telemetry-metrics.png", "tray/main-telemetry-color.png", "tray/telemetry-color.png"]
+      "context": "Telemetry page with a default-off enable switch, disabled empty state, deterministic readings, gaps, analysis statistics, a draggable exact-time range, contextual recording and replay controls, compact source controls at narrow width, a right-edge hover readout, dark layout, and per-user metric visibility and color flyouts.",
+      "screenshots": ["tray/main-telemetry.png", "tray/main-telemetry-disabled.png", "tray/main-telemetry-empty.png", "tray/main-telemetry-analysis.png", "tray/main-telemetry-narrow.png", "tray/main-telemetry-controls-narrow.png", "tray/main-telemetry-hover-edge.png", "tray/main-telemetry-dark.png", "tray/main-telemetry-range.png", "tray/main-telemetry-expired.png", "tray/main-telemetry-retention.png", "tray/main-telemetry-recording.png", "tray/main-telemetry-replay.png", "tray/main-telemetry-metrics.png", "tray/telemetry-metrics.png", "tray/main-telemetry-color.png", "tray/telemetry-color.png"]
     },
     {
       "surface": "tray",

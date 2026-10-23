@@ -53,6 +53,12 @@ public sealed class ContentWrapPanel : Panel
 
         desiredWidth = Math.Max(desiredWidth, lineWidth);
         desiredHeight += lineHeight;
+        // Grid rounds an Auto column to physical pixels. Reserve the next pixel
+        // so a fractional natural width cannot be rounded down and introduce an
+        // extra row only during Arrange, after the row height was measured.
+        double scale = XamlRoot?.RasterizationScale ?? 1;
+        if (!double.IsFinite(scale) || scale <= 0) { scale = 1; }
+        desiredWidth = Math.Min(availableWidth, Math.Ceiling(desiredWidth * scale) / scale);
         return new Size(desiredWidth, desiredHeight);
     }
 
@@ -118,7 +124,8 @@ public sealed class ContentWrapPanel : Panel
             if (bounds.Left < -tolerance || bounds.Top < -tolerance
                 || bounds.Right > ActualWidth + tolerance || bounds.Bottom > ActualHeight + tolerance)
             {
-                throw new InvalidOperationException("A wrapped command extends outside its host.");
+                throw new InvalidOperationException(
+                    $"A wrapped command extends outside its host. Bounds={bounds}; host={ActualWidth}x{ActualHeight}; desired={DesiredSize}; scale={XamlRoot?.RasterizationScale}.");
             }
             if (occupied.Any(other => Overlaps(other, bounds, tolerance)))
             {

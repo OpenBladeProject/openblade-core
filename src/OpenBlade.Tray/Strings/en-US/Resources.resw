@@ -2770,4 +2770,13 @@ OpenBlade did not retry any stop request.</value>
   <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
     <value>Selected reading is no longer kept.</value>
   </data>
+  <data name="Telemetry_Disabled.Text" xml:space="preserve">
+    <value>Enable telemetry to collect sensor history and record data to CSV files.</value>
+  </data>
+  <data name="Telemetry_Enable.Text" xml:space="preserve">
+    <value>Enable telemetry</value>
+  </data>
+  <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Enable telemetry</value>
+  </data>
 </root>

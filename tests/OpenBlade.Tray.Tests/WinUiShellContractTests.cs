@@ -17,7 +17,7 @@ public sealed class WinUiShellContractTests
         string catalog = ReadRepositoryFile(
             "build", "localization", "TranslatorScreenshotMap.json");
 
-        foreach (string route in new[] { "telemetry-controls-narrow", "telemetry-hover-edge", "telemetry-recording", "telemetry-replay" })
+        foreach (string route in new[] { "telemetry-disabled", "telemetry-controls-narrow", "telemetry-hover-edge", "telemetry-recording", "telemetry-replay" })
         {
             Assert.Contains($"\"{route}\"", app, StringComparison.Ordinal);
             Assert.Contains($"case \"{route}\":", features, StringComparison.Ordinal);

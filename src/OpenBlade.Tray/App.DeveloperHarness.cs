@@ -683,7 +683,7 @@ public partial class App
             bool captureFeatureSnapshot = captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
-                or "profiles-application-discovery-empty" or "telemetry-empty"
+                or "profiles-application-discovery-empty" or "telemetry-empty" or "telemetry-disabled"
                 or "laptop-battery-history" or "display-brightness-known"
                 or "display-brightness-unavailable";
             bool captureSnapTapFailure = string.Equals(
@@ -846,6 +846,10 @@ public partial class App
                             snapshotMainWindow.ShowLocalizationSnapshotFeature("display-brightness-known");
                             await WaitForSnapshotLayoutAsync();
                         }
+                        if (destination == "telemetry" || destination.StartsWith("telemetry-", StringComparison.Ordinal))
+                        {
+                            await snapshotMainWindow.ViewModel.SetTelemetryEnabledAsync(destination != "telemetry-disabled");
+                        }
                         snapshotMainWindow.ShowLocalizationSnapshotFeature(destination);
                         if (captureTelemetrySource)
                         {
@@ -903,7 +907,7 @@ public partial class App
                                 color: destination == "telemetry-color"),
                             Path.Combine(resolvedDirectory, $"{destination}.png"));
                     }
-                    if (captureTelemetryVariant || destination is "telemetry" or "telemetry-empty")
+                    if (captureTelemetryVariant || destination is "telemetry" or "telemetry-empty" or "telemetry-disabled")
                     {
                         snapshotMainWindow.VerifyLocalizationSnapshotTelemetry();
                     }

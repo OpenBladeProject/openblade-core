@@ -2770,4 +2770,13 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
     <value>[!! Séléctéd réádíng ís nó lóngér képt. ~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Telemetry_Disabled.Text" xml:space="preserve">
+    <value>[!! Énáblé télémétrý tó cólléct sénsór hístórý ánd récórd dátá tó CSV fílés. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Enable.Text" xml:space="preserve">
+    <value>[!! Énáblé télémétrý ~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Énáblé télémétrý ~~~~~~ !!]</value>
+  </data>
 </root>

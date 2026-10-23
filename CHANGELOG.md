@@ -11,6 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Keep telemetry off by default with a saved Enable telemetry switch. Turning it off stops history collection and finishes an active CSV recording. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Show timestamped sensor values beside the telemetry crosshair while hovering. Use flat desktop toolbar controls, grouped sample navigation and a live-follow toggle, with an inline Full range action beside the timeline label. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Standardize app typography around the native WinUI type scale and shared command sizing. Telemetry table headers use strong text while body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 
