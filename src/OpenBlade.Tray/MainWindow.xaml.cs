@@ -279,6 +279,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     : Microsoft.UI.Colors.White);
         }
         Root.DataContext = ViewModel;
+        Root.ActualThemeChanged += OnRootActualThemeChanged;
+        ApplyCaptionTheme();
         Root.Loaded += OnRootLoaded;
         Root.SizeChanged += OnRootSizeChanged;
         AppWindow.Changed += OnAppWindowChanged;
@@ -753,6 +755,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel.UserSettingsChanged -= OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
         AppWindow.Closing -= OnClosing;
+        Root.ActualThemeChanged -= OnRootActualThemeChanged;
         Root.Loaded -= OnRootLoaded;
         Root.SizeChanged -= OnRootSizeChanged;
         AppWindow.Changed -= OnAppWindowChanged;
@@ -1316,19 +1319,33 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void ApplyTheme(ThemePreference selectedTheme)
     {
         ThemeManager.Apply(Root, selectedTheme);
+        ApplyCaptionTheme();
+    }
 
+    private void OnRootActualThemeChanged(FrameworkElement sender, object args)
+    {
+        if (Volatile.Read(ref disposed) == 0)
+        {
+            ApplyCaptionTheme();
+        }
+    }
+
+    private void ApplyCaptionTheme()
+    {
         if (!AppWindowTitleBar.IsCustomizationSupported())
         {
             return;
         }
 
         AppWindow.TitleBar.PreferredTheme =
-            ThemeSelectionPolicy.Resolve(selectedTheme) switch
+            // Native captions must follow the rendered XAML/Mica theme, including
+            // Follow Windows, rather than independently resolving the app mode.
+            Root.ActualTheme switch
             {
-                ResolvedTheme.Default => TitleBarTheme.UseDefaultAppMode,
-                ResolvedTheme.Light => TitleBarTheme.Light,
-                ResolvedTheme.Dark => TitleBarTheme.Dark,
-                _ => throw new ArgumentOutOfRangeException(nameof(selectedTheme)),
+                ElementTheme.Default => TitleBarTheme.UseDefaultAppMode,
+                ElementTheme.Light => TitleBarTheme.Light,
+                ElementTheme.Dark => TitleBarTheme.Dark,
+                _ => throw new InvalidOperationException("Unexpected resolved window theme."),
             };
     }
 
