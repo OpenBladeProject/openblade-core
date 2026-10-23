@@ -4257,22 +4257,34 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState confirmed = await deviceProvider.ResumeExperimentalWritesAsync(
                 observed =>
                 {
+                    bool unavailableLightingIsBeingAbandoned = uncertainLighting
+                        && observed.Lighting is null;
                     if (!StillAuthorized()
                         || pendingWriteConfirmations.Snapshot().Any(entry => entry.Value.Match(
                             entry.Key, observed, source, Automation, managementState: null)
-                                == PendingConfirmationResult.Unavailable))
+                                == PendingConfirmationResult.Unavailable
+                            && !(unavailableLightingIsBeingAbandoned
+                                && entry.Key == DeviceSubsystem.Lighting)))
                     {
                         return false;
                     }
-                    ReconcilePendingWriteConfirmations(observed, source, device);
-                    // The user may submit a new request; do not continue the paused transition.
-                    pendingTransitionContinuation = null;
+                    if (unavailableLightingIsBeingAbandoned)
+                    {
+                        // Recovery observed enough protocol state to permit a new
+                        // explicit request, but not enough to confirm or contradict
+                        // the interrupted lighting write. Retire only that pending
+                        // confirmation without attributing unknown state as drift.
+                        pendingWriteConfirmations.Remove(DeviceSubsystem.Lighting);
+                    }
                     if (uncertainLighting)
                     {
                         pendingLightingRestore = null;
                         pendingLightingRestoreFromLifecycle = false;
-                        experimentalLightingResumeAwaitingRequest = observed.Lighting is not null;
+                        experimentalLightingResumeAwaitingRequest = true;
                     }
+                    ReconcilePendingWriteConfirmations(observed, source, device);
+                    // The user may submit a new request; do not continue the paused transition.
+                    pendingTransitionContinuation = null;
                     return true;
                 }, StillAuthorized, token).ConfigureAwait(false);
             bool retainedHyperBoostRecovery = hyperBoostRestorePending

@@ -619,8 +619,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             (IRz090528LightingEffect? Effect, LightingSettings? Settings,
                 long StartedTimestamp, LightingRendererOwnershipState Ownership) previous =
                 CaptureOwnedEffectCore();
+            bool wakingFromDark = baselineRaw == 0 && requestedRaw != 0;
 
-            if (CanRetainRenderer(previous.Settings, settings))
+            if (!wakingFromDark && CanRetainRenderer(previous.Settings, settings))
             {
                 try
                 {
@@ -665,11 +666,15 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 }
             }
 
+            // On wake, keep the keyboard dark until the selected frame is ready.
+            // Raising brightness first exposes stale firmware/transition colors.
+            bool brightnessAttempted = false;
             await StopStreamCoreAsync().ConfigureAwait(false);
             try
             {
-                if (baselineRaw != requestedRaw)
+                if (!wakingFromDark && baselineRaw != requestedRaw)
                 {
+                    brightnessAttempted = true;
                     await SetAndConfirmRawCoreAsync(
                         requestedRaw,
                         cancellationToken).ConfigureAwait(false);
@@ -686,6 +691,13 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     await WriteMatrixFrameCoreAsync(
                         effect.RenderFrame(TimeSpan.Zero),
                         cancellationToken).ConfigureAwait(false);
+
+                    if (wakingFromDark)
+                    {
+                        brightnessAttempted = true;
+                        await SetAndConfirmRawCoreAsync(requestedRaw, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                     lock (effectSync)
                     {
                         activeEffect = effect;
@@ -708,7 +720,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             }
             catch (Exception exception)
             {
-                bool brightnessRestored = baselineRaw == requestedRaw
+                bool brightnessRestored = !brightnessAttempted || baselineRaw == requestedRaw
                     || await TryRestoreCoreAsync(baselineRaw).ConfigureAwait(false);
                 bool rendererRestored = previous.Effect is not null
                     && await TryRestoreOwnedEffectCoreAsync(previous)

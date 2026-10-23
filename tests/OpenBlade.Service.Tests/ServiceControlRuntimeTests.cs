@@ -6147,7 +6147,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             .SetValue(context.Runtime, true);
 
     [Fact]
-    public async Task ResumeExperimentalWrites_DoesNotReplayUncertainLightingThroughOwnershipPolicy()
+    public async Task ResumeExperimentalWrites_NullLightingRetiresOnlyLightingPendingAndWaitsForNewRequest()
     {
         var gate = new LowPowerGate();
         TestContext context = CreateWritableContext(lowPowerGate: gate);
@@ -6179,13 +6179,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             }, before.ConfirmedState!));
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
-            Lighting = LightingSettingsFactory.SpectrumCycling(45),
+            Lighting = null,
         };
         context.Provider.IsExperimentalWritesPaused = true;
         int writes = context.Device.TotalSetterCalls;
         ControlOperationResult resumed = await context.Runtime.ResumeExperimentalWritesAsync(
             static () => true, CancellationToken.None);
         Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
+        Assert.False(pending.Blocks(DeviceSubsystem.Lighting));
+        Assert.Null(context.Runtime.GetStatus().ConfirmedState!.Lighting);
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
         typeof(ServiceControlRuntime).GetField("pendingLightingRestore",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
@@ -6211,6 +6213,50 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         gate.Exit();
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
         Assert.True(context.Device.LightingSetCalls > lightingWrites);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResumeExperimentalWrites_CrossPowerNullLightingPreservesExistingDrift(
+        bool controllerPresent)
+    {
+        TestContext context = CreateWritableContext(
+            conflicts: controllerPresent ? ["RazerAppEngine"] : null,
+            initialPowerSource: PowerSource.Battery);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        if (!controllerPresent)
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Lighting = LightingSettingsFactory.SpectrumCycling(45),
+            };
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+        bool lightingDriftBefore = context.Runtime.GetStatus().ExternalChanges
+            .Contains(DeviceSubsystem.Lighting);
+        Assert.Equal(!controllerPresent, lightingDriftBefore);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        var pending = Assert.IsType<PendingWriteConfirmationTracker>(typeof(ServiceControlRuntime)
+            .GetField("pendingWriteConfirmations", System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
+        pending.Set(DeviceSubsystem.Lighting, new PendingWriteConfirmation(
+            PowerSource.PluggedIn,
+            before.DesiredState,
+            before.ConfirmedState!));
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { Lighting = null };
+        context.Provider.IsExperimentalWritesPaused = true;
+
+        ControlOperationResult resumed = await context.Runtime.ResumeExperimentalWritesAsync(
+            static () => true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
+        Assert.False(pending.Blocks(DeviceSubsystem.Lighting));
+        Assert.Equal(
+            lightingDriftBefore,
+            context.Runtime.GetStatus().ExternalChanges.Contains(DeviceSubsystem.Lighting));
     }
 
     [Theory]
