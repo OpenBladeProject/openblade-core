@@ -20,7 +20,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
         await viewModel.StartAsync();
         client.Publish(Status(1));
-        await WaitForAsync(() => viewModel.IsConnected);
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
         viewModel.LiveReadingsEnabled = false;
         viewModel.SetTelemetryPresentationActive(true);
 
@@ -48,7 +48,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
         await viewModel.StartAsync();
         client.Publish(Status(1));
-        await WaitForAsync(() => viewModel.IsConnected);
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
         viewModel.LiveReadingsEnabled = false;
         viewModel.SetTelemetryPresentationActive(true);
         client.Observation = Status(2, withReadings: true) with
@@ -81,7 +81,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), new MutableTimeProvider(Start));
         await viewModel.StartAsync();
         client.Publish(Status(1));
-        await WaitForAsync(() => viewModel.IsConnected);
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
         viewModel.SetTelemetryPresentationActive(true);
         client.Observation = Status(2, withReadings: true);
         await viewModel.ObserveTrayStateAsync(CancellationToken.None);
@@ -110,7 +110,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
         await viewModel.StartAsync();
         client.Publish(Status(1));
-        await WaitForAsync(() => viewModel.IsConnected);
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
         viewModel.LiveReadingsEnabled = false;
 
         Assert.Null(viewModel.DisplayedTelemetrySourceSessionId);
@@ -149,7 +149,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
         await viewModel.StartAsync();
         client.Publish(Status(1));
-        await WaitForAsync(() => viewModel.IsConnected);
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
         var recording = new GatedRecordingSession();
         viewModel.SetTelemetryRecordingFactoryForTests(
             (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(recording));
@@ -322,7 +322,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
         await viewModel.StartAsync();
         client.Publish(Status(1));
-        await WaitForAsync(() => viewModel.IsConnected);
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
         viewModel.LiveReadingsEnabled = true;
         viewModel.SetTelemetryPresentationActive(true);
         viewModel.SetDashboardTelemetryPresentationActive(false);
