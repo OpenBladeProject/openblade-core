@@ -11,12 +11,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Show timestamped sensor values beside the telemetry crosshair. Organize controls around recording or replay, browse samples beside their timestamp, toggle live following, and reset the range from its timeline toolbar. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Show timestamped sensor values beside the telemetry crosshair while hovering. Use flat desktop toolbar controls, grouped sample navigation and a live-follow toggle, with an inline Full range action beside the timeline label. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Standardize app typography around the native WinUI type scale and shared command sizing. Telemetry table headers use strong text while body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 
 ### Fixed
 
-- Keep hover inspection available after telemetry range edits and preserve selection when recording starts or stops. Explain expired readings and adjusted time bounds, and retain unrelated preferences when a saved sensor is unknown. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Hide graph readouts, crosshairs and sample markers when the pointer leaves, without clearing pinned table values. Keep hover inspection available after telemetry range edits and preserve selection when recording starts or stops. Explain expired readings and adjusted time bounds, and retain unrelated preferences when a saved sensor is unknown. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Prevent stale keyboard colors from flashing before the selected effect when activity wakes idle lighting, across all supported Blade models. ([#844](https://github.com/OSSBlade/openblade-core/pull/844))
 - Keep the minimize, maximize and close buttons in sync with the window theme, including when following Windows. ([#843](https://github.com/OSSBlade/openblade-core/pull/843))
 

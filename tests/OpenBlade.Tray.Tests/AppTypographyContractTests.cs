@@ -41,8 +41,9 @@ public sealed class AppTypographyContractTests
             "{StaticResource BodyTextBlockStyle}");
         AssertSetter(data, "Typography.NumeralAlignment", "Tabular");
 
-        Assert.DoesNotContain(typography.Descendants(), element =>
-            Attribute(element, "Property") is "FontFamily" or "FontSize" or "LineHeight");
+        Assert.DoesNotContain(typography.Descendants().Where(element =>
+                Attribute(element, "TargetType") == "TextBlock").SelectMany(style => style.Descendants()),
+            element => Attribute(element, "Property") is "FontFamily" or "FontSize" or "LineHeight");
     }
 
     [Fact]
@@ -75,6 +76,31 @@ public sealed class AppTypographyContractTests
         AssertSetter(textCommand, "ContentTemplate", "{StaticResource AppCommandTextTemplate}");
         Assert.DoesNotContain(command.Elements(), setter =>
             Attribute(setter, "Property") is "Height" or "FontSize" or "FontFamily");
+    }
+
+    [Fact]
+    public void DesktopToolsKeepNativeStatesAndSeparateDensityFromPageCommands()
+    {
+        XDocument typography = ReadTypography();
+        foreach ((string key, string type, string native) in new[]
+        {
+            ("AppToolbarButtonStyle", "Button", "DefaultButtonStyle"),
+            ("AppToolbarToggleButtonStyle", "ToggleButton", "DefaultToggleButtonStyle"),
+        })
+        {
+            XElement style = AssertStyle(typography, key, "{StaticResource " + native + "}", type);
+            AssertSetter(style, "MinHeight", "32");
+            AssertSetter(style, "MinWidth", "32");
+            AssertSetter(style, "Background", "Transparent");
+            Assert.DoesNotContain(style.Elements(), setter =>
+                Attribute(setter, "Property") is "Template" or "ContentTemplate" or "Height" or "FontSize");
+        }
+        XElement inline = AssertStyle(typography, "AppInlineCommandStyle",
+            "{StaticResource DefaultHyperlinkButtonStyle}", "HyperlinkButton");
+        AssertSetter(inline, "MinHeight", "24");
+        XElement icon = Assert.Single(typography.Descendants(), element => Attribute(element, "Key") == "AppToolbarIconStyle");
+        AssertSetter(icon, "FontSize", "16");
+        AssertSetter(icon, "AutomationProperties.AccessibilityView", "Raw");
     }
 
     [Fact]

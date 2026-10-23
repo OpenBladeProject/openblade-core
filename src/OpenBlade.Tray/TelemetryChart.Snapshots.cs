@@ -10,6 +10,10 @@ public sealed partial class TelemetryChart
 {
     internal void ShowLocalizationSnapshotLayout(string destination)
     {
+        if (destination is "telemetry" or "telemetry-controls-narrow")
+        {
+            SetGraphInspectionActive(false);
+        }
         if (destination == "telemetry-range" && timeRange is { } range)
         {
             showAllRetained = false;
@@ -31,7 +35,7 @@ public sealed partial class TelemetryChart
             Update(trimmed, newStart, current.SourceEndUtc.AddSeconds(1), sourceSessionId);
             analysisPanel.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0.5 });
         }
-        else if (destination is "telemetry-analysis" or "telemetry-narrow" or "telemetry-dark")
+        else if (destination is "telemetry-analysis" or "telemetry-narrow")
         {
             rangeStatisticsExpander.IsExpanded = destination == "telemetry-narrow";
             analysisPanel.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0.5 });
@@ -120,7 +124,6 @@ public sealed partial class TelemetryChart
         inspectionToolbar.VerifyLocalizationSnapshotLayout();
         rangeToolbar.VerifyLocalizationSnapshotLayout();
         sampleCommands.VerifyLocalizationSnapshotLayout();
-        rangeCommands.VerifyLocalizationSnapshotLayout();
         VerifyLocalizationSnapshotReadouts();
         VerifyLocalizationSnapshotRangeInteractions();
         var extreme = TelemetryTimeRangeSelection.Create(DateTimeOffset.MinValue, DateTimeOffset.MaxValue);
@@ -142,11 +145,16 @@ public sealed partial class TelemetryChart
         bool savedFollow = followLatest;
         HistorySelectionNotice savedNotice = historySelectionNotice;
         double? savedFraction = localizationSnapshotInspectionFraction;
+        bool savedInspectionActive = graphInspectionActive;
+        bool savedPinned = samplePinned;
+        bool savedFullRange = showAllRetained;
+        TelemetryTimeRangeSelection? savedRange = timeRange;
         localizationSnapshotInspectionFraction = null;
         try
         {
             foreach (double fraction in new[] { 0d, 0.5, 1d })
             {
+                SetGraphInspectionActive(true);
                 InspectAtFraction(fraction);
                 UpdateLayout();
                 foreach (Lane lane in lanes.Where(item => item.Root.Visibility == Visibility.Visible && item.Scale is not null))
@@ -185,14 +193,59 @@ public sealed partial class TelemetryChart
                     }
                 }
             }
+            PinSelection();
+            int pinnedIndex = selectedSampleIndex;
+            bool pinned = samplePinned;
+            string[] values = analysisRows.Values.Select(row => row.Cells[1].Text).ToArray();
+            SetGraphInspectionActive(false);
+            Draw(); // A live refresh must not reopen an off-graph callout.
+            if (selectedSampleIndex != pinnedIndex || samplePinned != pinned
+                || !values.SequenceEqual(analysisRows.Values.Select(row => row.Cells[1].Text)))
+            {
+                throw new InvalidOperationException("Leaving a graph changed the selected table sample or pin.");
+            }
+            AssertGraphDetailsHidden();
+            MoveSelection(-1); // Keyboard navigation must not reopen off-graph tooltips.
+            if (pinnedIndex > 0 && (selectedSampleIndex != pinnedIndex - 1 || !samplePinned))
+            {
+                throw new InvalidOperationException("Off-graph keyboard navigation did not select and pin the previous sample.");
+            }
+            foreach (MetricChoice choice in choices)
+            {
+                if (analysisRows[choice.Metric].Cells[1].Text != FormatNumber(SelectedSample?.Value(choice.Metric), choice))
+                {
+                    throw new InvalidOperationException("Off-graph keyboard navigation left stale table values.");
+                }
+            }
+            AssertGraphDetailsHidden();
+            SetGraphInspectionActive(true);
+            if (SelectedSample is not null && lanes.Where(lane => lane.Root.Visibility == Visibility.Visible)
+                .Any(lane => lane.Readout.Visibility != Visibility.Visible))
+            {
+                throw new InvalidOperationException("Reentering the graph did not restore the pinned sample readout.");
+            }
         }
         finally
         {
+            graphInspectionActive = savedInspectionActive;
+            samplePinned = savedPinned;
+            showAllRetained = savedFullRange;
+            timeRange = savedRange;
             selectedSampleIndex = savedIndex;
             followLatest = savedFollow;
             historySelectionNotice = savedNotice;
             localizationSnapshotInspectionFraction = savedFraction;
             UpdateInspection();
+        }
+    }
+
+    private void AssertGraphDetailsHidden()
+    {
+        if (lanes.Any(lane => lane.Readout.Visibility != Visibility.Collapsed
+            || lane.Crosshair.Visibility != Visibility.Collapsed
+            || lane.Markers.Values.Any(marker => marker.Visibility != Visibility.Collapsed)))
+        {
+            throw new InvalidOperationException("Graph details remain visible after the pointer leaves.");
         }
     }
 

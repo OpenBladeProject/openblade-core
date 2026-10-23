@@ -9,9 +9,12 @@ gaps. Line patterns help distinguish paired sensors alongside their colors.
 Hover over a chart to inspect the nearest original sample. The vertical
 crosshair, on-chart value callouts and **At sample** column show the same original
 sample across every metric. Callouts include the sample time and stay inside the
-plot at either edge.
+plot at either edge. These graph details hide when the pointer leaves, including
+for a pinned sample. The table keeps its selected values and pin; moving back
+over a graph shows that selected moment again.
 Click to pin it, or use the sample arrows (**Previous sample** and **Next sample**)
-beside the timestamp with the keyboard.
+in the compact tool group with the keyboard. The play/pause toggle controls
+**Follow latest**; its tooltip and accessible name identify the action.
 A pinned moment and its time window stay fixed as readings arrive. Choose
 **Follow latest** to follow the newest readings again. Turn it off to hold the
 visible window while browsing samples. If a pinned reading ages
@@ -29,7 +32,7 @@ to move it. The start and end fields allow precise keyboard edits, including
 fractional seconds and a UTC offset. The chart keeps the selected time bounds,
 including empty spans before or after readings. Edited ranges stay fixed until
 you choose **Follow latest** or use the timeline
-reset tool (**Full range**). If older readings expire, the
+inline **Full range** action beside the timeline label. If older readings expire, the
 chart shows the available range and explains the adjustment. Starting or stopping
 a CSV recording keeps the current selection.
 

@@ -220,6 +220,25 @@ public sealed class TelemetryChartLayoutTests
     }
 
     [Fact]
+    public void GraphDetailsHaveAPointerLifetimeSeparateFromSampleSelection()
+    {
+        string source = File.ReadAllText(Path.Combine(RepositoryRoot,
+            "src", "OpenBlade.Tray", "TelemetryChart.cs"));
+        foreach (string cleanup in new[] { "PointerExited", "PointerCanceled", "PointerCaptureLost" })
+        {
+            Assert.Contains("lane.Plot." + cleanup + " += (_, _) => SetGraphInspectionActive(false)", source,
+                StringComparison.Ordinal);
+        }
+        Assert.Contains("graphInspectionActive && sample is not null && lane.Scale is not null", source,
+            StringComparison.Ordinal);
+        string native = File.ReadAllText(Path.Combine(RepositoryRoot,
+            "src", "OpenBlade.Tray", "TelemetryChart.Snapshots.cs"));
+        Assert.Contains("Leaving a graph changed the selected table sample or pin.", native, StringComparison.Ordinal);
+        Assert.Contains("AssertGraphDetailsHidden();", native, StringComparison.Ordinal);
+        Assert.Contains("MoveSelection(-1)", native, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GraphValueReadoutUsesNativeThemeResources()
     {
         var app = System.Xml.Linq.XDocument.Load(Path.Combine(RepositoryRoot,

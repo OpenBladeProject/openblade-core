@@ -266,6 +266,12 @@ and high-contrast behavior remain authoritative:
   padding. `AppCustomCommandButtonStyle` shares native sizing and padding for
   icon or composed content without applying the string-only text template.
   Other specialized controls retain their component style.
+- `AppToolbarButtonStyle` and `AppToolbarToggleButtonStyle` for flat desktop
+  tools with 32-DIP minimum targets and native interaction states. Use
+  `AppToolbarIconStyle` for their shared 16-DIP decorative glyphs and keep
+  accessible names on the controls. Body text retains the native type ramp.
+- `AppInlineCommandStyle` for native text actions beside captions, such as
+  Full range. Its 24-DIP minimum height can grow with text scaling.
 
 Keep local layout styles as aliases based on these application roles. Do not
 copy the native role's current `FontSize`, set a fixed line height, or introduce

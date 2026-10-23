@@ -41,7 +41,11 @@ public sealed partial class TelemetryChart
     private double rangeDragOriginX;
     private RangeDragKind rangeDragKind;
     private bool showAllRetained = true;
-    private readonly ContentWrapPanel rangeCommands = new();
+    private readonly HyperlinkButton fullRangeButton = new()
+    {
+        Content = LocalizedResources.Get("TelemetryUI_FullRange", "Full range"),
+        Style = AppTypography.RequireStyle(AppTypography.InlineCommand),
+    };
     private readonly ContextualToolbar rangeToolbar = new();
 
     private enum RangeDragKind { Start, End, Pan }
@@ -49,18 +53,17 @@ public sealed partial class TelemetryChart
     private UIElement CreateRangeEditor()
     {
         var editor = new StackPanel { Spacing = 8 };
-        var fullRange = IconCommand(LocalizedResources.Get("TelemetryUI_FullRange", "Full range"), Symbol.ZoomOut);
-        fullRange.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(fullRangeButton,
+            LocalizedResources.Get("TelemetryUI_FullRange", "Full range"));
         overviewLabel.VerticalAlignment = VerticalAlignment.Center;
-        rangeCommands.Children.Add(fullRange);
         ContextualToolbar.SetRole(overviewLabel, ContextualToolbarElementRole.Context);
-        ContextualToolbar.SetRole(rangeCommands, ContextualToolbarElementRole.Actions);
+        ContextualToolbar.SetRole(fullRangeButton, ContextualToolbarElementRole.Actions);
         rangeToolbar.Children.Add(overviewLabel);
-        rangeToolbar.Children.Add(rangeCommands);
+        rangeToolbar.Children.Add(fullRangeButton);
         editor.Children.Add(rangeToolbar);
         editor.Children.Add(overview);
         editor.Children.Add(Columns(rangeStartInput, rangeEndInput));
-        fullRange.Click += (_, _) =>
+        fullRangeButton.Click += (_, _) =>
         {
             if (timeRange is null)
             {

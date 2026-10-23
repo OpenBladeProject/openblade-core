@@ -145,9 +145,9 @@ public sealed class ContentWrapPanel : Panel
 
     private static void VerifyButton(ButtonBase button, double tolerance)
     {
-        if (button.MinHeight + tolerance < 40)
+        if (button.MinHeight + tolerance < 32 || button.ActualHeight + tolerance < button.MinHeight)
         {
-            throw new InvalidOperationException("A wrapped command is smaller than the shared touch target.");
+            throw new InvalidOperationException("A wrapped command is smaller than its shared desktop target.");
         }
 
         string accessibleName = AutomationProperties.GetName(button);

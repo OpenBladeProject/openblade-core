@@ -19,6 +19,9 @@ copy their current sizes.
 | Caption | `AppCaptionTextStyle` | Units, timestamps, chart axes, and supporting metadata |
 | Data | `AppDataTextStyle` | Numeric readings and table values that benefit from tabular figures |
 | Command | `AppCommandButtonStyle` | String page commands with wrapping, centered text and a 40-DIP minimum height |
+| Toolbar | `AppToolbarButtonStyle`, `AppToolbarToggleButtonStyle` | Flat desktop tools with a 32-DIP minimum target and native focus/checked/hover states |
+| Toolbar icon | `AppToolbarIconStyle` | Shared 16-DIP decorative glyphs, with the control owning the accessible name |
+| Inline action | `AppInlineCommandStyle` | Native text links beside captions, with a 24-DIP minimum height |
 
 All table body cells use regular weight, including the selected reading, range
 statistics and counts. Reserve strong body text for headers. Data cells at the
@@ -45,3 +48,8 @@ Composed icon-and-text commands use `AppCustomCommandButtonStyle`. It owns the
 same native sizing and padding as string commands, without applying the
 string-only content template. Keep each composed label in `AppBodyTextStyle`
 and a constrained layout so translated and scaled text can wrap.
+
+Chart toolbars use the separate desktop toolbar roles instead of page-action
+sizing. Keep native templates, focus rings and toggle semantics. Minimum targets
+can grow with translated or scaled content; do not fix heights or shrink body
+text. A short inline action such as Full range belongs beside its caption.

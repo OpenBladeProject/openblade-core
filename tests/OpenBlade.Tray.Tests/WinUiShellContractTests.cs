@@ -55,7 +55,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal("Context", Attribute(context, "ContextualToolbar.Role"));
         Assert.Equal("Actions", Attribute(commands, "ContextualToolbar.Role"));
         Assert.Equal(
-            "{StaticResource CardTitleStyle}",
+            "{StaticResource AppBodyTextStyle}",
             Attribute(NamedElement(document, "TextBlock", "TelemetrySourceText"), "Style"));
         Assert.Equal(
             "Collapsed",
@@ -69,7 +69,7 @@ public sealed class WinUiShellContractTests
         Assert.All(buttons, button =>
         {
             Assert.Equal("Button", button.Name.LocalName);
-            Assert.Equal("{StaticResource AppCustomCommandButtonStyle}", Attribute(button, "Style"));
+            Assert.Equal("{StaticResource AppToolbarButtonStyle}", Attribute(button, "Style"));
             Assert.Null(Attribute(button, "ContentTemplate"));
             Assert.Null(Attribute(button, "Uid"));
             Assert.Single(button.Descendants(), element => element.Name.LocalName is "SymbolIcon" or "FontIcon");

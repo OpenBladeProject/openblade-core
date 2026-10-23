@@ -13,6 +13,10 @@ internal static class AppTypography
     public const string Data = "AppDataTextStyle";
     public const string CustomCommandButton = "AppCustomCommandButtonStyle";
     public const string CommandButton = "AppCommandButtonStyle";
+    public const string ToolbarButton = "AppToolbarButtonStyle";
+    public const string ToolbarToggleButton = "AppToolbarToggleButtonStyle";
+    public const string ToolbarIcon = "AppToolbarIconStyle";
+    public const string InlineCommand = "AppInlineCommandStyle";
 
     public static void Apply(TextBlock textBlock, string key)
     {

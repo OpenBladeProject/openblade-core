@@ -3142,7 +3142,7 @@
                                         local:ContextualToolbar.Role="Context"
                                         Spacing="4">
                                 <TextBlock x:Name="TelemetrySourceText"
-                                           Style="{StaticResource CardTitleStyle}"
+                                           Style="{StaticResource AppBodyTextStyle}"
                                            TextWrapping="Wrap" />
                                 <TextBlock x:Name="TelemetryRecordingText"
                                            Style="{StaticResource SecondaryTextStyle}"
@@ -3152,44 +3152,44 @@
                             <local:ContentWrapPanel x:Name="TelemetrySourceCommands"
                                                     local:ContextualToolbar.Role="Actions">
                                 <Button x:Name="TelemetryRecordButton"
-                                        Style="{StaticResource AppCustomCommandButtonStyle}"
+                                        Style="{StaticResource AppToolbarButtonStyle}"
                                         Click="OnStartTelemetryRecording">
-                                    <Grid ColumnSpacing="8">
+                                    <Grid ColumnSpacing="6">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                        <FontIcon Glyph="&#xE7C8;" />
+                                        <FontIcon Glyph="&#xE7C8;" Style="{StaticResource AppToolbarIconStyle}" />
                                         <TextBlock x:Name="TelemetryRecordLabel" Grid.Column="1"
                                                    Style="{StaticResource AppBodyTextStyle}"
                                                    TextWrapping="Wrap" />
                                     </Grid>
                                 </Button>
                                 <Button x:Name="TelemetryStopButton"
-                                        Style="{StaticResource AppCustomCommandButtonStyle}"
+                                        Style="{StaticResource AppToolbarButtonStyle}"
                                         Click="OnStopTelemetryRecording">
-                                    <Grid ColumnSpacing="8">
+                                    <Grid ColumnSpacing="6">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                        <SymbolIcon Symbol="Stop" />
+                                        <FontIcon Glyph="&#xE71A;" Style="{StaticResource AppToolbarIconStyle}" />
                                         <TextBlock x:Name="TelemetryStopLabel" Grid.Column="1"
                                                    Style="{StaticResource AppBodyTextStyle}"
                                                    TextWrapping="Wrap" />
                                     </Grid>
                                 </Button>
                                 <Button x:Name="TelemetryLiveButton"
-                                        Style="{StaticResource AppCustomCommandButtonStyle}"
+                                        Style="{StaticResource AppToolbarButtonStyle}"
                                         Click="OnCloseTelemetryReplay">
-                                    <Grid ColumnSpacing="8">
+                                    <Grid ColumnSpacing="6">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                        <SymbolIcon Symbol="Back" />
+                                        <FontIcon Glyph="&#xE72B;" Style="{StaticResource AppToolbarIconStyle}" />
                                         <TextBlock x:Name="TelemetryLiveLabel" Grid.Column="1"
                                                    Style="{StaticResource AppBodyTextStyle}"
                                                    TextWrapping="Wrap" />
                                     </Grid>
                                 </Button>
                                 <Button x:Name="TelemetryOpenButton"
-                                        Style="{StaticResource AppCustomCommandButtonStyle}"
+                                        Style="{StaticResource AppToolbarButtonStyle}"
                                         Click="OnOpenTelemetryReplay">
-                                    <Grid ColumnSpacing="8">
+                                    <Grid ColumnSpacing="6">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                        <SymbolIcon Symbol="OpenFile" />
+                                        <FontIcon Glyph="&#xE8E5;" Style="{StaticResource AppToolbarIconStyle}" />
                                         <TextBlock x:Name="TelemetryOpenLabel" Grid.Column="1"
                                                    Style="{StaticResource AppBodyTextStyle}"
                                                    TextWrapping="Wrap" />

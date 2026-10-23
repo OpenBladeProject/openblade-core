@@ -49,6 +49,7 @@ public sealed partial class MainWindow
             case "telemetry":
                 ApplyTelemetryFixture(populated: true);
                 TelemetryPlot.ShowLocalizationSnapshotInspection(0.4, focusNextSampleButton: true);
+                TelemetryPlot.ShowLocalizationSnapshotLayout(destination);
                 break;
             case "telemetry-empty":
                 ApplyTelemetryFixture(populated: false);
@@ -364,7 +365,7 @@ public sealed partial class MainWindow
             RefreshRateOptions:
             [
                 new DisplayRefreshRateOption("fixed-60", "60 Hz"),
-                new DisplayRefreshRateOption("dynamic-48-240", "Dynamic (48–240 Hz)", true),
+                new DisplayRefreshRateOption("dynamic-48-240", "Dynamic (48â€“240 Hz)", true),
             ],
             SelectedRefreshRateKey: "dynamic-48-240",
             IsHdrSupported: true,

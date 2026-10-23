@@ -74,6 +74,7 @@ public sealed partial class TelemetryChart : Grid
     private int selectedSampleIndex = -1;
     private bool followLatest = true;
     private bool samplePinned;
+    private bool graphInspectionActive;
     private HistorySelectionNotice historySelectionNotice;
 
     private enum HistorySelectionNotice { None, RangeAdjusted, SampleExpired }
@@ -104,34 +105,25 @@ public sealed partial class TelemetryChart : Grid
         previousSampleButton = IconCommand(LocalizedResources.Get("TelemetryUI_PreviousSample", "Previous sample"), Symbol.Back);
         nextSampleButton = IconCommand(LocalizedResources.Get("TelemetryUI_NextSample", "Next sample"), Symbol.Forward);
         string followLabel = LocalizedResources.Get("TelemetryUI_FollowLatest", "Follow latest");
-        var followContent = new Grid { ColumnSpacing = 8 };
-        followContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        followContent.ColumnDefinitions.Add(new ColumnDefinition());
-        followContent.Children.Add(new SymbolIcon(Symbol.Sync));
-        TextBlock followText = Text(AppTypography.Body, followLabel);
-        Grid.SetColumn(followText, 1);
-        followContent.Children.Add(followText);
-        followLatestButton = new ToggleButton { Content = followContent, MinHeight = 40, Padding = new Thickness(12, 6, 12, 6) };
+        followLatestButton = new ToggleButton
+        {
+            Content = ToolbarIcon(Symbol.Play),
+            Style = AppTypography.RequireStyle(AppTypography.ToolbarToggleButton),
+        };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(followLatestButton, followLabel);
         ToolTipService.SetToolTip(followLatestButton, followLabel);
         (Button metricEditor, UIElement metricLegend) = CreateMetricEditor();
+        // Adjacent transport tools form one predictable cluster, independent of timestamp length.
+        sampleCommands.Children.Add(previousSampleButton);
+        sampleCommands.Children.Add(nextSampleButton);
         sampleCommands.Children.Add(followLatestButton);
         sampleCommands.Children.Add(metricEditor);
         var moment = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         moment.Children.Add(inspectionState);
         moment.Children.Add(inspectionMode);
-        var navigation = new Grid { ColumnSpacing = 8, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
-        navigation.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        navigation.ColumnDefinitions.Add(new ColumnDefinition());
-        navigation.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        navigation.Children.Add(previousSampleButton);
-        Grid.SetColumn(moment, 1);
-        navigation.Children.Add(moment);
-        Grid.SetColumn(nextSampleButton, 2);
-        navigation.Children.Add(nextSampleButton);
-        ContextualToolbar.SetRole(navigation, ContextualToolbarElementRole.Context);
+        ContextualToolbar.SetRole(moment, ContextualToolbarElementRole.Context);
         ContextualToolbar.SetRole(sampleCommands, ContextualToolbarElementRole.Actions);
-        inspectionToolbar.Children.Add(navigation);
+        inspectionToolbar.Children.Add(moment);
         inspectionToolbar.Children.Add(sampleCommands);
         panel.Children.Add(inspectionToolbar);
         panel.Children.Add(metricLegend);
@@ -154,7 +146,11 @@ public sealed partial class TelemetryChart : Grid
             }
             CreateLaneReadout(lane);
             lane.Plot.SizeChanged += (_, _) => Draw();
+            lane.Plot.PointerEntered += (_, args) => OnPlotPointerMoved(lane, args);
             lane.Plot.PointerMoved += (_, args) => OnPlotPointerMoved(lane, args);
+            lane.Plot.PointerExited += (_, _) => SetGraphInspectionActive(false);
+            lane.Plot.PointerCanceled += (_, _) => SetGraphInspectionActive(false);
+            lane.Plot.PointerCaptureLost += (_, _) => SetGraphInspectionActive(false);
             lane.Plot.PointerPressed += (_, args) => OnPlotPointerPressed(lane, args);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(lane.Plot,
                 LocalizedResources.Get("TelemetryUI_ChartAutomationName",
@@ -171,6 +167,7 @@ public sealed partial class TelemetryChart : Grid
         SizeChanged += (_, _) => UpdateTableLayout();
         ActualThemeChanged += (_, _) => Draw();
         Loaded += (_, _) => Draw();
+        Unloaded += (_, _) => SetGraphInspectionActive(false);
     }
 
     public event EventHandler? PreferencesChanged;
@@ -267,15 +264,19 @@ public sealed partial class TelemetryChart : Grid
     {
         var button = new Button
         {
-            Style = AppTypography.RequireStyle(AppTypography.CustomCommandButton),
-            Content = new SymbolIcon(symbol),
+            Style = AppTypography.RequireStyle(AppTypography.ToolbarButton),
+            Content = ToolbarIcon(symbol),
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
-        button.MinWidth = 40;
-        button.Padding = new Thickness(8);
         ToolTipService.SetToolTip(button, label);
         return button;
     }
+
+    private static FontIcon ToolbarIcon(Symbol symbol) => new()
+    {
+        Glyph = char.ConvertFromUtf32((int)symbol),
+        Style = AppTypography.RequireStyle(AppTypography.ToolbarIcon),
+    };
 
     private static Grid Columns(params FrameworkElement[] children)
     {
@@ -464,6 +465,8 @@ public sealed partial class TelemetryChart : Grid
         nextSampleButton.IsEnabled = rawSamples.Count > 0 && selectedSampleIndex < rawSamples.Count - 1;
         followLatestButton.IsEnabled = retainedSnapshot?.RawSamples.Count > 0;
         followLatestButton.IsChecked = followLatest && timeRange?.FollowLatest == true;
+        ((FontIcon)followLatestButton.Content).Glyph = char.ConvertFromUtf32(
+            (int)(followLatestButton.IsChecked == true ? Symbol.Pause : Symbol.Play));
         inspectionState.Text = sample is null
             ? historySelectionNotice == HistorySelectionNotice.SampleExpired
                 ? LocalizedResources.Get("TelemetryUI_SelectedReadingExpired", "Selected reading is no longer kept.")
@@ -482,9 +485,9 @@ public sealed partial class TelemetryChart : Grid
         UpdateAnalysisValues(sample);
         foreach (Lane lane in lanes)
         {
-            lane.Crosshair.Visibility = sample is not null && lane.Scale is not null ? Visibility.Visible : Visibility.Collapsed;
+            lane.Crosshair.Visibility = graphInspectionActive && sample is not null && lane.Scale is not null ? Visibility.Visible : Visibility.Collapsed;
             lane.Readout.Visibility = lane.Crosshair.Visibility;
-            if (sample is null || lane.Scale is null)
+            if (!graphInspectionActive || sample is null || lane.Scale is null)
             {
                 foreach (Ellipse marker in lane.Markers.Values)
                 {
@@ -513,8 +516,16 @@ public sealed partial class TelemetryChart : Grid
         }
     }
 
+    private void SetGraphInspectionActive(bool active)
+    {
+        if (graphInspectionActive == active) { return; }
+        graphInspectionActive = active;
+        UpdateInspection();
+    }
+
     private void OnPlotPointerMoved(Lane lane, PointerRoutedEventArgs args)
     {
+        SetGraphInspectionActive(true);
         if (!samplePinned)
         {
             InspectAtPosition(lane, args.GetCurrentPoint(lane.Plot).Position.X);
@@ -523,6 +534,7 @@ public sealed partial class TelemetryChart : Grid
 
     private void OnPlotPointerPressed(Lane lane, PointerRoutedEventArgs args)
     {
+        SetGraphInspectionActive(true);
         if (!InspectAtPosition(lane, args.GetCurrentPoint(lane.Plot).Position.X))
         {
             return;
@@ -641,6 +653,7 @@ public sealed partial class TelemetryChart : Grid
             return;
         }
         localizationSnapshotInspectionFraction = null;
+        SetGraphInspectionActive(true);
         InspectAtFraction(fraction);
         PinSelection();
         if (localizationSnapshotFocusNextSample)
