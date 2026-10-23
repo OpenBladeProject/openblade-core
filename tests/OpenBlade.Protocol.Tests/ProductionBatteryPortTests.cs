@@ -1198,6 +1198,45 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task AdjustableFanFirstCommandSharedGateRefusalIsKnownNotAppliedAndDoesNotPoisonPort()
+    {
+        var gateFailure = new HidSessionResult<ReadOnlyMemory<byte>>(
+            default,
+            HidSessionFailureKind.Exhausted)
+        {
+            Diagnostic = new(
+                HidSessionFailurePhase.SharedGateAdmission,
+                HidSessionFailureKind.Exhausted,
+                NativeWin32Error: null,
+                TransferredByteCount: null),
+        };
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            gateFailure,
+            Success([0xD0]));
+        CapturedCommandFixture[] fixtures =
+        [
+            .. MaximumCapabilityFixtures(),
+            Fixture(ProductionBatteryPort.Limit80Action, 0x07, 0x12, [0xD0]),
+        ];
+        await using var port = CreatePort(session, Catalog(fixtures));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission,
+            error.FailurePhase);
+        Assert.Equal(HidSessionFailurePhase.SharedGateAdmission, error.Diagnostic?.Phase);
+        await port.SetChargeLimitAsync(80, default);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
     public async Task AdjustableFanPreWriteReadFailureReportsExactPreSubmissionPhase()
     {
         var diagnostic = new HidSessionFailureDiagnostic(
@@ -1238,7 +1277,10 @@ public sealed class ProductionBatteryPortTests
     public async Task AdjustableFanFailureAfterSubmissionRemainsIndeterminate()
     {
         var diagnostic = new HidSessionFailureDiagnostic(
-            HidSessionFailurePhase.GetCompletion, HidSessionFailureKind.NativeIoFailure, 31, 0);
+            HidSessionFailurePhase.SharedGateAdmission,
+            HidSessionFailureKind.Exhausted,
+            NativeWin32Error: null,
+            TransferredByteCount: null);
         byte[] state1 = [0x01, 0x01, 0x00, 0x01];
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x00, 0x00]),
@@ -1246,7 +1288,7 @@ public sealed class ProductionBatteryPortTests
             Success(state1),
             new HidSessionResult<ReadOnlyMemory<byte>>(
                 default,
-                HidSessionFailureKind.NativeIoFailure)
+                HidSessionFailureKind.Exhausted)
             { Diagnostic = diagnostic });
         await using var port = CreatePort(
             session,
@@ -1262,7 +1304,7 @@ public sealed class ProductionBatteryPortTests
             BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
             error.FailurePhase);
         Assert.Contains("manual entry channel 2 of 2", error.Message);
-        Assert.Contains(nameof(HidSessionFailureKind.NativeIoFailure), error.Message);
+        Assert.Contains(nameof(HidSessionFailureKind.Exhausted), error.Message);
         Assert.Equal(diagnostic, error.Diagnostic);
         Assert.Equal((byte)0x0D, error.CommandClass);
         Assert.Equal((byte)0x02, error.CommandId);
@@ -1579,6 +1621,42 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(WriteSubmissionState.Indeterminate, failed.SubmissionState);
         Assert.Equal(WriteSubmissionState.Indeterminate, poisoned.SubmissionState);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task ThermalFirstCommandSharedGateRefusalIsKnownNotAppliedAndDoesNotPoisonPort()
+    {
+        byte[] first = [0x01, 0x01, 0x05, 0x00];
+        byte[] second = [0x01, 0x02, 0x05, 0x00];
+        var gateFailure = new HidSessionResult<ReadOnlyMemory<byte>>(
+            default,
+            HidSessionFailureKind.Exhausted)
+        {
+            Diagnostic = new(
+                HidSessionFailurePhase.SharedGateAdmission,
+                HidSessionFailureKind.Exhausted,
+                NativeWin32Error: null,
+                TransferredByteCount: null),
+        };
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            gateFailure,
+            Success([0xD0]));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.PerformanceSilentFirstAction, 0x0D, 0x02, first),
+                Fixture(ProductionBatteryPort.PerformanceSilentSecondAction, 0x0D, 0x02, second),
+                Fixture(ProductionBatteryPort.Limit80Action, 0x07, 0x12, [0xD0])));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Silent, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(HidSessionFailurePhase.SharedGateAdmission, error.Diagnostic?.Phase);
+        await port.SetChargeLimitAsync(80, default);
         Assert.Equal(4, session.Commands.Count);
     }
 

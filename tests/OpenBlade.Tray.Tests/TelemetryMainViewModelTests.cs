@@ -496,6 +496,73 @@ public sealed class TelemetryMainViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task StopDuringBackpressure_WriterFaultDrainsAppendAndAllowsRestart()
+    {
+        string path = Path.Combine(directory, "backpressure.csv");
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(Start);
+        await using var fixture = await FailingTelemetryRecordingFixture.CreateAsync(
+            path, TelemetrySessionMetadata.CreateLive(Start), time);
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
+        await viewModel.StartAsync();
+        client.Publish(Status(1));
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
+        viewModel.SetTelemetryRecordingFactoryForTests(
+            (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(fixture.Recording));
+        await viewModel.StartTelemetryRecordingAsync(path, CancellationToken.None);
+        client.Observation = Status(2, withReadings: true);
+        await viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        await fixture.WriteStarted.WaitAsync(TimeSpan.FromSeconds(5));
+        client.Observation = Status(3, withReadings: true);
+        await viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        client.Observation = Status(4, withReadings: true);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task observation = viewModel.ObserveTrayStateAsync(cancellation.Token);
+        Assert.False(observation.IsCompleted);
+        Task<string?> stop = viewModel.StopTelemetryRecordingAsync(CancellationToken.None);
+
+        try
+        {
+            fixture.FailWrite();
+            IOException error = await Assert.ThrowsAsync<IOException>(() =>
+                stop.WaitAsync(TimeSpan.FromSeconds(5)));
+            await observation.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Contains("Injected telemetry disk failure", error.Message, StringComparison.Ordinal);
+            Assert.False(viewModel.IsTelemetryRecording);
+            Assert.Null(viewModel.TelemetryRecordingPath);
+            Assert.Contains(path + ".partial", viewModel.TelemetryErrorMessage, StringComparison.Ordinal);
+            Assert.True(File.Exists(path + ".partial"));
+            Assert.False(File.Exists(path));
+
+            var replacement = new GatedRecordingSession(destinationPath: "replacement.csv");
+            viewModel.SetTelemetryRecordingFactoryForTests(
+                (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(replacement));
+            await viewModel.StartTelemetryRecordingAsync("replacement.csv", CancellationToken.None);
+            Assert.Equal("replacement.csv", await viewModel.StopTelemetryRecordingAsync(CancellationToken.None));
+        }
+        finally
+        {
+            cancellation.Cancel();
+            fixture.FailWrite();
+            try
+            {
+                await observation;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            try
+            {
+                await stop;
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    [Fact]
     public async Task AsynchronousWriterFailure_ClearsRecordingAndAllowsImmediateRestart()
     {
         var client = new FakeServiceClient();

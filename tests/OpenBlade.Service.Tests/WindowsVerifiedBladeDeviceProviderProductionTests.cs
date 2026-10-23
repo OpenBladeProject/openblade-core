@@ -3164,6 +3164,64 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task ChargeLimitCanceledAfterInitialSessionOpenIsKnownNotApplied()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var unopenedSetter = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, unopenedSetter)
+        {
+            AfterOpen = openCount =>
+            {
+                if (openCount == 1)
+                {
+                    cancellation.Cancel();
+                }
+            },
+        };
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetChargeLimitAsync(
+                BatteryPolicy.Create(80),
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(0, unopenedSetter.SetLimitCount);
+        Assert.Equal(1, unopenedSetter.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ChargeLimitCanceledAfterSetterEntryRemainsIndeterminateWithoutRetry()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            blockWrite: true);
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        Task write = device.SetChargeLimitAsync(BatteryPolicy.Create(80), cancellation.Token);
+        await port.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() => write);
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.SetLimitCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
+    [Fact]
     public async Task HyperBoostKnownNotAppliedFreshSetterRetainsSubmissionClassification()
     {
         using var cancellation = new CancellationTokenSource();
