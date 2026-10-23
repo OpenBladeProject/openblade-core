@@ -683,6 +683,44 @@ internal sealed partial class ExperimentalBladePort
                 ClearOwnedFrame();
             }
 
+            if (wakingFromDark && model.ProductId == 0x0255
+                && (settings.Effect == LightingEffect.Static
+                    || settings.Parameters is BreathingLightingParameters
+                    { ColorMode: BreathingColorMode.Single }))
+            {
+                // These model-specific color setters acknowledge without echoing
+                // the applied state. Confirm effect and color before making it visible.
+                // The combined lighting getter cannot represent a lit effect at raw zero.
+                (LightingEffect confirmedEffect, _) = await ReadEffectAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (confirmedEffect != settings.Effect)
+                {
+                    throw new IOException(
+                        "Independent keyboard effect readback did not confirm the requested effect.");
+                }
+                if (settings.Effect == LightingEffect.Static)
+                {
+                    if (await ReadSingleZoneStaticColorAsync(cancellationToken)
+                        .ConfigureAwait(false) != settings.Color)
+                    {
+                        throw new IOException(
+                            "Independent keyboard color readback did not confirm the requested color.");
+                    }
+                }
+                else
+                {
+                    // Brightness only supplies the typed parser's container here;
+                    // compare the independently read parameters while raw stays zero.
+                    LightingSettings confirmedBreathing = await ReadBreathingSettingsAsync(
+                        settings.Brightness, cancellationToken).ConfigureAwait(false);
+                    if (!Equals(confirmedBreathing.Parameters, settings.Parameters))
+                    {
+                        throw new IOException(
+                            "Independent keyboard breathing readback did not confirm the requested parameters.");
+                    }
+                }
+            }
+
             // Stage the selected content while brightness is still confirmed zero.
             // Existing visible transitions retain their established ordering.
             if (settings.Effect == LightingEffect.Off || wakingFromDark)

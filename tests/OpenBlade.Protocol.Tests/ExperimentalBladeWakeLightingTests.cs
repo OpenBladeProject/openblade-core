@@ -48,20 +48,86 @@ public sealed partial class ExperimentalBladeLightingTests
         Assert.Equal(128, session.Raw);
     }
 
-    [Fact]
-    public async Task WakeFromDark_Blade15StaticIsReadyBeforeBrightness()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WakeFromDark_Blade15ParameterizedEffectIsConfirmedBeforeBrightness(
+        bool breathing)
     {
         ExperimentalBladeModel model = ModelFor(0x0255);
         var session = new Session { Raw = 0, Effect = 0 };
         await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+        LightingSettings requested = Blade15ParameterizedSetting(breathing);
 
-        await port.SetLightingAsync(
-            LightingSettingsFactory.Static(new RgbColor(9, 8, 7), 50),
-            CancellationToken.None);
+        await port.SetLightingAsync(requested, CancellationToken.None);
 
-        Assert.Equal(new byte[] { 0x0A, 0x03 }, MutationCommandIds(session));
-        Assert.Equal(1, session.Effect);
+        int setter = session.Commands.FindIndex(IsSingleZoneEffectSetter);
+        int effectQuery = session.Commands.FindIndex(setter + 1, IsEffectQuery);
+        int parameterQuery = session.Commands.FindIndex(effectQuery + 1, IsStandardEffectQuery);
+        int brightness = session.Commands.FindIndex(IsBrightnessSetter);
+        Assert.True(setter < effectQuery);
+        Assert.True(effectQuery < parameterQuery);
+        Assert.True(parameterQuery < brightness);
+        Assert.Equal(breathing ? 2 : 1, session.Effect);
         Assert.Equal(128, session.Raw);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WakeFromDark_Blade15IgnoredParameterizedEffectAckStaysDarkAndPauses(
+        bool breathing)
+    {
+        ExperimentalBladeModel model = ModelFor(0x0255);
+        var session = new Session { Raw = 0, Effect = 0, IgnoreEffect = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = Create(session, policy, model);
+        LightingSettings requested = Blade15ParameterizedSetting(breathing);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(requested, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Equal(0, session.Raw);
+        Assert.DoesNotContain(session.Commands, IsBrightnessSetter);
+        Assert.False(policy.WritesAllowed);
+
+        var retrySession = new Session { Raw = 0, Effect = 0 };
+        await using var retry = Create(retrySession, policy, model);
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            retry.SetLightingAsync(requested, CancellationToken.None));
+        Assert.Empty(retrySession.Commands);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WakeFromDark_Blade15ParameterizedEffectMismatchStaysDark(
+        bool breathing)
+    {
+        ExperimentalBladeModel model = ModelFor(0x0255);
+        var session = new Session { Raw = 0, Effect = 0 };
+        session.BeforeSubmission = command =>
+        {
+            if (IsStandardEffectQuery(command))
+            {
+                session.StandardEffect = breathing
+                    ? new byte[] { 3, 1, 0xAA, 0xBB, 0xCC }
+                    : new byte[] { 6, 0xAA, 0xBB, 0xCC, 0 };
+            }
+        };
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = Create(session, policy, model);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                Blade15ParameterizedSetting(breathing),
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Equal(0, session.Raw);
+        Assert.DoesNotContain(session.Commands, IsBrightnessSetter);
+        Assert.False(policy.WritesAllowed);
     }
 
     [Fact]
@@ -202,6 +268,21 @@ public sealed partial class ExperimentalBladeLightingTests
 
     private static bool IsBrightnessSetter(RazerCommandSpec command) =>
         command.ClassId == 0x03 && command.CommandId == 0x03;
+
+    private static LightingSettings Blade15ParameterizedSetting(bool breathing) =>
+        breathing
+            ? LightingSettingsFactory.BreathingSingle(new RgbColor(9, 8, 7), 50)
+            : LightingSettingsFactory.Static(new RgbColor(9, 8, 7), 50);
+
+    private static bool IsSingleZoneEffectSetter(RazerCommandSpec command) =>
+        command.ClassId == 0x03 && command.CommandId == 0x0A
+        && command.Arguments.Span[0] is 3 or 6;
+
+    private static bool IsEffectQuery(RazerCommandSpec command) =>
+        command.ClassId == 0x0F && command.CommandId == 0x82;
+
+    private static bool IsStandardEffectQuery(RazerCommandSpec command) =>
+        command.ClassId == 0x03 && command.CommandId == 0x8A;
 
     private static bool IsFrameRow(RazerCommandSpec command) =>
         command.ClassId == 0x03 && command.CommandId == 0x0B;

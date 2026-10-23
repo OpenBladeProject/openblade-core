@@ -1210,12 +1210,12 @@ public sealed partial class ExperimentalBladeLightingTests
             }
             else if (command.ClassId == 0x03 && command.CommandId == 0x0A)
             {
-                if (args[0] == 6)
+                if (!IgnoreEffect && args[0] == 6)
                 {
                     Effect = 1;
                     StandardEffect = [6, args[1], args[2], args[3], 0];
                 }
-                else if (args[0] == 3)
+                else if (!IgnoreEffect && args[0] == 3)
                 {
                     Effect = 2;
                     StandardEffect = args;
