@@ -1,17 +1,44 @@
 # Telemetry and battery history
 
-Open **Telemetry** to inspect battery power, CPU/GPU temperatures or either fan's
-speed. Choose a metric and time range. The chart shows minimum, maximum and
-average values from the original readings; drawing fewer points does not change
-the statistics. The horizontal axis shows actual timestamps across the selected
-time range, including empty spans before or after the available readings. Missing
-readings and pauses in observation remain gaps.
+Open **Telemetry** and turn on **Enable telemetry** to compare battery power,
+CPU/GPU temperatures and fan speed. Telemetry is off by default; the switch is
+saved for your Windows user. Turning it off stops history collection and finishes
+an active CSV recording. Existing CSV files remain available when you turn it
+back on. Dashboard live readings use their own preference.
+Temperature, power and fan speed use separate scales with a shared time axis.
+Use the **Metrics and colors** gear to choose visible sensors and their colors; these
+preferences are saved for your Windows user. Missing readings and pauses remain
+gaps. Line patterns help distinguish paired sensors alongside their colors.
 
-Hover or touch the chart to inspect a moment. A vertical crosshair selects the
-nearest original reading, and the readout shows its timestamp and all available
-metrics together. Use **Previous sample** and **Next sample** with the keyboard
-for the same inspection. The selected moment stays fixed as new readings arrive;
-choose **Follow latest** to return to the newest reading.
+Hover over a chart to inspect the nearest original sample. The vertical
+crosshair, on-chart value callouts and **At sample** column show the same original
+sample across every metric. Callouts include the sample time and stay inside the
+plot at either edge. These graph details hide when the pointer leaves, including
+for a pinned sample. The table keeps its selected values and pin; moving back
+over a graph shows that selected moment again.
+Click to pin it, or use the sample arrows (**Previous sample** and **Next sample**)
+in the compact tool group with the keyboard. The play/pause toggle controls
+**Follow latest**; its tooltip and accessible name identify the action.
+A pinned moment and its time window stay fixed as readings arrive. Choose
+**Follow latest** to follow the newest readings again. Turn it off to hold the
+visible window while browsing samples. If a pinned reading ages
+out of the retained history, the chart clears it and says so. Hover, use
+**Next sample**, or choose **Follow latest** to inspect available readings.
+
+The analysis table shows each metric's minimum, average, maximum and available
+reading count within the visible range. Counts expose missing readings in their
+tooltips and accessible labels. All statistics use the original readings; drawing
+fewer points does not change them. On a narrow window, expand **Range statistics**
+for the minimum, average and maximum.
+
+Drag either edge of the overview to resize the visible range, or drag its center
+to move it. The start and end fields allow precise keyboard edits, including
+fractional seconds and a UTC offset. The chart keeps the selected time bounds,
+including empty spans before or after readings. Edited ranges stay fixed until
+you choose **Follow latest** or use the timeline
+inline **Full range** action beside the timeline label. If older readings expire, the
+chart shows the available range and explains the adjustment. Starting or stopping
+a CSV recording keeps the current selection.
 
 The page identifies live data, stale data and local CSV replay. Power-source and
 active-profile changes appear below the chart. Available sensors depend on the
@@ -25,7 +52,8 @@ or a recording is active. Explicit recording works when the normal live-readings
 preference is off and continues when the window is hidden. Exiting the Tray
 finalizes the recording; closing only its window keeps it running.
 
-Choose **Stop recording** to drain accepted readings and finalize the CSV.
+The recording action becomes **Stop recording** while a CSV is active. Choose it
+to drain accepted readings and finalize the CSV.
 Recordings are bounded to 24 hours and 86,400 readings, with bounded queue and
 file limits. During recording the writer uses a `.partial` file beside the
 destination and publishes the completed CSV atomically. A finalization failure

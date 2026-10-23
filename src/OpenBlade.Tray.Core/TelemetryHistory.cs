@@ -5,7 +5,10 @@ public sealed record TelemetryMetricStatistics(
     int Count,
     double? Minimum,
     double? Maximum,
-    double? Average);
+    double? Average)
+{
+    public int MissingCount { get; init; }
+}
 
 public sealed record TelemetryChartPoint(DateTimeOffset TimestampUtc, double? Value);
 
@@ -127,6 +130,23 @@ public sealed class TelemetryHistory
             .Where(sample => (rangeStartUtc is null || sample.TimestampUtc >= rangeStartUtc)
                 && (rangeEndUtc is null || sample.TimestampUtc <= rangeEndUtc))
             .ToArray();
+        TelemetryEvent[] selectedEvents = events
+            .Where(value => (rangeStartUtc is null || value.TimestampUtc >= rangeStartUtc)
+                && (rangeEndUtc is null || value.TimestampUtc <= rangeEndUtc))
+            .ToArray();
+        return CreateSnapshot(
+            selected,
+            selectedEvents,
+            maximumChartPoints,
+            expectedSampleInterval);
+    }
+
+    internal static TelemetryHistorySnapshot CreateSnapshot(
+        IReadOnlyList<TelemetrySample> selected,
+        IReadOnlyList<TelemetryEvent> selectedEvents,
+        int maximumChartPoints,
+        TimeSpan? expectedSampleInterval)
+    {
         TelemetrySeriesSnapshot[] series = Enum.GetValues<TelemetryMetric>()
             .Select(metric => CreateSeries(
                 selected,
@@ -134,14 +154,10 @@ public sealed class TelemetryHistory
                 maximumChartPoints,
                 expectedSampleInterval))
             .ToArray();
-        TelemetryEvent[] selectedEvents = events
-            .Where(value => (rangeStartUtc is null || value.TimestampUtc >= rangeStartUtc)
-                && (rangeEndUtc is null || value.TimestampUtc <= rangeEndUtc))
-            .ToArray();
         return new TelemetryHistorySnapshot(
             selected.FirstOrDefault()?.TimestampUtc,
             selected.LastOrDefault()?.TimestampUtc,
-            selected.Length,
+            selected.Count,
             series,
             selectedEvents)
         {
@@ -157,14 +173,17 @@ public sealed class TelemetryHistory
         TimeSpan? expectedSampleInterval)
     {
         int[] values = samples.Select(sample => sample.Value(metric)).OfType<int>().ToArray();
-        TelemetryMetricStatistics statistics = values.Length == 0
+        TelemetryMetricStatistics statistics = (values.Length == 0
             ? new TelemetryMetricStatistics(metric, 0, null, null, null)
             : new TelemetryMetricStatistics(
                 metric,
                 values.Length,
                 values.Min(),
                 values.Max(),
-                values.Average(value => (double)value));
+                values.Average(value => (double)value))) with
+        {
+            MissingCount = samples.Count - values.Length,
+        };
         var points = new List<TelemetryChartPoint>(samples.Count);
         TelemetrySample? previous = null;
         foreach (TelemetrySample sample in samples)

@@ -674,10 +674,16 @@ public partial class App
                 "profiles-wide",
                 StringComparison.Ordinal);
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
-            bool captureFeatureSnapshot = requestedPage is
+            bool captureTelemetryVariant = requestedPage is
+                "telemetry-analysis" or "telemetry-narrow" or "telemetry-controls-narrow"
+                or "telemetry-hover-edge" or "telemetry-dark"
+                or "telemetry-range" or "telemetry-metrics" or "telemetry-color"
+                or "telemetry-expired" or "telemetry-retention"
+                or "telemetry-recording" or "telemetry-replay";
+            bool captureFeatureSnapshot = captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
-                or "profiles-application-discovery-empty" or "telemetry-empty"
+                or "profiles-application-discovery-empty" or "telemetry-empty" or "telemetry-disabled"
                 or "laptop-battery-history" or "display-brightness-known"
                 or "display-brightness-unavailable";
             bool captureSnapTapFailure = string.Equals(
@@ -727,150 +733,195 @@ public partial class App
                         StringComparison.Ordinal));
             foreach (string destination in destinations)
             {
-                Windows.Graphics.SizeInt32 snapshotSize = string.Equals(
-                    destination,
-                    "settings-appearance",
-                    StringComparison.Ordinal)
-                    ? new Windows.Graphics.SizeInt32(1920, 1000)
-                    : string.Equals(
+                bool captureTelemetrySource = destination is
+                    "telemetry-recording" or "telemetry-replay";
+                try
+                {
+                    Windows.Graphics.SizeInt32 snapshotSize = string.Equals(
                         destination,
-                        "profiles-narrow",
+                        "settings-appearance",
                         StringComparison.Ordinal)
-                        ? new Windows.Graphics.SizeInt32(800, 820)
+                        ? new Windows.Graphics.SizeInt32(1920, 1000)
                         : string.Equals(
                             destination,
-                            "profiles-wide",
+                            "profiles-narrow",
                             StringComparison.Ordinal)
-                            ? new Windows.Graphics.SizeInt32(1600, 900)
-                            : new Windows.Graphics.SizeInt32(1120, 820);
-                if (destination is "profiles-applications"
-                    or "profiles-applications-empty"
-                    or "profiles-application-editor")
-                {
-                    snapshotSize = new Windows.Graphics.SizeInt32(800, 900);
-                }
-                if (destination is "profiles-application-editor" or "profiles-application-editor-controls")
-                {
-                    snapshotSize = new Windows.Graphics.SizeInt32(1120, 1100);
-                }
-                else if (destination is "profiles-application-discovery" or "profiles-application-discovery-empty")
-                {
-                    snapshotSize = new Windows.Graphics.SizeInt32(1120, 900);
-                }
-                else if (destination is "telemetry" or "telemetry-empty")
-                {
-                    snapshotSize = new Windows.Graphics.SizeInt32(1120, 1120);
-                }
-                else if (destination == "laptop-battery-history")
-                {
-                    snapshotSize = new Windows.Graphics.SizeInt32(1120, 940);
-                }
-                else if (destination == "thx-audio-headphones")
-                {
-                    snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
-                }
-                snapshotMainWindow.AppWindow.Resize(snapshotSize);
-                await WaitForSnapshotLayoutAsync();
-                string navigationDestination = destination switch
-                {
-                    "settings-appearance" or "settings-experimental" => "settings",
-                    "profiles-applications" or "profiles-applications-empty"
-                        or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
-                        or "profiles-application-discovery-empty" => "profiles",
-                    "telemetry-empty" => "telemetry",
-                    "laptop-battery-history" => "laptop",
-                    "display-brightness-known" or "display-brightness-unavailable" => "display",
-                    _ when captureSnapTap => "laptop",
-                    _ when destination.StartsWith("thx-audio", StringComparison.Ordinal) => "thx-audio",
-                    _ when captureProfilesVariant => "profiles",
-                    _ => destination,
-                };
-                snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
-                await WaitForSnapshotLayoutAsync();
-                if (string.Equals(
-                    destination,
-                    "settings-appearance",
-                    StringComparison.Ordinal))
-                {
-                    snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
-                    await WaitForSnapshotLayoutAsync();
-                }
-                if (destination.StartsWith("thx-audio", StringComparison.Ordinal))
-                {
-                    await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
-                    await WaitForSnapshotLayoutAsync();
-                }
-                if (destination == "laptop" && Environment.GetEnvironmentVariable(
-                    "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE")?.StartsWith(
-                        "one-shot-", StringComparison.Ordinal) == true)
-                {
-                    snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
-                    await WaitForSnapshotLayoutAsync();
-                }
-                if (destination == "settings-experimental")
-                {
-                    snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
-                    await WaitForSnapshotLayoutAsync();
-                }
-                if (captureSnapTap)
-                {
-                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
-                    await WaitForSnapshotLayoutAsync();
-                }
-                if (captureFeatureSnapshot || destination == "telemetry")
-                {
-                    if (destination == "display-brightness-unavailable")
+                            ? new Windows.Graphics.SizeInt32(800, 820)
+                            : string.Equals(
+                                destination,
+                                "profiles-wide",
+                                StringComparison.Ordinal)
+                                ? new Windows.Graphics.SizeInt32(1600, 900)
+                                : new Windows.Graphics.SizeInt32(1120, 820);
+                    if (destination is "profiles-applications"
+                        or "profiles-applications-empty"
+                        or "profiles-application-editor")
                     {
-                        // Verify the known-to-unknown binding transition after template realization.
-                        snapshotMainWindow.ShowLocalizationSnapshotFeature("display-brightness-known");
-                        await WaitForSnapshotLayoutAsync();
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 900);
                     }
-                    snapshotMainWindow.ShowLocalizationSnapshotFeature(destination);
-                    await WaitForSnapshotLayoutAsync();
                     if (destination is "profiles-application-editor" or "profiles-application-editor-controls")
                     {
-                        snapshotMainWindow.VerifyLocalizationSnapshotApplicationEditorLock();
+                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 1100);
                     }
-                    if (destination is "display-brightness-known" or "display-brightness-unavailable")
+                    else if (destination is "profiles-application-discovery" or "profiles-application-discovery-empty")
                     {
-                        var slider = FindPerformanceSmokeDescendant<Microsoft.UI.Xaml.Controls.Slider>(
-                            snapshotMainWindow.Content, "DisplayBrightnessSlider")
-                            ?? throw new InvalidOperationException("The brightness slider was not realized.");
-                        Visibility expected = destination == "display-brightness-known"
-                            ? Visibility.Visible : Visibility.Collapsed;
-                        if (slider.Parent is not XamlGrid host || host.Visibility != expected)
-                        {
-                            throw new InvalidOperationException("Brightness availability did not update the rendered slider host.");
-                        }
+                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 900);
                     }
-                    if (destination == "profiles-application-editor-controls")
+                    else if (destination is "telemetry-narrow" or "telemetry-controls-narrow")
                     {
-                        snapshotMainWindow.ShowLocalizationSnapshotApplicationEditorControls();
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 1120);
+                    }
+                    else if (destination == "telemetry"
+                        || destination.StartsWith("telemetry-", StringComparison.Ordinal))
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 1120);
+                    }
+                    else if (destination == "laptop-battery-history")
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 940);
+                    }
+                    else if (destination == "thx-audio-headphones")
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
+                    }
+                    snapshotMainWindow.AppWindow.Resize(snapshotSize);
+                    if (destination == "telemetry-dark"
+                        && snapshotMainWindow.Content is XamlGrid telemetryRoot)
+                    {
+                        telemetryRoot.RequestedTheme = ElementTheme.Dark;
+                        telemetryRoot.Background = new SolidColorBrush(Microsoft.UI.Colors.Black);
+                    }
+                    await WaitForSnapshotLayoutAsync();
+                    string navigationDestination = destination switch
+                    {
+                        "settings-appearance" or "settings-experimental" => "settings",
+                        "profiles-applications" or "profiles-applications-empty"
+                            or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
+                            or "profiles-application-discovery-empty" => "profiles",
+                        _ when destination.StartsWith("telemetry-", StringComparison.Ordinal) => "telemetry",
+                        "laptop-battery-history" => "laptop",
+                        "display-brightness-known" or "display-brightness-unavailable" => "display",
+                        _ when captureSnapTap => "laptop",
+                        _ when destination.StartsWith("thx-audio", StringComparison.Ordinal) => "thx-audio",
+                        _ when captureProfilesVariant => "profiles",
+                        _ => destination,
+                    };
+                    snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
+                    await WaitForSnapshotLayoutAsync();
+                    if (string.Equals(
+                        destination,
+                        "settings-appearance",
+                        StringComparison.Ordinal))
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
                         await WaitForSnapshotLayoutAsync();
                     }
-                    if (destination == "profiles-application-discovery")
+                    if (destination.StartsWith("thx-audio", StringComparison.Ordinal))
                     {
-                        // Exercise real icon decoding using only this known local executable.
-                        // Fictional game fixtures keep their neutral fallback icons.
-                        var icon = await ApplicationExecutableIconLoader.LoadAsync(
-                            Environment.ProcessPath!, CancellationToken.None)
-                            ?? throw new InvalidOperationException("The local executable icon did not decode.");
-                        if (icon.PixelWidth <= 0 || icon.PixelHeight <= 0)
+                        await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (destination == "laptop" && Environment.GetEnvironmentVariable(
+                        "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE")?.StartsWith(
+                            "one-shot-", StringComparison.Ordinal) == true)
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (destination == "settings-experimental")
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (captureSnapTap)
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (captureFeatureSnapshot || destination == "telemetry")
+                    {
+                        if (destination == "display-brightness-unavailable")
                         {
-                            throw new InvalidOperationException("The decoded executable icon was empty.");
+                            // Verify the known-to-unknown binding transition after template realization.
+                            snapshotMainWindow.ShowLocalizationSnapshotFeature("display-brightness-known");
+                            await WaitForSnapshotLayoutAsync();
+                        }
+                        if (destination == "telemetry" || destination.StartsWith("telemetry-", StringComparison.Ordinal))
+                        {
+                            await snapshotMainWindow.ViewModel.SetTelemetryEnabledAsync(destination != "telemetry-disabled");
+                        }
+                        snapshotMainWindow.ShowLocalizationSnapshotFeature(destination);
+                        if (captureTelemetrySource)
+                        {
+                            await snapshotMainWindow.PrepareLocalizationSnapshotTelemetrySourceAsync(
+                                destination,
+                                resolvedDirectory);
+                        }
+                        await WaitForSnapshotLayoutAsync();
+                        if (destination is "profiles-application-editor" or "profiles-application-editor-controls")
+                        {
+                            snapshotMainWindow.VerifyLocalizationSnapshotApplicationEditorLock();
+                        }
+                        if (destination is "display-brightness-known" or "display-brightness-unavailable")
+                        {
+                            var slider = FindPerformanceSmokeDescendant<Microsoft.UI.Xaml.Controls.Slider>(
+                                snapshotMainWindow.Content, "DisplayBrightnessSlider")
+                                ?? throw new InvalidOperationException("The brightness slider was not realized.");
+                            Visibility expected = destination == "display-brightness-known"
+                                ? Visibility.Visible : Visibility.Collapsed;
+                            if (slider.Parent is not XamlGrid host || host.Visibility != expected)
+                            {
+                                throw new InvalidOperationException("Brightness availability did not update the rendered slider host.");
+                            }
+                        }
+                        if (destination == "profiles-application-editor-controls")
+                        {
+                            snapshotMainWindow.ShowLocalizationSnapshotApplicationEditorControls();
+                            await WaitForSnapshotLayoutAsync();
+                        }
+                        if (destination == "profiles-application-discovery")
+                        {
+                            // Exercise real icon decoding using only this known local executable.
+                            // Fictional game fixtures keep their neutral fallback icons.
+                            var icon = await ApplicationExecutableIconLoader.LoadAsync(
+                                Environment.ProcessPath!, CancellationToken.None)
+                                ?? throw new InvalidOperationException("The local executable icon did not decode.");
+                            if (icon.PixelWidth <= 0 || icon.PixelHeight <= 0)
+                            {
+                                throw new InvalidOperationException("The decoded executable icon was empty.");
+                            }
                         }
                     }
+                    if (captureSnapTapInformation)
+                    {
+                        await SaveFlyoutSnapshotAsync(
+                            snapshotMainWindow,
+                            snapshotMainWindow.GetLocalizationSnapshotSnapTapInformation(),
+                            Path.Combine(resolvedDirectory, "snap-tap-information.png"));
+                    }
+                    if (destination is "telemetry-metrics" or "telemetry-color")
+                    {
+                        await SaveFlyoutSnapshotAsync(
+                            snapshotMainWindow,
+                            snapshotMainWindow.GetLocalizationSnapshotTelemetryFlyout(
+                                color: destination == "telemetry-color"),
+                            Path.Combine(resolvedDirectory, $"{destination}.png"));
+                    }
+                    if (captureTelemetryVariant || destination is "telemetry" or "telemetry-empty" or "telemetry-disabled")
+                    {
+                        snapshotMainWindow.VerifyLocalizationSnapshotTelemetry();
+                    }
+                    await SaveSnapshotAsync(
+                        snapshotMainWindow.Content,
+                        Path.Combine(resolvedDirectory, $"main-{destination}.png"));
                 }
-                if (captureSnapTapInformation)
+                finally
                 {
-                    await SaveFlyoutSnapshotAsync(
-                        snapshotMainWindow,
-                        snapshotMainWindow.GetLocalizationSnapshotSnapTapInformation(),
-                        Path.Combine(resolvedDirectory, "snap-tap-information.png"));
+                    if (captureTelemetrySource)
+                    {
+                        await snapshotMainWindow.CleanupLocalizationSnapshotTelemetrySourceAsync();
+                    }
                 }
-                await SaveSnapshotAsync(
-                    snapshotMainWindow.Content,
-                    Path.Combine(resolvedDirectory, $"main-{destination}.png"));
             }
 
             if (string.IsNullOrWhiteSpace(requestedPage)
@@ -1183,9 +1234,88 @@ public partial class App
         await File.WriteAllBytesAsync(path, encoded);
     }
 
+    private static void SetSnapshotScrollIndicatorsToRest(DependencyObject element)
+    {
+        if (element is Microsoft.UI.Xaml.Controls.ScrollViewer viewer
+            && viewer.IsLoaded && viewer.ActualWidth > 0 && viewer.ActualHeight > 0)
+        {
+            // Two equal frames can precede the native indicator's delayed fade.
+            // Enter the shipped template's rest state directly for every capture;
+            // scrolling, offsets and page visibility settings remain unchanged.
+            if (!VisualStateManager.GoToState(viewer, "NoIndicator", useTransitions: false))
+            {
+                throw new InvalidOperationException(
+                    "A realized snapshot ScrollViewer has no NoIndicator visual state.");
+            }
+        }
+
+        if (element is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar scrollBar
+            && scrollBar.IsLoaded && scrollBar.ActualWidth > 0 && scrollBar.ActualHeight > 0)
+        {
+            // The viewer's NoIndicator state changes IndicatorMode, but the
+            // child scrollbar still runs its own delayed rest-state storyboard.
+            // Complete that native storyboard instead of changing layout or opacity.
+            CompleteSnapshotScrollBarRestState(scrollBar);
+        }
+
+        int childCount = VisualTreeHelper.GetChildrenCount(element);
+        for (int index = 0; index < childCount; index++)
+        {
+            SetSnapshotScrollIndicatorsToRest(VisualTreeHelper.GetChild(element, index));
+        }
+    }
+
+    private static void CompleteSnapshotScrollBarRestState(
+        Microsoft.UI.Xaml.Controls.Primitives.ScrollBar scrollBar)
+    {
+        if (!VisualStateManager.GoToState(scrollBar, "Collapsed", useTransitions: false)
+            || !VisualStateManager.GoToState(scrollBar, "NoIndicator", useTransitions: false))
+        {
+            throw new InvalidOperationException(
+                "A realized snapshot ScrollBar has no native rest states.");
+        }
+
+        bool indicatorStateCompleted = false;
+        int childCount = VisualTreeHelper.GetChildrenCount(scrollBar);
+        for (int index = 0; index < childCount; index++)
+        {
+            if (VisualTreeHelper.GetChild(scrollBar, index) is not FrameworkElement root)
+            {
+                continue;
+            }
+
+            foreach (VisualStateGroup group in VisualStateManager.GetVisualStateGroups(root))
+            {
+                if (group.Name is not ("ScrollingIndicatorStates" or "ConsciousStates"))
+                {
+                    continue;
+                }
+
+                string expectedState = group.Name == "ScrollingIndicatorStates"
+                    ? "NoIndicator"
+                    : "Collapsed";
+                if (group.CurrentState?.Name != expectedState)
+                {
+                    throw new InvalidOperationException(
+                        "A snapshot ScrollBar did not enter its native rest state.");
+                }
+
+                group.CurrentState.Storyboard?.SkipToFill();
+                indicatorStateCompleted |= group.Name == "ScrollingIndicatorStates";
+            }
+        }
+
+        if (!indicatorStateCompleted)
+        {
+            throw new InvalidOperationException(
+                "A realized snapshot ScrollBar has no indicator-state storyboard root.");
+        }
+    }
+
     private static async Task<LocalizationSnapshotFrame>
         CaptureCanonicalSnapshotFrameAsync(UIElement element)
     {
+        SetSnapshotScrollIndicatorsToRest(element);
         var bitmap = new RenderTargetBitmap();
         await bitmap.RenderAsync(element);
         if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)

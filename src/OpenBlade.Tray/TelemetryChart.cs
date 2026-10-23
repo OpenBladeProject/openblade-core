@@ -1,22 +1,24 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using Windows.UI.ViewManagement;
 using Brush = Microsoft.UI.Xaml.Media.Brush;
 using Button = Microsoft.UI.Xaml.Controls.Button;
-using ComboBox = Microsoft.UI.Xaml.Controls.ComboBox;
 using HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment;
 using Point = Windows.Foundation.Point;
+using Size = Windows.Foundation.Size;
+using ToggleButton = Microsoft.UI.Xaml.Controls.Primitives.ToggleButton;
 
 namespace OpenBlade.Tray;
 
-/// <summary>A timestamped telemetry chart with exact raw-sample inspection.</summary>
-public sealed class TelemetryChart : Grid
+/// <summary>Synchronized unit lanes and an analysis table backed by original samples.</summary>
+public sealed partial class TelemetryChart : Grid
 {
-    private const double PlotLeft = 76;
-    private const double PlotTop = 12;
+    private const double PlotTop = 10;
     private const double PlotRight = 12;
-    private const double PlotBottom = 34;
+    private readonly AccessibilitySettings accessibility = new();
 
     public static readonly DependencyProperty PlotStrokeProperty = DependencyProperty.Register(
         nameof(PlotStroke), typeof(Brush), typeof(TelemetryChart),
@@ -26,43 +28,60 @@ public sealed class TelemetryChart : Grid
         new PropertyMetadata(null, (sender, _) => ((TelemetryChart)sender).Draw()));
 
     private sealed record MetricChoice(
-        TelemetryMetric Metric,
-        string Label,
-        string Unit,
-        double Divisor = 1);
+        TelemetryMetric Metric, string Label, string Unit, double Divisor,
+        string LightColor, string DarkColor, bool Dashed = false);
+
+    private sealed class Lane(MetricChoice[] metrics, TextBlock title)
+    {
+        public MetricChoice[] Metrics { get; } = metrics;
+        public StackPanel Root { get; } = new() { Spacing = 2 };
+        public TextBlock Title { get; } = title;
+        public Canvas Plot { get; } = new()
+        {
+            Height = 112,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+        };
+        public Line Crosshair { get; } = new() { StrokeThickness = 1, StrokeDashArray = [2, 3] };
+        public Dictionary<TelemetryMetric, Ellipse> Markers { get; } = [];
+        public Border Readout { get; } = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        public TextBlock ReadoutTime { get; } = Text(AppTypography.Caption);
+        public Dictionary<TelemetryMetric, TextBlock> ReadoutValues { get; } = [];
+        public TelemetryChartScale? Scale { get; set; }
+        public double AreaWidth { get; set; }
+        public double AreaHeight { get; set; }
+    }
 
     private readonly MetricChoice[] choices;
-    private readonly ComboBox metric;
-    private readonly Canvas plot = new()
-    {
-        Height = 264,
-        HorizontalAlignment = HorizontalAlignment.Stretch,
-        Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
-    };
-    private readonly TextBlock statistics = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock inspectionState = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock selectedMetricReadout = new()
-    {
-        FontSize = 18,
-        TextWrapping = TextWrapping.Wrap,
-    };
-    private readonly StackPanel sampleReadout = new() { Spacing = 2 };
-    private readonly Dictionary<TelemetryMetric, TextBlock> metricReadouts = [];
+    private readonly Lane[] lanes;
+    private readonly TextBlock inspectionState = Text(AppTypography.Data);
+    private readonly TextBlock inspectionMode = Text(AppTypography.Caption);
+    private readonly TextBlock noReadings = Text(AppTypography.Caption,
+        LocalizedResources.Get("TelemetryUI_WaitingForReadings", "Waiting for readings"));
     private readonly Button previousSampleButton;
     private readonly Button nextSampleButton;
-    private readonly Button followLatestButton;
-    private readonly Line crosshair = new() { StrokeThickness = 1.5 };
-    private readonly Ellipse selectedPoint = new() { Width = 8, Height = 8 };
+    private readonly ToggleButton followLatestButton;
+    private readonly ContextualToolbar inspectionToolbar = new();
+    private readonly ContentWrapPanel sampleCommands = new();
+    private readonly StackPanel panel = new() { Spacing = 12 };
+    private IReadOnlyList<TelemetryChartMetricPreference> metricPreferences =
+        TelemetryChartPreferenceDefaults.Normalize(null);
+    private TelemetryHistorySnapshot? retainedSnapshot;
     private TelemetryHistorySnapshot? snapshot;
-    private IReadOnlyList<TelemetryChartPoint> points = [];
     private IReadOnlyList<TelemetrySample> rawSamples = [];
-    private TelemetryChartScale? scale;
-    private DateTimeOffset? visibleStartUtc;
-    private DateTimeOffset? visibleEndUtc;
+    private TelemetryTimeRangeSelection? timeRange;
+    private Guid? sourceSessionId;
     private int selectedSampleIndex = -1;
     private bool followLatest = true;
-    private double plotAreaWidth;
-    private double plotAreaHeight;
+    private bool samplePinned;
+    private bool graphInspectionActive;
+    private HistorySelectionNotice historySelectionNotice;
+
+    private enum HistorySelectionNotice { None, RangeAdjusted, SampleExpired }
+    private bool updatingPreferences;
+    private bool viewportDrawQueued;
+    private double plotLeft = 64;
+    private double plotBottom = 28;
 #if OPENBLADE_DEVELOPER_HARNESS
     private double? localizationSnapshotInspectionFraction;
     private bool localizationSnapshotFocusNextSample;
@@ -72,76 +91,90 @@ public sealed class TelemetryChart : Grid
     {
         choices =
         [
-            new(TelemetryMetric.BatteryPowerFlowMilliwatts,
-                LocalizedResources.Get("TelemetryUI_BatteryPower", "Battery power"), "W", 1000),
             new(TelemetryMetric.CpuTemperatureCelsius,
-                LocalizedResources.Get("TelemetryUI_CpuTemperature", "CPU temperature"), "°C"),
+                LocalizedResources.Get("TelemetryUI_CpuTemperature", "CPU temperature"), "°C", 1, "#278524", "#83D970"),
             new(TelemetryMetric.GpuTemperatureCelsius,
-                LocalizedResources.Get("TelemetryUI_GpuTemperature", "GPU temperature"), "°C"),
+                LocalizedResources.Get("TelemetryUI_GpuTemperature", "GPU temperature"), "°C", 1, "#187CB5", "#73BFFA", true),
+            new(TelemetryMetric.BatteryPowerFlowMilliwatts,
+                LocalizedResources.Get("TelemetryUI_BatteryPower", "Battery power"), "W", 1000, "#996317", "#E3AD61"),
             new(TelemetryMetric.Fan1Rpm,
-                LocalizedResources.Get("TelemetryUI_Fan1Speed", "Fan 1 speed"), "RPM"),
+                LocalizedResources.Get("TelemetryUI_Fan1Speed", "Fan 1 speed"), "RPM", 1, "#7D4ACA", "#C0A3F1"),
             new(TelemetryMetric.Fan2Rpm,
-                LocalizedResources.Get("TelemetryUI_Fan2Speed", "Fan 2 speed"), "RPM"),
+                LocalizedResources.Get("TelemetryUI_Fan2Speed", "Fan 2 speed"), "RPM", 1, "#B13D68", "#EF9EB8", true),
         ];
-        metric = new ComboBox
+        previousSampleButton = IconCommand(LocalizedResources.Get("TelemetryUI_PreviousSample", "Previous sample"), Symbol.Back);
+        nextSampleButton = IconCommand(LocalizedResources.Get("TelemetryUI_NextSample", "Next sample"), Symbol.Forward);
+        string followLabel = LocalizedResources.Get("TelemetryUI_FollowLatest", "Follow latest");
+        followLatestButton = new ToggleButton
         {
-            Header = LocalizedResources.Get("TelemetryUI_Metric", "Metric"),
-            ItemsSource = choices,
-            DisplayMemberPath = "Label",
-            SelectedIndex = 0,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Content = ToolbarIcon(Symbol.Play),
+            Style = AppTypography.RequireStyle(AppTypography.ToolbarToggleButton),
         };
-        previousSampleButton = CreateInspectionButton(
-            LocalizedResources.Get("TelemetryUI_PreviousSample", "Previous sample"));
-        nextSampleButton = CreateInspectionButton(
-            LocalizedResources.Get("TelemetryUI_NextSample", "Next sample"));
-        followLatestButton = CreateInspectionButton(
-            LocalizedResources.Get("TelemetryUI_FollowLatest", "Follow latest"));
-
-        var controls = new Grid { ColumnSpacing = 8 };
-        controls.ColumnDefinitions.Add(new ColumnDefinition());
-        controls.ColumnDefinitions.Add(new ColumnDefinition());
-        controls.ColumnDefinitions.Add(new ColumnDefinition());
-        controls.Children.Add(previousSampleButton);
-        Grid.SetColumn(nextSampleButton, 1);
-        controls.Children.Add(nextSampleButton);
-        Grid.SetColumn(followLatestButton, 2);
-        controls.Children.Add(followLatestButton);
-
-        foreach (MetricChoice choice in choices)
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(followLatestButton, followLabel);
+        ToolTipService.SetToolTip(followLatestButton, followLabel);
+        (Button metricEditor, UIElement metricLegend) = CreateMetricEditor();
+        // Adjacent transport tools form one predictable cluster, independent of timestamp length.
+        sampleCommands.Children.Add(previousSampleButton);
+        sampleCommands.Children.Add(nextSampleButton);
+        sampleCommands.Children.Add(followLatestButton);
+        sampleCommands.Children.Add(metricEditor);
+        var moment = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        moment.Children.Add(inspectionState);
+        moment.Children.Add(inspectionMode);
+        ContextualToolbar.SetRole(moment, ContextualToolbarElementRole.Context);
+        ContextualToolbar.SetRole(sampleCommands, ContextualToolbarElementRole.Actions);
+        inspectionToolbar.Children.Add(moment);
+        inspectionToolbar.Children.Add(sampleCommands);
+        panel.Children.Add(inspectionToolbar);
+        panel.Children.Add(metricLegend);
+        lanes =
+        [
+            new([choices[0], choices[1]], Text(AppTypography.BodyStrong,
+                LocalizedResources.Get("TelemetryUI_Temperatures", "Temperatures (°C)"))),
+            new([choices[2]], Text(AppTypography.BodyStrong,
+                LocalizedResources.Get("TelemetryUI_PowerLane", "Battery power (W)"))),
+            new([choices[3], choices[4]], Text(AppTypography.BodyStrong,
+                LocalizedResources.Get("TelemetryUI_FanLane", "Fan speed (RPM)"))),
+        ];
+        foreach (Lane lane in lanes)
         {
-            var readout = new TextBlock { TextWrapping = TextWrapping.Wrap };
-            metricReadouts.Add(choice.Metric, readout);
-            sampleReadout.Children.Add(readout);
+            lane.Root.Children.Add(lane.Title);
+            lane.Root.Children.Add(lane.Plot);
+            foreach (MetricChoice choice in lane.Metrics)
+            {
+                lane.Markers.Add(choice.Metric, new Ellipse { Width = 7, Height = 7 });
+            }
+            CreateLaneReadout(lane);
+            lane.Plot.SizeChanged += (_, _) => Draw();
+            lane.Plot.PointerEntered += (_, args) => OnPlotPointerMoved(lane, args);
+            lane.Plot.PointerMoved += (_, args) => OnPlotPointerMoved(lane, args);
+            lane.Plot.PointerExited += (_, _) => SetGraphInspectionActive(false);
+            lane.Plot.PointerCanceled += (_, _) => SetGraphInspectionActive(false);
+            lane.Plot.PointerCaptureLost += (_, _) => SetGraphInspectionActive(false);
+            lane.Plot.PointerPressed += (_, args) => OnPlotPointerPressed(lane, args);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(lane.Plot,
+                LocalizedResources.Get("TelemetryUI_ChartAutomationName",
+                    "Telemetry timeline. Point to the chart or use the sample buttons for exact readings."));
+            panel.Children.Add(lane.Root);
         }
-
-        var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(metric);
-        panel.Children.Add(plot);
-        panel.Children.Add(statistics);
-        panel.Children.Add(inspectionState);
-        panel.Children.Add(selectedMetricReadout);
-        panel.Children.Add(sampleReadout);
-        panel.Children.Add(controls);
+        panel.Children.Add(noReadings);
+        panel.Children.Add(CreateRangeEditor());
+        panel.Children.Add(CreateAnalysisTable());
         Children.Add(panel);
-
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
-            plot,
-            LocalizedResources.Get(
-                "TelemetryUI_ChartAutomationName",
-                "Telemetry timeline. Point to the chart or use the sample buttons for exact readings."));
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetLiveSetting(
-            sampleReadout,
-            Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
-        metric.SelectionChanged += (_, _) => Draw();
-        plot.SizeChanged += (_, _) => Draw();
-        plot.PointerMoved += OnPlotPointerMoved;
-        plot.PointerPressed += OnPlotPointerPressed;
         previousSampleButton.Click += (_, _) => MoveSelection(-1);
         nextSampleButton.Click += (_, _) => MoveSelection(1);
-        followLatestButton.Click += (_, _) => FollowLatest();
+        followLatestButton.Click += (_, _) => ChangeFollowMode(followLatestButton.IsChecked == true);
+        SizeChanged += (_, _) => UpdateTableLayout();
         ActualThemeChanged += (_, _) => Draw();
+        Loaded += (_, _) => Draw();
+        Unloaded += (_, _) => SetGraphInspectionActive(false);
     }
+
+    public event EventHandler? PreferencesChanged;
+    public event EventHandler? VisibleRangeChanged;
+
+    public IReadOnlyList<TelemetryChartMetricPreference> MetricPreferences => metricPreferences.ToArray();
+    public IReadOnlyList<TelemetryEvent> VisibleEvents => snapshot?.Events ?? [];
 
     public Brush? PlotStroke
     {
@@ -155,379 +188,388 @@ public sealed class TelemetryChart : Grid
         set => SetValue(GridStrokeProperty, value);
     }
 
-    public void Update(
-        TelemetryHistorySnapshot value,
-        DateTimeOffset? visibleStartUtc = null,
-        DateTimeOffset? visibleEndUtc = null)
+    public void ApplyPreferences(IReadOnlyList<TelemetryChartMetricPreference> preferences)
     {
-        ArgumentNullException.ThrowIfNull(value);
-        if (visibleStartUtc.HasValue != visibleEndUtc.HasValue)
-        {
-            throw new ArgumentException("Both visible telemetry time bounds must be supplied together.");
-        }
-        if (visibleStartUtc > visibleEndUtc)
-        {
-            throw new ArgumentException("Visible telemetry start must not follow its end.");
-        }
-
-        snapshot = value;
-        this.visibleStartUtc = visibleStartUtc;
-        this.visibleEndUtc = visibleEndUtc;
+        metricPreferences = TelemetryChartPreferenceDefaults.Normalize(preferences);
+        RefreshMetricEditor();
         Draw();
     }
 
-#if OPENBLADE_DEVELOPER_HARNESS
-    internal void ShowLocalizationSnapshotInspection(
-        double fraction,
-        bool focusNextSampleButton = false)
+    public void Update(
+        TelemetryHistorySnapshot value,
+        DateTimeOffset? visibleStartUtc = null,
+        DateTimeOffset? visibleEndUtc = null,
+        Guid? sessionId = null)
     {
-        localizationSnapshotInspectionFraction = Math.Clamp(fraction, 0, 1);
-        localizationSnapshotFocusNextSample = focusNextSampleButton;
-        ApplyLocalizationSnapshotInspection();
+        ArgumentNullException.ThrowIfNull(value);
+        if (visibleStartUtc.HasValue != visibleEndUtc.HasValue || visibleStartUtc > visibleEndUtc)
+        {
+            throw new ArgumentException("Both ordered telemetry time bounds must be supplied together.");
+        }
+        DateTimeOffset end = visibleEndUtc ?? value.RangeEndUtc ?? DateTimeOffset.UtcNow;
+        DateTimeOffset start = visibleStartUtc ?? value.RangeStartUtc ?? end;
+        bool reset = sourceSessionId != sessionId;
+        sourceSessionId = sessionId;
+        retainedSnapshot = value;
+        TelemetryTimeRangeSelection? previousRange = timeRange;
+        if (reset)
+        {
+            rangeDragBaseline = null;
+            overview.ReleasePointerCaptures();
+            showAllRetained = true;
+        }
+        // Dragging owns a fixed baseline until capture ends; a sample update may not move it.
+        if (rangeDragBaseline is null)
+        {
+            timeRange = timeRange is null || showAllRetained
+                ? TelemetryTimeRangeSelection.Create(start, end)
+                : timeRange.UpdateSource(start, end);
+            if (!reset && previousRange is { FollowLatest: false }
+                && (timeRange.StartUtc != previousRange.StartUtc || timeRange.EndUtc != previousRange.EndUtc)
+                && historySelectionNotice != HistorySelectionNotice.SampleExpired)
+            {
+                historySelectionNotice = HistorySelectionNotice.RangeAdjusted;
+            }
+        }
+        if (reset)
+        {
+            samplePinned = false;
+            followLatest = true;
+            historySelectionNotice = HistorySelectionNotice.None;
+            rangeValidation.Visibility = Visibility.Collapsed;
+        }
+        RebuildViewport();
     }
-#endif
 
-    private static Button CreateInspectionButton(string content)
+    private static TextBlock Text(string role, string? content = null)
+    {
+        var text = new TextBlock { Text = content ?? string.Empty, TextWrapping = TextWrapping.Wrap };
+        AppTypography.Apply(text, role);
+        return text;
+    }
+
+    private static Button Command(string content)
     {
         var button = new Button
         {
-            Content = new TextBlock
-            {
-                Text = content,
-                TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-            },
+            Content = content,
+            Style = AppTypography.RequireStyle(AppTypography.CommandButton),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            MinHeight = 44,
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, content);
         return button;
     }
 
+    private static Button IconCommand(string label, Symbol symbol)
+    {
+        var button = new Button
+        {
+            Style = AppTypography.RequireStyle(AppTypography.ToolbarButton),
+            Content = ToolbarIcon(symbol),
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
+        ToolTipService.SetToolTip(button, label);
+        return button;
+    }
+
+    private static FontIcon ToolbarIcon(Symbol symbol) => new()
+    {
+        Glyph = char.ConvertFromUtf32((int)symbol),
+        Style = AppTypography.RequireStyle(AppTypography.ToolbarIcon),
+    };
+
+    private static Grid Columns(params FrameworkElement[] children)
+    {
+        var grid = new Grid { ColumnSpacing = 8 };
+        foreach (FrameworkElement child in children)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition());
+            Grid.SetColumn(child, grid.Children.Count);
+            grid.Children.Add(child);
+        }
+        return grid;
+    }
+
+    private void RebuildViewport()
+    {
+        if (retainedSnapshot is null || timeRange is null)
+        {
+            return;
+        }
+        DateTimeOffset? selected = SelectedSample?.TimestampUtc;
+        snapshot = TelemetryChartViewport.BuildSnapshot(retainedSnapshot, timeRange.StartUtc, timeRange.EndUtc);
+        rawSamples = snapshot.RawSamples;
+        if (samplePinned && selected is { } pinned
+            && !rawSamples.Any(sample => sample.TimestampUtc == pinned))
+        {
+            samplePinned = false;
+            followLatest = false;
+            historySelectionNotice = HistorySelectionNotice.SampleExpired;
+        }
+        selectedSampleIndex = rawSamples.Count == 0 || historySelectionNotice == HistorySelectionNotice.SampleExpired ? -1
+            : followLatest ? rawSamples.Count - 1
+            : selected is { } target ? TelemetryChartSelection.FindNearestSampleIndex(rawSamples, target) : 0;
+        Draw();
+        VisibleRangeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private void Draw()
     {
-        DateTimeOffset? retainedSelection = SelectedSample?.TimestampUtc;
-        plot.Children.Clear();
-        scale = null;
-        if (metric.SelectedItem is not MetricChoice choice || snapshot is null)
+        if (snapshot is null || lanes is null)
         {
             return;
         }
-
-        TelemetrySeriesSnapshot? series = snapshot.Series.FirstOrDefault(
-            item => item.Metric == choice.Metric);
-        points = series?.Points ?? [];
-        rawSamples = snapshot.RawSamples;
-        selectedSampleIndex = ResolveSelectedIndex(retainedSelection);
-        UpdateSummary(choice, series?.Statistics);
-
-        double width = plot.ActualWidth;
-        double height = plot.Height;
-        plotAreaWidth = width - PlotLeft - PlotRight;
-        plotAreaHeight = height - PlotTop - PlotBottom;
-        DateTimeOffset? startUtc = visibleStartUtc ?? snapshot.RangeStartUtc;
-        DateTimeOffset? endUtc = visibleEndUtc ?? snapshot.RangeEndUtc;
-        if (width <= PlotLeft + PlotRight || plotAreaHeight <= 0
-            || startUtc is null || endUtc is null
-            || PlotStroke is not { } plotBrush || GridStroke is not { } gridBrush)
+        TextBlock measurement = Text(AppTypography.Caption, "−20,000");
+        measurement.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        plotLeft = Math.Max(64, measurement.DesiredSize.Width + 12);
+        plotBottom = measurement.DesiredSize.Height + 12;
+        foreach (Lane lane in lanes)
         {
-            UpdateInspection();
-            return;
+            PrepareLaneReadout(lane, SelectedSample);
+            lane.Plot.Height = Math.Max(Math.Max(112, measurement.DesiredSize.Height * 6),
+                lane.Readout.DesiredSize.Height + PlotTop + plotBottom + 8);
+            DrawLane(lane);
         }
-
-        double minimum = series?.Statistics.Minimum ?? 0;
-        double maximum = series?.Statistics.Maximum ?? 1;
-        scale = TelemetryChartScale.Create(
-            startUtc.Value,
-            endUtc.Value,
-            minimum,
-            maximum);
-        DrawGrid(choice, series?.Statistics.Count > 0, gridBrush);
-        DrawEvents(gridBrush);
-        DrawSeries(plotBrush);
-
-        crosshair.Stroke = plotBrush;
-        selectedPoint.Fill = plotBrush;
-        plot.Children.Add(crosshair);
-        plot.Children.Add(selectedPoint);
+        noReadings.Visibility = rawSamples.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshMetricEditor();
+        UpdateRangeEditor();
+        UpdateAnalysisStatistics();
         UpdateInspection();
 #if OPENBLADE_DEVELOPER_HARNESS
         ApplyLocalizationSnapshotInspection();
 #endif
     }
 
-#if OPENBLADE_DEVELOPER_HARNESS
-    private void ApplyLocalizationSnapshotInspection()
+    private void DrawLane(Lane lane)
     {
-        if (scale is null || localizationSnapshotInspectionFraction is not { } fraction)
+        lane.Plot.Children.Clear();
+        lane.Scale = null;
+        MetricChoice[] visible = lane.Metrics.Where(IsMetricVisible).ToArray();
+        lane.Root.Visibility = visible.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (visible.Length == 0 || snapshot is null)
         {
             return;
         }
-
-        localizationSnapshotInspectionFraction = null;
-        InspectAtFraction(fraction);
-        if (localizationSnapshotFocusNextSample)
-        {
-            _ = nextSampleButton.Focus(FocusState.Keyboard);
-        }
-        localizationSnapshotFocusNextSample = false;
-    }
-#endif
-
-    private int ResolveSelectedIndex(DateTimeOffset? retainedSelection)
-    {
-        if (rawSamples.Count == 0)
-        {
-            return -1;
-        }
-        if (followLatest)
-        {
-            return rawSamples.Count - 1;
-        }
-        return retainedSelection is { } selected
-            ? TelemetryChartSelection.FindNearestSampleIndex(rawSamples, selected)
-            : 0;
-    }
-
-    private void DrawGrid(MetricChoice choice, bool hasValues, Brush gridBrush)
-    {
-        if (scale is null)
+        double width = lane.Plot.ActualWidth;
+        lane.AreaWidth = width - plotLeft - PlotRight;
+        lane.AreaHeight = lane.Plot.Height - PlotTop - plotBottom;
+        if (lane.AreaWidth <= 0 || lane.AreaHeight <= 0 || timeRange is null || GridStroke is not { } gridBrush)
         {
             return;
         }
-
-        if (hasValues)
+        TelemetrySeriesSnapshot[] series = snapshot.Series
+            .Where(item => visible.Any(choice => choice.Metric == item.Metric)).ToArray();
+        double[] minima = series.Select(item => item.Statistics.Minimum).OfType<double>().ToArray();
+        double[] maxima = series.Select(item => item.Statistics.Maximum).OfType<double>().ToArray();
+        lane.Scale = TelemetryChartScale.Create(timeRange.StartUtc, timeRange.EndUtc,
+            minima.Length > 0 ? minima.Min() : 0, maxima.Length > 0 ? maxima.Max() : 1);
+        double divisor = visible[0].Divisor;
+        if (minima.Length > 0)
         {
-            foreach (double tick in scale.CreateValueTicks(5))
+            foreach (double tick in lane.Scale.CreateValueTicks(3))
             {
-                double y = PlotTop + (scale.ValueFractionFromTop(tick) * plotAreaHeight);
-                plot.Children.Add(new Line
-                {
-                    X1 = PlotLeft,
-                    X2 = PlotLeft + plotAreaWidth,
-                    Y1 = y,
-                    Y2 = y,
-                    Stroke = gridBrush,
-                    StrokeThickness = 1,
-                });
-                var label = new TextBlock
-                {
-                    FontSize = 11,
-                    Text = $"{tick / choice.Divisor:0.##} {choice.Unit}",
-                    TextAlignment = TextAlignment.Right,
-                    Width = PlotLeft - 8,
-                };
+                double y = PlotTop + lane.Scale.ValueFractionFromTop(tick) * lane.AreaHeight;
+                lane.Plot.Children.Add(new Line { X1 = plotLeft, X2 = width - PlotRight, Y1 = y, Y2 = y, Stroke = gridBrush });
+                TextBlock label = Text(AppTypography.Caption, (tick / divisor).ToString("0.#"));
+                label.TextAlignment = TextAlignment.Right;
+                label.Width = plotLeft - 10;
+                label.Measure(new Size(label.Width, double.PositiveInfinity));
                 Canvas.SetLeft(label, 0);
-                Canvas.SetTop(label, y - 9);
-                plot.Children.Add(label);
+                Canvas.SetTop(label, y - label.DesiredSize.Height / 2);
+                lane.Plot.Children.Add(label);
             }
         }
-
-        int tickCount = plotAreaWidth >= 520 ? 5 : 3;
-        TimeSpan duration = scale.EndUtc - scale.StartUtc;
-        foreach (DateTimeOffset tick in scale.CreateTimeTicks(tickCount))
+        int tickCount = lane.AreaWidth >= 520 ? 5 : 3;
+        TimeSpan duration = timeRange.Duration;
+        foreach (DateTimeOffset tick in lane.Scale.CreateTimeTicks(tickCount))
         {
-            double x = PlotLeft + (scale.TimeFraction(tick) * plotAreaWidth);
-            plot.Children.Add(new Line
+            double x = plotLeft + lane.Scale.TimeFraction(tick) * lane.AreaWidth;
+            TextBlock label = Text(AppTypography.Caption, FormatTimeTick(PresentationTimestamp.ForDisplay(tick), duration));
+            label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Canvas.SetLeft(label, Math.Clamp(x - label.DesiredSize.Width / 2, plotLeft,
+                Math.Max(plotLeft, width - PlotRight - label.DesiredSize.Width)));
+            Canvas.SetTop(label, PlotTop + lane.AreaHeight + 6);
+            lane.Plot.Children.Add(label);
+        }
+        foreach (MetricChoice choice in visible)
+        {
+            Brush brush = SeriesBrush(choice);
+            TelemetrySeriesSnapshot? data = series.FirstOrDefault(item => item.Metric == choice.Metric);
+            Polyline? segment = null;
+            foreach (TelemetryChartPoint point in data?.Points ?? [])
+            {
+                if (point.Value is not { } value)
+                {
+                    DrawIsolatedPoint(lane.Plot, segment, brush);
+                    segment = null;
+                    continue;
+                }
+                if (segment is null)
+                {
+                    segment = new Polyline { Stroke = brush, StrokeThickness = 2 };
+                    if (choice.Dashed)
+                    {
+                        segment.StrokeDashArray = [4, 3];
+                    }
+
+                    lane.Plot.Children.Add(segment);
+                }
+                segment.Points.Add(new Point(plotLeft + lane.Scale.TimeFraction(point.TimestampUtc) * lane.AreaWidth,
+                    PlotTop + lane.Scale.ValueFractionFromTop(value) * lane.AreaHeight));
+            }
+            DrawIsolatedPoint(lane.Plot, segment, brush);
+            Ellipse marker = lane.Markers[choice.Metric];
+            marker.Fill = brush;
+            lane.Plot.Children.Add(marker);
+        }
+        foreach (TelemetryEvent marker in snapshot.Events.TakeLast(64))
+        {
+            double x = plotLeft + lane.Scale.TimeFraction(marker.TimestampUtc) * lane.AreaWidth;
+            var line = new Line
             {
                 X1 = x,
                 X2 = x,
                 Y1 = PlotTop,
-                Y2 = PlotTop + plotAreaHeight,
+                Y2 = PlotTop + lane.AreaHeight,
                 Stroke = gridBrush,
-                StrokeThickness = 1,
-            });
-            var label = new TextBlock
-            {
-                FontSize = 11,
-                Text = FormatTimeTick(tick.ToLocalTime(), duration),
-                TextAlignment = TextAlignment.Center,
-                Width = 90,
+                StrokeDashArray = [2, 3]
             };
-            Canvas.SetLeft(label, Math.Clamp(x - 45, 0, Math.Max(0, plot.ActualWidth - 90)));
-            Canvas.SetTop(label, PlotTop + plotAreaHeight + 6);
-            plot.Children.Add(label);
+            ToolTipService.SetToolTip(line, $"{PresentationTimestamp.ForDisplay(marker.TimestampUtc):G} · {marker.PreviousValue} → {marker.CurrentValue}");
+            lane.Plot.Children.Add(line);
         }
+        lane.Crosshair.Stroke = inspectionState.Foreground;
+        lane.Plot.Children.Add(lane.Crosshair);
+        lane.Plot.Children.Add(lane.Readout);
     }
 
-    private void DrawEvents(Brush gridBrush)
+    private static void DrawIsolatedPoint(Canvas canvas, Polyline? segment, Brush brush)
     {
-        if (snapshot is null || scale is null)
+        if (segment?.Points.Count != 1)
         {
             return;
         }
-
-        foreach (IGrouping<DateTimeOffset, TelemetryEvent> markers in snapshot.Events
-            .Where(marker => marker.TimestampUtc >= scale.StartUtc
-                && marker.TimestampUtc <= scale.EndUtc)
-            .GroupBy(marker => marker.TimestampUtc)
-            .TakeLast(128))
-        {
-            double x = PlotLeft + (scale.TimeFraction(markers.Key) * plotAreaWidth);
-            var marker = new Line
-            {
-                X1 = x,
-                X2 = x,
-                Y1 = PlotTop,
-                Y2 = PlotTop + plotAreaHeight,
-                Stroke = gridBrush,
-                StrokeThickness = 2,
-                StrokeDashArray = [3, 3],
-            };
-            string description = string.Join(Environment.NewLine, markers.Select(value =>
-                $"{value.TimestampUtc.ToLocalTime():G}: {value.PreviousValue} → {value.CurrentValue}"));
-            ToolTipService.SetToolTip(marker, description);
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(marker, description);
-            plot.Children.Add(marker);
-        }
+        Point point = segment.Points[0];
+        var dot = new Ellipse { Width = 4, Height = 4, Fill = brush };
+        Canvas.SetLeft(dot, point.X - 2);
+        Canvas.SetTop(dot, point.Y - 2);
+        canvas.Children.Add(dot);
     }
 
-    private void DrawSeries(Brush plotBrush)
-    {
-        if (scale is null)
-        {
-            return;
-        }
-
-        Polyline? segment = null;
-        foreach (TelemetryChartPoint point in points)
-        {
-            if (point.Value is not { } value)
-            {
-                segment = null;
-                continue;
-            }
-            if (segment is null)
-            {
-                segment = new Polyline { Stroke = plotBrush, StrokeThickness = 2 };
-                plot.Children.Add(segment);
-            }
-            segment.Points.Add(new Point(
-                PlotLeft + (scale.TimeFraction(point.TimestampUtc) * plotAreaWidth),
-                PlotTop + (scale.ValueFractionFromTop(value) * plotAreaHeight)));
-        }
-    }
-
-    private void UpdateSummary(MetricChoice choice, TelemetryMetricStatistics? metricStatistics)
-    {
-        statistics.Text = metricStatistics?.Count > 0
-            ? LocalizedResources.Format(
-                "TelemetryUI_Statistics",
-                "Min {0} · Max {1} · Average {2} · {3} readings",
-                FormatValue(metricStatistics.Minimum, choice),
-                FormatValue(metricStatistics.Maximum, choice),
-                FormatValue(metricStatistics.Average, choice),
-                metricStatistics.Count)
-            : LocalizedResources.Get(
-                "TelemetryUI_NoReadings",
-                "No readings are available for this metric.");
-    }
+    private TelemetrySample? SelectedSample => selectedSampleIndex >= 0 && selectedSampleIndex < rawSamples.Count
+        ? rawSamples[selectedSampleIndex] : null;
 
     private void UpdateInspection()
     {
         TelemetrySample? sample = SelectedSample;
-        bool hasSample = sample is not null;
         previousSampleButton.IsEnabled = selectedSampleIndex > 0;
-        nextSampleButton.IsEnabled = selectedSampleIndex >= 0
-            && selectedSampleIndex < rawSamples.Count - 1;
-        followLatestButton.IsEnabled = hasSample && !followLatest;
-
-        if (sample is null || metric.SelectedItem is not MetricChoice selectedChoice)
+        nextSampleButton.IsEnabled = rawSamples.Count > 0 && selectedSampleIndex < rawSamples.Count - 1;
+        followLatestButton.IsEnabled = retainedSnapshot?.RawSamples.Count > 0;
+        followLatestButton.IsChecked = followLatest && timeRange?.FollowLatest == true;
+        ((FontIcon)followLatestButton.Content).Glyph = char.ConvertFromUtf32(
+            (int)(followLatestButton.IsChecked == true ? Symbol.Pause : Symbol.Play));
+        inspectionState.Text = sample is null
+            ? historySelectionNotice == HistorySelectionNotice.SampleExpired
+                ? LocalizedResources.Get("TelemetryUI_SelectedReadingExpired", "Selected reading is no longer kept.")
+                : LocalizedResources.Get("TelemetryUI_NoSampleSelected", "No sample selected.")
+            : LocalizedResources.Format("TelemetryUI_SelectedMoment", "Selected moment · {0}", PresentationTimestamp.ForDisplay(sample.TimestampUtc).ToString("G"));
+        inspectionMode.Text = followLatest
+            ? LocalizedResources.Get("TelemetryUI_Following", "Following latest")
+            : samplePinned ? LocalizedResources.Get("TelemetryUI_Pinned", "Pinned")
+            : LocalizedResources.Get("TelemetryUI_InspectHint", "Hover to inspect. Click to pin a sample.");
+        if (historySelectionNotice == HistorySelectionNotice.RangeAdjusted)
         {
-            inspectionState.Text = LocalizedResources.Get(
-                "TelemetryUI_NoSampleSelected",
-                "No sample selected.");
-            selectedMetricReadout.Text = string.Empty;
-            sampleReadout.Visibility = Visibility.Collapsed;
-            crosshair.Visibility = Visibility.Collapsed;
-            selectedPoint.Visibility = Visibility.Collapsed;
-            return;
+            inspectionMode.Text += " · " + LocalizedResources.Get("TelemetryUI_RangeHistoryExpired",
+                "Older readings are no longer kept. The visible time range was adjusted.");
         }
-
-        string localTimestamp = sample.TimestampUtc.ToLocalTime().ToString("G");
-        inspectionState.Text = followLatest
-            ? LocalizedResources.Format(
-                "TelemetryUI_FollowingLatest",
-                "Following latest · {0}",
-                localTimestamp)
-            : LocalizedResources.Format(
-                "TelemetryUI_InspectingSample",
-                "Inspecting {0} · selection stays fixed",
-                localTimestamp);
-        selectedMetricReadout.Text = $"{selectedChoice.Label}: "
-            + FormatValue(sample.Value(selectedChoice.Metric), selectedChoice);
-        sampleReadout.Visibility = Visibility.Visible;
-        foreach (MetricChoice choice in choices)
+        tableMomentText.Text = $"{inspectionState.Text} · {inspectionMode.Text}";
+        UpdateAnalysisValues(sample);
+        foreach (Lane lane in lanes)
         {
-            TextBlock readout = metricReadouts[choice.Metric];
-            readout.Text = $"{choice.Label}: "
-                + FormatValue(sample.Value(choice.Metric), choice);
-            readout.Visibility = choice.Metric == selectedChoice.Metric
-                ? Visibility.Collapsed
-                : Visibility.Visible;
-        }
+            lane.Crosshair.Visibility = graphInspectionActive && sample is not null && lane.Scale is not null ? Visibility.Visible : Visibility.Collapsed;
+            lane.Readout.Visibility = lane.Crosshair.Visibility;
+            if (!graphInspectionActive || sample is null || lane.Scale is null)
+            {
+                foreach (Ellipse marker in lane.Markers.Values)
+                {
+                    marker.Visibility = Visibility.Collapsed;
+                }
+                continue;
+            }
 
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(
-            plot,
-            $"{inspectionState.Text}. {selectedMetricReadout.Text}");
-        if (scale is null)
-        {
-            crosshair.Visibility = Visibility.Collapsed;
-            selectedPoint.Visibility = Visibility.Collapsed;
-            return;
+            double x = plotLeft + lane.Scale.TimeFraction(sample.TimestampUtc) * lane.AreaWidth;
+            lane.Crosshair.X1 = x;
+            lane.Crosshair.X2 = x;
+            lane.Crosshair.Y1 = PlotTop;
+            lane.Crosshair.Y2 = PlotTop + lane.AreaHeight;
+            UpdateLaneReadout(lane, sample, x);
+            foreach (MetricChoice choice in lane.Metrics)
+            {
+                Ellipse marker = lane.Markers[choice.Metric];
+                double? value = sample.Value(choice.Metric);
+                marker.Visibility = value is not null && IsMetricVisible(choice) ? Visibility.Visible : Visibility.Collapsed;
+                if (value is { } number)
+                {
+                    Canvas.SetLeft(marker, x - marker.Width / 2);
+                    Canvas.SetTop(marker, PlotTop + lane.Scale.ValueFractionFromTop(number) * lane.AreaHeight - marker.Height / 2);
+                }
+            }
         }
-
-        double x = PlotLeft + (scale.TimeFraction(sample.TimestampUtc) * plotAreaWidth);
-        crosshair.X1 = x;
-        crosshair.X2 = x;
-        crosshair.Y1 = PlotTop;
-        crosshair.Y2 = PlotTop + plotAreaHeight;
-        crosshair.Visibility = Visibility.Visible;
-        if (sample.Value(selectedChoice.Metric) is not { } selectedValue)
-        {
-            selectedPoint.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        double y = PlotTop + (scale.ValueFractionFromTop(selectedValue) * plotAreaHeight);
-        Canvas.SetLeft(selectedPoint, x - (selectedPoint.Width / 2));
-        Canvas.SetTop(selectedPoint, y - (selectedPoint.Height / 2));
-        selectedPoint.Visibility = Visibility.Visible;
     }
 
-    private TelemetrySample? SelectedSample => selectedSampleIndex >= 0
-        && selectedSampleIndex < rawSamples.Count
-            ? rawSamples[selectedSampleIndex]
-            : null;
-
-    private void OnPlotPointerMoved(object sender, PointerRoutedEventArgs args) =>
-        InspectAtPosition(args.GetCurrentPoint(plot).Position.X);
-
-    private void OnPlotPointerPressed(object sender, PointerRoutedEventArgs args)
+    private void SetGraphInspectionActive(bool active)
     {
-        InspectAtPosition(args.GetCurrentPoint(plot).Position.X);
+        if (graphInspectionActive == active) { return; }
+        graphInspectionActive = active;
+        UpdateInspection();
+    }
+
+    private void OnPlotPointerMoved(Lane lane, PointerRoutedEventArgs args)
+    {
+        SetGraphInspectionActive(true);
+        if (!samplePinned)
+        {
+            InspectAtPosition(lane, args.GetCurrentPoint(lane.Plot).Position.X);
+        }
+    }
+
+    private void OnPlotPointerPressed(Lane lane, PointerRoutedEventArgs args)
+    {
+        SetGraphInspectionActive(true);
+        if (!InspectAtPosition(lane, args.GetCurrentPoint(lane.Plot).Position.X))
+        {
+            return;
+        }
+        PinSelection();
         args.Handled = true;
     }
 
-    private void InspectAtPosition(double x)
+    private bool InspectAtPosition(Lane lane, double x)
     {
-        if (scale is null || rawSamples.Count == 0 || plotAreaWidth <= 0)
+        if (lane.Scale is null || rawSamples.Count == 0 || lane.AreaWidth <= 0)
         {
-            return;
+            return false;
         }
 
-        InspectAtFraction((x - PlotLeft) / plotAreaWidth);
+        InspectAtFraction((x - plotLeft) / lane.AreaWidth);
+        return true;
     }
 
     private void InspectAtFraction(double fraction)
     {
-        if (scale is null || rawSamples.Count == 0)
+        if (timeRange is null || rawSamples.Count == 0)
         {
             return;
         }
 
-        DateTimeOffset target = scale.TimestampAtFraction(fraction);
-        selectedSampleIndex = TelemetryChartSelection.FindNearestSampleIndex(rawSamples, target);
+        DateTimeOffset target = TelemetryChartScale.Create(timeRange.StartUtc, timeRange.EndUtc, 0, 1)
+            .TimestampAtFraction(fraction);
+        int nearest = TelemetryChartSelection.FindNearestSampleIndex(rawSamples, target);
+        if (nearest == selectedSampleIndex && !followLatest && historySelectionNotice == HistorySelectionNotice.None)
+        {
+            return;
+        }
+        historySelectionNotice = HistorySelectionNotice.None;
+        selectedSampleIndex = nearest;
         followLatest = false;
         UpdateInspection();
     }
@@ -539,30 +581,86 @@ public sealed class TelemetryChart : Grid
             return;
         }
 
-        int current = selectedSampleIndex < 0 ? rawSamples.Count - 1 : selectedSampleIndex;
-        selectedSampleIndex = Math.Clamp(current + offset, 0, rawSamples.Count - 1);
+        historySelectionNotice = HistorySelectionNotice.None;
+        selectedSampleIndex = Math.Clamp(selectedSampleIndex + offset, 0, rawSamples.Count - 1);
+        PinSelection();
+    }
+
+    private void PinSelection()
+    {
+        if (SelectedSample is null)
+        {
+            return;
+        }
+        historySelectionNotice = HistorySelectionNotice.None;
         followLatest = false;
+        samplePinned = true;
+        showAllRetained = false;
+        timeRange = timeRange?.SetFollowLatest(false);
         UpdateInspection();
+    }
+
+    private void ChangeFollowMode(bool shouldFollow)
+    {
+        if (shouldFollow)
+        {
+            FollowLatest();
+        }
+        else if (timeRange is { } current)
+        {
+            SelectTimeRange(current);
+            RebuildViewport();
+        }
     }
 
     private void FollowLatest()
     {
-        if (rawSamples.Count == 0)
+        historySelectionNotice = HistorySelectionNotice.None;
+        timeRange = timeRange?.SetFollowLatest(true);
+        followLatest = true;
+        samplePinned = false;
+        RebuildViewport();
+    }
+
+    private bool IsMetricVisible(MetricChoice choice) => metricPreferences.Single(value => value.Metric == choice.Metric).IsVisible;
+
+    private Brush SeriesBrush(MetricChoice choice) => accessibility.HighContrast
+        ? inspectionState.Foreground
+        : new SolidColorBrush(ParseColor(metricPreferences.Single(value => value.Metric == choice.Metric).ColorHex
+            ?? (ActualTheme == ElementTheme.Dark ? choice.DarkColor : choice.LightColor)));
+
+    private static Windows.UI.Color ParseColor(string value) => Windows.UI.Color.FromArgb(255,
+        Convert.ToByte(value.Substring(1, 2), 16), Convert.ToByte(value.Substring(3, 2), 16), Convert.ToByte(value.Substring(5, 2), 16));
+
+    private static string FormatTimeTick(DateTimeOffset value, TimeSpan duration) => duration.TotalHours >= 24
+        ? value.ToString("MMM d HH:mm") : duration.TotalMinutes <= 10 ? value.ToString("HH:mm:ss") : value.ToString("HH:mm");
+
+    private static string FormatNumber(double? value, MetricChoice choice) => value is { } number
+        ? (number / choice.Divisor).ToString(choice.Unit == "RPM" ? "N0" : "0.##") : "—";
+
+#if OPENBLADE_DEVELOPER_HARNESS
+    internal void ShowLocalizationSnapshotInspection(double fraction, bool focusNextSampleButton = false)
+    {
+        localizationSnapshotInspectionFraction = Math.Clamp(fraction, 0, 1);
+        localizationSnapshotFocusNextSample = focusNextSampleButton;
+        ApplyLocalizationSnapshotInspection();
+    }
+
+    private void ApplyLocalizationSnapshotInspection()
+    {
+        if (timeRange is null || localizationSnapshotInspectionFraction is not { } fraction)
         {
             return;
         }
-
-        followLatest = true;
-        selectedSampleIndex = rawSamples.Count - 1;
-        UpdateInspection();
+        localizationSnapshotInspectionFraction = null;
+        SetGraphInspectionActive(true);
+        InspectAtFraction(fraction);
+        PinSelection();
+        if (localizationSnapshotFocusNextSample)
+        {
+            _ = nextSampleButton.Focus(FocusState.Keyboard);
+        }
+        localizationSnapshotFocusNextSample = false;
     }
-
-    private static string FormatTimeTick(DateTimeOffset value, TimeSpan duration) =>
-        duration.TotalHours >= 24
-            ? value.ToString("MMM d HH:mm")
-            : duration.TotalMinutes <= 10 ? value.ToString("HH:mm:ss") : value.ToString("HH:mm");
-
-    private static string FormatValue(double? value, MetricChoice choice) => value is { } number
-        ? $"{number / choice.Divisor:0.##} {choice.Unit}"
-        : LocalizedResources.Get("TelemetryUI_Unavailable", "Unavailable");
+#endif
 }

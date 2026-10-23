@@ -1789,4 +1789,7 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Telemetry recording reached its limit and was saved to {0}." xml:space="preserve">
     <value>[!! Télémétrý récórdíng réáchéd íts límít ánd wás sávéd tó {0}. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Telemetry is disabled." xml:space="preserve">
+    <value>[!! Télémétrý ís dísábléd. ~~~~~~~ !!]</value>
+  </data>
 </root>

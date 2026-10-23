@@ -5,11 +5,14 @@ namespace OpenBlade.Tray;
 public sealed partial class MainViewModel
 {
     private readonly TelemetryHistory telemetryHistory = new();
+    private readonly SemaphoreSlim telemetryEnabledGate = new(1, 1);
     private readonly SemaphoreSlim telemetryRecordingGate = new(1, 1);
     private readonly object telemetryAppendSync = new();
     private ITelemetryRecordingSession? telemetryRecording;
     private Func<string, TelemetrySessionMetadata, TimeProvider, CancellationToken,
         Task<ITelemetryRecordingSession>> telemetryRecordingFactory = DefaultTelemetryRecordingFactoryAsync;
+    private Func<string, TimeProvider, CancellationToken, Task<TelemetrySessionDocument>>
+        telemetryReplayReader = DefaultTelemetryReplayReaderAsync;
     private TelemetrySessionDocument? telemetryReplaySession;
     private TelemetryHistory? telemetryReplayHistory;
     private TelemetrySample? latestLiveTelemetrySample;
@@ -19,6 +22,23 @@ public sealed partial class MainViewModel
     private int pendingTelemetryAppends;
     private bool telemetryRecordingAccepting;
     private TaskCompletionSource? telemetryAppendsDrained;
+    private bool telemetryEnabled;
+    private long telemetryEnableGeneration;
+
+    public bool TelemetryEnabled
+    {
+        get => telemetryEnabled;
+        private set
+        {
+            if (telemetryEnabled == value)
+            {
+                return;
+            }
+            SetField(ref telemetryEnabled, value);
+            telemetryEnableGeneration++;
+            Notify(nameof(RequiresTelemetryObservation));
+        }
+    }
 
     public bool IsTelemetryPresentationActive => telemetryPresentationActive;
 
@@ -35,8 +55,9 @@ public sealed partial class MainViewModel
     }
 
     public bool RequiresTelemetryObservation =>
-        IsTelemetryRecording
-        || IsTelemetryPresentationActive && TelemetryReplaySession is null;
+        TelemetryEnabled
+        && (IsTelemetryRecording
+            || IsTelemetryPresentationActive && TelemetryReplaySession is null);
 
     public string? TelemetryRecordingPath => telemetryRecording?.DestinationPath;
 
@@ -50,6 +71,9 @@ public sealed partial class MainViewModel
 
     public TelemetrySessionMetadata? DisplayedTelemetrySessionMetadata =>
         TelemetryReplaySession?.Metadata ?? telemetryRecording?.Metadata;
+
+    // Recording changes the CSV destination, while the live data source stays the same.
+    public Guid? DisplayedTelemetrySourceSessionId => TelemetryReplaySession?.Metadata.SessionId;
 
     public TelemetrySource DisplayedTelemetrySource =>
         TelemetryReplaySession is null
@@ -71,6 +95,34 @@ public sealed partial class MainViewModel
             : TimeSpan.FromSeconds(2);
 
     private TimeSpan TelemetryFreshnessInterval => TelemetryExpectedSampleInterval;
+
+    public async Task SetTelemetryEnabledAsync(bool enabled)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        await telemetryEnabledGate.WaitAsync();
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            if (enabled)
+            {
+                TelemetryEnabled = true;
+                return;
+            }
+
+            TelemetryEnabled = false;
+            CloseTelemetryReplay();
+
+            // Disabling telemetry is a committed user action. Reuse the normal
+            // recording stop path so already accepted appends drain and the CSV
+            // is finalized atomically; cancellation must not strand a partial
+            // session or reopen append admission after the feature is off.
+            await StopTelemetryRecordingAsync(CancellationToken.None);
+        }
+        finally
+        {
+            telemetryEnabledGate.Release();
+        }
+    }
 
     public void SetTelemetryPresentationActive(bool active)
     {
@@ -106,9 +158,15 @@ public sealed partial class MainViewModel
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         await telemetryRecordingGate.WaitAsync(cancellationToken);
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            if (!TelemetryEnabled)
+            {
+                throw new InvalidOperationException(TrayText.Get("Telemetry is disabled."));
+            }
             if (telemetryRecording is not null)
             {
                 throw new InvalidOperationException("Telemetry recording is already active.");
@@ -118,6 +176,23 @@ public sealed partial class MainViewModel
                 TelemetrySessionMetadata.CreateLive(timeProvider.GetUtcNow()),
                 timeProvider,
                 cancellationToken);
+            try
+            {
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            }
+            catch
+            {
+                try
+                {
+                    await created.DisposeAsync();
+                }
+                catch (Exception)
+                {
+                    // Preserve the disposal admission failure. The partial
+                    // recording remains available if its writer cannot close.
+                }
+                throw;
+            }
             lock (telemetryAppendSync)
             {
                 telemetryRecording = created;
@@ -135,9 +210,11 @@ public sealed partial class MainViewModel
 
     public async Task<string?> StopTelemetryRecordingAsync(CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         await telemetryRecordingGate.WaitAsync(cancellationToken);
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             ITelemetryRecordingSession? recording = telemetryRecording;
             if (recording is null)
             {
@@ -209,13 +286,25 @@ public sealed partial class MainViewModel
         string path,
         CancellationToken cancellationToken)
     {
-        TelemetrySessionDocument document = await TelemetryCsv.ReadAsync(
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (!TelemetryEnabled)
+        {
+            throw new InvalidOperationException(TrayText.Get("Telemetry is disabled."));
+        }
+        long enableGeneration = telemetryEnableGeneration;
+        TelemetrySessionDocument document = await telemetryReplayReader(
             path,
-            timeProvider: timeProvider,
-            cancellationToken: cancellationToken);
+            timeProvider,
+            cancellationToken);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         TelemetryHistory history = await Task.Run(
             () => BuildReplayHistory(document, cancellationToken),
             cancellationToken);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (!TelemetryEnabled || telemetryEnableGeneration != enableGeneration)
+        {
+            throw new InvalidOperationException(TrayText.Get("Telemetry is disabled."));
+        }
         telemetryReplaySession = document;
         telemetryReplayHistory = history;
         TelemetryErrorMessage = string.Empty;
@@ -240,6 +329,10 @@ public sealed partial class MainViewModel
 
     private TelemetryRecordBatch? CaptureTelemetryObservation(ServiceStatusSnapshot status)
     {
+        if (!TelemetryEnabled)
+        {
+            return null;
+        }
         ITelemetryRecordingSession? recording = null;
         lock (telemetryAppendSync)
         {
@@ -366,6 +459,7 @@ public sealed partial class MainViewModel
     private void NotifyTelemetryViewChanged()
     {
         Notify(nameof(TelemetryReplaySession));
+        Notify(nameof(DisplayedTelemetrySourceSessionId));
         Notify(nameof(DisplayedTelemetrySessionMetadata));
         Notify(nameof(DisplayedTelemetrySource));
         Notify(nameof(LatestTelemetrySample));
@@ -383,6 +477,10 @@ public sealed partial class MainViewModel
             Task<ITelemetryRecordingSession>> factory) =>
         telemetryRecordingFactory = factory ?? throw new ArgumentNullException(nameof(factory));
 
+    internal void SetTelemetryReplayReaderForTests(
+        Func<string, TimeProvider, CancellationToken, Task<TelemetrySessionDocument>> reader) =>
+        telemetryReplayReader = reader ?? throw new ArgumentNullException(nameof(reader));
+
     private static async Task<ITelemetryRecordingSession> DefaultTelemetryRecordingFactoryAsync(
         string path,
         TelemetrySessionMetadata metadata,
@@ -393,6 +491,15 @@ public sealed partial class MainViewModel
             metadata,
             timeProvider: clock,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+
+    private static Task<TelemetrySessionDocument> DefaultTelemetryReplayReaderAsync(
+        string path,
+        TimeProvider clock,
+        CancellationToken cancellationToken) =>
+        TelemetryCsv.ReadAsync(
+            path,
+            timeProvider: clock,
+            cancellationToken: cancellationToken);
 
     private static TelemetryHistory BuildReplayHistory(
         TelemetrySessionDocument document,

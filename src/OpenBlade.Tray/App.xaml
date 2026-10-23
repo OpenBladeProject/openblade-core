@@ -6,7 +6,15 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+                <ResourceDictionary Source="Themes/Typography.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="TelemetryReadoutStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Padding" Value="8,4" />
+            </Style>
             <Color x:Key="SystemAccentColor">#47E10C</Color>
             <Color x:Key="SystemAccentColorLight1">#6CE73D</Color>
             <Color x:Key="SystemAccentColorLight2">#91ED6D</Color>

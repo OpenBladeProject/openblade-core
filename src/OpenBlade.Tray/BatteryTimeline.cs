@@ -62,7 +62,7 @@ public sealed class BatteryTimeline : Grid
             range.Text = string.Empty;
             return;
         }
-        range.Text = $"{report.WindowStartUtc.ToLocalTime():g} – {report.WindowEndUtc.ToLocalTime():g}";
+        range.Text = $"{PresentationTimestamp.ForDisplay(report.WindowStartUtc):g} – {PresentationTimestamp.ForDisplay(report.WindowEndUtc):g}";
         double duration = (report.WindowEndUtc - report.WindowStartUtc).TotalSeconds;
         if (duration <= 0)
         {
@@ -100,7 +100,7 @@ public sealed class BatteryTimeline : Grid
                     VerticalAlignment = VerticalAlignment.Center,
                 };
             }
-            string description = $"{interval.StartUtc.ToLocalTime():g} – {interval.EndUtc.ToLocalTime():t}: {label}";
+            string description = $"{PresentationTimestamp.ForDisplay(interval.StartUtc):g} – {PresentationTimestamp.ForDisplay(interval.EndUtc):t}: {label}";
             ToolTipService.SetToolTip(segment, description);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(segment, description);
             Canvas.SetLeft(segment, left);

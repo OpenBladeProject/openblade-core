@@ -5,8 +5,21 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Compare telemetry sensors in separate temperature, power and fan-speed lanes with a shared time axis and an analysis table. Choose visible metrics and custom colors, drag the time window or edit precise bounds, and inspect exact raw-sample values and range statistics. Pinned moments stay fixed as live readings arrive. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+
+### Changed
+
+- Keep telemetry off by default with a saved Enable telemetry switch. Turning it off stops history collection and finishes an active CSV recording. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Show timestamped sensor values beside the telemetry crosshair while hovering. Use flat desktop toolbar controls, grouped sample navigation and a live-follow toggle, with an inline Full range action beside the timeline label. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Standardize app typography around the native WinUI type scale and shared command sizing. Telemetry table headers use strong text while body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+
 ### Fixed
 
+- Align telemetry status text with CSV actions and center shared toolbar content at native display scaling. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+
+- Hide graph readouts, crosshairs and sample markers when the pointer leaves, without clearing pinned table values. Keep hover inspection available after telemetry range edits and preserve selection when recording starts or stops. Explain expired readings and adjusted time bounds, and retain unrelated preferences when a saved sensor is unknown. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Keep application and display automation current after cancellation or rapid app switches, and let telemetry recording stop cleanly after a disk error. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
 - Avoid unnecessary control pauses when performance, fan or battery changes are canceled or blocked before they are sent. Keep shutdown cleanup bounded. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
 - Prevent stale keyboard colors from flashing before the selected effect when activity wakes idle lighting, across all supported Blade models. ([#844](https://github.com/OSSBlade/openblade-core/pull/844))

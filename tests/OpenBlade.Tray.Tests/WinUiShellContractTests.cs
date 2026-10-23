@@ -6,6 +6,113 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void TelemetryCaptureRoutesCoverCompactControlsAndRightEdgeInspection()
+    {
+        string app = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
+        string features = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "MainWindow.FeatureSnapshots.cs");
+        string capture = ReadRepositoryFile(
+            "build", "Capture-LocalizationSnapshots.ps1");
+        string catalog = ReadRepositoryFile(
+            "build", "localization", "TranslatorScreenshotMap.json");
+
+        foreach (string route in new[] { "telemetry-disabled", "telemetry-controls-narrow", "telemetry-hover-edge", "telemetry-recording", "telemetry-replay" })
+        {
+            Assert.Contains($"\"{route}\"", app, StringComparison.Ordinal);
+            Assert.Contains($"case \"{route}\":", features, StringComparison.Ordinal);
+            Assert.Contains($"'{route}'", capture, StringComparison.Ordinal);
+            Assert.Contains($"main-{route}.png", catalog, StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "destination is \"telemetry-narrow\" or \"telemetry-controls-narrow\"",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "destination == \"telemetry-hover-edge\" ? 1 : 0.4",
+            features,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TelemetrySourceHeaderUsesContextualStateAndLocalizedIconCommands()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement header = NamedElement(
+            document,
+            "ContextualToolbar",
+            "TelemetrySourceHeader");
+        XElement context = NamedElement(document, "StackPanel", "TelemetrySourceContext");
+        XElement commands = NamedElement(
+            document,
+            "ContentWrapPanel",
+            "TelemetrySourceCommands");
+        XElement[] buttons = commands.Elements().ToArray();
+
+        Assert.Equal([context, commands], header.Elements().ToArray());
+        Assert.Equal("Context", Attribute(context, "ContextualToolbar.Role"));
+        Assert.Equal("Actions", Attribute(commands, "ContextualToolbar.Role"));
+        Assert.Equal(
+            "{StaticResource AppBodyTextStyle}",
+            Attribute(NamedElement(document, "TextBlock", "TelemetrySourceText"), "Style"));
+        Assert.Equal(
+            "Collapsed",
+            Attribute(NamedElement(document, "TextBlock", "TelemetryRecordingText"), "Visibility"));
+        Assert.Equal(["TelemetryRecordButton", "TelemetryStopButton",
+            "TelemetryLiveButton", "TelemetryOpenButton"],
+            buttons.Select(button => Attribute(button, "Name")));
+        Assert.Equal(["OnStartTelemetryRecording", "OnStopTelemetryRecording",
+            "OnCloseTelemetryReplay", "OnOpenTelemetryReplay"],
+            buttons.Select(button => Attribute(button, "Click")));
+        Assert.All(buttons, button =>
+        {
+            Assert.Equal("Button", button.Name.LocalName);
+            Assert.Equal("{StaticResource AppToolbarButtonStyle}", Attribute(button, "Style"));
+            Assert.Null(Attribute(button, "ContentTemplate"));
+            Assert.Null(Attribute(button, "Uid"));
+            Assert.Single(button.Descendants(), element => element.Name.LocalName is "SymbolIcon" or "FontIcon");
+            XElement label = Assert.Single(button.Descendants(), element =>
+                element.Name.LocalName == "TextBlock");
+            Assert.Equal("{StaticResource AppBodyTextStyle}", Attribute(label, "Style"));
+            Assert.Equal("Wrap", Attribute(label, "TextWrapping"));
+        });
+
+        string source = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "MainWindow.Telemetry.cs");
+        foreach (string key in new[] { "Telemetry_Record.Content", "Telemetry_Stop.Content",
+            "Telemetry_Open.Content", "Telemetry_Live.Content" })
+        {
+            Assert.Contains($"LocalizedResources.Get(\"{key}\"", source, StringComparison.Ordinal);
+        }
+        Assert.Contains("ToolTipService.SetToolTip(TelemetryRecordButton, recordingOff)", source,
+            StringComparison.Ordinal);
+        Assert.Contains("TelemetryRecordButton.Visibility = !recording && !replay", source,
+            StringComparison.Ordinal);
+        Assert.Contains("TelemetryStopButton.Visibility = recording", source, StringComparison.Ordinal);
+        Assert.Contains("TelemetryLiveButton.Visibility = replay", source, StringComparison.Ordinal);
+        Assert.Contains("TelemetryRecordingText.Visibility = recording", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ContextualToolbarMeasuresAndVerifiesItsTwoRegions()
+    {
+        string source = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "ContextualToolbar.cs");
+
+        Assert.Contains("ContextualToolbarElementRole.Context", source, StringComparison.Ordinal);
+        Assert.Contains("ContextualToolbarElementRole.Actions", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "context.DesiredSize.Width + 16 + actions.DesiredSize.Width > availableSize.Width",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("ColumnSpacing = useStackedLayout ? 0 : 16", source, StringComparison.Ordinal);
+        Assert.Contains("RowSpacing = useStackedLayout ? 8 : 0", source, StringComparison.Ordinal);
+        Assert.Contains("commands.VerifyLocalizationSnapshotLayout()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SnapTapPopupExplainsLaptopDriverAndKeepsCompatibilityOutOfTheRow()
     {
         XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
@@ -2765,10 +2872,10 @@ public sealed class WinUiShellContractTests
             canonicalizer,
             StringComparison.Ordinal);
         Assert.Contains("GetRgbBrightness", canonicalizer, StringComparison.Ordinal);
-        Assert.Contains("transitions == 2", canonicalizer, StringComparison.Ordinal);
+        Assert.Contains("CountRingTransitions(pixels, width, centerX, centerY) == 2", canonicalizer, StringComparison.Ordinal);
         Assert.Contains("channelDelta > 16", canonicalizer, StringComparison.Ordinal);
         Assert.Contains(
-            "bgra8-4-bit-midpoint-local-majority-v2",
+            "bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4",
             canonicalizer,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -2810,7 +2917,7 @@ public sealed class WinUiShellContractTests
             capture,
             StringComparison.Ordinal);
         Assert.Contains(
-            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v2'",
+            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4'",
             capture,
             StringComparison.Ordinal);
         Assert.Contains(

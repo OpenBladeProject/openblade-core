@@ -46,12 +46,33 @@ public sealed partial class MainWindow
                 ApplyApplicationProfileFixture(populated: false);
                 ShowLocalizationSnapshotApplicationDiscoveryFixture(destination != "profiles-application-discovery-empty");
                 break;
+            case "telemetry-disabled":
+                RefreshTelemetryPresentation(FeatureSnapshotTime);
+                break;
             case "telemetry":
                 ApplyTelemetryFixture(populated: true);
                 TelemetryPlot.ShowLocalizationSnapshotInspection(0.4, focusNextSampleButton: true);
+                TelemetryPlot.ShowLocalizationSnapshotLayout(destination);
                 break;
             case "telemetry-empty":
                 ApplyTelemetryFixture(populated: false);
+                break;
+            case "telemetry-analysis":
+            case "telemetry-narrow":
+            case "telemetry-recording":
+            case "telemetry-replay":
+            case "telemetry-controls-narrow":
+            case "telemetry-hover-edge":
+            case "telemetry-dark":
+            case "telemetry-range":
+            case "telemetry-metrics":
+            case "telemetry-color":
+            case "telemetry-expired":
+            case "telemetry-retention":
+                ApplyTelemetryFixture(populated: true);
+                TelemetryPlot.ShowLocalizationSnapshotInspection(
+                    destination == "telemetry-hover-edge" ? 1 : 0.4);
+                TelemetryPlot.ShowLocalizationSnapshotLayout(destination);
                 break;
             case "laptop-battery-history":
                 ApplyBatteryHistoryFixture();
@@ -68,6 +89,92 @@ public sealed partial class MainWindow
                     nameof(destination), destination, "Unknown feature snapshot route.");
         }
     }
+
+    internal void VerifyLocalizationSnapshotTelemetry()
+    {
+        TelemetryPageHeader.VerifyLocalizationSnapshotLayout();
+        if (!ViewModel.TelemetryEnabled)
+        {
+            if (TelemetryEnabledToggle.IsOn || TelemetryContent.Visibility != Visibility.Collapsed
+                || TelemetryDisabledText.Visibility != Visibility.Visible)
+            {
+                throw new InvalidOperationException("Disabled telemetry still presents collection controls.");
+            }
+            return;
+        }
+        TelemetrySourceHeader.VerifyLocalizationSnapshotLayout();
+        foreach ((Microsoft.UI.Xaml.Controls.Button button, TextBlock label) in new[]
+        {
+            (TelemetryRecordButton, TelemetryRecordLabel), (TelemetryStopButton, TelemetryStopLabel),
+            (TelemetryLiveButton, TelemetryLiveLabel), (TelemetryOpenButton, TelemetryOpenLabel),
+        })
+        {
+            if (button.Visibility != Visibility.Visible) { continue; }
+            if (Microsoft.UI.Xaml.Controls.Grid.GetRow(TelemetrySourceCommands) == 0
+                && TelemetryRecordingText.Visibility == Visibility.Collapsed
+                && Math.Abs(TelemetrySourceText.ActualHeight - label.ActualHeight) <= 0.5)
+            {
+                double statusTop = TelemetrySourceText.TransformToVisual(TelemetrySourceHeader)
+                    .TransformPoint(new Windows.Foundation.Point()).Y;
+                double commandTop = label.TransformToVisual(TelemetrySourceHeader)
+                    .TransformPoint(new Windows.Foundation.Point()).Y;
+                if (Math.Abs(statusTop - commandTop) > 0.75)
+                {
+                    throw new InvalidOperationException(
+                        $"Telemetry status and command text are misaligned: status={statusTop}; command={commandTop}; scale={TelemetrySourceHeader.XamlRoot?.RasterizationScale}.");
+                }
+            }
+            Windows.Foundation.Point origin = label.TransformToVisual(button).TransformPoint(new Windows.Foundation.Point());
+            if (label.ActualWidth <= 0 || label.ActualHeight <= 0 || label.IsTextTrimmed
+                || origin.X < -0.5 || origin.Y < -0.5
+                || origin.X + label.ActualWidth > button.ActualWidth + 0.5
+                || origin.Y + label.ActualHeight > button.ActualHeight + 0.5)
+            {
+                throw new InvalidOperationException("A contextual source command did not render its complete localized label.");
+            }
+        }
+        Microsoft.UI.Xaml.Controls.Button[] visibleCommands = new[]
+        {
+            TelemetryRecordButton, TelemetryStopButton, TelemetryLiveButton, TelemetryOpenButton,
+        }.Where(button => button.Visibility == Visibility.Visible).ToArray();
+        double naturalWidth = visibleCommands.Sum(button => button.DesiredSize.Width)
+            + Math.Max(0, visibleCommands.Length - 1) * 8;
+        if (naturalWidth <= TelemetrySourceCommands.ActualWidth)
+        {
+            double[] tops = visibleCommands.Select(button => button.TransformToVisual(TelemetrySourceCommands)
+                .TransformPoint(new Windows.Foundation.Point()).Y).ToArray();
+            if (tops.Length > 1 && tops.Max() - tops.Min() > 0.5)
+            {
+                throw new InvalidOperationException("Commands that fit their measured width wrapped at native DPI.");
+            }
+        }
+        VerifyLocalizationSnapshotTelemetrySourceState();
+        TelemetryPlot.VerifyLocalizationSnapshotAnalysis();
+    }
+
+    private void VerifyLocalizationSnapshotTelemetrySourceState()
+    {
+        bool replay = ViewModel.DisplayedTelemetrySource == TelemetrySource.LocalCsvReplay;
+        bool recording = ViewModel.IsTelemetryRecording;
+        if (string.IsNullOrWhiteSpace(TelemetrySourceText.Text)
+            || TelemetrySourceText.Visibility != Visibility.Visible
+            || TelemetryRecordButton.Visibility != (!recording && !replay
+                ? Visibility.Visible : Visibility.Collapsed)
+            || TelemetryStopButton.Visibility != (recording
+                ? Visibility.Visible : Visibility.Collapsed)
+            || TelemetryLiveButton.Visibility != (replay
+                ? Visibility.Visible : Visibility.Collapsed)
+            || TelemetryOpenButton.Visibility != Visibility.Visible
+            || TelemetryRecordingText.Visibility != (recording
+                ? Visibility.Visible : Visibility.Collapsed))
+        {
+            throw new InvalidOperationException(
+                "Telemetry source status and contextual commands do not match the displayed source state.");
+        }
+    }
+
+    internal Flyout GetLocalizationSnapshotTelemetryFlyout(bool color) =>
+        TelemetryPlot.GetLocalizationSnapshotFlyout(color);
 
     private void ShowLocalizationSnapshotApplicationEditorFixture()
     {
@@ -195,7 +302,6 @@ public sealed partial class MainWindow
 
     private void ApplyTelemetryFixture(bool populated)
     {
-        TelemetryRange.SelectedIndex = 3;
         if (populated)
         {
             FieldInfo historyField = typeof(MainViewModel).GetField(
@@ -301,7 +407,7 @@ public sealed partial class MainWindow
             RefreshRateOptions:
             [
                 new DisplayRefreshRateOption("fixed-60", "60 Hz"),
-                new DisplayRefreshRateOption("dynamic-48-240", "Dynamic (48–240 Hz)", true),
+                new DisplayRefreshRateOption("dynamic-48-240", "Dynamic (48â€“240 Hz)", true),
             ],
             SelectedRefreshRateKey: "dynamic-48-240",
             IsHdrSupported: true,

@@ -22,7 +22,7 @@ public sealed partial class MainWindow
         WindowsBatteryReport? report = BatteryHistoryViewModel.Report;
         BatteryHistorySummary.Text = report is null
             ? LocalizedResources.Get("BatteryHistory_NotLoaded", "Load Windows' battery report to inspect the last 24 hours.")
-            : LocalizedResources.Format("BatteryHistory_SourceTime", "Windows battery report · Generated {0}", report.GeneratedAtUtc.ToLocalTime().ToString("g"));
+            : LocalizedResources.Format("BatteryHistory_SourceTime", "Windows battery report · Generated {0}", PresentationTimestamp.ForDisplay(report.GeneratedAtUtc).ToString("g"));
         BatteryHealthText.Text = report is null ? string.Empty : LocalizedResources.Format(
             "BatteryHistory_Health", "Full charge {0} · Design {1} · Health {2} · Cycles {3}",
             Capacity(report.Status.FullChargeCapacityMilliwattHours), Capacity(report.Status.DesignCapacityMilliwattHours),
@@ -55,7 +55,7 @@ public sealed partial class MainWindow
         string discharge = interval.DischargeMilliwattHours is { } energy ? $"{energy / 1000d:0.##} Wh"
             : LocalizedResources.Get("BatteryHistory_Unknown", "Unknown");
         return LocalizedResources.Format("BatteryHistory_Interval", "{0} – {1} · {2} · {3} · Charge {4} · Discharged {5}",
-            interval.StartUtc.ToLocalTime().ToString("g"), interval.EndUtc.ToLocalTime().ToString("t"),
+            PresentationTimestamp.ForDisplay(interval.StartUtc).ToString("g"), PresentationTimestamp.ForDisplay(interval.EndUtc).ToString("t"),
             source, activity, charge, discharge);
     }
 

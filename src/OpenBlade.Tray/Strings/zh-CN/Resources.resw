@@ -2492,23 +2492,11 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Navigation_Telemetry" xml:space="preserve">
     <value>遥测</value>
   </data>
-  <data name="Telemetry_All.Content" xml:space="preserve">
-    <value>所有保留的读数</value>
-  </data>
   <data name="Telemetry_Description.Text" xml:space="preserve">
     <value>查看温度、风扇和电池功率随时间的变化。缺失的读数会保留为空缺。</value>
   </data>
   <data name="Telemetry_EventsTitle.Text" xml:space="preserve">
     <value>电源和配置变化</value>
-  </data>
-  <data name="Telemetry_Last15.Content" xml:space="preserve">
-    <value>最近 15 分钟</value>
-  </data>
-  <data name="Telemetry_Last5.Content" xml:space="preserve">
-    <value>最近 5 分钟</value>
-  </data>
-  <data name="Telemetry_Last60.Content" xml:space="preserve">
-    <value>最近一小时</value>
   </data>
   <data name="Telemetry_Live.Content" xml:space="preserve">
     <value>返回实时数据</value>
@@ -2518,9 +2506,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="Telemetry_Open.Content" xml:space="preserve">
     <value>打开 CSV 回放</value>
-  </data>
-  <data name="Telemetry_Range.Header" xml:space="preserve">
-    <value>时间范围</value>
   </data>
   <data name="Telemetry_Record.Content" xml:space="preserve">
     <value>记录 CSV</value>
@@ -2609,32 +2594,20 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="TelemetryUI_FollowLatest" xml:space="preserve">
     <value>跟随最新读数</value>
   </data>
-  <data name="TelemetryUI_FollowingLatest" xml:space="preserve">
-    <value>跟随最新读数 · {0}</value>
-  </data>
   <data name="TelemetryUI_Fresh" xml:space="preserve">
     <value>最新</value>
   </data>
   <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
     <value>GPU 温度</value>
   </data>
-  <data name="TelemetryUI_InspectingSample" xml:space="preserve">
-    <value>正在查看 {0} · 已固定选择</value>
-  </data>
   <data name="TelemetryUI_LiveSource" xml:space="preserve">
     <value>实时数据 · {0}</value>
-  </data>
-  <data name="TelemetryUI_Metric" xml:space="preserve">
-    <value>指标</value>
   </data>
   <data name="TelemetryUI_NextSample" xml:space="preserve">
     <value>下一条采样</value>
   </data>
   <data name="TelemetryUI_NoEvents" xml:space="preserve">
     <value>此时间范围内没有供电方式或配置方案变化。</value>
-  </data>
-  <data name="TelemetryUI_NoReadings" xml:space="preserve">
-    <value>此指标暂无读数。</value>
   </data>
   <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
     <value>未选择采样。</value>
@@ -2666,16 +2639,127 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="TelemetryUI_Stale" xml:space="preserve">
     <value>已过期</value>
   </data>
-  <data name="TelemetryUI_Statistics" xml:space="preserve">
-    <value>最低 {0} · 最高 {1} · 平均 {2} · {3} 条读数</value>
-  </data>
   <data name="TelemetryUI_Unavailable" xml:space="preserve">
     <value>不可用</value>
   </data>
   <data name="TelemetryUI_WaitingForReadings" xml:space="preserve">
     <value>正在等待读数</value>
   </data>
+  <data name="TelemetryUI_AnalysisTitle" xml:space="preserve">
+    <value>所选采样和范围统计</value>
+  </data>
+  <data name="TelemetryUI_ApplyColor" xml:space="preserve">
+    <value>应用颜色</value>
+  </data>
+  <data name="TelemetryUI_ColorPattern" xml:space="preserve">
+    <value>各项指标还通过不同线型加以区分。</value>
+  </data>
+  <data name="TelemetryUI_ColorPreference" xml:space="preserve">
+    <value>颜色和可见指标将为当前用户保存。</value>
+  </data>
+  <data name="TelemetryUI_DefaultColor" xml:space="preserve">
+    <value>默认颜色</value>
+  </data>
+  <data name="TelemetryUI_FanLane" xml:space="preserve">
+    <value>风扇转速 (RPM)</value>
+  </data>
+  <data name="TelemetryUI_Following" xml:space="preserve">
+    <value>正在跟随最新读数</value>
+  </data>
+  <data name="TelemetryUI_FullRange" xml:space="preserve">
+    <value>完整范围</value>
+  </data>
+  <data name="TelemetryUI_InspectHint" xml:space="preserve">
+    <value>悬停可查看。单击可固定采样。</value>
+  </data>
+  <data name="TelemetryUI_InvalidRangeTime" xml:space="preserve">
+    <value>请输入有效的日期和时间。</value>
+  </data>
+  <data name="TelemetryUI_MetricColor" xml:space="preserve">
+    <value>{0} 颜色</value>
+  </data>
+  <data name="TelemetryUI_MetricsAndColors" xml:space="preserve">
+    <value>指标和颜色</value>
+  </data>
+  <data name="TelemetryUI_Pinned" xml:space="preserve">
+    <value>已固定</value>
+  </data>
+  <data name="TelemetryUI_PowerLane" xml:space="preserve">
+    <value>电池功率 (W)</value>
+  </data>
+  <data name="TelemetryUI_RangeAutomation" xml:space="preserve">
+    <value>可见时间范围。拖动其边缘，或编辑开始和结束时间字段。</value>
+  </data>
+  <data name="TelemetryUI_RangeEnd" xml:space="preserve">
+    <value>结束</value>
+  </data>
+  <data name="TelemetryUI_RangeHint" xml:space="preserve">
+    <value>拖动任一边缘可调整大小，拖动所选窗口可移动范围。也可编辑开始和结束时间。</value>
+  </data>
+  <data name="TelemetryUI_RangeOverview" xml:space="preserve">
+    <value>可见时间范围 · {0}</value>
+  </data>
+  <data name="TelemetryUI_RangeScope" xml:space="preserve">
+    <value>范围 · {0} 至 {1}</value>
+  </data>
+  <data name="TelemetryUI_RangeStart" xml:space="preserve">
+    <value>开始</value>
+  </data>
+  <data name="TelemetryUI_RangeStatistics" xml:space="preserve">
+    <value>范围统计</value>
+  </data>
+  <data name="TelemetryUI_ReadingCounts" xml:space="preserve">
+    <value>{0} 条读数 · 缺失 {1} 条</value>
+  </data>
+  <data name="TelemetryUI_ResetColors" xml:space="preserve">
+    <value>重置颜色</value>
+  </data>
+  <data name="TelemetryUI_SelectedMoment" xml:space="preserve">
+    <value>所选时刻 · {0}</value>
+  </data>
+  <data name="TelemetryUI_TableAverage" xml:space="preserve">
+    <value>平均</value>
+  </data>
+  <data name="TelemetryUI_TableMaximum" xml:space="preserve">
+    <value>最大</value>
+  </data>
+  <data name="TelemetryUI_TableMetric" xml:space="preserve">
+    <value>指标</value>
+  </data>
+  <data name="TelemetryUI_TableMinimum" xml:space="preserve">
+    <value>最小</value>
+  </data>
+  <data name="TelemetryUI_TableMoment" xml:space="preserve">
+    <value>所选采样</value>
+  </data>
+  <data name="TelemetryUI_TableReadings" xml:space="preserve">
+    <value>读数</value>
+  </data>
+  <data name="TelemetryUI_Temperatures" xml:space="preserve">
+    <value>温度 (°C)</value>
+  </data>
+  <data name="TelemetryUI_VisibleTimeRange" xml:space="preserve">
+    <value>可见时间范围</value>
+  </data>
   <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
     <value>不可用</value>
+  </data>
+  <data name="TelemetryUI_RangeHistoryExpired" xml:space="preserve">
+    <value>较早的读数已不再保留。可见时间范围已调整。</value>
+  </data>
+  <data name="TelemetryUI_RangeTimeAdjusted" xml:space="preserve">
+    <value>已调整至可用时间范围内。</value>
+  </data>
+  <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
+    <value>所选读数已不再保留。</value>
+  </data>
+  <data name="Telemetry_Enable.Text" xml:space="preserve">
+    <value>启用遥测</value>
+  </data>
+  <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>启用遥测</value>
+  </data>
+  <data name="Telemetry_Disabled.Text" xml:space="preserve">
+    <value>启用遥测以收集传感器历史数据并将数据记录到 CSV 文件。</value>
   </data>
 </root>

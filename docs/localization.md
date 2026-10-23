@@ -158,6 +158,11 @@ Agent, tray icon, or hardware integration. The installer snapshot test uses the
 same output variable and renders its states without planning or applying a Burn
 package:
 
+Disconnected screenshot timestamps use UTC, so a machine timezone change does
+not alter translator packages. The installed app continues to display local
+times. The screenshot render profile records this UTC policy and the bounded
+rounded-edge alpha canonicalization used for reproducible native flyouts.
+
 Tray visual smoke tests, installer UI tests, and the capture wrapper run their
 windows without displaying them on the user's screen. Rendering,
 localization, layout, and logical keyboard-focus checks still run. An isolation

@@ -291,6 +291,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             exception => Trace.TraceError(
                 "OpenBlade preference save failed: {0}",
                 exception));
+        TelemetryPlot.PreferencesChanged += (_, _) =>
+        {
+            if (!localizationSnapshotMode)
+            {
+                QueuePreferenceSave();
+            }
+        };
+        TelemetryPlot.VisibleRangeChanged += (_, _) => RefreshTelemetryEvents();
         AppWindow.Closing += OnClosing;
     }
 
@@ -881,6 +889,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
+            await ViewModel.SetTelemetryEnabledAsync(preferences.TelemetryEnabled);
+            TelemetryPlot.ApplyPreferences(preferences.EffectiveTelemetryChartMetrics);
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
             initialLanguage = initialLanguageOverride ?? preferences.EffectiveLanguage;
@@ -1114,8 +1124,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 RefreshTelemetryPresentation();
             }
         }
+        if (args.PropertyName == nameof(MainViewModel.TelemetryEnabled) && telemetryToggleInProgress)
+        {
+            // Persist the accepted switch state before CSV finalization awaits.
+            // Initialization uses the same property without saving partial preferences.
+            QueuePreferenceSave();
+        }
         if (args.PropertyName is nameof(MainViewModel.IsTelemetryRecording)
-            or nameof(MainViewModel.TelemetryReplaySession) or nameof(MainViewModel.TelemetryErrorMessage))
+            or nameof(MainViewModel.TelemetryReplaySession) or nameof(MainViewModel.TelemetryErrorMessage)
+            or nameof(MainViewModel.TelemetryEnabled))
         {
             RefreshTelemetryPresentation();
         }
@@ -1449,7 +1466,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
                 Language: ViewModel.LanguagePreference,
                 SnapTapEnabled: snapTapEnabled,
-                ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled));
+                ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled,
+                TelemetryChartMetrics: TelemetryPlot.MetricPreferences,
+                TelemetryEnabled: ViewModel.TelemetryEnabled));
         }
         catch (ObjectDisposedException)
         {
@@ -3351,7 +3370,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ? Visibility.Visible
             : Visibility.Collapsed;
         TelemetryPage.Visibility = destination == "telemetry" ? Visibility.Visible : Visibility.Collapsed;
-        ViewModel.SetTelemetryPresentationActive(!localizationSnapshotMode && windowVisible && destination == "telemetry");
+        ViewModel.SetTelemetryPresentationActive(ViewModel.TelemetryEnabled && !localizationSnapshotMode && windowVisible && destination == "telemetry");
         if (destination == "telemetry")
         {
             RefreshTelemetryPresentation();
@@ -3621,7 +3640,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         ViewModel.SetDashboardTelemetryPresentationActive(
             windowVisible && HomePage.Visibility == Visibility.Visible);
-        bool telemetryActive = !localizationSnapshotMode
+        bool telemetryActive = ViewModel.TelemetryEnabled && !localizationSnapshotMode
             && windowVisible
             && TelemetryPage.Visibility == Visibility.Visible;
         ViewModel.SetTelemetryPresentationActive(telemetryActive);

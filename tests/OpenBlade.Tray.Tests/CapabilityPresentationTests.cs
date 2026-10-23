@@ -1366,19 +1366,12 @@ public sealed class CapabilityPresentationTests
         XElement[] retainedDropdowns = document.Descendants()
             .Where(element => element.Name.LocalName == "ComboBox")
             .ToArray();
-        Assert.Equal(3, retainedDropdowns.Length);
+        Assert.Equal(2, retainedDropdowns.Length);
         Assert.Contains(retainedDropdowns, element =>
             Attribute(element, "AutomationProperties.Name") == "Profile to review");
         Assert.Contains(retainedDropdowns, element =>
             Attribute(element, "SelectionChanged") == "OnSpecialKeyActionSelectionChanged");
-        XElement telemetryRange = Assert.Single(retainedDropdowns, element =>
-            Attribute(element, "Name") == "TelemetryRange");
-        Assert.Equal("Time range", Attribute(telemetryRange, "Header"));
-        Assert.Equal("1", Attribute(telemetryRange, "SelectedIndex"));
-        Assert.Equal("OnTelemetryRangeChanged", Attribute(telemetryRange, "SelectionChanged"));
-        Assert.Equal(
-            4,
-            telemetryRange.Elements().Count(element => element.Name.LocalName == "ComboBoxItem"));
+        Assert.DoesNotContain(retainedDropdowns, element => Attribute(element, "Name") == "TelemetryRange");
     }
 
     [Fact]
@@ -2489,10 +2482,10 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("DispatcherQueuePriority.Low", badgeHandlerSource, StringComparison.Ordinal);
         Assert.Contains("VerticalAlignmentRatio = 0", badgeHandlerSource, StringComparison.Ordinal);
 
-        AssertStyleBasedOn(document, "PageTitleStyle", "{StaticResource TitleTextBlockStyle}");
-        AssertStyleBasedOn(document, "SectionHeaderStyle", "{StaticResource SubtitleTextBlockStyle}");
-        AssertStyleBasedOn(document, "CardTitleStyle", "{StaticResource BodyStrongTextBlockStyle}");
-        AssertStyleBasedOn(document, "SecondaryTextStyle", "{StaticResource BodyTextBlockStyle}");
+        AssertStyleBasedOn(document, "PageTitleStyle", "{StaticResource AppPageTitleTextStyle}");
+        AssertStyleBasedOn(document, "SectionHeaderStyle", "{StaticResource AppSectionTitleTextStyle}");
+        AssertStyleBasedOn(document, "CardTitleStyle", "{StaticResource AppBodyStrongTextStyle}");
+        AssertStyleBasedOn(document, "SecondaryTextStyle", "{StaticResource AppBodyTextStyle}");
         Assert.Equal(
             "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
             Attribute(NamedElement(document, "InfoBar", "OperationErrorInfoBar"), "Visibility"));

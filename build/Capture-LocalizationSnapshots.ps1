@@ -125,6 +125,19 @@ try {
             'profiles-application-discovery-empty',
             'telemetry',
             'telemetry-empty',
+            'telemetry-disabled',
+            'telemetry-analysis',
+            'telemetry-narrow',
+            'telemetry-controls-narrow',
+            'telemetry-hover-edge',
+            'telemetry-dark',
+            'telemetry-range',
+            'telemetry-expired',
+            'telemetry-retention',
+            'telemetry-recording',
+            'telemetry-replay',
+            'telemetry-metrics',
+            'telemetry-color',
             'laptop',
             'laptop-battery-history',
             'laptop-snap-tap-info',
@@ -202,9 +215,10 @@ $manifest = [ordered]@{
     renderProfile = [ordered]@{
         language = $Culture
         theme = 'light'
+        timeZone = 'UTC-for-snapshot-timestamps'
         dpi = '96-process-local-DPIUNAWARE'
         installerRendering = 'software'
-        pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v2'
+        pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4'
         frameStabilization = 'two-consecutive-canonical-frames-v1'
         windowActivation = 'stable-title-foreground-v1'
         inputIsolation = 'noninteractive-window-v1'
