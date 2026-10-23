@@ -2872,7 +2872,7 @@ public sealed class WinUiShellContractTests
             canonicalizer,
             StringComparison.Ordinal);
         Assert.Contains("GetRgbBrightness", canonicalizer, StringComparison.Ordinal);
-        Assert.Contains("transitions == 2", canonicalizer, StringComparison.Ordinal);
+        Assert.Contains("CountRingTransitions(pixels, width, centerX, centerY) == 2", canonicalizer, StringComparison.Ordinal);
         Assert.Contains("channelDelta > 16", canonicalizer, StringComparison.Ordinal);
         Assert.Contains(
             "bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4",
