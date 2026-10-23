@@ -13,6 +13,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Standardize app typography around the native WinUI type scale and shared command sizing. Telemetry table headers use strong text while body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 
+### Fixed
+
+- Keep the minimize, maximize and close buttons in sync with the window theme, including when following Windows. ([#843](https://github.com/OSSBlade/openblade-core/pull/843))
+
 ## [0.41.1-nightly.99] - 2026-10-22
 
 ### Changed

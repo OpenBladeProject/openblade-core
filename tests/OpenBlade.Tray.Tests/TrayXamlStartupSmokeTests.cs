@@ -80,6 +80,11 @@ public sealed class TrayXamlStartupSmokeTests
             "--responsive-page-header-smoke",
             "OpenBlade-responsive-page-header-smoke");
 
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task NativeCaptionsFollowResolvedWindowTheme() =>
+        RunTraySmokeAsync("--caption-theme-smoke", "OpenBlade-caption-theme-smoke");
+
     private static async Task RunTraySmokeAsync(
         string argument,
         string reportPrefix,
