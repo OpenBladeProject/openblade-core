@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.42.0-nightly.100] - 2026-10-23
+
 ### Added
 
 - Compare telemetry sensors in separate temperature, power and fan-speed lanes with a shared time axis and an analysis table. Choose visible metrics and custom colors, drag the time window or edit precise bounds, and inspect exact raw-sample values and range statistics. Pinned moments stay fixed as live readings arrive. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
@@ -18,7 +20,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Align telemetry status text with CSV actions and center shared toolbar content at native display scaling. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
-
 - Hide graph readouts, crosshairs and sample markers when the pointer leaves, without clearing pinned table values. Keep hover inspection available after telemetry range edits and preserve selection when recording starts or stops. Explain expired readings and adjusted time bounds, and retain unrelated preferences when a saved sensor is unknown. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Keep application and display automation current after cancellation or rapid app switches, and let telemetry recording stop cleanly after a disk error. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
 - Avoid unnecessary control pauses when performance, fan or battery changes are canceled or blocked before they are sent. Keep shutdown cleanup bounded. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
@@ -2219,7 +2220,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.41.1-nightly.99...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.42.0-nightly.100...HEAD
+[0.42.0-nightly.100]: https://github.com/OSSBlade/openblade-core/compare/v0.41.1-nightly.99...v0.42.0-nightly.100
 [0.41.1-nightly.99]: https://github.com/OSSBlade/openblade-core/compare/v0.41.0-nightly.98...v0.41.1-nightly.99
 [0.41.0-nightly.98]: https://github.com/OSSBlade/openblade-core/compare/v0.40.0...v0.41.0-nightly.98
 [0.40.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.30.0...v0.40.0
