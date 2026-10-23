@@ -70,7 +70,7 @@ public sealed partial class MainWindow
                 "TelemetryUI_NoEvents",
                 "No power or profile changes in this range.")
             : string.Join(Environment.NewLine, events.TakeLast(12).Select(marker =>
-                $"{marker.TimestampUtc.ToLocalTime():G} · {(marker.Kind == TelemetryEventKind.PowerSourceChanged ? LocalizedResources.Get("TelemetryUI_PowerSource", "Power source") : LocalizedResources.Get("TelemetryUI_Profile", "Profile"))}: {marker.PreviousValue} → {marker.CurrentValue}"));
+                $"{PresentationTimestamp.ForDisplay(marker.TimestampUtc):G} · {(marker.Kind == TelemetryEventKind.PowerSourceChanged ? LocalizedResources.Get("TelemetryUI_PowerSource", "Power source") : LocalizedResources.Get("TelemetryUI_Profile", "Profile"))}: {marker.PreviousValue} → {marker.CurrentValue}"));
     }
 
     private async void OnStartTelemetryRecording(object sender, RoutedEventArgs args) =>

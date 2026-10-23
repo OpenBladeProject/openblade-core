@@ -3,7 +3,9 @@ namespace OpenBlade.Tray;
 internal static class LocalizationSnapshotPixelCanonicalizer
 {
     public const string RenderProfileIdentifier =
-        "bgra8-4-bit-midpoint-local-majority-v2";
+        "bgra8-4-bit-midpoint-local-majority-edge-alpha-v3";
+
+    private const int RoundedEdgeBandWidth = 2;
 
     public static void RequireVisibleDetail(byte[] pixels, bool requireOpaqueSurface = false)
     {
@@ -68,6 +70,8 @@ internal static class LocalizationSnapshotPixelCanonicalizer
             }
         }
 
+        CanonicalizeRoundedEdges(pixels, width, height);
+
         byte[] quantized = (byte[])pixels.Clone();
         for (int y = 1; y < height - 1; y++)
         {
@@ -99,6 +103,59 @@ internal static class LocalizationSnapshotPixelCanonicalizer
                 }
             }
         }
+    }
+
+    private static void CanonicalizeRoundedEdges(
+        byte[] pixels,
+        int width,
+        int height)
+    {
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (x >= RoundedEdgeBandWidth &&
+                    x < width - RoundedEdgeBandWidth &&
+                    y >= RoundedEdgeBandWidth &&
+                    y < height - RoundedEdgeBandWidth)
+                {
+                    continue;
+                }
+
+                int index = ((y * width) + x) * 4;
+                byte alpha = CanonicalizeRoundedEdgeAlpha(pixels[index + 3]);
+                pixels[index + 3] = alpha;
+                for (int channel = 0; channel < 3; channel++)
+                {
+                    pixels[index + channel] = alpha <= 16
+                        ? Math.Min((byte)0x07, alpha)
+                        : Math.Min(pixels[index + channel], alpha);
+                }
+            }
+        }
+    }
+
+    private static byte CanonicalizeRoundedEdgeAlpha(byte alpha)
+    {
+        if (alpha is 0 or 255)
+        {
+            return alpha;
+        }
+
+        // RenderTargetBitmap can move a rounded presenter edge by one alpha
+        // value between otherwise identical processes. Round only the image
+        // perimeter, retaining partial-alpha corner coverage and stable extrema.
+        if (alpha <= 8)
+        {
+            return 8;
+        }
+
+        if (alpha >= 248)
+        {
+            return 248;
+        }
+
+        return (byte)(((alpha + 8) / 16) * 16);
     }
 
     private static uint FindNeighborMajority(

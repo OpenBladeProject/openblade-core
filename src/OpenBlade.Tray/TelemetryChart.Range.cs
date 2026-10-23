@@ -165,7 +165,7 @@ public sealed partial class TelemetryChart
     }
 
     private static string FormatRangeTime(DateTimeOffset value) =>
-        value.ToLocalTime().ToString(RangeTimeFormat, CultureInfo.InvariantCulture);
+        PresentationTimestamp.ForDisplay(value).ToString(RangeTimeFormat, CultureInfo.InvariantCulture);
 
     private void DrawOverview()
     {
@@ -220,7 +220,7 @@ public sealed partial class TelemetryChart
         }
         foreach (DateTimeOffset tick in domain.CreateTimeTicks(3))
         {
-            TextBlock label = Text(AppTypography.Caption, FormatTimeTick(tick.ToLocalTime(),
+            TextBlock label = Text(AppTypography.Caption, FormatTimeTick(PresentationTimestamp.ForDisplay(tick),
                 timeRange.SourceEndUtc - timeRange.SourceStartUtc));
             label.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
             overview.Height = Math.Max(76, 56 + label.DesiredSize.Height);

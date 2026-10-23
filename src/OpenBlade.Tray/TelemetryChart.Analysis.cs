@@ -308,7 +308,7 @@ public sealed partial class TelemetryChart
         }
         tableRangeText.Text = timeRange is null ? string.Empty
             : LocalizedResources.Format("TelemetryUI_RangeScope", "Range · {0} to {1}",
-                timeRange.StartUtc.ToLocalTime().ToString("G"), timeRange.EndUtc.ToLocalTime().ToString("G"));
+                PresentationTimestamp.ForDisplay(timeRange.StartUtc).ToString("G"), PresentationTimestamp.ForDisplay(timeRange.EndUtc).ToString("G"));
     }
 
     private void UpdateAnalysisValues(TelemetrySample? sample)

@@ -973,7 +973,9 @@ throw 'Target catalog was not write-locked during import.'
     $generatedFolder = Join-Path $packageRoot 'OpenBlade-ru-RU-translator'
     $manifest = Get-Content (Join-Path $generatedFolder 'manifest.json') -Raw |
         ConvertFrom-Json
-    Assert-Equal 'bgra8-4-bit-midpoint-local-majority-v2' `
+    Assert-Equal 'UTC-for-snapshot-timestamps' $manifest.screenshotRenderProfile.timeZone `
+        'Snapshot timestamps must not depend on the machine timezone.'
+    Assert-Equal 'bgra8-4-bit-midpoint-local-majority-edge-alpha-v3' `
         $manifest.screenshotRenderProfile.pixelCanonicalization `
         'The package manifest must record deterministic pixel canonicalization.'
     Assert-Equal 'two-consecutive-canonical-frames-v1' `

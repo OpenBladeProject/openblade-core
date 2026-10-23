@@ -315,7 +315,7 @@ public sealed partial class TelemetryChart : Grid
         foreach (DateTimeOffset tick in lane.Scale.CreateTimeTicks(tickCount))
         {
             double x = plotLeft + lane.Scale.TimeFraction(tick) * lane.AreaWidth;
-            TextBlock label = Text(AppTypography.Caption, FormatTimeTick(tick.ToLocalTime(), duration));
+            TextBlock label = Text(AppTypography.Caption, FormatTimeTick(PresentationTimestamp.ForDisplay(tick), duration));
             label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             Canvas.SetLeft(label, Math.Clamp(x - label.DesiredSize.Width / 2, plotLeft,
                 Math.Max(plotLeft, width - PlotRight - label.DesiredSize.Width)));
@@ -365,7 +365,7 @@ public sealed partial class TelemetryChart : Grid
                 Stroke = gridBrush,
                 StrokeDashArray = [2, 3]
             };
-            ToolTipService.SetToolTip(line, $"{marker.TimestampUtc.ToLocalTime():G} · {marker.PreviousValue} → {marker.CurrentValue}");
+            ToolTipService.SetToolTip(line, $"{PresentationTimestamp.ForDisplay(marker.TimestampUtc):G} · {marker.PreviousValue} → {marker.CurrentValue}");
             lane.Plot.Children.Add(line);
         }
         lane.Crosshair.Stroke = inspectionState.Foreground;
@@ -396,7 +396,7 @@ public sealed partial class TelemetryChart : Grid
         followLatestButton.IsEnabled = sample is not null && (!followLatest || timeRange?.FollowLatest != true);
         inspectionState.Text = sample is null
             ? LocalizedResources.Get("TelemetryUI_NoSampleSelected", "No sample selected.")
-            : LocalizedResources.Format("TelemetryUI_SelectedMoment", "Selected moment · {0}", sample.TimestampUtc.ToLocalTime().ToString("G"));
+            : LocalizedResources.Format("TelemetryUI_SelectedMoment", "Selected moment · {0}", PresentationTimestamp.ForDisplay(sample.TimestampUtc).ToString("G"));
         inspectionMode.Text = followLatest
             ? LocalizedResources.Get("TelemetryUI_Following", "Following latest")
             : samplePinned ? LocalizedResources.Get("TelemetryUI_Pinned", "Pinned")

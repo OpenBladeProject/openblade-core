@@ -2761,7 +2761,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("transitions == 2", canonicalizer, StringComparison.Ordinal);
         Assert.Contains("channelDelta > 16", canonicalizer, StringComparison.Ordinal);
         Assert.Contains(
-            "bgra8-4-bit-midpoint-local-majority-v2",
+            "bgra8-4-bit-midpoint-local-majority-edge-alpha-v3",
             canonicalizer,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -2803,7 +2803,7 @@ public sealed class WinUiShellContractTests
             capture,
             StringComparison.Ordinal);
         Assert.Contains(
-            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v2'",
+            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-v3'",
             capture,
             StringComparison.Ordinal);
         Assert.Contains(

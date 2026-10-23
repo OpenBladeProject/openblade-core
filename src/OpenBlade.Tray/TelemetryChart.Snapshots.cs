@@ -45,6 +45,10 @@ public sealed partial class TelemetryChart
         {
             throw new InvalidOperationException("Telemetry snapshot data was not initialized.");
         }
+        if (PresentationTimestamp.ForDisplay(timeRange.StartUtc).Offset != TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("Disconnected telemetry snapshots did not pin displayed timestamps to UTC.");
+        }
         TelemetryTimeRangeSelection savedRange = timeRange;
         DateTimeOffset? selected = SelectedSample?.TimestampUtc;
         foreach (MetricChoice choice in choices)
