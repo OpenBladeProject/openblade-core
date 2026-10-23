@@ -72,9 +72,9 @@ public sealed class WinUiShellContractTests
             Assert.Equal("{StaticResource AppCustomCommandButtonStyle}", Attribute(button, "Style"));
             Assert.Null(Attribute(button, "ContentTemplate"));
             Assert.Null(Attribute(button, "Uid"));
-            Assert.Single(button.Descendants().Where(element => element.Name.LocalName is "SymbolIcon" or "FontIcon"));
-            XElement label = Assert.Single(button.Descendants().Where(element =>
-                element.Name.LocalName == "TextBlock"));
+            Assert.Single(button.Descendants(), element => element.Name.LocalName is "SymbolIcon" or "FontIcon");
+            XElement label = Assert.Single(button.Descendants(), element =>
+                element.Name.LocalName == "TextBlock");
             Assert.Equal("{StaticResource AppBodyTextStyle}", Attribute(label, "Style"));
             Assert.Equal("Wrap", Attribute(label, "TextWrapping"));
         });
