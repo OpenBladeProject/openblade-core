@@ -155,6 +155,34 @@ public sealed class TelemetryRecordingSessionTests : IDisposable
         Assert.Equal("recover me", File.ReadAllText(path + ".partial"));
     }
 
+    [Fact]
+    public async Task WriterFailure_ReleasesBlockedAppendAndRetainsPartialFile()
+    {
+        string path = Path.Combine(directory, "failed-writer.csv");
+        await using var fixture = await FailingTelemetryRecordingFixture.CreateAsync(
+            path, TelemetrySessionMetadata.CreateLive(Start), new MutableTimeProvider(Start));
+        TelemetryRecordingSession recording = fixture.Recording;
+        await recording.AppendAsync(Sample(1));
+        await fixture.WriteStarted.WaitAsync(TimeSpan.FromSeconds(5));
+        await recording.AppendAsync(Sample(2));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task blocked = recording.AppendAsync(Sample(3), cancellationToken: cancellation.Token).AsTask();
+        Assert.False(blocked.IsCompleted);
+
+        fixture.FailWrite();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => blocked);
+        IOException error = await Assert.ThrowsAsync<IOException>(() =>
+            ((ITelemetryRecordingSession)recording).Completion.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Contains("Injected telemetry disk failure", error.Message, StringComparison.Ordinal);
+        await Assert.ThrowsAsync<IOException>(() => recording.StopAsync());
+        Assert.False(recording.IsActive);
+        Assert.True(File.Exists(path + ".partial"));
+        Assert.False(File.Exists(path));
+        using FileStream released = File.Open(
+            path + ".partial", FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))
