@@ -11,6 +11,7 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
     private static readonly TimeSpan DefaultLeaseRefreshInterval = TimeSpan.FromSeconds(5);
     private readonly Func<ReportApplicationContextRequest, CancellationToken,
         Task<ControlOperationResult>> report;
+    private readonly object statusSync = new();
     private readonly Channel<Event> events = Channel.CreateBounded<Event>(
         new BoundedChannelOptions(16)
         {
@@ -23,9 +24,11 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
     private readonly TimeSpan leaseRefreshInterval;
     private readonly Dictionary<int, TrackedProcess> tracked = [];
     private IReadOnlyList<ApplicationProfileDefinition> profiles = [];
+    private IReadOnlyList<ApplicationProfileDefinition> pendingProfiles = [];
     private ThxForegroundObservation foreground = ThxForegroundObservation.Unknown;
     private string? reportedPath;
     private bool reportPending;
+    private bool statusPending;
     private long sequence;
     private long activationSequence;
     private int disposed;
@@ -45,8 +48,15 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
         }
     }
 
-    internal void Observe(ServiceStatusSnapshot status) =>
-        events.Writer.TryWrite(new StatusObserved(status.Profiles.ApplicationProfiles));
+    internal void Observe(ServiceStatusSnapshot status)
+    {
+        lock (statusSync)
+        {
+            pendingProfiles = status.Profiles.ApplicationProfiles;
+            statusPending = true;
+        }
+        events.Writer.TryWrite(StatusObserved.Instance);
+    }
 
     internal void ObserveForeground(ThxForegroundObservation observation) =>
         events.Writer.TryWrite(new ForegroundObserved(observation));
@@ -79,10 +89,12 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
                 {
                     return;
                 }
+                ApplyLatestStatus();
                 while (events.Reader.TryRead(out Event? item))
                 {
                     Process(item);
                 }
+                ApplyLatestStatus();
                 _ = await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                 read = events.Reader.WaitToReadAsync(cancellationToken).AsTask();
             }
@@ -107,10 +119,8 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
     {
         switch (item)
         {
-            case StatusObserved status:
-                profiles = status.Profiles ?? [];
-                RemoveInvalidTrackedProcesses();
-                TrackWhileRunningForeground();
+            case StatusObserved:
+                ApplyLatestStatus();
                 break;
             case ForegroundObserved observed:
                 foreground = observed.Observation;
@@ -132,8 +142,26 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
         }
     }
 
+    private void ApplyLatestStatus()
+    {
+        IReadOnlyList<ApplicationProfileDefinition> latest;
+        lock (statusSync)
+        {
+            if (!statusPending)
+            {
+                return;
+            }
+            latest = pendingProfiles;
+            statusPending = false;
+        }
+        profiles = latest;
+        RemoveInvalidTrackedProcesses();
+        TrackWhileRunningForeground();
+    }
+
     private async Task<bool> ReconcileAsync(CancellationToken cancellationToken)
     {
+        ApplyLatestStatus();
         string? next = SelectActivePath();
         if (!string.Equals(next, reportedPath, StringComparison.OrdinalIgnoreCase))
         {
@@ -319,8 +347,10 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
     }
 
     private abstract record Event;
-    private sealed record StatusObserved(
-        IReadOnlyList<ApplicationProfileDefinition> Profiles) : Event;
+    private sealed record StatusObserved : Event
+    {
+        internal static readonly StatusObserved Instance = new();
+    }
     private sealed record ForegroundObserved(ThxForegroundObservation Observation) : Event;
     private sealed record ProcessExited(int ProcessId, long ActivationSequence) : Event;
     private sealed record TrackedProcess(

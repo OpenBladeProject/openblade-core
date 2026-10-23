@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep application and display automation current after cancellation or rapid app switches, and let telemetry recording stop cleanly after a disk error. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
+- Avoid unnecessary control pauses when performance, fan or battery changes are canceled or blocked before they are sent. Keep shutdown cleanup bounded. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
 - Prevent stale keyboard colors from flashing before the selected effect when activity wakes idle lighting, across all supported Blade models. ([#844](https://github.com/OSSBlade/openblade-core/pull/844))
 - Keep the minimize, maximize and close buttons in sync with the window theme, including when following Windows. ([#843](https://github.com/OSSBlade/openblade-core/pull/843))
 

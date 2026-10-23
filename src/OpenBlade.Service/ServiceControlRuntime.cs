@@ -520,6 +520,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? lastOwnedLightingSettings;
     private long lastLightingOffSuspendGeneration = -1;
     private static readonly TimeSpan LowPowerLightingBudget = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ShutdownFinalCleanupBudget = TimeSpan.FromSeconds(5);
     private ExactFanControlOwnership exactFanControlOwnership =
         ExactFanControlOwnership.Unowned;
     private long fanAuthorityEpoch;
@@ -11924,9 +11925,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RestoreOwnedHyperBoostForLifecycleCoreAsync(
                 "shutdown",
                 cancellationToken).ConfigureAwait(false);
-        CancellationToken cleanupToken = cancellationToken.IsCancellationRequested
-            ? CancellationToken.None
-            : cancellationToken;
+        // HyperBoost may consume the caller's whole shutdown budget. Still give
+        // keyboard release and fan handback one shared, bounded final attempt.
+        // The worker's five-second budget plus this reserve is at most ten
+        // seconds of cooperative cleanup; individual steps never renew it.
+        using var cleanupBudget = new CancellationTokenSource(ShutdownFinalCleanupBudget);
+        using var cleanupCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cleanupBudget.Token,
+            cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken);
+        CancellationToken cleanupToken = cleanupCancellation.Token;
         await operationGate.WaitAsync(cleanupToken).ConfigureAwait(false);
         try
         {

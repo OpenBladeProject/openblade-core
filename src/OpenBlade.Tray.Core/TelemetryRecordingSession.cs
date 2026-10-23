@@ -65,7 +65,7 @@ public sealed class TelemetryRecordingSession : ITelemetryRecordingSession
     private int finalized;
     private string? automaticCompletionReason;
 
-    private TelemetryRecordingSession(
+    internal TelemetryRecordingSession(
         string destinationPath,
         string partialPath,
         TelemetrySessionMetadata metadata,
@@ -290,36 +290,53 @@ public sealed class TelemetryRecordingSession : ITelemetryRecordingSession
 
     private async Task RunWriterAsync()
     {
-        await foreach (TelemetryRecordBatch batch in pending.Reader.ReadAllAsync().ConfigureAwait(false))
+        Exception? failure = null;
+        try
         {
-            try
+            await foreach (TelemetryRecordBatch batch in pending.Reader.ReadAllAsync().ConfigureAwait(false))
             {
-                await writer.WriteSampleAsync(batch.Sample, CancellationToken.None).ConfigureAwait(false);
-                lastSampleAt = batch.Sample.TimestampUtc;
-                foreach (TelemetryEvent marker in batch.Markers)
+                try
                 {
-                    await writer.WriteEventAsync(marker, CancellationToken.None).ConfigureAwait(false);
+                    await writer.WriteSampleAsync(batch.Sample, CancellationToken.None).ConfigureAwait(false);
+                    lastSampleAt = batch.Sample.TimestampUtc;
+                    foreach (TelemetryEvent marker in batch.Markers)
+                    {
+                        await writer.WriteEventAsync(marker, CancellationToken.None).ConfigureAwait(false);
+                    }
+                }
+                catch (TelemetryCapacityReachedException exception)
+                {
+                    BeginAutomaticCompletion(exception.Message);
+                    break;
                 }
             }
-            catch (TelemetryCapacityReachedException exception)
-            {
-                BeginAutomaticCompletion(exception.Message);
-                break;
-            }
-        }
 
-        DateTimeOffset maximumEnd = metadata.StartedAtUtc + limits.MaximumDuration;
-        DateTimeOffset endedAt = timeProvider.GetUtcNow();
-        if (endedAt > maximumEnd)
-        {
-            endedAt = maximumEnd;
+            DateTimeOffset maximumEnd = metadata.StartedAtUtc + limits.MaximumDuration;
+            DateTimeOffset endedAt = timeProvider.GetUtcNow();
+            if (endedAt > maximumEnd)
+            {
+                endedAt = maximumEnd;
+            }
+            if (lastSampleAt > endedAt)
+            {
+                endedAt = lastSampleAt.Value;
+            }
+            await writer.CompleteAsync(endedAt, CancellationToken.None).ConfigureAwait(false);
         }
-        if (lastSampleAt > endedAt)
+        catch (Exception exception)
         {
-            endedAt = lastSampleAt.Value;
+            failure = exception;
+            throw;
         }
-        await writer.CompleteAsync(endedAt, CancellationToken.None).ConfigureAwait(false);
-        await writer.DisposeAsync().ConfigureAwait(false);
+        finally
+        {
+            // Stop drains accepted appends before acquiring finalization. A failed
+            // reader must release blocked producers itself; its completion observer
+            // may be waiting behind Stop's gate and cannot close this channel for it.
+            Volatile.Write(ref accepting, 0);
+            pending.Writer.TryComplete(failure);
+            await writer.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private void BeginAutomaticCompletion(string reason)
