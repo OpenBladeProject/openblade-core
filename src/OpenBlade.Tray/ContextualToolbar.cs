@@ -97,6 +97,10 @@ public sealed class ContextualToolbar : Grid
         SetRow(actions, useStackedLayout ? 1 : 0);
         SetColumn(actions, useStackedLayout ? 0 : 1);
         SetColumnSpan(actions, useStackedLayout ? 2 : 1);
+        // Keep each region at its natural height. Stretching a short status
+        // leaves its text at the top while padded command labels sit lower.
+        context.VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center;
+        actions.VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center;
         actions.HorizontalAlignment = useStackedLayout
             ? Microsoft.UI.Xaml.HorizontalAlignment.Stretch
             : Microsoft.UI.Xaml.HorizontalAlignment.Right;
@@ -116,6 +120,12 @@ public sealed class ContextualToolbar : Grid
         Rect contextBounds = GetVerifiedBounds(context, "context");
         Rect actionsBounds = GetVerifiedBounds(actions, "actions");
         const double tolerance = 0.5;
+        if (stacked is false
+            && Math.Abs(contextBounds.Top + contextBounds.Height / 2
+                - actionsBounds.Top - actionsBounds.Height / 2) > tolerance)
+        {
+            throw new InvalidOperationException("Contextual toolbar regions are not vertically centered.");
+        }
         if (Overlaps(contextBounds, actionsBounds, tolerance))
         {
             throw new InvalidOperationException("Contextual toolbar regions overlap.");

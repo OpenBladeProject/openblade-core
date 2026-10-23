@@ -52,4 +52,7 @@ and a constrained layout so translated and scaled text can wrap.
 Chart toolbars use the separate desktop toolbar roles instead of page-action
 sizing. Keep native templates, focus rings and toggle semantics. Minimum targets
 can grow with translated or scaled content; do not fix heights or shrink body
-text. A short inline action such as Full range belongs beside its caption.
+text. Center each contextual toolbar region at its natural height so status
+text and padded command labels share a line; stretching the status region can
+shift its text above the actions. A short inline action such as Full range
+belongs beside its caption.

@@ -110,6 +110,20 @@ public sealed partial class MainWindow
         })
         {
             if (button.Visibility != Visibility.Visible) { continue; }
+            if (Microsoft.UI.Xaml.Controls.Grid.GetRow(TelemetrySourceCommands) == 0
+                && TelemetryRecordingText.Visibility == Visibility.Collapsed
+                && Math.Abs(TelemetrySourceText.ActualHeight - label.ActualHeight) <= 0.5)
+            {
+                double statusTop = TelemetrySourceText.TransformToVisual(TelemetrySourceHeader)
+                    .TransformPoint(new Windows.Foundation.Point()).Y;
+                double commandTop = label.TransformToVisual(TelemetrySourceHeader)
+                    .TransformPoint(new Windows.Foundation.Point()).Y;
+                if (Math.Abs(statusTop - commandTop) > 0.75)
+                {
+                    throw new InvalidOperationException(
+                        $"Telemetry status and command text are misaligned: status={statusTop}; command={commandTop}; scale={TelemetrySourceHeader.XamlRoot?.RasterizationScale}.");
+                }
+            }
             Windows.Foundation.Point origin = label.TransformToVisual(button).TransformPoint(new Windows.Foundation.Point());
             if (label.ActualWidth <= 0 || label.ActualHeight <= 0 || label.IsTextTrimmed
                 || origin.X < -0.5 || origin.Y < -0.5
