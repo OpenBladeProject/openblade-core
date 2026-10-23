@@ -3137,14 +3137,66 @@
                         <TextBlock x:Uid="Telemetry_Description"
                                    Text="Inspect temperatures, fans and battery power over time. Missing readings remain gaps."
                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock x:Name="TelemetrySourceText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                        <local:ContentWrapPanel x:Name="TelemetrySourceCommands">
-                            <Button x:Uid="Telemetry_Record" x:Name="TelemetryRecordButton" Content="Record CSV" Style="{StaticResource AppCommandButtonStyle}" Click="OnStartTelemetryRecording" />
-                            <Button x:Uid="Telemetry_Stop" x:Name="TelemetryStopButton" Content="Stop recording" Style="{StaticResource AppCommandButtonStyle}" Click="OnStopTelemetryRecording" />
-                            <Button x:Uid="Telemetry_Open" Content="Open CSV replay" Style="{StaticResource AppCommandButtonStyle}" Click="OnOpenTelemetryReplay" />
-                            <Button x:Uid="Telemetry_Live" x:Name="TelemetryLiveButton" Content="Return to live" Style="{StaticResource AppCommandButtonStyle}" Click="OnCloseTelemetryReplay" />
-                        </local:ContentWrapPanel>
-                        <TextBlock x:Name="TelemetryRecordingText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        <local:ContextualToolbar x:Name="TelemetrySourceHeader">
+                            <StackPanel x:Name="TelemetrySourceContext"
+                                        local:ContextualToolbar.Role="Context"
+                                        Spacing="4">
+                                <TextBlock x:Name="TelemetrySourceText"
+                                           Style="{StaticResource CardTitleStyle}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock x:Name="TelemetryRecordingText"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           TextWrapping="Wrap"
+                                           Visibility="Collapsed" />
+                            </StackPanel>
+                            <local:ContentWrapPanel x:Name="TelemetrySourceCommands"
+                                                    local:ContextualToolbar.Role="Actions">
+                                <Button x:Name="TelemetryRecordButton"
+                                        Style="{StaticResource AppCustomCommandButtonStyle}"
+                                        Click="OnStartTelemetryRecording">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE7C8;" />
+                                        <TextBlock x:Name="TelemetryRecordLabel" Grid.Column="1"
+                                                   Style="{StaticResource AppBodyTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </Grid>
+                                </Button>
+                                <Button x:Name="TelemetryStopButton"
+                                        Style="{StaticResource AppCustomCommandButtonStyle}"
+                                        Click="OnStopTelemetryRecording">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <SymbolIcon Symbol="Stop" />
+                                        <TextBlock x:Name="TelemetryStopLabel" Grid.Column="1"
+                                                   Style="{StaticResource AppBodyTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </Grid>
+                                </Button>
+                                <Button x:Name="TelemetryLiveButton"
+                                        Style="{StaticResource AppCustomCommandButtonStyle}"
+                                        Click="OnCloseTelemetryReplay">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <SymbolIcon Symbol="Back" />
+                                        <TextBlock x:Name="TelemetryLiveLabel" Grid.Column="1"
+                                                   Style="{StaticResource AppBodyTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </Grid>
+                                </Button>
+                                <Button x:Name="TelemetryOpenButton"
+                                        Style="{StaticResource AppCustomCommandButtonStyle}"
+                                        Click="OnOpenTelemetryReplay">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <SymbolIcon Symbol="OpenFile" />
+                                        <TextBlock x:Name="TelemetryOpenLabel" Grid.Column="1"
+                                                   Style="{StaticResource AppBodyTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </Grid>
+                                </Button>
+                            </local:ContentWrapPanel>
+                        </local:ContextualToolbar>
                         <TextBlock x:Name="TelemetryErrorText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <Border Style="{StaticResource SettingsEditorSubcardStyle}">

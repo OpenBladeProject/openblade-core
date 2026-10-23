@@ -42,18 +42,22 @@ public sealed partial class TelemetryChart
     private RangeDragKind rangeDragKind;
     private bool showAllRetained = true;
     private readonly ContentWrapPanel rangeCommands = new();
+    private readonly ContextualToolbar rangeToolbar = new();
 
     private enum RangeDragKind { Start, End, Pan }
 
     private UIElement CreateRangeEditor()
     {
         var editor = new StackPanel { Spacing = 8 };
-        var fullRange = Command(LocalizedResources.Get("TelemetryUI_FullRange", "Full range"));
+        var fullRange = IconCommand(LocalizedResources.Get("TelemetryUI_FullRange", "Full range"), Symbol.ZoomOut);
         fullRange.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left;
         overviewLabel.VerticalAlignment = VerticalAlignment.Center;
-        rangeCommands.Children.Add(overviewLabel);
         rangeCommands.Children.Add(fullRange);
-        editor.Children.Add(rangeCommands);
+        ContextualToolbar.SetRole(overviewLabel, ContextualToolbarElementRole.Context);
+        ContextualToolbar.SetRole(rangeCommands, ContextualToolbarElementRole.Actions);
+        rangeToolbar.Children.Add(overviewLabel);
+        rangeToolbar.Children.Add(rangeCommands);
+        editor.Children.Add(rangeToolbar);
         editor.Children.Add(overview);
         editor.Children.Add(Columns(rangeStartInput, rangeEndInput));
         fullRange.Click += (_, _) =>

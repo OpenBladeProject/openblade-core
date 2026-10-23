@@ -29,13 +29,17 @@
                    TextAlignment="Center"
                    TextWrapping="Wrap" />
     </DataTemplate>
-    <Style x:Key="AppCommandButtonStyle"
+    <Style x:Key="AppCustomCommandButtonStyle"
            TargetType="Button"
            BasedOn="{StaticResource DefaultButtonStyle}">
         <Setter Property="MinHeight" Value="40" />
         <Setter Property="Padding" Value="12,6" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style x:Key="AppCommandButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource AppCustomCommandButtonStyle}">
         <Setter Property="ContentTemplate" Value="{StaticResource AppCommandTextTemplate}" />
     </Style>
 </ResourceDictionary>

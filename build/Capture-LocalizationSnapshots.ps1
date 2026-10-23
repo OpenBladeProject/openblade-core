@@ -133,6 +133,8 @@ try {
             'telemetry-range',
             'telemetry-expired',
             'telemetry-retention',
+            'telemetry-recording',
+            'telemetry-replay',
             'telemetry-metrics',
             'telemetry-color',
             'laptop',

@@ -61,7 +61,7 @@ public sealed class AppTypographyContractTests
 
         XElement command = AssertStyle(
             typography,
-            "AppCommandButtonStyle",
+            "AppCustomCommandButtonStyle",
             "{StaticResource DefaultButtonStyle}",
             targetType: "Button");
 
@@ -69,7 +69,10 @@ public sealed class AppTypographyContractTests
         AssertSetter(command, "Padding", "12,6");
         AssertSetter(command, "HorizontalContentAlignment", "Center");
         AssertSetter(command, "VerticalContentAlignment", "Center");
-        AssertSetter(command, "ContentTemplate", "{StaticResource AppCommandTextTemplate}");
+        Assert.DoesNotContain(command.Elements(), setter => Attribute(setter, "Property") == "ContentTemplate");
+        XElement textCommand = AssertStyle(typography, "AppCommandButtonStyle",
+            "{StaticResource AppCustomCommandButtonStyle}", targetType: "Button");
+        AssertSetter(textCommand, "ContentTemplate", "{StaticResource AppCommandTextTemplate}");
         Assert.DoesNotContain(command.Elements(), setter =>
             Attribute(setter, "Property") is "Height" or "FontSize" or "FontFamily");
     }
@@ -87,6 +90,7 @@ public sealed class AppTypographyContractTests
         Assert.Contains("Caption = \"AppCaptionTextStyle\"", helper, StringComparison.Ordinal);
         Assert.Contains("Data = \"AppDataTextStyle\"", helper, StringComparison.Ordinal);
         Assert.Contains("CommandButton = \"AppCommandButtonStyle\"", helper, StringComparison.Ordinal);
+        Assert.Contains("CustomCommandButton = \"AppCustomCommandButtonStyle\"", helper, StringComparison.Ordinal);
         Assert.Contains("textBlock.Style = RequireStyle(key);", helper, StringComparison.Ordinal);
         Assert.Contains("Application.Current.Resources[key]", helper, StringComparison.Ordinal);
     }

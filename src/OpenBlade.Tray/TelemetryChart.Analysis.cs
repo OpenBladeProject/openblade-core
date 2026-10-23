@@ -81,7 +81,7 @@ public sealed partial class TelemetryChart
         content.Children.Add(reset);
         content.Children.Add(Text(AppTypography.Caption,
             LocalizedResources.Get("TelemetryUI_ColorPreference", "Colors and visible metrics are saved for this user.")));
-        var editor = Command(LocalizedResources.Get("TelemetryUI_MetricsAndColors", "Metrics and colors"));
+        var editor = IconCommand(LocalizedResources.Get("TelemetryUI_MetricsAndColors", "Metrics and colors"), Symbol.Setting);
         editor.HorizontalAlignment = HorizontalAlignment.Left;
         metricEditorFlyout = new Flyout { Content = content };
         editor.Flyout = metricEditorFlyout;

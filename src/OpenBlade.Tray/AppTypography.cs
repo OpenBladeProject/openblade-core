@@ -11,6 +11,7 @@ internal static class AppTypography
     public const string BodyStrong = "AppBodyStrongTextStyle";
     public const string Caption = "AppCaptionTextStyle";
     public const string Data = "AppDataTextStyle";
+    public const string CustomCommandButton = "AppCustomCommandButtonStyle";
     public const string CommandButton = "AppCommandButtonStyle";
 
     public static void Apply(TextBlock textBlock, string key)

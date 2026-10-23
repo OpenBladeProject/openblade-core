@@ -55,6 +55,8 @@ public sealed partial class MainWindow
                 break;
             case "telemetry-analysis":
             case "telemetry-narrow":
+            case "telemetry-recording":
+            case "telemetry-replay":
             case "telemetry-controls-narrow":
             case "telemetry-hover-edge":
             case "telemetry-dark":
@@ -86,8 +88,46 @@ public sealed partial class MainWindow
 
     internal void VerifyLocalizationSnapshotTelemetry()
     {
-        TelemetrySourceCommands.VerifyLocalizationSnapshotLayout();
+        TelemetrySourceHeader.VerifyLocalizationSnapshotLayout();
+        foreach ((Microsoft.UI.Xaml.Controls.Button button, TextBlock label) in new[]
+        {
+            (TelemetryRecordButton, TelemetryRecordLabel), (TelemetryStopButton, TelemetryStopLabel),
+            (TelemetryLiveButton, TelemetryLiveLabel), (TelemetryOpenButton, TelemetryOpenLabel),
+        })
+        {
+            if (button.Visibility != Visibility.Visible) { continue; }
+            Windows.Foundation.Point origin = label.TransformToVisual(button).TransformPoint(new Windows.Foundation.Point());
+            if (label.ActualWidth <= 0 || label.ActualHeight <= 0 || label.IsTextTrimmed
+                || origin.X < -0.5 || origin.Y < -0.5
+                || origin.X + label.ActualWidth > button.ActualWidth + 0.5
+                || origin.Y + label.ActualHeight > button.ActualHeight + 0.5)
+            {
+                throw new InvalidOperationException("A contextual source command did not render its complete localized label.");
+            }
+        }
+        VerifyLocalizationSnapshotTelemetrySourceState();
         TelemetryPlot.VerifyLocalizationSnapshotAnalysis();
+    }
+
+    private void VerifyLocalizationSnapshotTelemetrySourceState()
+    {
+        bool replay = ViewModel.DisplayedTelemetrySource == TelemetrySource.LocalCsvReplay;
+        bool recording = ViewModel.IsTelemetryRecording;
+        if (string.IsNullOrWhiteSpace(TelemetrySourceText.Text)
+            || TelemetrySourceText.Visibility != Visibility.Visible
+            || TelemetryRecordButton.Visibility != (!recording && !replay
+                ? Visibility.Visible : Visibility.Collapsed)
+            || TelemetryStopButton.Visibility != (recording
+                ? Visibility.Visible : Visibility.Collapsed)
+            || TelemetryLiveButton.Visibility != (replay
+                ? Visibility.Visible : Visibility.Collapsed)
+            || TelemetryOpenButton.Visibility != Visibility.Visible
+            || TelemetryRecordingText.Visibility != (recording
+                ? Visibility.Visible : Visibility.Collapsed))
+        {
+            throw new InvalidOperationException(
+                "Telemetry source status and contextual commands do not match the displayed source state.");
+        }
     }
 
     internal Flyout GetLocalizationSnapshotTelemetryFlyout(bool color) =>

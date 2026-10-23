@@ -117,6 +117,8 @@ public sealed partial class TelemetryChart
         {
             throw new InvalidOperationException("Telemetry time bounds lost precision or their UTC offset.");
         }
+        inspectionToolbar.VerifyLocalizationSnapshotLayout();
+        rangeToolbar.VerifyLocalizationSnapshotLayout();
         sampleCommands.VerifyLocalizationSnapshotLayout();
         rangeCommands.VerifyLocalizationSnapshotLayout();
         VerifyLocalizationSnapshotReadouts();
@@ -212,6 +214,18 @@ public sealed partial class TelemetryChart
         localizationSnapshotInspectionFraction = null;
         try
         {
+            ChangeFollowMode(false);
+            if (followLatest || samplePinned || timeRange.FollowLatest || followLatestButton.IsChecked == true)
+            {
+                throw new InvalidOperationException("Turning follow off did not hold the time window independently of sample pinning.");
+            }
+            ChangeFollowMode(true);
+            if (!followLatest || !timeRange.FollowLatest || followLatestButton.IsChecked != true)
+            {
+                throw new InvalidOperationException("Turning follow on did not resume the live window.");
+            }
+            timeRange = savedRange;
+            RebuildViewport();
             selectedSampleIndex = 0;
             PinSelection();
             SelectTimeRange(ApplyRangeDrag(savedRange, RangeDragKind.Pan, 0));

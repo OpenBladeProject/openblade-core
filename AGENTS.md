@@ -263,7 +263,9 @@ and high-contrast behavior remain authoritative:
 - `AppCommandButtonStyle` for full-size string page commands. Its shared
   `AppCommandTextTemplate` wraps and centers localized body text while the
   button keeps native focus behavior, a 40-DIP minimum height, and shared
-  padding. Icon and custom-content buttons retain their component style.
+  padding. `AppCustomCommandButtonStyle` shares native sizing and padding for
+  icon or composed content without applying the string-only text template.
+  Other specialized controls retain their component style.
 
 Keep local layout styles as aliases based on these application roles. Do not
 copy the native role's current `FontSize`, set a fixed line height, or introduce

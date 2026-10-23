@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Button = Microsoft.UI.Xaml.Controls.Button;
 using Microsoft.Windows.Storage.Pickers;
 
 namespace OpenBlade.Tray;
@@ -35,29 +37,69 @@ public sealed partial class MainWindow
             ? LocalizedResources.Format(
                 "TelemetryUI_ReplaySource",
                 "CSV replay · {0}",
-                metadata?.OriginPath ?? string.Empty)
+                localizationSnapshotMode ? @"C:\Telemetry\Example.csv" : metadata?.OriginPath ?? string.Empty)
             : LocalizedResources.Format("TelemetryUI_LiveSource", "Live · {0}", ViewModel.LatestTelemetryFreshness switch
             {
                 TelemetryFreshness.Fresh => LocalizedResources.Get("TelemetryUI_Fresh", "Fresh"),
                 TelemetryFreshness.Stale => LocalizedResources.Get("TelemetryUI_Stale", "Stale"),
                 _ => LocalizedResources.Get("TelemetryUI_WaitingForReadings", "Waiting for readings"),
             });
-        TelemetryRecordButton.IsEnabled = !localizationSnapshotMode && !ViewModel.IsTelemetryRecording && !replay;
-        TelemetryStopButton.IsEnabled = ViewModel.IsTelemetryRecording;
+        bool recording = ViewModel.IsTelemetryRecording;
+        SetTelemetryCommandPresentation(
+            TelemetryRecordButton,
+            TelemetryRecordLabel,
+            LocalizedResources.Get("Telemetry_Record.Content", "Record CSV"));
+        SetTelemetryCommandPresentation(
+            TelemetryStopButton,
+            TelemetryStopLabel,
+            LocalizedResources.Get("Telemetry_Stop.Content", "Stop recording"));
+        SetTelemetryCommandPresentation(
+            TelemetryOpenButton,
+            TelemetryOpenLabel,
+            LocalizedResources.Get("Telemetry_Open.Content", "Open CSV replay"));
+        SetTelemetryCommandPresentation(
+            TelemetryLiveButton,
+            TelemetryLiveLabel,
+            LocalizedResources.Get("Telemetry_Live.Content", "Return to live"));
+        TelemetryRecordButton.Visibility = !recording && !replay
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TelemetryStopButton.Visibility = recording
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TelemetryLiveButton.Visibility = replay
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TelemetryRecordButton.IsEnabled = !localizationSnapshotMode && !recording && !replay;
+        TelemetryStopButton.IsEnabled = recording;
         TelemetryLiveButton.IsEnabled = replay;
-        TelemetryRecordingText.Text = ViewModel.IsTelemetryRecording
+        string recordingOff = LocalizedResources.Get(
+            "TelemetryUI_RecordingOff",
+            "Recording off · readings stay in memory until you record a CSV.");
+        ToolTipService.SetToolTip(TelemetryRecordButton, recordingOff);
+        TelemetryRecordingText.Text = recording
             ? LocalizedResources.Format(
                 "TelemetryUI_RecordingActive",
                 "Recording · {0}. Sampling continues while this window is hidden.",
-                ViewModel.TelemetryRecordingPath ?? string.Empty)
-            : LocalizedResources.Get(
-                "TelemetryUI_RecordingOff",
-                "Recording off · readings stay in memory until you record a CSV.");
+                localizationSnapshotMode ? @"C:\Telemetry\Example.csv" : ViewModel.TelemetryRecordingPath ?? string.Empty)
+            : string.Empty;
+        TelemetryRecordingText.Visibility = recording
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         TelemetryErrorText.Text = telemetryActionError ?? ViewModel.TelemetryErrorMessage;
         TelemetryErrorText.Visibility = string.IsNullOrWhiteSpace(TelemetryErrorText.Text)
             ? Visibility.Collapsed
             : Visibility.Visible;
         telemetryPresentationDirty = false;
+    }
+
+    private static void SetTelemetryCommandPresentation(
+        Button button,
+        TextBlock label,
+        string text)
+    {
+        label.Text = text;
+        AutomationProperties.SetName(button, text);
     }
 
     private void RefreshTelemetryEvents()

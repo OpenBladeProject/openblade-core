@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using Point = Windows.Foundation.Point;
 using Rect = Windows.Foundation.Rect;
 using Size = Windows.Foundation.Size;
-using Button = Microsoft.UI.Xaml.Controls.Button;
+using ButtonBase = Microsoft.UI.Xaml.Controls.Primitives.ButtonBase;
 using Panel = Microsoft.UI.Xaml.Controls.Panel;
 
 namespace OpenBlade.Tray;
@@ -133,7 +133,7 @@ public sealed class ContentWrapPanel : Panel
                 }
             }
 
-            if (child is Button button)
+            if (child is ButtonBase button)
             {
                 VerifyButton(button, tolerance);
             }
@@ -143,7 +143,7 @@ public sealed class ContentWrapPanel : Panel
         }
     }
 
-    private static void VerifyButton(Button button, double tolerance)
+    private static void VerifyButton(ButtonBase button, double tolerance)
     {
         if (button.MinHeight + tolerance < 40)
         {

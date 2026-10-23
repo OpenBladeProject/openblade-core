@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using ToggleButton = Microsoft.UI.Xaml.Controls.Primitives.ToggleButton;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.UI.ViewManagement;
@@ -53,13 +54,14 @@ public sealed partial class TelemetryChart : Grid
 
     private readonly MetricChoice[] choices;
     private readonly Lane[] lanes;
-    private readonly TextBlock inspectionState = Text(AppTypography.BodyStrong);
+    private readonly TextBlock inspectionState = Text(AppTypography.Data);
     private readonly TextBlock inspectionMode = Text(AppTypography.Caption);
     private readonly TextBlock noReadings = Text(AppTypography.Caption,
         LocalizedResources.Get("TelemetryUI_WaitingForReadings", "Waiting for readings"));
     private readonly Button previousSampleButton;
     private readonly Button nextSampleButton;
-    private readonly Button followLatestButton;
+    private readonly ToggleButton followLatestButton;
+    private readonly ContextualToolbar inspectionToolbar = new();
     private readonly ContentWrapPanel sampleCommands = new();
     private readonly StackPanel panel = new() { Spacing = 12 };
     private IReadOnlyList<TelemetryChartMetricPreference> metricPreferences =
@@ -99,17 +101,39 @@ public sealed partial class TelemetryChart : Grid
             new(TelemetryMetric.Fan2Rpm,
                 LocalizedResources.Get("TelemetryUI_Fan2Speed", "Fan 2 speed"), "RPM", 1, "#B13D68", "#EF9EB8", true),
         ];
-        previousSampleButton = Command(LocalizedResources.Get("TelemetryUI_PreviousSample", "Previous sample"));
-        nextSampleButton = Command(LocalizedResources.Get("TelemetryUI_NextSample", "Next sample"));
-        followLatestButton = Command(LocalizedResources.Get("TelemetryUI_FollowLatest", "Follow latest"));
+        previousSampleButton = IconCommand(LocalizedResources.Get("TelemetryUI_PreviousSample", "Previous sample"), Symbol.Back);
+        nextSampleButton = IconCommand(LocalizedResources.Get("TelemetryUI_NextSample", "Next sample"), Symbol.Forward);
+        string followLabel = LocalizedResources.Get("TelemetryUI_FollowLatest", "Follow latest");
+        var followContent = new Grid { ColumnSpacing = 8 };
+        followContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        followContent.ColumnDefinitions.Add(new ColumnDefinition());
+        followContent.Children.Add(new SymbolIcon(Symbol.Sync));
+        TextBlock followText = Text(AppTypography.Body, followLabel);
+        Grid.SetColumn(followText, 1);
+        followContent.Children.Add(followText);
+        followLatestButton = new ToggleButton { Content = followContent, MinHeight = 40, Padding = new Thickness(12, 6, 12, 6) };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(followLatestButton, followLabel);
+        ToolTipService.SetToolTip(followLatestButton, followLabel);
         (Button metricEditor, UIElement metricLegend) = CreateMetricEditor();
-        sampleCommands.Children.Add(previousSampleButton);
-        sampleCommands.Children.Add(nextSampleButton);
         sampleCommands.Children.Add(followLatestButton);
         sampleCommands.Children.Add(metricEditor);
-        panel.Children.Add(inspectionState);
-        panel.Children.Add(inspectionMode);
-        panel.Children.Add(sampleCommands);
+        var moment = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        moment.Children.Add(inspectionState);
+        moment.Children.Add(inspectionMode);
+        var navigation = new Grid { ColumnSpacing = 8, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
+        navigation.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        navigation.ColumnDefinitions.Add(new ColumnDefinition());
+        navigation.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        navigation.Children.Add(previousSampleButton);
+        Grid.SetColumn(moment, 1);
+        navigation.Children.Add(moment);
+        Grid.SetColumn(nextSampleButton, 2);
+        navigation.Children.Add(nextSampleButton);
+        ContextualToolbar.SetRole(navigation, ContextualToolbarElementRole.Context);
+        ContextualToolbar.SetRole(sampleCommands, ContextualToolbarElementRole.Actions);
+        inspectionToolbar.Children.Add(navigation);
+        inspectionToolbar.Children.Add(sampleCommands);
+        panel.Children.Add(inspectionToolbar);
         panel.Children.Add(metricLegend);
         lanes =
         [
@@ -143,7 +167,7 @@ public sealed partial class TelemetryChart : Grid
         Children.Add(panel);
         previousSampleButton.Click += (_, _) => MoveSelection(-1);
         nextSampleButton.Click += (_, _) => MoveSelection(1);
-        followLatestButton.Click += (_, _) => FollowLatest();
+        followLatestButton.Click += (_, _) => ChangeFollowMode(followLatestButton.IsChecked == true);
         SizeChanged += (_, _) => UpdateTableLayout();
         ActualThemeChanged += (_, _) => Draw();
         Loaded += (_, _) => Draw();
@@ -236,6 +260,20 @@ public sealed partial class TelemetryChart : Grid
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, content);
+        return button;
+    }
+
+    private static Button IconCommand(string label, Symbol symbol)
+    {
+        var button = new Button
+        {
+            Style = AppTypography.RequireStyle(AppTypography.CustomCommandButton),
+            Content = new SymbolIcon(symbol),
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
+        button.MinWidth = 40;
+        button.Padding = new Thickness(8);
+        ToolTipService.SetToolTip(button, label);
         return button;
     }
 
@@ -424,7 +462,8 @@ public sealed partial class TelemetryChart : Grid
         TelemetrySample? sample = SelectedSample;
         previousSampleButton.IsEnabled = selectedSampleIndex > 0;
         nextSampleButton.IsEnabled = rawSamples.Count > 0 && selectedSampleIndex < rawSamples.Count - 1;
-        followLatestButton.IsEnabled = retainedSnapshot?.RawSamples.Count > 0 && (!followLatest || timeRange?.FollowLatest != true);
+        followLatestButton.IsEnabled = retainedSnapshot?.RawSamples.Count > 0;
+        followLatestButton.IsChecked = followLatest && timeRange?.FollowLatest == true;
         inspectionState.Text = sample is null
             ? historySelectionNotice == HistorySelectionNotice.SampleExpired
                 ? LocalizedResources.Get("TelemetryUI_SelectedReadingExpired", "Selected reading is no longer kept.")
@@ -547,6 +586,19 @@ public sealed partial class TelemetryChart : Grid
         showAllRetained = false;
         timeRange = timeRange?.SetFollowLatest(false);
         UpdateInspection();
+    }
+
+    private void ChangeFollowMode(bool shouldFollow)
+    {
+        if (shouldFollow)
+        {
+            FollowLatest();
+        }
+        else if (timeRange is { } current)
+        {
+            SelectTimeRange(current);
+            RebuildViewport();
+        }
     }
 
     private void FollowLatest()

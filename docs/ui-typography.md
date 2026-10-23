@@ -40,3 +40,8 @@ The tray quick-controls popup retains its existing compact 12-DIP and 11-DIP
 exceptions for now. Any new exception needs a constrained surface and a render
 check at increased text scale. New page and telemetry UI use the application
 roles above.
+
+Composed icon-and-text commands use `AppCustomCommandButtonStyle`. It owns the
+same native sizing and padding as string commands, without applying the
+string-only content template. Keep each composed label in `AppBodyTextStyle`
+and a constrained layout so translated and scaled text can wrap.

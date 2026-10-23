@@ -268,7 +268,9 @@ try {
                     'context/tray/main-telemetry.png',
                     'context/tray/main-telemetry-empty.png',
                     'context/tray/main-telemetry-controls-narrow.png',
-                    'context/tray/main-telemetry-hover-edge.png')
+                    'context/tray/main-telemetry-hover-edge.png',
+                    'context/tray/main-telemetry-recording.png',
+                    'context/tray/main-telemetry-replay.png')
             },
             @{
                 Key = 'BatteryHistory_Title.Text'
@@ -280,7 +282,9 @@ try {
                     'context/tray/main-telemetry.png',
                     'context/tray/main-telemetry-empty.png',
                     'context/tray/main-telemetry-controls-narrow.png',
-                    'context/tray/main-telemetry-hover-edge.png')
+                    'context/tray/main-telemetry-hover-edge.png',
+                    'context/tray/main-telemetry-recording.png',
+                    'context/tray/main-telemetry-replay.png')
             },
             @{
                 Key = 'MainWindow_DisplayBrightnessTitle.Text'
@@ -299,7 +303,8 @@ try {
                 Key = 'Telemetry recording reached its limit and was saved to {0}.'
                 Screenshots = @(
                     'context/tray/main-telemetry.png',
-                    'context/tray/main-telemetry-empty.png')
+                    'context/tray/main-telemetry-empty.png',
+                    'context/tray/main-telemetry-recording.png')
             },
             @{
                 Key = 'Battery history'
