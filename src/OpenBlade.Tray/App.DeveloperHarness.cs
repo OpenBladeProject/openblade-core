@@ -1234,9 +1234,32 @@ public partial class App
         await File.WriteAllBytesAsync(path, encoded);
     }
 
+    private static void SetSnapshotScrollIndicatorsToRest(DependencyObject element)
+    {
+        if (element is Microsoft.UI.Xaml.Controls.ScrollViewer viewer
+            && viewer.IsLoaded && viewer.ActualWidth > 0 && viewer.ActualHeight > 0)
+        {
+            // Two equal frames can precede the native indicator's delayed fade.
+            // Enter the shipped template's rest state directly for every capture;
+            // scrolling, offsets and page visibility settings remain unchanged.
+            if (!VisualStateManager.GoToState(viewer, "NoIndicator", useTransitions: false))
+            {
+                throw new InvalidOperationException(
+                    "A realized snapshot ScrollViewer has no NoIndicator visual state.");
+            }
+        }
+
+        int childCount = VisualTreeHelper.GetChildrenCount(element);
+        for (int index = 0; index < childCount; index++)
+        {
+            SetSnapshotScrollIndicatorsToRest(VisualTreeHelper.GetChild(element, index));
+        }
+    }
+
     private static async Task<LocalizationSnapshotFrame>
         CaptureCanonicalSnapshotFrameAsync(UIElement element)
     {
+        SetSnapshotScrollIndicatorsToRest(element);
         var bitmap = new RenderTargetBitmap();
         await bitmap.RenderAsync(element);
         if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
