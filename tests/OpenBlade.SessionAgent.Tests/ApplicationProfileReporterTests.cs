@@ -107,6 +107,86 @@ public sealed class ApplicationProfileReporterTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
 
+    [Fact]
+    public async Task AuthoritativeStatusCannotBeEvictedByForegroundBurstWhileReportIsBlocked()
+    {
+        var profile = new ApplicationProfileDefinition(
+            Guid.NewGuid(),
+            "Game",
+            @"C:\Games\game.exe",
+            ApplicationActivationMode.WhileRunningAfterActivation,
+            new ApplicationProfileOverrideSet());
+        var process = new FakeProcessHandle(profile.ExecutablePath);
+        var firstReportStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstReport = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondReport = new TaskCompletionSource<ReportApplicationContextRequest>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int reportCount = 0;
+        await using var reporter = new ApplicationProfileReporter(
+            async (request, cancellationToken) =>
+            {
+                int ordinal = Interlocked.Increment(ref reportCount);
+                if (ordinal == 1)
+                {
+                    firstReportStarted.TrySetResult();
+                    await releaseFirstReport.Task.WaitAsync(cancellationToken);
+                }
+                else
+                {
+                    secondReport.TrySetResult(request);
+                }
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "Applied");
+            },
+            processId => processId == 42
+                ? process
+                : throw new ArgumentException("Unexpected process."),
+            TimeSpan.FromSeconds(1));
+        using var cancellation = new CancellationTokenSource();
+        Task running = reporter.RunAsync(cancellation.Token);
+        try
+        {
+            reporter.Observe(Status([profile]));
+            reporter.ObserveForeground(new ThxForegroundObservation(
+                "game.exe",
+                ExecutablePath: profile.ExecutablePath,
+                ProcessId: 42));
+            await firstReportStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            reporter.Observe(Status(
+            [
+                profile with
+                {
+                    ActivationMode = ApplicationActivationMode.Foreground,
+                },
+            ]));
+            for (int index = 0; index < 16; index++)
+            {
+                reporter.ObserveForeground(ThxForegroundObservation.Unknown);
+            }
+            releaseFirstReport.TrySetResult();
+
+            ReportApplicationContextRequest next = await secondReport.Task
+                .WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Null(next.ExecutablePath);
+        }
+        finally
+        {
+            releaseFirstReport.TrySetResult();
+            cancellation.Cancel();
+            try
+            {
+                await running;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+    }
+
     private static ServiceStatusSnapshot Status(
         IReadOnlyList<ApplicationProfileDefinition> profiles)
     {

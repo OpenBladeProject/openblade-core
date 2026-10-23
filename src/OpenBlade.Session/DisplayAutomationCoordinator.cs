@@ -440,6 +440,7 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
         DisplayAutomationTarget target,
         CancellationTokenSource ownedCancellation)
     {
+        bool ownsAutomaticWrite = false;
         try
         {
             DisplaySettingsSnapshot? baseline;
@@ -457,7 +458,8 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
                 {
                     lock (sync)
                     {
-                        if (generation == transitionGeneration)
+                        if (generation == transitionGeneration
+                            && !ownedCancellation.IsCancellationRequested)
                         {
                             pendingTransitionPowerSource = null;
                             lastTransitionResult = new DisplayTransitionResult(
@@ -469,7 +471,8 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
                 baseline = query.State;
                 lock (sync)
                 {
-                    if (generation == transitionGeneration)
+                    if (generation == transitionGeneration
+                        && !ownedCancellation.IsCancellationRequested)
                     {
                         applicationBaseline = baseline;
                         checkpointApplicationProfileId = target.ApplicationProfileId;
@@ -490,12 +493,14 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
                     if (settings.IsConfigured)
                     {
                         automaticWriteInFlight = true;
+                        ownsAutomaticWrite = true;
                         uncertainFields = DisplayOwnedSettings.From(settings);
                     }
                     admitted = TryRecordRecoveryState(target.PowerSource);
                     if (!admitted)
                     {
                         automaticWriteInFlight = false;
+                        ownsAutomaticWrite = false;
                         LatchDurabilityFailure();
                         pendingTransitionPowerSource = null;
                         lastTransitionResult = new DisplayTransitionResult(
@@ -532,7 +537,17 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
 
             lock (sync)
             {
-                automaticWriteInFlight = false;
+                bool isCurrent = generation == transitionGeneration
+                    && !ownedCancellation.IsCancellationRequested;
+                if (!isCurrent && !ownsAutomaticWrite)
+                {
+                    return;
+                }
+                if (ownsAutomaticWrite)
+                {
+                    automaticWriteInFlight = false;
+                    ownsAutomaticWrite = false;
+                }
                 pendingTransitionPowerSource = null;
                 lastTransitionResult = new DisplayTransitionResult(
                     transitionGeneration,
@@ -555,8 +570,6 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
                     return;
                 }
 
-                bool isCurrent = generation == transitionGeneration
-                    && !ownedCancellation.IsCancellationRequested;
                 if (isCurrent && result.Succeeded
                     && !target.ApplicationProfileId.HasValue)
                 {
@@ -606,9 +619,10 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
         {
             lock (sync)
             {
-                if (automaticWriteInFlight)
+                if (ownsAutomaticWrite)
                 {
                     automaticWriteInFlight = false;
+                    ownsAutomaticWrite = false;
                     automaticWritesPaused = true;
                     manualHold = true;
                     pendingTransitionPowerSource = null;
@@ -625,7 +639,17 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
         {
             lock (sync)
             {
-                automaticWriteInFlight = false;
+                bool isCurrent = generation == transitionGeneration
+                    && !ownedCancellation.IsCancellationRequested;
+                if (!isCurrent && !ownsAutomaticWrite)
+                {
+                    return;
+                }
+                if (ownsAutomaticWrite)
+                {
+                    automaticWriteInFlight = false;
+                    ownsAutomaticWrite = false;
+                }
                 automaticWritesPaused = true;
                 manualHold = true;
                 pendingTransitionPowerSource = null;

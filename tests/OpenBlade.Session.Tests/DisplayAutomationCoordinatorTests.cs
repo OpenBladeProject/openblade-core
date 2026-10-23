@@ -51,6 +51,116 @@ public sealed class DisplayAutomationCoordinatorTests
     }
 
     [Fact]
+    public async Task CanceledPreAdmissionQueryCannotLatchManualHoldForNewerTransition()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new PreAdmissionSupersessionApplier();
+        var staleCancellationRecorded = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            context,
+            applier,
+            recordRecoveryState: state =>
+            {
+                if (state.ManualHold)
+                {
+                    staleCancellationRecorded.TrySetResult();
+                }
+                return true;
+            });
+        ProfileSet profiles = Profiles("base");
+        Guid id = Guid.NewGuid();
+        profiles = profiles with
+        {
+            ApplicationProfiles =
+            [
+                new ApplicationProfileDefinition(
+                    id,
+                    "Game",
+                    @"C:\Games\game.exe",
+                    ApplicationActivationMode.Foreground,
+                    new ApplicationProfileOverrideSet
+                    {
+                        PluggedIn = new ApplicationPowerProfileOverride
+                        {
+                            Display = new DisplayProfileSettings(null, true, null),
+                        },
+                    }),
+            ],
+        };
+        ServiceStatusSnapshot baseline = Status(PowerSource.PluggedIn, profiles);
+        ServiceStatusSnapshot application = baseline with
+        {
+            ActiveApplicationProfileId = id,
+        };
+        coordinator.Observe(baseline);
+
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(application));
+        await applier.FirstQueryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(baseline));
+        await applier.NewerTransitionStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Task cancellationOutcome = await Task.WhenAny(
+            staleCancellationRecorded.Task,
+            Task.Delay(TimeSpan.FromMilliseconds(250)));
+        Assert.NotSame(staleCancellationRecorded.Task, cancellationOutcome);
+        applier.ReleaseNewerTransition.TrySetResult();
+        await coordinator.WhenIdleAsync();
+        Assert.Single(applier.Transitions);
+
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(application));
+        await coordinator.WhenIdleAsync();
+        Assert.Equal(2, applier.Transitions.Count);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CanceledPreAdmissionQueryCannotOverrideCompletedManualMutation(
+        bool throwsFault)
+    {
+        DisplayAutomationRecoveryState? checkpoint = null;
+        var applier = new ManualSupersessionQueryApplier(throwsFault);
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+            {
+                ActiveApplicationProfileId = id,
+            }));
+        await applier.QueryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(coordinator.BeginManualOperation(
+            new DisplayProfileSettings(null, true, null)));
+        await applier.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        coordinator.CompleteManualOperation(
+            SessionDisplayOperationStatus.Succeeded,
+            applier.State);
+        applier.ReleaseQuery.TrySetResult();
+        await coordinator.WhenIdleAsync();
+
+        Assert.Null(coordinator.LastTransitionResult);
+        Assert.NotNull(checkpoint);
+        Assert.False(checkpoint.AutomaticWritesPaused);
+        Assert.False(checkpoint.UncertainHdr);
+    }
+
+    [Fact]
     public async Task IndeterminateTransitionBlocksTargetAndPowerChanges()
     {
         var context = new DisplayPowerContextState();
@@ -1072,6 +1182,153 @@ public sealed class DisplayAutomationCoordinatorTests
 
         private static SessionDisplayExecutionResult Success() =>
             DisplayAutomationCoordinatorTests.Success();
+    }
+
+    private sealed class PreAdmissionSupersessionApplier : IDisplayProfileApplier
+    {
+        private int queryCount;
+
+        public List<DisplayProfileSettings> Transitions { get; } = [];
+        public TaskCompletionSource FirstQueryStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource NewerTransitionStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseNewerTransition { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<SessionDisplayExecutionResult> QueryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref queryCount) != 1)
+            {
+                return Success();
+            }
+
+            FirstQueryStarted.TrySetResult();
+            var canceled = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            using CancellationTokenRegistration registration = cancellationToken.Register(
+                () => canceled.TrySetResult());
+            await canceled.Task;
+            await NewerTransitionStarted.Task;
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        public Task<SessionDisplayExecutionResult> SetRefreshRateAsync(
+            PowerSource expectedPowerSource,
+            string refreshRateKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetHdrAsync(
+            PowerSource expectedPowerSource,
+            bool enabled,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetColorProfileAsync(
+            PowerSource expectedPowerSource,
+            string colorProfileKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
+            PowerSource expectedPowerSource,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async Task<SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(
+            PowerSource expectedPowerSource,
+            long expectedGeneration,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken)
+        {
+            Transitions.Add(settings);
+            if (Transitions.Count == 1)
+            {
+                NewerTransitionStarted.TrySetResult();
+                await ReleaseNewerTransition.Task;
+            }
+            return Success();
+        }
+    }
+
+    private sealed class ManualSupersessionQueryApplier : IDisplayProfileApplier
+    {
+        private readonly bool throwsFault;
+
+        public ManualSupersessionQueryApplier(bool throwsFault)
+        {
+            this.throwsFault = throwsFault;
+        }
+
+        public DisplaySettingsSnapshot State { get; } =
+            SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native");
+        public TaskCompletionSource QueryStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CancellationObserved { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseQuery { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<SessionDisplayExecutionResult> QueryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            QueryStarted.TrySetResult();
+            using CancellationTokenRegistration registration = cancellationToken.Register(
+                () => CancellationObserved.TrySetResult());
+            await ReleaseQuery.Task;
+            if (throwsFault)
+            {
+                throw new IOException(
+                    "The canceled baseline query failed after manual completion.");
+            }
+            return Failure("The canceled baseline query returned a stale failure.");
+        }
+
+        public Task<SessionDisplayExecutionResult> SetRefreshRateAsync(
+            PowerSource expectedPowerSource,
+            string refreshRateKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetHdrAsync(
+            PowerSource expectedPowerSource,
+            bool enabled,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetColorProfileAsync(
+            PowerSource expectedPowerSource,
+            string colorProfileKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
+            PowerSource expectedPowerSource,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(
+            PowerSource expectedPowerSource,
+            long expectedGeneration,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private static SessionDisplayExecutionResult Success() => new(
