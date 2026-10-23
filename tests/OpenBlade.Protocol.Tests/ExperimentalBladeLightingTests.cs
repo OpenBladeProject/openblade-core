@@ -1032,7 +1032,7 @@ public sealed partial class ExperimentalBladeLightingTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task WaveAtZeroPercent_IsReportedAsUnsupportedAndBlocksWrites(int raw)
+    public async Task WaveAtZeroPercent_RejectsPublicReadAndRequiresExactDarkForBuiltInWrite(int raw)
     {
         var session = new Session { Raw = (byte)raw, Effect = 4 };
         var policy = Enabled();
@@ -1042,11 +1042,27 @@ public sealed partial class ExperimentalBladeLightingTests
         Assert.Equal(DeviceStateQuery.KeyboardLightingCombination, rejection.Query);
         Assert.StartsWith($"01 05 {raw:X2} / 01 05 04 01", rejection.RejectedPayloadHex);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(77), CancellationToken.None));
+            port.SetLightingAsync(LightingSettingsFactory.Static(new RgbColor(9, 8, 7), 77), CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.Contains(policy.Snapshot().Observations, item =>
             item.FailureCategory == "UnrepresentableZeroBrightnessEffect" && item.ConfirmedValue == $"Effect=Wave;Raw={raw};Percent=0");
         Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+        Assert.True(policy.WritesAllowed);
+
+        LightingSettings requested = LightingSettingsFactory.SpectrumCycling(77);
+        if (raw == 0)
+        {
+            await port.SetLightingAsync(requested, CancellationToken.None);
+            Assert.Equal(new byte[] { 0x02, 0x03 }, MutationCommandIds(session));
+            Assert.Equal(requested, await port.ReadStateAsync(CancellationToken.None));
+        }
+        else
+        {
+            failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.SetLightingAsync(requested, CancellationToken.None));
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+            Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+        }
         Assert.True(policy.WritesAllowed);
     }
 
