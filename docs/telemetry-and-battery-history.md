@@ -7,7 +7,9 @@ preferences are saved for your Windows user. Missing readings and pauses remain
 gaps. Line patterns help distinguish paired sensors alongside their colors.
 
 Hover over a chart to inspect the nearest original sample. The vertical
-crosshair and **At sample** column show the same timestamp across every metric.
+crosshair, on-chart value callouts and **At sample** column show the same original
+sample across every metric. Callouts include the sample time and stay inside the
+plot at either edge.
 Click to pin it, or use **Previous sample** and **Next sample** with the keyboard.
 A pinned moment and its time window stay fixed as readings arrive. Choose
 **Follow latest** to follow the newest readings again. If a pinned reading ages

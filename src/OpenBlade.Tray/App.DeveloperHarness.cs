@@ -675,7 +675,8 @@ public partial class App
                 StringComparison.Ordinal);
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
             bool captureTelemetryVariant = requestedPage is
-                "telemetry-analysis" or "telemetry-narrow" or "telemetry-dark"
+                "telemetry-analysis" or "telemetry-narrow" or "telemetry-controls-narrow"
+                or "telemetry-hover-edge" or "telemetry-dark"
                 or "telemetry-range" or "telemetry-metrics" or "telemetry-color"
                 or "telemetry-expired" or "telemetry-retention";
             bool captureFeatureSnapshot = captureTelemetryVariant || requestedPage is
@@ -761,7 +762,7 @@ public partial class App
                 {
                     snapshotSize = new Windows.Graphics.SizeInt32(1120, 900);
                 }
-                else if (destination == "telemetry-narrow")
+                else if (destination is "telemetry-narrow" or "telemetry-controls-narrow")
                 {
                     snapshotSize = new Windows.Graphics.SizeInt32(800, 1120);
                 }

@@ -199,6 +199,9 @@ public sealed class TelemetryChartLayoutTests
             source,
             StringComparison.Ordinal);
         Assert.Contains("sample.Value(choice.Metric)", source, StringComparison.Ordinal);
+        Assert.Contains("ContentWrapPanel sampleCommands", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Columns(previousSampleButton, nextSampleButton", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("editor.Children.Add(fullRange)", range, StringComparison.Ordinal);
         Assert.Contains("lane.Scale.CreateTimeTicks(tickCount)", source, StringComparison.Ordinal);
         Assert.Contains("TelemetryChartViewport.BuildSnapshot", source, StringComparison.Ordinal);
         Assert.Contains("new([choices[0], choices[1]]", source, StringComparison.Ordinal);
@@ -208,9 +211,26 @@ public sealed class TelemetryChartLayoutTests
         Assert.Contains("overview.CapturePointer", range, StringComparison.Ordinal);
         Assert.Contains("CommitRangeTime(input)", range, StringComparison.Ordinal);
         Assert.Contains("rangeDragBaseline", range, StringComparison.Ordinal);
-        Assert.DoesNotContain("FontSize =", source + analysis + range, StringComparison.Ordinal);
+        string inspection = File.ReadAllText(Path.Combine(RepositoryRoot,
+            "src", "OpenBlade.Tray", "TelemetryChart.Inspection.cs"));
+        Assert.Contains("Text(AppTypography.Data)", inspection, StringComparison.Ordinal);
+        Assert.DoesNotContain("FontSize =", source + analysis + range + inspection, StringComparison.Ordinal);
         Assert.Contains("ShowLocalizationSnapshotInspection", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ComboBox", source + range, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GraphValueReadoutUsesNativeThemeResources()
+    {
+        var app = System.Xml.Linq.XDocument.Load(Path.Combine(RepositoryRoot,
+            "src", "OpenBlade.Tray", "App.xaml"));
+        var style = Assert.Single(app.Descendants(), element => element.Name.LocalName == "Style"
+            && element.Attributes().Any(attribute => attribute.Name.LocalName == "Key" && attribute.Value == "TelemetryReadoutStyle"));
+        var background = Assert.Single(style.Elements(), element => (string?)element.Attribute("Property") == "Background");
+        var border = Assert.Single(style.Elements(), element => (string?)element.Attribute("Property") == "BorderBrush");
+        Assert.Equal("{ThemeResource SolidBackgroundFillColorBaseBrush}", (string?)background.Attribute("Value"));
+        Assert.Equal("{ThemeResource DividerStrokeColorDefaultBrush}", (string?)border.Attribute("Value"));
+        Assert.DoesNotContain(style.Elements(), element => (string?)element.Attribute("Property") is "FontSize" or "FontWeight" or "FontFamily");
     }
 
     private static string RepositoryRoot => Path.GetFullPath(Path.Combine(

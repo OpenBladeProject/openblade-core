@@ -55,6 +55,8 @@ public sealed partial class MainWindow
                 break;
             case "telemetry-analysis":
             case "telemetry-narrow":
+            case "telemetry-controls-narrow":
+            case "telemetry-hover-edge":
             case "telemetry-dark":
             case "telemetry-range":
             case "telemetry-metrics":
@@ -62,7 +64,8 @@ public sealed partial class MainWindow
             case "telemetry-expired":
             case "telemetry-retention":
                 ApplyTelemetryFixture(populated: true);
-                TelemetryPlot.ShowLocalizationSnapshotInspection(0.4);
+                TelemetryPlot.ShowLocalizationSnapshotInspection(
+                    destination == "telemetry-hover-edge" ? 1 : 0.4);
                 TelemetryPlot.ShowLocalizationSnapshotLayout(destination);
                 break;
             case "laptop-battery-history":
@@ -81,8 +84,11 @@ public sealed partial class MainWindow
         }
     }
 
-    internal void VerifyLocalizationSnapshotTelemetry() =>
+    internal void VerifyLocalizationSnapshotTelemetry()
+    {
+        TelemetrySourceCommands.VerifyLocalizationSnapshotLayout();
         TelemetryPlot.VerifyLocalizationSnapshotAnalysis();
+    }
 
     internal Flyout GetLocalizationSnapshotTelemetryFlyout(bool color) =>
         TelemetryPlot.GetLocalizationSnapshotFlyout(color);

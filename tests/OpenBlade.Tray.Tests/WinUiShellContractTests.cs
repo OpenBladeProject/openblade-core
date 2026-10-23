@@ -6,6 +6,62 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void TelemetryCaptureRoutesCoverCompactControlsAndRightEdgeInspection()
+    {
+        string app = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
+        string features = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "MainWindow.FeatureSnapshots.cs");
+        string capture = ReadRepositoryFile(
+            "build", "Capture-LocalizationSnapshots.ps1");
+        string catalog = ReadRepositoryFile(
+            "build", "localization", "TranslatorScreenshotMap.json");
+
+        foreach (string route in new[] { "telemetry-controls-narrow", "telemetry-hover-edge" })
+        {
+            Assert.Contains($"\"{route}\"", app, StringComparison.Ordinal);
+            Assert.Contains($"case \"{route}\":", features, StringComparison.Ordinal);
+            Assert.Contains($"'{route}'", capture, StringComparison.Ordinal);
+            Assert.Contains($"main-{route}.png", catalog, StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "destination is \"telemetry-narrow\" or \"telemetry-controls-narrow\"",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "destination == \"telemetry-hover-edge\" ? 1 : 0.4",
+            features,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TelemetrySourceCommandsUseTheSharedContentWidthWrapLayout()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement commands = NamedElement(
+            document,
+            "ContentWrapPanel",
+            "TelemetrySourceCommands");
+        XElement[] buttons = commands.Elements().ToArray();
+
+        Assert.Equal(["Telemetry_Record", "Telemetry_Stop", "Telemetry_Open", "Telemetry_Live"],
+            buttons.Select(button => Attribute(button, "Uid")));
+        Assert.Equal(["OnStartTelemetryRecording", "OnStopTelemetryRecording",
+            "OnOpenTelemetryReplay", "OnCloseTelemetryReplay"],
+            buttons.Select(button => Attribute(button, "Click")));
+        Assert.All(buttons, button =>
+        {
+            Assert.Equal("Button", button.Name.LocalName);
+            Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style"));
+            Assert.Null(Attribute(button, "HorizontalAlignment"));
+            Assert.Null(Attribute(button, "Grid.Row"));
+            Assert.Null(Attribute(button, "Grid.Column"));
+        });
+    }
+
+    [Fact]
     public void SnapTapPopupExplainsLaptopDriverAndKeepsCompatibilityOutOfTheRow()
     {
         XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));

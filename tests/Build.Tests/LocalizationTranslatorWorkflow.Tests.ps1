@@ -266,7 +266,9 @@ try {
                 Key = 'Telemetry_Title.Text'
                 Screenshots = @(
                     'context/tray/main-telemetry.png',
-                    'context/tray/main-telemetry-empty.png')
+                    'context/tray/main-telemetry-empty.png',
+                    'context/tray/main-telemetry-controls-narrow.png',
+                    'context/tray/main-telemetry-hover-edge.png')
             },
             @{
                 Key = 'BatteryHistory_Title.Text'
@@ -276,7 +278,9 @@ try {
                 Key = 'TelemetryUI_NextSample'
                 Screenshots = @(
                     'context/tray/main-telemetry.png',
-                    'context/tray/main-telemetry-empty.png')
+                    'context/tray/main-telemetry-empty.png',
+                    'context/tray/main-telemetry-controls-narrow.png',
+                    'context/tray/main-telemetry-hover-edge.png')
             },
             @{
                 Key = 'MainWindow_DisplayBrightnessTitle.Text'

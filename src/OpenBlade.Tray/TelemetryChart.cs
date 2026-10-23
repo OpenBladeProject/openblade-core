@@ -43,6 +43,9 @@ public sealed partial class TelemetryChart : Grid
         };
         public Line Crosshair { get; } = new() { StrokeThickness = 1, StrokeDashArray = [2, 3] };
         public Dictionary<TelemetryMetric, Ellipse> Markers { get; } = [];
+        public Border Readout { get; } = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        public TextBlock ReadoutTime { get; } = Text(AppTypography.Caption);
+        public Dictionary<TelemetryMetric, TextBlock> ReadoutValues { get; } = [];
         public TelemetryChartScale? Scale { get; set; }
         public double AreaWidth { get; set; }
         public double AreaHeight { get; set; }
@@ -57,6 +60,7 @@ public sealed partial class TelemetryChart : Grid
     private readonly Button previousSampleButton;
     private readonly Button nextSampleButton;
     private readonly Button followLatestButton;
+    private readonly ContentWrapPanel sampleCommands = new();
     private readonly StackPanel panel = new() { Spacing = 12 };
     private IReadOnlyList<TelemetryChartMetricPreference> metricPreferences =
         TelemetryChartPreferenceDefaults.Normalize(null);
@@ -98,11 +102,15 @@ public sealed partial class TelemetryChart : Grid
         previousSampleButton = Command(LocalizedResources.Get("TelemetryUI_PreviousSample", "Previous sample"));
         nextSampleButton = Command(LocalizedResources.Get("TelemetryUI_NextSample", "Next sample"));
         followLatestButton = Command(LocalizedResources.Get("TelemetryUI_FollowLatest", "Follow latest"));
-        var sampleCommands = Columns(previousSampleButton, nextSampleButton, followLatestButton);
+        (Button metricEditor, UIElement metricLegend) = CreateMetricEditor();
+        sampleCommands.Children.Add(previousSampleButton);
+        sampleCommands.Children.Add(nextSampleButton);
+        sampleCommands.Children.Add(followLatestButton);
+        sampleCommands.Children.Add(metricEditor);
         panel.Children.Add(inspectionState);
         panel.Children.Add(inspectionMode);
         panel.Children.Add(sampleCommands);
-        panel.Children.Add(CreateMetricEditor());
+        panel.Children.Add(metricLegend);
         lanes =
         [
             new([choices[0], choices[1]], Text(AppTypography.BodyStrong,
@@ -120,6 +128,7 @@ public sealed partial class TelemetryChart : Grid
             {
                 lane.Markers.Add(choice.Metric, new Ellipse { Width = 7, Height = 7 });
             }
+            CreateLaneReadout(lane);
             lane.Plot.SizeChanged += (_, _) => Draw();
             lane.Plot.PointerMoved += (_, args) => OnPlotPointerMoved(lane, args);
             lane.Plot.PointerPressed += (_, args) => OnPlotPointerPressed(lane, args);
@@ -277,7 +286,9 @@ public sealed partial class TelemetryChart : Grid
         plotBottom = measurement.DesiredSize.Height + 12;
         foreach (Lane lane in lanes)
         {
-            lane.Plot.Height = Math.Max(112, measurement.DesiredSize.Height * 6);
+            PrepareLaneReadout(lane, SelectedSample);
+            lane.Plot.Height = Math.Max(Math.Max(112, measurement.DesiredSize.Height * 6),
+                lane.Readout.DesiredSize.Height + PlotTop + plotBottom + 8);
             DrawLane(lane);
         }
         noReadings.Visibility = rawSamples.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -389,6 +400,7 @@ public sealed partial class TelemetryChart : Grid
         }
         lane.Crosshair.Stroke = inspectionState.Foreground;
         lane.Plot.Children.Add(lane.Crosshair);
+        lane.Plot.Children.Add(lane.Readout);
     }
 
     private static void DrawIsolatedPoint(Canvas canvas, Polyline? segment, Brush brush)
@@ -432,6 +444,7 @@ public sealed partial class TelemetryChart : Grid
         foreach (Lane lane in lanes)
         {
             lane.Crosshair.Visibility = sample is not null && lane.Scale is not null ? Visibility.Visible : Visibility.Collapsed;
+            lane.Readout.Visibility = lane.Crosshair.Visibility;
             if (sample is null || lane.Scale is null)
             {
                 foreach (Ellipse marker in lane.Markers.Values)
@@ -446,6 +459,7 @@ public sealed partial class TelemetryChart : Grid
             lane.Crosshair.X2 = x;
             lane.Crosshair.Y1 = PlotTop;
             lane.Crosshair.Y2 = PlotTop + lane.AreaHeight;
+            UpdateLaneReadout(lane, sample, x);
             foreach (MetricChoice choice in lane.Metrics)
             {
                 Ellipse marker = lane.Markers[choice.Metric];
@@ -498,8 +512,13 @@ public sealed partial class TelemetryChart : Grid
 
         DateTimeOffset target = TelemetryChartScale.Create(timeRange.StartUtc, timeRange.EndUtc, 0, 1)
             .TimestampAtFraction(fraction);
+        int nearest = TelemetryChartSelection.FindNearestSampleIndex(rawSamples, target);
+        if (nearest == selectedSampleIndex && !followLatest && historySelectionNotice == HistorySelectionNotice.None)
+        {
+            return;
+        }
         historySelectionNotice = HistorySelectionNotice.None;
-        selectedSampleIndex = TelemetryChartSelection.FindNearestSampleIndex(rawSamples, target);
+        selectedSampleIndex = nearest;
         followLatest = false;
         UpdateInspection();
     }

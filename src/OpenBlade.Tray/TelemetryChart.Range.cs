@@ -41,16 +41,21 @@ public sealed partial class TelemetryChart
     private double rangeDragOriginX;
     private RangeDragKind rangeDragKind;
     private bool showAllRetained = true;
+    private readonly ContentWrapPanel rangeCommands = new();
 
     private enum RangeDragKind { Start, End, Pan }
 
     private UIElement CreateRangeEditor()
     {
         var editor = new StackPanel { Spacing = 8 };
-        editor.Children.Add(overviewLabel);
+        var fullRange = Command(LocalizedResources.Get("TelemetryUI_FullRange", "Full range"));
+        fullRange.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left;
+        overviewLabel.VerticalAlignment = VerticalAlignment.Center;
+        rangeCommands.Children.Add(overviewLabel);
+        rangeCommands.Children.Add(fullRange);
+        editor.Children.Add(rangeCommands);
         editor.Children.Add(overview);
         editor.Children.Add(Columns(rangeStartInput, rangeEndInput));
-        var fullRange = Command(LocalizedResources.Get("TelemetryUI_FullRange", "Full range"));
         fullRange.Click += (_, _) =>
         {
             if (timeRange is null)
@@ -65,7 +70,6 @@ public sealed partial class TelemetryChart
             samplePinned = false;
             RebuildViewport();
         };
-        editor.Children.Add(fullRange);
         editor.Children.Add(Text(AppTypography.Caption,
             LocalizedResources.Get("TelemetryUI_RangeHint", "Drag either edge to resize, or drag the selected window to move it. You can also edit the start and end times.")));
         editor.Children.Add(rangeValidation);

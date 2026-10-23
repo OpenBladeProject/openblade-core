@@ -127,6 +127,8 @@ try {
             'telemetry-empty',
             'telemetry-analysis',
             'telemetry-narrow',
+            'telemetry-controls-narrow',
+            'telemetry-hover-edge',
             'telemetry-dark',
             'telemetry-range',
             'telemetry-expired',

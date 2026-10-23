@@ -40,7 +40,7 @@ public sealed partial class TelemetryChart
     private Grid? analysisHeader;
     private bool tableIsNarrow;
 
-    private UIElement CreateMetricEditor()
+    private (Button Editor, UIElement Legend) CreateMetricEditor()
     {
         var content = new StackPanel { Spacing = 8, MinWidth = 280 };
         foreach (MetricChoice choice in choices)
@@ -117,10 +117,7 @@ public sealed partial class TelemetryChart
             Grid.SetRow(item, index / 3);
             legend.Children.Add(item);
         }
-        var controls = new StackPanel { Spacing = 10 };
-        controls.Children.Add(editor);
-        controls.Children.Add(legend);
-        return controls;
+        return (editor, legend);
     }
 
     private Flyout CreateColorEditor(MetricChoice choice)

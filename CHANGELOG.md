@@ -11,6 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Show timestamped sensor values beside the telemetry crosshair and keep recording, inspection and range controls compact, with wrapping for smaller windows. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Standardize app typography around the native WinUI type scale and shared command sizing. Telemetry table headers use strong text while body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 
 ### Fixed

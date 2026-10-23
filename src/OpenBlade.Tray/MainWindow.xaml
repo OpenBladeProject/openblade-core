@@ -3138,14 +3138,12 @@
                                    Text="Inspect temperatures, fans and battery power over time. Missing readings remain gaps."
                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                         <TextBlock x:Name="TelemetrySourceText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                        <Grid ColumnSpacing="8" RowSpacing="8">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                            <Button x:Uid="Telemetry_Record" x:Name="TelemetryRecordButton" Content="Record CSV" Style="{StaticResource AppCommandButtonStyle}" Click="OnStartTelemetryRecording" HorizontalAlignment="Stretch" />
-                            <Button x:Uid="Telemetry_Stop" x:Name="TelemetryStopButton" Content="Stop recording" Style="{StaticResource AppCommandButtonStyle}" Click="OnStopTelemetryRecording" HorizontalAlignment="Stretch" Grid.Column="1" />
-                            <Button x:Uid="Telemetry_Open" Content="Open CSV replay" Style="{StaticResource AppCommandButtonStyle}" Click="OnOpenTelemetryReplay" HorizontalAlignment="Stretch" Grid.Row="1" />
-                            <Button x:Uid="Telemetry_Live" x:Name="TelemetryLiveButton" Content="Return to live" Style="{StaticResource AppCommandButtonStyle}" Click="OnCloseTelemetryReplay" HorizontalAlignment="Stretch" Grid.Row="1" Grid.Column="1" />
-                        </Grid>
+                        <local:ContentWrapPanel x:Name="TelemetrySourceCommands">
+                            <Button x:Uid="Telemetry_Record" x:Name="TelemetryRecordButton" Content="Record CSV" Style="{StaticResource AppCommandButtonStyle}" Click="OnStartTelemetryRecording" />
+                            <Button x:Uid="Telemetry_Stop" x:Name="TelemetryStopButton" Content="Stop recording" Style="{StaticResource AppCommandButtonStyle}" Click="OnStopTelemetryRecording" />
+                            <Button x:Uid="Telemetry_Open" Content="Open CSV replay" Style="{StaticResource AppCommandButtonStyle}" Click="OnOpenTelemetryReplay" />
+                            <Button x:Uid="Telemetry_Live" x:Name="TelemetryLiveButton" Content="Return to live" Style="{StaticResource AppCommandButtonStyle}" Click="OnCloseTelemetryReplay" />
+                        </local:ContentWrapPanel>
                         <TextBlock x:Name="TelemetryRecordingText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                         <TextBlock x:Name="TelemetryErrorText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                         <Border Style="{StaticResource SettingsGroupStyle}">

@@ -117,6 +117,9 @@ public sealed partial class TelemetryChart
         {
             throw new InvalidOperationException("Telemetry time bounds lost precision or their UTC offset.");
         }
+        sampleCommands.VerifyLocalizationSnapshotLayout();
+        rangeCommands.VerifyLocalizationSnapshotLayout();
+        VerifyLocalizationSnapshotReadouts();
         VerifyLocalizationSnapshotRangeInteractions();
         var extreme = TelemetryTimeRangeSelection.Create(DateTimeOffset.MinValue, DateTimeOffset.MaxValue);
         _ = ApplyRangeDrag(extreme, RangeDragKind.Start, -extreme.Duration.Ticks);
@@ -128,6 +131,66 @@ public sealed partial class TelemetryChart
         if (SelectedSample is null && lanes.SelectMany(lane => lane.Markers.Values).Any(marker => marker.Visibility == Visibility.Visible))
         {
             throw new InvalidOperationException("An empty telemetry chart contains a phantom selected sample marker.");
+        }
+    }
+
+    private void VerifyLocalizationSnapshotReadouts()
+    {
+        int savedIndex = selectedSampleIndex;
+        bool savedFollow = followLatest;
+        HistorySelectionNotice savedNotice = historySelectionNotice;
+        double? savedFraction = localizationSnapshotInspectionFraction;
+        localizationSnapshotInspectionFraction = null;
+        try
+        {
+            foreach (double fraction in new[] { 0d, 0.5, 1d })
+            {
+                InspectAtFraction(fraction);
+                UpdateLayout();
+                foreach (Lane lane in lanes.Where(item => item.Root.Visibility == Visibility.Visible && item.Scale is not null))
+                {
+                    TelemetrySample? sample = SelectedSample;
+                    if (sample is null)
+                    {
+                        if (lane.Readout.Visibility != Visibility.Collapsed)
+                        {
+                            throw new InvalidOperationException("An empty chart has a phantom value callout.");
+                        }
+                        continue;
+                    }
+                    if (lane.Readout.Visibility != Visibility.Visible || lane.Readout.IsHitTestVisible
+                        || lane.ReadoutTime.Text != PresentationTimestamp.ForDisplay(sample.TimestampUtc).ToString("T"))
+                    {
+                        throw new InvalidOperationException("A chart value callout is missing its sample time or blocks pointer inspection.");
+                    }
+                    double left = Canvas.GetLeft(lane.Readout);
+                    double top = Canvas.GetTop(lane.Readout);
+                    if (!double.IsFinite(left) || left < plotLeft - 0.5
+                        || left + lane.Readout.ActualWidth > plotLeft + lane.AreaWidth + 0.5
+                        || top < PlotTop || top + lane.Readout.ActualHeight > PlotTop + lane.AreaHeight + 0.5)
+                    {
+                        throw new InvalidOperationException("A chart value callout is clipped at an inspection edge.");
+                    }
+                    foreach (MetricChoice choice in lane.Metrics)
+                    {
+                        TextBlock value = lane.ReadoutValues[choice.Metric];
+                        string expected = $"{choice.Label}: {FormatNumber(sample.Value(choice.Metric), choice)} {choice.Unit}";
+                        if (value.Text != expected || (value.Visibility == Visibility.Visible) != IsMetricVisible(choice)
+                            || !ReferenceEquals(value.Style, AppTypography.RequireStyle(AppTypography.Data)))
+                        {
+                            throw new InvalidOperationException("A graph readout differs from the original sample or shared typography.");
+                        }
+                    }
+                }
+            }
+        }
+        finally
+        {
+            selectedSampleIndex = savedIndex;
+            followLatest = savedFollow;
+            historySelectionNotice = savedNotice;
+            localizationSnapshotInspectionFraction = savedFraction;
+            UpdateInspection();
         }
     }
 
