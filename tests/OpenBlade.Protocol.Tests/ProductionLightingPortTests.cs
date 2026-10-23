@@ -337,9 +337,12 @@ public sealed class ProductionLightingPortTests
             Assert.Equal(0x00, command.Arguments.Span[2]);
             Assert.Equal(0x10, command.Arguments.Span[3]);
         });
-        Assert.Equal(
-            (0x03, 0x0A, "0500"),
-            CommandTuple(session.Commands.Last()));
+        int latchIndex = session.Commands.FindLastIndex(command =>
+            command.ClassId == 0x03 && command.CommandId == 0x0A);
+        int brightnessIndex = session.Commands.FindIndex(command =>
+            command.ClassId == 0x03 && command.CommandId == 0x03);
+        Assert.True(latchIndex < brightnessIndex);
+        Assert.Equal((0x03, 0x0A, "0500"), CommandTuple(session.Commands[latchIndex]));
     }
 
     [Theory]
@@ -1756,6 +1759,93 @@ public sealed class ProductionLightingPortTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WakeFromDark_PreparesFrameBeforeRestoringBrightness(bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0);
+        var writer = new MatrixWriter();
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session, new ManualTimeProvider(), rz090528, writer);
+        int darkFrameWrites = 0;
+        session.CommandObserved = command =>
+        {
+            if (command.ClassId == 0x03 && command.CommandId is 0x0B or 0x0A)
+            {
+                Assert.Equal(0, session.Brightness);
+                darkFrameWrites++;
+            }
+        };
+        writer.WriteObserved = () =>
+        {
+            Assert.Equal(0, session.Brightness);
+            darkFrameWrites++;
+        };
+
+        await port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), default);
+
+        Assert.Equal(rz090528 ? 7 : 2, darkFrameWrites);
+        Assert.Equal(128, session.Brightness);
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, port.OwnershipState);
+        Assert.Equal((0x03, 0x83, "010500"), CommandTuple(session.Commands.Last()));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WakeFromDark_FailedFirstFrameNeverRaisesBrightness(bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0);
+        var writer = new MatrixWriter();
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session, new ManualTimeProvider(), rz090528, writer);
+        session.CommandObserved = command =>
+        {
+            if (rz090528 && command.ClassId == 0x03 && command.CommandId == 0x0B)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied, "Synthetic frame rejection.");
+            }
+        };
+        writer.FailNextWrite();
+
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), default));
+
+        Assert.Equal(0, session.Brightness);
+        Assert.Equal(0, session.BrightnessSetCalls);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WakeFromDark_BrightnessReadbackFailureRestoresDarkAndDoesNotStartRenderer(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        session.BrightnessQueryOverrides.Enqueue(0);
+        var writer = new MatrixWriter();
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session, new ManualTimeProvider(), rz090528, writer);
+
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), default));
+
+        Assert.Equal(0, session.Brightness);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Equal(2, session.BrightnessSetCalls);
+        if (rz090528)
+        {
+            Assert.Equal(6, session.Commands.Count(command =>
+                command.ClassId == 0x03 && command.CommandId == 0x0B));
+        }
+        else
+        {
+            Assert.Single(writer.Reports);
+        }
+    }
     [Fact]
     public async Task StaticWrite_UsesBrightnessReadbackHandshakeAndOneMatrixFrame()
     {
@@ -3326,6 +3416,8 @@ public sealed class ProductionLightingPortTests
     {
         internal List<RazerCommandSpec> Commands { get; } = [];
 
+        internal Action<RazerCommandSpec>? CommandObserved { get; set; }
+
         internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
 
         internal ConcurrentQueue<RazerCommandSpec> SubmittedCommands { get; } = [];
@@ -3400,6 +3492,7 @@ public sealed class ProductionLightingPortTests
             }
             _ = assignTransactionId();
             Commands.Add(command);
+            CommandObserved?.Invoke(command);
             if ((command.ClassId, command.CommandId) == (0x00, 0x86)
                 && TransitionFailure is { } transitionFailure)
             {
@@ -3622,6 +3715,8 @@ public sealed class ProductionLightingPortTests
 
         internal List<Pid02E0MatrixReport> Reports { get; } = [];
 
+        internal Action? WriteObserved { get; set; }
+
         internal List<CancellationToken> CancellationTokens { get; } = [];
 
         internal Queue<HidSessionFailureKind> Failures { get; } = [];
@@ -3635,6 +3730,7 @@ public sealed class ProductionLightingPortTests
             Pid02E0MatrixReport report,
             CancellationToken cancellationToken)
         {
+            WriteObserved?.Invoke();
             bool fail;
             lock (sync)
             {

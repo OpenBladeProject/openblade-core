@@ -753,7 +753,7 @@ public sealed partial class ExperimentalBladeLightingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task LeavingOff_ConfirmsBrightnessBeforeEffectAndPreservesReadablePartialState(bool failEffect)
+    public async Task LeavingOff_StagesEffectBeforeBrightnessAndPreservesDarkOnFailure(bool failEffect)
     {
         var session = new Session { Raw = 0, Effect = 0, FailEffect = failEffect };
         var policy = Enabled();
@@ -771,12 +771,17 @@ public sealed partial class ExperimentalBladeLightingTests
         {
             await port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None);
         }
-        Assert.Equal(128, session.Raw);
+        Assert.Equal(failEffect ? 0 : 128, session.Raw);
         Assert.Equal(failEffect ? 0 : 3, session.Effect);
-        Assert.Equal(new byte[] { 0x03, 0x02 }, session.Commands.Where(command => command.CommandId < 0x80)
-            .Select(command => command.CommandId));
-        int brightness = session.Commands.FindIndex(command => command.CommandId == 0x03);
-        Assert.Equal(0x83, session.Commands[brightness + 1].CommandId);
+        Assert.Equal(failEffect ? new byte[] { 0x02 } : new byte[] { 0x02, 0x03 },
+            session.Commands.Where(command => command.CommandId < 0x80)
+            .Select(command => command.CommandId)
+            .ToArray());
+        if (!failEffect)
+        {
+            int brightness = session.Commands.FindIndex(command => command.CommandId == 0x03);
+            Assert.Equal(0x83, session.Commands[brightness + 1].CommandId);
+        }
     }
 
     [Theory]

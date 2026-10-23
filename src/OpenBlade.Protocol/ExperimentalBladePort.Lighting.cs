@@ -494,6 +494,7 @@ internal sealed partial class ExperimentalBladePort
                 ? null
                 : await ReadLogoAsync(cancellationToken).ConfigureAwait(false);
             byte originalBaselineRaw = baselineRaw;
+            bool wakingFromDark = baselineRaw == 0 && raw != 0;
             policy.Record("KeyboardLighting", "Baseline", "Confirmed", requested: requested,
                 confirmed: $"{baseline.Effect};Raw={baselineRaw};Logo={baselineLogo?.ToString() ?? "Unchanged"}");
 
@@ -515,7 +516,7 @@ internal sealed partial class ExperimentalBladePort
                 baselineRaw = raw;
             }
 
-            if (settings.Effect != LightingEffect.Off)
+            if (settings.Effect != LightingEffect.Off && !wakingFromDark)
             {
                 await ApplyBrightnessAsync().ConfigureAwait(false);
             }
@@ -578,6 +579,15 @@ internal sealed partial class ExperimentalBladePort
                     lightingOwnership.UniformFrameActivated = 0;
                 }
                 hostOwnershipAcquired = true;
+                if (wakingFromDark)
+                {
+                    // A sampled effect starts black until its first session sample,
+                    // just like the validated renderers. Hide stale firmware colors.
+                    frameWriteAttempted = true;
+                    await WriteUniformFrameCoreAsync(
+                        new RgbColor(0, 0, 0), cancellationToken, () => submitted = true)
+                        .ConfigureAwait(false);
+                }
                 setOnlyFrame = true;
             }
             else if (settings.Effect == LightingEffect.Static && SupportsUniformFrame(model))
@@ -673,7 +683,9 @@ internal sealed partial class ExperimentalBladePort
                 ClearOwnedFrame();
             }
 
-            if (settings.Effect == LightingEffect.Off)
+            // Stage the selected content while brightness is still confirmed zero.
+            // Existing visible transitions retain their established ordering.
+            if (settings.Effect == LightingEffect.Off || wakingFromDark)
             {
                 await ApplyBrightnessAsync().ConfigureAwait(false);
             }
@@ -958,55 +970,8 @@ internal sealed partial class ExperimentalBladePort
                     "A uniform host-rendered lighting effect does not own the keyboard.");
             }
 
-            if (model.ProductId == 0x02A0)
-            {
-                var colors = new RgbColor[Blade18LightingFrame.SlotCount];
-                Array.Fill(colors, frame.Color);
-                bool activate = lightingOwnership.UniformFrameActivated == 0;
-                if (!activate)
-                {
-                    // Uniform sampling may request 30/60 Hz. Keep this model's
-                    // established 20 FPS transport budget without queuing frames.
-                    TimeSpan remaining = Blade18LightingAnimation.FrameInterval
-                        - animationTime.GetElapsedTime(lightingOwnership.UniformFrameTimestamp);
-                    if (remaining > TimeSpan.Zero)
-                    {
-                        await Task.Delay(remaining, animationTime, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                }
-                long submittedAt = animationTime.GetTimestamp();
-                await SubmitBlade18FrameAsync(
-                    new Blade18LightingFrame(colors),
-                    activate,
-                    cancellationToken).ConfigureAwait(false);
-                submitted = true;
-                lightingOwnership.UniformFrameActivated = 1;
-                lightingOwnership.UniformFrameTimestamp = submittedAt;
-                policy.RecordUniformFrameApplied(frame.Color);
-                return;
-            }
-
-            for (int row = 0; row < ExperimentalBladeLightingFrame.RowCount; row++)
-            {
-                RequireWriteAdmission();
-                await ExchangeAsync("KeyboardUniformFrame", 0x03, 0x0B,
-                    ExperimentalBladeLightingFrame.CreateUniformRow(row, frame.Color),
-                    true, cancellationToken, variableResponse: true,
-                    payloadValidator: static value =>
-                        value.Length <= RazerReport.MaximumPayloadLength,
-                    requireEcho: false,
-                    recordAcknowledgedSubmission: false).ConfigureAwait(false);
-                submitted = true;
-            }
-            RequireWriteAdmission();
-            await ExchangeAsync("KeyboardUniformFrame", 0x03, 0x0A,
-                [5, 0], true, cancellationToken, variableResponse: true,
-                payloadValidator: static value =>
-                    value.Length <= RazerReport.MaximumPayloadLength,
-                requireEcho: false,
-                recordAcknowledgedSubmission: false).ConfigureAwait(false);
-            submitted = true;
+            await WriteUniformFrameCoreAsync(
+                frame.Color, cancellationToken, () => submitted = true).ConfigureAwait(false);
             policy.RecordUniformFrameApplied(frame.Color);
         }
         catch (CapabilityUnavailableException) when (!submitted)
@@ -1028,6 +993,61 @@ internal sealed partial class ExperimentalBladePort
         {
             operationGate.Release();
         }
+    }
+
+    private async Task WriteUniformFrameCoreAsync(
+        RgbColor color,
+        CancellationToken cancellationToken,
+        Action onSubmitted)
+    {
+        if (model.ProductId == 0x02A0)
+        {
+            var colors = new RgbColor[Blade18LightingFrame.SlotCount];
+            Array.Fill(colors, color);
+            bool activate = lightingOwnership.UniformFrameActivated == 0;
+            if (!activate)
+            {
+                // Uniform sampling may request 30/60 Hz. Keep this model's
+                // established 20 FPS transport budget without queuing frames.
+                TimeSpan remaining = Blade18LightingAnimation.FrameInterval
+                    - animationTime.GetElapsedTime(lightingOwnership.UniformFrameTimestamp);
+                if (remaining > TimeSpan.Zero)
+                {
+                    await Task.Delay(remaining, animationTime, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+            long submittedAt = animationTime.GetTimestamp();
+            await SubmitBlade18FrameAsync(
+                new Blade18LightingFrame(colors),
+                activate,
+                cancellationToken).ConfigureAwait(false);
+            onSubmitted();
+            lightingOwnership.UniformFrameActivated = 1;
+            lightingOwnership.UniformFrameTimestamp = submittedAt;
+            return;
+        }
+
+        for (int row = 0; row < ExperimentalBladeLightingFrame.RowCount; row++)
+        {
+            RequireWriteAdmission();
+            await ExchangeAsync("KeyboardUniformFrame", 0x03, 0x0B,
+                ExperimentalBladeLightingFrame.CreateUniformRow(row, color),
+                true, cancellationToken, variableResponse: true,
+                payloadValidator: static value =>
+                    value.Length <= RazerReport.MaximumPayloadLength,
+                requireEcho: false,
+                recordAcknowledgedSubmission: false).ConfigureAwait(false);
+            onSubmitted();
+        }
+        RequireWriteAdmission();
+        await ExchangeAsync("KeyboardUniformFrame", 0x03, 0x0A,
+            [5, 0], true, cancellationToken, variableResponse: true,
+            payloadValidator: static value =>
+                value.Length <= RazerReport.MaximumPayloadLength,
+            requireEcho: false,
+            recordAcknowledgedSubmission: false).ConfigureAwait(false);
+        onSubmitted();
     }
 
     public Task SetPlaybackMuteIndicatorAsync(

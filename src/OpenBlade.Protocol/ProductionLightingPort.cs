@@ -398,12 +398,17 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 }
             }
 
+            // On wake, keep the keyboard dark until the selected frame is ready.
+            // Raising brightness first exposes stale firmware/transition colors.
+            bool wakingFromDark = baselineRaw == 0 && requestedRaw != 0;
+            bool brightnessAttempted = false;
             await StopStreamCoreAsync().ConfigureAwait(false);
 
             try
             {
-                if (baselineRaw != requestedRaw)
+                if (!wakingFromDark && baselineRaw != requestedRaw)
                 {
+                    brightnessAttempted = true;
                     await SetBrightnessAndVerifyCoreAsync(requestedRaw, cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -436,6 +441,13 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     await WriteMatrixCoreAsync(initialFrame, cancellationToken)
                         .ConfigureAwait(false);
 
+                    if (wakingFromDark)
+                    {
+                        brightnessAttempted = true;
+                        await SetBrightnessAndVerifyCoreAsync(requestedRaw, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
                     lock (effectSync)
                     {
                         activeEffect = effect;
@@ -458,7 +470,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             }
             catch (Exception exception)
             {
-                bool brightnessRestored = baselineRaw == requestedRaw
+                bool brightnessRestored = !brightnessAttempted || baselineRaw == requestedRaw
                     || await TryRestoreBrightnessCoreAsync(baselineRaw).ConfigureAwait(false);
                 bool rendererRestored = previous is not null
                     && await TryRestoreOwnedEffectCoreAsync(previous).ConfigureAwait(false);
