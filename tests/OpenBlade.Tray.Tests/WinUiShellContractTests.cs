@@ -2620,6 +2620,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TitleBarTheme.UseDefaultAppMode", window, StringComparison.Ordinal);
         Assert.Contains("TitleBarTheme.Light", window, StringComparison.Ordinal);
         Assert.Contains("TitleBarTheme.Dark", window, StringComparison.Ordinal);
+        Assert.Contains("Root.ActualThemeChanged += OnRootActualThemeChanged", window, StringComparison.Ordinal);
+        Assert.Contains("Root.ActualThemeChanged -= OnRootActualThemeChanged", window, StringComparison.Ordinal);
+        Assert.Contains("Root.ActualTheme switch", window, StringComparison.Ordinal);
+        Assert.Contains("ElementTheme.Light => TitleBarTheme.Light", window, StringComparison.Ordinal);
+        Assert.Contains("ElementTheme.Dark => TitleBarTheme.Dark", window, StringComparison.Ordinal);
+        Assert.Contains("ThemeManager.Apply(Root, selectedTheme);" + Environment.NewLine
+            + "        ApplyCaptionTheme();", window, StringComparison.Ordinal);
     }
 
     [Fact]
