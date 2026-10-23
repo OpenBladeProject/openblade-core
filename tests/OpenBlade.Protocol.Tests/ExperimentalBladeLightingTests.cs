@@ -753,7 +753,7 @@ public sealed partial class ExperimentalBladeLightingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task LeavingOff_ConfirmsBrightnessBeforeEffectAndPreservesReadablePartialState(bool failEffect)
+    public async Task LeavingOff_StagesEffectBeforeBrightnessAndPreservesDarkOnFailure(bool failEffect)
     {
         var session = new Session { Raw = 0, Effect = 0, FailEffect = failEffect };
         var policy = Enabled();
@@ -771,12 +771,17 @@ public sealed partial class ExperimentalBladeLightingTests
         {
             await port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None);
         }
-        Assert.Equal(128, session.Raw);
+        Assert.Equal(failEffect ? 0 : 128, session.Raw);
         Assert.Equal(failEffect ? 0 : 3, session.Effect);
-        Assert.Equal(new byte[] { 0x03, 0x02 }, session.Commands.Where(command => command.CommandId < 0x80)
-            .Select(command => command.CommandId));
-        int brightness = session.Commands.FindIndex(command => command.CommandId == 0x03);
-        Assert.Equal(0x83, session.Commands[brightness + 1].CommandId);
+        Assert.Equal(failEffect ? new byte[] { 0x02 } : new byte[] { 0x02, 0x03 },
+            session.Commands.Where(command => command.CommandId < 0x80)
+            .Select(command => command.CommandId)
+            .ToArray());
+        if (!failEffect)
+        {
+            int brightness = session.Commands.FindIndex(command => command.CommandId == 0x03);
+            Assert.Equal(0x83, session.Commands[brightness + 1].CommandId);
+        }
     }
 
     [Theory]
@@ -1027,7 +1032,7 @@ public sealed partial class ExperimentalBladeLightingTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task WaveAtZeroPercent_IsReportedAsUnsupportedAndBlocksWrites(int raw)
+    public async Task WaveAtZeroPercent_RejectsPublicReadAndRequiresExactDarkForBuiltInWrite(int raw)
     {
         var session = new Session { Raw = (byte)raw, Effect = 4 };
         var policy = Enabled();
@@ -1037,11 +1042,27 @@ public sealed partial class ExperimentalBladeLightingTests
         Assert.Equal(DeviceStateQuery.KeyboardLightingCombination, rejection.Query);
         Assert.StartsWith($"01 05 {raw:X2} / 01 05 04 01", rejection.RejectedPayloadHex);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(77), CancellationToken.None));
+            port.SetLightingAsync(LightingSettingsFactory.Static(new RgbColor(9, 8, 7), 77), CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.Contains(policy.Snapshot().Observations, item =>
             item.FailureCategory == "UnrepresentableZeroBrightnessEffect" && item.ConfirmedValue == $"Effect=Wave;Raw={raw};Percent=0");
         Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+        Assert.True(policy.WritesAllowed);
+
+        LightingSettings requested = LightingSettingsFactory.SpectrumCycling(77);
+        if (raw == 0)
+        {
+            await port.SetLightingAsync(requested, CancellationToken.None);
+            Assert.Equal(new byte[] { 0x02, 0x03 }, MutationCommandIds(session));
+            Assert.Equal(requested, await port.ReadStateAsync(CancellationToken.None));
+        }
+        else
+        {
+            failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.SetLightingAsync(requested, CancellationToken.None));
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+            Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+        }
         Assert.True(policy.WritesAllowed);
     }
 
@@ -1205,12 +1226,12 @@ public sealed partial class ExperimentalBladeLightingTests
             }
             else if (command.ClassId == 0x03 && command.CommandId == 0x0A)
             {
-                if (args[0] == 6)
+                if (!IgnoreEffect && args[0] == 6)
                 {
                     Effect = 1;
                     StandardEffect = [6, args[1], args[2], args[3], 0];
                 }
-                else if (args[0] == 3)
+                else if (!IgnoreEffect && args[0] == 3)
                 {
                     Effect = 2;
                     StandardEffect = args;

@@ -402,6 +402,37 @@ public sealed class ExperimentalBladeFactoryTests
         Assert.Equal(0, native.BoundCount);
     }
 
+    [Fact]
+    public async Task DarkLightingRecovery_UsesFreshSessionAndDrainsBeforeAcceptanceWithoutWriting()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x0255);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var io = new Io { TrackLightingEffect = true };
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
+            new Guard(), io, () => PowerSource.PluggedIn);
+        HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+        var port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None));
+        Assert.True(factory.IsWritesPaused);
+        Assert.Equal(3, io.LightingEffect);
+        await port.DisposeAsync();
+        int beforeRecovery = io.Commands.Count;
+
+        ConfirmedDeviceState recovered = await factory.ResumeWritesAsync(observed =>
+        {
+            Assert.Null(observed.Lighting);
+            Assert.True(factory.IsWritesPaused);
+            Assert.Equal(2, native.DisposeCounts[0]);
+            return true;
+        }, () => true, CancellationToken.None);
+
+        Assert.Null(recovered.Lighting);
+        Assert.False(factory.IsWritesPaused);
+        Assert.Equal(2, native.BoundCount);
+        Assert.All(io.Commands.Skip(beforeRecovery), command => Assert.True(command >= 0x80));
+    }
+
     private static ExperimentalBladeFactory Create(Native native, Io io) =>
         new(ExperimentalBladeModels.All[0], new Identity(), native, new Guard(), io,
             () => PowerSource.ExternalUnknown);
@@ -494,6 +525,8 @@ public sealed class ExperimentalBladeFactoryTests
         internal Action? AfterGet { get; init; }
         internal bool RejectSecondInterface { get; init; }
         internal byte PerformanceMode { get; init; }
+        internal bool TrackLightingEffect { get; init; }
+        internal byte LightingEffect { get; set; }
         internal bool WrongSelector { get; init; }
         internal bool FailRead { get; init; }
         internal (byte Class, byte Id)? StatusFailure { get; init; }
@@ -505,6 +538,10 @@ public sealed class ExperimentalBladeFactoryTests
             if (controlCode == 0x000B0191)
             {
                 lastRequest = buffer.ToArray();
+                if (TrackLightingEffect && buffer[7] == 0x0F && buffer[8] == 0x02)
+                {
+                    LightingEffect = buffer[11];
+                }
                 Commands.Add(buffer[8]);
                 Events?.Add($"query:{handle.FileHandle.DangerousGetHandle().ToInt64()}:{buffer[7]:X2}/{buffer[8]:X2}");
             }
@@ -532,8 +569,17 @@ public sealed class ExperimentalBladeFactoryTests
                     buffer[9] = 12;
                     buffer[89] ^= 12;
                 }
-                buffer[11] = PerformanceMode;
-                buffer[89] ^= PerformanceMode;
+                if (TrackLightingEffect && lastRequest[7] == 0x0F)
+                {
+                    byte effect = lastRequest[8] == 0x82 ? LightingEffect : lastRequest[11];
+                    buffer[11] = effect;
+                    buffer[89] ^= (byte)(lastRequest[11] ^ effect);
+                }
+                else
+                {
+                    buffer[11] = PerformanceMode;
+                    buffer[89] ^= PerformanceMode;
+                }
                 if (WrongSelector)
                 {
                     buffer[89] ^= buffer[10];
