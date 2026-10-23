@@ -1794,6 +1794,62 @@ public sealed class ProductionLightingPortTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task WakeFromDark_RestagesRetainedStaticFrameBeforeBrightness(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session, new ManualTimeProvider(), rz090528, writer);
+        RgbColor color = new(0x12, 0x34, 0x56);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(color, brightness: 6),
+            default);
+        if (rz090528)
+        {
+            // PID 02C6 retains its renderer when a brightness step reaches zero.
+            _ = await port.StepBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                default);
+        }
+        else
+        {
+            // PID 02E0 retires ownership when its own step reaches zero, but an
+            // external brightness change can make the retained frame dark before
+            // the next stable-Off observation relinquishes it.
+            session.Brightness = 0;
+        }
+        Assert.Equal(0, session.Brightness);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+
+        int darkFrameWrites = 0;
+        session.CommandObserved = command =>
+        {
+            if (command.ClassId == 0x03 && command.CommandId is 0x0B or 0x0A)
+            {
+                Assert.Equal(0, session.Brightness);
+                darkFrameWrites++;
+            }
+        };
+        writer.WriteObserved = () =>
+        {
+            Assert.Equal(0, session.Brightness);
+            darkFrameWrites++;
+        };
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(color, brightness: 50),
+            default);
+
+        Assert.Equal(rz090528 ? 7 : 2, darkFrameWrites);
+        Assert.Equal(128, session.Brightness);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Equal((0x03, 0x83, "010500"), CommandTuple(session.Commands.Last()));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task WakeFromDark_FailedFirstFrameNeverRaisesBrightness(bool rz090528)
     {
         var session = new LightingSession(initialBrightness: 0);

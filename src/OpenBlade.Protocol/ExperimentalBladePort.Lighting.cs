@@ -221,12 +221,12 @@ internal sealed partial class ExperimentalBladePort
         byte percent = checked((byte)LightingBrightnessProtocol.RawToPercent(raw));
         if (effect != LightingEffect.Off && percent == 0)
         {
-            if (allowConfirmedDark && raw == 0 && !SupportsUniformFrame(model))
+            if (allowConfirmedDark && raw == 0)
             {
                 // A dark-wake failure may leave a selected built-in effect at
                 // confirmed zero brightness. Keep the public setting unknown;
                 // recovery and a new explicit request need no guessed Off state.
-                // Host-frame models still require a representable restoration baseline.
+                // Host-frame requests still require a representable restoration baseline.
                 RecordQuery("KeyboardLighting", "Unavailable",
                     $"Effect={effect};Raw=0;Percent=0", "ConfirmedDarkEffect");
                 return (null, raw);
@@ -443,6 +443,9 @@ internal sealed partial class ExperimentalBladePort
         }
         bool blade18UniformRequest = model.ProductId == 0x02A0
             && settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter;
+        bool hostFrameRequest = animationRequest
+            || settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter
+            || settings.Effect == LightingEffect.Static && SupportsUniformFrame(model);
         if (blade18UniformRequest && session is not IRazerSetFeatureCommandSession)
         {
             throw new CapabilityUnavailableException("This model has no admitted uniform frame transport.");
@@ -500,7 +503,7 @@ internal sealed partial class ExperimentalBladePort
             else
             {
                 (baseline, baselineRaw) = await ReadKeyboardLightingAsync(
-                    cancellationToken, allowConfirmedDark: true).ConfigureAwait(false);
+                    cancellationToken, allowConfirmedDark: !hostFrameRequest).ConfigureAwait(false);
             }
             LogoLightingMode? baselineLogo = settings.LogoMode is null
                 ? null

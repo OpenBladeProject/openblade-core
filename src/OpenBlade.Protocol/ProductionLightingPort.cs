@@ -353,8 +353,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 : await QueryLogoModeCoreAsync(cancellationToken).ConfigureAwait(false);
             byte requestedRaw = LightingBrightnessProtocol.PercentToRaw(settings.Brightness);
             OwnedEffectSnapshot? previous = CaptureOwnedEffectCore();
+            bool wakingFromDark = baselineRaw == 0 && requestedRaw != 0;
 
-            if (CanRetainRenderer(previous, settings))
+            if (!wakingFromDark && CanRetainRenderer(previous, settings))
             {
                 try
                 {
@@ -400,7 +401,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
             // On wake, keep the keyboard dark until the selected frame is ready.
             // Raising brightness first exposes stale firmware/transition colors.
-            bool wakingFromDark = baselineRaw == 0 && requestedRaw != 0;
             bool brightnessAttempted = false;
             await StopStreamCoreAsync().ConfigureAwait(false);
 

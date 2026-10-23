@@ -9,6 +9,8 @@ public sealed partial class ExperimentalBladeLightingTests
     [InlineData(0x029D)]
     [InlineData(0x02C5)]
     [InlineData(0x0255)]
+    [InlineData(0x029F)]
+    [InlineData(0x02A0)]
     public async Task DarkWakeFailure_ReadOnlyRecoveryKeepsLightingUnknownUntilNewRequest(int productId)
     {
         ExperimentalBladeModel model = ModelFor((ushort)productId);
@@ -31,15 +33,21 @@ public sealed partial class ExperimentalBladeLightingTests
             command => Assert.True(command.CommandId >= 0x80));
         Assert.Equal(0, session.Raw);
         Assert.False(policy.WritesAllowed);
-        Assert.Contains(policy.Snapshot().Observations, item =>
-            item.FailureCategory == "ConfirmedDarkEffect"
-            && item.ConfirmedValue == "Effect=Spectrum;Raw=0;Percent=0");
+        if (productId is not (0x029F or 0x02A0))
+        {
+            Assert.Contains(policy.Snapshot().Observations, item =>
+                item.FailureCategory == "ConfirmedDarkEffect"
+                && item.ConfirmedValue == "Effect=Spectrum;Raw=0;Percent=0");
+        }
 
         // The factory completes this latch only after its fresh-session,
         // authority and service reconciliation gates. No port read clears it.
         policy.CompleteRecovery();
         session.IgnoreBrightness = false;
         session.Commands.Clear();
+
+        await Assert.ThrowsAsync<DeviceStateContentRejectedException>(() =>
+            port.ReadStateAsync(CancellationToken.None));
 
         await port.SetLightingAsync(
             LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None);
@@ -56,6 +64,8 @@ public sealed partial class ExperimentalBladeLightingTests
     [InlineData(0x029D)]
     [InlineData(0x02C5)]
     [InlineData(0x0255)]
+    [InlineData(0x029F)]
+    [InlineData(0x02A0)]
     public async Task ConfirmedDarkBaseline_ExplicitOffConfirmsDestinationWithoutRaisingBrightness(int productId)
     {
         ExperimentalBladeModel model = ModelFor((ushort)productId);
@@ -173,17 +183,46 @@ public sealed partial class ExperimentalBladeLightingTests
     }
 
     [Theory]
-    [InlineData(0x029F)]
-    [InlineData(0x02A0)]
-    public async Task UnrepresentableDarkHostBaseline_RemainsBlockedBeforeAnyFrame(int productId)
+    [InlineData(0x029F, 1, 3)]
+    [InlineData(0x02A0, 1, 3)]
+    [InlineData(0x029F, 0, 0x7F)]
+    [InlineData(0x02A0, 0, 0x7F)]
+    public async Task HostModelBuiltInRequest_RejectsMalformedDarkBaselineBeforeWriting(
+        int productId, byte raw, byte effect)
+    {
+        ExperimentalBladeModel model = ModelFor((ushort)productId);
+        var session = new Session { Raw = raw, Effect = effect };
+        await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(50), CancellationToken.None));
+
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+        Assert.Equal(raw, session.Raw);
+    }
+
+    [Theory]
+    [InlineData(0x029F, LightingEffect.Static)]
+    [InlineData(0x02A0, LightingEffect.Static)]
+    [InlineData(0x029F, LightingEffect.AmbientAwareness)]
+    [InlineData(0x02A0, LightingEffect.AmbientAwareness)]
+    [InlineData(0x02A0, LightingEffect.Breathing)]
+    public async Task UnrepresentableDarkHostBaseline_RemainsBlockedBeforeAnyFrame(
+        int productId, LightingEffect effect)
     {
         ExperimentalBladeModel model = ModelFor((ushort)productId);
         var session = new Session { Raw = 0, Effect = 3 };
         await using var port = Create(session, new ExperimentalFeaturesPolicy(model), model);
+        LightingSettings requested = effect switch
+        {
+            LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
+                AmbientAwarenessRegion.Full, 50),
+            LightingEffect.Breathing => LightingSettingsFactory.BreathingSingle(new RgbColor(9, 8, 7), 50),
+            _ => LightingSettingsFactory.Static(new RgbColor(9, 8, 7), 50),
+        };
 
         await Assert.ThrowsAsync<BladeWriteException>(() => port.SetLightingAsync(
-            LightingSettingsFactory.Static(new RgbColor(9, 8, 7), 50),
-            CancellationToken.None));
+            requested, CancellationToken.None));
 
         Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
         Assert.Equal(0, session.Raw);

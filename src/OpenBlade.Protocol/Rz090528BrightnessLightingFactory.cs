@@ -619,8 +619,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             (IRz090528LightingEffect? Effect, LightingSettings? Settings,
                 long StartedTimestamp, LightingRendererOwnershipState Ownership) previous =
                 CaptureOwnedEffectCore();
+            bool wakingFromDark = baselineRaw == 0 && requestedRaw != 0;
 
-            if (CanRetainRenderer(previous.Settings, settings))
+            if (!wakingFromDark && CanRetainRenderer(previous.Settings, settings))
             {
                 try
                 {
@@ -667,7 +668,6 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
             // On wake, keep the keyboard dark until the selected frame is ready.
             // Raising brightness first exposes stale firmware/transition colors.
-            bool wakingFromDark = baselineRaw == 0 && requestedRaw != 0;
             bool brightnessAttempted = false;
             await StopStreamCoreAsync().ConfigureAwait(false);
             try
