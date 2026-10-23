@@ -2,11 +2,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using ButtonBase = Microsoft.UI.Xaml.Controls.Primitives.ButtonBase;
+using Panel = Microsoft.UI.Xaml.Controls.Panel;
 using Point = Windows.Foundation.Point;
 using Rect = Windows.Foundation.Rect;
 using Size = Windows.Foundation.Size;
-using ButtonBase = Microsoft.UI.Xaml.Controls.Primitives.ButtonBase;
-using Panel = Microsoft.UI.Xaml.Controls.Panel;
 
 namespace OpenBlade.Tray;
 

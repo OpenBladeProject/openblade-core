@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using ToggleButton = Microsoft.UI.Xaml.Controls.Primitives.ToggleButton;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.UI.ViewManagement;
@@ -10,6 +9,7 @@ using Button = Microsoft.UI.Xaml.Controls.Button;
 using HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment;
 using Point = Windows.Foundation.Point;
 using Size = Windows.Foundation.Size;
+using ToggleButton = Microsoft.UI.Xaml.Controls.Primitives.ToggleButton;
 
 namespace OpenBlade.Tray;
 

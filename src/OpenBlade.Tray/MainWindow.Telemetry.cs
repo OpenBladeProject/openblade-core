@@ -2,8 +2,8 @@ using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Button = Microsoft.UI.Xaml.Controls.Button;
 using Microsoft.Windows.Storage.Pickers;
+using Button = Microsoft.UI.Xaml.Controls.Button;
 
 namespace OpenBlade.Tray;
 
