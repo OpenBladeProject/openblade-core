@@ -89,6 +89,10 @@ public sealed class SessionDisplayRequestDispatcher
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionDisplayRequestDispatcher",
+                "DispatchRequest",
+                exception);
             result = await TryQueryFailureAsync(
                 manualOperationAdmitted
                     ? SessionDisplayOperationStatus.Indeterminate
@@ -144,6 +148,10 @@ public sealed class SessionDisplayRequestDispatcher
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionDisplayRequestDispatcher",
+                "RefreshStateAfterFailure",
+                exception);
             return new SessionDisplayExecutionResult(
                 status,
                 error,

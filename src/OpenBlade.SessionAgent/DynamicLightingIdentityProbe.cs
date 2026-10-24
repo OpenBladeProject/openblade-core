@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenBlade.Contracts;
 using Windows.ApplicationModel;
 
 namespace OpenBlade.SessionAgent;
@@ -128,6 +129,10 @@ internal sealed class DynamicLightingIdentityProbeCommand(
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.DynamicLightingIdentityProbe",
+                "ObserveIdentity",
+                exception);
             failure = exception;
         }
 
@@ -143,6 +148,10 @@ internal sealed class DynamicLightingIdentityProbeCommand(
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.DynamicLightingIdentityProbe",
+                "ObserveLampArray",
+                exception);
             failure ??= exception;
         }
 
@@ -182,6 +191,10 @@ internal sealed class DynamicLightingIdentityProbeCommand(
                 or UnauthorizedAccessException
                 or NotSupportedException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.DynamicLightingIdentityProbe",
+                "WriteReport",
+                exception);
             return 2;
         }
 

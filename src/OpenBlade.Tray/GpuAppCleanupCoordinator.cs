@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -316,8 +317,9 @@ internal sealed class GpuAppCleanupCoordinator
         }
         catch (Exception exception) when (IsSessionOperationException(exception))
         {
-            Trace.TraceWarning(
-                "OpenBlade GPU app cleanup failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.GpuAppCleanupCoordinator",
+                "Cleanup",
                 exception);
             return await PresentAsync(
                 new(GpuAppCleanupOutcomeKind.SessionAgentFailure),

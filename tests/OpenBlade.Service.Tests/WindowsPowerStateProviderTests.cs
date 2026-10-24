@@ -98,10 +98,9 @@ public sealed class WindowsPowerStateProviderTests
             history.CreateLogger("OpenBlade.Service.WindowsPowerStateProvider"));
 
         Assert.Null(provider.CaptureBatteryHealth());
-        Assert.Contains(
-            history.Snapshot().LogLines,
-            line => line.Contains(
-                "Warning OpenBlade.Service.WindowsPowerStateProvider: Windows battery health capture failed; capacity is unavailable.",
-                StringComparison.Ordinal));
+        string diagnostics = string.Join(Environment.NewLine, history.Snapshot().LogLines);
+        Assert.Contains("Windows battery health capture failed; capacity is unavailable.", diagnostics, StringComparison.Ordinal);
+        Assert.Contains(nameof(InvalidOperationException), diagnostics, StringComparison.Ordinal);
+        Assert.Contains("native failure", diagnostics, StringComparison.Ordinal);
     }
 }

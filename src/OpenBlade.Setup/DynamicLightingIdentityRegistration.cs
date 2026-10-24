@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
+using OpenBlade.Contracts;
 using Windows.Management.Deployment;
 
 namespace OpenBlade.Setup;
@@ -177,6 +178,7 @@ public sealed class DynamicLightingIdentityRegistration(
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(DynamicLightingIdentityRegistration), nameof(InstallIfPresentAsync), exception);
             throw new InvalidOperationException(
                 "The Dynamic Lighting identity registration failed "
                 + $"({exception.GetType().Name}, HRESULT 0x{exception.HResult:X8}).");
@@ -222,6 +224,7 @@ public sealed class DynamicLightingIdentityRegistration(
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(DynamicLightingIdentityRegistration), nameof(RemoveIfPresentAsync), exception);
             throw new InvalidOperationException(
                 "The Dynamic Lighting identity removal failed "
                 + $"({exception.GetType().Name}, HRESULT 0x{exception.HResult:X8}).");
@@ -255,6 +258,7 @@ public sealed class DynamicLightingIdentityRegistration(
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(DynamicLightingIdentityRegistration), nameof(FindPackages), exception);
             throw new InvalidOperationException(
                 "The Dynamic Lighting identity registration state could not be queried "
                 + $"({exception.GetType().Name}, HRESULT 0x{exception.HResult:X8}).");

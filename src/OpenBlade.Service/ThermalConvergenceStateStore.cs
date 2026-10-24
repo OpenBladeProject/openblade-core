@@ -243,6 +243,7 @@ internal sealed class ThermalConvergenceStateStore
         }
         catch (Exception exception) when (BatteryConfigurationStore.IsRecoverable(exception))
         {
+            DiagnosticTrace.TraceException(nameof(ThermalConvergenceStateStore), nameof(Read), exception);
             return Quarantined(
                 ContainsFutureSchema(json)
                     ? ConfigurationQuarantineReason.FutureSchema

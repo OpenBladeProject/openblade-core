@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using OpenBlade.Contracts;
 using OpenBlade.Platform;
 
 namespace OpenBlade.SessionAgent.Tests;
@@ -6,6 +7,95 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class RazerSnapTapDriverAdmissionTests
 {
     private static readonly Guid LaptopContainer = new("D937EC4C-C08F-4CEB-A72D-E6193129A748");
+
+    [Fact]
+    public void InvalidDataDuringCaptureReturnsDiscoveryFailureWithoutEscaping()
+    {
+        var admission = new RazerSnapTapDriverAdmission(() =>
+            throw new InvalidDataException("The endpoint has no installed driver package."));
+        Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure, out var detail));
+        Assert.Equal(RazerSnapTapAdmissionFailure.DiscoveryFailed, failure);
+        Assert.Equal(nameof(InvalidDataException), detail?.ExceptionType);
+        Assert.Equal("The endpoint has no installed driver package.", detail?.Message);
+    }
+
+    [Theory]
+    [MemberData(nameof(ReviewedProfiles))]
+    public void BothPackageFailuresSurviveAdmissionForEveryReviewedProfile(string productId)
+    {
+        RazerSnapTapDriverSnapshot good = ModelSnapshot(productId);
+        string service = RazerSnapTapDriverProfiles.All.Single(profile => profile.ProductId == productId).DeviceService;
+        var common = DiagnosticFailure.FromException("DriverPackage", "RzCommon", "EndpointBinding",
+            "EndpointDriverMissing", new InvalidDataException("The endpoint has no installed driver package."));
+        var device = DiagnosticFailure.FromException("DriverPackage", service, "InfContract",
+            "HardwareServiceMismatch", new InvalidDataException("Exact service declaration absent."));
+        var admission = new RazerSnapTapDriverAdmission(() => good with
+        {
+            CommonDriver = new(true, false, null, "legacy common") { FailureDetail = common },
+            DeviceDriver = new(true, false, null, "legacy device") { FailureDetail = device },
+        });
+
+        Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure, out var detail));
+        Assert.Equal(RazerSnapTapAdmissionFailure.DriverPackageUntrusted, failure);
+        Assert.Equal("RzCommon", detail?.Cause?.Operation);
+        Assert.Equal("EndpointDriverMissing", detail?.Cause?.Reason);
+        Assert.Equal(service, detail?.Cause?.Related?[0].Operation);
+        Assert.Equal("Exact service declaration absent.", detail?.Cause?.Related?[0].Message);
+        Assert.True(detail?.IsValid());
+        Assert.False(admission.TryGetEndpoint(out _, out bool missing));
+        Assert.False(missing);
+    }
+
+    [Fact]
+    public void ControllerEnumerationFailureRetainsBoundedExceptionWithoutProcessIdentity()
+    {
+        var result = WindowsRazerSnapTapDriverDiscovery.ObserveControllers(
+            () => throw new Win32Exception(
+                5,
+                @"Process inventory failed under C:\Users\private-owner\diagnostics."));
+
+        Assert.False(result.Detected);
+        Assert.False(result.Complete);
+        Assert.Equal("ObserveControllers", result.Failure?.Operation);
+        Assert.Equal("EnumerateProcesses", result.Failure?.Stage);
+        Assert.Equal("ProcessEnumerationFailed", result.Failure?.Reason);
+        Assert.Equal(5, result.Failure?.NativeErrorCode);
+        Assert.DoesNotContain("private-owner", result.Failure?.Message, StringComparison.Ordinal);
+        Assert.True(result.Failure?.IsValid());
+    }
+
+    [Fact]
+    public void IncompleteControllerObservationRetainsFailureAlongsidePackageEvidence()
+    {
+        RazerSnapTapDriverSnapshot good = ExactSnapshot();
+        DiagnosticFailure observation = DiagnosticFailure.FromException(
+            "SnapTapAdmission",
+            "ObserveControllers",
+            "ReadProcessName",
+            "ProcessInspectionFailed",
+            new Win32Exception(5, @"Process inspection failed under C:\Users\private-owner\state."));
+        DiagnosticFailure package = DiagnosticFailure.FromException(
+            "DriverPackage",
+            "RzCommon",
+            "CatalogTrust",
+            "CatalogTrustFailed",
+            new InvalidDataException("The installed package is not trusted."));
+        var admission = new RazerSnapTapDriverAdmission(() => good with
+        {
+            ControllerObservationComplete = false,
+            ControllerObservationFailure = observation,
+            CommonDriver = new(true, false, null) { FailureDetail = package },
+        });
+
+        Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure, out var detail));
+        Assert.Equal(RazerSnapTapAdmissionFailure.IncompleteControllerObservation, failure);
+        Assert.Equal("ObserveControllers", detail?.Cause?.Operation);
+        Assert.Equal("ProcessInspectionFailed", detail?.Cause?.Reason);
+        Assert.DoesNotContain("private-owner", detail?.Cause?.Message, StringComparison.Ordinal);
+        Assert.Equal("RzCommon", detail?.Cause?.Related?[0].Operation);
+        Assert.Equal("CatalogTrustFailed", detail?.Cause?.Related?[0].Reason);
+        Assert.True(detail?.IsValid());
+    }
 
     [Fact]
     public void ExactDriverKeyboardAndControlTupleIsAdmitted()
@@ -153,10 +243,10 @@ public sealed class RazerSnapTapDriverAdmissionTests
     }
 
     [Fact]
-    public void DiscoveryExceptionPreservesNativeInnerCauseWithoutMessage()
+    public void DiscoveryExceptionPreservesNativeInnerCauseAndRedactedMessage()
     {
         var admission = new RazerSnapTapDriverAdmission(() =>
-            throw new IOException("sensitive path", new Win32Exception(5, "native message")));
+            throw new IOException(@"Binding failed at C:\Users\owner-sensitive\driver.sys", new Win32Exception(5, "native message password=hidden-value")));
 
         Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure, out var detail));
 
@@ -165,8 +255,10 @@ public sealed class RazerSnapTapDriverAdmissionTests
         Assert.Equal(nameof(Win32Exception), detail?.Cause?.ExceptionType);
         Assert.Equal(5, detail?.Cause?.NativeErrorCode);
         string serialized = System.Text.Json.JsonSerializer.Serialize(detail);
-        Assert.DoesNotContain("sensitive path", serialized, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("native message", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("owner-sensitive", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Binding failed", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("hidden-value", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("native message", serialized, StringComparison.Ordinal);
     }
 
     [Fact]

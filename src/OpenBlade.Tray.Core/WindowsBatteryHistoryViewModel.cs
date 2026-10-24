@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -89,6 +90,10 @@ public sealed class WindowsBatteryHistoryViewModel : INotifyPropertyChanged, IAs
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.WindowsBatteryHistoryViewModel",
+                    "Refresh",
+                    exception);
                 Error = string.IsNullOrWhiteSpace(exception.Message)
                     ? TrayText.Get("Battery history is unavailable.")
                     : exception.Message;

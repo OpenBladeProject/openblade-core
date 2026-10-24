@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Principal;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Platform;
 
@@ -430,6 +431,7 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         }
         catch (Exception exception) when (IsRecoverableProcessActionException(exception))
         {
+            DiagnosticTrace.TraceException("GpuApps", "KillProcessTreeWithExactFallback", exception);
             // A tree-wide request can fail while the freshly revalidated process
             // itself remains terminable. Retrying only that exact process preserves
             // the attended action without transferring approval to another PID.
@@ -544,6 +546,12 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         }
         catch (Exception exception) when (IsRecoverableProcessInspectionException(exception))
         {
+            // Process disappearance is expected during an inventory. Unexpected access/native
+            // failures still retain their technical details before this best-effort omission.
+            if (exception is not ArgumentException)
+            {
+                DiagnosticTrace.TraceException("GpuApps", "TryReadProcess", exception);
+            }
             return false;
         }
     }

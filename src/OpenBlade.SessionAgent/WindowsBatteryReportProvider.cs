@@ -148,8 +148,12 @@ internal sealed class WindowsBatteryReportProcessRunner : IWindowsBatteryReportP
         {
             process.Kill(entireProcessTree: true);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsBatteryReportProvider),
+                "TerminateReportProcess",
+                exception);
         }
     }
 
@@ -164,8 +168,12 @@ internal sealed class WindowsBatteryReportProcessRunner : IWindowsBatteryReportP
                 .WaitAsync(StopTimeout)
                 .ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsBatteryReportProvider),
+                "WaitForTerminatedReportProcess",
+                exception);
         }
         try
         {
@@ -173,8 +181,12 @@ internal sealed class WindowsBatteryReportProcessRunner : IWindowsBatteryReportP
                 .WaitAsync(StopTimeout)
                 .ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsBatteryReportProvider),
+                "DrainTerminatedReportProcess",
+                exception);
         }
     }
 
@@ -343,6 +355,10 @@ public sealed class WindowsBatteryReportProvider
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsBatteryReportProvider),
+                "DeleteReportDirectory",
+                exception);
         }
     }
 }

@@ -601,6 +601,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             }
             catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
+                DiagnosticTrace.TraceException(nameof(WindowsSetupPlatform), nameof(StopInstalledProcessAsync), exception,
+                    $"component={componentName}");
                 process.Dispose();
             }
         }

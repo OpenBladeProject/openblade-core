@@ -28,10 +28,12 @@ On models other than RZ09-0581, install the model's Razer keyboard driver throug
 
 For a failure report, export diagnostics while the failure is present. The
 `snap-tap.json` entry retains the runtime state and terminal failure stage,
-reason, numeric errors and possible submission. `OpenBlade.SnapTap.log` records
+reason, numeric errors, redacted exception messages and stack locations, inner
+and aggregate causes, and possible submission. `OpenBlade.SnapTap.log` records
 supervisor failures. A driver-admitted entry establishes discovery and admission;
 it does not confirm hook setup or active input handling. `diagnostic-export.json`
-identifies missing or failed log collection. These records contain no keystrokes.
+identifies missing, partial or failed log collection, and `diagnostic-inventory.json`
+lists collected payload entries and limits. These records contain no keystrokes.
 
 The Session Agent starts an authenticated current-user supervisor, which starts a separate input worker. Parent image, user, session, process lifetime, preference and coordinated shutdown checks apply to both helpers. A per-user/session mutex prevents concurrent supervisors. A failed helper stays stopped until an explicit off/on transition.
 

@@ -156,8 +156,10 @@ transitions, not production profile reconciliation or hidden power limits.
 Failure details must survive every result, exception, process and status
 boundary. A generic UI state such as `Failed` is presentation, not a complete
 diagnostic. Use `DiagnosticFailure` for the component, operation, stage, reason,
-exception type, HRESULT, native or process exit code, bounded cause chain and
-possible submission. It excludes exception messages and private paths. Preserve
+exception type, HRESULT, native or process exit code, complete inner/aggregate
+exception details and possible submission. Messages and thrown stack locations
+are retained after account-path and credential redaction. Limits and omissions
+are explicit. Preserve
 the original failure when cleanup adds another; diagnostic metadata never
 authorizes a retry, recovery write or hardware capability.
 
@@ -171,9 +173,11 @@ metadata in `OpenBlade.SessionAgent.log`; THX capture failures retain it in
 `thx-audio.json`.
 
 `diagnostic-export.json` lists included, absent, unrequested and failed
-supplements. An unreadable or oversized log is skipped individually, keeping
-healthy logs and recording the omission. Logs are limited to 32 files of
-128 KiB each. The identity-only export still saves its exact selected evidence
+supplements, including per-log sizes and partial reads. Unreadable logs are
+reported individually; oversized logs contribute their newest 1 MiB. Logs retain
+four 1 MiB generations per component; exports collect up to 128 files and 64 MiB.
+The payload inventory and limits are in `diagnostic-inventory.json`; see
+[diagnostic coverage](diagnostics-coverage.md). The identity-only export still saves its exact selected evidence
 without these supplements. Test both the original failure and its exported
 representation when adding a new failure boundary.
 

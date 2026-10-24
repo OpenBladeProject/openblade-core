@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Setup;
 
@@ -131,6 +132,8 @@ internal sealed class ScCommandRunner
             }
             catch (Exception exception) when (exception is IOException or OperationCanceledException or ObjectDisposedException)
             {
+                DiagnosticTrace.TraceException(nameof(ScCommandRunner), nameof(StopOwnedProcessAsync), exception,
+                    "Timed-out child stream cleanup failed.");
                 // The original timeout/cancellation remains the operation outcome.
             }
         }

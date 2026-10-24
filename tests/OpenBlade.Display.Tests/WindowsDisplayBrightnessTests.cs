@@ -1,9 +1,24 @@
+using System.Management;
 using OpenBlade.Display;
 
 namespace OpenBlade.Display.Tests;
 
 public sealed class WindowsDisplayBrightnessTests
 {
+    [Fact]
+    public void SetResult_PreservesNativeStatusAndUnexpectedType()
+    {
+        ManagementException status = Assert.Throws<ManagementException>(
+            () => WindowsDisplayBrightness.ValidateSetResult(5u));
+        Assert.Contains("status 5 (0x00000005)", status.Message, StringComparison.Ordinal);
+
+        ManagementException type = Assert.Throws<ManagementException>(
+            () => WindowsDisplayBrightness.ValidateSetResult(5));
+        Assert.Contains("System.Int32", type.Message, StringComparison.Ordinal);
+
+        WindowsDisplayBrightness.ValidateSetResult(0u);
+    }
+
     private const string InternalPath = @"\\?\DISPLAY#SDC4226#4&abc&0&UID8388688#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
 
     [Theory]

@@ -74,6 +74,7 @@ public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSourc
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsAuthorizedUserTokenSource), nameof(ReadTokens), exception);
             return [];
         }
 
@@ -115,6 +116,8 @@ public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSourc
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDiagnosticMetadataSource), nameof(AddUserTokens), exception,
+                "Account-name enumeration failed.");
         }
 
         try
@@ -130,6 +133,8 @@ public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSourc
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDiagnosticMetadataSource), nameof(AddUserTokens), exception,
+                "User-profile enumeration failed.");
         }
 
     }
@@ -376,6 +381,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 : null)
         {
             FirmwareQueries = queryDiagnostics.Snapshot(),
+            ServiceHistory = historySnapshot,
         };
 
         await using var destination = new MemoryStream();
@@ -383,7 +389,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             .ConfigureAwait(false);
         if (destination.Length > OpenBladeIpc.MaximumDiagnosticArchiveBytes)
         {
-            throw new InvalidDataException("Diagnostic archive exceeds the 32 KiB limit.");
+            throw new InvalidDataException("Diagnostic archive exceeds the 16 MiB limit.");
         }
 
         string fileName = $"OpenBlade-diagnostics-{metadata.CapturedAt.UtcDateTime:yyyyMMdd-HHmmssZ}.zip";

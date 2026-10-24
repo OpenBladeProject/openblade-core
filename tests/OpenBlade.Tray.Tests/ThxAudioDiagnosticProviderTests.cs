@@ -93,15 +93,20 @@ public sealed class ThxAudioDiagnosticProviderTests
     }
 
     [Fact]
-    public async Task CaptureAsync_PreservesWrappedNativeFailureWithoutPrivateMessage()
+    public async Task CaptureAsync_PreservesWrappedNativeFailureWithRedactedMessage()
     {
-        var exception = new IOException("private path", new Win32Exception(5, "private service"));
+        var exception = new IOException(
+            @"query failed at C:\Users\Alice\thx.json",
+            new Win32Exception(5, "private service unavailable"));
         var provider = new ThxAudioDiagnosticProvider(new StubAdapter(exception));
         ThxAudioDiagnosticReport report = await provider.CaptureAsync(CancellationToken.None);
         Assert.Equal("Discovery", report.Failure?.Stage);
         Assert.Equal(exception.HResult, report.Failure?.HResult);
         Assert.Equal(5, report.Failure?.Cause?.NativeErrorCode);
-        Assert.DoesNotContain("private", System.Text.Json.JsonSerializer.Serialize(report), StringComparison.OrdinalIgnoreCase);
+        string serialized = System.Text.Json.JsonSerializer.Serialize(report);
+        Assert.Contains("query failed", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("private service unavailable", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Alice", serialized, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

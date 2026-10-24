@@ -447,9 +447,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             completion.TrySetException(exception);
             if (Volatile.Read(ref disposed) == 0)
             {
-                Trace.TraceError(
-                    "Reactive keyboard observation failed: {0}",
-                    exception.GetType().Name);
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.WindowsReactiveKeyboardSource",
+                    "RunMessageThread",
+                    exception);
             }
         }
         finally
@@ -471,9 +472,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 }
                 catch (Win32Exception exception)
                 {
-                    Trace.TraceWarning(
-                        "Reactive input registration cleanup failed: {0}",
-                        exception.NativeErrorCode);
+                    DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.WindowsReactiveKeyboardSource",
+                        "UnregisterRawInput",
+                        exception);
                 }
             }
 

@@ -6,6 +6,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -182,6 +183,10 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
         {
             // Sharing failures include another live installer; unreadable/partial records cannot
             // establish that a previous native operation completed. Never replay either case.
+            DiagnosticTrace.TraceException(
+                nameof(WindowsRazerDriverInstallPlatform),
+                "InspectInstallJournal",
+                exception);
             return true;
         }
     }

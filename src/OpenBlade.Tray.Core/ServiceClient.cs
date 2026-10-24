@@ -677,7 +677,9 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         CancellationToken token)
     {
         await IpcMessageCodec.WriteRequestAsync(connection, request, token).ConfigureAwait(false);
-        ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(connection, token)
+        ServiceServerFrame frame = await (request is ExportDiagnosticsRequest
+                ? IpcMessageCodec.ReadDiagnosticArchiveFrameAsync(connection, token)
+                : IpcMessageCodec.ReadServerFrameAsync(connection, token))
             .ConfigureAwait(false);
         return ValidateResponse(frame, request);
     }

@@ -36,7 +36,10 @@ internal sealed record RazerSnapTapDriverSnapshot(
     IReadOnlyList<RazerSnapTapKeyboardDevice> KeyboardDevices,
     bool CompetingControllerDetected,
     bool ControllerObservationComplete,
-    bool ActiveConsoleSession);
+    bool ActiveConsoleSession)
+{
+    public DiagnosticFailure? ControllerObservationFailure { get; init; }
+}
 
 internal enum RazerSnapTapAdmissionFailure
 {
@@ -101,14 +104,32 @@ internal sealed class RazerSnapTapDriverAdmission
                     "SnapTapAdmission",
                     "ResolveEndpoint",
                     "Evaluate",
-                    failure.ToString());
+                    failure.ToString())
+                {
+                    Cause = AdmissionFailureCause(snapshot, failure),
+                    Context = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        snapshot.BiosProductName,
+                        snapshot.SystemProductName,
+                        snapshot.ActiveConsoleSession,
+                        snapshot.ControllerObservationComplete,
+                        snapshot.CompetingControllerDetected,
+                        ControlCandidates = snapshot.ControlDevices.Count,
+                        KeyboardCandidates = snapshot.KeyboardDevices.Count,
+                        CommonInstalled = snapshot.CommonDriver.Installed,
+                        CommonTrusted = snapshot.CommonDriver.Trusted,
+                        DeviceInstalled = snapshot.DeviceDriver.Installed,
+                        DeviceTrusted = snapshot.DeviceDriver.Trusted,
+                    }),
+                };
+                detail = detail.LimitDetails();
                 Trace.TraceWarning("SnapTap driver admission rejected: {0}; host={1}.",
                     failure, snapshot.BiosProductName);
             }
             return failure == RazerSnapTapAdmissionFailure.None;
         }
         catch (Exception exception) when (exception is
-            Win32Exception or InvalidOperationException or IOException
+            Win32Exception or InvalidOperationException or IOException or InvalidDataException
             or UnauthorizedAccessException or CryptographicException
             or OverflowException)
         {
@@ -207,6 +228,34 @@ internal sealed class RazerSnapTapDriverAdmission
         return RazerSnapTapAdmissionFailure.None;
     }
 
+    private static DiagnosticFailure? PackageFailure(RazerSnapTapDriverSnapshot snapshot)
+    {
+        // Retain actual failures in common/filter order; diagnostics grant no admission.
+        DiagnosticFailure? common = !Trusted(snapshot.CommonDriver) ? snapshot.CommonDriver.FailureDetail : null;
+        DiagnosticFailure? device = !Trusted(snapshot.DeviceDriver) ? snapshot.DeviceDriver.FailureDetail : null;
+        return common is null ? device : device is null ? common : common with
+        {
+            Related = [.. common.Related ?? [], device],
+        };
+    }
+
+    private static DiagnosticFailure? AdmissionFailureCause(
+        RazerSnapTapDriverSnapshot snapshot,
+        RazerSnapTapAdmissionFailure failure)
+    {
+        DiagnosticFailure? package = PackageFailure(snapshot);
+        if (failure != RazerSnapTapAdmissionFailure.IncompleteControllerObservation
+            || snapshot.ControllerObservationFailure is not { } observation)
+        {
+            return package;
+        }
+
+        return package is null ? observation : observation with
+        {
+            Related = [.. observation.Related ?? [], package],
+        };
+    }
+
     private static bool Trusted(RazerDriverApiPackageEvidence evidence) =>
         evidence.Installed && evidence.Trusted && !string.IsNullOrWhiteSpace(evidence.Identity);
 
@@ -262,7 +311,7 @@ internal static class WindowsRazerSnapTapDriverDiscovery
     internal static RazerSnapTapDriverSnapshot Capture()
     {
         using RegistryKey localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
-        (bool competing, bool complete) = ObserveControllers();
+        (bool competing, bool complete, DiagnosticFailure? observationFailure) = ObserveControllers();
         string? biosManufacturer = ReadRegistryString(localMachine, BiosKey, "SystemManufacturer");
         string? biosProduct = ReadRegistryString(localMachine, BiosKey, "SystemProductName");
         string? systemManufacturer = ReadRegistryString(localMachine, SystemInformationKey, "SystemManufacturer");
@@ -282,7 +331,10 @@ internal static class WindowsRazerSnapTapDriverDiscovery
                 : WindowsRazerDriverApiDiscovery.Capture(controlInstance, "RzCommon", @"RAZER\DeviceContol"),
             profile is null ? RazerDriverApiPackageEvidence.Rejected
                 : WindowsRazerDriverApiDiscovery.Capture(keyboardInstance, profile.DeviceService, profile.KeyboardHardwareId),
-            controls, keyboards, competing, complete, HasActiveConsoleSession());
+            controls, keyboards, competing, complete, HasActiveConsoleSession())
+        {
+            ControllerObservationFailure = observationFailure,
+        };
     }
     internal static bool HasActiveConsoleSession() =>
         ProcessIdToSessionId((uint)Environment.ProcessId, out uint current)
@@ -297,20 +349,25 @@ internal static class WindowsRazerSnapTapDriverDiscovery
         return key?.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
     }
 
-    private static (bool Detected, bool Complete) ObserveControllers()
+    internal static (bool Detected, bool Complete, DiagnosticFailure? Failure) ObserveControllers(
+        Func<Process[]>? enumerateProcesses = null)
     {
         Process[] processes;
         try
         {
-            processes = Process.GetProcesses();
+            processes = (enumerateProcesses ?? Process.GetProcesses)();
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
         {
-            return (false, false);
+            return (false, false, ControllerObservationFailure(
+                "EnumerateProcesses",
+                "ProcessEnumerationFailed",
+                exception));
         }
 
         bool complete = true;
         bool detected = false;
+        DiagnosticFailure? failure = null;
         try
         {
             foreach (Process process in processes)
@@ -323,6 +380,10 @@ internal static class WindowsRazerSnapTapDriverDiscovery
                     Win32Exception or InvalidOperationException or NotSupportedException)
                 {
                     complete = false;
+                    failure ??= ControllerObservationFailure(
+                        "ReadProcessName",
+                        "ProcessInspectionFailed",
+                        exception);
                 }
             }
         }
@@ -333,8 +394,18 @@ internal static class WindowsRazerSnapTapDriverDiscovery
                 process.Dispose();
             }
         }
-        return (detected, complete);
+        return (detected, complete, failure);
     }
+
+    private static DiagnosticFailure ControllerObservationFailure(
+        string stage,
+        string reason,
+        Exception exception) => DiagnosticFailure.FromException(
+            "SnapTapAdmission",
+            "ObserveControllers",
+            stage,
+            reason,
+            exception);
 
     private static IReadOnlyList<RazerSnapTapControlDevice> ReadControls()
     {

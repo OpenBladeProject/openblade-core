@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Principal;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 using OpenBlade.Tray;
 
@@ -90,6 +91,10 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioAdmission",
+                "Evaluate",
+                exception);
             string error = $"THX audio admission could not be verified: {exception.GetType().Name}.";
             return profile is null ? Unsupported(error) : new ThxAudioAdmission(
                 profile.Backend == ThxAudioNativeBackend.Legacy265
@@ -116,10 +121,18 @@ internal sealed class WindowsThxAudioAdmissionSource : IThxAudioAdmissionSource
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioAdmission",
+                "VerifyNativeComponent",
+                exception);
             error = $"The pinned THX native component {NativeDllName} is missing.";
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioAdmission",
+                "VerifyNativeComponent",
+                exception);
             error = $"The pinned THX native component {NativeDllName} is incompatible or unreadable.";
         }
         return false;

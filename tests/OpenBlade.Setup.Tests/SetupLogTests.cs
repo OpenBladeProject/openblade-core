@@ -1,9 +1,34 @@
+using System.Diagnostics;
+using System.Text.Json;
+using OpenBlade.Contracts;
 using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
 
 public sealed class SetupLogTests : IDisposable
 {
+    [Fact]
+    public void TraceListener_RoutesWarningsThroughSetupLog()
+    {
+        string path = Path.Combine(directory, "setup.log");
+        using var listener = new SetupDiagnosticTraceListener(new SetupLog(path));
+
+        listener.TraceEvent(
+            null,
+            "OpenBlade",
+            TraceEventType.Warning,
+            0,
+            "component={0} operation={1}",
+            "SetupFallback",
+            "Recover");
+
+        string line = Assert.Single(File.ReadAllLines(path));
+        Assert.Contains(
+            "OpenBlade.Setup: Trace Warning: component=SetupFallback operation=Recover",
+            line,
+            StringComparison.Ordinal);
+    }
+
     private readonly string directory = Path.Combine(
         Path.GetTempPath(),
         "OpenBlade.Setup.Tests",
@@ -26,14 +51,14 @@ public sealed class SetupLogTests : IDisposable
             new IOException("The file is in use.")));
 
         string[] lines = File.ReadAllLines(path);
-        Assert.Equal(3, lines.Length);
+        Assert.Equal(2, lines.Length);
         Assert.All(lines, line => Assert.Contains("OpenBlade.Setup: ", line, StringComparison.Ordinal));
         Assert.EndsWith("Started: Install (bundle-managed: True)", lines[0], StringComparison.Ordinal);
-        Assert.EndsWith(
-            "Failed: System.InvalidOperationException: Service replacement failed.",
-            lines[1],
-            StringComparison.Ordinal);
-        Assert.EndsWith("Caused by: System.IO.IOException: The file is in use.", lines[2], StringComparison.Ordinal);
+        DiagnosticFailure failure = ReadFailure(lines[1]);
+        Assert.Equal(nameof(InvalidOperationException), failure.ExceptionType);
+        Assert.Equal("Service replacement failed.", failure.Message);
+        Assert.Equal(nameof(IOException), failure.Cause?.ExceptionType);
+        Assert.Equal("The file is in use.", failure.Cause?.Message);
     }
 
     [Fact]
@@ -45,10 +70,13 @@ public sealed class SetupLogTests : IDisposable
             new IOException("first"),
             new UnauthorizedAccessException("second")));
 
-        string[] lines = File.ReadAllLines(path);
-        Assert.Equal(3, lines.Length);
-        Assert.EndsWith("Caused by: System.IO.IOException: first", lines[1], StringComparison.Ordinal);
-        Assert.EndsWith("Caused by: System.UnauthorizedAccessException: second", lines[2], StringComparison.Ordinal);
+        DiagnosticFailure failure = ReadFailure(Assert.Single(File.ReadAllLines(path)));
+        Assert.Equal(nameof(AggregateException), failure.ExceptionType);
+        Assert.Equal(nameof(IOException), failure.Cause?.ExceptionType);
+        Assert.Equal("first", failure.Cause?.Message);
+        DiagnosticFailure related = Assert.Single(failure.Related!);
+        Assert.Equal(nameof(UnauthorizedAccessException), related.ExceptionType);
+        Assert.Equal("second", related.Message);
     }
 
     [Fact]
@@ -97,5 +125,13 @@ public sealed class SetupLogTests : IDisposable
         Assert.EndsWith("Step: ActivateFiles", lines[2], StringComparison.Ordinal);
         Assert.EndsWith("Step: CommitFiles", lines[3], StringComparison.Ordinal);
         Assert.EndsWith("Step: CommitFiles x2 in total, last: ", lines[4], StringComparison.Ordinal);
+    }
+
+    private static DiagnosticFailure ReadFailure(string line)
+    {
+        const string marker = "OpenBlade.Setup: ";
+        int start = line.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        return JsonSerializer.Deserialize<DiagnosticFailure>(line[(start + marker.Length)..])!;
     }
 }

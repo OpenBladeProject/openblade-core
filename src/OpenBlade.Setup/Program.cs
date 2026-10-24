@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenBlade.Setup;
 
 #if OPENBLADE_LOCAL_DEV_DEPLOYMENT
@@ -37,9 +38,20 @@ _ = SetupCommandParser.TryParseInvocation(
     out SetupInvocation invocation);
 // Burn discards stderr, so bundle-managed runs also record their outcome in the package log.
 var log = new SetupLog(invocation.LogPath);
-log.Write($"Started: {invocation.Command} (bundle-managed: {invocation.BundleManaged})");
+using var diagnosticTraceListener = new SetupDiagnosticTraceListener(log);
+bool diagnosticTraceListenerAdded = false;
 try
 {
+    Trace.Listeners.Add(diagnosticTraceListener);
+    diagnosticTraceListenerAdded = true;
+}
+catch
+{
+    // An unavailable diagnostic sink must not change setup behavior.
+}
+try
+{
+    log.Write($"Started: {invocation.Command} (bundle-managed: {invocation.BundleManaged})");
     if (isUninstallRelay)
     {
         await InstalledUninstallBootstrapper.WaitForInstalledParentExitAsync(CancellationToken.None);
@@ -84,8 +96,25 @@ catch (Exception exception)
 }
 finally
 {
-    if (isUninstallRelay)
+    try
     {
-        InstalledUninstallBootstrapper.ScheduleRelayCleanup(executablePath, paths);
+        if (isUninstallRelay)
+        {
+            InstalledUninstallBootstrapper.ScheduleRelayCleanup(executablePath, paths);
+        }
+    }
+    finally
+    {
+        if (diagnosticTraceListenerAdded)
+        {
+            try
+            {
+                Trace.Listeners.Remove(diagnosticTraceListener);
+            }
+            catch
+            {
+                // Listener cleanup is best effort during process exit.
+            }
+        }
     }
 }

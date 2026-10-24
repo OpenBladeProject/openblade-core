@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.DeploymentBroker;
 
@@ -16,7 +18,11 @@ internal sealed record BrokerServiceConfigurationEvidence(
     bool ExecutableExists,
     bool ProgramFilesDirectoryIsReparsePoint,
     bool InstallDirectoryIsReparsePoint,
-    bool ExecutableIsReparsePoint);
+    bool ExecutableIsReparsePoint)
+{
+    public uint Win32ExitCode { get; init; }
+    public uint ServiceSpecificExitCode { get; init; }
+}
 
 internal static class BrokerServiceConfigurationPolicy
 {
@@ -48,6 +54,7 @@ internal static class BrokerServiceConfigurationPolicy
         catch (Exception exception) when (exception is
             ArgumentException or NotSupportedException)
         {
+            DiagnosticTrace.TraceException(nameof(BrokerServiceConfigurationPolicy), nameof(IsTrusted), exception);
             return false;
         }
     }
@@ -73,19 +80,39 @@ internal sealed class WindowsBrokerServiceHealthProbe : IBrokerServiceHealthProb
                 return Task.FromResult(BrokerServiceObservation.Absent);
             }
 
-            return Task.FromResult(BrokerServiceConfigurationPolicy.IsTrusted(
-                    evidence,
-                    ExpectedExecutablePath)
-                ? BrokerServiceObservation.Healthy
-                : BrokerServiceObservation.Indeterminate);
+            if (BrokerServiceConfigurationPolicy.IsTrusted(evidence, ExpectedExecutablePath))
+            {
+                return Task.FromResult(BrokerServiceObservation.Healthy);
+            }
+
+            try
+            {
+                Trace.TraceWarning(
+                    "component={0} operation={1} state=indeterminate {2}",
+                    nameof(WindowsBrokerServiceHealthProbe),
+                    nameof(ObserveAsync),
+                    FormatServiceStatusContext(evidence));
+            }
+            catch
+            {
+                // Diagnostic sinks must not change the fail-closed health result.
+            }
+            return Task.FromResult(BrokerServiceObservation.Indeterminate);
         }
         catch (Exception exception) when (exception is
             Win32Exception or IOException or UnauthorizedAccessException
             or InvalidDataException or InvalidOperationException)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsBrokerServiceHealthProbe), nameof(ObserveAsync), exception);
             return Task.FromResult(BrokerServiceObservation.Indeterminate);
         }
     }
+
+    internal static string FormatServiceStatusContext(BrokerServiceConfigurationEvidence evidence) =>
+        $"running={evidence.IsRunning} "
+        + $"win32ExitCode={evidence.Win32ExitCode} win32ExitCodeHex=0x{evidence.Win32ExitCode:X8} "
+        + $"serviceSpecificExitCode={evidence.ServiceSpecificExitCode} "
+        + $"serviceSpecificExitCodeHex=0x{evidence.ServiceSpecificExitCode:X8}";
 }
 
 internal static class WindowsBrokerServiceConfigurationReader
@@ -186,7 +213,11 @@ internal static class WindowsBrokerServiceConfigurationReader
                 InstallDirectoryIsReparsePoint: install.Exists
                     && install.Attributes.HasFlag(FileAttributes.ReparsePoint),
                 ExecutableIsReparsePoint: executable.Exists
-                    && executable.Attributes.HasFlag(FileAttributes.ReparsePoint));
+                    && executable.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                Win32ExitCode = status.Win32ExitCode,
+                ServiceSpecificExitCode = status.ServiceSpecificExitCode,
+            };
         }
         finally
         {

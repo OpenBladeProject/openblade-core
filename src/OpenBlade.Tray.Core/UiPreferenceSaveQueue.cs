@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -161,8 +162,12 @@ public sealed class UiPreferenceSaveQueue : IAsyncDisposable
         {
             reportFailure(exception);
         }
-        catch
+        catch (Exception reportingException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.UiPreferenceSaveQueue",
+                "ReportSaveFailure",
+                reportingException);
         }
     }
 

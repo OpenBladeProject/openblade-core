@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 public enum BatteryValidationProbeStage
@@ -184,6 +186,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsRazerHidEvidenceEvaluator), nameof(Evaluate), exception);
             return Failure(
                 BatteryValidationProbeStage.HostIdentity,
                 BatteryValidationProbeClassification.HostIdentityBlocked,

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
@@ -341,6 +342,7 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsHostIdentitySource), nameof(ReadPlatformFailure), exception);
             return new HostIdentityFailureDetail(
                 HostIdentityFailureReason.PlatformReadFailed,
                 "Platform",
@@ -465,6 +467,8 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsHostIdentitySource), nameof(TryReadValue), exception,
+                $"source={source}; value={valueName}");
             actual = string.Empty;
             failure = new HostIdentityFailureDetail(
                 HostIdentityFailureReason.RegistryReadFailed,

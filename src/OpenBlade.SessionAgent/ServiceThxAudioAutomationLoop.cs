@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 using OpenBlade.Tray;
 
@@ -78,9 +79,10 @@ internal sealed class ServiceThxAudioAutomationLoop(
         }
         catch (Exception exception)
         {
-            System.Diagnostics.Trace.TraceWarning(
-                "THX application automation observation failed: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioAutomation",
+                "ObserveState",
+                exception);
         }
     }
 }

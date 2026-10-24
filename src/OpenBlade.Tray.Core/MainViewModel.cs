@@ -5037,9 +5037,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception publicationException)
             {
                 // The optional UI publication must not hold shutdown open.
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.MainViewModel",
+                    "PublishStartupRegistrationState",
+                    publicationException);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -5048,6 +5052,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "InitializeStartupRegistration",
+                exception);
             try
             {
                 await dispatcher.InvokeAsync(
@@ -5071,9 +5079,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception publicationException)
             {
                 // The optional UI publication must not hold shutdown open.
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.MainViewModel",
+                    "PublishStartupRegistrationFailure",
+                    publicationException);
             }
         }
     }
@@ -6991,8 +7003,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "ConfirmManualOverridesCleared",
+                exception);
             message = TrayText.Get(
                 "Manual override clear requests completed; service confirmation is unavailable.");
             failed = true;
@@ -7027,8 +7043,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "ClearManualOverride",
+                exception,
+                subsystem);
             hardwareNotApplied.Add(subsystem);
         }
     }
@@ -7062,6 +7083,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "SetStartAtSignIn",
+                exception);
             await dispatcher.InvokeAsync(
                 () =>
                 {
@@ -7655,6 +7680,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "RestoreSavedDisplayProfile",
+                exception);
             string message = TrayText.Format(
                 "Could not restore the saved display profile: {0}",
                 exception.Message);
@@ -7721,6 +7750,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "RunOperation",
+                exception);
             string message = TrayText.Format("Operation failed: {0}", exception.Message);
             await dispatcher.InvokeAsync(
                 () =>
@@ -7775,6 +7808,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "ExportDiagnostics",
+                exception);
             string message = TrayText.Format(
                 "Diagnostic export failed: {0}",
                 exception.Message);
@@ -7849,6 +7886,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "CreateSupportReport",
+                exception);
             string message = savedPath is null
                 ? TrayText.Format("Identity report failed: {0}", exception.Message)
                 : SavedWithoutBrowserMessage(savedPath);

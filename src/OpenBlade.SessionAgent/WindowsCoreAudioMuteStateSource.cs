@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.SessionAgent;
 
@@ -763,8 +764,12 @@ internal static class CoreAudioSubscriptionShutdown
         catch (OperationCanceledException)
         {
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsCoreAudioMuteStateSource),
+                "ObserveDeferredCompletion",
+                exception);
         }
     }
 }

@@ -2,12 +2,16 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Platform;
 
 public sealed record RazerDriverApiPackageEvidence(bool Installed, bool Trusted, string? Identity, string? Failure = null)
 {
+    public DiagnosticFailure? FailureDetail { get; init; }
+
     public static RazerDriverApiPackageEvidence Missing { get; } = new(false, false, null);
     public static RazerDriverApiPackageEvidence Rejected { get; } = new(true, false, null);
 }
@@ -15,107 +19,156 @@ public sealed record RazerDriverApiPackageEvidence(bool Installed, bool Trusted,
 /// <summary>Read-only binding of a Razer API endpoint to its installed, catalog-trusted package.</summary>
 public static class WindowsRazerDriverApiDiscovery
 {
+    private static readonly object ValidationReasonKey = new();
     private static readonly object CacheLock = new();
     private static readonly Dictionary<string, long> TrustCache = new(StringComparer.Ordinal);
 
     public static RazerDriverApiPackageEvidence Capture(string? instanceId, string service, string hardwareId)
     {
+        var context = new Dictionary<string, string> { ["Service"] = service, ["HardwareContract"] = hardwareId };
+        return Capture(service, setStage => CaptureCore(instanceId, service, hardwareId, setStage, context), context);
+    }
+
+    // Exercise the same rejection boundary without registry or native I/O in offline tests.
+    internal static RazerDriverApiPackageEvidence Capture(
+        string service, Func<Action<string>, RazerDriverApiPackageEvidence> capture,
+        IReadOnlyDictionary<string, string>? context = null)
+    {
+        string stage = "ServiceBinding";
         try
         {
-            using RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
-            using RegistryKey? serviceKey = machine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + service);
-            if (serviceKey is null)
+            RazerDriverApiPackageEvidence evidence = capture(value => stage = value);
+            return evidence.FailureDetail is null || context is null ? evidence : evidence with
             {
-                return RazerDriverApiPackageEvidence.Missing;
-            }
-            if (serviceKey.GetValue("Type") is not int serviceType || serviceType != 1)
-            {
-                return RazerDriverApiPackageEvidence.Rejected;
-            }
-            string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-            string image = ResolveServiceImage(serviceKey.GetValue("ImagePath", null,
-                RegistryValueOptions.DoNotExpandEnvironmentNames) as string, windows, service);
-            if (!File.Exists(image))
-            {
-                return RazerDriverApiPackageEvidence.Missing;
-            }
-            if (string.IsNullOrWhiteSpace(instanceId))
-            {
-                return RazerDriverApiPackageEvidence.Rejected;
-            }
-            using RegistryKey? device = machine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\" + instanceId);
-            string driverKey = device?.GetValue("Driver") as string
-                ?? throw new InvalidDataException("The endpoint has no installed driver package.");
-            if (driverKey.Contains("..", StringComparison.Ordinal) || driverKey.StartsWith('\\'))
-            {
-                throw new InvalidDataException("Invalid installed driver key.");
-            }
-            using RegistryKey? driver = machine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\" + driverKey);
-            string infName = driver?.GetValue("InfPath") as string
-                ?? throw new InvalidDataException("The installed driver INF is unavailable.");
-            RequireFileName(infName);
-            string publishedInf = Path.Combine(windows, "INF", infName);
-            var buffer = new StringBuilder(32768);
-            if (!SetupGetInfDriverStoreLocation(publishedInf, 0, null, buffer, buffer.Capacity, out _))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-            string storeInf = Path.GetFullPath(buffer.ToString());
-            string storeRoot = Path.Combine(windows, "System32", "DriverStore", "FileRepository");
-            RequireUnder(storeInf, storeRoot);
-            string root = Path.GetDirectoryName(storeInf)!;
-            // Lock the published and store INFs while selecting their catalog and declarations.
-            using var published = OpenProtectedFile(publishedInf);
-            using var inf = OpenProtectedFile(storeInf);
-            string publishedIdentity = Hash(published);
-            if (!string.Equals(publishedIdentity, Hash(inf), StringComparison.Ordinal))
-            {
-                throw new InvalidDataException("The installed INF differs from its driver-store package.");
-            }
-            inf.Position = 0;
-            using var reader = new StreamReader(inf, Encoding.UTF8, true, 4096, leaveOpen: true);
-            string catalogName = ValidateInfContract(reader.ReadToEnd(), service, hardwareId);
-            string catalogPath = Path.Combine(root, catalogName);
-            string storeImage = Path.Combine(root, service + ".sys");
-            using var catalog = OpenProtectedFile(catalogPath);
-            using var stored = OpenProtectedFile(storeImage);
-            using var active = OpenProtectedFile(image);
-            string activeIdentity = Hash(active);
-            if (!string.Equals(activeIdentity, Hash(stored), StringComparison.Ordinal))
-            {
-                throw new InvalidDataException("The active driver image differs from its installed package.");
-            }
-            string identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n',
-                instanceId.ToUpperInvariant(), service.ToUpperInvariant(), hardwareId.ToUpperInvariant(),
-                image.ToUpperInvariant(), storeInf.ToUpperInvariant(), publishedIdentity, activeIdentity, Hash(catalog)))));
-            lock (CacheLock)
-            {
-                long now = Environment.TickCount64;
-                if (!TrustCache.TryGetValue(identity, out long verifiedAt) || now - verifiedAt >= 60_000)
-                {
-                    _ = WindowsDriverApiTrust.VerifyCatalogMembers(catalogPath, [storeInf, storeImage, image],
-                        [WindowsDriverApiTrust.MicrosoftHardwareCompatibilityPublisher]);
-                    if (TrustCache.Count >= 16)
-                    {
-                        TrustCache.Clear();
-                    }
-                    TrustCache[identity] = now;
-                }
-            }
-            return new(true, true, identity);
+                FailureDetail = (evidence.FailureDetail with { Context = JsonSerializer.Serialize(context) }).LimitDetails(),
+            };
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or InvalidOperationException or ArgumentException or Win32Exception or CryptographicException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException
+            or UnauthorizedAccessException or InvalidOperationException or ArgumentException
+            or Win32Exception or CryptographicException or OverflowException)
         {
-            return new(true, false, null, exception.Message);
+            string operation = Operation(service);
+            string reason = exception.Data[ValidationReasonKey] as string ?? "PackageInspectionFailed";
+            DiagnosticFailure detail = DiagnosticFailure.FromException(
+                "DriverPackage", operation, stage, reason, exception);
+            detail = (detail with { Context = context is null ? null : JsonSerializer.Serialize(context) }).LimitDetails();
+            DiagnosticTrace.TraceFailure(detail);
+            return new(true, false, null, exception.Message) { FailureDetail = detail };
         }
+    }
+
+    private static RazerDriverApiPackageEvidence CaptureCore(
+        string? instanceId, string service, string hardwareId, Action<string> setStage,
+        IDictionary<string, string> context)
+    {
+        using RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+        using RegistryKey? serviceKey = machine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + service);
+        if (serviceKey is null)
+        {
+            return Unavailable(service, "ServiceBinding", "ServiceMissing", installed: false);
+        }
+        if (serviceKey.GetValue("Type") is not int serviceType || serviceType != 1)
+        {
+            return Unavailable(service, "ServiceBinding", "ServiceTypeMismatch");
+        }
+        string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        setStage("ServiceImage");
+        string? imageValue = serviceKey.GetValue("ImagePath", null,
+            RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+        context["ServiceImageValue"] = imageValue ?? "Unavailable";
+        string image = ResolveServiceImage(imageValue, windows, service);
+        context["ServiceImage"] = image;
+        if (!File.Exists(image))
+        {
+            return Unavailable(service, "ServiceImage", "ServiceImageNotFound", installed: false);
+        }
+        if (string.IsNullOrWhiteSpace(instanceId))
+        {
+            return Unavailable(service, "EndpointBinding", "EndpointMissing");
+        }
+        setStage("EndpointBinding");
+        using RegistryKey? device = machine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\" + instanceId);
+        string driverKey = device?.GetValue("Driver") as string
+            ?? throw Reject("EndpointDriverMissing", "The endpoint has no installed driver package.");
+        if (driverKey.Contains("..", StringComparison.Ordinal) || driverKey.StartsWith('\\'))
+        {
+            throw Reject("InvalidDriverKey", "Invalid installed driver key.");
+        }
+        context["DriverKey"] = driverKey;
+        using RegistryKey? driver = machine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\" + driverKey);
+        string infName = driver?.GetValue("InfPath") as string
+            ?? throw Reject("InstalledInfMissing", "The installed driver INF is unavailable.");
+        context["PublishedInfName"] = infName;
+        RequireFileName(infName);
+        string publishedInf = Path.Combine(windows, "INF", infName);
+        setStage("DriverStoreLocation");
+        var buffer = new StringBuilder(32768);
+        if (!SetupGetInfDriverStoreLocation(publishedInf, 0, null, buffer, buffer.Capacity, out _))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        setStage("DriverStorePath");
+        string storeInf = Path.GetFullPath(buffer.ToString());
+        context["StoreInf"] = storeInf;
+        string storeRoot = Path.Combine(windows, "System32", "DriverStore", "FileRepository");
+        RequireUnder(storeInf, storeRoot);
+        string root = Path.GetDirectoryName(storeInf)!;
+        // Lock the published and store INFs while selecting their catalog and declarations.
+        setStage("PublishedInf");
+        using var published = OpenProtectedFile(publishedInf);
+        setStage("StoreInf");
+        using var inf = OpenProtectedFile(storeInf);
+        setStage("InfComparison");
+        string publishedIdentity = Hash(published);
+        if (!string.Equals(publishedIdentity, Hash(inf), StringComparison.Ordinal))
+        {
+            throw Reject("PublishedInfMismatch", "The installed INF differs from its driver-store package.");
+        }
+        inf.Position = 0;
+        using var reader = new StreamReader(inf, Encoding.UTF8, true, 4096, leaveOpen: true);
+        setStage("InfContract");
+        string catalogName = ValidateInfContract(reader.ReadToEnd(), service, hardwareId);
+        context["CatalogName"] = catalogName;
+        string catalogPath = Path.Combine(root, catalogName);
+        string storeImage = Path.Combine(root, service + ".sys");
+        setStage("CatalogFile");
+        using var catalog = OpenProtectedFile(catalogPath);
+        setStage("StoredDriver");
+        using var stored = OpenProtectedFile(storeImage);
+        setStage("ActiveDriver");
+        using var active = OpenProtectedFile(image);
+        setStage("DriverComparison");
+        string activeIdentity = Hash(active);
+        if (!string.Equals(activeIdentity, Hash(stored), StringComparison.Ordinal))
+        {
+            throw Reject("ActiveDriverMismatch", "The active driver image differs from its installed package.");
+        }
+        string identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n',
+            instanceId.ToUpperInvariant(), service.ToUpperInvariant(), hardwareId.ToUpperInvariant(),
+            image.ToUpperInvariant(), storeInf.ToUpperInvariant(), publishedIdentity, activeIdentity, Hash(catalog)))));
+        lock (CacheLock)
+        {
+            long now = Environment.TickCount64;
+            if (!TrustCache.TryGetValue(identity, out long verifiedAt) || now - verifiedAt >= 60_000)
+            {
+                setStage("CatalogTrust");
+                _ = WindowsDriverApiTrust.VerifyCatalogMembers(catalogPath, [storeInf, storeImage, image],
+                    [WindowsDriverApiTrust.MicrosoftHardwareCompatibilityPublisher]);
+                if (TrustCache.Count >= 16)
+                {
+                    TrustCache.Clear();
+                }
+                TrustCache[identity] = now;
+            }
+        }
+        return new(true, true, identity);
     }
 
     internal static string ResolveServiceImage(string? value, string windows, string service)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new InvalidDataException("The driver service image is unavailable.");
+            throw Reject("ServiceImageMissing", "The driver service image is unavailable.");
         }
         string path = value.Trim();
         if (path.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
@@ -134,7 +187,7 @@ public static class WindowsRazerDriverApiDiscovery
         RequireUnder(path, Path.Combine(windows, "System32", "drivers"));
         if (!string.Equals(Path.GetFileName(path), service + ".sys", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException("The service image is not the selected Razer API driver.");
+            throw Reject("ServiceImageNameMismatch", "The service image is not the selected Razer API driver.");
         }
         return path;
     }
@@ -145,7 +198,7 @@ public static class WindowsRazerDriverApiDiscovery
     {
         if (text.Length > 1_048_576)
         {
-            throw new InvalidDataException("The driver INF exceeds the inspection bound.");
+            throw Reject("InfTooLarge", "The driver INF exceeds the inspection bound.");
         }
         var sections = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         List<string>? section = null;
@@ -157,7 +210,7 @@ public static class WindowsRazerDriverApiDiscovery
                 string name = line[1..^1];
                 if (!sections.TryAdd(name, section = []))
                 {
-                    throw new InvalidDataException("Duplicate driver INF section.");
+                    throw Reject("DuplicateInfSection", "Duplicate driver INF section.");
                 }
             }
             else if (line.Length > 0)
@@ -190,7 +243,7 @@ public static class WindowsRazerDriverApiDiscovery
         if (!version.Any(entry => Key(entry, "Provider") && Values(entry) is [string provider]
             && provider is "Razer Inc" or "Razer Inc." or "Razer"))
         {
-            throw new InvalidDataException("The signed INF does not identify the Razer provider.");
+            throw Reject("ProviderMismatch", "The signed INF does not identify the Razer provider.");
         }
         var models = new List<string>();
         foreach (string line in sections.GetValueOrDefault("Manufacturer") ?? [])
@@ -233,21 +286,22 @@ public static class WindowsRazerDriverApiDiscovery
                 {
                     continue;
                 }
-                string? catalog = version.Where(entry => Key(entry, "CatalogFile.NTamd64") || Key(entry, "CatalogFile"))
-                    .SelectMany(Values).Distinct(StringComparer.OrdinalIgnoreCase).SingleOrDefault();
-                if (catalog is null)
+                string[] catalogs = version.Where(entry => Key(entry, "CatalogFile.NTamd64") || Key(entry, "CatalogFile"))
+                    .SelectMany(Values).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                if (catalogs.Length != 1)
                 {
-                    throw new InvalidDataException("The installed package catalog is ambiguous or missing.");
+                    throw Reject("CatalogMissingOrAmbiguous", "The installed package catalog is ambiguous or missing.");
                 }
+                string catalog = catalogs[0];
                 RequireFileName(catalog);
                 if (!catalog.EndsWith(".cat", StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidDataException("The package catalog has an invalid extension.");
+                    throw Reject("CatalogExtensionMismatch", "The package catalog has an invalid extension.");
                 }
                 return catalog;
             }
         }
-        throw new InvalidDataException("The installed INF does not bind the exact hardware and Razer API service.");
+        throw Reject("HardwareServiceMismatch", "The installed INF does not bind the exact hardware and Razer API service.");
     }
 
     private static FileStream OpenProtectedFile(string path)
@@ -256,14 +310,14 @@ public static class WindowsRazerDriverApiDiscovery
         {
             if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
             {
-                throw new InvalidDataException("Driver package paths may not contain reparse points.");
+                throw Reject("ReparsePoint", "Driver package paths may not contain reparse points.");
             }
         }
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (stream.Length > 64 * 1024 * 1024)
         {
             stream.Dispose();
-            throw new InvalidDataException("The driver package file exceeds the inspection bound.");
+            throw Reject("PackageFileTooLarge", "The driver package file exceeds the inspection bound.");
         }
         return stream;
     }
@@ -278,7 +332,7 @@ public static class WindowsRazerDriverApiDiscovery
     {
         if (string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) || name.Contains(':'))
         {
-            throw new InvalidDataException("Invalid installed package filename.");
+            throw Reject("InvalidPackageFileName", "Invalid installed package filename.");
         }
     }
 
@@ -286,9 +340,33 @@ public static class WindowsRazerDriverApiDiscovery
     {
         if (!Path.GetFullPath(path).StartsWith(Path.GetFullPath(root).TrimEnd('\\') + '\\', StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException("The driver path is outside its protected Windows directory.");
+            throw Reject("UnprotectedPath", "The driver path is outside its protected Windows directory.");
         }
     }
+
+    private static InvalidDataException Reject(string reason, string message)
+    {
+        var exception = new InvalidDataException(message);
+        // Keep the exception contract while marking only reasons owned by this validator.
+        exception.Data[ValidationReasonKey] = reason;
+        return exception;
+    }
+
+    private static string Operation(string service) => service is { Length: > 0 and <= 96 }
+        && service.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '.' or '-')
+            ? service : "UnknownService";
+
+    private static RazerDriverApiPackageEvidence Unavailable(
+        string service, string stage, string reason, bool installed = true) =>
+        new(installed, false, null, reason switch
+        {
+            "ServiceMissing" => "The selected Razer API service is not installed.",
+            "ServiceTypeMismatch" => "The Razer API service is not a kernel driver.",
+            "ServiceImageNotFound" => "The installed Razer API service image is missing.",
+            "EndpointMissing" => "The exact Razer API endpoint binding is absent or ambiguous.",
+            _ => "The Razer API package could not be verified.",
+        })
+        { FailureDetail = new("DriverPackage", Operation(service), stage, reason) };
 
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

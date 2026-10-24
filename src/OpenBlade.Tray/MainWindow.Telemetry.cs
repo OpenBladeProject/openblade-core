@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.Storage.Pickers;
+using OpenBlade.Contracts;
 using Button = Microsoft.UI.Xaml.Controls.Button;
 
 namespace OpenBlade.Tray;
@@ -213,7 +214,11 @@ public sealed partial class MainWindow
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade {0} failed: {1}", label, exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow.Telemetry",
+                "RunTelemetryAction",
+                exception,
+                label);
             telemetryActionError = string.IsNullOrWhiteSpace(ViewModel.TelemetryErrorMessage)
                 ? LocalizedResources.Format("TelemetryUI_ActionFailed", "Telemetry operation failed: {0}", exception.Message)
                 : ViewModel.TelemetryErrorMessage;

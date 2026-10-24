@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Threading.Channels;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
@@ -146,7 +145,10 @@ public sealed class SnapTapProcessCoordinator(
                         }
                         catch (Exception exception)
                         {
-                            Trace.TraceWarning("Snap Tap helper startup failed: {0}", exception.GetType().Name);
+                            DiagnosticTrace.TraceException(
+                                "OpenBlade.SessionAgent.SnapTapProcessCoordinator",
+                                "StartChild",
+                                exception);
                             latched = true;
                             coordinatorFailure = SnapTapDiagnosticFailure.FromException(
                                 SnapTapDiagnosticFailure.Coordinator, "StartChild",
@@ -190,7 +192,10 @@ public sealed class SnapTapProcessCoordinator(
         catch (Exception exception)
         {
             supervisionFailed = true;
-            Trace.TraceWarning("Snap Tap supervision failed: {0}", exception.GetType().Name);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SnapTapProcessCoordinator",
+                "RunSupervision",
+                exception);
             coordinatorFailure ??= SnapTapDiagnosticFailure.FromException(
                 SnapTapDiagnosticFailure.Coordinator, "Run", "Supervision",
                 "SupervisionFailed", exception);
@@ -307,7 +312,10 @@ public sealed class SnapTapProcessCoordinator(
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning("Snap Tap terminal status read failed: {0}", exception.GetType().Name);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SnapTapProcessCoordinator",
+                "ReadTerminalStatus",
+                exception);
             return null;
         }
     }
@@ -334,26 +342,16 @@ public sealed class SnapTapProcessCoordinator(
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning("Snap Tap status publication failed: {0}", exception.GetType().Name);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SnapTapProcessCoordinator",
+                "PublishStatus",
+                exception);
             return false;
         }
     }
 
     private static void TraceFailure(DiagnosticFailure failure)
-    {
-        int depth = 0;
-        for (DiagnosticFailure? current = failure; current is not null && depth < 4; current = current.Cause)
-        {
-            Trace.TraceWarning(
-                "Snap Tap diagnostic failure: depth={0}; component={1}; operation={2}; stage={3}; reason={4}; mayHaveSubmitted={5}; exception={6}; hresult={7}; native={8}; processExitCode={9}.",
-                depth, current.Component, current.Operation, current.Stage, current.Reason,
-                current.MayHaveSubmitted, current.ExceptionType ?? "None",
-                current.HResult?.ToString(CultureInfo.InvariantCulture) ?? "None",
-                current.NativeErrorCode?.ToString(CultureInfo.InvariantCulture) ?? "None",
-                current.ProcessExitCode?.ToString(CultureInfo.InvariantCulture) ?? "None");
-            depth++;
-        }
-    }
+        => Trace.TraceWarning("Snap Tap diagnostic failure: {0}", failure);
 
     private static async Task<bool> StopAsync(ISnapTapChildProcess child, Task? exited)
     {
@@ -407,12 +405,24 @@ public sealed class SnapTapProcessCoordinator(
                 DisposeChild(child);
             }
         }
-        catch (Exception exception) { Trace.TraceWarning("Snap Tap deferred cleanup failed: {0}", exception.GetType().Name); }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SnapTapProcessCoordinator",
+                "DisposeAfterExit",
+                exception);
+        }
     }
 
     private static void DisposeChild(ISnapTapChildProcess child)
     {
         try { child.Dispose(); }
-        catch (Exception exception) { Trace.TraceWarning("Snap Tap process handle cleanup failed: {0}", exception.GetType().Name); }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SnapTapProcessCoordinator",
+                "DisposeChild",
+                exception);
+        }
     }
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -50,6 +51,7 @@ public sealed class RazerKeyboardDriverInstaller
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or Win32Exception or InvalidOperationException)
         {
+            DiagnosticTrace.TraceException(nameof(RazerKeyboardDriverInstaller), "Inspect", exception);
             return new(false, false, RazerDriverInstallOutcome.Unavailable);
         }
     }
@@ -148,6 +150,11 @@ public sealed class RazerKeyboardDriverInstaller
             or InvalidOperationException or Win32Exception or System.Security.Cryptography.CryptographicException
             or System.Text.Json.JsonException or TimeoutException or HttpRequestException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(RazerKeyboardDriverInstaller),
+                "InstallAsync",
+                exception,
+                possiblySubmitted ? "A driver installation may have been submitted." : "No driver installation was submitted.");
             return possiblySubmitted ? RazerDriverInstallOutcome.RecoveryRequired : RazerDriverInstallOutcome.Failed;
         }
     }

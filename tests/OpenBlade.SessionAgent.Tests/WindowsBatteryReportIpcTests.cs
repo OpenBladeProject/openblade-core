@@ -143,7 +143,8 @@ public sealed class WindowsBatteryReportIpcTests
         var unavailable = new SessionBatteryRequestDispatcher(_ => Task.FromResult<WindowsBatteryReport?>(null));
         var failures = new List<DiagnosticFailure>();
         var failed = new SessionBatteryRequestDispatcher(
-            _ => throw new IOException("private detail"),
+            _ => throw new IOException(
+                @"provider failed at C:\Users\Alice\battery.html"),
             failures.Add);
 
         SessionBatteryResponse successResponse = await success.DispatchAsync(
@@ -162,7 +163,7 @@ public sealed class WindowsBatteryReportIpcTests
         Assert.Equal(SessionBatteryOperationStatus.Unavailable, unavailableResponse.Status);
         Assert.Null(unavailableResponse.Report);
         Assert.Equal(SessionBatteryOperationStatus.Failed, failedResponse.Status);
-        Assert.DoesNotContain("private detail", failedResponse.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("Alice", failedResponse.Error, StringComparison.Ordinal);
         DiagnosticFailure failure = Assert.Single(failures);
         Assert.True(failure.IsValid());
         Assert.Equal("session-agent", failure.Component);
@@ -170,7 +171,8 @@ public sealed class WindowsBatteryReportIpcTests
         Assert.Equal("dispatcher", failure.Stage);
         Assert.Equal("exception", failure.Reason);
         Assert.Equal(nameof(IOException), failure.ExceptionType);
-        Assert.DoesNotContain("private detail", failure.ToString(), StringComparison.Ordinal);
+        Assert.Contains("provider failed", failure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Alice", failure.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

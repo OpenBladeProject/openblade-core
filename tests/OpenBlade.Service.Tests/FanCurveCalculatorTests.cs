@@ -6,6 +6,25 @@ namespace OpenBlade.Service.Tests;
 public sealed class FanCurveCalculatorTests
 {
     [Fact]
+    public void NativeStatusObservation_RecordsOnlyChangesAndOneRecovery()
+    {
+        List<string> warnings = [];
+        var observer = new NativeStatusChangeObserver("Sensor", "Read", warnings.Add);
+
+        observer.ObserveFailure("Collect", 0x800007D5);
+        observer.ObserveFailure("Collect", 0x800007D5);
+        observer.ObserveFailure("Format", 5);
+        observer.ObserveRecovery();
+        observer.ObserveRecovery();
+
+        Assert.Equal(3, warnings.Count);
+        Assert.Contains("component=Sensor operation=Read state=failed reason=Collect", warnings[0], StringComparison.Ordinal);
+        Assert.Contains("status=2147485653 statusHex=0x800007D5", warnings[0], StringComparison.Ordinal);
+        Assert.Contains("reason=Format status=5 statusHex=0x00000005", warnings[1], StringComparison.Ordinal);
+        Assert.Contains("state=recovered status=0 statusHex=0x00000000", warnings[2], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SeparateCurvesUseTheirOwnSensors()
     {
         ManualFanCurve curve = new(

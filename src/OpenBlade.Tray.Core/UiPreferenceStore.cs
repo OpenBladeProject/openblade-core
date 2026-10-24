@@ -4,6 +4,7 @@ using System.IO;
 using System.Security;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -273,12 +274,14 @@ public sealed class UiPreferenceStore
                 or UnauthorizedAccessException
                 or SecurityException)
         {
-            if (exception is InvalidDataException)
-            {
-                ReportDiagnostic(
-                    $"Preference input exceeds the {MaximumFileSizeBytes / 1024} KiB limit; "
-                    + "following the system language. The file has not been changed.");
-            }
+            ReportDiagnostic(DiagnosticTrace.FormatException(
+                "OpenBlade.Tray.UiPreferenceStore",
+                "ReadLanguage",
+                exception,
+                exception is InvalidDataException
+                    ? $"Preference input exceeds the {MaximumFileSizeBytes / 1024} KiB limit; "
+                        + "following the system language. The file has not been changed."
+                    : "Preference language could not be read; following the system language."));
         }
 
         return UiLanguagePreference.FollowSystem;
@@ -318,12 +321,14 @@ public sealed class UiPreferenceStore
         catch (Exception exception) when (
             exception is JsonException or InvalidDataException)
         {
-            if (exception is InvalidDataException)
-            {
-                ReportDiagnostic(
-                    $"Preference input exceeds the {MaximumFileSizeBytes / 1024} KiB limit; "
-                    + "using default preferences. The file has not been changed.");
-            }
+            ReportDiagnostic(DiagnosticTrace.FormatException(
+                "OpenBlade.Tray.UiPreferenceStore",
+                "LoadPreferences",
+                exception,
+                exception is InvalidDataException
+                    ? $"Preference input exceeds the {MaximumFileSizeBytes / 1024} KiB limit; "
+                        + "using default preferences. The file has not been changed."
+                    : "Preference data is invalid; using default preferences. The file has not been changed."));
 
             return UiPreferences.Default;
         }
@@ -493,9 +498,13 @@ public sealed class UiPreferenceStore
         {
             diagnosticSink(message);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             // Diagnostic failures must not change preference recovery or save outcomes.
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.UiPreferenceStore",
+                "ReportDiagnostic",
+                exception);
         }
     }
 
@@ -724,6 +733,10 @@ public sealed class UiPreferenceStore
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or SecurityException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.UiPreferenceStore",
+                "DeleteTemporaryFile",
+                exception);
         }
     }
 }

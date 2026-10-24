@@ -339,6 +339,8 @@ internal static class ProductionLightingEvidenceSource
             or IOException
             or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingEvidenceSource),
+                nameof(HasCurrentExactBuildValidationArtifact), exception);
             // A missing, damaged, stale, or unapproved validation artifact can
             // never turn into permission to write. Keep the factory read-only.
             return false;
@@ -372,6 +374,8 @@ internal static class ProductionLightingEvidenceSource
             or IOException
             or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingEvidenceSource),
+                nameof(HasCurrentExactBuildValidationArtifact), exception);
             return false;
         }
     }

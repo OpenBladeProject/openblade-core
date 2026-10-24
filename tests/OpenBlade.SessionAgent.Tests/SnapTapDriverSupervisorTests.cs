@@ -12,7 +12,9 @@ public sealed class SnapTapDriverSupervisorTests
         var original = new OpenBlade.Contracts.DiagnosticFailure(
             "SnapTapWorker", "HookSession", "HookMutation", "WriteFailed",
             MayHaveSubmitted: true, NativeErrorCode: 31);
-        var cleanup = new IOException("private cleanup path", new System.ComponentModel.Win32Exception(5));
+        var cleanup = new IOException(
+            @"cleanup failed at C:\Users\Alice\private.txt",
+            new System.ComponentModel.Win32Exception(5));
         var wrapped = SnapTapDiagnosticFailure.FromException(
             "SnapTapSupervisor", "Cleanup", "Reconciliation", "CleanupFailed", cleanup, cause: original);
         Assert.True(wrapped.IsValid());
@@ -21,7 +23,52 @@ public sealed class SnapTapDriverSupervisorTests
         Assert.Equal(original, wrapped.Cause);
         Assert.True(SnapTapDiagnosticFailure.Create(
             "SnapTapCoordinator", "StopChild", "Cleanup", "StopFailed", cause: original).MayHaveSubmitted);
-        Assert.DoesNotContain("private", wrapped.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cleanup failed", wrapped.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Alice", wrapped.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CleanupWrappingRetainsCurrentAggregateBranchesBesideOriginalCause()
+    {
+        var original = new DiagnosticFailure(
+            "SnapTapWorker", "HookSession", "HookMutation", "WriteFailed",
+            MayHaveSubmitted: true);
+        var cleanup = new AggregateException(
+            "cleanup failed",
+            new IOException("close failed"),
+            new System.ComponentModel.Win32Exception(5, "release failed"));
+
+        DiagnosticFailure wrapped = SnapTapDiagnosticFailure.FromException(
+            "SnapTapSupervisor",
+            "Cleanup",
+            "Reconciliation",
+            "CleanupFailed",
+            cleanup,
+            cause: original);
+
+        Assert.Equal(original, wrapped.Cause);
+        Assert.Equal(2, wrapped.Related?.Count);
+        Assert.Equal(nameof(IOException), wrapped.Related?[0].ExceptionType);
+        Assert.Equal(nameof(System.ComponentModel.Win32Exception),
+            wrapped.Related?[1].ExceptionType);
+        Assert.True(wrapped.IsValid());
+    }
+
+    [Fact]
+    public void CreateMarksTruncationWhenPriorFailureExceedsSharedDepth()
+    {
+        DiagnosticFailure cause = new("SnapTapWorker", "Run", "Failure", "Leaf");
+        for (int index = 0; index < DiagnosticFailure.MaximumDepth + 2; index++)
+        {
+            cause = new DiagnosticFailure(
+                "SnapTapWorker", "Run", "Failure", "Wrapped", Cause: cause);
+        }
+
+        DiagnosticFailure wrapped = SnapTapDiagnosticFailure.Create(
+            "SnapTapCoordinator", "StopChild", "Cleanup", "StopFailed", cause: cause);
+
+        Assert.True(wrapped.DetailsTruncated);
+        Assert.True(wrapped.IsValid());
     }
 
     [Fact]

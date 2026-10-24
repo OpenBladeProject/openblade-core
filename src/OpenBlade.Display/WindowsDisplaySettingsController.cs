@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Display;
 
@@ -52,6 +53,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDisplaySettingsController), nameof(QueryAsync), exception);
             return Unavailable(exception.Message);
         }
         finally
@@ -129,6 +131,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(WindowsDisplaySettingsController), nameof(PrepareBrightness), exception);
                 return DisplayOperationResult.Failure(
                     $"The brightness change failed: {exception.Message}",
                     TryQuerySnapshot(CancellationToken.None), submitted);
@@ -194,6 +197,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDisplaySettingsController), nameof(ExecuteRefreshMutation), exception,
+                "Refresh-rate submission failed.");
             failure = $"The refresh-rate change failed: {exception.Message}";
         }
         DisplaySettingsSnapshot? after = null;
@@ -203,6 +208,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDisplaySettingsController), nameof(ExecuteRefreshMutation), exception,
+                "Refresh-rate confirmation failed.");
             failure ??= $"The refresh-rate change could not be confirmed: {exception.Message}";
         }
         // Submission may have happened even when Windows returns an error.
@@ -223,6 +230,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDisplaySettingsController), nameof(PrepareRefreshAfterSnapshot), exception);
             // Validation is read-only. Preserve the typed failure and known
             // snapshot without submitting a restoration for an unapplied change.
             return new(() => DisplayOperationResult.Failure(
@@ -239,6 +247,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDisplaySettingsController), nameof(PrepareHdr), exception);
             // Preserve the controller's typed HDR failure/reconciliation contract
             // when native preparation fails before a mutation is submitted.
             return new(() => ResolveHdrMutationResult(
@@ -285,6 +294,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(WindowsDisplaySettingsController), nameof(PrepareHdrCore), exception);
                 return ResolveHdrMutationResult(enabled, exception.Message, TryQuerySnapshot(CancellationToken.None));
             }
         });
@@ -350,6 +360,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(WindowsDisplaySettingsController), nameof(PrepareColorProfile), exception);
                 return DisplayOperationResult.Failure(
                     $"The color-profile change failed: {exception.Message}",
                     TryQuerySnapshot(CancellationToken.None));
@@ -986,8 +997,13 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         {
             return QueryCore(cancellationToken);
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsDisplaySettingsController),
+                nameof(TryQuerySnapshot),
+                exception,
+                "recovery=post-mutation-readback");
             return null;
         }
     }

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -104,10 +104,10 @@ public sealed class TrayExitLifecycle
         }
         catch (Exception reportingException)
         {
-            Trace.TraceError(
-                "OpenBlade could not report a tray shutdown failure. Cleanup: {0}; reporting: {1}",
-                exception,
-                reportingException);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayExitLifecycle",
+                "ReportCleanupFailure",
+                new AggregateException(exception, reportingException));
         }
     }
 }

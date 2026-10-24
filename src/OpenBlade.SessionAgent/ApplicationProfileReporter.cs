@@ -198,7 +198,10 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning("Application profile report failed: {0}", exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ApplicationProfileReporter",
+                "ReportApplicationContext",
+                exception);
         }
     }
 

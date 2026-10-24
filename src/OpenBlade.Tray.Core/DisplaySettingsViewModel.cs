@@ -749,8 +749,11 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             DisplayOperation.ProfileApply => "profile apply",
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind)),
         };
-        string message = FormattableString.Invariant(
-            $"OpenBlade display {operation} failed unexpectedly ({exception.GetType().Name}, HRESULT 0x{exception.HResult:X8}).");
+        string message = DiagnosticTrace.FormatException(
+            "OpenBlade.Tray.DisplaySettingsViewModel",
+            "ApplyDisplayOperation",
+            exception,
+            operation);
         try
         {
             diagnosticSink(message);
@@ -765,9 +768,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 refreshFailureDiagnosticSignatures.Add(signature);
             }
         }
-        catch (Exception)
+        catch (Exception diagnosticException)
         {
             // Diagnostics must not replace the user-visible operation result.
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.DisplaySettingsViewModel",
+                "ReportDiagnostic",
+                diagnosticException);
         }
     }
 

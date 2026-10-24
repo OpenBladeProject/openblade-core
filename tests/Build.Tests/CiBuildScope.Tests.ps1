@@ -87,8 +87,15 @@ Assert-Contains $contracts.QualityProjects `
 Assert-Contains $contracts.QualityProjects `
     'src/OpenBlade.Tray/OpenBlade.Tray.csproj' `
     'Contracts changes must include Tray consumers.'
+foreach ($consumer in @(
+        'src/OpenBlade.Display/OpenBlade.Display.csproj',
+        'src/OpenBlade.Platform/OpenBlade.Platform.csproj',
+        'src/OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj')) {
+    Assert-Contains $contracts.AffectedProjects $consumer `
+        'Shared diagnostic recorder consumers must remain in the Contracts reverse closure.'
+}
 Assert-NotContains $contracts.AffectedProjects `
-    'src/OpenBlade.Display/OpenBlade.Display.csproj' `
+    'src/OpenBlade.Deployment/OpenBlade.Deployment.csproj' `
     'Unrelated production projects must remain outside the reverse closure.'
 Assert-Equal $true $contracts.RunInstaller `
     'Contracts changes affect Setup and require complete installer validation.'

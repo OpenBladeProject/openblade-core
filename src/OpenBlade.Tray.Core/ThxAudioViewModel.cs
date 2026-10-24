@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -265,6 +266,10 @@ public sealed partial class ThxAudioViewModel(
             or System.ComponentModel.Win32Exception
             or System.Security.Cryptography.CryptographicException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.ThxAudioViewModel",
+                "DownloadComponent",
+                exception);
             statusKey = "THX component download failed.";
             failureDetail = exception.Message;
         }
@@ -355,6 +360,10 @@ public sealed partial class ThxAudioViewModel(
             or InvalidOperationException or UnauthorizedAccessException or System.ComponentModel.Win32Exception
             or System.Security.Cryptography.CryptographicException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.ThxAudioViewModel",
+                "InstallStack",
+                exception);
             stackInstallationPaused = requested;
             statusKey = requested
                 ? "THX setup could not be confirmed. Do not run setup again. Export diagnostics for help."
@@ -650,6 +659,10 @@ public sealed partial class ThxAudioViewModel(
         catch (Exception exception) when (exception is IOException or InvalidOperationException
             or OperationCanceledException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.ThxAudioViewModel",
+                isMutation ? "Mutate" : "Read",
+                exception);
             state = null;
             componentDownloadNeeded = stackInstallationNeeded = false;
             isReadSettingsVisible = true;

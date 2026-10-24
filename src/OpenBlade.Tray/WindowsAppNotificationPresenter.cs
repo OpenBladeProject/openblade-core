@@ -1,5 +1,6 @@
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -168,8 +169,12 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
         {
             errorHandler?.Invoke(exception);
         }
-        catch
+        catch (Exception reportingException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsAppNotificationPresenter),
+                "ReportFailure",
+                reportingException);
         }
     }
 }

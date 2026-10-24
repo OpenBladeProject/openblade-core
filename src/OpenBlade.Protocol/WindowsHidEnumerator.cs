@@ -105,8 +105,10 @@ internal static class WindowsHidEnumerator
             {
                 candidate = native.TryOpen(path, DiagnosticOpenParameters).Candidate;
             }
-            catch (Exception)
+            catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(WindowsHidEnumerator), nameof(FindCollections), exception,
+                    "Diagnostic HID interface open failed.");
                 continue;
             }
 
@@ -129,8 +131,10 @@ internal static class WindowsHidEnumerator
                         identity.FeatureReportByteLength,
                         identity.VersionNumber));
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
+                    DiagnosticTrace.TraceException(nameof(WindowsHidEnumerator), nameof(FindCollections), exception,
+                        "Diagnostic HID interface metadata read failed.");
                     // Diagnostic discovery skips interfaces whose metadata cannot be read.
                 }
             }

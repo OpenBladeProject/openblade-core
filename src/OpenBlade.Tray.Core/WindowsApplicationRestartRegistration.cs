@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -55,10 +56,10 @@ public sealed class WindowsApplicationRestartRegistration
             }
             catch (Exception exception)
             {
-                Trace.TraceWarning(
-                    "OpenBlade Windows Application Restart registration failed: {0} (0x{1:X8}).",
-                    exception.GetType().Name,
-                    exception.HResult);
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.WindowsApplicationRestartRegistration",
+                    "Register",
+                    exception);
                 return false;
             }
         }
@@ -91,10 +92,10 @@ public sealed class WindowsApplicationRestartRegistration
             }
             catch (Exception exception)
             {
-                Trace.TraceWarning(
-                    "OpenBlade Windows Application Restart unregistration failed: {0} (0x{1:X8}).",
-                    exception.GetType().Name,
-                    exception.HResult);
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.WindowsApplicationRestartRegistration",
+                    "Unregister",
+                    exception);
                 return false;
             }
         }

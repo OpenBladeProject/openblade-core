@@ -1,3 +1,4 @@
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.SessionAgent;
@@ -75,6 +76,10 @@ internal sealed class LegacyThxAudioCommand(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.LegacyThxAudioCommand",
+                "Execute",
+                exception);
             return Result(mayHaveSubmitted ? ThxAudioOperationStatus.Indeterminate : ThxAudioOperationStatus.Failed,
                 exception is OutputMismatchException
                     ? "The selected THX output does not match the exact active Realtek output. Select the output currently used by Windows."

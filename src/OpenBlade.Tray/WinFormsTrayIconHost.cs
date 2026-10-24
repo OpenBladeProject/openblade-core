@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -63,9 +64,10 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         trayIcon.BalloonTipClicked += OnBalloonTipClicked;
         notificationPresenter = WindowsAppNotificationPresenter.CreateBestEffort(
             notificationInvoked,
-            exception => System.Diagnostics.Trace.TraceWarning(
-                "OpenBlade app notification presenter failed: {0}",
-                exception.Message));
+            exception => DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.WinFormsTrayIconHost",
+                "PresentNotification",
+                exception));
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         themeSource.TrayIconThemeChanged += OnTrayIconThemeChanged;
     }

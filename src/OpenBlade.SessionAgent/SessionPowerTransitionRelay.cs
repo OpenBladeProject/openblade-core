@@ -227,8 +227,10 @@ internal sealed class SessionPowerTransitionRelay : IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning("OpenBlade session power relay: sequence {0}, failure {1} (0x{2:X8}).",
-                transition.Request.Sequence, exception.GetType().Name, exception.HResult);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionPowerTransitionRelay",
+                "ReportTransition",
+                exception);
         }
     }
     private TimeSpan Remaining(Transition transition)
@@ -261,8 +263,10 @@ internal sealed class SessionPowerTransitionRelay : IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning("OpenBlade session power relay cancellation failed: {0}.",
-                exception.GetType().Name);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionPowerTransitionRelay",
+                "ObserveCancellation",
+                exception);
         }
     }
 

@@ -99,6 +99,8 @@ public sealed class ProfileStore
                 catch (Exception exception)
                     when (BatteryConfigurationStore.IsRecoverable(exception))
                 {
+                    DiagnosticTrace.TraceException(nameof(ProfileStore), nameof(SaveAsync), exception,
+                        "Existing profile document was invalid.");
                     throw new ConfigurationQuarantinedException(
                         "The existing profile is preserved in quarantine.",
                         ContainsFutureSchema(existing)
@@ -139,6 +141,7 @@ public sealed class ProfileStore
             }
             catch (Exception exception) when (BatteryConfigurationStore.IsRecoverable(exception))
             {
+                DiagnosticTrace.TraceException(nameof(ProfileStore), nameof(LoadAsync), exception);
                 preservationRequired = true;
                 return new ProfileLoadResult(
                     ProfileDefaults.CreateSafeDefaults(),

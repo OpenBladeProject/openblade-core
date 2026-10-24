@@ -34,6 +34,10 @@ internal sealed class SnapTapStatusPublisher : IDisposable
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.SnapTapStatusPublisher",
+                    "WriteStatus",
+                    exception);
                 Volatile.Write(ref failed, 1);
             }
         });
@@ -71,8 +75,12 @@ internal sealed class SnapTapStatusPublisher : IDisposable
                 Volatile.Write(ref failed, 1);
             }
         }
-        catch (AggregateException)
+        catch (AggregateException exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SnapTapStatusPublisher",
+                "StopWriter",
+                exception);
             Volatile.Write(ref failed, 1);
         }
     }

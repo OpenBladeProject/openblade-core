@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Setup;
 
@@ -313,6 +314,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(SetupPayloadTransaction), nameof(CommitAsync), exception);
                 CommitWarning = CreateBoundedCommitWarning(backupDirectory);
                 TraceWarningNoThrow(
                     "{0} Cleanup detail: {1}",
@@ -379,6 +381,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(SetupPayloadTransaction), nameof(DisposeAsync), exception);
                 TraceWarningNoThrow(
                     "OpenBlade setup retained guarded staging directory '{0}' after best-effort disposal cleanup failed: {1}",
                     stagingDirectory,

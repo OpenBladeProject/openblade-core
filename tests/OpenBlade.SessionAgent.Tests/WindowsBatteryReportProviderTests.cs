@@ -137,11 +137,12 @@ public sealed class WindowsBatteryReportProviderTests
     }
 
     [Fact]
-    public async Task ReadAsync_ReportsTimeoutTypeWithoutExceptionMessage()
+    public async Task ReadAsync_ReportsTimeoutWithRedactedMessage()
     {
         var failures = new List<DiagnosticFailure>();
         var provider = new WindowsBatteryReportProvider(
-            new CallbackRunner((_, _) => throw new TimeoutException("private timeout detail")),
+            new CallbackRunner((_, _) => throw new TimeoutException(
+                @"timeout reading C:\Users\Alice\battery.html")),
             CreateTemporaryDirectory,
             failures.Add);
 
@@ -151,15 +152,18 @@ public sealed class WindowsBatteryReportProviderTests
         DiagnosticFailure failure = Assert.Single(failures);
         AssertFailure(failure, "process", "exception");
         Assert.Equal(nameof(TimeoutException), failure.ExceptionType);
-        Assert.DoesNotContain("private timeout detail", failure.ToString(), StringComparison.Ordinal);
+        Assert.Contains("timeout reading", failure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Alice", failure.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task ReadAsync_ReportsNativeErrorWithoutExceptionMessage()
+    public async Task ReadAsync_ReportsNativeErrorWithRedactedMessage()
     {
         var failures = new List<DiagnosticFailure>();
         var provider = new WindowsBatteryReportProvider(
-            new CallbackRunner((_, _) => throw new Win32Exception(5, "private native detail")),
+            new CallbackRunner((_, _) => throw new Win32Exception(
+                5,
+                @"native failure at C:\Users\Alice\battery.html")),
             CreateTemporaryDirectory,
             failures.Add);
 
@@ -169,7 +173,8 @@ public sealed class WindowsBatteryReportProviderTests
         AssertFailure(failure, "process", "exception");
         Assert.Equal(nameof(Win32Exception), failure.ExceptionType);
         Assert.Equal(5, failure.NativeErrorCode);
-        Assert.DoesNotContain("private native detail", failure.ToString(), StringComparison.Ordinal);
+        Assert.Contains("native failure", failure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Alice", failure.ToString(), StringComparison.Ordinal);
         SessionBatteryResponse response = await new SessionBatteryRequestDispatcher(provider).DispatchAsync(
             new(SessionBatteryIpc.ProtocolVersion, Guid.NewGuid()), CancellationToken.None);
         Assert.Equal(SessionBatteryOperationStatus.Failed, response.Status);

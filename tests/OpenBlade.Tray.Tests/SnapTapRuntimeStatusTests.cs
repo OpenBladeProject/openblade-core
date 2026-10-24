@@ -45,7 +45,8 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
     public void TerminalFailureSurvivesExitAndDiagnosticExport()
     {
         DiagnosticFailure failure = DiagnosticFailure.FromException("SnapTap", "Driver", "HookSetup",
-            "HookWriteFailed", new Win32Exception(5, "private native path"), mayHaveSubmitted: true);
+            "HookWriteFailed", new Win32Exception(5,
+                @"native failure at C:\Users\Alice\hook.bin"), mayHaveSubmitted: true);
         var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Failed, DateTimeOffset.UtcNow,
             DriverModel: "Blade 16 - RZ09-0528", ExperimentalDriver: true, Failure: failure);
         SnapTapStatusStore.Write(status, StatusPath);
@@ -55,7 +56,35 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
         Assert.Null(report.CaptureFailure);
         Assert.Equal(failure, report.Status?.Failure);
         Assert.Equal("RZ09-0528", report.Status?.DriverModel);
-        Assert.DoesNotContain("private", JsonSerializer.Serialize(report), StringComparison.OrdinalIgnoreCase);
+        string serialized = JsonSerializer.Serialize(report);
+        Assert.Contains("native failure", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Alice", serialized, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DetailedAggregateFailureSurvivesExpandedStatusEnvelope()
+    {
+        var aggregate = new AggregateException(
+            new IOException(new string('x', 8192)),
+            new Win32Exception(5, "secondary failure"));
+        DiagnosticFailure failure = DiagnosticFailure.FromException(
+            "SnapTap",
+            "Driver",
+            "Run",
+            "WorkerFailed",
+            aggregate);
+        var status = new SnapTapRuntimeStatus(
+            SnapTapRuntimeState.Failed,
+            DateTimeOffset.UtcNow,
+            Failure: failure);
+
+        SnapTapStatusStore.Write(status, StatusPath);
+
+        SnapTapRuntimeStatus restored = Assert.IsType<SnapTapRuntimeStatus>(
+            SnapTapStatusStore.Read(StatusPath));
+        Assert.Equal(failure.ExceptionType, restored.Failure?.ExceptionType);
+        Assert.Equal(8192, restored.Failure?.Cause?.Message?.Length);
+        Assert.Single(restored.Failure?.Related ?? []);
     }
 
     [Fact]
@@ -63,11 +92,11 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
     {
         Assert.Equal("StatusNotObserved", SnapTapStatusStore.CaptureDiagnostics(StatusPath).CaptureFailure?.Reason);
         Directory.CreateDirectory(directory);
-        File.WriteAllText(StatusPath, "{private-invalid-json");
+        File.WriteAllText(StatusPath, "{invalid-json");
         SnapTapDiagnosticReport malformed = SnapTapStatusStore.CaptureDiagnostics(StatusPath);
         Assert.Equal(nameof(JsonException), malformed.CaptureFailure?.ExceptionType);
-        Assert.DoesNotContain("private", JsonSerializer.Serialize(malformed), StringComparison.OrdinalIgnoreCase);
-        File.WriteAllText(StatusPath, new string(' ', 8193));
+        Assert.NotNull(malformed.CaptureFailure?.Message);
+        File.WriteAllText(StatusPath, new string(' ', SnapTapStatusStore.MaximumFileSize + 1));
         Assert.Equal("StatusTooLarge", SnapTapStatusStore.CaptureDiagnostics(StatusPath).CaptureFailure?.Reason);
     }
 

@@ -186,10 +186,14 @@ public sealed partial class MainViewModel
                 {
                     await created.DisposeAsync();
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
                     // Preserve the disposal admission failure. The partial
                     // recording remains available if its writer cannot close.
+                    DiagnosticTrace.TraceException(
+                        "OpenBlade.Tray.MainViewModel.Telemetry",
+                        "DisposeRejectedRecording",
+                        exception);
                 }
                 throw;
             }
@@ -262,6 +266,10 @@ public sealed partial class MainViewModel
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.MainViewModel.Telemetry",
+                    "FinalizeRecording",
+                    exception);
                 lock (telemetryAppendSync)
                 {
                     if (ReferenceEquals(telemetryRecording, recording))
@@ -435,10 +443,14 @@ public sealed partial class MainViewModel
                 {
                     await recording.DisposeAsync().ConfigureAwait(false);
                 }
-                catch (Exception)
+                catch (Exception disposeException)
                 {
                     // A recording writer fault must not prevent the remaining
                     // view-model resources from being released during shutdown.
+                    DiagnosticTrace.TraceException(
+                        "OpenBlade.Tray.MainViewModel.Telemetry",
+                        "DisposeRecordingDuringShutdown",
+                        disposeException);
                 }
             }
         }
@@ -544,6 +556,10 @@ public sealed partial class MainViewModel
         ITelemetryRecordingSession recording,
         Exception exception)
     {
+        DiagnosticTrace.TraceException(
+            "OpenBlade.Tray.MainViewModel.Telemetry",
+            "RecordTelemetry",
+            exception);
         await telemetryRecordingGate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -575,9 +591,13 @@ public sealed partial class MainViewModel
             {
                 await recording.DisposeAsync().ConfigureAwait(false);
             }
-            catch (Exception)
+            catch (Exception disposeException)
             {
                 // The partial recording remains available for recovery.
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.MainViewModel.Telemetry",
+                    "DisposeFailedRecording",
+                    disposeException);
             }
         }
         finally
@@ -643,6 +663,10 @@ public sealed partial class MainViewModel
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.MainViewModel.Telemetry",
+                    "FinalizeAutomaticRecording",
+                    exception);
                 await dispatcher.InvokeAsync(
                     () =>
                     {

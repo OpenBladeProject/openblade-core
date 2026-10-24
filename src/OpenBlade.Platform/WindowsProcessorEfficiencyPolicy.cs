@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Platform;
 
@@ -44,6 +45,7 @@ public sealed class WindowsProcessorEfficiencyPolicy
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException("ProcessorPolicy", "Discover", exception);
             return Unavailable(
                 api,
                 ownerThreadId: 0,
@@ -105,8 +107,9 @@ public sealed class WindowsProcessorEfficiencyPolicy
                 && api.GetCurrentThreadId() == ownerThreadId
                 && api.SetCurrentThreadCpuSets(efficientProcessorIds);
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException("ProcessorPolicy", "TryPreferEfficientProcessorsForCurrentThread", exception);
             return false;
         }
     }
@@ -119,8 +122,9 @@ public sealed class WindowsProcessorEfficiencyPolicy
                 && api.GetCurrentThreadId() == ownerThreadId
                 && api.ClearCurrentThreadCpuSets();
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException("ProcessorPolicy", "TryAllowAllProcessorsForCurrentThread", exception);
             return false;
         }
     }
@@ -131,8 +135,9 @@ public sealed class WindowsProcessorEfficiencyPolicy
         {
             return api.SetProcessEcoQos(enabled);
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException("ProcessorPolicy", "TrySetProcessEcoQos", exception);
             return false;
         }
     }
