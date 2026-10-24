@@ -156,7 +156,7 @@ public sealed class DiagnosticHistoryTests
     }
 
     [Fact]
-    public void LoggerProvider_RejectsExceptionValuedStructuredStateBeforeFormatting()
+    public void LoggerProvider_CapturesExceptionValuedStateWithoutInvokingItsFormatter()
     {
         const string secret = "structured-exception-secret";
         var history = new DiagnosticHistory();
@@ -170,9 +170,13 @@ public sealed class DiagnosticHistoryTests
             default,
             new InvalidDataException(secret),
             exception: null,
-            static (state, _) => state.ToString());
+            static (_, _) => throw new InvalidOperationException("Unsafe exception formatter invoked."));
 
-        Assert.Empty(history.Snapshot().LogLines);
+        string diagnostic = string.Join(Environment.NewLine, history.Snapshot().LogLines);
+        Assert.Contains(secret, diagnostic, StringComparison.Ordinal);
+        Assert.Contains(nameof(InvalidOperationException), diagnostic, StringComparison.Ordinal);
+        Assert.Contains(nameof(InvalidDataException), diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unsafe exception formatter", diagnostic, StringComparison.Ordinal);
     }
 
     [Fact]
