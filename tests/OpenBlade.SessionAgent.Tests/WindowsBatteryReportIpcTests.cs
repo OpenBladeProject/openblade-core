@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 using OpenBlade.SessionAgent;
 
@@ -140,7 +141,10 @@ public sealed class WindowsBatteryReportIpcTests
         Guid successId = Guid.NewGuid();
         var success = new SessionBatteryRequestDispatcher(_ => Task.FromResult<WindowsBatteryReport?>(Report()));
         var unavailable = new SessionBatteryRequestDispatcher(_ => Task.FromResult<WindowsBatteryReport?>(null));
-        var failed = new SessionBatteryRequestDispatcher(_ => throw new IOException("private detail"));
+        var failures = new List<DiagnosticFailure>();
+        var failed = new SessionBatteryRequestDispatcher(
+            _ => throw new IOException("private detail"),
+            failures.Add);
 
         SessionBatteryResponse successResponse = await success.DispatchAsync(
             new SessionBatteryRequest(SessionBatteryIpc.ProtocolVersion, successId),
@@ -159,6 +163,14 @@ public sealed class WindowsBatteryReportIpcTests
         Assert.Null(unavailableResponse.Report);
         Assert.Equal(SessionBatteryOperationStatus.Failed, failedResponse.Status);
         Assert.DoesNotContain("private detail", failedResponse.Error, StringComparison.Ordinal);
+        DiagnosticFailure failure = Assert.Single(failures);
+        Assert.True(failure.IsValid());
+        Assert.Equal("session-agent", failure.Component);
+        Assert.Equal("windows-battery-report", failure.Operation);
+        Assert.Equal("dispatcher", failure.Stage);
+        Assert.Equal("exception", failure.Reason);
+        Assert.Equal(nameof(IOException), failure.ExceptionType);
+        Assert.DoesNotContain("private detail", failure.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -17,6 +18,9 @@ public sealed record ThxAudioDiagnosticReport(
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ThxBaseAudioDiagnosticProof? BaseAudio { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DiagnosticFailure? Failure { get; init; }
 }
 
 public interface IThxAudioDiagnosticProvider
@@ -54,13 +58,16 @@ public sealed class ThxAudioDiagnosticProvider(IThxAudioAdapter adapter)
         {
             throw;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException exception)
         {
             return new ThxAudioDiagnosticReport(
                 ThxAudioDiagnosticCaptureStatus.Failed,
                 null,
                 null,
-                "The Session Agent THX admission query timed out.");
+                "The Session Agent THX admission query timed out.")
+            {
+                Failure = DiagnosticFailure.FromException("THX", "Diagnostics", "Discovery", "TimedOut", exception),
+            };
         }
         catch (Exception exception)
         {
@@ -75,7 +82,10 @@ public sealed class ThxAudioDiagnosticProvider(IThxAudioAdapter adapter)
             ThxAudioDiagnosticCaptureStatus.Failed,
             null,
             null,
-            $"The Session Agent THX admission query failed: {exception.GetType().Name}.");
+            $"The Session Agent THX admission query failed: {exception.GetType().Name}.")
+        {
+            Failure = DiagnosticFailure.FromException("THX", "Diagnostics", "Discovery", "CaptureFailed", exception),
+        };
     }
 
     private static string? SanitizeError(string? error)

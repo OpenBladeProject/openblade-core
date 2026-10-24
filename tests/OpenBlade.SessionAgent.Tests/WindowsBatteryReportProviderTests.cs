@@ -1,5 +1,7 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 using OpenBlade.SessionAgent;
 
@@ -72,17 +74,103 @@ public sealed class WindowsBatteryReportProviderTests
     public async Task ReadAsync_ReturnsUnavailableAndCleansUpAfterProcessFailure()
     {
         string? createdDirectory = null;
+        var failures = new List<DiagnosticFailure>();
         var runner = new CallbackRunner((_, _) => Task.FromResult(
-            new WindowsBatteryReportProcessResult(1, "bounded output", "bounded error")));
+            new WindowsBatteryReportProcessResult(1, "private output", "private error")));
         var provider = new WindowsBatteryReportProvider(
             runner,
-            () => createdDirectory = CreateTemporaryDirectory());
+            () => createdDirectory = CreateTemporaryDirectory(),
+            failures.Add);
 
         WindowsBatteryReport? report = await provider.ReadAsync();
 
         Assert.Null(report);
         Assert.NotNull(createdDirectory);
         Assert.False(Directory.Exists(createdDirectory));
+        DiagnosticFailure failure = Assert.Single(failures);
+        AssertFailure(failure, "process", "process-exit");
+        Assert.Equal(1, failure.ProcessExitCode);
+        Assert.DoesNotContain("private", failure.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ReportsMissingOutputWithoutExposingItsPath()
+    {
+        string? createdDirectory = null;
+        var failures = new List<DiagnosticFailure>();
+        var provider = new WindowsBatteryReportProvider(
+            new CallbackRunner((_, _) => Task.FromResult(
+                new WindowsBatteryReportProcessResult(0, "", ""))),
+            () => createdDirectory = CreateTemporaryDirectory(),
+            failures.Add);
+
+        WindowsBatteryReport? report = await provider.ReadAsync();
+
+        Assert.Null(report);
+        Assert.NotNull(createdDirectory);
+        Assert.False(Directory.Exists(createdDirectory));
+        DiagnosticFailure failure = Assert.Single(failures);
+        AssertFailure(failure, "output", "output-missing");
+        Assert.DoesNotContain(createdDirectory, failure.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ReportsRejectedParserInputWithoutCopyingIt()
+    {
+        var failures = new List<DiagnosticFailure>();
+        var runner = new CallbackRunner((outputPath, _) =>
+        {
+            File.WriteAllText(outputPath, "private malformed report");
+            return Task.FromResult(new WindowsBatteryReportProcessResult(0, "", ""));
+        });
+        var provider = new WindowsBatteryReportProvider(
+            runner,
+            CreateTemporaryDirectory,
+            failures.Add);
+
+        WindowsBatteryReport? report = await provider.ReadAsync();
+
+        Assert.Null(report);
+        DiagnosticFailure failure = Assert.Single(failures);
+        AssertFailure(failure, "parse", "parse-rejected");
+        Assert.DoesNotContain("private malformed report", failure.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ReportsTimeoutTypeWithoutExceptionMessage()
+    {
+        var failures = new List<DiagnosticFailure>();
+        var provider = new WindowsBatteryReportProvider(
+            new CallbackRunner((_, _) => throw new TimeoutException("private timeout detail")),
+            CreateTemporaryDirectory,
+            failures.Add);
+
+        WindowsBatteryReport? report = await provider.ReadAsync();
+
+        Assert.Null(report);
+        DiagnosticFailure failure = Assert.Single(failures);
+        AssertFailure(failure, "process", "exception");
+        Assert.Equal(nameof(TimeoutException), failure.ExceptionType);
+        Assert.DoesNotContain("private timeout detail", failure.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ReportsNativeErrorWithoutExceptionMessage()
+    {
+        var failures = new List<DiagnosticFailure>();
+        var provider = new WindowsBatteryReportProvider(
+            new CallbackRunner((_, _) => throw new Win32Exception(5, "private native detail")),
+            CreateTemporaryDirectory,
+            failures.Add);
+
+        WindowsBatteryReport? report = await provider.ReadAsync();
+
+        Assert.Null(report);
+        DiagnosticFailure failure = Assert.Single(failures);
+        AssertFailure(failure, "process", "exception");
+        Assert.Equal(nameof(Win32Exception), failure.ExceptionType);
+        Assert.Equal(5, failure.NativeErrorCode);
+        Assert.DoesNotContain("private native detail", failure.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -123,6 +211,19 @@ public sealed class WindowsBatteryReportProviderTests
             $"OpenBlade.BatteryReport.Tests.{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static void AssertFailure(
+        DiagnosticFailure failure,
+        string stage,
+        string reason)
+    {
+        Assert.True(failure.IsValid());
+        Assert.Equal("session-agent", failure.Component);
+        Assert.Equal("windows-battery-report", failure.Operation);
+        Assert.Equal(stage, failure.Stage);
+        Assert.Equal(reason, failure.Reason);
+        Assert.False(failure.MayHaveSubmitted);
     }
 
     private static DateTimeOffset Utc(int year, int month, int day, int hour) =>

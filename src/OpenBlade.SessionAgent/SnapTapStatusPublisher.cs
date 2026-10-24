@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -14,11 +15,11 @@ internal sealed class SnapTapStatusPublisher : IDisposable
             FullMode = BoundedChannelFullMode.DropOldest,
         });
     private readonly Task writer;
-    private readonly RazerSnapTapDriverProfile profile;
+    private RazerSnapTapDriverProfile? profile;
     private int failed;
     private SnapTapRuntimeState? lastState;
 
-    internal SnapTapStatusPublisher(RazerSnapTapDriverProfile profile)
+    internal SnapTapStatusPublisher(RazerSnapTapDriverProfile? profile = null)
     {
         this.profile = profile;
         writer = Task.Run(async () =>
@@ -40,9 +41,12 @@ internal sealed class SnapTapStatusPublisher : IDisposable
 
     internal bool Failed => Volatile.Read(ref failed) != 0;
 
-    internal void Publish(SnapTapRuntimeState state)
+    internal void SetProfile(RazerSnapTapDriverProfile value) =>
+        profile = value ?? throw new ArgumentNullException(nameof(value));
+
+    internal void Publish(SnapTapRuntimeState state, DiagnosticFailure? failure = null)
     {
-        if (lastState == state)
+        if (lastState == state && failure is null)
         {
             return;
         }
@@ -51,8 +55,9 @@ internal sealed class SnapTapStatusPublisher : IDisposable
             state,
             DateTimeOffset.UtcNow,
             Environment.ProcessId,
-            profile.ProductName,
-            !profile.PhysicallyValidated));
+            profile?.ProductName,
+            profile is { PhysicallyValidated: false },
+            failure));
     }
 
     public void Dispose()
@@ -61,7 +66,10 @@ internal sealed class SnapTapStatusPublisher : IDisposable
         // The hook is already removed before waiting for the final status flush.
         try
         {
-            writer.Wait(TimeSpan.FromSeconds(2));
+            if (!writer.Wait(TimeSpan.FromSeconds(2)))
+            {
+                Volatile.Write(ref failed, 1);
+            }
         }
         catch (AggregateException)
         {

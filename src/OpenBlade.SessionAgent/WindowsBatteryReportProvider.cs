@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.SessionAgent;
@@ -193,47 +194,81 @@ internal sealed class WindowsBatteryReportProcessRunner : IWindowsBatteryReportP
 public sealed class WindowsBatteryReportProvider
 {
     private const string ReportFileName = "battery-report.xml";
+    private const string DiagnosticComponent = "session-agent";
+    private const string DiagnosticOperation = "windows-battery-report";
     private readonly IWindowsBatteryReportProcessRunner processRunner;
     private readonly Func<string> createTemporaryDirectory;
+    private readonly Action<DiagnosticFailure> diagnosticFailureSink;
 
     public WindowsBatteryReportProvider()
         : this(
             new WindowsBatteryReportProcessRunner(),
-            static () => Directory.CreateTempSubdirectory("OpenBlade.BatteryReport.").FullName)
+            static () => Directory.CreateTempSubdirectory("OpenBlade.BatteryReport.").FullName,
+            TraceFailure)
     {
     }
 
     internal WindowsBatteryReportProvider(
         IWindowsBatteryReportProcessRunner processRunner,
-        Func<string> createTemporaryDirectory)
+        Func<string> createTemporaryDirectory,
+        Action<DiagnosticFailure>? diagnosticFailureSink = null)
     {
         this.processRunner = processRunner
             ?? throw new ArgumentNullException(nameof(processRunner));
         this.createTemporaryDirectory = createTemporaryDirectory
             ?? throw new ArgumentNullException(nameof(createTemporaryDirectory));
+        this.diagnosticFailureSink = diagnosticFailureSink ?? TraceFailure;
     }
 
     public async Task<WindowsBatteryReport?> ReadAsync(
         CancellationToken cancellationToken = default)
     {
         string? temporaryDirectory = null;
+        string stage = "temporary-directory";
         try
         {
             temporaryDirectory = createTemporaryDirectory();
             string reportPath = Path.Combine(temporaryDirectory, ReportFileName);
+            stage = "process";
             WindowsBatteryReportProcessResult result = await processRunner
                 .RunAsync(reportPath, cancellationToken)
                 .ConfigureAwait(false);
-            if (result.ExitCode != 0 || !File.Exists(reportPath))
+            if (result.ExitCode != 0)
             {
+                diagnosticFailureSink(new DiagnosticFailure(
+                    DiagnosticComponent,
+                    DiagnosticOperation,
+                    stage,
+                    "process-exit") with
+                {
+                    ProcessExitCode = result.ExitCode,
+                });
+                return null;
+            }
+            if (!File.Exists(reportPath))
+            {
+                diagnosticFailureSink(new DiagnosticFailure(
+                    DiagnosticComponent,
+                    DiagnosticOperation,
+                    "output",
+                    "output-missing"));
                 return null;
             }
 
+            stage = "output-read";
             byte[] xml = await ReadBoundedFileAsync(reportPath, cancellationToken)
                 .ConfigureAwait(false);
-            return WindowsBatteryReportParser.TryParse(xml, out WindowsBatteryReport? report)
-                ? report
-                : null;
+            stage = "parse";
+            if (!WindowsBatteryReportParser.TryParse(xml, out WindowsBatteryReport? report))
+            {
+                diagnosticFailureSink(new DiagnosticFailure(
+                    DiagnosticComponent,
+                    DiagnosticOperation,
+                    stage,
+                    "parse-rejected"));
+                return null;
+            }
+            return report;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -242,8 +277,15 @@ public sealed class WindowsBatteryReportProvider
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
             or InvalidDataException
+            or System.ComponentModel.Win32Exception
             or TimeoutException)
         {
+            diagnosticFailureSink(DiagnosticFailure.FromException(
+                DiagnosticComponent,
+                DiagnosticOperation,
+                stage,
+                "exception",
+                exception));
             return null;
         }
         finally
@@ -254,6 +296,9 @@ public sealed class WindowsBatteryReportProvider
             }
         }
     }
+
+    private static void TraceFailure(DiagnosticFailure failure) =>
+        Trace.TraceWarning("Windows battery report failure: {0}", failure);
 
     private static async Task<byte[]> ReadBoundedFileAsync(
         string path,

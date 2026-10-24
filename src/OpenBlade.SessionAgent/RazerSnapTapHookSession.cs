@@ -35,6 +35,8 @@ internal sealed class RazerSnapTapHookSession
     private IReadOnlyList<byte[]> baselineHooks = [];
     private RazerSnapTapHookSessionState state;
     private bool mutationPending;
+    private string failureStage = "BaselineRead";
+    private string failureReason = "DriverRequestFailed";
     private bool subscriptionCloseAttempted;
 
     internal RazerSnapTapHookSession(IRazerSnapTapHookTransport transport)
@@ -45,6 +47,7 @@ internal sealed class RazerSnapTapHookSession
     internal RazerSnapTapHookSessionState State { get { lock (gate) { return state; } } }
     internal bool FailureMayHaveSubmitted { get; private set; }
     internal string? FailureReason { get; private set; }
+    internal OpenBlade.Contracts.DiagnosticFailure? Failure { get; private set; }
     internal IReadOnlyList<byte[]> BaselineHooks { get { lock (gate) { return Copy(baselineHooks); } } }
     internal IReadOnlyList<byte[]> OwnedHooks { get { lock (gate) { return Copy(ownedHooks); } } }
 
@@ -64,7 +67,11 @@ internal sealed class RazerSnapTapHookSession
             state = RazerSnapTapHookSessionState.Starting;
             try
             {
+                failureStage = "BaselineRead";
+                failureReason = "DriverRequestFailed";
                 baselineHooks = ReadSnapshot();
+                failureStage = "BaselineValidation";
+                failureReason = "HookValidationFailed";
                 VerifyOwnedHooks(baselineHooks, []);
                 if (baselineHooks.Count > RazerSnapTapDriverProtocol.MaximumHookEnumerationCount - 2)
                 {
@@ -74,7 +81,11 @@ internal sealed class RazerSnapTapHookSession
                 {
                     byte[] hook = RazerSnapTapDriverProtocol.EncodeHook(scanCode);
                     mutationPending = true;
+                    failureStage = "HookMutation";
+                    failureReason = "SetHookFailed";
                     transport.SetHook((byte[])hook.Clone());
+                    failureStage = "HookReadback";
+                    failureReason = "HookReadbackFailed";
                     VerifyOwnedHooks(ReadSnapshot(), [.. ownedHooks, hook]);
                     ownedHooks.Add(hook);
                     mutationPending = false;
@@ -84,7 +95,11 @@ internal sealed class RazerSnapTapHookSession
                 // confirms records, not the file's subscription flag: Active means
                 // SetHookEnabled completed successfully, not independent flag readback.
                 mutationPending = true;
+                failureStage = "Subscription";
+                failureReason = "EnableFailed";
                 transport.SetHookEnabled(true);
+                failureStage = "SubscriptionReadback";
+                failureReason = "HookReadbackFailed";
                 VerifyOwnedHooks(ReadSnapshot(), ownedHooks);
                 mutationPending = false;
                 state = RazerSnapTapHookSessionState.Active;
@@ -128,6 +143,8 @@ internal sealed class RazerSnapTapHookSession
                 // Closing this file removes only its subscription. A separately
                 // opened guardian handle must clear/read back canonical owned
                 // hooks after closure; it must not retain a duplicate of our handle.
+                failureStage = "SubscriptionClose";
+                failureReason = "CloseFailed";
                 transport.CloseSubscription();
                 if (faulted)
                 {
@@ -141,6 +158,14 @@ internal sealed class RazerSnapTapHookSession
                 if (faulted)
                 {
                     FailureReason += $" Subscription closure also failed: {exception.Message}";
+                    Failure = SnapTapDiagnosticFailure.FromException(
+                        SnapTapDiagnosticFailure.Worker,
+                        "HookSession",
+                        failureStage,
+                        failureReason,
+                        exception,
+                        FailureMayHaveSubmitted,
+                        Failure);
                     return false;
                 }
                 return Fail(exception);
@@ -191,6 +216,13 @@ internal sealed class RazerSnapTapHookSession
     {
         FailureMayHaveSubmitted = mutationPending;
         FailureReason = exception.Message;
+        Failure = SnapTapDiagnosticFailure.FromException(
+            SnapTapDiagnosticFailure.Worker,
+            "HookSession",
+            failureStage,
+            failureReason,
+            exception,
+            FailureMayHaveSubmitted);
         state = RazerSnapTapHookSessionState.Faulted;
         return false;
     }

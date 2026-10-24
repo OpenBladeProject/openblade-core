@@ -793,6 +793,49 @@ type sealed class OpenBlade.Contracts.DiagnosticExperimentalSupport
   property System.String EvidenceLevel { get; init; }
   property System.String EvidenceSource { get; init; }
   property System.String ModelNumber { get; init; }
+type sealed class OpenBlade.Contracts.DiagnosticFailure
+  interface System.IEquatable<OpenBlade.Contracts.DiagnosticFailure>
+  ctor (System.String Component, System.String Operation, System.String Stage, System.String Reason, System.Boolean MayHaveSubmitted = false, System.String ExceptionType = null, System.Nullable<System.Int32> HResult = null, System.Nullable<System.Int32> NativeErrorCode = null, OpenBlade.Contracts.DiagnosticFailure Cause = null, System.Nullable<System.Int32> ProcessExitCode = null)
+  method OpenBlade.Contracts.DiagnosticFailure <Clone>$()
+  method OpenBlade.Contracts.DiagnosticFailure get_Cause()
+  method System.Boolean IsValid()
+  method System.Boolean get_MayHaveSubmitted()
+  method System.Nullable<System.Int32> get_HResult()
+  method System.Nullable<System.Int32> get_NativeErrorCode()
+  method System.Nullable<System.Int32> get_ProcessExitCode()
+  method System.String get_Component()
+  method System.String get_ExceptionType()
+  method System.String get_Operation()
+  method System.String get_Reason()
+  method System.String get_Stage()
+  method System.Void Deconstruct(out System.String Component, out System.String Operation, out System.String Stage, out System.String Reason, out System.Boolean MayHaveSubmitted, out System.String ExceptionType, out System.Nullable<System.Int32> HResult, out System.Nullable<System.Int32> NativeErrorCode, out OpenBlade.Contracts.DiagnosticFailure Cause, out System.Nullable<System.Int32> ProcessExitCode)
+  method System.Void set_Cause(OpenBlade.Contracts.DiagnosticFailure value)
+  method System.Void set_Component(System.String value)
+  method System.Void set_ExceptionType(System.String value)
+  method System.Void set_HResult(System.Nullable<System.Int32> value)
+  method System.Void set_MayHaveSubmitted(System.Boolean value)
+  method System.Void set_NativeErrorCode(System.Nullable<System.Int32> value)
+  method System.Void set_Operation(System.String value)
+  method System.Void set_ProcessExitCode(System.Nullable<System.Int32> value)
+  method System.Void set_Reason(System.String value)
+  method System.Void set_Stage(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.DiagnosticFailure FromException(System.String component, System.String operation, System.String stage, System.String reason, System.Exception exception, System.Boolean mayHaveSubmitted = false)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.DiagnosticFailure left, OpenBlade.Contracts.DiagnosticFailure right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.DiagnosticFailure left, OpenBlade.Contracts.DiagnosticFailure right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.DiagnosticFailure other)
+  property OpenBlade.Contracts.DiagnosticFailure Cause { get; init; }
+  property System.Boolean MayHaveSubmitted { get; init; }
+  property System.Nullable<System.Int32> HResult { get; init; }
+  property System.Nullable<System.Int32> NativeErrorCode { get; init; }
+  property System.Nullable<System.Int32> ProcessExitCode { get; init; }
+  property System.String Component { get; init; }
+  property System.String ExceptionType { get; init; }
+  property System.String Operation { get; init; }
+  property System.String Reason { get; init; }
+  property System.String Stage { get; init; }
 type enum OpenBlade.Contracts.DisplayBrightnessHidAvailability
   field System.Int32 value__
   field const OpenBlade.Contracts.DisplayBrightnessHidAvailability Available = 1

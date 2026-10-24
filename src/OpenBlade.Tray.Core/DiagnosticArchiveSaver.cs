@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
@@ -45,6 +46,7 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
     private readonly IDiagnosticArchiveDestination destination;
     private readonly string userModeLogDirectory;
     private readonly IThxAudioDiagnosticProvider? thxAudioDiagnostics;
+    private readonly Func<SnapTapDiagnosticReport> snapTapDiagnostics;
 
     public DiagnosticArchiveSaver(IDiagnosticArchiveDestination destination)
         : this(destination, PersistentTraceLog.DefaultLogDirectory, thxAudioDiagnostics: null)
@@ -68,13 +70,15 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
     public DiagnosticArchiveSaver(
         IDiagnosticArchiveDestination destination,
         string userModeLogDirectory,
-        IThxAudioDiagnosticProvider? thxAudioDiagnostics)
+        IThxAudioDiagnosticProvider? thxAudioDiagnostics,
+        Func<SnapTapDiagnosticReport>? snapTapDiagnostics = null)
     {
         this.destination = destination
             ?? throw new ArgumentNullException(nameof(destination));
         ArgumentException.ThrowIfNullOrWhiteSpace(userModeLogDirectory);
         this.userModeLogDirectory = userModeLogDirectory;
         this.thxAudioDiagnostics = thxAudioDiagnostics;
+        this.snapTapDiagnostics = snapTapDiagnostics ?? (() => SnapTapStatusStore.CaptureDiagnostics());
     }
 
     public Task<DiagnosticArchiveSaveResult> SaveAsync(
@@ -126,10 +130,27 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
             byte[] archiveBytes = archive.ZipBytes;
             if (appendUserModeLogs)
             {
+                var sections = new List<DiagnosticExportSection>();
                 archiveBytes = UserModeDiagnosticLogAppender.TryAppendLogs(
                     archive.ZipBytes,
                     userModeLogDirectory,
-                    token);
+                    token,
+                    sections.Add);
+                SnapTapDiagnosticReport snapTap;
+                try
+                {
+                    snapTap = snapTapDiagnostics();
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    snapTap = new(DateTimeOffset.UtcNow, null,
+                        DiagnosticFailure.FromException("SnapTap", "Diagnostics", "Capture", "CaptureFailed", exception));
+                }
+                archiveBytes = TryAppendJson(archiveBytes, "snap-tap.json", snapTap, sections, token);
                 if (thxAudioDiagnostics is not null)
                 {
                     ThxAudioDiagnosticReport diagnostics;
@@ -147,11 +168,21 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
                     {
                         diagnostics = ThxAudioDiagnosticProvider.Failure(exception);
                     }
-                    archiveBytes = TryAppendThxAudioDiagnostics(
+                    archiveBytes = TryAppendJson(
                         archiveBytes,
+                        "thx-audio.json",
                         diagnostics,
+                        sections,
                         token);
                 }
+                else
+                {
+                    sections.Add(new("thx-audio.json", DiagnosticExportStatus.NotRequested));
+                }
+                // Best-effort capture must remain explicit about omissions. The manifest
+                // also survives a failed sibling supplement and contains no private paths.
+                archiveBytes = TryAppendJson(archiveBytes, "diagnostic-export.json",
+                    sections.ToArray(), null, token);
             }
             await using (var stream = new FileStream(
                 temporaryPath,
@@ -188,9 +219,11 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
         }
     }
 
-    private static byte[] TryAppendThxAudioDiagnostics(
+    private static byte[] TryAppendJson<T>(
         byte[] archiveBytes,
-        ThxAudioDiagnosticReport diagnostics,
+        string entryName,
+        T diagnostics,
+        ICollection<DiagnosticExportSection>? sections,
         CancellationToken cancellationToken)
     {
         try
@@ -204,7 +237,6 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
                 ZipArchiveMode.Update,
                 leaveOpen: true))
             {
-                const string entryName = "thx-audio.json";
                 archive.GetEntry(entryName)?.Delete();
                 ZipArchiveEntry entry = archive.CreateEntry(
                     entryName,
@@ -212,6 +244,7 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
                 using Stream target = entry.Open();
                 JsonSerializer.Serialize(target, diagnostics, DiagnosticJsonOptions);
             }
+            sections?.Add(new(entryName, DiagnosticExportStatus.Included, 1));
             return destination.ToArray();
         }
         catch (OperationCanceledException)
@@ -223,6 +256,10 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
                 or InvalidDataException
                 or NotSupportedException)
         {
+            DiagnosticFailure failure = DiagnosticFailure.FromException(
+                "Diagnostics", "Export", "AppendSupplement", "SupplementAppendFailed", exception);
+            sections?.Add(new(entryName, DiagnosticExportStatus.Failed, Failures: [failure]));
+            Trace.TraceWarning("Diagnostic supplement {0} was omitted: {1}", entryName, failure);
             return archiveBytes;
         }
     }

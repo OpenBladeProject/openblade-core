@@ -26,6 +26,13 @@ On models other than RZ09-0581, install the model's Razer keyboard driver throug
 
 ## Driver implementation
 
+For a failure report, export diagnostics while the failure is present. The
+`snap-tap.json` entry retains the runtime state and terminal failure stage,
+reason, numeric errors and possible submission. `OpenBlade.SnapTap.log` records
+supervisor failures. A driver-admitted entry establishes discovery and admission;
+it does not confirm hook setup or active input handling. `diagnostic-export.json`
+identifies missing or failed log collection. These records contain no keystrokes.
+
 The Session Agent starts an authenticated current-user supervisor, which starts a separate input worker. Parent image, user, session, process lifetime, preference and coordinated shutdown checks apply to both helpers. A per-user/session mutex prevents concurrent supervisors. A failed helper stays stopped until an explicit off/on transition.
 
 Admission requires both Windows host-identity sources to match one exact reviewed model, its PID-specific keyboard collection and control endpoint in the same device container, its sole reviewed keyboard upper filter, and trusted installed packages for the model filter and shared `RzCommon` driver. OpenBlade checks actual service images, signed INF hardware/service declarations and Windows catalog membership. Observed content fingerprints invalidate stale sessions; they are not a build allowlist. The active physical console session must own the worker. A competing mapping controller, non-console session or incomplete discovery rejects admission. New models and materially different API contracts need their own driver review. SKU is diagnostic metadata.

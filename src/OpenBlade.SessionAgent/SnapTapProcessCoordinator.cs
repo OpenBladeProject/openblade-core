@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading.Channels;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -23,7 +25,8 @@ public interface ISnapTapChildProcess : IDisposable
 public sealed class SnapTapProcessCoordinator(
     ISnapTapPreferenceSource preferenceSource,
     Func<ISnapTapChildProcess> startChild,
-    Action<SnapTapRuntimeStatus> publishStatus)
+    Action<SnapTapRuntimeStatus> publishStatus,
+    Func<SnapTapRuntimeStatus?>? readStatus = null)
 {
     private readonly Channel<bool> changes = Channel.CreateBounded<bool>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
@@ -40,9 +43,11 @@ public sealed class SnapTapProcessCoordinator(
 
         ISnapTapChildProcess? child = null;
         Task? exited = null;
+        DateTimeOffset childStartedAt = DateTimeOffset.MinValue;
         bool latched = false;
         bool stopping = false;
         bool supervisionFailed = false;
+        DiagnosticFailure? coordinatorFailure = null;
         int observedOff = 0;
         preferenceSource.SnapTapEnabledChanged += OnPreferenceChanged;
         OnPreferenceChanged(preferenceSource.SnapTapEnabled);
@@ -73,25 +78,48 @@ public sealed class SnapTapProcessCoordinator(
                 {
                     if (!child.HasExited)
                     {
+                        if (exited.IsFaulted)
+                        {
+                            try
+                            {
+                                await exited.ConfigureAwait(false);
+                            }
+                            catch (Exception exception)
+                            {
+                                coordinatorFailure = SnapTapDiagnosticFailure.FromException(
+                                    SnapTapDiagnosticFailure.Coordinator, "ObserveChild", "ExitObservation",
+                                    "ExitObservationFailed", exception);
+                                throw;
+                            }
+                        }
                         throw new InvalidOperationException("The helper exit observer ended before the process exited.");
                     }
                     bool successful = await ObserveExitAsync(child, exited).ConfigureAwait(false);
-                    bool unavailable = child.ExitCode == 3;
-                    bool recoveryRequired = child.ExitCode == 4;
-                    bool driverMissing = child.ExitCode == 5;
-                    bool unsupportedModel = child.ExitCode == 6;
-                    bool manualDriverSetup = child.ExitCode == 7;
+                    int childId = child.Id;
+                    int childExitCode = child.ExitCode;
+                    SnapTapRuntimeStatus? terminal = ReadMatchingTerminalStatus(
+                        readStatus, childId, childStartedAt);
+                    bool unavailable = childExitCode == 3;
+                    bool recoveryRequired = childExitCode == 4;
+                    bool driverMissing = childExitCode == 5;
+                    bool unsupportedModel = childExitCode == 6;
+                    bool manualDriverSetup = childExitCode == 7;
                     DisposeChild(child);
                     child = null;
                     exited = null;
                     if (!successful || !stopping)
                     {
                         latched = true;
-                        latched |= !Publish(recoveryRequired ? SnapTapRuntimeState.RecoveryRequired
-                            : unsupportedModel ? SnapTapRuntimeState.UnsupportedModel
-                            : manualDriverSetup ? SnapTapRuntimeState.ManualDriverSetupRequired
-                            : driverMissing ? SnapTapRuntimeState.DriverMissing
-                            : unavailable ? SnapTapRuntimeState.Unavailable : SnapTapRuntimeState.Failed);
+                        latched |= terminal is not null
+                            ? !Publish(terminal with { UpdatedAt = DateTimeOffset.UtcNow })
+                            : !Publish(recoveryRequired ? SnapTapRuntimeState.RecoveryRequired
+                                : unsupportedModel ? SnapTapRuntimeState.UnsupportedModel
+                                : manualDriverSetup ? SnapTapRuntimeState.ManualDriverSetupRequired
+                                : driverMissing ? SnapTapRuntimeState.DriverMissing
+                                : unavailable ? SnapTapRuntimeState.Unavailable : SnapTapRuntimeState.Failed,
+                                failure: SnapTapDiagnosticFailure.Create(
+                                    SnapTapDiagnosticFailure.Coordinator, "ObserveChild", "ProcessExit",
+                                    "TerminalStatusUnavailable", processExitCode: childExitCode));
                     }
                     else
                     {
@@ -111,6 +139,7 @@ public sealed class SnapTapProcessCoordinator(
                     {
                         try
                         {
+                            childStartedAt = DateTimeOffset.UtcNow;
                             child = startChild();
                             exited = child.WaitForExitAsync(CancellationToken.None);
                         }
@@ -118,7 +147,12 @@ public sealed class SnapTapProcessCoordinator(
                         {
                             Trace.TraceWarning("Snap Tap helper startup failed: {0}", exception.GetType().Name);
                             latched = true;
-                            Publish(SnapTapRuntimeState.Failed);
+                            coordinatorFailure = SnapTapDiagnosticFailure.FromException(
+                                SnapTapDiagnosticFailure.Coordinator, "StartChild",
+                                child is null ? "ProcessStart" : "ExitObservation",
+                                child is null ? "HelperStartFailed" : "ExitObservationFailed",
+                                exception);
+                            Publish(SnapTapRuntimeState.Failed, failure: coordinatorFailure);
                             if (child is not null)
                             {
                                 // A process may exist even when observing it failed. Keep ownership.
@@ -156,7 +190,10 @@ public sealed class SnapTapProcessCoordinator(
         {
             supervisionFailed = true;
             Trace.TraceWarning("Snap Tap supervision failed: {0}", exception.GetType().Name);
-            Publish(SnapTapRuntimeState.Failed);
+            coordinatorFailure ??= SnapTapDiagnosticFailure.FromException(
+                SnapTapDiagnosticFailure.Coordinator, "Run", "Supervision",
+                "SupervisionFailed", exception);
+            Publish(SnapTapRuntimeState.Failed, failure: coordinatorFailure);
         }
         finally
         {
@@ -164,15 +201,58 @@ public sealed class SnapTapProcessCoordinator(
             if (child is not null)
             {
                 bool stopped = await StopAsync(child, exited).ConfigureAwait(false);
+                SnapTapRuntimeStatus? terminal = ReadMatchingTerminalStatus(
+                    readStatus, child.Id, childStartedAt);
                 if (stopped)
                 {
                     bool success = await ObserveExitAsync(child, exited!).ConfigureAwait(false);
+                    if (!success)
+                    {
+                        try { success = child.HasExited && child.ExitCode == 0; }
+                        catch (Exception) { }
+                    }
+                    int exitCode = child.ExitCode;
                     DisposeChild(child);
-                    Publish(success ? SnapTapRuntimeState.Off : SnapTapRuntimeState.Failed);
+                    if (success)
+                    {
+                        Publish(coordinatorFailure is null ? SnapTapRuntimeState.Off : SnapTapRuntimeState.Failed,
+                            failure: coordinatorFailure);
+                    }
+                    else if (coordinatorFailure is not null)
+                    {
+                        Publish(SnapTapRuntimeState.Failed, failure: SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Coordinator, "StopChild", "ProcessExit",
+                            "StopFailed", cause: coordinatorFailure, processExitCode: exitCode));
+                    }
+                    else if (terminal is not null)
+                    {
+                        Publish(terminal with { UpdatedAt = DateTimeOffset.UtcNow });
+                    }
+                    else
+                    {
+                        Publish(SnapTapRuntimeState.Failed, failure: SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Coordinator, "StopChild", "ProcessExit",
+                            "StopFailed", processExitCode: exitCode));
+                    }
                 }
                 else
                 {
-                    Publish(SnapTapRuntimeState.Failed);
+                    if (coordinatorFailure is not null)
+                    {
+                        Publish(SnapTapRuntimeState.Failed, failure: SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Coordinator, "StopChild", "WaitForExit",
+                            "StopTimedOut", cause: coordinatorFailure));
+                    }
+                    else if (terminal is not null)
+                    {
+                        Publish(terminal with { UpdatedAt = DateTimeOffset.UtcNow });
+                    }
+                    else
+                    {
+                        Publish(SnapTapRuntimeState.Failed, failure: SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Coordinator, "StopChild", "WaitForExit",
+                            "StopTimedOut"));
+                    }
                     _ = DisposeAfterExitAsync(child, exited);
                 }
             }
@@ -201,17 +281,76 @@ public sealed class SnapTapProcessCoordinator(
         changes.Writer.TryWrite(true);
     }
 
-    private bool Publish(SnapTapRuntimeState state, int processId = 0)
+    internal static SnapTapRuntimeStatus? MatchingTerminalStatus(
+        SnapTapRuntimeStatus? status,
+        int processId,
+        DateTimeOffset startedAt) => status is not null
+            && status.ProcessId == processId
+            && status.UpdatedAt >= startedAt
+            && SnapTapStatusStore.IsTerminalState(status.State)
+            && status.Failure is not null
+                ? status : null;
+
+    private static SnapTapRuntimeStatus? ReadMatchingTerminalStatus(
+        Func<SnapTapRuntimeStatus?>? readStatus,
+        int processId,
+        DateTimeOffset startedAt)
     {
+        if (readStatus is null)
+        {
+            return null;
+        }
         try
         {
-            publishStatus(new(state, DateTimeOffset.UtcNow, processId));
+            return MatchingTerminalStatus(readStatus(), processId, startedAt);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning("Snap Tap terminal status read failed: {0}", exception.GetType().Name);
+            return null;
+        }
+    }
+
+    private bool Publish(
+        SnapTapRuntimeState state,
+        int processId = 0,
+        DiagnosticFailure? failure = null) => Publish(new(
+            state,
+            DateTimeOffset.UtcNow,
+            processId,
+            Failure: failure));
+
+    private bool Publish(SnapTapRuntimeStatus status)
+    {
+        if (status.Failure is { } failure)
+        {
+            TraceFailure(failure);
+        }
+        try
+        {
+            publishStatus(status);
             return true;
         }
         catch (Exception exception)
         {
             Trace.TraceWarning("Snap Tap status publication failed: {0}", exception.GetType().Name);
             return false;
+        }
+    }
+
+    private static void TraceFailure(DiagnosticFailure failure)
+    {
+        int depth = 0;
+        for (DiagnosticFailure? current = failure; current is not null && depth < 4; current = current.Cause)
+        {
+            Trace.TraceWarning(
+                "Snap Tap diagnostic failure: depth={0}; component={1}; operation={2}; stage={3}; reason={4}; mayHaveSubmitted={5}; exception={6}; hresult={7}; native={8}; processExitCode={9}.",
+                depth, current.Component, current.Operation, current.Stage, current.Reason,
+                current.MayHaveSubmitted, current.ExceptionType ?? "None",
+                current.HResult?.ToString(CultureInfo.InvariantCulture) ?? "None",
+                current.NativeErrorCode?.ToString(CultureInfo.InvariantCulture) ?? "None",
+                current.ProcessExitCode?.ToString(CultureInfo.InvariantCulture) ?? "None");
+            depth++;
         }
     }
 
