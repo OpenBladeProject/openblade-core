@@ -129,7 +129,8 @@ public sealed class DiagnosticArchiveProviderTests
         var provider = new DiagnosticArchiveProvider(
             runtime,
             history,
-            new FixedMetadataSource(secret));
+            new FixedMetadataSource(secret),
+            new FirmwareQueryDiagnostics());
 
         DiagnosticArchive result = await provider.CreateAsync(
             liveReadingsEnabled: true,
