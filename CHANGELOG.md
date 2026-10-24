@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve failure stages and native error details in SnapTap, Windows battery reports, Session Agent dispatch and THX diagnostics. Include SnapTap runtime failures and collection results in support exports, and keep healthy logs when another log is unreadable. ([#847](https://github.com/OpenBladeProject/openblade-core/pull/847))
+
 ## [0.42.0-nightly.100] - 2026-10-23
 
 ### Added
