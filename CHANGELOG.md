@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Retain redacted exception messages, stack locations, native results and complete ordinary cause chains across runtime diagnostics. Preserve driver and controller discovery context, log-writer health and export omissions, and deliver larger diagnostic archives without widening control requests. ([#850](https://github.com/OpenBladeProject/openblade-core/pull/850))
+
 ## [0.42.1-nightly.101] - 2026-10-24
 
 ### Fixed
