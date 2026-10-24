@@ -86,6 +86,8 @@ public sealed class SnapTapProcessCoordinatorTests
         await WaitUntilAsync(() => first.StopRequested);
         source.Set(true);
         await WaitUntilAsync(() => statuses.Last().State == SnapTapRuntimeState.Failed, TimeSpan.FromSeconds(4));
+        Assert.Equal("StopTimedOut", statuses.Last().Failure?.Reason);
+        Assert.Equal("WaitForExit", statuses.Last().Failure?.Stage);
         Assert.Equal(1, launches);
         Assert.False(first.Disposed);
         first.Exit(0);

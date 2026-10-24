@@ -70,7 +70,8 @@ public sealed class SnapTapProcessCoordinator(
                     stopping = true;
                     if (!await StopAsync(child, exited!).ConfigureAwait(false))
                     {
-                        latched |= !Publish(SnapTapRuntimeState.Failed);
+                        latched |= !Publish(SnapTapRuntimeState.Failed, failure: SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Coordinator, "StopChild", "WaitForExit", "StopTimedOut"));
                     }
                 }
 
@@ -357,7 +358,11 @@ public sealed class SnapTapProcessCoordinator(
     private static async Task<bool> StopAsync(ISnapTapChildProcess child, Task? exited)
     {
         try { child.RequestStop(); }
-        catch (Exception exception) { Trace.TraceWarning("Snap Tap stop request failed: {0}", exception.GetType().Name); }
+        catch (Exception exception)
+        {
+            TraceFailure(SnapTapDiagnosticFailure.FromException(
+                SnapTapDiagnosticFailure.Coordinator, "StopChild", "StopRequest", "StopRequestFailed", exception));
+        }
         if (exited is null)
         {
             return false;
@@ -368,8 +373,10 @@ public sealed class SnapTapProcessCoordinator(
             return true;
         }
         catch (TimeoutException) { return false; }
-        catch (Exception)
+        catch (Exception exception)
         {
+            TraceFailure(SnapTapDiagnosticFailure.FromException(
+                SnapTapDiagnosticFailure.Coordinator, "StopChild", "WaitForExit", "ChildWaitFailed", exception));
             try { return child.HasExited; }
             catch (Exception) { return false; }
         }
@@ -382,7 +389,12 @@ public sealed class SnapTapProcessCoordinator(
             await exited.ConfigureAwait(false);
             return child.HasExited && child.ExitCode == 0;
         }
-        catch (Exception) { return false; }
+        catch (Exception exception)
+        {
+            TraceFailure(SnapTapDiagnosticFailure.FromException(
+                SnapTapDiagnosticFailure.Coordinator, "ObserveChild", "ExitObservation", "ExitObservationFailed", exception));
+            return false;
+        }
     }
 
     private static async Task DisposeAfterExitAsync(ISnapTapChildProcess child, Task? exited)
