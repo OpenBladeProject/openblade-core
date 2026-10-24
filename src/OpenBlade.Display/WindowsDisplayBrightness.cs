@@ -1,5 +1,6 @@
 using System.Management;
 using System.Runtime.InteropServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Display;
 
@@ -46,6 +47,7 @@ internal static class WindowsDisplayBrightness
         catch (Exception exception) when (exception is ManagementException
             or COMException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDisplayBrightness), nameof(Query), exception);
             return null;
         }
     }
@@ -106,10 +108,7 @@ internal static class WindowsDisplayBrightness
             input["Brightness"] = target;
             onSubmitting();
             using ManagementBaseObject? output = matches[0].InvokeMethod("WmiSetBrightness", input, null);
-            if (output?["ReturnValue"] is not uint status || status != 0)
-            {
-                throw new ManagementException("Windows did not acknowledge the brightness change.");
-            }
+            ValidateSetResult(output?["ReturnValue"]);
         }
         finally
         {
@@ -117,6 +116,22 @@ internal static class WindowsDisplayBrightness
             {
                 method.Dispose();
             }
+        }
+    }
+
+    internal static void ValidateSetResult(object? returnValue)
+    {
+        if (returnValue is not uint status)
+        {
+            string type = returnValue?.GetType().FullName ?? "null";
+            throw new ManagementException(
+                $"Windows returned an invalid brightness acknowledgement type ({type}).");
+        }
+
+        if (status != 0)
+        {
+            throw new ManagementException(
+                $"Windows rejected the brightness change with status {status} (0x{status:X8}).");
         }
     }
 

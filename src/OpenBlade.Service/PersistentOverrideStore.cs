@@ -153,6 +153,8 @@ public sealed class PersistentOverrideStore
                 catch (Exception exception)
                     when (BatteryConfigurationStore.IsRecoverable(exception))
                 {
+                    DiagnosticTrace.TraceException(nameof(PersistentOverrideStore), nameof(SaveAsync), exception,
+                        "Existing override document was invalid.");
                     throw new ConfigurationQuarantinedException(
                         "The existing override document is preserved in quarantine.",
                         ContainsFutureSchema(existing)
@@ -197,6 +199,7 @@ public sealed class PersistentOverrideStore
         catch (Exception exception)
             when (BatteryConfigurationStore.IsRecoverable(exception))
         {
+            DiagnosticTrace.TraceException(nameof(PersistentOverrideStore), nameof(LoadCoreAsync), exception);
             return new PersistentOverrideInspection(
                 new PersistentOverrideLoadResult(
                     PersistentOverrideState.Empty,

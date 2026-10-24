@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 using OpenBlade.Tray;
 
@@ -118,6 +119,10 @@ public sealed class SessionAudioRequestDispatcher
         catch (Exception exception)
         {
             // A diagnostic failure neither masks THX discovery nor authorizes setup.
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionAudioRequestDispatcher",
+                "ReadBaseAudioDiagnostics",
+                exception);
             return new(false, false, false, $"The base-audio diagnostic query failed: {exception.GetType().Name}.");
         }
     }
@@ -274,6 +279,10 @@ public sealed class SessionAudioRequestDispatcher
             catch (Exception exception)
             {
                 MarkIndeterminate(endpoint);
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.SessionAudioRequestDispatcher",
+                    "ExecuteMutation",
+                    exception);
                 return Response(
                     request,
                     ThxAudioOperationStatus.Indeterminate,
@@ -285,6 +294,10 @@ public sealed class SessionAudioRequestDispatcher
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionAudioRequestDispatcher",
+                "DispatchRequest",
+                exception);
             return Response(
                 request,
                 ThxAudioOperationStatus.Failed,
@@ -314,6 +327,10 @@ public sealed class SessionAudioRequestDispatcher
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             confirmed.Remove(endpoint);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionAudioRequestDispatcher",
+                "ExecuteRead",
+                exception);
             return Response(
                 request,
                 ThxAudioOperationStatus.Failed,
@@ -524,9 +541,13 @@ public sealed class SessionAudioRequestDispatcher
         {
             return ApplicationAutomationPausedProvider?.Invoke() == true;
         }
-        catch
+        catch (Exception exception)
         {
             // A UI diagnostic must not obscure confirmed native readback.
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionAudioRequestDispatcher",
+                "ReadAutomationPaused",
+                exception);
             return true;
         }
     }

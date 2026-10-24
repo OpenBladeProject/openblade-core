@@ -1518,7 +1518,7 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "OpenBlade could not show the '{0}' dialog",
+            "\"ShowDialog\"",
             window,
             StringComparison.Ordinal);
         Assert.Contains("contentDialogGate.WaitAsync()", window, StringComparison.Ordinal);
@@ -2421,7 +2421,7 @@ public sealed class WinUiShellContractTests
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         Assert.Contains("exitLifecycle.ExitAsync()", app, StringComparison.Ordinal);
         Assert.Contains("exitLifecycle.TryRunWhileActive", app, StringComparison.Ordinal);
-        Assert.Contains("Trace.TraceError", app, StringComparison.Ordinal);
+        Assert.Contains("DiagnosticTrace.TraceException", app, StringComparison.Ordinal);
         Assert.Contains("RequestTrayExitAsync()", app, StringComparison.Ordinal);
         Assert.Contains("Keep background features running", app, StringComparison.Ordinal);
         Assert.Contains("Shut down completely", app, StringComparison.Ordinal);

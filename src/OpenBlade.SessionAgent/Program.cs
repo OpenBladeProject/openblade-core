@@ -103,6 +103,10 @@ internal static class Program
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.Program",
+                "RunProcess",
+                exception);
             _ = CrashReportWriter.CreateDefault(
                     "OpenBlade.SessionAgent",
                     OpenBladeProductVersion.Read(typeof(Program).Assembly))
@@ -266,9 +270,10 @@ internal static class Program
                 audioDispatcher.ApplicationAutomationPausedProvider = () => audioAutomationCoordinator.IsPaused;
                 var specialKeyBindings = new SpecialKeyBindingSource(
                     preferencesPath,
-                    exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade shortcut preference refresh failed: {0}",
-                        exception.Message));
+                    exception => DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.SpecialKeyBindings",
+                        "RefreshPreferences",
+                        exception));
                 var snapTap = new SnapTapProcessCoordinator(
                     specialKeyBindings,
                     SnapTapInputProcess.Start,
@@ -285,9 +290,10 @@ internal static class Program
                 using IDisplayBrightnessOsd displayBrightnessOsd =
                     WindowsTrayBrightnessOsdNotifier.CreateBestEffort(
                         eventEndpoint,
-                        exception => System.Diagnostics.Trace.TraceWarning(
-                            "OpenBlade brightness OSD notification failed: {0}",
-                            exception.Message));
+                        exception => DiagnosticTrace.TraceException(
+                            "OpenBlade.SessionAgent.BrightnessOsd",
+                            "Notify",
+                            exception));
                 await using var functionRowServiceClient = new ServiceClient();
                 var functionRowActions = new FunctionRowActionExecutor(
                     functionRowServiceClient,
@@ -326,13 +332,15 @@ internal static class Program
                 using IPerformanceShortcutNotificationSink shortcutNotifications =
                     WindowsTrayPerformanceShortcutNotificationSink.CreateBestEffort(
                         eventEndpoint,
-                        exception => System.Diagnostics.Trace.TraceWarning(
-                            "OpenBlade notification failed: {0}",
-                            exception.Message));
+                        exception => DiagnosticTrace.TraceException(
+                            "OpenBlade.SessionAgent.PerformanceShortcutNotification",
+                            "Notify",
+                            exception));
                 Action<Exception> inputErrorHandler = exception =>
-                    System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade input observation failed: {0}",
-                        exception.Message);
+                    DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.InputObservation",
+                        "Observe",
+                        exception);
                 await using var reactiveServiceClient = new ServiceClient();
                 var blade18FnActions = new Blade18FnActionExecutor(
                     reactiveServiceClient,
@@ -370,41 +378,46 @@ internal static class Program
                 await using var ambient = new ServiceAmbientLightingLoop(
                     hostRenderedLightingServiceClient,
                     WindowsAmbientScreenSamplerFactory.Instance,
-                    exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade Ambient Awareness failed: {0}",
-                        exception.Message),
+                    exception => DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.AmbientAwareness",
+                        "Render",
+                        exception),
                     statusWatcher: statusFeed);
                 await using var audioMeter = new ServiceAudioMeterLightingLoop(
                     hostRenderedLightingServiceClient,
                     WindowsAudioMeterLightingSamplerFactory.Instance,
-                    exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade Audio Meter failed: {0}",
-                        exception.Message),
+                    exception => DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.AudioMeter",
+                        "Render",
+                        exception),
                     statusWatcher: statusFeed);
                 await using var lightingIdleServiceClient = new ServiceClient();
                 var lightingIdlePolicy = new ServiceLightingIdlePolicyLoop(
                     lightingIdleServiceClient,
                     new WindowsUserIdleTimeSource(),
-                    exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade lighting power policy failed: {0}",
-                        exception.Message),
+                    exception => DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.LightingIdlePolicy",
+                        "Observe",
+                        exception),
                     statusWatcher: statusFeed,
                     displayStateSource: new WindowsSessionDisplayStateSource());
                 await using var playbackMuteServiceClient = new ServiceClient();
                 var playbackMuteIndicator = new ServicePlaybackMuteIndicatorLoop(
                     playbackMuteServiceClient,
                     new WindowsPlaybackMuteStateSource(),
-                    exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade playback mute indication failed: {0}",
-                        exception.Message),
+                    exception => DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.PlaybackMuteIndicator",
+                        "Observe",
+                        exception),
                     statusWatcher: statusFeed);
                 await using var microphoneMuteServiceClient = new ServiceClient();
                 var microphoneMuteIndicator = new ServiceMicrophoneMuteIndicatorLoop(
                     microphoneMuteServiceClient,
                     new WindowsMicrophoneMuteStateSource(),
-                    exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade microphone mute indication failed: {0}",
-                        exception.Message),
+                    exception => DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.MicrophoneMuteIndicator",
+                        "Observe",
+                        exception),
                     statusWatcher: statusFeed);
                 var lampArrayObservation = new ServiceLampArrayObservationLoop(
                     statusFeed,
@@ -412,9 +425,10 @@ internal static class Program
                     observation => System.Diagnostics.Trace.TraceInformation(
                         "OpenBlade LampArray observation: {0}",
                         observation.ToSanitizedSummary()),
-                    exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade LampArray observation failed: {0}",
-                        exception.Message));
+                    exception => DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.LampArray",
+                        "Observe",
+                        exception));
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
@@ -556,10 +570,10 @@ internal sealed class SessionAgentShutdownRequest
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade Session Agent restart unregistration failed during intentional shutdown: {0} (0x{1:X8}).",
-                exception.GetType().Name,
-                exception.HResult);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.Shutdown",
+                "UnregisterApplicationRestart",
+                exception);
         }
 
         try

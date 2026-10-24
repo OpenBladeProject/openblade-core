@@ -55,6 +55,7 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         }
         catch (Exception exception) when (IsAvailabilityFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(NvidiaGpuClockOffsetController), nameof(Query), exception);
             return null;
         }
         finally

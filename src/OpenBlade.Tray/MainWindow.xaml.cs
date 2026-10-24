@@ -194,22 +194,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
         visibleObservationLoop = new VisibleObservationLoop(ObserveVisibleSurfacesAsync,
-            errorHandler: exception => Trace.TraceError(
-                "OpenBlade visible observation failed: {0}",
+            errorHandler: exception => DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ObserveVisibleSurfaces",
                 exception),
             observationIntervalProvider: () =>
                 ViewModel.RequiresTelemetryObservation
                     ? ViewModel.TelemetryExpectedSampleInterval
                     : ViewModel.LiveReadingsObservationInterval);
         trayObservationLoop = new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync,
-            errorHandler: exception => Trace.TraceError(
-                "OpenBlade on-demand tray telemetry refresh failed: {0}",
+            errorHandler: exception => DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ObserveTrayState",
                 exception),
             observationIntervalProvider: () => Timeout.InfiniteTimeSpan);
         gpuAppObservationLoop = new VisibleObservationLoop(
             ObserveGpuAppActivityAsync,
-            errorHandler: exception => Trace.TraceWarning(
-                "OpenBlade GPU app visibility refresh failed: {0}",
+            errorHandler: exception => DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ObserveGpuAppActivity",
                 exception),
             observationIntervalProvider: () => GpuAppObservationPolicy.GetInterval(
                 ViewModel.IsGpuAppCleanupVisible));
@@ -288,8 +291,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         this.preferenceStore = preferenceStore ?? UiPreferenceStore.CreateDefault();
         preferenceSaveQueue = new UiPreferenceSaveQueue(
             this.preferenceStore.SaveAsync,
-            exception => Trace.TraceError(
-                "OpenBlade preference save failed: {0}",
+            exception => DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SavePreferences",
                 exception));
         TelemetryPlot.PreferencesChanged += (_, _) =>
         {
@@ -704,8 +708,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
         {
             Interlocked.Exchange(ref updateCheckingStarted, 0);
-            Trace.TraceError(
-                "OpenBlade update-check initialization failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "InitializeUpdateChecking",
                 exception);
         }
     }
@@ -823,10 +828,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade {0} disposal failed: {1}",
-                component,
-                exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "DisposeComponent",
+                exception,
+                component);
         }
     }
 
@@ -968,8 +974,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade preference initialization failed; using Follow Windows: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "InitializePreferences",
                 exception);
         }
 
@@ -1045,8 +1052,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade initial theme application failed; using Follow Windows: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ApplyInitialTheme",
                 exception);
             ViewModel.Theme = ThemePreference.FollowWindows;
             try
@@ -1055,8 +1063,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
             catch (Exception fallbackException)
             {
-                Trace.TraceError(
-                    "OpenBlade fallback theme application failed: {0}",
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.MainWindow",
+                    "ApplyFallbackTheme",
                     fallbackException);
             }
         }
@@ -1074,8 +1083,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade status watch initialization failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "InitializeStatusWatch",
                 exception);
         }
 
@@ -1326,7 +1336,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade runtime theme application failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ApplyRuntimeTheme",
+                exception);
             return;
         }
 
@@ -1476,8 +1489,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (InvalidOperationException exception)
         {
-            Trace.TraceError(
-                "OpenBlade preference save queue failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "QueuePreferenceSave",
                 exception);
         }
     }
@@ -1522,8 +1536,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade initial window placement failed; using the Windows default: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "PlaceInitialWindow",
                 exception);
         }
     }
@@ -2042,7 +2057,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade {0} change failed: {1}", label, exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ApplyToggleChange",
+                exception,
+                label);
         }
         finally
         {
@@ -2079,7 +2098,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade performance selection failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SelectPerformanceMode",
+                exception);
         }
         finally
         {
@@ -2160,8 +2182,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade function key behavior selection failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SelectFunctionKeyBehavior",
                 exception);
         }
         finally
@@ -2758,7 +2781,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade GPU clock-offset change failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SetGpuClockOffsets",
+                exception);
         }
         finally
         {
@@ -2784,7 +2810,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade custom performance selection failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SelectCustomPerformance",
+                exception);
         }
         finally
         {
@@ -2821,7 +2850,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade fan selection failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SelectFanMode",
+                exception);
         }
         finally
         {
@@ -2905,7 +2937,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade fan-curve sensor selection failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SelectFanCurveSensor",
+                exception);
         }
         finally
         {
@@ -2945,7 +2980,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade fan-control change failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SetFanControl",
+                exception);
         }
         finally
         {
@@ -3019,7 +3057,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade automatic lighting apply failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ApplyAutomaticLighting",
+                exception);
         }
         finally
         {
@@ -3145,7 +3186,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade charge-limit change failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SetChargeLimit",
+                exception);
             ViewModel.RevertUnappliedChargeLimitEdit(
                 commit.Value,
                 commit.EditorRevision);
@@ -3186,7 +3230,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade battery-protection change failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "SetBatteryProtection",
+                exception);
         }
         finally
         {
@@ -3968,7 +4015,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade {0} failed: {1}", label, exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "RunUiOperation",
+                exception,
+                label);
         }
     }
 
@@ -4176,7 +4227,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("Razer service stop failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "StopRazerServices",
+                exception);
             await ShowMessageDialogAsync(
                 LocalizedResources.Get(
                     "MainWindow_StopRazer_FailedTitle",
@@ -4278,9 +4332,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         catch (Exception exception)
             when (Volatile.Read(ref disposed) != 0 || Root.XamlRoot is null)
         {
-            Trace.TraceWarning(
-                "OpenBlade dialog closed during window teardown: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "CloseDialogDuringTeardown",
+                exception);
             return null;
         }
         finally
@@ -4310,10 +4365,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade could not show the '{0}' dialog: {1}",
-                title,
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ShowDialog",
+                exception);
         }
     }
 
@@ -4369,7 +4424,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ShutdownOpenBlade",
+                exception);
             await ShowMessageDialogAsync(
                 LocalizedResources.Get("MainWindow_Shutdown_FailedTitle", "OpenBlade could not shut down"),
                 LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
@@ -4404,7 +4462,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade service start failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "StartOpenBlade",
+                exception);
             await ShowMessageDialogAsync(
                 LocalizedResources.Get("MainWindow_Start_FailedTitle", "OpenBlade could not start"),
                 LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
@@ -4464,7 +4525,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade profile export failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ExportProfiles",
+                exception);
             await ShowMessageDialogAsync(
                 LocalizedResources.Get("MainWindow_ProfileExport_FailedTitle", "Profiles could not be exported"),
                 LocalizedResources.Get(
@@ -5482,7 +5546,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade profile import failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ImportProfiles",
+                exception);
             await ShowMessageDialogAsync(
                 LocalizedResources.Get("MainWindow_ProfileImport_FailedTitle", "Profiles could not be imported"),
                 LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
@@ -5592,7 +5659,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade keyboard lighting import failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "ImportKeyboardLighting",
+                exception);
             await ShowMessageDialogAsync(
                 LocalizedResources.Get(
                     "MainWindow_LightingImport_FailedTitle",

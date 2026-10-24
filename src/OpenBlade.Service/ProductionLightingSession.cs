@@ -923,6 +923,7 @@ internal sealed class ProductionLightingSession
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingSession), nameof(GetLightingPortCoreAsync), exception);
             var failure = new LightingPortOpenFailure(
                 HidSessionFailureKind.NativeIoFailure,
                 Diagnostic: null,
@@ -1221,6 +1222,7 @@ internal sealed class ProductionLightingSession
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingSession), nameof(ReadLightingStateCoreAsync), exception);
             Volatile.Write(ref keyboardStateReadRejection, RejectionDescription(exception));
             // Brightness uses the command interface while the host renderer
             // writes the matrix through a separate interface. A transient
@@ -1261,6 +1263,8 @@ internal sealed class ProductionLightingSession
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingSession),
+                nameof(ReadPowerTransitionLightingStateCoreAsync), exception);
             Volatile.Write(ref keyboardStateReadRejection, RejectionDescription(exception));
             await RetireUnusableLightingPortAfterReadFailureAsync()
                 .ConfigureAwait(false);
@@ -1324,6 +1328,7 @@ internal sealed class ProductionLightingSession
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingSession), nameof(ReadLogoLightingStateCoreAsync), exception);
             Volatile.Write(ref logoStateReadRejection, RejectionDescription(exception));
             return null;
         }

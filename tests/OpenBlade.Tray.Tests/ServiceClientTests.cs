@@ -272,6 +272,43 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task ExportDiagnosticsAsync_AcceptsArchiveResponseAboveNormalFrameLimit()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        byte[] zipBytes = new byte[128 * 1024];
+        zipBytes[0] = 0x50;
+        zipBytes[1] = 0x4B;
+        zipBytes[2] = 0x03;
+        zipBytes[3] = 0x04;
+        var expected = new DiagnosticArchive("OpenBlade-diagnostics.zip", zipBytes);
+        Task server = RunServerAsync(
+            pipeName,
+            request =>
+            {
+                Assert.IsType<ExportDiagnosticsRequest>(request);
+                return new ServiceResponse(
+                    OpenBladeIpc.ProtocolVersion,
+                    request.RequestId,
+                    true,
+                    null,
+                    null,
+                    null,
+                    expected);
+            },
+            timeout.Token);
+        IServiceClient client = new ServiceClient(pipeName);
+
+        DiagnosticArchive actual = await client.ExportDiagnosticsAsync(
+            liveReadingsEnabled: false,
+            timeout.Token);
+        await server;
+
+        Assert.Equal(expected.SuggestedFileName, actual.SuggestedFileName);
+        Assert.Equal(expected.ZipBytes, actual.ZipBytes);
+    }
+
+    [Fact]
     public async Task ExportDiagnosticsAsync_RejectsSuccessfulResponseWithoutArchiveBody()
     {
         string pipeName = NewPipeName();

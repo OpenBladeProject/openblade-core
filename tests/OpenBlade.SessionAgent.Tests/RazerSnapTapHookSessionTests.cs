@@ -103,12 +103,14 @@ public sealed class RazerSnapTapHookSessionTests
     }
 
     [Fact]
-    public void FailurePreservesNativeInnerCauseWithoutPersistingMessages()
+    public void FailurePreservesRedactedMessageAndNativeInnerCause()
     {
         var transport = new FakeTransport
         {
             FailureCall = 2,
-            Failure = new IOException("path must not escape", new Win32Exception(5, "native message")),
+            Failure = new IOException(
+                @"hook write failed at C:\Users\Alice\hook.bin",
+                new Win32Exception(5, "native access denied")),
         };
         var session = new RazerSnapTapHookSession(transport);
 
@@ -123,8 +125,9 @@ public sealed class RazerSnapTapHookSessionTests
         Assert.Equal(nameof(Win32Exception), failure.Cause?.ExceptionType);
         Assert.Equal(5, failure.Cause?.NativeErrorCode);
         string serialized = System.Text.Json.JsonSerializer.Serialize(failure);
-        Assert.DoesNotContain("path", serialized, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("native message", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("hook write failed", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("native access denied", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Alice", serialized, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

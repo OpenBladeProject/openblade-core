@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -1138,8 +1139,12 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
         {
             errorHandler?.Invoke(exception);
         }
-        catch
+        catch (Exception reportingException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsDisplayBrightnessOsd),
+                "ReportFailure",
+                reportingException);
         }
     }
 

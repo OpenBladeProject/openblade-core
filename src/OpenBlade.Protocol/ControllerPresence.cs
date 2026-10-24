@@ -112,8 +112,10 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
                 }
             }
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsControllerPresenceMonitor), nameof(Observe), exception,
+                "Process observation failed.");
             processFailed = true;
         }
 
@@ -146,8 +148,10 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
                 }
             }
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsControllerPresenceMonitor), nameof(Observe), exception,
+                "Service observation failed.");
             serviceFailed = true;
         }
 
@@ -197,8 +201,9 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
                 && endpoint.ProductId is > 0
                 && (endpoint.VendorId != 0x1532 || !bladeIds.Contains(endpoint.ProductId.Value)));
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsControllerPresenceMonitor), nameof(HasNoBladeLampArray), exception);
             return false;
         }
     }

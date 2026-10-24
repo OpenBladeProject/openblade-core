@@ -535,6 +535,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(Rz090528BrightnessLightingPort), nameof(TurnOffForLowPowerAsync), exception,
+                "Lighting write admission failed before submission.");
             return new(before, LightingLowPowerOffOutcome.KnownNotApplied, exception.Message);
         }
         bool retired = false;
@@ -574,6 +576,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(Rz090528BrightnessLightingPort), nameof(TurnOffForLowPowerAsync), exception);
             LightingLowPowerOffOutcome outcome = submissionStarted
                 && exception is not BladeWriteException
                 { SubmissionState: WriteSubmissionState.KnownNotApplied }
@@ -648,6 +651,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 }
                 catch (Exception exception)
                 {
+                    DiagnosticTrace.TraceException(nameof(Rz090528BrightnessLightingPort), nameof(SetLightingAsync), exception,
+                        "Brightness-only lighting transition failed.");
                     bool brightnessRestored = baselineRaw == requestedRaw
                         || await TryRestoreCoreAsync(baselineRaw).ConfigureAwait(false);
                     bool logoRestored = baselineLogo is null
@@ -720,6 +725,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(Rz090528BrightnessLightingPort), nameof(SetLightingAsync), exception,
+                    "Lighting transition failed.");
                 bool brightnessRestored = !brightnessAttempted || baselineRaw == requestedRaw
                     || await TryRestoreCoreAsync(baselineRaw).ConfigureAwait(false);
                 bool rendererRestored = previous.Effect is not null

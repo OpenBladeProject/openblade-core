@@ -99,6 +99,10 @@ internal static class SnapTapInputHost
             or UnauthorizedAccessException or System.ComponentModel.Win32Exception
             or InvalidOperationException or WaitHandleCannotBeOpenedException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SnapTapInputHost",
+                "Run",
+                exception);
             return 1;
         }
     }

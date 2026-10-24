@@ -152,6 +152,8 @@ public sealed class ControlRequestHandler
             catch (Exception exception) when (exception is
                 InvalidDataException or IOException or JsonException or UnauthorizedAccessException)
             {
+                DiagnosticTrace.TraceException(nameof(ControlRequestHandler), nameof(HandleCoreAsync), exception,
+                    "Active-user configuration load failed.");
                 return Failure(
                     request.RequestId,
                     $"The active user's configuration could not be loaded: {exception.Message}");
@@ -457,6 +459,7 @@ public sealed class ControlRequestHandler
         catch (Exception exception) when (exception is
             InvalidDataException or IOException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(nameof(ControlRequestHandler), nameof(ExportDiagnosticsAsync), exception);
             return Failure(requestId, $"Diagnostic export failed: {exception.Message}");
         }
     }

@@ -28,6 +28,67 @@ public sealed class WindowsRazerDriverApiDiscoveryTests
         Description="Razer keyboard"
         """;
 
+    [Theory]
+    [InlineData("RzCommon")]
+    [InlineData("RzDev_02c6")]
+    public void StructuralPackageRejectionRetainsPackageCheckMessageAndStack(string service)
+    {
+        RazerDriverApiPackageEvidence evidence = WindowsRazerDriverApiDiscovery.Capture(service, stage =>
+        {
+            stage("InfContract");
+            WindowsRazerDriverApiDiscovery.ValidateInfContract(
+                Inf.Replace("Razer Inc", "Other Vendor", StringComparison.Ordinal),
+                "RzDev_02e0", @"HID\VID_1532&PID_02E0&MI_01&COL01");
+            throw new InvalidOperationException("The malformed INF must have been rejected.");
+        });
+
+        Assert.True(evidence.Installed);
+        Assert.False(evidence.Trusted);
+        Assert.Null(evidence.Identity);
+        Assert.Equal("The signed INF does not identify the Razer provider.", evidence.Failure);
+        Assert.Equal(service, evidence.FailureDetail?.Operation);
+        Assert.Equal("InfContract", evidence.FailureDetail?.Stage);
+        Assert.Equal("ProviderMismatch", evidence.FailureDetail?.Reason);
+        Assert.Equal(nameof(InvalidDataException), evidence.FailureDetail?.ExceptionType);
+        Assert.Equal(new InvalidDataException().HResult, evidence.FailureDetail?.HResult);
+        Assert.Contains(nameof(WindowsRazerDriverApiDiscovery.ValidateInfContract), evidence.FailureDetail?.StackTrace);
+        Assert.True(evidence.FailureDetail?.IsValid());
+    }
+
+    [Fact]
+    public void UnexpectedNativePackageFailurePreservesInnerChainAndRedactsItsMessage()
+    {
+        RazerDriverApiPackageEvidence evidence = WindowsRazerDriverApiDiscovery.Capture("RzCommon", stage =>
+        {
+            stage("PublishedInf");
+            throw new IOException(@"Cannot open C:\Users\private-owner\package.inf",
+                new System.ComponentModel.Win32Exception(5, "Access denied"));
+        });
+        Assert.False(evidence.Trusted);
+        Assert.Equal(5, evidence.FailureDetail?.Cause?.NativeErrorCode);
+        Assert.Equal("PublishedInf", evidence.FailureDetail?.Stage);
+        Assert.DoesNotContain("private-owner",
+            System.Text.Json.JsonSerializer.Serialize(evidence.FailureDetail), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("CatalogFile=updated.cat", "CatalogFile=one.cat\nCatalogFile.NTamd64=two.cat", "CatalogMissingOrAmbiguous")]
+    [InlineData("CatalogFile=updated.cat", "CatalogFile=wrong.dll", "CatalogExtensionMismatch")]
+    [InlineData("CatalogFile=updated.cat", "CatalogFile=..\\bad.cat", "InvalidPackageFileName")]
+    public void CatalogRejectionHasAnExactStableReason(string before, string after, string reason)
+    {
+        RazerDriverApiPackageEvidence evidence = WindowsRazerDriverApiDiscovery.Capture("RzCommon", stage =>
+        {
+            stage("InfContract");
+            WindowsRazerDriverApiDiscovery.ValidateInfContract(
+                Inf.Replace(before, after, StringComparison.Ordinal),
+                "RzDev_02e0", @"HID\VID_1532&PID_02E0&MI_01&COL01");
+            return new(true, true, "must-not-reach");
+        });
+        Assert.False(evidence.Trusted);
+        Assert.Equal(reason, evidence.FailureDetail?.Reason);
+    }
+
     [Fact]
     public void UpdatedPackageKeepsExactFilterContractWithoutVersionPin()
     {

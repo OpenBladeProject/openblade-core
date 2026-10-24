@@ -260,6 +260,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(TurnOffForLowPowerAsync), exception,
+                "Lighting write admission failed before submission.");
             return new(before, LightingLowPowerOffOutcome.KnownNotApplied, exception.Message);
         }
         bool retired = false;
@@ -299,6 +301,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(TurnOffForLowPowerAsync), exception);
             LightingLowPowerOffOutcome outcome = submissionStarted
                 && exception is not BladeWriteException
                 { SubmissionState: WriteSubmissionState.KnownNotApplied }
@@ -381,6 +384,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 }
                 catch (Exception exception)
                 {
+                    DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(SetLightingAsync), exception,
+                        "Brightness-only lighting transition failed.");
                     bool brightnessRestored = baselineRaw == requestedRaw
                         || await TryRestoreBrightnessCoreAsync(baselineRaw)
                             .ConfigureAwait(false);
@@ -470,6 +475,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(SetLightingAsync), exception,
+                    "Lighting transition failed.");
                 bool brightnessRestored = !brightnessAttempted || baselineRaw == requestedRaw
                     || await TryRestoreBrightnessCoreAsync(baselineRaw).ConfigureAwait(false);
                 bool rendererRestored = previous is not null

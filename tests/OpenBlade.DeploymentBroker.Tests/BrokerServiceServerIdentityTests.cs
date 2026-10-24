@@ -100,6 +100,24 @@ public sealed class BrokerServiceServerIdentityTests
         Assert.Equal(ExpectedExecutable, WindowsBrokerServiceHealthProbe.ExpectedExecutablePath);
     }
 
+    [Fact]
+    public void ServiceExitCodes_AreDiagnosticOnlyAndRetainNumericContext()
+    {
+        BrokerServiceConfigurationEvidence evidence = HealthyEvidence() with
+        {
+            Win32ExitCode = 1067,
+            ServiceSpecificExitCode = 42,
+        };
+
+        Assert.True(BrokerServiceConfigurationPolicy.IsTrusted(evidence, ExpectedExecutable));
+        string context = WindowsBrokerServiceHealthProbe.FormatServiceStatusContext(evidence);
+        Assert.Contains("win32ExitCode=1067 win32ExitCodeHex=0x0000042B", context, StringComparison.Ordinal);
+        Assert.Contains(
+            "serviceSpecificExitCode=42 serviceSpecificExitCodeHex=0x0000002A",
+            context,
+            StringComparison.Ordinal);
+    }
+
     private static BrokerServiceConfigurationEvidence HealthyEvidence() => new(
         Exists: true,
         IsRunning: true,

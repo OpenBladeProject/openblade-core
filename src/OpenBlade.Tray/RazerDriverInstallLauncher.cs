@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -92,6 +93,11 @@ internal sealed class RazerDriverInstallLauncher
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException
             or IOException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(RazerDriverInstallLauncher),
+                "LaunchAsync",
+                exception,
+                requestStarted ? "The elevated request may have started." : "The elevated request did not start.");
             return requestStarted ? RazerDriverInstallOutcome.RecoveryRequired : RazerDriverInstallOutcome.Unavailable;
         }
     }

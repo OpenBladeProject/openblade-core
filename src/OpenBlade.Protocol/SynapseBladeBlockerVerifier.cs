@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
@@ -70,6 +71,8 @@ internal sealed class SynapseBladeBlockerVerifier
                 or JsonException or InvalidOperationException or ArgumentException or FormatException or OverflowException
                 or KeyNotFoundException)
             {
+                DiagnosticTrace.TraceException(nameof(SynapseBladeBlockerVerifier),
+                    nameof(GetAppliedBladeProductIds), exception);
                 return null;
             }
         }

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -275,8 +276,9 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
             }
             catch (Exception exception)
             {
-                Trace.TraceError(
-                    "OpenBlade automatic update-check shutdown failed: {0}",
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.UpdateCheckViewModel",
+                    "DisposeAutomaticCheck",
                     exception);
             }
         }
@@ -359,8 +361,9 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
         catch (ReleaseUpdateConnectivityException exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade update check could not reach GitHub: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.UpdateCheckViewModel",
+                "CheckForUpdates",
                 exception);
             retryAfter = timeProvider.GetUtcNow() + FailureRetryDelay;
             Notify(nameof(RetryAfter));
@@ -370,6 +373,10 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
         catch (ReleaseUpdateRateLimitException exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.UpdateCheckViewModel",
+                "CheckForUpdates",
+                exception);
             retryAfter = exception.RetryAfter;
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
@@ -379,6 +386,10 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
         catch (ReleaseUpdateRetryException exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.UpdateCheckViewModel",
+                "CheckForUpdates",
+                exception);
             retryAfter = exception.RetryAfter;
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);
@@ -388,7 +399,10 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade update check failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.UpdateCheckViewModel",
+                "CheckForUpdates",
+                exception);
             retryAfter = timeProvider.GetUtcNow() + FailureRetryDelay;
             Notify(nameof(RetryAfter));
             PreferencesChanged?.Invoke(this, EventArgs.Empty);

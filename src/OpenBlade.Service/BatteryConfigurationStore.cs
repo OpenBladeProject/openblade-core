@@ -222,6 +222,8 @@ public sealed class BatteryConfigurationStore
                 }
                 catch (Exception exception) when (IsRecoverable(exception))
                 {
+                    DiagnosticTrace.TraceException(nameof(BatteryConfigurationStore), nameof(LoadCoreAsync), exception,
+                        "Recovery snapshot was invalid.");
                     return Quarantined(
                         ConfigurationQuarantineReason.InvalidDocument,
                         recovered: true,
@@ -264,6 +266,8 @@ public sealed class BatteryConfigurationStore
             }
             catch (Exception exception) when (IsRecoverable(exception))
             {
+                DiagnosticTrace.TraceException(nameof(BatteryConfigurationStore), nameof(LoadCoreAsync), exception,
+                    "Committed aggregate snapshot was invalid.");
                 return Quarantined(
                     HasSchemaVersion(snapshot.Profile.Contents)
                         ? ConfigurationQuarantineReason.IncompleteAggregate
@@ -305,6 +309,8 @@ public sealed class BatteryConfigurationStore
         }
         catch (Exception exception) when (IsRecoverable(exception))
         {
+            DiagnosticTrace.TraceException(nameof(BatteryConfigurationStore), nameof(LoadCoreAsync), exception,
+                "Configuration load failed.");
             return Quarantined(
                 ConfigurationQuarantineReason.InvalidDocument,
                 recovered: true,
@@ -762,6 +768,7 @@ public sealed class BatteryConfigurationStore
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(nameof(BatteryConfigurationStore), nameof(DeleteBestEffort), exception);
             // Transaction artifacts are non-authoritative. Leaving one behind is safer
             // than changing the success/failure result after commit or rollback.
         }
@@ -832,6 +839,7 @@ public sealed class BatteryConfigurationStore
         }
         catch (Exception exception) when (IsRecoverable(exception))
         {
+            DiagnosticTrace.TraceException(nameof(BatteryConfigurationStore), nameof(ReadCommittedSnapshotForSave), exception);
             throw new ConfigurationQuarantinedException(
                 "The existing configuration is invalid and was preserved in quarantine.",
                 ConfigurationQuarantineReason.InvalidDocument);

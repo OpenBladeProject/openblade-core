@@ -18097,6 +18097,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private ControlOperationResult RecordRejectedIntent(Exception exception)
     {
+        DiagnosticTrace.TraceException(nameof(ServiceControlRuntime), nameof(RecordRejectedIntent), exception);
         if (exception is ConfigurationQuarantinedException)
         {
             return ConfigurationQuarantineBlocked();

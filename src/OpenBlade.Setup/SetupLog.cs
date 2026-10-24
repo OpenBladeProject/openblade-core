@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Setup;
 
 // Appends a short run record to the Burn-allocated package log so a quiet install
@@ -30,18 +32,11 @@ public sealed class SetupLog(string? path)
     public void WriteFailure(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        Write($"Failed: {Describe(exception)}");
-        IEnumerable<Exception> causes = exception is AggregateException aggregate
-            ? aggregate.InnerExceptions
-            : exception.InnerException is { } inner ? [inner] : [];
-        foreach (Exception cause in causes)
-        {
-            Write($"Caused by: {Describe(cause)}");
-        }
+        Write(DiagnosticTrace.FormatException(
+            "OpenBlade.Setup",
+            "Run",
+            exception));
     }
-
-    private static string Describe(Exception exception) =>
-        $"{exception.GetType().FullName}: {exception.Message}";
 }
 
 // Records each setup step so the log shows how far a failed run got. Repeats of one

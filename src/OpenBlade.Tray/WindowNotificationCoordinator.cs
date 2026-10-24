@@ -220,9 +220,10 @@ internal sealed class WindowNotificationCoordinator
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade could not show a notification: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.WindowNotificationCoordinator",
+                "ShowNotification",
+                exception);
             return false;
         }
     }

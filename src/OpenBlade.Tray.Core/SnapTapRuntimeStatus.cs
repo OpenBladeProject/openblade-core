@@ -32,7 +32,7 @@ public sealed record SnapTapRuntimeStatus(
 
 public static class SnapTapStatusStore
 {
-    private const int MaximumFileSize = 8192;
+    internal const int MaximumFileSize = 2 * 1024 * 1024;
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     public static string GetDefaultPath()
@@ -176,6 +176,10 @@ public static class SnapTapStatusStore
             catch (Exception exception) when (exception is IOException
                 or UnauthorizedAccessException or SecurityException)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.SnapTapStatusStore",
+                    "DeleteTemporaryStatus",
+                    exception);
             }
         }
     }

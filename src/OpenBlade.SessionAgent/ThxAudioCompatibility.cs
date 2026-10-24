@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.SessionAgent;
 
@@ -366,6 +367,10 @@ internal static class ThxAudioCompatibility
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(ThxAudioCompatibility),
+                "InspectDriverStore",
+                exception);
             serviceBinary = null;
             error = packageName is null
                 ? "The THX driver store is unreadable."

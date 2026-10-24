@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -29,6 +30,7 @@ internal sealed class ThxAudioInstallLauncher
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
+            DiagnosticTrace.TraceException(nameof(ThxAudioInstallLauncher), "IsSupportedHost", exception);
             return false;
         }
     }
@@ -97,6 +99,11 @@ internal sealed class ThxAudioInstallLauncher
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(ThxAudioInstallLauncher),
+                "LaunchAsync",
+                exception,
+                started ? "The elevated request may have started." : "The elevated request did not start.");
             return started ? ThxAudioProvisioningResult.RecoveryRequired : ThxAudioProvisioningResult.Failed;
         }
     }

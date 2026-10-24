@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.SessionAgent;
 
@@ -36,8 +37,10 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
         catch (Exception exception) when (exception is Win32Exception
             or DllNotFoundException or EntryPointNotFoundException)
         {
-            Trace.TraceWarning("OpenBlade session power notifications are unavailable: {0} (0x{1:X8}).",
-                exception.GetType().Name, exception.HResult);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionPowerNotification",
+                "Register",
+                exception);
             return null;
         }
     }
@@ -91,8 +94,10 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
             // Windows still owns the callback pointer on unregister failure.
             // Root its complete lifetime while suppressing further dispatch.
             FailedCleanups.Add(this);
-            Trace.TraceWarning("OpenBlade session power notification unregister failed: {0} (0x{1:X8}).",
-                exception.GetType().Name, exception.HResult);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SessionPowerNotification",
+                "Unregister",
+                exception);
         }
     }
 
@@ -114,8 +119,10 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
             // Never unwind a managed exception through the native callback.
             try
             {
-                Trace.TraceWarning("OpenBlade session power notification failed: {0} (0x{1:X8}).",
-                    exception.GetType().Name, exception.HResult);
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.SessionPowerNotification",
+                    "DispatchCallback",
+                    exception);
             }
             catch
             {

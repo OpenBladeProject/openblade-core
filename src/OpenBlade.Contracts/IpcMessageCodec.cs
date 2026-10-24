@@ -8,10 +8,11 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 71;
+    public const int ProtocolVersion = 72;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
-    public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
+    public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
+    public const int MaximumDiagnosticResponseBytes = 24 * 1024 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
 }
 
@@ -98,6 +99,17 @@ public static class IpcMessageCodec
         return frame;
     }
 
+    public static async Task<ServiceServerFrame> ReadDiagnosticArchiveFrameAsync(
+        Stream stream,
+        CancellationToken token)
+    {
+        ServiceServerFrame frame = await ReadFramedAsync<ServiceServerFrame>(
+                stream, token, maximumMessageBytes: OpenBladeIpc.MaximumDiagnosticResponseBytes)
+            .ConfigureAwait(false);
+        ValidateServerFrame(frame);
+        return frame;
+    }
+
     public static Task WriteProtocol51ReadOnlyServerFrameAsync(
         Stream stream,
         ServiceServerFrame frame,
@@ -151,9 +163,13 @@ public static class IpcMessageCodec
             throw new InvalidDataException("IPC message body is invalid.", exception);
         }
 
-        if (payload.Length > OpenBladeIpc.MaximumMessageBytes)
+        int maximum = serializerOptions is null && message is ServiceResponse { Archive: not null }
+            ? OpenBladeIpc.MaximumDiagnosticResponseBytes : OpenBladeIpc.MaximumMessageBytes;
+        if (payload.Length > maximum)
         {
-            throw new InvalidDataException("IPC message exceeds the 64 KiB limit.");
+            throw new InvalidDataException(maximum == OpenBladeIpc.MaximumMessageBytes
+                ? "IPC message exceeds the 64 KiB limit."
+                : "Diagnostic response exceeds the 24 MiB limit.");
         }
 
         byte[] prefix = new byte[sizeof(int)];
@@ -166,13 +182,14 @@ public static class IpcMessageCodec
     private static async Task<T> ReadFramedAsync<T>(
         Stream stream,
         CancellationToken cancellationToken,
-        bool allowProtocol51 = false)
+        bool allowProtocol51 = false,
+        int maximumMessageBytes = OpenBladeIpc.MaximumMessageBytes)
     {
         ArgumentNullException.ThrowIfNull(stream);
         byte[] prefix = new byte[sizeof(int)];
         await stream.ReadExactlyAsync(prefix, cancellationToken).ConfigureAwait(false);
         int length = BinaryPrimitives.ReadInt32LittleEndian(prefix);
-        if (length is <= 0 or > OpenBladeIpc.MaximumMessageBytes)
+        if (length <= 0 || length > maximumMessageBytes)
         {
             throw new InvalidDataException("IPC message length is invalid.");
         }
@@ -183,8 +200,14 @@ public static class IpcMessageCodec
         {
             ValidateNoDuplicateObjectMembers(payload);
             ValidatePayloadVersion(payload, allowProtocol51);
-            return JsonSerializer.Deserialize<T>(payload, SerializerOptions)
+            T message = JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("IPC message body is invalid.");
+            if (length > OpenBladeIpc.MaximumMessageBytes
+                && message is not ServiceResponse { Archive: not null })
+            {
+                throw new InvalidDataException("Only a diagnostic archive may use the larger response limit.");
+            }
+            return message;
         }
         catch (JsonException exception)
         {

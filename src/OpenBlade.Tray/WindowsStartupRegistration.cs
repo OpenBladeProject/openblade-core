@@ -1,3 +1,4 @@
+using OpenBlade.Contracts;
 using OpenBlade.Setup;
 
 namespace OpenBlade.Tray;
@@ -145,6 +146,7 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsStartupRegistration), "ReadTrayTaskState", exception);
             return false;
         }
     }
@@ -168,9 +170,10 @@ internal sealed class WindowsStartupRegistration : IStartupRegistration
             {
                 File.Delete(temporaryPath);
             }
-            catch
+            catch (Exception exception)
             {
                 // Best-effort cleanup must not replace the primary write failure.
+                DiagnosticTrace.TraceException(nameof(WindowsStartupRegistration), "DeleteTemporaryDisabledMarker", exception);
             }
         }
     }

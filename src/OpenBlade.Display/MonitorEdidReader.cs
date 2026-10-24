@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Display;
 
@@ -32,6 +33,7 @@ internal static class MonitorEdidReader
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(nameof(MonitorEdidReader), nameof(TryRead), exception);
             return false;
         }
     }

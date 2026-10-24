@@ -106,6 +106,7 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsFirmwareVersionSource), nameof(ReadFirmwareVersion), exception);
             return Unavailable;
         }
     }
@@ -126,6 +127,7 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsFirmwareVersionSource), nameof(ReadModelNumber), exception);
             return Unavailable;
         }
     }
@@ -138,6 +140,7 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsFirmwareVersionSource), nameof(ReadBiosVersion), exception);
             return Unavailable;
         }
     }
@@ -160,6 +163,7 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsFirmwareVersionSource), nameof(ReadEcVersion), exception);
             return Unavailable;
         }
     }
@@ -199,6 +203,7 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
         }
         catch (Exception exception) when (IsSafeMetadataFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsFirmwareVersionSource), nameof(ReadVbiosFirmware), exception);
             return null;
         }
     }

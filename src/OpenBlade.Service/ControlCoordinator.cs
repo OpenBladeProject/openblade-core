@@ -219,6 +219,8 @@ public sealed class ControlCoordinator
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyPerformanceTransitionOutcomeAsync), exception,
+                "Initial performance read failed.");
             return new ScopedApplyOutcome(
                 ReadFailure("Performance", exception),
                 Readback: null,
@@ -249,6 +251,8 @@ public sealed class ControlCoordinator
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyPerformanceTransitionOutcomeAsync), exception,
+                    "Performance capability refresh failed.");
                 return new ScopedApplyOutcome(
                     ReadFailure("Performance", exception),
                     Readback: null,
@@ -813,6 +817,7 @@ public sealed class ControlCoordinator
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyFanControlTransitionCoreOutcomeAsync), exception);
             return new ScopedApplyOutcome(
                 ReadFailure("Fans", exception),
                 null,
@@ -1293,6 +1298,8 @@ public sealed class ControlCoordinator
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyDesiredStateOutcomeAsync), exception,
+                "Initial aggregate state read failed.");
             ControlResult failed = ReadFailure("Device state", exception);
             return new FullTransitionApplyOutcome(
                 new SubsystemApplyResults(failed, failed, failed, failed),
@@ -1356,6 +1363,8 @@ public sealed class ControlCoordinator
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyDesiredStateOutcomeAsync), exception,
+                    "Post-transition aggregate state read failed.");
                 foreach (DeviceSubsystem subsystem in transition.Attempted)
                 {
                     // A setter whose completion is the only confirmation this laptop
@@ -1862,6 +1871,8 @@ public sealed class ControlCoordinator
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyPendingSubsystemWritesAsync), exception,
+                    $"subsystem={subsystem}");
                 transition.Provisional[subsystem] = Indeterminate(pending.Name, exception);
                 if (IsThermalSubsystem(subsystem))
                 {
@@ -1967,6 +1978,7 @@ public sealed class ControlCoordinator
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyFullTransitionThermalStepOnceAsync), exception);
             return new ScopedApplyOutcome(
                 Indeterminate(original.Name, exception),
                 null,
@@ -2289,6 +2301,7 @@ public sealed class ControlCoordinator
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyBatteryOperationAsync), exception);
             return new ScopedApplyOutcome(
                 submissionIndeterminate
                     ? Indeterminate("Battery", exception)
@@ -2538,6 +2551,8 @@ public sealed class ControlCoordinator
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ControlCoordinator), nameof(ApplyScopedAsync), exception,
+                $"subsystem={subsystem}");
             bool retryableThermalInitialReadFailure =
                 !writeAttempted
                 && initialStateReadStarted

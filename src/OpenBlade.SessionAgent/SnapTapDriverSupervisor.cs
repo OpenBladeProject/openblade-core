@@ -272,26 +272,18 @@ internal static class SnapTapDriverSupervisor
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning("SnapTap terminal status publication failed: {0}.", exception.GetType().Name);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.SnapTapDriverSupervisor",
+                "PublishTerminalStatus",
+                exception);
         }
         return exitCode;
     }
 
     private static void TraceTerminalFailure(DiagnosticFailure failure, int exitCode)
-    {
-        int depth = 0;
-        for (DiagnosticFailure? current = failure; current is not null && depth < 4; current = current.Cause)
-        {
-            Trace.TraceWarning(
-                "SnapTap terminal failure: depth={0}; component={1}; operation={2}; stage={3}; reason={4}; mayHaveSubmitted={5}; exception={6}; hresult={7}; native={8}; exitCode={9}.",
-                depth, current.Component, current.Operation, current.Stage, current.Reason,
-                current.MayHaveSubmitted, current.ExceptionType ?? "None",
-                current.HResult?.ToString(CultureInfo.InvariantCulture) ?? "None",
-                current.NativeErrorCode?.ToString(CultureInfo.InvariantCulture) ?? "None",
-                current.ProcessExitCode ?? (depth == 0 ? exitCode : null));
-            depth++;
-        }
-    }
+        => Trace.TraceWarning(
+            "SnapTap terminal failure: {0}",
+            failure with { ProcessExitCode = failure.ProcessExitCode ?? exitCode });
 
     private static SnapTapRuntimeState AdmissionState(int exitCode) => exitCode switch
     {
