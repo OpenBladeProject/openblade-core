@@ -40,7 +40,7 @@ to understand the contract or validate an invariant; avoid rebuilding context
 from whole files without a concrete reason.
 
 `trail build` refreshes the deterministic graph without a model or API key;
-`trail check` verifies freshness for workflow validation. Optional LLM
+`trail check` checks branch changes against recorded team learnings. Optional LLM
 summaries require a separate `trail build --deep`.
 <!-- trail:end -->
 
