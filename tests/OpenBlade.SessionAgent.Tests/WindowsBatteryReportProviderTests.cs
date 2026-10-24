@@ -163,14 +163,16 @@ public sealed class WindowsBatteryReportProviderTests
             CreateTemporaryDirectory,
             failures.Add);
 
-        WindowsBatteryReport? report = await provider.ReadAsync();
-
-        Assert.Null(report);
+        Win32Exception exception = await Assert.ThrowsAsync<Win32Exception>(() => provider.ReadAsync());
+        Assert.Equal(5, exception.NativeErrorCode);
         DiagnosticFailure failure = Assert.Single(failures);
         AssertFailure(failure, "process", "exception");
         Assert.Equal(nameof(Win32Exception), failure.ExceptionType);
         Assert.Equal(5, failure.NativeErrorCode);
         Assert.DoesNotContain("private native detail", failure.ToString(), StringComparison.Ordinal);
+        SessionBatteryResponse response = await new SessionBatteryRequestDispatcher(provider).DispatchAsync(
+            new(SessionBatteryIpc.ProtocolVersion, Guid.NewGuid()), CancellationToken.None);
+        Assert.Equal(SessionBatteryOperationStatus.Failed, response.Status);
     }
 
     [Fact]

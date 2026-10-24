@@ -274,10 +274,21 @@ public sealed class WindowsBatteryReportProvider
         {
             throw;
         }
+        catch (System.ComponentModel.Win32Exception exception)
+        {
+            diagnosticFailureSink(DiagnosticFailure.FromException(
+                DiagnosticComponent,
+                DiagnosticOperation,
+                stage,
+                "exception",
+                exception));
+            // Keep the existing dispatcher Failed classification for process-start
+            // failures while retaining the more specific provider phase as evidence.
+            throw;
+        }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
             or InvalidDataException
-            or System.ComponentModel.Win32Exception
             or TimeoutException)
         {
             diagnosticFailureSink(DiagnosticFailure.FromException(
