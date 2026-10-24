@@ -5,15 +5,43 @@ repository. Keep changes narrow, evidence-based, and suitable for a native
 Windows hardware utility.
 
 <!-- trail:start -->
-## Trail-Code context
+## Trail — repo context graph
 
-Use the `trail_*` MCP tools or `trail` CLI to navigate indexed code. Start with
-`trail map` for orientation, `trail ask "<question>" --source` for ranked source
-spans, `trail grep "<symbol>"` for exhaustive matches, or `trail callers <symbol>`
-for dependencies. Treat graph results as navigation aids; verify the current
-source for consequential changes. The deterministic index is `.trail/cache/`;
-`trail build` refreshes it without a model or API key. Optional LLM summaries
-require a separate `--deep` build.
+This repository is indexed in `.trail/cache/`. The graph links concise system
+notes to exact source spans and precomputed symbol relationships. For code
+tasks, query Trail before broad text searches or broad source reads, and reuse
+literal identifiers such as a symbol, error string, or file name.
+
+Treat graph results as navigation and context, not as a substitute for the
+current checkout. Source and tests remain authoritative. Verify current source
+before consequential edits, safety or compatibility claims, and final review;
+documentation, configuration, generated files, and new files may be unindexed.
+
+Choose the command that matches the question:
+
+- `trail map` gives a token-budgeted orientation to directory clusters, hubs,
+  and hotspots. Use it when the repository or subsystem is unfamiliar.
+- `trail ask "<question>" --source` returns ranked nodes with relevant source
+  spans inlined. Use the results as focused starting points; add `--full` when
+  a returned crux is truncated or the complete definition is needed.
+- `trail grep "<literal>"` searches indexed files exhaustively and groups hits
+  by enclosing symbol. Use it for every occurrence or caller of a pattern;
+  use `rg` for files Trail does not index.
+- `trail skeleton <file>` lists each definition's signature and span for a
+  compact view of an API surface.
+- `trail callers <symbol>` shows incoming references. Add `--direction out`
+  for dependencies or `--depth N` to inspect a transitive blast radius.
+- `.trail/cache/INDEX.md` is available for direct browsing. In multi-repository
+  workspaces, narrow queries with `--in <scope>/` when the scope is known.
+
+Open the exact referenced source range when Trail omits a required detail or
+when verification is consequential. Read more surrounding source when needed
+to understand the contract or validate an invariant; avoid rebuilding context
+from whole files without a concrete reason.
+
+`trail build` refreshes the deterministic graph without a model or API key;
+`trail check` checks branch changes against recorded team learnings. Optional LLM
+summaries require a separate `trail build --deep`.
 <!-- trail:end -->
 
 ## Parallel work
