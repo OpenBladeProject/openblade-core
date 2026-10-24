@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 using OpenBlade.Platform;
 
 namespace OpenBlade.SessionAgent;
@@ -80,15 +81,27 @@ internal sealed class RazerSnapTapDriverAdmission
     }
 
     internal bool TryGetEndpointWithFailure(
-        out RazerSnapTapDriverEndpoint endpoint, out RazerSnapTapAdmissionFailure failure)
+        out RazerSnapTapDriverEndpoint endpoint, out RazerSnapTapAdmissionFailure failure) =>
+        TryGetEndpointWithFailure(out endpoint, out failure, out _);
+
+    internal bool TryGetEndpointWithFailure(
+        out RazerSnapTapDriverEndpoint endpoint,
+        out RazerSnapTapAdmissionFailure failure,
+        out DiagnosticFailure? detail)
     {
         endpoint = null!;
+        detail = null;
         try
         {
             RazerSnapTapDriverSnapshot snapshot = capture();
             failure = Evaluate(snapshot, out endpoint);
             if (failure != RazerSnapTapAdmissionFailure.None)
             {
+                detail = new(
+                    "SnapTapAdmission",
+                    "ResolveEndpoint",
+                    "Evaluate",
+                    failure.ToString());
                 Trace.TraceWarning("SnapTap driver admission rejected: {0}; host={1}.",
                     failure, snapshot.BiosProductName);
             }
@@ -100,6 +113,12 @@ internal sealed class RazerSnapTapDriverAdmission
             or OverflowException)
         {
             failure = RazerSnapTapAdmissionFailure.DiscoveryFailed;
+            detail = DiagnosticFailure.FromException(
+                "SnapTapAdmission",
+                "ResolveEndpoint",
+                "Capture",
+                "DiscoveryFailed",
+                exception);
             Trace.TraceWarning("SnapTap driver discovery failed: {0}; HRESULT=0x{1:X8}.",
                 exception.GetType().Name, exception.HResult);
             return false;

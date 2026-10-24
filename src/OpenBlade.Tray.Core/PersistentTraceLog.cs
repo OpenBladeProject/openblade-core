@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -260,27 +261,38 @@ internal static class UserModeDiagnosticTextRedactor
 internal static class UserModeDiagnosticLogAppender
 {
     private const string ArchiveDirectory = "user-mode-logs";
+    private const int MaximumLogFiles = 32;
 
     internal static byte[] TryAppendLogs(
         byte[] archiveBytes,
         string logDirectory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<DiagnosticExportSection>? report = null)
     {
         ArgumentNullException.ThrowIfNull(archiveBytes);
         ArgumentException.ThrowIfNullOrWhiteSpace(logDirectory);
+        var failures = new List<DiagnosticFailure>();
+        int included = 0;
         try
         {
             if (!Directory.Exists(logDirectory))
             {
+                report?.Invoke(new("UserModeLogs", DiagnosticExportStatus.NotObserved));
                 return archiveBytes;
             }
 
-            string[] files = Directory.GetFiles(logDirectory, "OpenBlade.*.log")
+            string[] files = Directory.EnumerateFiles(logDirectory, "OpenBlade.*.log")
+                .Take(MaximumLogFiles + 1)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             if (files.Length == 0)
             {
+                report?.Invoke(new("UserModeLogs", DiagnosticExportStatus.NotObserved));
                 return archiveBytes;
+            }
+            if (files.Length > MaximumLogFiles)
+            {
+                failures.Add(new("Diagnostics", "Export", "UserModeLogs", "LogCountLimit"));
             }
 
             using var destination = new MemoryStream();
@@ -291,24 +303,53 @@ internal static class UserModeDiagnosticLogAppender
                 ZipArchiveMode.Update,
                 leaveOpen: true))
             {
-                foreach (string path in files)
+                foreach (string path in files.Take(MaximumLogFiles))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    byte[] content;
+                    try
+                    {
+                        // Read each source before changing the ZIP: one locked or oversized
+                        // log must not discard every healthy log already collected.
+                        using Stream source = new FileStream(path, FileMode.Open, FileAccess.Read,
+                            FileShare.ReadWrite | FileShare.Delete);
+                        using var bounded = new MemoryStream();
+                        byte[] buffer = new byte[8192];
+                        int count;
+                        while ((count = source.Read(buffer, 0, Math.Min(buffer.Length,
+                            PersistentTraceLog.MaximumFileBytes + 1 - (int)bounded.Length))) > 0)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            bounded.Write(buffer, 0, count);
+                        }
+                        if (bounded.Length > PersistentTraceLog.MaximumFileBytes)
+                        {
+                            failures.Add(new("Diagnostics", "Export", "UserModeLogRead", "LogTooLarge"));
+                            continue;
+                        }
+                        content = bounded.ToArray();
+                    }
+                    catch (Exception exception) when (exception is IOException
+                        or UnauthorizedAccessException or NotSupportedException)
+                    {
+                        failures.Add(DiagnosticFailure.FromException(
+                            "Diagnostics", "Export", "UserModeLogRead", "LogReadFailed", exception));
+                        continue;
+                    }
                     string entryName = $"{ArchiveDirectory}/{Path.GetFileName(path)}";
                     archive.GetEntry(entryName)?.Delete();
                     ZipArchiveEntry entry = archive.CreateEntry(
                         entryName,
                         CompressionLevel.Optimal);
-                    using Stream source = new FileStream(
-                        path,
-                        FileMode.Open,
-                        FileAccess.Read,
-                        FileShare.ReadWrite | FileShare.Delete);
                     using Stream target = entry.Open();
-                    source.CopyTo(target);
+                    target.Write(content);
+                    included++;
                 }
             }
 
+            report?.Invoke(new("UserModeLogs", failures.Count == 0 ? DiagnosticExportStatus.Included
+                : included > 0 ? DiagnosticExportStatus.Partial : DiagnosticExportStatus.Failed,
+                included, failures));
             return destination.ToArray();
         }
         catch (OperationCanceledException)
@@ -321,6 +362,8 @@ internal static class UserModeDiagnosticLogAppender
                 or UnauthorizedAccessException
                 or NotSupportedException)
         {
+            report?.Invoke(new("UserModeLogs", DiagnosticExportStatus.Failed, Failures:
+                [DiagnosticFailure.FromException("Diagnostics", "Export", "UserModeLogs", "LogAppendFailed", exception)]));
             return archiveBytes;
         }
     }

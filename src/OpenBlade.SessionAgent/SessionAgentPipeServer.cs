@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.SessionAgent;
 
@@ -19,6 +20,7 @@ internal sealed class SessionAgentPipeServer<TRequest, TResponse> : IAsyncDispos
     private readonly Func<TRequest, CancellationToken, Task<TResponse>> dispatch;
     private readonly SessionAgentPipeServerPolicy<TRequest, TResponse> policy;
     private readonly TimeProvider timeProvider;
+    private readonly Action<DiagnosticFailure> diagnosticFailureSink;
     private NamedPipeServerStream? currentPipe;
     private int disposed;
 
@@ -28,7 +30,8 @@ internal sealed class SessionAgentPipeServer<TRequest, TResponse> : IAsyncDispos
         Func<Stream, TResponse, CancellationToken, Task> writeResponse,
         Func<TRequest, CancellationToken, Task<TResponse>> dispatch,
         SessionAgentPipeServerPolicy<TRequest, TResponse> policy,
-        TimeProvider? timeProvider)
+        TimeProvider? timeProvider,
+        Action<DiagnosticFailure>? diagnosticFailureSink = null)
     {
         this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
         this.readRequest = readRequest ?? throw new ArgumentNullException(nameof(readRequest));
@@ -37,6 +40,7 @@ internal sealed class SessionAgentPipeServer<TRequest, TResponse> : IAsyncDispos
         this.dispatch = dispatch ?? throw new ArgumentNullException(nameof(dispatch));
         this.policy = policy ?? throw new ArgumentNullException(nameof(policy));
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.diagnosticFailureSink = diagnosticFailureSink ?? TraceFailure;
         currentPipe = owner.TakeInitialPipe();
     }
 
@@ -132,7 +136,12 @@ internal sealed class SessionAgentPipeServer<TRequest, TResponse> : IAsyncDispos
                 exception is not OperationCanceledException
                 && policy.DispatchFailure is { } failureResponse)
             {
-                Trace.TraceError("Session pipe dispatch failed: {0}", exception);
+                diagnosticFailureSink(DiagnosticFailure.FromException(
+                    "session-agent.ipc",
+                    typeof(TRequest).Name,
+                    "dispatch",
+                    "exception",
+                    exception));
                 response = failureResponse(request, exception);
             }
         }
@@ -157,6 +166,9 @@ internal sealed class SessionAgentPipeServer<TRequest, TResponse> : IAsyncDispos
             // terminate the other session-agent features.
         }
     }
+
+    private static void TraceFailure(DiagnosticFailure failure) =>
+        Trace.TraceError("Session pipe dispatch failed: {0}", failure);
 
     public async ValueTask DisposeAsync()
     {

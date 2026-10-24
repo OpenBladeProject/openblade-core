@@ -272,7 +272,8 @@ internal static class Program
                 var snapTap = new SnapTapProcessCoordinator(
                     specialKeyBindings,
                     SnapTapInputProcess.Start,
-                    status => SnapTapStatusStore.Write(status));
+                    status => SnapTapStatusStore.Write(status),
+                    () => SnapTapStatusStore.Read());
                 specialKeyBindings.PreferencesObserved += preferences =>
                     audioAutomationCoordinator.SetIntegrationEnabled(preferences?.ThxAudioIntegrationEnabled == true);
                 var specialKeyInput = new WindowsSpecialKeyInputSender();

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using OpenBlade.SessionAgent;
 
 namespace OpenBlade.SessionAgent.Tests;
@@ -47,6 +48,8 @@ public sealed class SnapTapDriverInputProcessorTests
         Assert.True(processor.Enable());
         Assert.False(processor.Handle(new(0x1E, true)));
         Assert.True(processor.Faulted);
+        Assert.Equal("OutputCountMismatch", processor.Failure?.Reason);
+        Assert.False(processor.Failure?.MayHaveSubmitted);
         Assert.False(processor.Handle(new(0x20, true)));
         processor.Disable();
         Assert.Equal(1, submissions);
@@ -60,6 +63,7 @@ public sealed class SnapTapDriverInputProcessorTests
         Assert.True(processor.Enable());
         Assert.False(processor.Handle(new(0x2C, true)));
         Assert.True(processor.Faulted);
+        Assert.Null(processor.Failure);
         Assert.Equal(0, submissions);
     }
 
@@ -87,7 +91,7 @@ public sealed class SnapTapDriverInputProcessorTests
         int submissions = 0;
         var processor = new SnapTapDriverInputProcessor(_ =>
         {
-            if (++submissions == 2) { throw new IOException(); }
+            if (++submissions == 2) { throw new IOException("hidden", new Win32Exception(5)); }
             return 1;
         });
         Assert.True(processor.Enable());
@@ -95,5 +99,8 @@ public sealed class SnapTapDriverInputProcessorTests
         Assert.False(processor.Handle(new(0x20, true)));
         Assert.True(processor.Faulted);
         Assert.Equal(2, submissions);
+        Assert.Equal("OutputSubmissionFailed", processor.Failure?.Reason);
+        Assert.True(processor.Failure?.MayHaveSubmitted);
+        Assert.Equal(5, processor.Failure?.Cause?.NativeErrorCode);
     }
 }

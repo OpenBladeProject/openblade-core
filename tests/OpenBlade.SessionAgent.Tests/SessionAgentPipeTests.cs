@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 using OpenBlade.SessionAgent;
 
@@ -129,6 +130,59 @@ public sealed class SessionAgentPipeTests
                 CancellationToken.None));
 
         Assert.Same(expected, actual);
+    }
+
+    [Fact]
+    public async Task DispatchFailureReportsBoundedMetadataAndKeepsCorrelatedFallback()
+    {
+        const int failureHResult = unchecked((int)0x80070005);
+        SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
+        var endpoint = new SessionAgentPipeEndpoint(
+            $"{SessionBatteryIpc.PipeNameSuffix}.DispatchFailure.{Guid.NewGuid():N}");
+        Assert.True(SessionAgentPipeOwner.TryAcquire(endpoint, sid, out SessionAgentPipeOwner? owner));
+        var failures = new List<DiagnosticFailure>();
+        SessionBatteryResponse? written = null;
+        var request = new SessionBatteryRequest(
+            SessionBatteryIpc.ProtocolVersion,
+            Guid.NewGuid());
+        await using var server = new SessionAgentPipeServer<SessionBatteryRequest, SessionBatteryResponse>(
+            owner!,
+            (_, _) => Task.FromResult(request),
+            (_, response, _) =>
+            {
+                written = response;
+                return Task.CompletedTask;
+            },
+            (_, _) => Task.FromException<SessionBatteryResponse>(
+                new IOException("private dispatch detail", failureHResult)),
+            new SessionAgentPipeServerPolicy<SessionBatteryRequest, SessionBatteryResponse>(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(1),
+                static _ => TimeSpan.FromSeconds(1),
+                static (failedRequest, _) => new SessionBatteryResponse(
+                    SessionBatteryIpc.ProtocolVersion,
+                    failedRequest.RequestId,
+                    SessionBatteryOperationStatus.Failed,
+                    "The Session Agent could not read the Windows battery report.",
+                    null)),
+            timeProvider: null,
+            diagnosticFailureSink: failures.Add);
+
+        await server.ServeConnectionAsync(Stream.Null, CancellationToken.None);
+
+        Assert.NotNull(written);
+        Assert.Equal(request.RequestId, written.RequestId);
+        Assert.Equal(SessionBatteryOperationStatus.Failed, written.Status);
+        Assert.DoesNotContain("private dispatch detail", written.Error, StringComparison.Ordinal);
+        DiagnosticFailure failure = Assert.Single(failures);
+        Assert.True(failure.IsValid());
+        Assert.Equal("session-agent.ipc", failure.Component);
+        Assert.Equal(nameof(SessionBatteryRequest), failure.Operation);
+        Assert.Equal("dispatch", failure.Stage);
+        Assert.Equal("exception", failure.Reason);
+        Assert.Equal(nameof(IOException), failure.ExceptionType);
+        Assert.Equal(failureHResult, failure.HResult);
+        Assert.DoesNotContain("private dispatch detail", failure.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

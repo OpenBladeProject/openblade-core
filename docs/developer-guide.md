@@ -153,6 +153,30 @@ or readback ambiguity stops further writes. These checks validate protocol
 transitions, not production profile reconciliation or hidden power limits.
 ## Diagnostics exports
 
+Failure details must survive every result, exception, process and status
+boundary. A generic UI state such as `Failed` is presentation, not a complete
+diagnostic. Use `DiagnosticFailure` for the component, operation, stage, reason,
+exception type, HRESULT, native or process exit code, bounded cause chain and
+possible submission. It excludes exception messages and private paths. Preserve
+the original failure when cleanup adds another; diagnostic metadata never
+authorizes a retry, recovery write or hardware capability.
+
+The standard export includes `snap-tap.json` with cached runtime state or an
+explicit status-read failure. Worker and supervisor failures are matched to
+their process and attempt before publication, so stale helper output cannot
+replace the current failure. SnapTap records terminal failures through its
+existing background status writer, without per-key logging. Battery report
+and unexpected Session Agent dispatch failures retain the same bounded
+metadata in `OpenBlade.SessionAgent.log`; THX capture failures retain it in
+`thx-audio.json`.
+
+`diagnostic-export.json` lists included, absent, unrequested and failed
+supplements. An unreadable or oversized log is skipped individually, keeping
+healthy logs and recording the omission. Logs are limited to 32 files of
+128 KiB each. The identity-only export still saves its exact selected evidence
+without these supplements. Test both the original failure and its exported
+representation when adding a new failure boundary.
+
 Use **Export diagnostics** in the tray to collect device-verification evidence.
 The ZIP's `device-verification.json` contains the latest service probe and the
 most recent failure from the current service run, with timestamps. A successful

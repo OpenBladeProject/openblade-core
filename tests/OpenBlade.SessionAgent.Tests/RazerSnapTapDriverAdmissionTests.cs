@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using OpenBlade.Platform;
 
 namespace OpenBlade.SessionAgent.Tests;
@@ -134,6 +135,38 @@ public sealed class RazerSnapTapDriverAdmissionTests
             Assert.False(admission.TryGetEndpoint(out _, out bool driverMissing));
             Assert.False(driverMissing);
         }
+    }
+
+    [Fact]
+    public void RejectionReturnsBoundedSpecificDiagnostic()
+    {
+        RazerSnapTapDriverSnapshot snapshot = ExactSnapshot() with { ActiveConsoleSession = false };
+        var admission = new RazerSnapTapDriverAdmission(() => snapshot);
+
+        Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure, out var detail));
+
+        Assert.Equal(RazerSnapTapAdmissionFailure.InactiveConsoleSession, failure);
+        Assert.Equal("SnapTapAdmission", detail?.Component);
+        Assert.Equal("Evaluate", detail?.Stage);
+        Assert.Equal("InactiveConsoleSession", detail?.Reason);
+        Assert.Null(detail?.ExceptionType);
+    }
+
+    [Fact]
+    public void DiscoveryExceptionPreservesNativeInnerCauseWithoutMessage()
+    {
+        var admission = new RazerSnapTapDriverAdmission(() =>
+            throw new IOException("sensitive path", new Win32Exception(5, "native message")));
+
+        Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure, out var detail));
+
+        Assert.Equal(RazerSnapTapAdmissionFailure.DiscoveryFailed, failure);
+        Assert.Equal(nameof(IOException), detail?.ExceptionType);
+        Assert.Equal(nameof(Win32Exception), detail?.Cause?.ExceptionType);
+        Assert.Equal(5, detail?.Cause?.NativeErrorCode);
+        string serialized = System.Text.Json.JsonSerializer.Serialize(detail);
+        Assert.DoesNotContain("sensitive path", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("native message", serialized, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

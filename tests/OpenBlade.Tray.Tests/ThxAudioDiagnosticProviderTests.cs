@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using OpenBlade.Session;
 using OpenBlade.Tray;
 
@@ -87,6 +88,20 @@ public sealed class ThxAudioDiagnosticProviderTests
         Assert.Null(report.OperationStatus);
         Assert.Null(report.Availability);
         Assert.Equal("The Session Agent THX admission query timed out.", report.Error);
+        Assert.Equal("TimedOut", report.Failure?.Reason);
+        Assert.Equal(nameof(OperationCanceledException), report.Failure?.ExceptionType);
+    }
+
+    [Fact]
+    public async Task CaptureAsync_PreservesWrappedNativeFailureWithoutPrivateMessage()
+    {
+        var exception = new IOException("private path", new Win32Exception(5, "private service"));
+        var provider = new ThxAudioDiagnosticProvider(new StubAdapter(exception));
+        ThxAudioDiagnosticReport report = await provider.CaptureAsync(CancellationToken.None);
+        Assert.Equal("Discovery", report.Failure?.Stage);
+        Assert.Equal(exception.HResult, report.Failure?.HResult);
+        Assert.Equal(5, report.Failure?.Cause?.NativeErrorCode);
+        Assert.DoesNotContain("private", System.Text.Json.JsonSerializer.Serialize(report), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

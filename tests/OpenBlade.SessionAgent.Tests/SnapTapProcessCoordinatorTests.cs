@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using OpenBlade.Contracts;
 using OpenBlade.SessionAgent;
 using OpenBlade.Tray;
 
@@ -85,6 +86,8 @@ public sealed class SnapTapProcessCoordinatorTests
         await WaitUntilAsync(() => first.StopRequested);
         source.Set(true);
         await WaitUntilAsync(() => statuses.Last().State == SnapTapRuntimeState.Failed, TimeSpan.FromSeconds(4));
+        Assert.Equal("StopTimedOut", statuses.Last().Failure?.Reason);
+        Assert.Equal("WaitForExit", statuses.Last().Failure?.Stage);
         Assert.Equal(1, launches);
         Assert.False(first.Disposed);
         first.Exit(0);
@@ -121,8 +124,33 @@ public sealed class SnapTapProcessCoordinatorTests
         Assert.True(child.StopRequested);
         Assert.False(child.Disposed);
         Assert.Equal(SnapTapRuntimeState.Failed, statuses.Last().State);
+        Assert.Equal("StopTimedOut", statuses.Last().Failure?.Reason);
         child.Exit(0);
         await WaitUntilAsync(() => child.Disposed);
+    }
+
+    [Fact]
+    public async Task CancellationStopFailurePreservesFreshTerminalDiagnostic()
+    {
+        var child = new Child { StopExitCode = 99 };
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        SnapTapRuntimeStatus? terminal = null;
+        var failure = new DiagnosticFailure(
+            "SnapTapSupervisor", "ReconcileHooks", "Reconciliation", "RecoveryRequired", true);
+        using var cancel = new CancellationTokenSource();
+        Task run = new SnapTapProcessCoordinator(new Preference(true), () =>
+        {
+            terminal = new(SnapTapRuntimeState.RecoveryRequired, DateTimeOffset.UtcNow,
+                child.Id, Failure: failure);
+            return child;
+        }, statuses.Enqueue, () => terminal).RunAsync(cancel.Token);
+        await WaitUntilAsync(() => terminal is not null);
+
+        cancel.Cancel();
+        await run;
+
+        Assert.Equal(failure, statuses.Last().Failure);
+        Assert.Equal(SnapTapRuntimeState.RecoveryRequired, statuses.Last().State);
     }
 
     [Fact]
@@ -161,7 +189,7 @@ public sealed class SnapTapProcessCoordinatorTests
     [Fact]
     public async Task ExitObservationFailure_DoesNotCompleteSessionTaskBeforeCancellation()
     {
-        var child = new Child { ExitOnStop = false, FailExitObservation = true };
+        var child = new Child { FailExitObservation = true };
         var source = new Preference(true);
         int launches = 0;
         using var cancel = new CancellationTokenSource();
@@ -169,8 +197,10 @@ public sealed class SnapTapProcessCoordinatorTests
         Task run = new SnapTapProcessCoordinator(source, () => { launches++; return child; }, statuses.Enqueue).RunAsync(cancel.Token);
         await WaitUntilAsync(() => child.StopRequested);
         Assert.False(run.IsCompleted);
-        Assert.False(child.Disposed);
+        Assert.True(child.Disposed);
         Assert.Equal(SnapTapRuntimeState.Failed, statuses.Last().State);
+        Assert.Equal("ExitObservationFailed", statuses.Last().Failure?.Reason);
+        Assert.Equal(nameof(IOException), statuses.Last().Failure?.ExceptionType);
         source.Set(false);
         source.Set(true);
         Assert.Equal(1, launches);
@@ -210,6 +240,52 @@ public sealed class SnapTapProcessCoordinatorTests
         cancel.Cancel();
         await run;
         Assert.Equal(1, launches);
+    }
+
+    [Fact]
+    public async Task UnexpectedExitPreservesFreshTerminalSupervisorFailure()
+    {
+        var source = new Preference(true);
+        var child = new Child();
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        SnapTapRuntimeStatus? terminal = null;
+        var failure = new DiagnosticFailure(
+            "SnapTapSupervisor", "ReconcileHooks", "Reconciliation", "RecoveryRequired", true,
+            Cause: new("SnapTapWorker", "HookSession", "HookMutation", "SetHookFailed", true));
+        using var cancel = new CancellationTokenSource();
+        Task run = new SnapTapProcessCoordinator(source, () =>
+        {
+            terminal = new(SnapTapRuntimeState.RecoveryRequired, DateTimeOffset.UtcNow,
+                child.Id, Failure: failure);
+            return child;
+        }, statuses.Enqueue, () => terminal).RunAsync(cancel.Token);
+        await WaitUntilAsync(() => terminal is not null);
+
+        child.Exit(4);
+
+        await WaitUntilAsync(() => statuses.Last().Failure is not null);
+        Assert.Equal(failure, statuses.Last().Failure);
+        Assert.Equal(SnapTapRuntimeState.RecoveryRequired, statuses.Last().State);
+        cancel.Cancel();
+        await run;
+    }
+
+    [Fact]
+    public void TerminalStatusMatchRejectsStaleWrongProcessAndNonterminalRecords()
+    {
+        DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+        var failure = new DiagnosticFailure("SnapTapSupervisor", "Run", "WorkerExit", "UnexpectedExit");
+        var status = new SnapTapRuntimeStatus(
+            SnapTapRuntimeState.Failed, startedAt.AddMilliseconds(1), 123, Failure: failure);
+
+        Assert.Same(status, SnapTapProcessCoordinator.MatchingTerminalStatus(status, 123, startedAt));
+        Assert.Null(SnapTapProcessCoordinator.MatchingTerminalStatus(status, 124, startedAt));
+        Assert.Null(SnapTapProcessCoordinator.MatchingTerminalStatus(
+            status with { UpdatedAt = startedAt.AddMilliseconds(-1) }, 123, startedAt));
+        Assert.Null(SnapTapProcessCoordinator.MatchingTerminalStatus(
+            status with { State = SnapTapRuntimeState.Active, Failure = null }, 123, startedAt));
+        Assert.Null(SnapTapProcessCoordinator.MatchingTerminalStatus(
+            status with { Failure = null }, 123, startedAt));
     }
 
     private sealed class Preference(bool initial = false) : ISnapTapPreferenceSource

@@ -5,6 +5,7 @@ internal sealed class SnapTapDriverInputProcessor
 {
     private readonly Func<SnapTapOutputBatch, int> send;
     private readonly SnapTapPriorityCore core;
+    internal OpenBlade.Contracts.DiagnosticFailure? Failure { get; private set; }
 
     internal SnapTapDriverInputProcessor(
         Func<SnapTapOutputBatch, int> send,
@@ -12,7 +13,7 @@ internal sealed class SnapTapDriverInputProcessor
         TimeSpan? repeatInterval = null)
     {
         this.send = send ?? throw new ArgumentNullException(nameof(send));
-        core = new SnapTapPriorityCore(send, timeProvider, repeatInterval);
+        core = new SnapTapPriorityCore(Send, timeProvider, repeatInterval);
     }
 
     internal bool Enabled => core.Enabled;
@@ -48,7 +49,7 @@ internal sealed class SnapTapDriverInputProcessor
             // through the same typed driver output path as priority changes.
             try
             {
-                if (send(new(key, default, 1)) != 1)
+                if (Send(new(key, default, 1)) != 1)
                 {
                     core.Poison();
                 }
@@ -67,4 +68,35 @@ internal sealed class SnapTapDriverInputProcessor
     internal void Disable() => core.Disable();
 
     internal void Poison() => core.Poison();
+
+    private int Send(SnapTapOutputBatch batch)
+    {
+        try
+        {
+            int accepted = send(batch);
+            if (accepted != batch.Count)
+            {
+                Failure ??= SnapTapDiagnosticFailure.Create(
+                    SnapTapDiagnosticFailure.Worker,
+                    "SendOutput",
+                    "InputLoop",
+                    "OutputCountMismatch",
+                    accepted > 0);
+            }
+            return accepted;
+        }
+        catch (Exception exception)
+        {
+            // The native callback may have submitted before reporting failure.
+            // Capture it before the priority core poisons and suppresses the exception.
+            Failure ??= SnapTapDiagnosticFailure.FromException(
+                SnapTapDiagnosticFailure.Worker,
+                "SendOutput",
+                "InputLoop",
+                "OutputSubmissionFailed",
+                exception,
+                mayHaveSubmitted: true);
+            throw;
+        }
+    }
 }

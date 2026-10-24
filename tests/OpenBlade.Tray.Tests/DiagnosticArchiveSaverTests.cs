@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO.Compression;
 using System.Text.Json;
 using OpenBlade.Contracts;
@@ -149,6 +150,97 @@ public sealed class DiagnosticArchiveSaverTests
                 entry => entry.FullName == "user-mode-logs/OpenBlade.Tray.log");
             using var reader = new StreamReader(log.Open());
             Assert.Equal("redacted tray warning", await reader.ReadToEndAsync());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SaveAsync_OneUnreadableLogPreservesHealthyLogsAndExplainsOmission(bool oversized)
+    {
+        string directory = CreateTemporaryDirectory();
+        string logs = Path.Combine(directory, "logs");
+        Directory.CreateDirectory(logs);
+        string badLog = Path.Combine(logs, "OpenBlade.Bad.log");
+        await File.WriteAllTextAsync(badLog, oversized ? new string('x', 128 * 1024 + 1) : "locked");
+        await File.WriteAllTextAsync(Path.Combine(logs, "OpenBlade.Tray.log"), "healthy");
+        string path = Path.Combine(directory, "diagnostics.zip");
+        try
+        {
+            using FileStream? locked = oversized ? null : new(badLog, FileMode.Open, FileAccess.Read, FileShare.None);
+            var saver = new DiagnosticArchiveSaver(new StubDestination(path), logs);
+            await saver.SaveAsync(CreateValidArchive(), CancellationToken.None);
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            Assert.NotNull(archive.GetEntry("versions.json"));
+            Assert.NotNull(archive.GetEntry("user-mode-logs/OpenBlade.Tray.log"));
+            Assert.Null(archive.GetEntry("user-mode-logs/OpenBlade.Bad.log"));
+            using JsonDocument manifest = await JsonDocument.ParseAsync(archive.GetEntry("diagnostic-export.json")!.Open());
+            JsonElement section = manifest.RootElement.EnumerateArray().Single(value =>
+                value.GetProperty("name").GetString() == "UserModeLogs");
+            Assert.Equal("Partial", section.GetProperty("status").GetString());
+            Assert.Equal(1, section.GetProperty("includedItems").GetInt32());
+            Assert.Equal(oversized ? "LogTooLarge" : "LogReadFailed",
+                section.GetProperty("failures")[0].GetProperty("reason").GetString());
+            Assert.DoesNotContain(directory, manifest.RootElement.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SaveAsync_ExportsSnapTapFailureAndSiblingCaptureFailureWithoutPrivateText()
+    {
+        string directory = CreateTemporaryDirectory();
+        string path = Path.Combine(directory, "diagnostics.zip");
+        var failure = DiagnosticFailure.FromException("SnapTap", "Driver", "HookSetup", "HookWriteFailed",
+            new Win32Exception(5, "private native path"), mayHaveSubmitted: true);
+        var report = new SnapTapDiagnosticReport(DateTimeOffset.UtcNow,
+            new(SnapTapRuntimeState.Failed, DateTimeOffset.UtcNow, Failure: failure), null);
+        try
+        {
+            var saver = new DiagnosticArchiveSaver(new StubDestination(path), Path.Combine(directory, "absent"),
+                new ThrowingThxAudioDiagnosticProvider(), () => report);
+            await saver.SaveAsync(CreateValidArchive(), CancellationToken.None);
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            using JsonDocument snapTap = await JsonDocument.ParseAsync(archive.GetEntry("snap-tap.json")!.Open());
+            JsonElement root = snapTap.RootElement;
+            Assert.Equal("Failed", root.GetProperty("status").GetProperty("state").GetString());
+            Assert.Equal("HookSetup", root.GetProperty("status").GetProperty("failure").GetProperty("stage").GetString());
+            Assert.Equal(5, root.GetProperty("status").GetProperty("failure").GetProperty("nativeErrorCode").GetInt32());
+            Assert.True(root.GetProperty("status").GetProperty("failure").GetProperty("mayHaveSubmitted").GetBoolean());
+            Assert.DoesNotContain("private", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+            using JsonDocument thx = await JsonDocument.ParseAsync(archive.GetEntry("thx-audio.json")!.Open());
+            Assert.Equal("InvalidOperationException", thx.RootElement.GetProperty("failure").GetProperty("exceptionType").GetString());
+            Assert.DoesNotContain("secret", thx.RootElement.GetRawText(), StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(archive.GetEntry("diagnostic-export.json"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SaveAsync_RecordsSnapTapCaptureFailureAndStillExportsLogs()
+    {
+        string directory = CreateTemporaryDirectory();
+        string path = Path.Combine(directory, "diagnostics.zip");
+        try
+        {
+            var saver = new DiagnosticArchiveSaver(new StubDestination(path), directory, null,
+                () => throw new IOException("private path", new Win32Exception(5)));
+            await saver.SaveAsync(CreateValidArchive(), CancellationToken.None);
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            using JsonDocument report = await JsonDocument.ParseAsync(archive.GetEntry("snap-tap.json")!.Open());
+            Assert.Equal("CaptureFailed", report.RootElement.GetProperty("captureFailure").GetProperty("reason").GetString());
+            Assert.Equal(5, report.RootElement.GetProperty("captureFailure").GetProperty("cause").GetProperty("nativeErrorCode").GetInt32());
+            Assert.DoesNotContain("private", report.RootElement.GetRawText(), StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
