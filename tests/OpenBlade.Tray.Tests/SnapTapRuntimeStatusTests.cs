@@ -1,6 +1,6 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
-using System.ComponentModel;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray.Tests;

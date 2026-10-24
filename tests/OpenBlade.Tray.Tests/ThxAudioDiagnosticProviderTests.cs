@@ -1,6 +1,6 @@
+using System.ComponentModel;
 using OpenBlade.Session;
 using OpenBlade.Tray;
-using System.ComponentModel;
 
 namespace OpenBlade.Tray.Tests;
 

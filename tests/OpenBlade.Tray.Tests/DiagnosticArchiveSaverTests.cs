@@ -1,6 +1,6 @@
+using System.ComponentModel;
 using System.IO.Compression;
 using System.Text.Json;
-using System.ComponentModel;
 using OpenBlade.Contracts;
 using OpenBlade.Session;
 using OpenBlade.Tray;
