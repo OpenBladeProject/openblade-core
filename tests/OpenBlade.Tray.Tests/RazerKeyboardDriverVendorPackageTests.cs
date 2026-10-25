@@ -57,6 +57,17 @@ public sealed class RazerKeyboardDriverVendorPackageTests
             new("test.inf", 4, (int)small.Length - 4, true), cancelled.Token));
     }
 
+    [Fact]
+    public void TruncatedLzmaDataIsRejectedRatherThanSynthesizingEndOfInputBytes()
+    {
+        using MemoryStream original = Block(Small);
+        byte[] bytes = original.ToArray()[..^10];
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes, 0x80000000u | (uint)(bytes.Length - 4));
+        using var truncated = new MemoryStream(bytes);
+        Assert.Throws<InvalidDataException>(() => RazerKeyboardDriverVendorPackage.DecodeBlock(truncated,
+            new("test.inf", 4, bytes.Length - 4, true)));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -120,17 +131,101 @@ public sealed class RazerKeyboardDriverVendorPackageTests
         Assert.False(Directory.Exists(Path.Combine(directory.Path, source.PackageDirectory)));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(20)]
+    [InlineData(24)]
+    public void VendorHeaderMustKeepItsReviewedShape(int offset)
+    {
+        using MemoryStream original = Archive();
+        byte[] bytes = original.ToArray();
+        if (offset == 20)
+        {
+            bytes.AsSpan(20, 4).Clear();
+        }
+        else if (offset == 24)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(24, 4), uint.MaxValue);
+        }
+        else
+        {
+            bytes[offset] ^= 1;
+        }
+        using var changed = new MemoryStream(bytes);
+        Assert.Throws<InvalidDataException>(() => RazerKeyboardDriverVendorPackage.ValidateHeader(changed, 0));
+        using var truncated = new MemoryStream(bytes[..27]);
+        Assert.Throws<InvalidDataException>(() => RazerKeyboardDriverVendorPackage.ValidateHeader(truncated, 0));
+    }
+
     [Fact]
-    public void Legacy0255RecipeContainsOnlyCatalogCoveredInfClosure()
+    public void EveryVendorRecipeHasOnePinnedBlockForEachRequiredModelFile()
+    {
+        var recipes = RazerKeyboardDriverRecipes.All.Where(recipe => recipe.VendorBlocks is not null).ToArray();
+        Assert.Equal(4, recipes.Length);
+        foreach (var recipe in recipes)
+        {
+            var blocks = recipe.VendorBlocks!;
+            Assert.Equal(blocks.Count, blocks.Select(block => block.RelativePath).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            Assert.Equal(recipe.Files.Where(file => !file.RelativePath.StartsWith("rzcommonu/", StringComparison.Ordinal)
+                && file.RelativePath != "THIRD-PARTY-NOTICE.txt").Select(file => file.RelativePath).Order(),
+                blocks.Select(block => block.RelativePath).Order());
+            Assert.All(blocks, block =>
+            {
+                Assert.True(block.Compressed);
+                Assert.InRange(block.Offset, recipe.VendorHeaderOffset + 28, recipe.ArchiveLength - block.CompressedLength);
+            });
+            Assert.All(recipe.StageOrder.Where(path => path != recipe.InfFor("common")), path =>
+                Assert.Contains(blocks, block => block.RelativePath == path));
+            Assert.Equal("app-assets.razer.com", recipe.DownloadUri.Host);
+            Assert.Contains("Razer", recipe.CarrierSignerSubject, StringComparison.Ordinal);
+            Assert.Equal(40, recipe.CarrierSignerThumbprint!.Length);
+        }
+    }
+
+    [Fact]
+    public async Task ChangedSharedArchiveIsRejectedWithoutExtractingAnyPackage()
+    {
+        using var directory = new TemporaryDirectory();
+        using var handler = new ChangedCommonArchive();
+        using var client = new HttpClient(handler);
+        await Assert.ThrowsAsync<InvalidDataException>(() => RazerKeyboardDriverVendorPackage.AcquireCommonAsync(
+            directory.Path, RazerKeyboardDriverRecipes.Pid029F, client, default));
+        Assert.Empty(Directory.EnumerateDirectories(directory.Path));
+        Assert.Single(Directory.EnumerateFiles(directory.Path));
+    }
+
+    private sealed class ChangedCommonArchive : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal(RazerKeyboardDriverRecipes.Pid02C6.DownloadUri, request.RequestUri);
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[RazerKeyboardDriverRecipes.Pid02C6.ArchiveLength]),
+            });
+        }
+    }
+
+    [Fact]
+    public void Modern0255RecipeUsesItsCompleteCurrentWindowsCatalogPackage()
     {
         var recipe = RazerKeyboardDriverRecipes.Pid0255;
+        Assert.Null(recipe.VendorBlocks);
+        Assert.Equal(12, recipe.CabinetFiles!.Count);
+        Assert.Equal(15, recipe.Files.Count);
+        Assert.Equal("catalog.s.download.windowsupdate.com", recipe.DownloadUri.Host);
         Assert.All(recipe.StageOrder.Where(path => path != recipe.InfFor("common")), path =>
-            Assert.StartsWith("RzDev_0255_", Path.GetFileName(path), StringComparison.Ordinal));
-        Assert.DoesNotContain(recipe.Files, file => Path.GetFileName(file.RelativePath).StartsWith("RzDevU_0255_", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(4, recipe.Files.Count(file => file.RelativePath.EndsWith("WdfCoinstaller01009.dll", StringComparison.Ordinal)));
-        Assert.All(recipe.Files.Where(file => file.RelativePath.EndsWith(".dll", StringComparison.Ordinal)), file =>
-            Assert.Equal("18487B4FF94EDCCC98ED59D9FCA662D4A1331C5F1E14DF8DB3093256DD9F1C3E", file.Sha256));
-        Assert.Equal(16, recipe.VendorBlocks!.Count);
+            Assert.StartsWith("RzDevU_0255_", Path.GetFileName(path), StringComparison.Ordinal));
+        Assert.DoesNotContain(recipe.Files, file => file.RelativePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("525613053F0155B2627E1CC83DD155D554AECD9AC84E2A473E3AD64008300E4C", recipe.DeviceHash);
+        Assert.Equal("56A4850AE97AD3A9F786601445C7EAA70B645BB92128510D56A5CC5D63084EAF", recipe.CommonHash);
+        Assert.Equal("SHA1", recipe.CatalogHashAlgorithm);
+        Assert.All(RazerKeyboardDriverRecipes.All.Where(value => value.ProductId != "0255"), value =>
+            Assert.Equal("SHA256", value.CatalogHashAlgorithm));
+        Assert.Equal(recipe.CabinetFiles.Select(file => file.RelativePath).Order(),
+            RazerKeyboardDriverCabinet.CreatePlan(recipe.CabinetFiles, recipe.Files).Select(plan => plan.SourceName).Distinct().Order());
     }
 
     private sealed class TemporaryDirectory : IDisposable

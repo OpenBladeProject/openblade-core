@@ -7,8 +7,7 @@
     <ProjectReference Include="..\OpenBlade.Session\OpenBlade.Session.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="SharpCompress" />
-    <None Update="ThirdParty\SharpCompress-LICENSE.txt" Link="Licenses\SharpCompress.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="ThirdParty\LzmaSdk\LICENSE.txt" Link="Licenses\LzmaSdk.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeIncludePseudoLocalization)' == 'false'">
     <EmbeddedResource Remove="Properties\Resources.qps-ploc.resx" />

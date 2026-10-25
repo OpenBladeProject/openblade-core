@@ -55,15 +55,18 @@ public sealed class RazerDriverPackageTests
         Assert.Equal(original.CommonCatalogSignerThumbprint, added.CommonCatalogSignerThumbprint);
         foreach (var recipe in RazerKeyboardDriverRecipes.All)
         {
-            Assert.Equal(recipe.ProductId == "0255" ? 20 : recipe.VendorBlocks is null ? 19 : 16, recipe.Files.Count);
-            Assert.Contains(recipe.Files, file => file.RelativePath == "THIRD-PARTY-NOTICE.txt");
+            Assert.Equal(recipe.CabinetFiles is not null ? 15 : recipe.IsZip ? 19 : 16, recipe.Files.Count);
+            if (recipe.CabinetFiles is null)
+            {
+                Assert.Contains(recipe.Files, file => file.RelativePath == "THIRD-PARTY-NOTICE.txt");
+            }
             Assert.Equal(5, recipe.StageOrder.Count);
             Assert.Equal(5, recipe.InstallOrder.Count);
             Assert.Equal(recipe.StageOrder.Order(), recipe.InstallOrder.Order());
             foreach (string inf in recipe.StageOrder)
             {
                 Assert.Contains(recipe.Files, file => file.RelativePath == inf);
-                Assert.True(inf == "rzcommonu/rzcommonu.inf" || inf.Contains(recipe.ProductId.ToLowerInvariant(), StringComparison.Ordinal));
+                Assert.True(inf == recipe.InfFor("common") || inf.Contains(recipe.ProductId.ToLowerInvariant(), StringComparison.Ordinal));
             }
             Assert.All(recipe.Files.Where(file => file.RelativePath.EndsWith(".sys", StringComparison.Ordinal)), file =>
                 Assert.Equal(file.RelativePath.EndsWith("RzCommon.sys", StringComparison.Ordinal) ? recipe.CommonHash : recipe.DeviceHash, file.Sha256));
@@ -167,7 +170,7 @@ public sealed class RazerDriverPackageTests
         Assert.Throws<CryptographicException>(() => RazerDriverPackageTrust.VerifyCatalogPublisher(recipe,
             catalog, "Other publisher", recipe.DeviceCatalogSignerThumbprint));
         Assert.Throws<CryptographicException>(() => RazerDriverPackageTrust.VerifyCatalogPublisher(recipe,
-            "rzcommon.cat", publisher, recipe.DeviceCatalogSignerThumbprint));
+            "rzcommon.cat", publisher, new string('0', 40)));
     }
 
     [Theory]

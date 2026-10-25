@@ -123,6 +123,102 @@ public sealed class WindowsDriverApiTrustTests
             new[] { WindowsDriverApiTrust.MicrosoftHardwareCompatibilityPublisher }));
     }
 
+    [Fact]
+    public void CatalogMembershipPrefersSha256AndDoesNotProbeSha1AfterSuccess()
+    {
+        var algorithms = new List<string>();
+
+        WindowsDriverApiTrust.VerifyCatalogMemberAlgorithms(algorithm =>
+        {
+            algorithms.Add(algorithm);
+            return 0;
+        });
+
+        Assert.Equal(["SHA256"], algorithms);
+    }
+
+    [Fact]
+    public void CatalogMembershipRetriesSha1OnlyForExactNoSignatureStatus()
+    {
+        var algorithms = new List<string>();
+
+        WindowsDriverApiTrust.VerifyCatalogMemberAlgorithms(algorithm =>
+        {
+            algorithms.Add(algorithm);
+            return algorithm == "SHA256" ? unchecked((int)0x800B0100) : 0;
+        });
+
+        Assert.Equal(["SHA256", "SHA1"], algorithms);
+    }
+
+    [Fact]
+    public void CatalogMembershipCancellationAfterSha256MissPreventsSha1Fallback()
+    {
+        var algorithms = new List<string>();
+        using var cancellation = new CancellationTokenSource();
+
+        Assert.Throws<OperationCanceledException>(() =>
+            WindowsDriverApiTrust.VerifyCatalogMemberAlgorithms(algorithm =>
+            {
+                algorithms.Add(algorithm);
+                cancellation.Cancel();
+                return unchecked((int)0x800B0100);
+            }, cancellation.Token));
+
+        Assert.Equal(["SHA256"], algorithms);
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80096010))]
+    [InlineData(unchecked((int)0x800B010C))]
+    public void CatalogMembershipDoesNotDowngradeOtherTrustFailures(int status)
+    {
+        var algorithms = new List<string>();
+
+        CryptographicException error = Assert.Throws<CryptographicException>(() =>
+            WindowsDriverApiTrust.VerifyCatalogMemberAlgorithms(algorithm =>
+            {
+                algorithms.Add(algorithm);
+                return status;
+            }));
+
+        Assert.Equal(["SHA256"], algorithms);
+        Assert.Contains($"0x{status:X8}", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CatalogMembershipPreservesIoFailureWithoutTryingSha1()
+    {
+        var algorithms = new List<string>();
+        var expected = new IOException("locked member read failed");
+
+        IOException actual = Assert.Throws<IOException>(() =>
+            WindowsDriverApiTrust.VerifyCatalogMemberAlgorithms(algorithm =>
+            {
+                algorithms.Add(algorithm);
+                throw expected;
+            }));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(["SHA256"], algorithms);
+    }
+
+    [Fact]
+    public void CatalogMembershipRejectsFailedSha1Fallback()
+    {
+        var algorithms = new List<string>();
+
+        CryptographicException error = Assert.Throws<CryptographicException>(() =>
+            WindowsDriverApiTrust.VerifyCatalogMemberAlgorithms(algorithm =>
+            {
+                algorithms.Add(algorithm);
+                return algorithm == "SHA256" ? unchecked((int)0x800B0100) : unchecked((int)0x80096010);
+            }));
+
+        Assert.Equal(["SHA256", "SHA1"], algorithms);
+        Assert.Contains("0x80096010", error.Message, StringComparison.Ordinal);
+    }
+
     private sealed class TemporaryFile : IDisposable
     {
         internal TemporaryFile(byte[] content, string extension = ".bin")

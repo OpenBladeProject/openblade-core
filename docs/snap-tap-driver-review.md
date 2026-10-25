@@ -47,7 +47,7 @@ Exact vendor manifests, signed installer packages, filter hashes, topology and p
 
 All five expose the same version-1 query interface, size `0x28`, GUID `{14CC0596-CFA5-4379-A5AB-FA24E681D040}`, keyboard type-2 registration, per-device association, original-output bypass and callback restoration. The three .73 filters share executable sections; 02C5's reviewed functions match 02C6 after address normalization; 0255's older compiler plumbing was traced independently. Together with the reviewed common-driver API, this establishes one shared backend for all seven current OpenBlade models.
 
-The 0255 catalogs cover the legacy INF set; their parallel U INF variants are not catalog members. The 2026-10-26 installation review selects only those catalog-covered legacy INFs and their declared co-installer files. The separate setup recipes are documented in the [vendor artifact review](snap-tap-vendor-artifacts.md#complete-installation-recipes). The runtime review alone grants no installer or redistribution authority.
+The 0255 catalogs cover the legacy INF set; their parallel U INF variants are not catalog members. Those Razer-carrier legacy catalogs fail current-OS verification. The 2026-10-26 installation review instead selects the separately reviewed exact-model Microsoft Catalog .66 pair and its current-Windows signed U INF set; see the [0255 API review](snap-tap-0255-catalog-api-review.md). The separate setup recipes are documented in the [vendor artifact review](snap-tap-vendor-artifacts.md#complete-installation-recipes). The runtime review alone grants no installer or redistribution authority.
 
 ## Physical validation
 

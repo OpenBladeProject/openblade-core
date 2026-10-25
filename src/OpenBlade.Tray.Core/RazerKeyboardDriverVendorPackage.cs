@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using SharpCompress.Compressors.LZMA;
 
 namespace OpenBlade.Tray;
 
@@ -53,29 +52,64 @@ internal static class RazerKeyboardDriverVendorPackage
             throw new InvalidDataException("The vendor driver compression properties changed.");
         }
         using var compressed = new MemoryStream(data, 5, data.Length - 5, writable: false);
-        // Decode eagerly within a fixed output bound, then release the dictionary promptly.
-        using var decoder = LzmaStream.Create(data[..5], compressed, data.Length - 5, -1, leaveOpen: true);
-        var output = new MemoryStream();
+        using var input = new CheckedDecoderInput(compressed, cancellationToken);
+        var output = new BoundedDecoderOutput(cancellationToken);
         try
         {
-            byte[] buffer = new byte[16384];
-            int read;
-            while ((read = decoder.Read(buffer)) != 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (output.Length + read > 2 * 1024 * 1024)
-                {
-                    throw new InvalidDataException("The vendor driver block exceeds its expansion bound.");
-                }
-                output.Write(buffer, 0, read);
-            }
+            var decoder = new SevenZip.Compression.LZMA.Decoder();
+            decoder.SetDecoderProperties(data[..5]);
+            decoder.Code(input, output, data.Length - 5, -1, null);
             output.Position = 0;
             return output;
+        }
+        catch (Exception exception) when (exception is SevenZip.DataErrorException or SevenZip.InvalidParamException
+            or EndOfStreamException)
+        {
+            output.Dispose();
+            throw new InvalidDataException("The reviewed vendor driver block could not be decoded.", exception);
         }
         catch
         {
             output.Dispose();
             throw;
+        }
+    }
+
+    private sealed class CheckedDecoderInput(Stream inner, CancellationToken cancellationToken) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => inner.Length;
+        public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
+        public override int ReadByte()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int value = inner.ReadByte();
+            return value < 0 ? throw new EndOfStreamException("The compressed driver block ended unexpectedly.") : value;
+        }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int read = inner.Read(buffer, offset, count);
+            return read == 0 && count != 0 ? throw new EndOfStreamException("The compressed driver block ended unexpectedly.") : read;
+        }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class BoundedDecoderOutput(CancellationToken cancellationToken) : MemoryStream
+    {
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Length + count > 2 * 1024 * 1024)
+            {
+                throw new InvalidDataException("The vendor driver block exceeds its expansion bound.");
+            }
+            base.Write(buffer, offset, count);
         }
     }
 

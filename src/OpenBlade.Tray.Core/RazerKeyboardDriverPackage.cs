@@ -93,14 +93,27 @@ public static class RazerKeyboardDriverPackage
             await DownloadAsync(client, archive, recipe, cancellationToken).ConfigureAwait(false);
             archive.Position = 0;
             await VerifyHashAsync(archive, recipe.ArchiveLength, recipe.ArchiveSha256, cancellationToken).ConfigureAwait(false);
+            archive.Flush(flushToDisk: true);
+        }
+        // Windows SIP verification needs an independent synchronous read handle. An async
+        // read/write download handle can report TRUST_E_BAD_DIGEST for unchanged valid bytes.
+        // Reopen only after closing the writer, then retain read-only leases through decoding.
+        using (var archive = new FileStream(archivePath, FileMode.Open, FileAccess.Read, FileShare.Read, 16384, true))
+        {
+            await VerifyHashAsync(archive, recipe.ArchiveLength, recipe.ArchiveSha256, cancellationToken).ConfigureAwait(false);
             archive.Position = 0;
-            if (recipe.VendorBlocks is null)
+            if (recipe.CabinetFiles is not null)
+            {
+                RazerKeyboardDriverCabinet.ExtractVerified(archivePath, root, recipe, cancellationToken);
+            }
+            else if (recipe.IsZip)
             {
                 await ExtractVerifiedAsync(archive, root, recipe, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                RazerDriverPackageTrust.VerifyVendorArchive(archivePath, archive.SafeFileHandle, recipe, cancellationToken);
+                using var trustHandle = File.OpenHandle(archivePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                RazerDriverPackageTrust.VerifyVendorArchive(archivePath, trustHandle, recipe, cancellationToken);
                 await RazerKeyboardDriverVendorPackage.ExtractVerifiedAsync(archive, root, recipe, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -157,7 +170,7 @@ public static class RazerKeyboardDriverPackage
     {
         if (!uri.IsAbsoluteUri || uri.Scheme != Uri.UriSchemeHttps || uri.Port != 443 ||
             uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 ||
-            !(uri.Equals(recipe.DownloadUri) || recipe.VendorBlocks is null
+            !(uri.Equals(recipe.DownloadUri) || recipe.IsZip
               && uri.Host.Equals("release-assets.githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidDataException("The driver download used an unapproved address.");

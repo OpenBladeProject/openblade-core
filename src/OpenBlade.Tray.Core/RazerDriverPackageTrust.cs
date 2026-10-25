@@ -42,7 +42,14 @@ internal static class RazerDriverPackageTrust
                 Path.GetDirectoryName(file.RelativePath) == directory && file != catalog))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                VerifyMember(catalogPath, Path.Combine(packageRoot, member.RelativePath), cacheOnly);
+                try
+                {
+                    VerifyMember(catalogPath, Path.Combine(packageRoot, member.RelativePath), cacheOnly, recipe.CatalogHashAlgorithm);
+                }
+                catch (CryptographicException exception)
+                {
+                    throw new CryptographicException($"Catalog '{Path.GetFileName(catalogPath)}' rejected member '{Path.GetFileName(member.RelativePath)}'.", exception);
+                }
             }
         }
     }
@@ -112,12 +119,18 @@ internal static class RazerDriverPackageTrust
         VerifyObject(fileInfo, 1, GenericVerify, cacheOnly);
     }
 
-    private static void VerifyMember(string catalogPath, string memberPath, bool cacheOnly)
+    private static void VerifyMember(string catalogPath, string memberPath, bool cacheOnly, string algorithm = "SHA256")
     {
         RazerKeyboardDriverPackage.EnsureNoReparsePoints(memberPath);
         using var file = File.OpenHandle(memberPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        int expectedHashLength = algorithm switch
+        {
+            "SHA256" => 32,
+            "SHA1" => 20, // Only the pinned legacy 0255 catalogs use SHA1 member identifiers.
+            _ => throw new CryptographicException("An unreviewed catalog hash algorithm was requested."),
+        };
         var subsystem = DriverVerify;
-        if (!CryptCATAdminAcquireContext2(out var admin, ref subsystem, "SHA256", IntPtr.Zero, 0))
+        if (!CryptCATAdminAcquireContext2(out var admin, ref subsystem, algorithm, IntPtr.Zero, 0))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
@@ -125,7 +138,7 @@ internal static class RazerDriverPackageTrust
         try
         {
             uint length = 0;
-            if (!CryptCATAdminCalcHashFromFileHandle2(admin, file, ref length, null, 0) || length != 32)
+            if (!CryptCATAdminCalcHashFromFileHandle2(admin, file, ref length, null, 0) || length != expectedHashLength)
             {
                 throw new CryptographicException("Windows could not calculate the driver catalog member hash.");
             }

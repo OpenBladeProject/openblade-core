@@ -387,7 +387,9 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    extract only fixed reviewed blocks after whole-file hash and signer verification;
    never execute the carrier. The generic common package needs separate applicability
    evidence; do not substitute another model's filter. Select only catalog-covered
-   INFs and their complete source-file closure, including the legacy 0255 co-installer.
+   INFs and their complete source-file closure. RZ09-0328 uses the separately reviewed
+   complete Microsoft Catalog .66 pair and its current-Windows signed U INFs;
+   never substitute the Razer .71 legacy catalogs that fail current OS policy.
    The selected model recipe binds acquisition, each native operation and independent
    readback. Setup on the six additional models remains source-backed experimental
    until each model's own physical setup validation.

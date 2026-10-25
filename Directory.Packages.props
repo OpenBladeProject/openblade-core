@@ -21,7 +21,6 @@
          AI, ML, and Widgets binaries that OpenBlade does not use. -->
     <PackageVersion Include="Microsoft.WindowsAppSDK.Runtime" Version="[2.2.0]" />
     <PackageVersion Include="Microsoft.WindowsAppSDK.WinUI" Version="[2.2.1]" />
-    <PackageVersion Include="SharpCompress" Version="0.50.7" />
     <PackageVersion Include="System.Management" Version="[10.0.0]" />
     <PackageVersion Include="System.ServiceProcess.ServiceController" Version="10.0.9" />
   </ItemGroup>

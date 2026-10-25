@@ -215,8 +215,9 @@ reports that a package is in use or a reboot is required.
 The SnapTap **Install driver** action implements these staging and binding steps
 in a separate elevated helper. It selects a separately pinned installation recipe
 for each of the seven reviewed SnapTap models. RZ09-0581 and RZ09-0528 use their
-complete catalog archives; the other five combine selected files from their
-original Razer carriers with the independently reviewed generic RzCommon package.
+complete catalog archives; four more combine selected files from their original Razer carriers with the
+independently reviewed generic RzCommon package. RZ09-0328 uses its separately
+reviewed complete Microsoft Catalog .66 common/filter package.
 No model-specific filter is substituted. See the [vendor artifact review](snap-tap-vendor-artifacts.md#complete-installation-recipes)
 for the source and legacy INF selection. Each recipe preserves dependency order
 and independent readback. Setup on the six additional models remains source-backed

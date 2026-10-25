@@ -8,7 +8,10 @@ internal sealed class RazerKeyboardDriverRecipe
         string deviceCatalogSignerThumbprint, IEnumerable<RazerKeyboardDriverPackage.PackageFile> files,
         IEnumerable<string> stageOrder, IEnumerable<string> installOrder,
         Uri? downloadUri = null, IEnumerable<RazerDriverArchiveBlock>? vendorBlocks = null,
-        string? carrierSignerSubject = null, string? carrierSignerThumbprint = null, int vendorHeaderOffset = 0)
+        string? carrierSignerSubject = null, string? carrierSignerThumbprint = null, int vendorHeaderOffset = 0,
+        string catalogHashAlgorithm = "SHA256",
+        IEnumerable<RazerKeyboardDriverPackage.PackageFile>? cabinetFiles = null,
+        string? commonHash = null, string? commonCatalogSignerThumbprint = null)
     {
         Id = id;
         ProductName = productName;
@@ -23,6 +26,10 @@ internal sealed class RazerKeyboardDriverRecipe
         CarrierSignerSubject = carrierSignerSubject;
         CarrierSignerThumbprint = carrierSignerThumbprint;
         VendorHeaderOffset = vendorHeaderOffset;
+        CatalogHashAlgorithm = catalogHashAlgorithm;
+        CabinetFiles = cabinetFiles is null ? null : Array.AsReadOnly(cabinetFiles.ToArray());
+        CommonHash = commonHash ?? "64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59";
+        CommonCatalogSignerThumbprint = commonCatalogSignerThumbprint ?? "FAC666005546D6BE881A31C1267717879401A950";
         VendorBlocks = vendorBlocks is null ? null : Array.AsReadOnly(vendorBlocks.ToArray());
         DeviceCatalogSignerThumbprint = deviceCatalogSignerThumbprint;
         Files = Array.AsReadOnly(files.ToArray());
@@ -30,6 +37,9 @@ internal sealed class RazerKeyboardDriverRecipe
         InstallOrder = Array.AsReadOnly(installOrder.ToArray());
     }
 
+    public IReadOnlyList<RazerKeyboardDriverPackage.PackageFile>? CabinetFiles { get; }
+    public bool IsZip => VendorBlocks is null && CabinetFiles is null;
+    public string CatalogHashAlgorithm { get; }
     public string? CarrierSignerSubject { get; }
     public string? CarrierSignerThumbprint { get; }
     public int VendorHeaderOffset { get; }
@@ -42,7 +52,7 @@ internal sealed class RazerKeyboardDriverRecipe
     public string ProductName { get; }
     public string ProductId { get; }
     public string DeviceService { get; }
-    public string CommonHash => "64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59";
+    public string CommonHash { get; }
     public string DeviceHash { get; }
     public string ArchiveName { get; }
     public long ArchiveLength { get; }
@@ -52,7 +62,7 @@ internal sealed class RazerKeyboardDriverRecipe
     public IReadOnlyList<RazerKeyboardDriverPackage.PackageFile> Files { get; }
     public IReadOnlyList<string> StageOrder { get; }
     public IReadOnlyList<string> InstallOrder { get; }
-    public string CommonCatalogSignerThumbprint => "FAC666005546D6BE881A31C1267717879401A950";
+    public string CommonCatalogSignerThumbprint { get; }
     public string DeviceCatalogSignerThumbprint { get; }
 }
 
