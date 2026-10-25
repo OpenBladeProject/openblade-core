@@ -231,7 +231,10 @@ public sealed class WindowsRazerDriverInstallPlatformTests
         if (installed)
         {
             devices.Add(new(@"RZCONTROL\VID_1532&PID_02E0&MI_00\test", Container, "RzCommon", [], [],
-                [UsbMouse, Composite], 8, 0, Pin("common")) { MatchesCommonHardware = true });
+                [UsbMouse, Composite], 8, 0, Pin("common"))
+            {
+                MatchesCommonHardware = true,
+            });
             devices.Add(new(@"RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03\test", Container, "RzDev_02e0", ["mshidkmdf"], [],
                 [UsbKeyboard, Composite], 8, 0, Pin("vcon")));
         }
