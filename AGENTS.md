@@ -381,11 +381,14 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    owned-hook restoration and uncertain-output recovery. It must not load the
    Synapse mapping engine, acquire the service's HID handle, install or bundle
    drivers, or fall back to a system-wide keyboard hook. A separate, explicitly
-   user-initiated elevated helper may install the pinned RZ09-0581 catalog stack
-   after exact host, topology, package hash and Windows catalog verification.
+   user-initiated elevated helper may install the separately pinned RZ09-0581
+   or RZ09-0528 catalog stack after exact host, topology, package hash and Windows
+   catalog verification. The selected model recipe binds acquisition, each native
+   operation and independent readback; installation on RZ09-0528 remains
+   source-backed experimental until its own physical setup validation.
    Keep its durable journal, independent readback and stop-on-ambiguity behavior;
    never install from the input worker or bundle vendor binaries. Other models need
-   separately reviewed driver evidence; see [SnapTap](docs/snap-tap.md).
+   separately reviewed complete installation recipes; see [SnapTap](docs/snap-tap.md).
    The legacy THX COM backend, originally reviewed in 2.6.5.0, may offer manual spatial
    audio control on exact RZ09-0482 (`029D`), RZ09-0483 (`029F`) and RZ09-0484
    (`02A0`) when their trusted, model-bound service/APO stack is already installed. Keep its

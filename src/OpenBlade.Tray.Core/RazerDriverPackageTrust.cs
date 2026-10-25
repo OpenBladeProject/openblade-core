@@ -17,21 +17,28 @@ internal static class RazerDriverPackageTrust
         Verify(packageRoot, cancellationToken, cacheOnly: false);
 
     internal static void Verify(string packageRoot, CancellationToken cancellationToken, bool cacheOnly)
+        => Verify(packageRoot, RazerKeyboardDriverRecipes.Pid02E0, cancellationToken, cacheOnly);
+
+    internal static void Verify(string packageRoot, RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken)
+        => Verify(packageRoot, recipe, cancellationToken, cacheOnly: false);
+
+    internal static void Verify(string packageRoot, RazerKeyboardDriverRecipe recipe,
+        CancellationToken cancellationToken, bool cacheOnly)
     {
         if (!OperatingSystem.IsWindows())
         {
             throw new PlatformNotSupportedException("Windows is required to verify the driver catalogs.");
         }
 
-        foreach (var catalog in RazerKeyboardDriverPackage.Files.Where(file => file.RelativePath.EndsWith(".cat", StringComparison.Ordinal)))
+        foreach (var catalog in recipe.Files.Where(file => file.RelativePath.EndsWith(".cat", StringComparison.Ordinal)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var catalogPath = Path.Combine(packageRoot, catalog.RelativePath);
             RazerKeyboardDriverPackage.EnsureNoReparsePoints(catalogPath);
             using var catalogHandle = File.OpenHandle(catalogPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            VerifyCatalog(catalogPath, catalogHandle, cacheOnly);
+            VerifyCatalog(catalogPath, catalogHandle, recipe, cacheOnly);
             var directory = Path.GetDirectoryName(catalog.RelativePath);
-            foreach (var member in RazerKeyboardDriverPackage.Files.Where(file =>
+            foreach (var member in recipe.Files.Where(file =>
                 Path.GetDirectoryName(file.RelativePath) == directory && file != catalog))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -59,7 +66,7 @@ internal static class RazerDriverPackageTrust
         }
     }
 
-    private static void VerifyCatalog(string path, SafeFileHandle handle, bool cacheOnly)
+    private static void VerifyCatalog(string path, SafeFileHandle handle, RazerKeyboardDriverRecipe recipe, bool cacheOnly)
     {
         VerifyCatalogTrust(path, handle, cacheOnly);
         // Windows validates the signature and timestamp above; these pins also enforce the
@@ -67,10 +74,16 @@ internal static class RazerDriverPackageTrust
 #pragma warning disable SYSLIB0057
         using var certificate = X509Certificate.CreateFromSignedFile(path);
 #pragma warning restore SYSLIB0057
+        VerifyCatalogPublisher(recipe, path, certificate.Subject, certificate.GetCertHashString());
+    }
+
+    internal static void VerifyCatalogPublisher(RazerKeyboardDriverRecipe recipe, string path,
+        string subject, string thumbprint)
+    {
         var expectedThumbprint = Path.GetFileName(path) == "rzcommon.cat"
-            ? "FAC666005546D6BE881A31C1267717879401A950"
-            : "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21";
-        if (certificate.Subject != Publisher || certificate.GetCertHashString() != expectedThumbprint)
+            ? recipe.CommonCatalogSignerThumbprint
+            : recipe.DeviceCatalogSignerThumbprint;
+        if (subject != Publisher || thumbprint != expectedThumbprint)
         {
             throw new CryptographicException("The driver catalog publisher does not match the reviewed Microsoft signature.");
         }

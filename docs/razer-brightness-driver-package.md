@@ -213,7 +213,12 @@ RzCommon, VCon, mouse, keyboard, then DKM. Use
 reports that a package is in use or a reboot is required.
 
 The SnapTap **Install driver** action implements these staging and binding steps
-in a separate elevated helper. It verifies the pinned catalog package and records
+in a separate elevated helper. It also has a separately pinned RZ09-0528/02C6
+recipe; no 02E0 path or artifact is substituted on that model. The 02C6 mouse
+filter's ControlDevice=1 declaration creates the required control child.
+Both recipes preserve their dependency order and independent readback. The
+RZ09-0528 recipe remains source-backed experimental pending physical setup and
+recovery validation. It verifies the pinned catalog package and records
 operations in `%ProgramData%\OpenBlade.DriverInstallation\installation.jsonl`.
 A pending journal blocks another installation attempt, including after a restart.
 Preserve that journal and inspect the current bindings before manual recovery;

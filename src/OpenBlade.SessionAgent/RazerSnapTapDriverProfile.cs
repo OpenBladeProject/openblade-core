@@ -27,7 +27,7 @@ internal static class RazerSnapTapDriverProfiles
             new("Blade 16 - RZ09-0581", "02E0",
                 AutomaticInstallationAvailable: true, PhysicallyValidated: true),
             new("Blade 16 - RZ09-0528", "02C6",
-                AutomaticInstallationAvailable: false, PhysicallyValidated: false),
+                AutomaticInstallationAvailable: true, PhysicallyValidated: false),
             new("Blade 16 - RZ09-0483", "029F",
                 AutomaticInstallationAvailable: false, PhysicallyValidated: false),
             new("Blade 14 - RZ09-0482", "029D",

@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 
 namespace OpenBlade.Tray;
 
-/// <summary>The one reviewed 02E0 package. Acquisition never registers or installs a driver.</summary>
+/// <summary>Verified package acquisition. Public compatibility members retain the original 02E0 recipe.</summary>
 public static class RazerKeyboardDriverPackage
 {
     public const string ReleaseTag = "rz09-0581-1532-02e0-driver-stack-1.0.0.78-1.0.0.76";
@@ -55,17 +55,27 @@ public static class RazerKeyboardDriverPackage
         "rzcommonu/rzcommonu.inf",
     });
 
-    public static async Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken)
+    public static Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken) =>
+        AcquireVerifiedAsync(destination, RazerKeyboardDriverRecipes.Pid02E0, cancellationToken);
+
+    internal static async Task<string> AcquireVerifiedAsync(string destination, RazerKeyboardDriverRecipe recipe,
+        CancellationToken cancellationToken)
     {
         using var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false };
         using var client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromMinutes(2));
-        return await AcquireVerifiedAsync(destination, client, RazerDriverPackageTrust.Verify, timeout.Token).ConfigureAwait(false);
+        return await AcquireVerifiedAsync(destination, recipe, client,
+            (root, token) => RazerDriverPackageTrust.Verify(root, recipe, token), timeout.Token).ConfigureAwait(false);
     }
 
-    internal static async Task<string> AcquireVerifiedAsync(
+    internal static Task<string> AcquireVerifiedAsync(
         string destination, HttpClient client, Action<string, CancellationToken> verifyTrust,
+        CancellationToken cancellationToken) =>
+        AcquireVerifiedAsync(destination, RazerKeyboardDriverRecipes.Pid02E0, client, verifyTrust, cancellationToken);
+
+    internal static async Task<string> AcquireVerifiedAsync(
+        string destination, RazerKeyboardDriverRecipe recipe, HttpClient client, Action<string, CancellationToken> verifyTrust,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -76,30 +86,34 @@ public static class RazerKeyboardDriverPackage
             throw new IOException("Driver download requires an empty, protected destination directory.");
         }
 
-        var archivePath = Path.Combine(root, ArchiveName);
+        var archivePath = Path.Combine(root, recipe.ArchiveName);
         // CreateNew and FileShare.None prevent an existing archive from being replaced or reused.
         using (var archive = new FileStream(archivePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 16384, true))
         {
-            await DownloadAsync(client, archive, cancellationToken).ConfigureAwait(false);
+            await DownloadAsync(client, archive, recipe, cancellationToken).ConfigureAwait(false);
             archive.Position = 0;
-            await VerifyHashAsync(archive, ArchiveLength, ArchiveSha256, cancellationToken).ConfigureAwait(false);
+            await VerifyHashAsync(archive, recipe.ArchiveLength, recipe.ArchiveSha256, cancellationToken).ConfigureAwait(false);
             archive.Position = 0;
-            await ExtractVerifiedAsync(archive, root, Files, cancellationToken).ConfigureAwait(false);
+            await ExtractVerifiedAsync(archive, root, recipe, cancellationToken).ConfigureAwait(false);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var packageRoot = Path.Combine(root, PackageDirectory);
+        var packageRoot = Path.Combine(root, recipe.PackageDirectory);
         verifyTrust(packageRoot, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return packageRoot;
     }
 
-    internal static async Task DownloadAsync(HttpClient client, Stream destination, CancellationToken cancellationToken)
+    internal static Task DownloadAsync(HttpClient client, Stream destination, CancellationToken cancellationToken) =>
+        DownloadAsync(client, destination, RazerKeyboardDriverRecipes.Pid02E0, cancellationToken);
+
+    internal static async Task DownloadAsync(HttpClient client, Stream destination, RazerKeyboardDriverRecipe recipe,
+        CancellationToken cancellationToken)
     {
-        var uri = DownloadUri;
+        var uri = recipe.DownloadUri;
         for (var redirects = 0; redirects <= 3; redirects++)
         {
-            ValidateDownloadUri(uri);
+            ValidateDownloadUri(uri, recipe);
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.UserAgent.ParseAdd("OpenBlade/1.0");
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
@@ -112,32 +126,42 @@ public static class RazerKeyboardDriverPackage
             }
 
             response.EnsureSuccessStatusCode();
-            if (response.Content.Headers.ContentLength is long length && length != ArchiveLength)
+            if (response.Content.Headers.ContentLength is long length && length != recipe.ArchiveLength)
             {
                 throw new InvalidDataException("The driver download size does not match the reviewed package.");
             }
 
             await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await CopyExactAsync(input, destination, ArchiveLength, cancellationToken).ConfigureAwait(false);
+            await CopyExactAsync(input, destination, recipe.ArchiveLength, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         throw new InvalidDataException("The driver download redirected too many times.");
     }
 
-    internal static void ValidateDownloadUri(Uri uri)
+    internal static void ValidateDownloadUri(Uri uri) => ValidateDownloadUri(uri, RazerKeyboardDriverRecipes.Pid02E0);
+
+    internal static void ValidateDownloadUri(Uri uri, RazerKeyboardDriverRecipe recipe)
     {
         if (!uri.IsAbsoluteUri || uri.Scheme != Uri.UriSchemeHttps || uri.Port != 443 ||
             uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 ||
             !(uri.Host.Equals("release-assets.githubusercontent.com", StringComparison.OrdinalIgnoreCase) ||
-              uri.Equals(DownloadUri)))
+              uri.Equals(recipe.DownloadUri)))
         {
             throw new InvalidDataException("The driver download used an unapproved address.");
         }
     }
 
+    internal static Task ExtractVerifiedAsync(Stream archiveStream, string destination,
+        IReadOnlyList<PackageFile> expectedFiles, CancellationToken cancellationToken) =>
+        ExtractVerifiedAsync(archiveStream, destination, RazerKeyboardDriverRecipes.Pid02E0, expectedFiles, cancellationToken);
+
+    internal static Task ExtractVerifiedAsync(Stream archiveStream, string destination,
+        RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken) =>
+        ExtractVerifiedAsync(archiveStream, destination, recipe, recipe.Files, cancellationToken);
+
     internal static async Task ExtractVerifiedAsync(Stream archiveStream, string destination,
-        IReadOnlyList<PackageFile> expectedFiles, CancellationToken cancellationToken)
+        RazerKeyboardDriverRecipe recipe, IReadOnlyList<PackageFile> expectedFiles, CancellationToken cancellationToken)
     {
         EnsureNoReparsePoints(destination);
         using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read, leaveOpen: true);
@@ -146,7 +170,7 @@ public static class RazerKeyboardDriverPackage
             throw new InvalidDataException("The driver archive has an unexpected file count.");
         }
 
-        var expected = expectedFiles.ToDictionary(file => PackageDirectory + "/" + file.RelativePath, StringComparer.Ordinal);
+        var expected = expectedFiles.ToDictionary(file => recipe.PackageDirectory + "/" + file.RelativePath, StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Validate every name and length before creating any extracted file. Exact names reject
         // traversal, alternate separators, ADS, absolute paths, directories and extra content.

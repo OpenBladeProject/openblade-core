@@ -30,6 +30,7 @@ public sealed partial class MainWindow
             snapTapDriverInstallOutcome = driverSetupState switch
             {
                 "installed" => RazerDriverInstallOutcome.Installed,
+                "unavailable" => RazerDriverInstallOutcome.Unavailable,
                 "restart" => RazerDriverInstallOutcome.RestartRequired,
                 "failed" => RazerDriverInstallOutcome.RecoveryRequired,
                 _ => null,
@@ -143,7 +144,8 @@ public sealed partial class MainWindow
         SnapTapToggle.IsEnabled = !snapTapDriverInstalling;
         SnapTapInstallDriverButton.IsEnabled = !snapTapDriverInstalling;
         SnapTapInstallDriverButton.Visibility = snapTapDriverInstallOutcome is
-            RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.RestartRequired or RazerDriverInstallOutcome.RecoveryRequired
+            RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.Unavailable
+                or RazerDriverInstallOutcome.RestartRequired or RazerDriverInstallOutcome.RecoveryRequired
             ? Visibility.Collapsed
             : Visibility.Visible;
         SnapTapStatusText.Visibility = string.IsNullOrEmpty(SnapTapStatusText.Text)
