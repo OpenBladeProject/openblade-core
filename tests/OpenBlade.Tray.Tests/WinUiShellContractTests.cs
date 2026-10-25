@@ -219,7 +219,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void MissingSnapTapDriverOffersTheExactModelSetupGuide()
+    public void MissingSnapTapDriverOffersTheSharedModelSetupGuide()
     {
         XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement link = NamedElement(document, "HyperlinkButton", "SnapTapDriverLink");
@@ -235,11 +235,15 @@ public sealed class WinUiShellContractTests
         Assert.Equal("{StaticResource AccentButtonStyle}", Attribute(install, "Style"));
         Assert.Equal("Left", Attribute(link, "HorizontalAlignment"));
         Assert.Equal(
-            "https://github.com/OpenBladeProject/blade-driver-catalog/blob/main/docs/installing-rz09-0581.md",
+            "https://github.com/OpenBladeProject/blade-driver-catalog",
             Attribute(link, "NavigateUri"));
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs");
         Assert.Contains("snapTapEnabled && status?.State == SnapTapRuntimeState.DriverMissing", source, StringComparison.Ordinal);
         Assert.Contains("&& snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed", source, StringComparison.Ordinal);
+        Assert.Contains("RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.Unavailable", source, StringComparison.Ordinal);
+        Assert.Contains("\"unavailable\" => RazerDriverInstallOutcome.Unavailable", source, StringComparison.Ordinal);
+        string harness = ReadRepositoryFile("src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
+        Assert.Contains("\"laptop-snap-tap-driver-unavailable\"", harness, StringComparison.Ordinal);
     }
 
     [Fact]

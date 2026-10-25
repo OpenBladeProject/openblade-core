@@ -3398,7 +3398,7 @@
                                                                      HorizontalAlignment="Left" VerticalAlignment="Center"
                                                                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                                                      ToolTipService.ToolTip="Setup guide"
-                                                                     NavigateUri="https://github.com/OpenBladeProject/blade-driver-catalog/blob/main/docs/installing-rz09-0581.md"
+                                                                      NavigateUri="https://github.com/OpenBladeProject/blade-driver-catalog"
                                                                      AutomationProperties.Name="Razer keyboard driver setup guide">
                                                         <FontIcon Glyph="&#xE8A7;" FontSize="14" />
                                                     </HyperlinkButton>

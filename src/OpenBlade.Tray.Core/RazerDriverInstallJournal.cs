@@ -10,6 +10,7 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
     private readonly FileStream stream;
     private readonly List<RazerDriverInventoryEntry> baseline = [];
     private bool hasIntent;
+    private string? recipeId;
     public bool RequiresRecovery { get; private set; }
     public string PackageDestination { get; }
 
@@ -78,13 +79,14 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
 
     public void Begin(RazerDriverInstallSnapshot snapshot)
     {
+        recipeId = snapshot.RecipeId;
         baseline.AddRange(snapshot.Inventory);
-        Append(new { kind = "baseline", at = DateTimeOffset.UtcNow, snapshot });
+        Append(new { kind = "baseline", recipeVersion = 1, recipeId, at = DateTimeOffset.UtcNow, snapshot });
     }
 
     public void Intent(RazerDriverMutation operation)
     {
-        Append(new { kind = "intent", at = DateTimeOffset.UtcNow, operation });
+        Append(new { kind = "intent", recipeId, at = DateTimeOffset.UtcNow, operation });
         hasIntent = true;
         RequiresRecovery = true;
     }

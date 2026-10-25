@@ -27,17 +27,17 @@ internal static class RazerSnapTapDriverProfiles
             new("Blade 16 - RZ09-0581", "02E0",
                 AutomaticInstallationAvailable: true, PhysicallyValidated: true),
             new("Blade 16 - RZ09-0528", "02C6",
-                AutomaticInstallationAvailable: false, PhysicallyValidated: false),
+                AutomaticInstallationAvailable: true, PhysicallyValidated: false),
             new("Blade 16 - RZ09-0483", "029F",
-                AutomaticInstallationAvailable: false, PhysicallyValidated: false),
+                AutomaticInstallationAvailable: true, PhysicallyValidated: false),
             new("Blade 14 - RZ09-0482", "029D",
-                AutomaticInstallationAvailable: false, PhysicallyValidated: false),
+                AutomaticInstallationAvailable: true, PhysicallyValidated: false),
             new("Blade 14 - RZ09-0530", "02C5",
-                AutomaticInstallationAvailable: false, PhysicallyValidated: false),
+                AutomaticInstallationAvailable: true, PhysicallyValidated: false),
             new("Blade 15 Base Model (Early 2020) - RZ09-0328", "0255",
-                AutomaticInstallationAvailable: false, PhysicallyValidated: false),
+                AutomaticInstallationAvailable: true, PhysicallyValidated: false),
             new("Blade 18 - RZ09-0484", "02A0",
-                AutomaticInstallationAvailable: false, PhysicallyValidated: false),
+                AutomaticInstallationAvailable: true, PhysicallyValidated: false),
         });
 
     internal static RazerSnapTapDriverProfile? Find(

@@ -4,7 +4,7 @@ When A and D are held, the last pressed key takes priority. Releasing it restore
 
 Open **Laptop**, find **SnapTap (A/D)** under **Keyboard**, and turn it on. Release keys and mouse buttons to activate it. SnapTap is off by default and stays running when you close the visible Tray.
 
-On RZ09-0581, if the driver is missing, choose **Install driver** and approve the Windows prompt. OpenBlade downloads and verifies the RZ09-0581 package from the driver catalog. If a restart is requested, restart Windows and follow the setup guide to complete any remaining steps. After a successful installation, turn SnapTap off and on. **Setup guide** opens the catalog instructions.
+On every reviewed model below, connect AC power. If the driver is missing or a reviewed partial stack needs setup, choose **Install driver** and approve the Windows prompt. OpenBlade downloads and verifies the exact model's complete driver package from the catalog. If a restart is requested, restart Windows and follow the setup guide to complete any remaining steps. After a successful installation, turn SnapTap off and on. **Setup guide** opens the catalog instructions.
 
 SnapTap uses the laptop keyboard through its model-specific Razer driver and the shared Razer control driver. The pair uses the A/D scan positions. The information button includes game compatibility details.
 
@@ -17,12 +17,12 @@ SnapTap uses the laptop keyboard through its model-specific Razer driver and the
 | RZ09-0483 | 029F | 1.0.0.73 | Source-reviewed experimental |
 | RZ09-0482 | 029D | 1.0.0.73 | Source-reviewed experimental |
 | RZ09-0530 | 02C5 | 1.0.0.78 | Source-reviewed experimental |
-| RZ09-0328 | 0255 | 1.0.0.71 | Source-reviewed experimental |
+| RZ09-0328 | 0255 | 1.0.0.66 / 1.0.0.71 | Source-reviewed experimental |
 | RZ09-0484 | 02A0 | 1.0.0.73 | Source-reviewed experimental |
 
 The builds and hashes in the [driver review](snap-tap-driver-review.md) identify the inspected API sources. Runtime admission requires trusted installed packages for the shared `RzCommon` service and the model-specific filter, with the reviewed typed API and topology. Compatible installed driver updates do not require a new build allowlist. Discovery selects the service and keyboard collection from the exact model profile. The experimental label describes pending physical SnapTap validation, independently of the laptop's other supported features.
 
-On models other than RZ09-0581, install the model's Razer keyboard driver through Synapse, then close Synapse and turn SnapTap off and on. OpenBlade's **Install driver** action remains specific to the separately reviewed RZ09-0581 package. A missing file, untrusted package, incomplete topology and unsupported model are distinct admission failures; the exported `OpenBlade.SnapTap.log` records the rejected check. Downloading Synapse alone does not establish that the required driver stack is installed.
+Setup uses a separately pinned recipe for each model. A missing file, untrusted package, incomplete topology and unsupported model are distinct admission failures; the exported `OpenBlade.SnapTap.log` records the rejected check. Only a positive setup inspection exposes **Install driver**. Downloading Synapse alone does not establish that the required driver stack is installed.
 
 ## Driver implementation
 
@@ -67,8 +67,12 @@ The observed laptop Raw Input attribution reaches the unchanged Reactive/Ripple 
 
 A separate elevated helper runs from the installed OpenBlade directory. It accepts one fixed action, with no package path or URL arguments. The input worker never installs drivers.
 
-The helper requires the exact RZ09-0581 host and keyboard topology, AC power, and no competing Razer controller. It checks pinned archive and file hashes, Windows catalog signatures, and INF/SYS membership. It stages and binds the model-specific packages in catalog order, with fresh admission and independent readback.
+The helper requires an exact reviewed host and its keyboard/mouse topology, AC power, an active console session and no competing Razer controller. It checks that model's pinned archive and file hashes, Windows catalog signatures, and INF/SYS membership. The complete recipe includes the keyboard filter, mouse/control filter, USB lower filter, virtual consumer device and shared RzCommon driver. Four additional models download their pinned original Razer installers as data. Setup verifies each carrier and extracts only fixed, bounded driver blocks without running the installer. Their shared RzCommon files and notice come from the separately verified catalog archive; no other model's filter is extracted. RZ09-0328 instead uses a complete exact-model Microsoft Update Catalog CAB with its own reviewed 1.0.0.66 common/filter pair. Its signed U INFs pass current Windows policy; the older Razer-carrier legacy catalogs and uncovered U INFs are excluded. See the [0255 API review](snap-tap-0255-catalog-api-review.md). The mouse filter creates the control child; installing only the keyboard INF is insufficient.
+
+Acquisition, each staged/bound INF and final readback stay tied to the same immutable model recipe. A changed recipe or uncertain operation stops installation. Readback confirms all five package bindings, expected services and filters, healthy device nodes, and the control/virtual children in their exact common container and ancestry. Existing unrecognized driver images and unrelated filters are preserved. Setup also refuses another device matching the shared control INF, because [PnPUtil applies /install to every matching device](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-command-syntax#add-driver). Disconnect other Razer control devices before setup.
+
+An **Install driver** action requires a positive read-only setup inspection. Known missing bindings can qualify even when old driver files remain after Synapse removal. A catalog/signature rejection, unknown package failure or unrelated stack does not become installation authority. The original SnapTap failure remains in diagnostics.
 
 An administrator-only journal records intent before each driver operation. Interrupted or uncertain operations block automatic replay, including after a restart; recovery follows the manual catalog procedure. The helper never forces removal or restarts Windows. See the [driver package procedure](razer-brightness-driver-package.md) for recovery and release validation.
 
-Read-only checks verified the catalog archive and native signatures. Simulated tests cover installer failure handling. Clean installation, reboot and recovery on a recoverable laptop remain pending. This validation made no driver changes.
+Read-only checks verified the catalog inputs; automated tests cover recipe isolation, archive/catalog verification, independent readback and installer failure handling. Setup on every model except the previously reviewed RZ09-0581 remains source-backed experimental. Clean installation, reboot and recovery on a recoverable laptop remain pending. This validation made no driver changes.
