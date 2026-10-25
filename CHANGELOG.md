@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.43.0-nightly.103] - 2026-10-25
+
 ### Added
 
 - Offer **Install driver** for all seven reviewed SnapTap models, including eligible partial stacks. Verify each model's complete signed driver inputs, retain detailed setup failures, and preserve unrelated drivers. ([#852](https://github.com/OpenBladeProject/openblade-core/pull/852))
@@ -2236,7 +2238,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.42.2-nightly.102...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...HEAD
+[0.43.0-nightly.103]: https://github.com/OSSBlade/openblade-core/compare/v0.42.2-nightly.102...v0.43.0-nightly.103
 [0.42.2-nightly.102]: https://github.com/OSSBlade/openblade-core/compare/v0.42.1-nightly.101...v0.42.2-nightly.102
 [0.42.1-nightly.101]: https://github.com/OSSBlade/openblade-core/compare/v0.42.0-nightly.100...v0.42.1-nightly.101
 [0.42.0-nightly.100]: https://github.com/OSSBlade/openblade-core/compare/v0.41.1-nightly.99...v0.42.0-nightly.100
