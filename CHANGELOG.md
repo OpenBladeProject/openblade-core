@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Offer **Install driver** for RZ09-0528 and reviewed partial driver stacks on both Blade 16 models. Use the complete model-specific Razer package, retain detailed setup failures, and preserve unrelated drivers. ([#852](https://github.com/OpenBladeProject/openblade-core/pull/852))
+- Offer **Install driver** for all seven reviewed SnapTap models, including eligible partial stacks. Verify each model's complete signed driver inputs, retain detailed setup failures, and preserve unrelated drivers. ([#852](https://github.com/OpenBladeProject/openblade-core/pull/852))
 
 ## [0.42.2-nightly.102] - 2026-10-24
 

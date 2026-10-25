@@ -371,8 +371,7 @@ public sealed class RazerSnapTapDriverAdmissionTests
                 p => p.ProductId == model.UsbProductId);
             Assert.EndsWith(model.ModelNumber, profile.ProductName, StringComparison.Ordinal);
             Assert.Equal(model.ModelNumber == "RZ09-0581", profile.PhysicallyValidated);
-            Assert.Equal(model.ModelNumber is "RZ09-0581" or "RZ09-0528",
-                profile.AutomaticInstallationAvailable);
+            Assert.True(profile.AutomaticInstallationAvailable);
             Assert.Equal($@"HID\VID_1532&PID_{model.UsbProductId}&MI_01&COL01", profile.KeyboardHardwareId);
         }
     }
@@ -474,7 +473,7 @@ public sealed class RazerSnapTapDriverAdmissionTests
 
     [Theory]
     [MemberData(nameof(ReviewedProfiles))]
-    public void MissingDriverNeverOffersAnotherModelsInstaller(string productId)
+    public void MissingDriverOffersOnlyThePositivelyAdmittedExactInstaller(string productId)
     {
         RazerSnapTapDriverSnapshot good = ModelSnapshot(productId);
         int inspections = 0;
@@ -491,14 +490,12 @@ public sealed class RazerSnapTapDriverAdmissionTests
                     Admitted: true, Installed: false, AdmissionFailure: RazerDriverInstallOutcome.Unavailable);
             });
         Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure));
-        Assert.Equal(productId is "02E0" or "02C6" ? RazerSnapTapAdmissionFailure.DriverMissing
-            : RazerSnapTapAdmissionFailure.ManualDriverSetupRequired, failure);
-        Assert.Equal(productId is "02E0" or "02C6" ? 1 : 0, inspections);
+        Assert.Equal(RazerSnapTapAdmissionFailure.DriverMissing, failure);
+        Assert.Equal(1, inspections);
     }
 
     [Theory]
-    [InlineData("02E0")]
-    [InlineData("02C6")]
+    [MemberData(nameof(ReviewedProfiles))]
     public void ExactInstallerInspectionOffersRepairForAnEligiblePartialStack(string productId)
     {
         RazerSnapTapDriverSnapshot good = ModelSnapshot(productId);
@@ -579,8 +576,7 @@ public sealed class RazerSnapTapDriverAdmissionTests
     }
 
     [Theory]
-    [InlineData("02E0")]
-    [InlineData("02C6")]
+    [MemberData(nameof(ReviewedProfiles))]
     public void KnownInboxBindingGapOffersExactInstallerWithoutLosingPackageFailures(string productId)
     {
         RazerSnapTapDriverSnapshot snapshot = OwnerInboxBindingSnapshot(productId);
@@ -725,28 +721,6 @@ public sealed class RazerSnapTapDriverAdmissionTests
 
         Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure));
         Assert.Equal(RazerSnapTapAdmissionFailure.DriverPackageUntrusted, failure);
-        Assert.Equal(0, inspections);
-    }
-
-    [Fact]
-    public void ModelsWithoutAnExactRecipeRemainManualEvenWhenInspectionWouldAdmit()
-    {
-        RazerSnapTapDriverSnapshot good = ModelSnapshot("029F");
-        int inspections = 0;
-        var admission = new RazerSnapTapDriverAdmission(
-            () => good with
-            {
-                DeviceDriver = RazerDriverApiPackageEvidence.Missing,
-                KeyboardDevices = [good.KeyboardDevices[0] with { UpperFilters = [] }],
-            },
-            () =>
-            {
-                inspections++;
-                return new RazerDriverInstallationInspection(true, false, RazerDriverInstallOutcome.Unavailable);
-            });
-
-        Assert.False(admission.TryGetEndpointWithFailure(out _, out var failure));
-        Assert.Equal(RazerSnapTapAdmissionFailure.ManualDriverSetupRequired, failure);
         Assert.Equal(0, inspections);
     }
 

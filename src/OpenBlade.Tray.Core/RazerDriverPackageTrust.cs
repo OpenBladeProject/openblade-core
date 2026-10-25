@@ -47,6 +47,18 @@ internal static class RazerDriverPackageTrust
         }
     }
 
+    internal static void VerifyVendorArchive(string path, SafeFileHandle handle, RazerKeyboardDriverRecipe recipe,
+        CancellationToken cancellationToken)
+    {
+        if (recipe.VendorBlocks is null || string.IsNullOrEmpty(recipe.CarrierSignerSubject)
+            || string.IsNullOrEmpty(recipe.CarrierSignerThumbprint))
+        {
+            throw new CryptographicException("The vendor carrier has no reviewed signer pins.");
+        }
+        ThxNativeComponentTrust.Verify(path, handle, recipe.CarrierSignerSubject,
+            recipe.CarrierSignerThumbprint, cancellationToken);
+    }
+
     internal static void VerifyCatalogMembers(string packageRoot, string catalogName,
         IEnumerable<string> memberNames, CancellationToken cancellationToken, bool cacheOnly)
     {

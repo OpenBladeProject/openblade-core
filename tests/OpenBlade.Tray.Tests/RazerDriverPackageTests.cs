@@ -11,6 +11,11 @@ public sealed class RazerDriverPackageTests
     [Theory]
     [InlineData("Blade 16 - RZ09-0581", "02E0")]
     [InlineData("Blade 16 - RZ09-0528", "02C6")]
+    [InlineData("Blade 16 - RZ09-0483", "029F")]
+    [InlineData("Blade 14 - RZ09-0482", "029D")]
+    [InlineData("Blade 14 - RZ09-0530", "02C5")]
+    [InlineData("Blade 15 Base Model (Early 2020) - RZ09-0328", "0255")]
+    [InlineData("Blade 18 - RZ09-0484", "02A0")]
     public void RecipeRequiresBothExactHostIdentities(string productName, string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.FindHost("Razer", productName, "Razer", productName);
@@ -25,10 +30,10 @@ public sealed class RazerDriverPackageTests
     }
 
     [Fact]
-    public void RecipesDoNotAdmitOtherSnapTapProfilesOrMixedHosts()
+    public void RecipesDoNotAdmitUnknownProfilesOrMixedHosts()
     {
-        Assert.Equal(2, RazerKeyboardDriverRecipes.All.Count);
-        Assert.Null(RazerKeyboardDriverRecipes.FindHost("Razer", "Blade 14 - RZ09-0530", "Razer", "Blade 14 - RZ09-0530"));
+        Assert.Equal(7, RazerKeyboardDriverRecipes.All.Count);
+        Assert.Null(RazerKeyboardDriverRecipes.FindHost("Razer", "Blade 14 - RZ09-0000", "Razer", "Blade 14 - RZ09-0000"));
         Assert.Null(RazerKeyboardDriverRecipes.FindHost("Razer", "Blade 16 - RZ09-0528", "Razer", "Blade 16 - RZ09-0581"));
         Assert.Null(RazerKeyboardDriverRecipes.FindById(null));
         Assert.Null(RazerKeyboardDriverRecipes.FindById("02C6"));
@@ -50,7 +55,7 @@ public sealed class RazerDriverPackageTests
         Assert.Equal(original.CommonCatalogSignerThumbprint, added.CommonCatalogSignerThumbprint);
         foreach (var recipe in RazerKeyboardDriverRecipes.All)
         {
-            Assert.Equal(19, recipe.Files.Count);
+            Assert.Equal(recipe.ProductId == "0255" ? 20 : recipe.VendorBlocks is null ? 19 : 16, recipe.Files.Count);
             Assert.Contains(recipe.Files, file => file.RelativePath == "THIRD-PARTY-NOTICE.txt");
             Assert.Equal(5, recipe.StageOrder.Count);
             Assert.Equal(5, recipe.InstallOrder.Count);
@@ -69,10 +74,15 @@ public sealed class RazerDriverPackageTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public async Task RecipeRejectsOtherModelsDownloadBeforeSecondRequest(string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
-        var other = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId != productId);
+        var other = RazerKeyboardDriverRecipes.All.First(value => value.ProductId != productId);
         RazerKeyboardDriverPackage.ValidateDownloadUri(recipe.DownloadUri, recipe);
         Assert.Throws<InvalidDataException>(() => RazerKeyboardDriverPackage.ValidateDownloadUri(other.DownloadUri, recipe));
         using var handler = new FakeHandler(request =>
@@ -90,6 +100,11 @@ public sealed class RazerDriverPackageTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public async Task RecipeAcquisitionRejectsChangedArchiveBeforeTrust(string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
@@ -110,10 +125,15 @@ public sealed class RazerDriverPackageTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public async Task RecipeExtractionUsesOnlySelectedArchiveRoot(string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
-        var other = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId != productId);
+        var other = RazerKeyboardDriverRecipes.All.First(value => value.ProductId != productId);
         using var directory = new TemporaryDirectory();
         using var wrong = MakeArchive((other.PackageDirectory + "/notice.txt", "notice", 0));
         await Assert.ThrowsAsync<InvalidDataException>(() => RazerKeyboardDriverPackage.ExtractVerifiedAsync(
@@ -128,11 +148,17 @@ public sealed class RazerDriverPackageTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public void CatalogPublisherRejectsOtherModelsSignerAndWrongPublisher(string productId)
     {
         const string publisher = "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
-        var other = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId != productId);
+        var other = RazerKeyboardDriverRecipes.All.First(value =>
+            value.DeviceCatalogSignerThumbprint != recipe.DeviceCatalogSignerThumbprint);
         string catalog = $"rzdev_{productId.ToLowerInvariant()}_kbd.cat";
         RazerDriverPackageTrust.VerifyCatalogPublisher(recipe, catalog, publisher, recipe.DeviceCatalogSignerThumbprint);
         RazerDriverPackageTrust.VerifyCatalogPublisher(recipe, "rzcommon.cat", publisher, recipe.CommonCatalogSignerThumbprint);

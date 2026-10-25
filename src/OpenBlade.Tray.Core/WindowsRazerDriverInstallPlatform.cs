@@ -231,8 +231,8 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
         foreach ((Device device, string part) in new[] { (usb[0], "dkm"), (keyboard[0], "kbd"), (mouse[0], "mou"),
             (controls[0], "common"), (virtuals[0], "vcon") })
         {
-            string name = part == "common" ? "rzcommonu.inf" : $"rzdevu_{recipe.ProductId.ToLowerInvariant()}_{part}.inf";
-            var pin = recipe.Files.Single(file => Equal(Path.GetFileName(file.RelativePath), name));
+            string inf = recipe.InfFor(part);
+            var pin = recipe.Files.Single(file => Equal(file.RelativePath, inf));
             if (!Equal(device.InfHash, pin.Sha256))
             {
                 return false;

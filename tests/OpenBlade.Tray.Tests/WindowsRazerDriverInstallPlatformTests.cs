@@ -112,6 +112,11 @@ public sealed class WindowsRazerDriverInstallPlatformTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public void ExactRecipeAdmitsCleanAndPartialStacksAndConfirmsOnlyCompleteStack(string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
@@ -136,6 +141,11 @@ public sealed class WindowsRazerDriverInstallPlatformTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public void UnknownOrFailedPhysicalStackIsNotARepairTarget(string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
@@ -156,6 +166,11 @@ public sealed class WindowsRazerDriverInstallPlatformTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public void OptionalControlChildCannotBelongToAnUnknownStack(string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
@@ -197,6 +212,11 @@ public sealed class WindowsRazerDriverInstallPlatformTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public void SharedCommonInfCannotBindAnUnrelatedControlDevice(string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
@@ -247,7 +267,7 @@ public sealed class WindowsRazerDriverInstallPlatformTests
                 file.RelativePath.EndsWith(device.InfHash == Pin("common") ? "/rzcommonu.inf"
                     : device.InfHash == Pin("dkm") ? "_dkm.inf"
                     : device.InfHash == Pin("kbd") ? "_kbd.inf"
-                    : device.InfHash == Pin("mou") ? "_mou.inf" : "_vcon.inf", StringComparison.Ordinal)).Sha256,
+                    : device.InfHash == Pin("mou") ? "_mou.inf" : "_vcon.inf", StringComparison.OrdinalIgnoreCase)).Sha256,
         }).ToList();
     }
 

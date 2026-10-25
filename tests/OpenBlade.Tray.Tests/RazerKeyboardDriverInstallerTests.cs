@@ -6,6 +6,11 @@ public sealed class RazerKeyboardDriverInstallerTests
     [Theory]
     [InlineData("02E0")]
     [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
     public async Task StagesAllPackagesBeforeBindingAndConfirmsReadback(string productId)
     {
         var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);

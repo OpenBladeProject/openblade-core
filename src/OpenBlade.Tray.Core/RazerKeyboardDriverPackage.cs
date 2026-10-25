@@ -94,9 +94,21 @@ public static class RazerKeyboardDriverPackage
             archive.Position = 0;
             await VerifyHashAsync(archive, recipe.ArchiveLength, recipe.ArchiveSha256, cancellationToken).ConfigureAwait(false);
             archive.Position = 0;
-            await ExtractVerifiedAsync(archive, root, recipe, cancellationToken).ConfigureAwait(false);
+            if (recipe.VendorBlocks is null)
+            {
+                await ExtractVerifiedAsync(archive, root, recipe, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                RazerDriverPackageTrust.VerifyVendorArchive(archivePath, archive.SafeFileHandle, recipe, cancellationToken);
+                await RazerKeyboardDriverVendorPackage.ExtractVerifiedAsync(archive, root, recipe, cancellationToken).ConfigureAwait(false);
+            }
         }
 
+        if (recipe.VendorBlocks is not null)
+        {
+            await RazerKeyboardDriverVendorPackage.AcquireCommonAsync(root, recipe, client, cancellationToken).ConfigureAwait(false);
+        }
         cancellationToken.ThrowIfCancellationRequested();
         var packageRoot = Path.Combine(root, recipe.PackageDirectory);
         verifyTrust(packageRoot, cancellationToken);
@@ -145,8 +157,8 @@ public static class RazerKeyboardDriverPackage
     {
         if (!uri.IsAbsoluteUri || uri.Scheme != Uri.UriSchemeHttps || uri.Port != 443 ||
             uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 ||
-            !(uri.Host.Equals("release-assets.githubusercontent.com", StringComparison.OrdinalIgnoreCase) ||
-              uri.Equals(recipe.DownloadUri)))
+            !(uri.Equals(recipe.DownloadUri) || recipe.VendorBlocks is null
+              && uri.Host.Equals("release-assets.githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidDataException("The driver download used an unapproved address.");
         }
@@ -161,7 +173,8 @@ public static class RazerKeyboardDriverPackage
         ExtractVerifiedAsync(archiveStream, destination, recipe, recipe.Files, cancellationToken);
 
     internal static async Task ExtractVerifiedAsync(Stream archiveStream, string destination,
-        RazerKeyboardDriverRecipe recipe, IReadOnlyList<PackageFile> expectedFiles, CancellationToken cancellationToken)
+        RazerKeyboardDriverRecipe recipe, IReadOnlyList<PackageFile> expectedFiles, CancellationToken cancellationToken,
+        string? selectedDirectory = null, string? outputDirectory = null)
     {
         EnsureNoReparsePoints(destination);
         using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read, leaveOpen: true);
@@ -189,7 +202,12 @@ public static class RazerKeyboardDriverPackage
         foreach (var entry in archive.Entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var path = Path.Combine(destination, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
+            string relative = entry.FullName[(recipe.PackageDirectory.Length + 1)..];
+            if (selectedDirectory is not null && !relative.StartsWith(selectedDirectory, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            var path = Path.Combine(destination, outputDirectory ?? recipe.PackageDirectory, relative.Replace('/', Path.DirectorySeparatorChar));
             EnsureNoReparsePoints(path);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             EnsureNoReparsePoints(path);
@@ -211,7 +229,7 @@ public static class RazerKeyboardDriverPackage
         }
     }
 
-    private static async Task CopyExactAsync(Stream input, Stream output, long expectedLength, CancellationToken cancellationToken)
+    internal static async Task CopyExactAsync(Stream input, Stream output, long expectedLength, CancellationToken cancellationToken)
     {
         var buffer = new byte[16384];
         long total = 0;

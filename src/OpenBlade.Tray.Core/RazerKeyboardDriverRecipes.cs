@@ -6,7 +6,9 @@ internal sealed class RazerKeyboardDriverRecipe
     internal RazerKeyboardDriverRecipe(string id, string productName, string productId, string deviceService,
         string deviceHash, string archiveName, long archiveLength, string archiveSha256,
         string deviceCatalogSignerThumbprint, IEnumerable<RazerKeyboardDriverPackage.PackageFile> files,
-        IEnumerable<string> stageOrder, IEnumerable<string> installOrder)
+        IEnumerable<string> stageOrder, IEnumerable<string> installOrder,
+        Uri? downloadUri = null, IEnumerable<RazerDriverArchiveBlock>? vendorBlocks = null,
+        string? carrierSignerSubject = null, string? carrierSignerThumbprint = null, int vendorHeaderOffset = 0)
     {
         Id = id;
         ProductName = productName;
@@ -17,12 +19,24 @@ internal sealed class RazerKeyboardDriverRecipe
         ArchiveLength = archiveLength;
         ArchiveSha256 = archiveSha256;
         PackageDirectory = Path.GetFileNameWithoutExtension(archiveName);
-        DownloadUri = new Uri($"https://github.com/OpenBladeProject/blade-driver-catalog/releases/download/{id}/{archiveName}");
+        DownloadUri = downloadUri ?? new Uri($"https://github.com/OpenBladeProject/blade-driver-catalog/releases/download/{id}/{archiveName}");
+        CarrierSignerSubject = carrierSignerSubject;
+        CarrierSignerThumbprint = carrierSignerThumbprint;
+        VendorHeaderOffset = vendorHeaderOffset;
+        VendorBlocks = vendorBlocks is null ? null : Array.AsReadOnly(vendorBlocks.ToArray());
         DeviceCatalogSignerThumbprint = deviceCatalogSignerThumbprint;
         Files = Array.AsReadOnly(files.ToArray());
         StageOrder = Array.AsReadOnly(stageOrder.ToArray());
         InstallOrder = Array.AsReadOnly(installOrder.ToArray());
     }
+
+    public string? CarrierSignerSubject { get; }
+    public string? CarrierSignerThumbprint { get; }
+    public int VendorHeaderOffset { get; }
+    public IReadOnlyList<RazerDriverArchiveBlock>? VendorBlocks { get; }
+    public string InfFor(string part) => StageOrder.Single(path => part == "common"
+        ? Path.GetFileName(path).Equals("rzcommonu.inf", StringComparison.OrdinalIgnoreCase)
+        : path.EndsWith($"_{part}.inf", StringComparison.OrdinalIgnoreCase));
 
     public string Id { get; }
     public string ProductName { get; }
@@ -42,7 +56,9 @@ internal sealed class RazerKeyboardDriverRecipe
     public string DeviceCatalogSignerThumbprint { get; }
 }
 
-internal static class RazerKeyboardDriverRecipes
+internal sealed record RazerDriverArchiveBlock(string RelativePath, int Offset, int CompressedLength, bool Compressed);
+
+internal static partial class RazerKeyboardDriverRecipes
 {
     public static RazerKeyboardDriverRecipe Pid02E0 { get; } = new(
         RazerKeyboardDriverPackage.ReleaseTag, "Blade 16 - RZ09-0581", "02E0", "RzDev_02e0",
@@ -89,7 +105,14 @@ internal static class RazerKeyboardDriverRecipes
          "rzdevu_02c6_kbd/rzdevu_02c6_kbd.inf", "rzdevu_02c6_mou/rzdevu_02c6_mou.inf",
          "rzcommonu/rzcommonu.inf"]);
 
-    public static IReadOnlyList<RazerKeyboardDriverRecipe> All { get; } = Array.AsReadOnly(new[] { Pid02E0, Pid02C6 });
+    // The five vendor recipes live in another partial file. Build the registry only
+    // after every field initializer has run; source-file ordering must not admit nulls.
+    static RazerKeyboardDriverRecipes()
+    {
+        All = Array.AsReadOnly(new[] { Pid02E0, Pid02C6, Pid029F, Pid029D, Pid02C5, Pid0255, Pid02A0 });
+    }
+
+    public static IReadOnlyList<RazerKeyboardDriverRecipe> All { get; }
 
     public static RazerKeyboardDriverRecipe? FindById(string? id) =>
         All.SingleOrDefault(recipe => string.Equals(recipe.Id, id, StringComparison.Ordinal));
