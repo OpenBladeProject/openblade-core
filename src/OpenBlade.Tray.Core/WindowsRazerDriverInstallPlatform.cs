@@ -18,7 +18,10 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
 
 
     internal sealed record Device(string Id, Guid Container, string Service, string[] Upper, string[] Lower,
-        string[] Ancestors, uint Status, uint Problem, string? InfHash);
+        string[] Ancestors, uint Status, uint Problem, string? InfHash)
+    {
+        public bool MatchesCommonHardware { get; init; }
+    }
 
     public RazerDriverInstallSnapshot Capture() => Capture(requireElevation: true);
 
@@ -64,6 +67,19 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
         List<Device> devices = ReadDevices(registry, recipe);
         if (!TryAdmitTree(devices, recipe, out Guid container))
         {
+            if (container != Guid.Empty && !CommonTargetsMatch(devices, recipe, container))
+            {
+                DiagnosticTrace.TraceFailure(new DiagnosticFailure(
+                    "RazerDriverInstall", "InspectTopology", "CommonDriverBinding", "UnscopedCommonDevice")
+                {
+                    Message = "Driver setup would affect a control device outside the admitted laptop stack.",
+                    Context = JsonSerializer.Serialize(new
+                    {
+                        recipe.ProductId,
+                        CommonCandidates = devices.Count(device => device.MatchesCommonHardware),
+                    }),
+                });
+            }
             return Unavailable();
         }
 
@@ -119,6 +135,10 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
         {
             return false;
         }
+        if (!CommonTargetsMatch(devices, recipe, container))
+        {
+            return false;
+        }
         // The clean inbox stack or the reviewed filters are the only repair targets.
         // A failed physical stack or an unrelated filter must not be overwritten.
         if (new[] { keyboards[0], mice[0], collections[0], mouseCollections[0] }
@@ -141,6 +161,16 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
             && AllowedFilter(collections[0].Upper, recipe.DeviceService)
             && AllowedFilter(mouseCollections[0].Upper, recipe.DeviceService) && mouseCollections[0].Lower.Length == 0;
     }
+    private static bool CommonTargetsMatch(List<Device> devices, RazerKeyboardDriverRecipe recipe, Guid container) =>
+        // The common INF matches RAZER\DeviceContol, not a model-specific hardware ID.
+        // PnPUtil /install updates all matching devices; require every such target to be
+        // the admitted laptop's own control child before staging or binding any package.
+        devices.Where(device => device.MatchesCommonHardware).All(device =>
+            device.Id.StartsWith($@"RZCONTROL\VID_1532&PID_{recipe.ProductId}&MI_00\", StringComparison.OrdinalIgnoreCase)
+            && device.Container == container
+            && device.Ancestors.Any(id => id.StartsWith(
+                $@"USB\VID_1532&PID_{recipe.ProductId}&MI_02\", StringComparison.OrdinalIgnoreCase)));
+
     private static bool AdmitOptionalChild(List<Device> devices, string prefix, Guid container,
         string ancestorPrefix, string service, string? upperFilter)
     {
@@ -417,7 +447,10 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
                     throw NativeError();
                 }
                 string id = DeviceId(device.Instance);
-                if (!id.Contains($"VID_1532&PID_{recipe.ProductId}", StringComparison.OrdinalIgnoreCase))
+                bool matchesCommon = Property(set, ref device, 1).Concat(Property(set, ref device, 2))
+                    .Any(value => Equal(value, @"RAZER\DeviceContol"));
+                if (!id.Contains($"VID_1532&PID_{recipe.ProductId}", StringComparison.OrdinalIgnoreCase)
+                    && !matchesCommon)
                 {
                     continue;
                 }
@@ -458,7 +491,10 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
                     }
                 }
                 result.Add(new(id, new Guid(bytes), Property(set, ref device, 4).SingleOrDefault() ?? string.Empty,
-                    Property(set, ref device, 0x11), Property(set, ref device, 0x12), ancestors.ToArray(), status, problem, infHash));
+                    Property(set, ref device, 0x11), Property(set, ref device, 0x12), ancestors.ToArray(), status, problem, infHash)
+                {
+                    MatchesCommonHardware = matchesCommon,
+                });
             }
             throw new IOException("Device inventory exceeded its bound.");
         }

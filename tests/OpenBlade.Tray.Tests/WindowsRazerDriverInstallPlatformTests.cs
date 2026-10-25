@@ -194,6 +194,22 @@ public sealed class WindowsRazerDriverInstallPlatformTests
         Assert.False(WindowsRazerDriverInstallPlatform.AdmitServiceBinding(true, null, null, service));
     }
 
+    [Theory]
+    [InlineData("02E0")]
+    [InlineData("02C6")]
+    public void SharedCommonInfCannotBindAnUnrelatedControlDevice(string productId)
+    {
+        var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
+        var devices = Tree(true, recipe);
+        Assert.True(WindowsRazerDriverInstallPlatform.TryAdmitTree(devices, recipe, out _));
+        devices.Add(new(@"RZCONTROL\VID_1532&PID_FFFF&MI_00\external", Guid.NewGuid(),
+            "RzCommon", [], [], [@"USB\VID_1532&PID_FFFF&MI_02\external"], 8, 0, Pin("common"))
+        {
+            MatchesCommonHardware = true,
+        });
+        Assert.False(WindowsRazerDriverInstallPlatform.TryAdmitTree(devices, recipe, out _));
+    }
+
     private static bool IsInstalled(List<Device> devices, RazerKeyboardDriverRecipe recipe) =>
         WindowsRazerDriverInstallPlatform.IsInstalled(devices, Container, recipe.CommonHash, recipe.DeviceHash, recipe);
 
@@ -215,7 +231,7 @@ public sealed class WindowsRazerDriverInstallPlatformTests
         if (installed)
         {
             devices.Add(new(@"RZCONTROL\VID_1532&PID_02E0&MI_00\test", Container, "RzCommon", [], [],
-                [UsbMouse, Composite], 8, 0, Pin("common")));
+                [UsbMouse, Composite], 8, 0, Pin("common")) { MatchesCommonHardware = true });
             devices.Add(new(@"RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03\test", Container, "RzDev_02e0", ["mshidkmdf"], [],
                 [UsbKeyboard, Composite], 8, 0, Pin("vcon")));
         }
