@@ -2239,6 +2239,12 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SnapTap_Driver_Failed" xml:space="preserve">
     <value>[!! Drívér sétúp cóúldn't fínísh. Ópén thé sétúp gúídé. ~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="SnapTap_Driver_WindowsUpdateUnavailable" xml:space="preserve">
+    <value>[!! Windows Úpdáté ís únáváíláblé. Chéck Windows Úpdáté, thén trý ágáín. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_WindowsUpdateRefused" xml:space="preserve">
+    <value>[!! Thé áváíláblé drívér cóúld nót bé ínstálléd sáfélý. Éxpórt díágnóstícs fór hélp. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="SnapTap_Driver_Installed" xml:space="preserve">
     <value>[!! Drívér ínstálléd. Túrn SnápTáp óff ánd ón. ~~~~~~~~~~~~ !!]</value>
   </data>
@@ -2283,5 +2289,500 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="Touchpad_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Tóúchpád ~~~ !!]</value>
+  </data>
+  <data name="Applications_Add.Content" xml:space="preserve">
+    <value>[!! Ádd ápplícátíón ~~~~~ !!]</value>
+  </data>
+  <data name="Applications_CopyPowerProfile" xml:space="preserve">
+    <value>[!! Cópý sávéd cóntróls fróm thís pówér prófílé ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Applications_Description.Text" xml:space="preserve">
+    <value>[!! Ápplý séttíngs fór á gámé ór ápplícátíón. Éách pówér sóúrcé hás íts ówn óvérrídés. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Applications_Discover.Content" xml:space="preserve">
+    <value>[!! Díscóvér ínstálléd gámés ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Applications_Empty.Text" xml:space="preserve">
+    <value>[!! Nó ápplícátíón prófílés. Ýóúr pówér-sóúrcé prófílés rémáín áctívé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Applications_FanAutomatic" xml:space="preserve">
+    <value>[!! Áútómátíc ~~~~ !!]</value>
+  </data>
+  <data name="Applications_FanCurve" xml:space="preserve">
+    <value>[!! Mánúál cúrvé (sávéd póínts) ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Applications_FanFixed" xml:space="preserve">
+    <value>[!! Fíxéd ~~ !!]</value>
+  </data>
+  <data name="Applications_FanMaximum" xml:space="preserve">
+    <value>[!! Máxímúm ~~~ !!]</value>
+  </data>
+  <data name="Applications_Title.Text" xml:space="preserve">
+    <value>[!! Ápplícátíón prófílés ~~~~~~~ !!]</value>
+  </data>
+  <data name="Applications_UnavailableSetting" xml:space="preserve">
+    <value>[!! {0} (cúrréntlý únáváíláblé) ~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_AC" xml:space="preserve">
+    <value>[!! ÁC pówér ~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Active" xml:space="preserve">
+    <value>[!! Áctívé ~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Battery" xml:space="preserve">
+    <value>[!! Báttérý ~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Description.Text" xml:space="preserve">
+    <value>[!! Thé lást 24 hóúrs fróm Windows' báttérý répórt. Únknówn péríóds rémáín únknówn. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Health" xml:space="preserve">
+    <value>[!! Fúll chárgé {0} · Désígn {1} · Héálth {2} · Cýclés {3} ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Interval" xml:space="preserve">
+    <value>[!! {0} – {1} · {2} · {3} · Chárgé {4} · Díschárgéd {5} ~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Load.Content" xml:space="preserve">
+    <value>[!! Lóád báttérý hístórý ~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
+    <value>[!! Lóád Windows' báttérý répórt tó ínspéct thé lást 24 hóúrs. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_SourceTime" xml:space="preserve">
+    <value>[!! Windows báttérý répórt · Générátéd {0} ~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Standby" xml:space="preserve">
+    <value>[!! Cónnéctéd stándbý ~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Suspended" xml:space="preserve">
+    <value>[!! Súspéndéd ~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Title.Text" xml:space="preserve">
+    <value>[!! Báttérý hístórý ~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Unknown" xml:space="preserve">
+    <value>[!! Únknówn ~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_Cancel" xml:space="preserve">
+    <value>[!! Cáncél ~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_Change" xml:space="preserve">
+    <value>{0}: {1} → {2}</value>
+  </data>
+  <data name="BatteryPreset_Description" xml:space="preserve">
+    <value>[!! Sávé thésé chángés tó thé báttérý prófílé. Mánúál cóntróls ánd ápplícátíón óvérrídés kéép théír príórítý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
+    <value>[!! Lóng báttérý lífé ~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
+    <value>[!! Prévíéw súppórtéd báttérý-prófílé chángés béfóré sávíng. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_NoChanges" xml:space="preserve">
+    <value>[!! Thé súppórtéd báttérý séttíngs álréádý mátch thís prését. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
+    <value>[!! Prévíéw prését ~~~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_Save" xml:space="preserve">
+    <value>[!! Sávé tó báttérý prófílé ~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
+    <value>[!! Thé báttérý prófílé chángéd ór cóúld nót bé sávéd. Clósé thís prévíéw ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryPreset_Title" xml:space="preserve">
+    <value>[!! Lóng báttérý lífé ~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryTimeline_AC" xml:space="preserve">
+    <value>[!! ÁC ~~ !!]</value>
+  </data>
+  <data name="BatteryTimeline_Battery" xml:space="preserve">
+    <value>[!! Báttérý ~~~ !!]</value>
+  </data>
+  <data name="BatteryTimeline_Unknown" xml:space="preserve">
+    <value>[!! Únknówn ~~~ !!]</value>
+  </data>
+  <data name="Feature_061b9b48e177" xml:space="preserve">
+    <value>[!! Pówér sóúrcé ~~~~ !!]</value>
+  </data>
+  <data name="Feature_0d94e35e8475" xml:space="preserve">
+    <value>[!! Úntíl thé áctívátéd prócéss éxíts ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_155db46f9362" xml:space="preserve">
+    <value>[!! Fáns ~~ !!]</value>
+  </data>
+  <data name="Feature_19ad9b4c6b5c" xml:space="preserve">
+    <value>[!! Fíxéd fán spééd (RPM) ~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_207f5db133a0" xml:space="preserve">
+    <value>[!! Cópý thís pówér prófílé's líghtíng ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_3a29f5ccc091" xml:space="preserve">
+    <value>[!! Cólór prófílé ~~~~~ !!]</value>
+  </data>
+  <data name="Feature_3d621a53b31e" xml:space="preserve">
+    <value>[!! Whílé ín fórégróúnd ~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_496960c3c1f5" xml:space="preserve">
+    <value>[!! Báttérý ~~~ !!]</value>
+  </data>
+  <data name="Feature_50accd740fa2" xml:space="preserve">
+    <value>[!! Óff ~~ !!]</value>
+  </data>
+  <data name="Feature_612a36db4fc9" xml:space="preserve">
+    <value>[!! Kéép thís ápplícátíón's sávéd líghtíng ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_6cc5df35f033" xml:space="preserve">
+    <value>[!! Námé ~~ !!]</value>
+  </data>
+  <data name="Feature_6fce74ac10dd" xml:space="preserve">
+    <value>[!! Chóósé án éxécútáblé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_7a0afacfb221" xml:space="preserve">
+    <value>[!! Ínhérít pówér prófílé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_847ced6ca02b" xml:space="preserve">
+    <value>[!! Énábléd ~~~ !!]</value>
+  </data>
+  <data name="Feature_877cb5a94232" xml:space="preserve">
+    <value>[!! Plúggéd ín ~~~~ !!]</value>
+  </data>
+  <data name="Feature_9c7c8919be0e" xml:space="preserve">
+    <value>[!! Gámíng módé ~~~~ !!]</value>
+  </data>
+  <data name="Feature_9cb7099bc130" xml:space="preserve">
+    <value>[!! Díspláý bríghtnéss (%) ~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_9cc01faad79c" xml:space="preserve">
+    <value>[!! Ón ~~ !!]</value>
+  </data>
+  <data name="Feature_9d2725011acd" xml:space="preserve">
+    <value>[!! Kéýbóárd líghtíng ~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_a66522394a37" xml:space="preserve">
+    <value>[!! Thé prófílé cóúld nót bé sávéd. Révíéw thé sérvícé státús ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_af4123249281" xml:space="preserve">
+    <value>[!! Éxécútáblé páth ~~~~~ !!]</value>
+  </data>
+  <data name="Feature_b26de372b4b0" xml:space="preserve">
+    <value>[!! Délété ~~~ !!]</value>
+  </data>
+  <data name="Feature_c83928a24959" xml:space="preserve">
+    <value>[!! Áctívé prófílé: {0} ~~~~~ !!]</value>
+  </data>
+  <data name="Feature_c88a6043293f" xml:space="preserve">
+    <value>[!! Óvérrídé díspláý bríghtnéss ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_ce6bbac0215e" xml:space="preserve">
+    <value>[!! Brówsé fór éxécútáblé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Feature_d7c76cf63323" xml:space="preserve">
+    <value>[!! HDR ~~ !!]</value>
+  </data>
+  <data name="Feature_ea008cd08808" xml:space="preserve">
+    <value>[!! ÚSB-C ~~ !!]</value>
+  </data>
+  <data name="Feature_f7e6729d30cf" xml:space="preserve">
+    <value>[!! Édít ~~ !!]</value>
+  </data>
+  <data name="Feature_f8ed8576f5a9" xml:space="preserve">
+    <value>[!! Áctívátíón ~~~~ !!]</value>
+  </data>
+  <data name="Feature_fb51849e03f2" xml:space="preserve">
+    <value>[!! Réfrésh ráté ~~~~ !!]</value>
+  </data>
+  <data name="Feature_fb8bc434078d" xml:space="preserve">
+    <value>[!! Pérfórmáncé ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_BatteryHistoryRowsText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Windows báttérý hístórý íntérváls ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessDescription.Text" xml:space="preserve">
+    <value>[!! Sávé á sépáráté bríghtnéss fór éách pówér sóúrcé. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessEditor.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Díspláý bríghtnéss ín pércént ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessTitle.Text" xml:space="preserve">
+    <value>[!! Díspláý bríghtnéss ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileDisplayBrightnessCompactTitle.Text" xml:space="preserve">
+    <value>[!! Díspláý bríghtnéss ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProfileDisplayBrightnessTitle.Text" xml:space="preserve">
+    <value>[!! Díspláý bríghtnéss ~~~~~~ !!]</value>
+  </data>
+  <data name="Navigation_Telemetry" xml:space="preserve">
+    <value>[!! Télémétrý ~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Description.Text" xml:space="preserve">
+    <value>[!! Ínspéct témpérátúrés, fáns ánd báttérý pówér óvér tímé. Míssíng réádíngs rémáín gáps. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_EventsTitle.Text" xml:space="preserve">
+    <value>[!! Pówér ánd prófílé chángés ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Live.Content" xml:space="preserve">
+    <value>[!! Rétúrn tó lívé ~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Navigation.Content" xml:space="preserve">
+    <value>[!! Télémétrý ~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Open.Content" xml:space="preserve">
+    <value>[!! Ópén CSV répláý ~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Record.Content" xml:space="preserve">
+    <value>[!! Récórd CSV ~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Stop.Content" xml:space="preserve">
+    <value>[!! Stóp récórdíng ~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Title.Text" xml:space="preserve">
+    <value>[!! Télémétrý ~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_BackToProfiles" xml:space="preserve">
+    <value>[!! Báck tó prófílés ~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_BrightnessPercent" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="ApplicationsUI_Cancel" xml:space="preserve">
+    <value>[!! Cáncél ~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
+    <value>[!! Mátchíng éxécútáblés: {0} · Ínstálléd gámés: {1} ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
+    <value>[!! Chóósé án éxécútáblé fróm á détéctéd gámé. Révíéw thé éxáct páth béfóré sávíng thé prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryEmpty" xml:space="preserve">
+    <value>[!! Nó ínstálléd gámés wéré fóúnd. Úsé Ádd ápplícátíón tó chóósé án éxécútáblé mánúállý. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLimitedCount" xml:space="preserve">
+    <value>[!! Shówíng thé fírst {0} éxécútáblé mátchés. Nárrów thé séárch tó séé móré. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLoading" xml:space="preserve">
+    <value>[!! Lóókíng fór ínstálléd gámés… ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryNoMatches" xml:space="preserve">
+    <value>[!! Nó ínstálléd gámés mátch thís séárch. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryTitle" xml:space="preserve">
+    <value>[!! Díscóvér ínstálléd gámés ~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_EditProfileTitle" xml:space="preserve">
+    <value>[!! Édít ápplícátíón prófílé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_EditorDescription" xml:space="preserve">
+    <value>[!! Mátch óné éxáct éxécútáblé. Únsét séttíngs ínhérít thé cúrrént pówér-sóúrcé prófílé, ánd mánúál cóntróls kéép príórítý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_NewProfileTitle" xml:space="preserve">
+    <value>[!! Ádd ápplícátíón prófílé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_SaveProfile" xml:space="preserve">
+    <value>[!! Sávé prófílé ~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_SearchLabel" xml:space="preserve">
+    <value>[!! Séárch ínstálléd gámés ~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_SearchPlaceholder" xml:space="preserve">
+    <value>[!! Námé, láúnchér, ór éxécútáblé ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutable" xml:space="preserve">
+    <value>[!! Úsé ~~ !!]</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutableNamed" xml:space="preserve">
+    <value>[!! Úsé {0} ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ActionFailed" xml:space="preserve">
+    <value>[!! Télémétrý ópérátíón fáíléd: {0} ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_BatteryPower" xml:space="preserve">
+    <value>[!! Báttérý pówér ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ChartAutomationName" xml:space="preserve">
+    <value>[!! Télémétrý tímélíné. Póínt tó thé chárt ór úsé thé sámplé búttóns fór éxáct réádíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_CpuTemperature" xml:space="preserve">
+    <value>[!! CPÚ témpérátúré ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_CsvFiles" xml:space="preserve">
+    <value>[!! CSV fílés ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Fan1Speed" xml:space="preserve">
+    <value>[!! Fán 1 spééd ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Fan2Speed" xml:space="preserve">
+    <value>[!! Fán 2 spééd ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_FollowLatest" xml:space="preserve">
+    <value>[!! Fóllów látést ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Fresh" xml:space="preserve">
+    <value>[!! Frésh ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
+    <value>[!! GPÚ témpérátúré ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_LiveSource" xml:space="preserve">
+    <value>[!! Lívé · {0} ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_NextSample" xml:space="preserve">
+    <value>[!! Néxt sámplé ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_NoEvents" xml:space="preserve">
+    <value>[!! Nó pówér ór prófílé chángés ín thís rángé. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
+    <value>[!! Nó sámplé séléctéd. ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_OpenCsvTitle" xml:space="preserve">
+    <value>[!! Ópén télémétrý CSV ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_PowerSource" xml:space="preserve">
+    <value>[!! Pówér sóúrcé ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_PreviousSample" xml:space="preserve">
+    <value>[!! Prévíóús sámplé ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Profile" xml:space="preserve">
+    <value>[!! Prófílé ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RecordCsvTitle" xml:space="preserve">
+    <value>[!! Récórd télémétrý tó CSV ~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RecordingActive" xml:space="preserve">
+    <value>[!! Récórdíng · {0}. Sámplíng cóntínúés whílé thís wíndów ís híddén. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RecordingOff" xml:space="preserve">
+    <value>[!! Récórdíng óff · réádíngs stáý ín mémórý úntíl ýóú récórd á CSV. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ReplaySource" xml:space="preserve">
+    <value>[!! CSV répláý · {0} ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Stale" xml:space="preserve">
+    <value>[!! Stálé ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Unavailable" xml:space="preserve">
+    <value>[!! Únáváíláblé ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_WaitingForReadings" xml:space="preserve">
+    <value>[!! Wáítíng fór réádíngs ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
+    <value>[!! Únáváíláblé ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_AnalysisTitle" xml:space="preserve">
+    <value>[!! Séléctéd sámplé ánd rángé státístícs ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ApplyColor" xml:space="preserve">
+    <value>[!! Ápplý cólór ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ColorPattern" xml:space="preserve">
+    <value>[!! Líné páttérns álsó ídéntífý éách métríc. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ColorPreference" xml:space="preserve">
+    <value>[!! Cólórs ánd vísíblé métrícs áré sávéd fór thís úsér. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_DefaultColor" xml:space="preserve">
+    <value>[!! Défáúlt cólór ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_FanLane" xml:space="preserve">
+    <value>[!! Fán spééd (RPM) ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Following" xml:space="preserve">
+    <value>[!! Fóllówíng látést ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_FullRange" xml:space="preserve">
+    <value>[!! Fúll rángé ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_InspectHint" xml:space="preserve">
+    <value>[!! Hóvér tó ínspéct. Clíck tó pín á sámplé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_InvalidRangeTime" xml:space="preserve">
+    <value>[!! Éntér á válíd dáté ánd tímé. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_MetricColor" xml:space="preserve">
+    <value>[!! {0} cólór ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_MetricsAndColors" xml:space="preserve">
+    <value>[!! Métrícs ánd cólórs ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Pinned" xml:space="preserve">
+    <value>[!! Pínnéd ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_PowerLane" xml:space="preserve">
+    <value>[!! Báttérý pówér (W) ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeAutomation" xml:space="preserve">
+    <value>[!! Vísíblé tímé rángé. Drág íts édgés ór édít thé stárt ánd énd tímé fíélds. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeEnd" xml:space="preserve">
+    <value>[!! Énd ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeHint" xml:space="preserve">
+    <value>[!! Drág éíthér édgé tó résízé, ór drág thé séléctéd wíndów tó móvé ít. Ýóú cán álsó édít thé stárt ánd énd tímés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeOverview" xml:space="preserve">
+    <value>[!! Vísíblé tímé rángé · {0} ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeScope" xml:space="preserve">
+    <value>[!! Rángé · {0} tó {1} ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeStart" xml:space="preserve">
+    <value>[!! Stárt ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeStatistics" xml:space="preserve">
+    <value>[!! Rángé státístícs ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ReadingCounts" xml:space="preserve">
+    <value>[!! {0} réádíngs · {1} míssíng ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_ResetColors" xml:space="preserve">
+    <value>[!! Rését cólórs ~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_SelectedMoment" xml:space="preserve">
+    <value>[!! Séléctéd mómént · {0} ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableAverage" xml:space="preserve">
+    <value>[!! Ávérágé ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableMaximum" xml:space="preserve">
+    <value>[!! Máx ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableMetric" xml:space="preserve">
+    <value>[!! Métríc ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableMinimum" xml:space="preserve">
+    <value>[!! Mín ~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableMoment" xml:space="preserve">
+    <value>[!! Át sámplé ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_TableReadings" xml:space="preserve">
+    <value>[!! Réádíngs ~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_Temperatures" xml:space="preserve">
+    <value>[!! Témpérátúrés (°C) ~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_VisibleTimeRange" xml:space="preserve">
+    <value>[!! Vísíblé tímé rángé ~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeHistoryExpired" xml:space="preserve">
+    <value>[!! Óldér réádíngs áré nó lóngér képt. Thé vísíblé tímé rángé wás ádjústéd. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_RangeTimeAdjusted" xml:space="preserve">
+    <value>[!! Ádjústéd tó thé áváíláblé tímé rángé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
+    <value>[!! Séléctéd réádíng ís nó lóngér képt. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Disabled.Text" xml:space="preserve">
+    <value>[!! Énáblé télémétrý tó cólléct sénsór hístórý ánd récórd dátá tó CSV fílés. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_Enable.Text" xml:space="preserve">
+    <value>[!! Énáblé télémétrý ~~~~~~ !!]</value>
+  </data>
+  <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Énáblé télémétrý ~~~~~~ !!]</value>
   </data>
 </root>

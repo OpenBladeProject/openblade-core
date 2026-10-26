@@ -596,8 +596,11 @@ public sealed record DisplayProfileSettings(
     bool? HdrEnabled,
     string? ColorProfileKey)
 {
+    public byte? BrightnessPercent { get; init; }
+
     public bool IsConfigured =>
-        RefreshRateKey is not null || HdrEnabled.HasValue || ColorProfileKey is not null;
+        RefreshRateKey is not null || HdrEnabled.HasValue || ColorProfileKey is not null
+        || BrightnessPercent.HasValue;
 
     public static DisplayProfileSettings Unconfigured() => new(null, null, null);
 }
@@ -691,6 +694,35 @@ public sealed record ProfileSet(
     BatteryPolicy BatteryPolicy,
     LightingPowerPolicy? LightingPowerPolicy = null)
 {
+    public IReadOnlyList<ApplicationProfileDefinition> ApplicationProfiles { get; init; } = [];
+
+    public bool Equals(ProfileSet? other) => ReferenceEquals(this, other)
+        || other is not null
+            && PluggedIn == other.PluggedIn
+            && Battery == other.Battery
+            && UsbC == other.UsbC
+            && BatteryPolicy == other.BatteryPolicy
+            && LightingPowerPolicy == other.LightingPowerPolicy
+            && WindowsPowerModes == other.WindowsPowerModes
+            && ApplicationProfiles.SequenceEqual(other.ApplicationProfiles);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(PluggedIn);
+        hash.Add(Battery);
+        hash.Add(UsbC);
+        hash.Add(BatteryPolicy);
+        hash.Add(LightingPowerPolicy);
+        hash.Add(WindowsPowerModes);
+        foreach (ApplicationProfileDefinition profile in ApplicationProfiles)
+        {
+            hash.Add(profile);
+        }
+
+        return hash.ToHashCode();
+    }
+
     // The Session Agent applies the configured association because Windows
     // power mode is scoped to the interactive user rather than LocalSystem.
     public WindowsPowerModeAssociations WindowsPowerModes { get; init; } =

@@ -3721,6 +3721,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref profiles, value);
+            Notify(nameof(ApplicationProfiles));
+            NotifyComputed(nameof(ActiveApplicationProfileName), ActiveApplicationProfileName);
             Notify(nameof(ActiveSavedThxAudioProfile));
             NotifyProfileSummaries();
             Notify(nameof(SelectedWindowsPowerModeOption));
@@ -4542,6 +4544,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(LiveReadingsEnabled));
             Notify(nameof(SelectedLiveReadingsRefreshOption));
             Notify(nameof(LiveReadingsObservationInterval));
+            Notify(nameof(TelemetryExpectedSampleInterval));
             Notify(nameof(ShowDashboardLiveReadings));
             if (!LiveReadingsEnabled)
             {
@@ -5034,9 +5037,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception publicationException)
             {
                 // The optional UI publication must not hold shutdown open.
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.MainViewModel",
+                    "PublishStartupRegistrationState",
+                    publicationException);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -5045,6 +5052,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "InitializeStartupRegistration",
+                exception);
             try
             {
                 await dispatcher.InvokeAsync(
@@ -5068,9 +5079,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception publicationException)
             {
                 // The optional UI publication must not hold shutdown open.
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.MainViewModel",
+                    "PublishStartupRegistrationFailure",
+                    publicationException);
             }
         }
     }
@@ -5153,6 +5168,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ServiceStatusSnapshot status = await serviceClient
                 .ObserveStateAsync(requestedLiveReadings, cancellationToken);
+            TelemetryRecordBatch? telemetryBatch = null;
             await dispatcher.InvokeAsync(
                 () =>
                 {
@@ -5168,8 +5184,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         MarkLiveReadingsRefreshed(
                             publishPresentation: !trayOnly);
                     }
+                    if (accepted)
+                    {
+                        telemetryBatch = CaptureTelemetryObservation(status);
+                    }
                 },
                 cancellationToken);
+            if (telemetryBatch is not null)
+            {
+                await AppendTelemetryRecordingAsync(telemetryBatch, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -5201,6 +5226,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await command.DisposeAsync();
         }
+        await DisposeTelemetryAsync();
 
         if (activeWatch is not null)
         {
@@ -5332,6 +5358,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
+        NotifyComputed(nameof(ActiveApplicationProfileName), ActiveApplicationProfileName);
         if (IsConnected
             && previousStatus is not null
             && !performanceHoldReleased
@@ -5906,13 +5933,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private LiveReadingSensors ResolveRequestedLiveReadings(bool includeDashboardReadings)
     {
-        if (!LiveReadingsEnabled)
+        if (!LiveReadingsEnabled && !RequiresTelemetryObservation)
         {
             return LiveReadingSensors.None;
         }
 
-        LiveReadingSensors requested = LiveReadingSensors.None;
-        if (includeDashboardReadings)
+        LiveReadingSensors requested = RequiresTelemetryObservation
+            ? LiveReadingSensors.All
+            : LiveReadingSensors.None;
+        bool replayOnly = TelemetryReplaySession is not null
+            && IsTelemetryPresentationActive
+            && !dashboardTelemetryPresentationActive
+            && !trayDashboardTelemetryPresentationActive;
+        if (LiveReadingsEnabled && !replayOnly && includeDashboardReadings)
         {
             foreach (LiveReadingVisibilityOption option in DashboardTelemetryItems)
             {
@@ -5923,11 +5956,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
         }
 
-        foreach (TrayHoverLabelItemOption option in TrayHoverLabelItems)
+        if (LiveReadingsEnabled && !replayOnly)
         {
-            if (option.IsEnabled)
+            foreach (TrayHoverLabelItemOption option in TrayHoverLabelItems)
             {
-                requested |= ToSensor(option.Kind);
+                if (option.IsEnabled)
+                {
+                    requested |= ToSensor(option.Kind);
+                }
             }
         }
         return requested;
@@ -6064,7 +6100,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool trayOnly)
     {
         if (stamp.BeganWithConnectedSubscription
-            && stamp.Generation == connectionGeneration)
+            && stamp.Generation == connectionGeneration
+            && status.Revision >= latestAcceptedRevision)
         {
             ApplyStatus(status, trayOnly);
             return true;
@@ -6966,8 +7003,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "ConfirmManualOverridesCleared",
+                exception);
             message = TrayText.Get(
                 "Manual override clear requests completed; service confirmation is unavailable.");
             failed = true;
@@ -7002,8 +7043,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "ClearManualOverride",
+                exception,
+                subsystem);
             hardwareNotApplied.Add(subsystem);
         }
     }
@@ -7037,6 +7083,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "SetStartAtSignIn",
+                exception);
             await dispatcher.InvokeAsync(
                 () =>
                 {
@@ -7374,7 +7424,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             DisplayProfileSettings displayToRestore = new(
                 savedDisplay.RefreshRateKey ?? originalDisplay.RefreshRateKey,
                 savedDisplay.HdrEnabled ?? originalDisplay.HdrEnabled,
-                savedDisplay.ColorProfileKey ?? originalDisplay.ColorProfileKey);
+                savedDisplay.ColorProfileKey ?? originalDisplay.ColorProfileKey)
+            {
+                BrightnessPercent = savedDisplay.BrightnessPercent ?? originalDisplay.BrightnessPercent,
+            };
             restored = await RestoreSavedDisplayProfileAsync(
                 source,
                 displayToRestore,
@@ -7492,7 +7545,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         DisplayProfileSettings displayToRestore = new(
             savedDisplay.RefreshRateKey ?? originalDisplay.RefreshRateKey,
             savedDisplay.HdrEnabled ?? originalDisplay.HdrEnabled,
-            savedDisplay.ColorProfileKey ?? originalDisplay.ColorProfileKey);
+            savedDisplay.ColorProfileKey ?? originalDisplay.ColorProfileKey)
+        {
+            BrightnessPercent = savedDisplay.BrightnessPercent ?? originalDisplay.BrightnessPercent,
+        };
         bool thermalDifference = HasThermalProfileDifference;
         bool thermalControlsRestored = !thermalDifference
             || await ClearActiveProfileHardwareOverridesAsync(
@@ -7624,6 +7680,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "RestoreSavedDisplayProfile",
+                exception);
             string message = TrayText.Format(
                 "Could not restore the saved display profile: {0}",
                 exception.Message);
@@ -7690,6 +7750,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "RunOperation",
+                exception);
             string message = TrayText.Format("Operation failed: {0}", exception.Message);
             await dispatcher.InvokeAsync(
                 () =>
@@ -7744,6 +7808,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "ExportDiagnostics",
+                exception);
             string message = TrayText.Format(
                 "Diagnostic export failed: {0}",
                 exception.Message);
@@ -7818,6 +7886,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel",
+                "CreateSupportReport",
+                exception);
             string message = savedPath is null
                 ? TrayText.Format("Identity report failed: {0}", exception.Message)
                 : SavedWithoutBrowserMessage(savedPath);

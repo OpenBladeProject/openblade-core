@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.SessionAgent;
@@ -68,13 +69,19 @@ internal sealed class WindowsThxForegroundSource : IThxForegroundSource
             {
                 return ThxForegroundObservation.Unknown;
             }
-            string name = Path.GetFileName(path.ToString());
+            string executablePath = ApplicationProfileDefinition.NormalizeExecutablePath(
+                path.ToString());
+            string name = Path.GetFileName(executablePath);
             // ApplicationFrameHost does not identify the hosted application.
             // No package identity is inferred from its process or window title.
             return string.IsNullOrWhiteSpace(name)
                 || name.Equals("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase)
                 ? ThxForegroundObservation.Unknown
-                : new ThxForegroundObservation(name, WindowsThxActiveOutput.Read());
+                : new ThxForegroundObservation(
+                    name,
+                    WindowsThxActiveOutput.Read(),
+                    executablePath,
+                    checked((int)processId));
         }
         catch
         {

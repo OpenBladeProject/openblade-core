@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
@@ -68,6 +69,7 @@ internal static class WindowsDeviceFirmwareVersionReader
         }
         catch (Exception exception) when (IsSafeReadFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDeviceFirmwareVersionReader), nameof(ReadThunderboltFirmwareVersion), exception);
             return null;
         }
     }
@@ -92,6 +94,7 @@ internal static class WindowsDeviceFirmwareVersionReader
         }
         catch (Exception exception) when (IsSafeReadFailure(exception))
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDeviceFirmwareVersionReader), nameof(ReadTouchpadFirmwareVersion), exception);
             return null;
         }
     }

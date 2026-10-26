@@ -218,8 +218,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                     traceLogRegistration = null;
                     Exit();
                 }),
-            exception => Trace.TraceError(
-                "OpenBlade tray shutdown cleanup failed: {0}",
+            exception => DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "ShutdownCleanup",
                 exception));
 
         shutdownEvent = new EventWaitHandle(
@@ -345,17 +346,19 @@ public partial class App : Microsoft.UI.Xaml.Application
             brightnessHost = WindowsTrayBrightnessOsdHost.CreateBestEffort(
                 window,
                 eventEndpoint,
-                exception => Trace.TraceWarning(
-                    "OpenBlade brightness OSD host failed: {0}",
-                    exception.Message));
+                exception => DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.BrightnessOsdHost",
+                    "Observe",
+                    exception));
             notificationHost =
                 WindowsTrayPerformanceNotificationHost.CreateBestEffort(
                     window,
                     eventEndpoint,
                     signal => Enqueue(() => ShowPerformanceNotification(signal)),
-                    exception => Trace.TraceWarning(
-                        "OpenBlade performance notification host failed: {0}",
-                        exception.Message));
+                    exception => DiagnosticTrace.TraceException(
+                        "OpenBlade.Tray.PerformanceNotificationHost",
+                        "Observe",
+                        exception));
             return new WindowSurfaceSet(
                 dashboard,
                 brightnessHost,
@@ -542,8 +545,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade could not apply the selected language: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "ApplyLanguage",
                 exception);
             if (replacementCommitted)
             {
@@ -640,10 +644,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade {0} disposal failed: {1}",
-                component,
-                exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "DisposeSurface",
+                exception,
+                component);
         }
     }
 
@@ -655,8 +660,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade main window disposal failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "DisposeMainWindow",
                 exception);
         }
     }
@@ -677,8 +683,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade main window close failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "CloseMainWindow",
                 exception);
             return false;
         }
@@ -700,8 +707,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade session agent could not be started: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "StartSessionAgent",
                 exception);
         }
     }
@@ -791,8 +799,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade's one-time service start attempt failed; manual recovery remains available: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "StartServiceOnLaunch",
                 exception);
         }
     }
@@ -898,6 +907,10 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private async Task RunRazerDriverInstallHelperAsync()
     {
+        // This entrypoint returns before ordinary Tray logging is initialized.
+        // Keep driver setup outcomes and native failures in an exported per-process log.
+        using IDisposable logging = PersistentTraceLog.RegisterDefault(
+            "OpenBlade.Tray.DriverSetup", OpenBladeProductVersion.Read(typeof(App).Assembly));
         RazerDriverInstallOutcome outcome = RazerDriverInstallOutcome.Unavailable;
         try
         {
@@ -908,9 +921,14 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError("Razer driver setup failed: {0}", exception.GetType().Name);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "RunElevatedRazerDriverSetup",
+                exception);
             outcome = RazerDriverInstallOutcome.RecoveryRequired;
         }
+        Trace.TraceInformation("Razer driver setup completed with outcome {0} ({1}).", outcome, (int)outcome);
+        logging.Dispose();
         Environment.Exit((int)outcome);
     }
 
@@ -969,10 +987,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade elevated service {0} failed: {1}",
-                action.ToString().ToLowerInvariant(),
-                exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "RunElevatedServiceControl",
+                exception,
+                action.ToString());
         }
         finally
         {
@@ -998,7 +1017,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "RequestTrayExit",
+                exception);
             try
             {
                 ShowTrayTaskDialog(new TaskDialogPage
@@ -1017,8 +1039,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             }
             catch (Exception dialogException)
             {
-                Trace.TraceError(
-                    "OpenBlade could not show the shutdown error dialog: {0}",
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.App",
+                    "ShowShutdownErrorDialog",
                     dialogException);
             }
         }
@@ -1095,8 +1118,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard initialization failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "InitializeTrayDashboard",
                 exception);
         }
 
@@ -1141,8 +1165,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade window initialization failed; continuing with the usable shell: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.App",
+                "InitializeMainWindow",
                 exception);
         }
 
@@ -1191,6 +1216,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         object sender,
         Microsoft.UI.Xaml.UnhandledExceptionEventArgs args)
     {
+        DiagnosticTrace.TraceException(
+            "OpenBlade.Tray.App",
+            "XamlUnhandledException",
+            args.Exception);
         WriteFatalCrashReport("WinUI unhandled exception", args.Exception);
         // Intentionally leave Handled false so WinUI terminates normally.
     }
@@ -1218,6 +1247,10 @@ public partial class App : Microsoft.UI.Xaml.Application
             ?? new InvalidOperationException(
                 $"Unhandled non-Exception object of type "
                     + (args.ExceptionObject?.GetType().FullName ?? "<null>"));
+        DiagnosticTrace.TraceException(
+            "OpenBlade.Tray.App",
+            "AppDomainUnhandledException",
+            exception);
         WriteFatalCrashReport("AppDomain unhandled exception", exception);
     }
 
@@ -1225,6 +1258,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         object? sender,
         UnobservedTaskExceptionEventArgs args)
     {
+        DiagnosticTrace.TraceException(
+            "OpenBlade.Tray.App",
+            "UnobservedTaskException",
+            args.Exception);
         crashReportWriter?.TryWrite(
             "Unobserved task exception",
             args.Exception,

@@ -3,6 +3,7 @@ using System.Management;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -165,6 +166,10 @@ internal sealed class ThxAudioProvisioningCommand
             or InvalidOperationException or Win32Exception or CryptographicException
             or JsonException or TimeoutException or HttpRequestException or ManagementException or COMException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioProvisioningCommand",
+                "Run",
+                exception);
             return submissionMayHaveOccurred
                 ? ThxAudioProvisioningResult.RecoveryRequired : ThxAudioProvisioningResult.Failed;
         }

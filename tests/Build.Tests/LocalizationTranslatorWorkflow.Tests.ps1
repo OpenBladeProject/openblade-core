@@ -245,6 +245,83 @@ try {
         Assert-True ($profileContext.Screenshots.Split(';') -ccontains $profileScreenshot) `
             "Profile rows must reference '$profileScreenshot'."
     }
+    foreach ($featureContext in @(
+            @{
+                Key = 'Applications_Title.Text'
+                Screenshots = @(
+                    'context/tray/main-profiles-applications.png',
+                    'context/tray/main-profiles-applications-empty.png',
+                    'context/tray/main-profiles-application-editor.png',
+                    'context/tray/main-profiles-application-editor-controls.png',
+                    'context/tray/main-profiles-application-discovery.png',
+                    'context/tray/main-profiles-application-discovery-empty.png')
+            },
+            @{
+                Key = 'ApplicationsUI_SearchLabel'
+                Screenshots = @(
+                    'context/tray/main-profiles-application-discovery.png',
+                    'context/tray/main-profiles-application-discovery-empty.png')
+            },
+            @{
+                Key = 'Telemetry_Title.Text'
+                Screenshots = @(
+                    'context/tray/main-telemetry.png',
+                    'context/tray/main-telemetry-empty.png',
+                    'context/tray/main-telemetry-controls-narrow.png',
+                    'context/tray/main-telemetry-hover-edge.png',
+                    'context/tray/main-telemetry-recording.png',
+                    'context/tray/main-telemetry-replay.png')
+            },
+            @{
+                Key = 'BatteryHistory_Title.Text'
+                Screenshots = @('context/tray/main-laptop-battery-history.png')
+            },
+            @{
+                Key = 'TelemetryUI_NextSample'
+                Screenshots = @(
+                    'context/tray/main-telemetry.png',
+                    'context/tray/main-telemetry-empty.png',
+                    'context/tray/main-telemetry-controls-narrow.png',
+                    'context/tray/main-telemetry-hover-edge.png',
+                    'context/tray/main-telemetry-recording.png',
+                    'context/tray/main-telemetry-replay.png')
+            },
+            @{
+                Key = 'MainWindow_DisplayBrightnessTitle.Text'
+                Screenshots = @(
+                    'context/tray/main-display-brightness-known.png',
+                    'context/tray/main-display-brightness-unavailable.png')
+            },
+            @{
+                Key = 'Application profiles'
+                Screenshots = @(
+                    'context/tray/main-profiles-applications.png',
+                    'context/tray/main-profiles-applications-empty.png',
+                    'context/tray/main-profiles-application-editor.png')
+            },
+            @{
+                Key = 'Telemetry recording reached its limit and was saved to {0}.'
+                Screenshots = @(
+                    'context/tray/main-telemetry.png',
+                    'context/tray/main-telemetry-empty.png',
+                    'context/tray/main-telemetry-recording.png')
+            },
+            @{
+                Key = 'Battery history'
+                Screenshots = @('context/tray/main-laptop-battery-history.png')
+            },
+            @{
+                Key = 'Display brightness'
+                Screenshots = @(
+                    'context/tray/main-display-brightness-known.png',
+                    'context/tray/main-display-brightness-unavailable.png')
+            })) {
+        $featureRow = @($rows | Where-Object Key -ceq $featureContext.Key)[0]
+        foreach ($featureScreenshot in $featureContext.Screenshots) {
+            Assert-True ($featureRow.Screenshots.Split(';') -ccontains $featureScreenshot) `
+                "'$($featureContext.Key)' must reference '$featureScreenshot'."
+        }
+    }
     $snapTapContext = @($rows | Where-Object Key -ceq 'SnapTap_InfoInput.Text')[0]
     foreach ($snapTapScreenshot in @(
             'context/tray/main-laptop-snap-tap-info.png',
@@ -905,7 +982,9 @@ throw 'Target catalog was not write-locked during import.'
     $generatedFolder = Join-Path $packageRoot 'OpenBlade-ru-RU-translator'
     $manifest = Get-Content (Join-Path $generatedFolder 'manifest.json') -Raw |
         ConvertFrom-Json
-    Assert-Equal 'bgra8-4-bit-midpoint-local-majority-v2' `
+    Assert-Equal 'UTC-for-snapshot-timestamps' $manifest.screenshotRenderProfile.timeZone `
+        'Snapshot timestamps must not depend on the machine timezone.'
+    Assert-Equal 'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4' `
         $manifest.screenshotRenderProfile.pixelCanonicalization `
         'The package manifest must record deterministic pixel canonicalization.'
     Assert-Equal 'two-consecutive-canonical-frames-v1' `

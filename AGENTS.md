@@ -5,15 +5,43 @@ repository. Keep changes narrow, evidence-based, and suitable for a native
 Windows hardware utility.
 
 <!-- trail:start -->
-## Trail-Code context
+## Trail — repo context graph
 
-Use the `trail_*` MCP tools or `trail` CLI to navigate indexed code. Start with
-`trail map` for orientation, `trail ask "<question>" --source` for ranked source
-spans, `trail grep "<symbol>"` for exhaustive matches, or `trail callers <symbol>`
-for dependencies. Treat graph results as navigation aids; verify the current
-source for consequential changes. The deterministic index is `.trail/cache/`;
-`trail build` refreshes it without a model or API key. Optional LLM summaries
-require a separate `--deep` build.
+This repository is indexed in `.trail/cache/`. The graph links concise system
+notes to exact source spans and precomputed symbol relationships. For code
+tasks, query Trail before broad text searches or broad source reads, and reuse
+literal identifiers such as a symbol, error string, or file name.
+
+Treat graph results as navigation and context, not as a substitute for the
+current checkout. Source and tests remain authoritative. Verify current source
+before consequential edits, safety or compatibility claims, and final review;
+documentation, configuration, generated files, and new files may be unindexed.
+
+Choose the command that matches the question:
+
+- `trail map` gives a token-budgeted orientation to directory clusters, hubs,
+  and hotspots. Use it when the repository or subsystem is unfamiliar.
+- `trail ask "<question>" --source` returns ranked nodes with relevant source
+  spans inlined. Use the results as focused starting points; add `--full` when
+  a returned crux is truncated or the complete definition is needed.
+- `trail grep "<literal>"` searches indexed files exhaustively and groups hits
+  by enclosing symbol. Use it for every occurrence or caller of a pattern;
+  use `rg` for files Trail does not index.
+- `trail skeleton <file>` lists each definition's signature and span for a
+  compact view of an API surface.
+- `trail callers <symbol>` shows incoming references. Add `--direction out`
+  for dependencies or `--depth N` to inspect a transitive blast radius.
+- `.trail/cache/INDEX.md` is available for direct browsing. In multi-repository
+  workspaces, narrow queries with `--in <scope>/` when the scope is known.
+
+Open the exact referenced source range when Trail omits a required detail or
+when verification is consequential. Read more surrounding source when needed
+to understand the contract or validate an invariant; avoid rebuilding context
+from whole files without a concrete reason.
+
+`trail build` refreshes the deterministic graph without a model or API key;
+`trail check` checks branch changes against recorded team learnings. Optional LLM
+summaries require a separate `trail build --deep`.
 <!-- trail:end -->
 
 ## Parallel work
@@ -245,6 +273,45 @@ inventing a page-specific appearance:
   unchanged evidence; inspect only states affected by the change. A deliberate
   exception needs a concrete design reason in the PR and its focused test.
 
+## Typography
+
+Use the application typography roles in `Themes/Typography.xaml`. They inherit
+the native WinUI type ramp so the system font, language fallback, text scaling,
+and high-contrast behavior remain authoritative:
+
+- `AppPageTitleTextStyle` for page titles and `AppSectionTitleTextStyle` for
+  major sections.
+- `AppBodyTextStyle` for ordinary text and table cells, and
+  `AppBodyStrongTextStyle` for card titles and table column headers.
+- `AppCaptionTextStyle` for units, timestamps, chart axes, and supporting
+  metadata. It uses the theme's secondary text brush.
+- `AppDataTextStyle` for numeric readings and table values. It uses regular body
+  text with tabular numerals. Keep all table body cells regular; reserve strong
+  text for headers.
+- `AppCommandButtonStyle` for full-size string page commands. Its shared
+  `AppCommandTextTemplate` wraps and centers localized body text while the
+  button keeps native focus behavior, a 40-DIP minimum height, and shared
+  padding. `AppCustomCommandButtonStyle` shares native sizing and padding for
+  icon or composed content without applying the string-only text template.
+  Other specialized controls retain their component style.
+- `AppToolbarButtonStyle` and `AppToolbarToggleButtonStyle` for flat desktop
+  tools with 32-DIP minimum targets and native interaction states. Use
+  `AppToolbarIconStyle` for their shared 16-DIP decorative glyphs and keep
+  accessible names on the controls. Body text retains the native type ramp.
+- `AppInlineCommandStyle` for native text actions beside captions, such as
+  Full range. Its 24-DIP minimum height can grow with text scaling.
+
+Keep local layout styles as aliases based on these application roles. Do not
+copy the native role's current `FontSize`, set a fixed line height, or introduce
+a new font family. Let translated and scaled text wrap instead of fixing row
+heights. Runtime-created text uses `AppTypography.Apply`; runtime-created
+buttons resolve the command style through `AppTypography.RequireStyle`.
+
+The existing tray quick-controls popup may retain its compact 12-DIP and 11-DIP
+text until that surface is migrated and rendered independently. A new raw font
+size needs a concrete constrained-surface reason and focused visual evidence.
+See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
+
 ## Architecture rules
 
 1. The service is the sole owner of the laptop control HID handle. It exposes
@@ -314,11 +381,37 @@ inventing a page-specific appearance:
    owned-hook restoration and uncertain-output recovery. It must not load the
    Synapse mapping engine, acquire the service's HID handle, install or bundle
    drivers, or fall back to a system-wide keyboard hook. A separate, explicitly
-   user-initiated elevated helper may install the pinned RZ09-0581 catalog stack
-   after exact host, topology, package hash and Windows catalog verification.
+   user-initiated elevated helper may install each of the seven reviewed models'
+   separately pinned complete stack after exact host, topology, package hash and
+   Windows catalog verification. Original Razer carriers are data-only sources:
+   extract only fixed reviewed blocks after whole-file hash and signer verification;
+   never execute the carrier. The generic common package needs separate applicability
+   evidence; do not substitute another model's filter. Select only catalog-covered
+   INFs and their complete source-file closure. RZ09-0328 uses the separately reviewed
+   complete Microsoft Catalog .66 pair and its current-Windows signed U INFs;
+   never substitute the Razer .71 legacy catalogs that fail current OS policy.
+   The explicitly user-initiated keyboard setup helper may search Windows Update first
+   for all seven reviewed models, including optional driver offers, using the configured
+   source and policy. Match only the reviewed INF hardware IDs and provider, admit every
+   actual matching devnode in the exact model/container/ancestry, retain searched update
+   identities, and journal intent before each fresh per-submission check. Never change
+   update policy, disable the orchestrator or services, install unrelated updates, or
+   select by a display title. Existing bound partial packages retain trust checks;
+   compatible installed updates are not pinned to artifact hashes. A successful initial
+   no-offer search before any WU installation may use the pinned packages. Failed,
+   partial, canceled or uncertain WU operations must stop without alternate installation.
+   A successful dependency pass may continue only after independent progress exposes a
+   reviewed child while preserving prior targets; bound the passes and never replay
+   an update identity. Require independent complete installed-package readback before
+   claiming success. Setup failures retain their exact component, stage and observed
+   state in persistent exported diagnostics. This is implementation authority only;
+   development-time WU scans, downloads, installations and hardware actions remain gated.
+   The selected model recipe binds acquisition, each native operation and independent
+   readback. Setup on the six additional models remains source-backed experimental
+   until each model's own physical setup validation.
    Keep its durable journal, independent readback and stop-on-ambiguity behavior;
-   never install from the input worker or bundle vendor binaries. Other models need
-   separately reviewed driver evidence; see [SnapTap](docs/snap-tap.md).
+   never install from the input worker or bundle vendor binaries. Any additional model needs a
+   separately reviewed complete installation recipe; see [SnapTap](docs/snap-tap.md).
    The legacy THX COM backend, originally reviewed in 2.6.5.0, may offer manual spatial
    audio control on exact RZ09-0482 (`029D`), RZ09-0483 (`029F`) and RZ09-0484
    (`02A0`) when their trusted, model-bound service/APO stack is already installed. Keep its

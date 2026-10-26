@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -74,6 +75,10 @@ public sealed class TouchpadViewModel : INotifyPropertyChanged
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TouchpadViewModel",
+                "SetEnabled",
+                exception);
             enabled = ReadEnabled();
             needsConfirmation = true;
             failure = TrayText.Get("The touchpad change could not be confirmed. Check Windows Settings.");
@@ -93,6 +98,10 @@ public sealed class TouchpadViewModel : INotifyPropertyChanged
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TouchpadViewModel",
+                "ReadEnabled",
+                exception);
             return null;
         }
     }

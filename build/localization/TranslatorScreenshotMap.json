@@ -10,23 +10,77 @@
     "installer/installer-success.png",
     "tray/main-about.png",
     "tray/main-display.png",
+    "tray/main-display-brightness-known.png",
+    "tray/main-display-brightness-unavailable.png",
     "tray/main-home.png",
     "tray/main-thx-audio.png",
     "tray/main-thx-audio-headphones.png",
     "tray/main-thx-audio-enhancements.png",
     "tray/main-thx-audio-applications.png",
     "tray/main-laptop.png",
+    "tray/main-laptop-battery-history.png",
     "tray/main-laptop-snap-tap-info.png",
     "tray/snap-tap-information.png",
     "tray/main-lighting.png",
     "tray/main-profiles.png",
+    "tray/main-profiles-applications.png",
+    "tray/main-profiles-applications-empty.png",
+    "tray/main-profiles-application-editor.png",
+    "tray/main-profiles-application-editor-controls.png",
+    "tray/main-profiles-application-discovery.png",
+    "tray/main-profiles-application-discovery-empty.png",
     "tray/main-profiles-narrow.png",
     "tray/main-profiles-wide.png",
     "tray/main-settings-appearance.png",
     "tray/main-settings.png",
+    "tray/main-telemetry.png",
+    "tray/main-telemetry-empty.png",
+    "tray/main-telemetry-disabled.png",
+    "tray/main-telemetry-analysis.png",
+    "tray/main-telemetry-narrow.png",
+    "tray/main-telemetry-controls-narrow.png",
+    "tray/main-telemetry-hover-edge.png",
+    "tray/main-telemetry-dark.png",
+    "tray/main-telemetry-range.png",
+    "tray/main-telemetry-expired.png",
+    "tray/main-telemetry-retention.png",
+    "tray/main-telemetry-recording.png",
+    "tray/main-telemetry-replay.png",
+    "tray/main-telemetry-metrics.png",
+    "tray/telemetry-metrics.png",
+    "tray/main-telemetry-color.png",
+    "tray/telemetry-color.png",
     "tray/tray-dashboard.png"
   ],
   "rules": [
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^(?:Applications(?:UI)?_|Feature_(?:061b9b48e177|0d94e35e8475|155db46f9362|19ad9b4c6b5c|207f5db133a0|3a29f5ccc091|3d621a53b31e|496960c3c1f5|50accd740fa2|51e2604e2aaf|5f81f632042a|612a36db4fc9|6cc5df35f033|6fce74ac10dd|7837e2a6dec5|7a0afacfb221|847ced6ca02b|877cb5a94232|96ad4bd0f7ba|9c7c8919be0e|9cb7099bc130|9cc01faad79c|9d2725011acd|a4873a62f9e5|a66522394a37|ac3492bfbd41|af4123249281|b26de372b4b0|b4c2f503b194|c0774c185060|c1db83d165ed|c43fb5f4da35|c83928a24959|c88a6043293f|ce6bbac0215e|d7c76cf63323|ea008cd08808|f7e6729d30cf|f8ed8576f5a9|fb51849e03f2|fb8bc434078d))",
+      "context": "Application profile list, pushed editor and grouped game discovery shown with disconnected fixtures and empty states.",
+      "screenshots": ["tray/main-profiles-applications.png", "tray/main-profiles-applications-empty.png", "tray/main-profiles-application-editor.png", "tray/main-profiles-application-editor-controls.png", "tray/main-profiles-application-discovery.png", "tray/main-profiles-application-discovery-empty.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^(?:Telemetry(?:UI)?_|Navigation_Telemetry$|Feature_(?:3ca3281778c2|42d94a35c548|4696d358d054|6141eef71a99|6c455cda31d0|72539d6acd07|73998e0f0da8|73e7c4edf7e7|7d021f67142c|7f1c35cb6572|8f1c7cba79a7|905c2bc1b6eb|94d954185187|a72204aa94d0|b5c358cef921|c650cc78b7fe|c7f01a7da8db|c83b7fc012ef|d6db2da1a792|e09ca605b555|f04321b95415|f8d2f2cd53a8))",
+      "context": "Telemetry page with a default-off enable switch, disabled empty state, deterministic readings, gaps, analysis statistics, a draggable exact-time range, contextual recording and replay controls, compact source controls at narrow width, a right-edge hover readout, dark layout, and per-user metric visibility and color flyouts.",
+      "screenshots": ["tray/main-telemetry.png", "tray/main-telemetry-disabled.png", "tray/main-telemetry-empty.png", "tray/main-telemetry-analysis.png", "tray/main-telemetry-narrow.png", "tray/main-telemetry-controls-narrow.png", "tray/main-telemetry-hover-edge.png", "tray/main-telemetry-dark.png", "tray/main-telemetry-range.png", "tray/main-telemetry-expired.png", "tray/main-telemetry-retention.png", "tray/main-telemetry-recording.png", "tray/main-telemetry-replay.png", "tray/main-telemetry-metrics.png", "tray/telemetry-metrics.png", "tray/main-telemetry-color.png", "tray/telemetry-color.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^(?:BatteryHistory_|BatteryPreset_|BatteryTimeline_|MainWindow_BatteryHistoryRowsText)",
+      "context": "Windows battery history and long battery life preset preview shown with disconnected sample intervals.",
+      "screenshots": ["tray/main-laptop-battery-history.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^MainWindow_(?:DisplayBrightness|ProfileDisplayBrightness)",
+      "context": "Display brightness shown in both available and unavailable capability states.",
+      "screenshots": ["tray/main-display-brightness-known.png", "tray/main-display-brightness-unavailable.png"]
+    },
     {
       "surface": "tray",
       "match": "key",
@@ -110,6 +164,34 @@
       "pattern": ".*",
       "context": "Main OpenBlade window navigation, status, dialog, or common action.",
       "screenshots": ["tray/main-home.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:application profile|application activation mode|unknown application|power-source profile|name of up to 80 characters|at least one application profile setting|exact game or application executable)",
+      "context": "Runtime application profile validation and presentation text.",
+      "screenshots": ["tray/main-profiles-applications.png", "tray/main-profiles-applications-empty.png", "tray/main-profiles-application-editor.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:telemetry recording|recording reached its limit)",
+      "context": "Runtime telemetry recording status and recovery text.",
+      "screenshots": ["tray/main-telemetry.png", "tray/main-telemetry-empty.png", "tray/main-telemetry-analysis.png", "tray/main-telemetry-range.png", "tray/main-telemetry-expired.png", "tray/main-telemetry-retention.png", "tray/main-telemetry-recording.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:battery history|long battery life|last 24 hours|connected standby|discharged|full charge \\{0\\}.*design)",
+      "context": "Runtime Windows battery history and long battery life preset text.",
+      "screenshots": ["tray/main-laptop-battery-history.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:display brightness|^brightness \\{0\\}%$)",
+      "context": "Runtime display brightness value or unavailable state.",
+      "screenshots": ["tray/main-display-brightness-known.png", "tray/main-display-brightness-unavailable.png"]
     },
     {
       "surface": "tray-core",

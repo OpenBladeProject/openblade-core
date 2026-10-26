@@ -6,6 +6,113 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void TelemetryCaptureRoutesCoverCompactControlsAndRightEdgeInspection()
+    {
+        string app = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
+        string features = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "MainWindow.FeatureSnapshots.cs");
+        string capture = ReadRepositoryFile(
+            "build", "Capture-LocalizationSnapshots.ps1");
+        string catalog = ReadRepositoryFile(
+            "build", "localization", "TranslatorScreenshotMap.json");
+
+        foreach (string route in new[] { "telemetry-disabled", "telemetry-controls-narrow", "telemetry-hover-edge", "telemetry-recording", "telemetry-replay" })
+        {
+            Assert.Contains($"\"{route}\"", app, StringComparison.Ordinal);
+            Assert.Contains($"case \"{route}\":", features, StringComparison.Ordinal);
+            Assert.Contains($"'{route}'", capture, StringComparison.Ordinal);
+            Assert.Contains($"main-{route}.png", catalog, StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "destination is \"telemetry-narrow\" or \"telemetry-controls-narrow\"",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "destination == \"telemetry-hover-edge\" ? 1 : 0.4",
+            features,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TelemetrySourceHeaderUsesContextualStateAndLocalizedIconCommands()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement header = NamedElement(
+            document,
+            "ContextualToolbar",
+            "TelemetrySourceHeader");
+        XElement context = NamedElement(document, "StackPanel", "TelemetrySourceContext");
+        XElement commands = NamedElement(
+            document,
+            "ContentWrapPanel",
+            "TelemetrySourceCommands");
+        XElement[] buttons = commands.Elements().ToArray();
+
+        Assert.Equal([context, commands], header.Elements().ToArray());
+        Assert.Equal("Context", Attribute(context, "ContextualToolbar.Role"));
+        Assert.Equal("Actions", Attribute(commands, "ContextualToolbar.Role"));
+        Assert.Equal(
+            "{StaticResource AppBodyTextStyle}",
+            Attribute(NamedElement(document, "TextBlock", "TelemetrySourceText"), "Style"));
+        Assert.Equal(
+            "Collapsed",
+            Attribute(NamedElement(document, "TextBlock", "TelemetryRecordingText"), "Visibility"));
+        Assert.Equal(["TelemetryRecordButton", "TelemetryStopButton",
+            "TelemetryLiveButton", "TelemetryOpenButton"],
+            buttons.Select(button => Attribute(button, "Name")));
+        Assert.Equal(["OnStartTelemetryRecording", "OnStopTelemetryRecording",
+            "OnCloseTelemetryReplay", "OnOpenTelemetryReplay"],
+            buttons.Select(button => Attribute(button, "Click")));
+        Assert.All(buttons, button =>
+        {
+            Assert.Equal("Button", button.Name.LocalName);
+            Assert.Equal("{StaticResource AppToolbarButtonStyle}", Attribute(button, "Style"));
+            Assert.Null(Attribute(button, "ContentTemplate"));
+            Assert.Null(Attribute(button, "Uid"));
+            Assert.Single(button.Descendants(), element => element.Name.LocalName is "SymbolIcon" or "FontIcon");
+            XElement label = Assert.Single(button.Descendants(), element =>
+                element.Name.LocalName == "TextBlock");
+            Assert.Equal("{StaticResource AppBodyTextStyle}", Attribute(label, "Style"));
+            Assert.Equal("Wrap", Attribute(label, "TextWrapping"));
+        });
+
+        string source = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "MainWindow.Telemetry.cs");
+        foreach (string key in new[] { "Telemetry_Record.Content", "Telemetry_Stop.Content",
+            "Telemetry_Open.Content", "Telemetry_Live.Content" })
+        {
+            Assert.Contains($"LocalizedResources.Get(\"{key}\"", source, StringComparison.Ordinal);
+        }
+        Assert.Contains("ToolTipService.SetToolTip(TelemetryRecordButton, recordingOff)", source,
+            StringComparison.Ordinal);
+        Assert.Contains("TelemetryRecordButton.Visibility = !recording && !replay", source,
+            StringComparison.Ordinal);
+        Assert.Contains("TelemetryStopButton.Visibility = recording", source, StringComparison.Ordinal);
+        Assert.Contains("TelemetryLiveButton.Visibility = replay", source, StringComparison.Ordinal);
+        Assert.Contains("TelemetryRecordingText.Visibility = recording", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ContextualToolbarMeasuresAndVerifiesItsTwoRegions()
+    {
+        string source = ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "ContextualToolbar.cs");
+
+        Assert.Contains("ContextualToolbarElementRole.Context", source, StringComparison.Ordinal);
+        Assert.Contains("ContextualToolbarElementRole.Actions", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "context.DesiredSize.Width + 16 + actions.DesiredSize.Width > availableSize.Width",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("ColumnSpacing = useStackedLayout ? 0 : 16", source, StringComparison.Ordinal);
+        Assert.Contains("RowSpacing = useStackedLayout ? 8 : 0", source, StringComparison.Ordinal);
+        Assert.Contains("commands.VerifyLocalizationSnapshotLayout()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SnapTapPopupExplainsLaptopDriverAndKeepsCompatibilityOutOfTheRow()
     {
         XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
@@ -112,7 +219,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void MissingSnapTapDriverOffersTheExactModelSetupGuide()
+    public void MissingOrUnavailableSnapTapDriverKeepsSetupDiscoverableAndRetryable()
     {
         XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement link = NamedElement(document, "HyperlinkButton", "SnapTapDriverLink");
@@ -128,11 +235,83 @@ public sealed class WinUiShellContractTests
         Assert.Equal("{StaticResource AccentButtonStyle}", Attribute(install, "Style"));
         Assert.Equal("Left", Attribute(link, "HorizontalAlignment"));
         Assert.Equal(
-            "https://github.com/OpenBladeProject/blade-driver-catalog/blob/main/docs/installing-rz09-0581.md",
+            "https://github.com/OpenBladeProject/blade-driver-catalog",
             Attribute(link, "NavigateUri"));
-        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs");
-        Assert.Contains("snapTapEnabled && status?.State == SnapTapRuntimeState.DriverMissing", source, StringComparison.Ordinal);
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs")
+            .ReplaceLineEndings("\n");
+        Assert.Contains(
+            "private static bool CanOfferSnapTapDriverSetup(SnapTapRuntimeState? state) => state is\n"
+                + "        SnapTapRuntimeState.DriverMissing or SnapTapRuntimeState.Unavailable;",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "!CanOfferSnapTapDriverSetup(SnapTapStatusStore.Read()?.State)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "snapTapEnabled && CanOfferSnapTapDriverSetup(status?.State)",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains("&& snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.RestartRequired\n"
+                + "                or RazerDriverInstallOutcome.RecoveryRequired",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.Unavailable",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RazerDriverInstallOutcome.WindowsUpdateUnavailable => LocalizedResources.Get(\n"
+                + "            \"SnapTap_Driver_WindowsUpdateUnavailable\", \"Windows Update is unavailable. Check Windows Update, then try again.\")",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RazerDriverInstallOutcome.WindowsUpdateRefused => LocalizedResources.Get(\n"
+                + "            \"SnapTap_Driver_WindowsUpdateRefused\", \"The available driver could not be installed safely. Export diagnostics for help.\")",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"runtime-unavailable\" => SnapTapRuntimeState.Unavailable",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("\"unavailable\" => RazerDriverInstallOutcome.Unavailable", source, StringComparison.Ordinal);
+        string harness = ReadRepositoryFile("src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
+        Assert.Contains("\"laptop-snap-tap-runtime-unavailable\"", harness, StringComparison.Ordinal);
+        Assert.Contains("\"laptop-snap-tap-driver-unavailable\"", harness, StringComparison.Ordinal);
+        Assert.Contains("\"laptop-snap-tap-driver-windows-update-unavailable\"", harness, StringComparison.Ordinal);
+        Assert.Contains("\"laptop-snap-tap-driver-windows-update-refused\"", harness, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"laptop-snap-tap-driver-windows-update-refused\" => \"windows-update-refused\"",
+            harness,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DriverSetupHelperFlushesItsDedicatedLogBeforeProcessExit()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs")
+            .ReplaceLineEndings("\n");
+        int helperStart = app.IndexOf(
+            "private async Task RunRazerDriverInstallHelperAsync()",
+            StringComparison.Ordinal);
+        int helperEnd = app.IndexOf(
+            "private async Task RunElevatedServiceControlHelperAsync(",
+            helperStart,
+            StringComparison.Ordinal);
+        Assert.True(helperStart >= 0 && helperEnd > helperStart);
+        string helper = app[helperStart..helperEnd];
+
+        int registration = helper.IndexOf("PersistentTraceLog.RegisterDefault(", StringComparison.Ordinal);
+        int install = helper.IndexOf("new RazerKeyboardDriverInstaller().InstallAsync(", StringComparison.Ordinal);
+        int completion = helper.IndexOf("Razer driver setup completed with outcome", StringComparison.Ordinal);
+        int dispose = helper.IndexOf("logging.Dispose();", StringComparison.Ordinal);
+        int exit = helper.IndexOf("Environment.Exit((int)outcome);", StringComparison.Ordinal);
+
+        Assert.Contains("\"OpenBlade.Tray.DriverSetup\"", helper, StringComparison.Ordinal);
+        Assert.True(registration >= 0 && registration < install);
+        Assert.True(install < completion && completion < dispose && dispose < exit);
     }
 
     [Fact]
@@ -1411,7 +1590,7 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "OpenBlade could not show the '{0}' dialog",
+            "\"ShowDialog\"",
             window,
             StringComparison.Ordinal);
         Assert.Contains("contentDialogGate.WaitAsync()", window, StringComparison.Ordinal);
@@ -1437,7 +1616,8 @@ public sealed class WinUiShellContractTests
             "SelectedItem=\"{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Equal(7, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
+        XElement settingsHeader = NamedElement(XDocument.Parse(xaml), "Grid", "SettingsPageHeader");
+        Assert.Equal("0,0,0,20", settingsHeader.Attribute("Margin")?.Value);
         Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}\"",
             xaml,
@@ -1891,6 +2071,50 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void DisplayBrightnessUsesSharedRowPresentationAndBoundedAccessibleEditor()
+    {
+        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement title = document.Descendants().Single(element => (string?)element.Attribute(x + "Uid") == "MainWindow_DisplayBrightnessTitle");
+        XElement reference = document.Descendants().Single(element => (string?)element.Attribute(x + "Uid") == "MainWindow_TextBlockCPU");
+        XElement row = title.Ancestors().First(element => element.Name.LocalName == "Border");
+        XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
+        Assert.Equal(reference.Attribute("Style")?.Value, title.Attribute("Style")?.Value);
+        Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", referenceRow.Attribute("Style")?.Value);
+        Assert.Equal("{StaticResource SettingsLastRowStyle}", row.Attribute("Style")?.Value);
+        XElement lastStyle = document.Descendants().Single(element => (string?)element.Attribute(x + "Key") == "SettingsLastRowStyle");
+        Assert.Equal("{StaticResource SettingsRowStyle}", lastStyle.Attribute("BasedOn")?.Value);
+        XElement ordinaryStyle = document.Descendants().Single(element => (string?)element.Attribute(x + "Key") == "SettingsRowStyle");
+        XElement neutralStyle = document.Descendants().Single(element => (string?)element.Attribute(x + "Key") == "SettingsNeutralSubcardStyle");
+        foreach (string property in new[] { "Background", "local:SettingsCardPointerVisual.IsEnabled", "local:SettingsCardPointerVisual.PointerOverBackground" })
+        {
+            Assert.Equal(
+                neutralStyle.Elements().Single(element => (string?)element.Attribute("Property") == property).Attribute("Value")?.Value,
+                ordinaryStyle.Elements().Single(element => (string?)element.Attribute("Property") == property).Attribute("Value")?.Value);
+        }
+        Assert.Null(row.Attribute("Background"));
+        Assert.Null(row.Attribute("Height"));
+        XElement editor = row.Descendants().Single(element => element.Name.LocalName == "Slider");
+        Assert.Equal("0", editor.Attribute("Minimum")?.Value);
+        Assert.Equal("100", editor.Attribute("Maximum")?.Value);
+        XElement lightingEditor = document.Descendants().Single(element =>
+            (string?)element.Attribute(x + "Name") == "DashboardLightingBrightnessSlider");
+        Assert.Equal(lightingEditor.Attribute("Style")?.Value, editor.Attribute("Style")?.Value);
+        Assert.Equal("1", editor.Attribute("StepFrequency")?.Value);
+        Assert.Equal("True", editor.Attribute("IsThumbToolTipEnabled")?.Value);
+        Assert.Equal("{x:Bind BrightnessSliderValue, Mode=OneWay}", editor.Attribute("Value")?.Value);
+        Assert.Equal("{x:Bind CanChangeBrightness, Mode=OneWay}", editor.Attribute("IsEnabled")?.Value);
+        Assert.Equal("OnDisplayBrightnessSliderLoaded", editor.Attribute("Loaded")?.Value);
+        Assert.Equal("OnDisplayBrightnessSliderUnloaded", editor.Attribute("Unloaded")?.Value);
+        Assert.Equal("{x:Bind HasBrightnessReading, Mode=OneWay}", editor.Parent?.Attribute("Visibility")?.Value);
+        XElement unavailable = row.Descendants().Single(element =>
+            (string?)element.Attribute(x + "Uid") == "MainWindow_DisplayBrightnessUnavailableText");
+        Assert.Equal("{x:Bind IsBrightnessUnavailable, Mode=OneWay}", unavailable.Attribute("Visibility")?.Value);
+        Assert.DoesNotContain(row.Descendants(), element => element.Name.LocalName == "NumberBox");
+        Assert.Contains(editor.Attributes(), attribute => attribute.Name.LocalName == "AutomationProperties.Name" && !string.IsNullOrWhiteSpace(attribute.Value));
+    }
+
+    [Fact]
     public void ReactiveRawInputBelongsToAlwaysRunningSessionAgent()
     {
         string source = ReadRepositoryFile(
@@ -2269,7 +2493,7 @@ public sealed class WinUiShellContractTests
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         Assert.Contains("exitLifecycle.ExitAsync()", app, StringComparison.Ordinal);
         Assert.Contains("exitLifecycle.TryRunWhileActive", app, StringComparison.Ordinal);
-        Assert.Contains("Trace.TraceError", app, StringComparison.Ordinal);
+        Assert.Contains("DiagnosticTrace.TraceException", app, StringComparison.Ordinal);
         Assert.Contains("RequestTrayExitAsync()", app, StringComparison.Ordinal);
         Assert.Contains("Keep background features running", app, StringComparison.Ordinal);
         Assert.Contains("Shut down completely", app, StringComparison.Ordinal);
@@ -2433,7 +2657,10 @@ public sealed class WinUiShellContractTests
             bool isThxInstallerHostReader = file.EndsWith(
                 "ThxAudioInstallLauncher.cs",
                 StringComparison.OrdinalIgnoreCase);
-            if (!isRegistryReader && !isShellThemeSource && !isThxInstallerHostReader)
+            bool isInstalledApplicationReader = file.EndsWith(
+                "InstalledApplicationDiscovery.cs",
+                StringComparison.OrdinalIgnoreCase);
+            if (!isRegistryReader && !isShellThemeSource && !isThxInstallerHostReader && !isInstalledApplicationReader)
             {
                 Assert.DoesNotContain(
                     "Microsoft.Win32",
@@ -2572,6 +2799,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TitleBarTheme.UseDefaultAppMode", window, StringComparison.Ordinal);
         Assert.Contains("TitleBarTheme.Light", window, StringComparison.Ordinal);
         Assert.Contains("TitleBarTheme.Dark", window, StringComparison.Ordinal);
+        Assert.Contains("Root.ActualThemeChanged += OnRootActualThemeChanged", window, StringComparison.Ordinal);
+        Assert.Contains("Root.ActualThemeChanged -= OnRootActualThemeChanged", window, StringComparison.Ordinal);
+        Assert.Contains("Root.ActualTheme switch", window, StringComparison.Ordinal);
+        Assert.Contains("ElementTheme.Light => TitleBarTheme.Light", window, StringComparison.Ordinal);
+        Assert.Contains("ElementTheme.Dark => TitleBarTheme.Dark", window, StringComparison.Ordinal);
+        Assert.Contains("ThemeManager.Apply(Root, selectedTheme);" + Environment.NewLine
+            + "        ApplyCaptionTheme();", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2710,10 +2944,10 @@ public sealed class WinUiShellContractTests
             canonicalizer,
             StringComparison.Ordinal);
         Assert.Contains("GetRgbBrightness", canonicalizer, StringComparison.Ordinal);
-        Assert.Contains("transitions == 2", canonicalizer, StringComparison.Ordinal);
+        Assert.Contains("CountRingTransitions(pixels, width, centerX, centerY) == 2", canonicalizer, StringComparison.Ordinal);
         Assert.Contains("channelDelta > 16", canonicalizer, StringComparison.Ordinal);
         Assert.Contains(
-            "bgra8-4-bit-midpoint-local-majority-v2",
+            "bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4",
             canonicalizer,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -2755,7 +2989,7 @@ public sealed class WinUiShellContractTests
             capture,
             StringComparison.Ordinal);
         Assert.Contains(
-            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v2'",
+            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4'",
             capture,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -4219,7 +4453,7 @@ public sealed class WinUiShellContractTests
             popupPositioner,
             StringComparison.Ordinal);
         Assert.DoesNotContain("trayDashboardObservationLoop", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("private Task ObserveVisibleSurfacesAsync(", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("private async Task ObserveVisibleSurfacesAsync(", mainWindow, StringComparison.Ordinal);
         Assert.Contains("windowVisible || trayDashboardVisible", mainWindow, StringComparison.Ordinal);
         Assert.Contains("UpdateActiveObservationLoop();", mainWindow, StringComparison.Ordinal);
         Assert.Contains("ViewModel.ObserveTrayDashboardStateAsync", mainWindow, StringComparison.Ordinal);

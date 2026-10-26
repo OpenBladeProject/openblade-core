@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 internal readonly record struct RazerCommandSpec(
@@ -569,6 +571,8 @@ internal sealed class WindowsRazerHidSession :
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsRazerHidSession), nameof(ExecuteClaimedAsync), exception,
+                "Set-feature request failed.");
             Poison();
             return IoExceptionFailure(isSet: true, exception);
         }
@@ -666,6 +670,8 @@ internal sealed class WindowsRazerHidSession :
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsRazerHidSession), nameof(ExecuteClaimedAsync), exception,
+                "Get-feature request failed.");
             Poison();
             return IoExceptionFailure(isSet: false, exception);
         }
@@ -887,6 +893,8 @@ internal sealed class WindowsRazerHidSession :
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(nameof(WindowsRazerHidSession),
+                    nameof(ExecuteSetBatchClaimedAsync), exception);
                 HidSessionResult<ReadOnlyMemory<byte>> failure =
                     IoExceptionFailure(isSet: true, exception);
                 if (index > 0)

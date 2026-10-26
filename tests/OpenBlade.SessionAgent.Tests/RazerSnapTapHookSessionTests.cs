@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.ComponentModel;
 using OpenBlade.SessionAgent;
 
 namespace OpenBlade.SessionAgent.Tests;
@@ -91,6 +92,7 @@ public sealed class RazerSnapTapHookSessionTests
         Assert.Equal(RazerSnapTapHookSessionState.Faulted, session.State);
         Assert.Equal(ambiguous, session.FailureMayHaveSubmitted);
         Assert.NotNull(session.FailureReason);
+        Assert.Equal(ambiguous, Assert.IsType<OpenBlade.Contracts.DiagnosticFailure>(session.Failure).MayHaveSubmitted);
         Assert.Equal(failureCall, transport.Calls.Count);
         Assert.False(session.Start());
         Assert.False(session.Stop());
@@ -98,6 +100,51 @@ public sealed class RazerSnapTapHookSessionTests
         Assert.Equal(failureCall + 1, transport.Calls.Count);
         Assert.Equal("close", transport.Calls[^1]);
         Assert.Equal(RazerSnapTapHookSessionState.Faulted, session.State);
+    }
+
+    [Fact]
+    public void FailurePreservesRedactedMessageAndNativeInnerCause()
+    {
+        var transport = new FakeTransport
+        {
+            FailureCall = 2,
+            Failure = new IOException(
+                @"hook write failed at C:\Users\Alice\hook.bin",
+                new Win32Exception(5, "native access denied")),
+        };
+        var session = new RazerSnapTapHookSession(transport);
+
+        Assert.False(session.Start());
+
+        OpenBlade.Contracts.DiagnosticFailure failure = Assert.IsType<OpenBlade.Contracts.DiagnosticFailure>(session.Failure);
+        Assert.Equal("SnapTapWorker", failure.Component);
+        Assert.Equal("HookMutation", failure.Stage);
+        Assert.Equal("SetHookFailed", failure.Reason);
+        Assert.True(failure.MayHaveSubmitted);
+        Assert.Equal(nameof(IOException), failure.ExceptionType);
+        Assert.Equal(nameof(Win32Exception), failure.Cause?.ExceptionType);
+        Assert.Equal(5, failure.Cause?.NativeErrorCode);
+        string serialized = System.Text.Json.JsonSerializer.Serialize(failure);
+        Assert.Contains("hook write failed", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("native access denied", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Alice", serialized, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CleanupFailureWrapsOriginalAmbiguousMutationFailure()
+    {
+        var transport = new FakeTransport { FailureCalls = new HashSet<int> { 2, 3 } };
+        var session = new RazerSnapTapHookSession(transport);
+
+        Assert.False(session.Start());
+        Assert.False(session.Stop());
+
+        OpenBlade.Contracts.DiagnosticFailure failure = Assert.IsType<OpenBlade.Contracts.DiagnosticFailure>(session.Failure);
+        Assert.Equal("SubscriptionClose", failure.Stage);
+        Assert.Equal("CloseFailed", failure.Reason);
+        Assert.True(failure.MayHaveSubmitted);
+        Assert.Equal("HookMutation", failure.Cause?.Stage);
+        Assert.Equal("SetHookFailed", failure.Cause?.Reason);
     }
 
     [Fact]
@@ -188,6 +235,8 @@ public sealed class RazerSnapTapHookSessionTests
         internal List<byte[]> Hooks { get; } = [];
         internal List<string> Calls { get; } = [];
         internal int FailureCall { get; init; }
+        internal IReadOnlySet<int>? FailureCalls { get; init; }
+        internal Exception? Failure { get; init; }
         internal bool IgnoreSet { get; init; }
         internal bool DuplicateSet { get; init; }
 
@@ -224,9 +273,9 @@ public sealed class RazerSnapTapHookSessionTests
         private void Record(string call)
         {
             Calls.Add(call);
-            if (Calls.Count == FailureCall)
+            if (Calls.Count == FailureCall || FailureCalls?.Contains(Calls.Count) == true)
             {
-                throw new IOException("Injected transport failure after possible submission.");
+                throw Failure ?? new IOException("Injected transport failure after possible submission.");
             }
         }
     }

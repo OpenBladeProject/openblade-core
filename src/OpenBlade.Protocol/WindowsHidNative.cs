@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
@@ -233,14 +234,18 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsHidNative), nameof(Submit), exception,
+                "Native-overlapped preparation failed.");
             if (!attached && overlapped != IntPtr.Zero)
             {
                 try
                 {
                     kernel.FreeNativeOverlapped(handle.BoundHandle, overlapped);
                 }
-                catch
+                catch (Exception cleanupException)
                 {
+                    DiagnosticTrace.TraceException(nameof(WindowsHidNative), nameof(Submit), cleanupException,
+                        "Native-overlapped cleanup failed after preparation failure.");
                 }
             }
 
@@ -254,6 +259,8 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsHidNative), nameof(Submit), exception,
+                "Pinned-buffer address acquisition failed.");
             return ManagedSubmissionFailure(exception);
         }
 
@@ -281,6 +288,8 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsHidNative), nameof(Submit), exception,
+                "DeviceIoControl submission failed before a native completion was available.");
             return ManagedSubmissionFailure(exception);
         }
 
@@ -319,8 +328,9 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
                 ? NativeCancelResult.NotFound
                 : NativeCancelResult.Failed;
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsHidNative), nameof(Cancel), exception);
             return NativeCancelResult.Failed;
         }
     }

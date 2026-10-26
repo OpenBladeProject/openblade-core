@@ -82,6 +82,7 @@ public partial class App
 public partial class App
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
+    private const string CaptionThemeSmokeArgument = "--caption-theme-smoke";
     private const string ResponsivePageHeaderSmokeArgument =
         "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
@@ -153,6 +154,11 @@ public partial class App
                     LiveLocalizationSmokePreferencePathVariable));
             return true;
         }
+        if (commandLineArguments is [_, CaptionThemeSmokeArgument, string captionReportPath])
+        {
+            _ = RunCaptionThemeSmokeAsync(captionReportPath);
+            return true;
+        }
         if (commandLineArguments is [_, XamlStartupSmokeArgument, string smokeReportPath])
         {
             try
@@ -171,6 +177,58 @@ public partial class App
         }
 
         return false;
+    }
+
+    private static async Task RunCaptionThemeSmokeAsync(string reportPath)
+    {
+        try
+        {
+            MainWindow window = MainWindow.CreateLocalizationSnapshot();
+            var root = (FrameworkElement)window.Content;
+            ShowNoninteractiveSnapshotWindow(window);
+            await WaitForSnapshotLayoutAsync();
+            System.Reflection.MethodInfo applyTheme = typeof(MainWindow).GetMethod(
+                "ApplyTheme",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("The window theme hook was not found.");
+
+            async Task VerifyAsync(string phase)
+            {
+                await WaitForSnapshotLayoutAsync();
+                TitleBarTheme expected = root.ActualTheme == ElementTheme.Dark
+                    ? TitleBarTheme.Dark : TitleBarTheme.Light;
+                RequireResponsiveSelector(
+                    root.ActualTheme is ElementTheme.Light or ElementTheme.Dark
+                        && window.AppWindow.TitleBar.PreferredTheme == expected,
+                    $"{phase}: native captions did not match the resolved XAML theme.");
+                File.AppendAllText(reportPath,
+                    $"{phase}: XAML={root.ActualTheme}, captions={expected}{Environment.NewLine}");
+            }
+
+            File.WriteAllText(reportPath, "caption theme synchronization" + Environment.NewLine);
+            foreach (ThemePreference preference in new[]
+                { ThemePreference.Dark, ThemePreference.Light, ThemePreference.FollowWindows })
+            {
+                applyTheme.Invoke(window, [preference]);
+                await VerifyAsync(preference.ToString());
+            }
+            // Change only the resolved XAML theme, leaving the saved preference alone.
+            // This exercises the ActualThemeChanged path independently of ApplyTheme.
+            foreach (ElementTheme theme in new[] { ElementTheme.Dark, ElementTheme.Light })
+            {
+                root.RequestedTheme = theme;
+                await VerifyAsync("resolved theme change " + theme);
+            }
+            await window.DisposeAsync();
+            window.Close();
+            File.AppendAllText(reportPath, "completed" + Environment.NewLine);
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            File.AppendAllText(reportPath, exception.ToString());
+            Environment.Exit(1);
+        }
     }
 
     private void RunXamlStartupSmoke(
@@ -592,6 +650,7 @@ public partial class App
             {
                 "home",
                 "profiles",
+                "telemetry",
                 "laptop",
                 "thx-audio",
                 "thx-audio-headphones",
@@ -615,6 +674,18 @@ public partial class App
                 "profiles-wide",
                 StringComparison.Ordinal);
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
+            bool captureTelemetryVariant = requestedPage is
+                "telemetry-analysis" or "telemetry-narrow" or "telemetry-controls-narrow"
+                or "telemetry-hover-edge" or "telemetry-dark"
+                or "telemetry-range" or "telemetry-metrics" or "telemetry-color"
+                or "telemetry-expired" or "telemetry-retention"
+                or "telemetry-recording" or "telemetry-replay";
+            bool captureFeatureSnapshot = captureTelemetryVariant || requestedPage is
+                "profiles-applications" or "profiles-applications-empty"
+                or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
+                or "profiles-application-discovery-empty" or "telemetry-empty" or "telemetry-disabled"
+                or "laptop-battery-history" or "display-brightness-known"
+                or "display-brightness-unavailable";
             bool captureSnapTapFailure = string.Equals(
                 requestedPage, "laptop-snap-tap-failed", StringComparison.Ordinal);
             bool captureSnapTapEnabled = string.Equals(
@@ -625,7 +696,10 @@ public partial class App
                 requestedPage, "laptop-snap-tap-info", StringComparison.Ordinal);
             bool captureSnapTapDriverMissing = requestedPage is "laptop-snap-tap-driver"
                 or "laptop-snap-tap-driver-installing" or "laptop-snap-tap-driver-installed"
-                or "laptop-snap-tap-driver-restart" or "laptop-snap-tap-driver-failed";
+                or "laptop-snap-tap-driver-unavailable" or "laptop-snap-tap-driver-restart"
+                or "laptop-snap-tap-driver-failed" or "laptop-snap-tap-runtime-unavailable"
+                or "laptop-snap-tap-driver-windows-update-unavailable"
+                or "laptop-snap-tap-driver-windows-update-refused";
             string? driverSetupState = requestedPage switch
             {
                 "laptop-snap-tap-manual-driver" => "manual",
@@ -633,6 +707,10 @@ public partial class App
                 "laptop-snap-tap-experimental" => "experimental",
                 "laptop-snap-tap-driver-installing" => "installing",
                 "laptop-snap-tap-driver-installed" => "installed",
+                "laptop-snap-tap-driver-unavailable" => "unavailable",
+                "laptop-snap-tap-runtime-unavailable" => "runtime-unavailable",
+                "laptop-snap-tap-driver-windows-update-unavailable" => "windows-update-unavailable",
+                "laptop-snap-tap-driver-windows-update-refused" => "windows-update-refused",
                 "laptop-snap-tap-driver-restart" => "restart",
                 "laptop-snap-tap-driver-failed" => "failed",
                 _ => null,
@@ -642,6 +720,7 @@ public partial class App
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
+                && !captureFeatureSnapshot
                 && !captureSnapTap
                 && !string.Equals(
                     requestedPage,
@@ -651,7 +730,7 @@ public partial class App
                 throw new InvalidOperationException(
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
-            IEnumerable<string> destinations = captureProfilesVariant || captureSnapTap
+            IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -661,79 +740,195 @@ public partial class App
                         StringComparison.Ordinal));
             foreach (string destination in destinations)
             {
-                Windows.Graphics.SizeInt32 snapshotSize = string.Equals(
-                    destination,
-                    "settings-appearance",
-                    StringComparison.Ordinal)
-                    ? new Windows.Graphics.SizeInt32(1920, 1000)
-                    : string.Equals(
+                bool captureTelemetrySource = destination is
+                    "telemetry-recording" or "telemetry-replay";
+                try
+                {
+                    Windows.Graphics.SizeInt32 snapshotSize = string.Equals(
                         destination,
-                        "profiles-narrow",
+                        "settings-appearance",
                         StringComparison.Ordinal)
-                        ? new Windows.Graphics.SizeInt32(800, 820)
+                        ? new Windows.Graphics.SizeInt32(1920, 1000)
                         : string.Equals(
                             destination,
-                            "profiles-wide",
+                            "profiles-narrow",
                             StringComparison.Ordinal)
-                            ? new Windows.Graphics.SizeInt32(1600, 900)
-                            : new Windows.Graphics.SizeInt32(1120, 820);
-                if (destination == "thx-audio-headphones")
-                {
-                    snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
-                }
-                snapshotMainWindow.AppWindow.Resize(snapshotSize);
-                await WaitForSnapshotLayoutAsync();
-                string navigationDestination = destination is "settings-appearance" or "settings-experimental"
-                    ? "settings"
-                    : captureSnapTap
-                        ? "laptop"
-                    : destination.StartsWith("thx-audio", StringComparison.Ordinal)
-                        ? "thx-audio"
-                    : captureProfilesVariant
-                        ? "profiles"
-                        : destination;
-                snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
-                await WaitForSnapshotLayoutAsync();
-                if (string.Equals(
-                    destination,
-                    "settings-appearance",
-                    StringComparison.Ordinal))
-                {
-                    snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
+                            ? new Windows.Graphics.SizeInt32(800, 820)
+                            : string.Equals(
+                                destination,
+                                "profiles-wide",
+                                StringComparison.Ordinal)
+                                ? new Windows.Graphics.SizeInt32(1600, 900)
+                                : new Windows.Graphics.SizeInt32(1120, 820);
+                    if (destination is "profiles-applications"
+                        or "profiles-applications-empty"
+                        or "profiles-application-editor")
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 900);
+                    }
+                    if (destination is "profiles-application-editor" or "profiles-application-editor-controls")
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 1100);
+                    }
+                    else if (destination is "profiles-application-discovery" or "profiles-application-discovery-empty")
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 900);
+                    }
+                    else if (destination is "telemetry-narrow" or "telemetry-controls-narrow")
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 1120);
+                    }
+                    else if (destination == "telemetry"
+                        || destination.StartsWith("telemetry-", StringComparison.Ordinal))
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 1120);
+                    }
+                    else if (destination == "laptop-battery-history")
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 940);
+                    }
+                    else if (destination == "thx-audio-headphones")
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
+                    }
+                    snapshotMainWindow.AppWindow.Resize(snapshotSize);
+                    if (destination == "telemetry-dark"
+                        && snapshotMainWindow.Content is XamlGrid telemetryRoot)
+                    {
+                        telemetryRoot.RequestedTheme = ElementTheme.Dark;
+                        telemetryRoot.Background = new SolidColorBrush(Microsoft.UI.Colors.Black);
+                    }
                     await WaitForSnapshotLayoutAsync();
-                }
-                if (destination.StartsWith("thx-audio", StringComparison.Ordinal))
-                {
-                    await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
+                    string navigationDestination = destination switch
+                    {
+                        "settings-appearance" or "settings-experimental" => "settings",
+                        "profiles-applications" or "profiles-applications-empty"
+                            or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
+                            or "profiles-application-discovery-empty" => "profiles",
+                        _ when destination.StartsWith("telemetry-", StringComparison.Ordinal) => "telemetry",
+                        "laptop-battery-history" => "laptop",
+                        "display-brightness-known" or "display-brightness-unavailable" => "display",
+                        _ when captureSnapTap => "laptop",
+                        _ when destination.StartsWith("thx-audio", StringComparison.Ordinal) => "thx-audio",
+                        _ when captureProfilesVariant => "profiles",
+                        _ => destination,
+                    };
+                    snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
                     await WaitForSnapshotLayoutAsync();
+                    if (string.Equals(
+                        destination,
+                        "settings-appearance",
+                        StringComparison.Ordinal))
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotSettingsAppearance();
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (destination.StartsWith("thx-audio", StringComparison.Ordinal))
+                    {
+                        await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (destination == "laptop" && Environment.GetEnvironmentVariable(
+                        "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE")?.StartsWith(
+                            "one-shot-", StringComparison.Ordinal) == true)
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (destination == "settings-experimental")
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (captureSnapTap)
+                    {
+                        snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (captureFeatureSnapshot || destination == "telemetry")
+                    {
+                        if (destination == "display-brightness-unavailable")
+                        {
+                            // Verify the known-to-unknown binding transition after template realization.
+                            snapshotMainWindow.ShowLocalizationSnapshotFeature("display-brightness-known");
+                            await WaitForSnapshotLayoutAsync();
+                        }
+                        if (destination == "telemetry" || destination.StartsWith("telemetry-", StringComparison.Ordinal))
+                        {
+                            await snapshotMainWindow.ViewModel.SetTelemetryEnabledAsync(destination != "telemetry-disabled");
+                        }
+                        snapshotMainWindow.ShowLocalizationSnapshotFeature(destination);
+                        if (captureTelemetrySource)
+                        {
+                            await snapshotMainWindow.PrepareLocalizationSnapshotTelemetrySourceAsync(
+                                destination,
+                                resolvedDirectory);
+                        }
+                        await WaitForSnapshotLayoutAsync();
+                        if (destination is "profiles-application-editor" or "profiles-application-editor-controls")
+                        {
+                            snapshotMainWindow.VerifyLocalizationSnapshotApplicationEditorLock();
+                        }
+                        if (destination is "display-brightness-known" or "display-brightness-unavailable")
+                        {
+                            var slider = FindPerformanceSmokeDescendant<Microsoft.UI.Xaml.Controls.Slider>(
+                                snapshotMainWindow.Content, "DisplayBrightnessSlider")
+                                ?? throw new InvalidOperationException("The brightness slider was not realized.");
+                            Visibility expected = destination == "display-brightness-known"
+                                ? Visibility.Visible : Visibility.Collapsed;
+                            if (slider.Parent is not XamlGrid host || host.Visibility != expected)
+                            {
+                                throw new InvalidOperationException("Brightness availability did not update the rendered slider host.");
+                            }
+                        }
+                        if (destination == "profiles-application-editor-controls")
+                        {
+                            snapshotMainWindow.ShowLocalizationSnapshotApplicationEditorControls();
+                            await WaitForSnapshotLayoutAsync();
+                        }
+                        if (destination == "profiles-application-discovery")
+                        {
+                            // Exercise real icon decoding using only this known local executable.
+                            // Fictional game fixtures keep their neutral fallback icons.
+                            var icon = await ApplicationExecutableIconLoader.LoadAsync(
+                                Environment.ProcessPath!, CancellationToken.None)
+                                ?? throw new InvalidOperationException("The local executable icon did not decode.");
+                            if (icon.PixelWidth <= 0 || icon.PixelHeight <= 0)
+                            {
+                                throw new InvalidOperationException("The decoded executable icon was empty.");
+                            }
+                        }
+                    }
+                    if (captureSnapTapInformation)
+                    {
+                        await SaveFlyoutSnapshotAsync(
+                            snapshotMainWindow,
+                            snapshotMainWindow.GetLocalizationSnapshotSnapTapInformation(),
+                            Path.Combine(resolvedDirectory, "snap-tap-information.png"));
+                    }
+                    if (destination is "telemetry-metrics" or "telemetry-color")
+                    {
+                        await SaveFlyoutSnapshotAsync(
+                            snapshotMainWindow,
+                            snapshotMainWindow.GetLocalizationSnapshotTelemetryFlyout(
+                                color: destination == "telemetry-color"),
+                            Path.Combine(resolvedDirectory, $"{destination}.png"));
+                    }
+                    if (captureTelemetryVariant || destination is "telemetry" or "telemetry-empty" or "telemetry-disabled")
+                    {
+                        snapshotMainWindow.VerifyLocalizationSnapshotTelemetry();
+                    }
+                    await SaveSnapshotAsync(
+                        snapshotMainWindow.Content,
+                        Path.Combine(resolvedDirectory, $"main-{destination}.png"));
                 }
-                if (destination == "laptop" && Environment.GetEnvironmentVariable(
-                    "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE")?.StartsWith(
-                        "one-shot-", StringComparison.Ordinal) == true)
+                finally
                 {
-                    snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
-                    await WaitForSnapshotLayoutAsync();
+                    if (captureTelemetrySource)
+                    {
+                        await snapshotMainWindow.CleanupLocalizationSnapshotTelemetrySourceAsync();
+                    }
                 }
-                if (destination == "settings-experimental")
-                {
-                    snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
-                    await WaitForSnapshotLayoutAsync();
-                }
-                if (captureSnapTap)
-                {
-                    snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
-                    await WaitForSnapshotLayoutAsync();
-                }
-                if (captureSnapTapInformation)
-                {
-                    await SaveFlyoutSnapshotAsync(
-                        snapshotMainWindow,
-                        snapshotMainWindow.GetLocalizationSnapshotSnapTapInformation(),
-                        Path.Combine(resolvedDirectory, "snap-tap-information.png"));
-                }
-                await SaveSnapshotAsync(
-                    snapshotMainWindow.Content,
-                    Path.Combine(resolvedDirectory, $"main-{destination}.png"));
             }
 
             if (string.IsNullOrWhiteSpace(requestedPage)
@@ -1046,9 +1241,88 @@ public partial class App
         await File.WriteAllBytesAsync(path, encoded);
     }
 
+    private static void SetSnapshotScrollIndicatorsToRest(DependencyObject element)
+    {
+        if (element is Microsoft.UI.Xaml.Controls.ScrollViewer viewer
+            && viewer.IsLoaded && viewer.ActualWidth > 0 && viewer.ActualHeight > 0)
+        {
+            // Two equal frames can precede the native indicator's delayed fade.
+            // Enter the shipped template's rest state directly for every capture;
+            // scrolling, offsets and page visibility settings remain unchanged.
+            if (!VisualStateManager.GoToState(viewer, "NoIndicator", useTransitions: false))
+            {
+                throw new InvalidOperationException(
+                    "A realized snapshot ScrollViewer has no NoIndicator visual state.");
+            }
+        }
+
+        if (element is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar scrollBar
+            && scrollBar.IsLoaded && scrollBar.ActualWidth > 0 && scrollBar.ActualHeight > 0)
+        {
+            // The viewer's NoIndicator state changes IndicatorMode, but the
+            // child scrollbar still runs its own delayed rest-state storyboard.
+            // Complete that native storyboard instead of changing layout or opacity.
+            CompleteSnapshotScrollBarRestState(scrollBar);
+        }
+
+        int childCount = VisualTreeHelper.GetChildrenCount(element);
+        for (int index = 0; index < childCount; index++)
+        {
+            SetSnapshotScrollIndicatorsToRest(VisualTreeHelper.GetChild(element, index));
+        }
+    }
+
+    private static void CompleteSnapshotScrollBarRestState(
+        Microsoft.UI.Xaml.Controls.Primitives.ScrollBar scrollBar)
+    {
+        if (!VisualStateManager.GoToState(scrollBar, "Collapsed", useTransitions: false)
+            || !VisualStateManager.GoToState(scrollBar, "NoIndicator", useTransitions: false))
+        {
+            throw new InvalidOperationException(
+                "A realized snapshot ScrollBar has no native rest states.");
+        }
+
+        bool indicatorStateCompleted = false;
+        int childCount = VisualTreeHelper.GetChildrenCount(scrollBar);
+        for (int index = 0; index < childCount; index++)
+        {
+            if (VisualTreeHelper.GetChild(scrollBar, index) is not FrameworkElement root)
+            {
+                continue;
+            }
+
+            foreach (VisualStateGroup group in VisualStateManager.GetVisualStateGroups(root))
+            {
+                if (group.Name is not ("ScrollingIndicatorStates" or "ConsciousStates"))
+                {
+                    continue;
+                }
+
+                string expectedState = group.Name == "ScrollingIndicatorStates"
+                    ? "NoIndicator"
+                    : "Collapsed";
+                if (group.CurrentState?.Name != expectedState)
+                {
+                    throw new InvalidOperationException(
+                        "A snapshot ScrollBar did not enter its native rest state.");
+                }
+
+                group.CurrentState.Storyboard?.SkipToFill();
+                indicatorStateCompleted |= group.Name == "ScrollingIndicatorStates";
+            }
+        }
+
+        if (!indicatorStateCompleted)
+        {
+            throw new InvalidOperationException(
+                "A realized snapshot ScrollBar has no indicator-state storyboard root.");
+        }
+    }
+
     private static async Task<LocalizationSnapshotFrame>
         CaptureCanonicalSnapshotFrameAsync(UIElement element)
     {
+        SetSnapshotScrollIndicatorsToRest(element);
         var bitmap = new RenderTargetBitmap();
         await bitmap.RenderAsync(element);
         if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)

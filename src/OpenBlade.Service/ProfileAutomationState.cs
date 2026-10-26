@@ -19,6 +19,8 @@ public sealed class ProfileAutomationState
     private BatteryPolicy? temporaryBatteryPolicy;
     private bool? temporaryBatteryProtectionEnabled;
     private bool temporaryFullCharge;
+    private Guid? activeApplicationProfileId;
+    private string? activeApplicationExecutablePath;
 
     public ProfileAutomationState(
         ProfileSet profiles,
@@ -91,6 +93,21 @@ public sealed class ProfileAutomationState
 
     public ProfileSet Profiles => profiles;
 
+    public Guid? ActiveApplicationProfileId => activeApplicationProfileId;
+
+    public LaptopBehaviorProfileSettings EffectiveLaptopBehavior
+    {
+        get
+        {
+            PowerProfile? baseline = GetActiveProfile();
+            return baseline is null
+                ? LaptopBehaviorProfileSettings.Unconfigured()
+                : ApplicationProfileResolution.Apply(
+                    baseline,
+                    GetApplicationOverride()).EffectiveLaptopBehavior;
+        }
+    }
+
     public PerformanceOverride? PerformanceOverride =>
         recoveredHyperBoostPerformance
             ?? persistentPerformance
@@ -113,6 +130,18 @@ public sealed class ProfileAutomationState
     {
         ArgumentNullException.ThrowIfNull(value);
         profiles = value;
+        if (activeApplicationProfileId.HasValue
+            && !profiles.ApplicationProfiles.Any(profile =>
+                profile.Enabled
+                && profile.Id == activeApplicationProfileId.Value
+                && string.Equals(
+                    profile.ExecutablePath,
+                    activeApplicationExecutablePath,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            activeApplicationProfileId = null;
+            activeApplicationExecutablePath = null;
+        }
         if (temporaryBatteryPolicy == value.BatteryPolicy)
         {
             temporaryBatteryPolicy = null;
@@ -167,6 +196,32 @@ public sealed class ProfileAutomationState
             CancelTemporaryFullCharge();
         }
 
+        return true;
+    }
+
+    public bool SetApplicationContext(string? executablePath)
+    {
+        Guid? next = null;
+        string? normalized = null;
+        if (!string.IsNullOrWhiteSpace(executablePath))
+        {
+            normalized = ApplicationProfileDefinition.NormalizeExecutablePath(executablePath);
+            next = profiles.ApplicationProfiles.FirstOrDefault(profile =>
+                profile.Enabled
+                && string.Equals(profile.ExecutablePath, normalized,
+                    StringComparison.OrdinalIgnoreCase))?.Id;
+        }
+        if (next == activeApplicationProfileId
+            && (!next.HasValue
+                || string.Equals(
+                    normalized,
+                    activeApplicationExecutablePath,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+        activeApplicationProfileId = next;
+        activeApplicationExecutablePath = next.HasValue ? normalized : null;
         return true;
     }
 
@@ -254,7 +309,7 @@ public sealed class ProfileAutomationState
         bool supportsManualFansOnLimitedPower)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
-        PowerProfile profile = PowerSource switch
+        PowerProfile baseProfile = PowerSource switch
         {
             PowerSource.PluggedIn => profiles.PluggedIn,
             PowerSource.Battery => profiles.Battery,
@@ -262,6 +317,10 @@ public sealed class ProfileAutomationState
             PowerSource.ExternalUnknown => CreateObservedFallbackProfile(confirmed),
             _ => throw new InvalidOperationException("The active power source is undefined."),
         };
+        ApplicationPowerProfileOverride? applicationOverride = GetApplicationOverride();
+        PowerProfile profile = ApplicationProfileResolution.Apply(
+            baseProfile,
+            applicationOverride);
         PerformanceOverride? activePersistentPerformance =
             persistentPerformance is { } persistent
             && IsPerformanceCompatibleWithSource(persistent.Value, PowerSource)
@@ -300,7 +359,12 @@ public sealed class ProfileAutomationState
                 : ResolvePerformance(
                     profile.Performance,
                     activeTemporaryPerformance,
-                    activePersistentPerformance);
+                    activePersistentPerformance,
+                    applicationOverride is { Performance: not null }
+                        or { CustomPerformance: not null }
+                        or { GpuClockTuning: not null }
+                        ? SettingValueSource.ApplicationProfile
+                        : SettingValueSource.PowerProfile);
         CustomPerformanceSettings? customPerformance = resolvedPerformance.Value
             == PerformancePreset.Custom
                 ? activeRecoveredPerformance?.CustomPerformance
@@ -335,7 +399,10 @@ public sealed class ProfileAutomationState
                 profile.Fans,
                 confirmed.Fans.GetValueOrDefault(),
                 activeTemporaryFans,
-                activePersistentFans);
+                activePersistentFans,
+                applicationOverride is { Fans: not null } or { FanControl: not null }
+                    ? SettingValueSource.ApplicationProfile
+                    : SettingValueSource.PowerProfile);
         if (PowerSource == PowerSource.UsbC
             && !FanControlPowerPolicy.IsAvailable(PowerSource, resolvedFans.Value,
                 supportsManualFansOnLimitedPower))
@@ -345,7 +412,10 @@ public sealed class ProfileAutomationState
             resolvedFans = new(FanMode.Automatic, SettingValueSource.PowerProfile);
         }
         ResolvedSetting<LightingSettings> resolvedLighting =
-            ResolveLighting(profile, confirmed);
+            ResolveLighting(
+                profile,
+                confirmed,
+                applicationOverride?.Lighting is not null);
         FanControlSettings profileFanControl = profile.FanControl
             ?? FanControlSettings.FromLegacy(profile.Fans);
         FanControlSettings selectedFanControl = resolvedFans.Source switch
@@ -375,7 +445,8 @@ public sealed class ProfileAutomationState
 
     private ResolvedSetting<LightingSettings> ResolveLighting(
         PowerProfile profile,
-        ConfirmedDeviceState confirmed)
+        ConfirmedDeviceState confirmed,
+        bool fromApplication)
     {
         if (PowerSource == PowerSource.ExternalUnknown)
         {
@@ -392,7 +463,10 @@ public sealed class ProfileAutomationState
             profile.Lighting,
             confirmed.Lighting ?? profile.Lighting,
             temporaryLighting,
-            persistentLighting);
+            persistentLighting,
+            fromApplication
+                ? SettingValueSource.ApplicationProfile
+                : SettingValueSource.PowerProfile);
     }
 
     private static FanControlSettings WithMode(
@@ -468,7 +542,8 @@ public sealed class ProfileAutomationState
     private static ResolvedSetting<PerformancePreset> ResolvePerformance(
         PerformancePreset profileValue,
         PerformanceOverride? temporaryOverride,
-        PerformanceOverride? persistentOverride)
+        PerformanceOverride? persistentOverride,
+        SettingValueSource profileSource)
     {
         if (persistentOverride is not null)
         {
@@ -486,7 +561,18 @@ public sealed class ProfileAutomationState
 
         return new ResolvedSetting<PerformancePreset>(
             profileValue,
-            SettingValueSource.PowerProfile);
+            profileSource);
+    }
+
+    private ApplicationPowerProfileOverride? GetApplicationOverride()
+    {
+        if (!activeApplicationProfileId.HasValue)
+        {
+            return null;
+        }
+        return profiles.ApplicationProfiles.FirstOrDefault(profile =>
+                profile.Enabled && profile.Id == activeApplicationProfileId.Value)
+            ?.Overrides.ForPowerSource(PowerSource);
     }
 
     private static void SetOverride(

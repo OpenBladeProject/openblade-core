@@ -4,7 +4,11 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
+    <ProjectReference Include="..\OpenBlade.Platform\OpenBlade.Platform.csproj" />
     <ProjectReference Include="..\OpenBlade.Session\OpenBlade.Session.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="ThirdParty\LzmaSdk\LICENSE.txt" Link="Licenses\LzmaSdk.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeIncludePseudoLocalization)' == 'false'">
     <EmbeddedResource Remove="Properties\Resources.qps-ploc.resx" />

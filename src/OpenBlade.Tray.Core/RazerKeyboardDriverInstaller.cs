@@ -1,15 +1,21 @@
 using System.ComponentModel;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
 public enum RazerDriverInstallOutcome
 {
-    Installed = 0, Failed = 1, Unavailable = 2, RecoveryRequired = 4, Canceled = 1602, RestartRequired = 3010, AcPowerRequired = 10, RazerSoftwareRunning = 11,
+    Installed = 0, Failed = 1, Unavailable = 2, RecoveryRequired = 4, Canceled = 1602, RestartRequired = 3010, AcPowerRequired = 10, RazerSoftwareRunning = 11, WindowsUpdateUnavailable = 12, WindowsUpdateRefused = 13,
 }
 
 internal sealed record RazerDriverInventoryEntry(string PublishedName, string Sha256);
 internal sealed record RazerDriverInstallSnapshot(
-    bool Admitted, bool Installed, IReadOnlyList<RazerDriverInventoryEntry> Inventory, string Evidence, RazerDriverInstallOutcome AdmissionFailure = RazerDriverInstallOutcome.Unavailable);
+    bool Admitted, bool Installed, IReadOnlyList<RazerDriverInventoryEntry> Inventory, string Evidence, RazerDriverInstallOutcome AdmissionFailure = RazerDriverInstallOutcome.Unavailable)
+{
+    internal string? RecipeId { get; init; }
+    internal DiagnosticFailure? FailureDetail { get; init; }
+    internal IReadOnlyList<RazerKeyboardWindowsUpdateTarget> WindowsUpdateTargets { get; init; } = [];
+}
 internal sealed record RazerDriverMutation(string RelativeInf, bool Bind);
 internal sealed record RazerDriverMutationResult(int ExitCode, string Output);
 
@@ -21,36 +27,57 @@ internal interface IRazerDriverInstallJournal : IDisposable
     void Intent(RazerDriverMutation operation);
     void RecordResult(RazerDriverMutationResult result);
     void Observe(RazerDriverMutationResult result, RazerDriverInstallSnapshot after);
+    void WindowsUpdateIntent(RazerKeyboardWindowsUpdateSelection selection) => throw new InvalidOperationException("The journal cannot record Windows Update intent.");
+    void WindowsUpdateObserve(RazerKeyboardWindowsUpdateResult result, RazerDriverInstallSnapshot after) => throw new InvalidOperationException("The journal cannot record Windows Update results.");
     void Complete();
 }
 
 internal interface IRazerDriverInstallPlatform
 {
     RazerDriverInstallSnapshot Capture();
+    RazerDriverInstallSnapshot CaptureForWindowsUpdate() => Capture();
     bool HasUnfinishedTransaction();
     IRazerDriverInstallJournal OpenJournal();
-    Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken);
+    Task<string> AcquireVerifiedAsync(string destination, RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken);
     Task<RazerDriverMutationResult> MutateAsync(string root, RazerDriverMutation operation,
-        CancellationToken cancellationToken);
+        RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken);
 }
 
 /// <summary>Fixed-operation elevated installer. No user-supplied package, path, or command is accepted.</summary>
-public sealed class RazerKeyboardDriverInstaller
+public sealed partial class RazerKeyboardDriverInstaller
 {
     private readonly IRazerDriverInstallPlatform platform;
-    public RazerKeyboardDriverInstaller() : this(new WindowsRazerDriverInstallPlatform()) { }
-    internal RazerKeyboardDriverInstaller(IRazerDriverInstallPlatform platform) => this.platform = platform;
+    private readonly IRazerKeyboardWindowsUpdateSource? windowsUpdate;
+    private readonly Func<CancellationToken, Task> waitForWindowsUpdateReadback;
+    public RazerKeyboardDriverInstaller() : this(new WindowsRazerDriverInstallPlatform(),
+        new RazerKeyboardWindowsUpdateSource(() => new RazerKeyboardWindowsUpdateNativeSession(),
+            WindowsRazerDriverInstallPlatform.ReviewedWindowsUpdateHardwareIds))
+    { }
+    // The internal overload also keeps the pinned installer independently testable without WUA activation.
+    internal RazerKeyboardDriverInstaller(IRazerDriverInstallPlatform platform, IRazerKeyboardWindowsUpdateSource? windowsUpdate = null,
+        Func<CancellationToken, Task>? waitForWindowsUpdateReadback = null)
+    {
+        this.platform = platform;
+        this.windowsUpdate = windowsUpdate;
+        this.waitForWindowsUpdateReadback = waitForWindowsUpdateReadback
+            ?? (cancellationToken => Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken));
+    }
 
     public static RazerDriverInstallationInspection Inspect()
     {
         try
         {
-            var snapshot = WindowsRazerDriverInstallPlatform.Capture(requireElevation: false);
-            return new(snapshot.Admitted, snapshot.Installed, snapshot.AdmissionFailure);
+            var snapshot = WindowsRazerDriverInstallPlatform.Capture(requireElevation: false, windowsUpdate: true);
+            return new(snapshot.Admitted, snapshot.Installed, snapshot.AdmissionFailure) { FailureDetail = snapshot.FailureDetail };
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or Win32Exception or InvalidOperationException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or Win32Exception or InvalidOperationException
+            or System.Security.Cryptography.CryptographicException)
         {
-            return new(false, false, RazerDriverInstallOutcome.Unavailable);
+            DiagnosticTrace.TraceException(nameof(RazerKeyboardDriverInstaller), "Inspect", exception);
+            return new(false, false, RazerDriverInstallOutcome.Unavailable)
+            {
+                FailureDetail = DiagnosticFailure.FromException("RazerDriverInstall", "Inspect", "Inspection", "InspectionFailed", exception),
+            };
         }
     }
 
@@ -60,10 +87,16 @@ public sealed class RazerKeyboardDriverInstaller
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            RazerDriverInstallSnapshot baseline = platform.Capture();
+            RazerDriverInstallSnapshot baseline = windowsUpdate is null ? platform.Capture() : platform.CaptureForWindowsUpdate();
             if (!baseline.Admitted)
             {
+                TraceBlocked(baseline);
                 return baseline.AdmissionFailure;
+            }
+            RazerKeyboardDriverRecipe? recipe = RazerKeyboardDriverRecipes.FindById(baseline.RecipeId);
+            if (recipe is null)
+            {
+                return RazerDriverInstallOutcome.Unavailable;
             }
 
             if (platform.HasUnfinishedTransaction())
@@ -84,13 +117,29 @@ public sealed class RazerKeyboardDriverInstaller
                 return RazerDriverInstallOutcome.RecoveryRequired;
             }
 
-            string root = await platform.AcquireVerifiedAsync(journal.PackageDestination, cancellationToken)
+            if (windowsUpdate is not null)
+            {
+                RazerDriverInstallOutcome? updateOutcome = await InstallWindowsUpdateAsync(baseline, recipe, journal,
+                    value => possiblySubmitted = value, cancellationToken).ConfigureAwait(false);
+                if (updateOutcome is { } outcome) { return outcome; }
+                // Only an initial, successful search with no matching offers reaches this fallback.
+                // Fresh fixed-package admission still refuses incompatible existing files.
+                baseline = platform.Capture();
+                if (!MatchesRecipe(baseline, recipe))
+                {
+                    TraceBlocked(baseline);
+                    return baseline.AdmissionFailure;
+                }
+            }
+
+            string root = await platform.AcquireVerifiedAsync(journal.PackageDestination, recipe, cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             baseline = platform.Capture();
-            if (!baseline.Admitted)
+            if (!MatchesRecipe(baseline, recipe))
             {
-                return baseline.AdmissionFailure;
+                TraceBlocked(baseline);
+                return baseline.Admitted ? RazerDriverInstallOutcome.Unavailable : baseline.AdmissionFailure;
             }
 
             if (baseline.Installed)
@@ -99,23 +148,24 @@ public sealed class RazerKeyboardDriverInstaller
             }
 
             journal.Begin(baseline);
-            foreach (RazerDriverMutation operation in Operations())
+            foreach (RazerDriverMutation operation in Operations(recipe))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 RazerDriverInstallSnapshot before = platform.Capture();
-                if (!before.Admitted)
+                if (!MatchesRecipe(before, recipe))
                 {
                     if (!possiblySubmitted)
                     {
                         journal.Complete();
                     }
 
-                    return possiblySubmitted ? RazerDriverInstallOutcome.RecoveryRequired : before.AdmissionFailure;
+                    return possiblySubmitted ? RazerDriverInstallOutcome.RecoveryRequired
+                        : before.Admitted ? RazerDriverInstallOutcome.Unavailable : before.AdmissionFailure;
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 journal.Intent(operation); // Stable-storage flush precedes native submission.
                 possiblySubmitted = true;
-                RazerDriverMutationResult result = await platform.MutateAsync(root, operation, cancellationToken)
+                RazerDriverMutationResult result = await platform.MutateAsync(root, operation, recipe, cancellationToken)
                     .ConfigureAwait(false);
                 journal.RecordResult(result);
                 if (result.ExitCode == 3010)
@@ -126,13 +176,13 @@ public sealed class RazerKeyboardDriverInstaller
                 RazerDriverInstallSnapshot after = platform.Capture();
                 journal.Observe(result, after);
 
-                if (result.ExitCode != 0 || !after.Admitted)
+                if (result.ExitCode != 0 || !MatchesRecipe(after, recipe))
                 {
                     return RazerDriverInstallOutcome.RecoveryRequired;
                 }
             }
             RazerDriverInstallSnapshot final = platform.Capture();
-            if (!final.Admitted || !final.Installed)
+            if (!MatchesRecipe(final, recipe) || !final.Installed)
             {
                 return RazerDriverInstallOutcome.RecoveryRequired;
             }
@@ -144,15 +194,25 @@ public sealed class RazerKeyboardDriverInstaller
         {
             return possiblySubmitted ? RazerDriverInstallOutcome.RecoveryRequired : RazerDriverInstallOutcome.Canceled;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException
             or InvalidOperationException or Win32Exception or System.Security.Cryptography.CryptographicException
             or System.Text.Json.JsonException or TimeoutException or HttpRequestException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(RazerKeyboardDriverInstaller),
+                "InstallAsync",
+                exception,
+                possiblySubmitted ? "A driver installation may have been submitted." : "No driver installation was submitted.");
             return possiblySubmitted ? RazerDriverInstallOutcome.RecoveryRequired : RazerDriverInstallOutcome.Failed;
         }
     }
 
-    internal static IEnumerable<RazerDriverMutation> Operations() =>
-        RazerKeyboardDriverPackage.StageOrder.Select(path => new RazerDriverMutation(path, false))
-            .Concat(RazerKeyboardDriverPackage.InstallOrder.Select(path => new RazerDriverMutation(path, true)));
+    private static bool MatchesRecipe(RazerDriverInstallSnapshot snapshot, RazerKeyboardDriverRecipe recipe) =>
+        snapshot.Admitted && string.Equals(snapshot.RecipeId, recipe.Id, StringComparison.Ordinal);
+
+    internal static IEnumerable<RazerDriverMutation> Operations() => Operations(RazerKeyboardDriverRecipes.Pid02E0);
+
+    internal static IEnumerable<RazerDriverMutation> Operations(RazerKeyboardDriverRecipe recipe) =>
+        recipe.StageOrder.Select(path => new RazerDriverMutation(path, false))
+            .Concat(recipe.InstallOrder.Select(path => new RazerDriverMutation(path, true)));
 }

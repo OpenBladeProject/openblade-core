@@ -58,6 +58,10 @@ internal static class RazerServiceStopOperation
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.RazerServiceStopOperation",
+                "EnumerateServices",
+                exception);
             return new([], $"Windows service enumeration failed: {exception.Message}");
         }
 
@@ -84,6 +88,10 @@ internal static class RazerServiceStopOperation
                 }
                 catch (Exception exception)
                 {
+                    DiagnosticTrace.TraceException(
+                        "OpenBlade.Tray.RazerServiceStopOperation",
+                        "InspectService",
+                        exception);
                     return new([], $"A matched Razer service could not be inspected: {exception.Message}");
                 }
             }
@@ -200,6 +208,10 @@ internal static class RazerServiceStopOperation
             }
             catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.RazerServiceStopOperation",
+                    "StopService",
+                    exception);
                 failures.Add(new(
                     candidate.ServiceName,
                     candidate.DisplayName,

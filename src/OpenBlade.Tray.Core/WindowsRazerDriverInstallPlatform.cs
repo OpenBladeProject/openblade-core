@@ -6,99 +6,54 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
-public sealed record RazerDriverInstallationInspection(bool Admitted, bool Installed, RazerDriverInstallOutcome AdmissionFailure);
-
-internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPlatform
+public sealed record RazerDriverInstallationInspection(bool Admitted, bool Installed, RazerDriverInstallOutcome AdmissionFailure)
 {
-    private const string UsbKeyboard = @"USB\VID_1532&PID_02E0&MI_01\";
-    private const string UsbMouse = @"USB\VID_1532&PID_02E0&MI_02\";
-    private const string Keyboard = @"HID\VID_1532&PID_02E0&MI_01&COL01\";
-    private const string Mouse = @"HID\VID_1532&PID_02E0&MI_02\";
-    private const string Virtual = @"RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03\";
-    private const string Control = @"RZCONTROL\VID_1532&PID_02E0&MI_00\";
+    public DiagnosticFailure? FailureDetail { get; init; }
+}
+
+internal sealed partial class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPlatform
+{
     private static readonly string[] Controllers = ["RazerAppEngine", "Razer Synapse Service", "RazerSynapseService", "Razer Synapse 3", "Razer Synapse"];
 
 
     internal sealed record Device(string Id, Guid Container, string Service, string[] Upper, string[] Lower,
-        string[] Ancestors, uint Status, uint Problem, string? InfHash);
+        string[] Ancestors, uint Status, uint Problem, string? InfHash)
+    {
+        public bool MatchesCommonHardware { get; init; }
+        public IReadOnlyList<string> HardwareIds { get; init; } = [];
+    }
 
     public RazerDriverInstallSnapshot Capture() => Capture(requireElevation: true);
 
-    internal static RazerDriverInstallSnapshot Capture(bool requireElevation)
-    {
-        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
-        if (requireElevation && !new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
-        {
-            return Unavailable();
-        }
-
-        using RegistryKey registry = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
-        foreach (string key in new[] { @"HARDWARE\DESCRIPTION\System\BIOS", @"SYSTEM\CurrentControlSet\Control\SystemInformation" })
-        {
-            using RegistryKey? values = registry.OpenSubKey(key);
-            if (values is null || values.GetValue("SystemManufacturer") as string != "Razer"
-                || values.GetValue("SystemProductName") as string != "Blade 16 - RZ09-0581")
-            {
-                return Unavailable();
-            }
-        }
-        if (!ProcessIdToSessionId((uint)Environment.ProcessId, out uint session)
-            || session == 0 || session == uint.MaxValue || session != WTSGetActiveConsoleSessionId())
-        {
-            return Unavailable();
-        }
-
-        if (!GetSystemPowerStatus(out PowerStatus power))
-        {
-            throw NativeError();
-        }
-
-        if (power.AcLineStatus != 1)
-        {
-            return Unavailable(RazerDriverInstallOutcome.AcPowerRequired);
-        }
-
-        if (HasController())
-        {
-            return Unavailable(RazerDriverInstallOutcome.RazerSoftwareRunning);
-        }
-
-        List<Device> devices = ReadDevices(registry);
-        if (!TryAdmitTree(devices, out Guid container))
-        {
-            return Unavailable();
-        }
-
-        string drivers = Path.Combine(Environment.SystemDirectory, "drivers");
-        string? commonHash = HashFile(Path.Combine(drivers, "RzCommon.sys"));
-        string? deviceHash = HashFile(Path.Combine(drivers, "RzDev_02e0.sys"));
-        if ((commonHash is not null && !Equal(commonHash, CommonHash))
-            || (deviceHash is not null && !Equal(deviceHash, DeviceHash)))
-        {
-            return Unavailable();
-        }
-
-        var inventory = ReadInventory();
-        bool installed = IsInstalled(devices, container, commonHash, deviceHash) && ServiceBinariesMatch(registry);
-        return new(true, installed, inventory, JsonSerializer.Serialize(devices));
-    }
-
-    private static RazerDriverInstallSnapshot Unavailable(RazerDriverInstallOutcome reason = RazerDriverInstallOutcome.Unavailable)
-        => new(false, false, [], string.Empty, reason);
+    public RazerDriverInstallSnapshot CaptureForWindowsUpdate() => Capture(requireElevation: true, windowsUpdate: true);
 
     internal const string CommonHash = "64B72EF9CE409BB17D31096C119B68C4A6A02AB35B7535D763157A4E1A587E59";
     internal const string DeviceHash = "BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787";
 
-    internal static bool TryAdmitTree(List<Device> devices, out Guid container)
+    internal static bool TryAdmitTree(List<Device> devices, out Guid container) =>
+        TryAdmitTree(devices, RazerKeyboardDriverRecipes.Pid02E0, out container);
+
+    internal static bool TryAdmitTree(List<Device> devices, RazerKeyboardDriverRecipe recipe, out Guid container)
+        => TryAdmitTree(devices, recipe, out container, out _);
+
+    internal static bool TryAdmitTree(List<Device> devices, RazerKeyboardDriverRecipe recipe,
+        out Guid container, out DiagnosticFailure? failure)
     {
+        failure = null;
+        string usbKeyboard = $@"USB\VID_1532&PID_{recipe.ProductId}&MI_01\";
+        string usbMouse = $@"USB\VID_1532&PID_{recipe.ProductId}&MI_02\";
+        string keyboard = $@"HID\VID_1532&PID_{recipe.ProductId}&MI_01&COL01\";
+        string mouse = $@"HID\VID_1532&PID_{recipe.ProductId}&MI_02\";
         container = Guid.Empty;
-        Device[] keyboards = Matches(devices, UsbKeyboard), mice = Matches(devices, UsbMouse),
-            collections = Matches(devices, Keyboard), mouseCollections = Matches(devices, Mouse);
+        Device[] keyboards = Matches(devices, usbKeyboard), mice = Matches(devices, usbMouse),
+            collections = Matches(devices, keyboard), mouseCollections = Matches(devices, mouse);
         if (keyboards.Length != 1 || mice.Length != 1 || collections.Length != 1 || mouseCollections.Length != 1)
         {
+            failure = InspectionFailure("Topology", "PhysicalOrCollectionCountMismatch", recipe, devices);
             return false;
         }
 
@@ -108,67 +63,163 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
             || !collections[0].Ancestors.Contains(keyboards[0].Id, StringComparer.OrdinalIgnoreCase)
             || !mouseCollections[0].Ancestors.Contains(mice[0].Id, StringComparer.OrdinalIgnoreCase)
             || !keyboards[0].Ancestors.Intersect(mice[0].Ancestors, StringComparer.OrdinalIgnoreCase)
-                .Any(id => id.StartsWith(@"USB\VID_1532&PID_02E0\", StringComparison.OrdinalIgnoreCase)))
+                .Any(id => id.StartsWith($@"USB\VID_1532&PID_{recipe.ProductId}\", StringComparison.OrdinalIgnoreCase)))
         {
+            failure = InspectionFailure("Topology", "ContainerOrAncestryMismatch", recipe, devices);
+            return false;
+        }
+        if (!CommonTargetsMatch(devices, recipe, container))
+        {
+            failure = InspectionFailure("Topology", "UnscopedCommonDevice", recipe, devices);
+            return false;
+        }
+        if (!WindowsUpdateTargetsAdmitted(devices, recipe, container))
+        {
+            failure = InspectionFailure("Topology", "UnscopedWindowsUpdateTarget", recipe, devices);
             return false;
         }
         // The clean inbox stack or the reviewed filters are the only repair targets.
-        // Unknown filters and newer driver binaries must not be overwritten by this package.
-        return AllowedFilter(keyboards[0].Lower, "RzDev_02e0")
+        // A failed physical stack or an unrelated filter must not be overwritten.
+        if (new[] { keyboards[0], mice[0], collections[0], mouseCollections[0] }
+            .Any(device => device.Problem != 0 || (device.Status & 8) == 0))
+        {
+            failure = InspectionFailure("Topology", "PhysicalDeviceNotReady", recipe, devices);
+            return false;
+        }
+        if (!AdmitOptionalChild(devices, $@"RZCONTROL\VID_1532&PID_{recipe.ProductId}&MI_00\",
+                container, usbMouse, "RzCommon", upperFilter: null)
+            || !AdmitOptionalChild(devices, $@"RZVIRTUAL\VID_1532&PID_{recipe.ProductId}&MI_00&COL03\",
+                container, usbKeyboard, recipe.DeviceService, upperFilter: "mshidkmdf"))
+        {
+            failure = InspectionFailure("Topology", "OptionalChildBindingMismatch", recipe, devices);
+            return false;
+        }
+        bool admitted = Equal(keyboards[0].Service, "HidUsb") && Equal(mice[0].Service, "HidUsb")
+            && Equal(collections[0].Service, "kbdhid") && Equal(mouseCollections[0].Service, "mouhid")
+            && mice[0].Upper.Length == 0 && mice[0].Lower.Length == 0
+            && AllowedFilter(keyboards[0].Lower, recipe.DeviceService)
             && keyboards[0].Upper.Length == 0 && collections[0].Lower.Length == 0
-            && AllowedFilter(collections[0].Upper, "RzDev_02e0")
-            && AllowedFilter(mouseCollections[0].Upper, "RzDev_02e0") && mouseCollections[0].Lower.Length == 0;
+            && AllowedFilter(collections[0].Upper, recipe.DeviceService)
+            && AllowedFilter(mouseCollections[0].Upper, recipe.DeviceService) && mouseCollections[0].Lower.Length == 0;
+        if (!admitted)
+        {
+            failure = InspectionFailure("Topology", "ServiceOrFilterMismatch", recipe, devices);
+        }
+        return admitted;
     }
+    private static bool CommonTargetsMatch(List<Device> devices, RazerKeyboardDriverRecipe recipe, Guid container) =>
+        // The common INF matches RAZER\DeviceContol, not a model-specific hardware ID.
+        // PnPUtil /install updates all matching devices; require every such target to be
+        // the admitted laptop's own control child before staging or binding any package.
+        devices.Where(device => device.MatchesCommonHardware).All(device =>
+            device.Id.StartsWith($@"RZCONTROL\VID_1532&PID_{recipe.ProductId}&MI_00\", StringComparison.OrdinalIgnoreCase)
+            && device.Container == container
+            && device.Ancestors.Any(id => id.StartsWith(
+                $@"USB\VID_1532&PID_{recipe.ProductId}&MI_02\", StringComparison.OrdinalIgnoreCase)));
+
+    private static bool AdmitOptionalChild(List<Device> devices, string prefix, Guid container,
+        string ancestorPrefix, string service, string? upperFilter)
+    {
+        Device[] children = Matches(devices, prefix);
+        return children.Length == 0 || children.Length == 1
+            && children[0].Container == container
+            && (string.IsNullOrEmpty(children[0].Service) || Equal(children[0].Service, service))
+            // The reviewed virtual consumer INF uses the Windows HID KMDF upper filter.
+            // Its unbound child can have no filter yet; readback below requires mshidkmdf.
+            && (upperFilter is null ? children[0].Upper.Length == 0 : AllowedFilter(children[0].Upper, upperFilter))
+            && children[0].Lower.Length == 0
+            && children[0].Ancestors.Any(id => id.StartsWith(ancestorPrefix, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool AllowedFilter(string[] filters, string expected) => filters.Length == 0 || Only(filters, expected);
     private static bool Only(string[] filters, string expected) => filters.Length == 1 && Equal(filters[0], expected);
     private static bool Equal(string? value, string expected) => string.Equals(value, expected, StringComparison.OrdinalIgnoreCase);
     private static Device[] Matches(IEnumerable<Device> devices, string prefix) =>
         devices.Where(device => device.Id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToArray();
 
-    internal static bool IsInstalled(List<Device> devices, Guid container, string? commonHash, string? deviceHash)
+    internal static bool IsInstalled(List<Device> devices, Guid container, string? commonHash, string? deviceHash) =>
+        IsInstalled(devices, container, commonHash, deviceHash, RazerKeyboardDriverRecipes.Pid02E0);
+
+    internal static bool IsInstalled(List<Device> devices, Guid container, string? commonHash, string? deviceHash,
+        RazerKeyboardDriverRecipe recipe) => IsInstalled(devices, container, commonHash, deviceHash, recipe, requirePinnedFiles: true);
+
+    private static bool IsInstalled(List<Device> devices, Guid container, string? commonHash, string? deviceHash,
+        RazerKeyboardDriverRecipe recipe, bool requirePinnedFiles)
     {
-        Device[] usb = Matches(devices, UsbKeyboard), keyboard = Matches(devices, Keyboard), mouse = Matches(devices, Mouse),
-            controls = Matches(devices, Control), virtuals = Matches(devices, Virtual);
-        if (usb.Length != 1 || keyboard.Length != 1 || mouse.Length != 1 || controls.Length != 1 || virtuals.Length != 1)
+        string usbKeyboard = $@"USB\VID_1532&PID_{recipe.ProductId}&MI_01\";
+        string usbMouse = $@"USB\VID_1532&PID_{recipe.ProductId}&MI_02\";
+        string keyboardPrefix = $@"HID\VID_1532&PID_{recipe.ProductId}&MI_01&COL01\";
+        string mousePrefix = $@"HID\VID_1532&PID_{recipe.ProductId}&MI_02\";
+        string controlPrefix = $@"RZCONTROL\VID_1532&PID_{recipe.ProductId}&MI_00\";
+        string virtualPrefix = $@"RZVIRTUAL\VID_1532&PID_{recipe.ProductId}&MI_00&COL03\";
+        Device[] usb = Matches(devices, usbKeyboard), keyboard = Matches(devices, keyboardPrefix), mouse = Matches(devices, mousePrefix),
+            controls = Matches(devices, controlPrefix), virtuals = Matches(devices, virtualPrefix), usbMice = Matches(devices, usbMouse);
+        if (usb.Length != 1 || keyboard.Length != 1 || mouse.Length != 1 || controls.Length != 1 || virtuals.Length != 1 || usbMice.Length != 1)
         {
             return false;
         }
 
-        Device[] stack = [usb[0], keyboard[0], mouse[0], controls[0], virtuals[0]];
+        Device[] stack = [usb[0], usbMice[0], keyboard[0], mouse[0], controls[0], virtuals[0]];
         if (stack.Any(device => device.Container != container || device.Problem != 0 || (device.Status & 8) == 0))
         {
             return false;
         }
 
-        if (!Only(usb[0].Lower, "RzDev_02e0") || !Only(keyboard[0].Upper, "RzDev_02e0")
-            || !Only(mouse[0].Upper, "RzDev_02e0") || !Equal(controls[0].Service, "RzCommon")
-            || !Equal(virtuals[0].Service, "RzDev_02e0")
-            || !controls[0].Ancestors.Any(id => id.StartsWith(UsbMouse, StringComparison.OrdinalIgnoreCase))
-            || !virtuals[0].Ancestors.Any(id => id.StartsWith(UsbKeyboard, StringComparison.OrdinalIgnoreCase)))
+        if (!Equal(usb[0].Service, "HidUsb") || !Equal(usbMice[0].Service, "HidUsb")
+            || !Equal(keyboard[0].Service, "kbdhid") || !Equal(mouse[0].Service, "mouhid")
+            || !Only(usb[0].Lower, recipe.DeviceService) || !Only(keyboard[0].Upper, recipe.DeviceService)
+            || !Only(mouse[0].Upper, recipe.DeviceService) || !Equal(controls[0].Service, "RzCommon")
+            || !Equal(virtuals[0].Service, recipe.DeviceService)
+            || !Only(virtuals[0].Upper, "mshidkmdf")
+            || !controls[0].Ancestors.Any(id => id.StartsWith(usbMouse, StringComparison.OrdinalIgnoreCase))
+            || !virtuals[0].Ancestors.Any(id => id.StartsWith(usbKeyboard, StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
 
+        if (!requirePinnedFiles)
+        {
+            return true;
+        }
         foreach ((Device device, string part) in new[] { (usb[0], "dkm"), (keyboard[0], "kbd"), (mouse[0], "mou"),
             (controls[0], "common"), (virtuals[0], "vcon") })
         {
-            string name = part == "common" ? "rzcommonu.inf" : $"rzdevu_02e0_{part}.inf";
-            var pin = RazerKeyboardDriverPackage.Files.Single(file => Equal(Path.GetFileName(file.RelativePath), name));
+            string inf = recipe.InfFor(part);
+            var pin = recipe.Files.Single(file => Equal(file.RelativePath, inf));
             if (!Equal(device.InfHash, pin.Sha256))
             {
                 return false;
             }
         }
-        return Equal(commonHash, CommonHash) && Equal(deviceHash, DeviceHash);
+        return Equal(commonHash, recipe.CommonHash) && Equal(deviceHash, recipe.DeviceHash);
     }
 
-    private static bool ServiceBinariesMatch(RegistryKey registry)
+    private static bool ServiceBindingsAdmitted(RegistryKey registry, RazerKeyboardDriverRecipe recipe)
     {
-        foreach (string name in new[] { "RzCommon", "RzDev_02e0" })
+        foreach (string name in new[] { "RzCommon", recipe.DeviceService })
         {
             using RegistryKey? service = registry.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + name);
+            int? type = service?.GetValue("Type") is int value ? value : null;
             string? path = service?.GetValue("ImagePath", null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
-            if (!Equal(path, @"\SystemRoot\System32\drivers\" + name + ".sys"))
+            if (!AdmitServiceBinding(service is not null, type, path, name))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    internal static bool AdmitServiceBinding(bool present, int? type, string? imagePath, string expectedService) =>
+        !present || type == 1 && Equal(imagePath, @"\SystemRoot\System32\drivers\" + expectedService + ".sys");
+
+    private static bool ServiceBinariesMatch(RegistryKey registry, RazerKeyboardDriverRecipe recipe)
+    {
+        foreach (string name in new[] { "RzCommon", recipe.DeviceService })
+        {
+            using RegistryKey? service = registry.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + name);
+            int? type = service?.GetValue("Type") is int value ? value : null;
+            string? path = service?.GetValue("ImagePath", null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+            if (service is null || !AdmitServiceBinding(true, type, path, name))
             {
                 return false;
             }
@@ -182,23 +233,30 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
         {
             // Sharing failures include another live installer; unreadable/partial records cannot
             // establish that a previous native operation completed. Never replay either case.
+            DiagnosticTrace.TraceException(
+                nameof(WindowsRazerDriverInstallPlatform),
+                "InspectInstallJournal",
+                exception);
             return true;
         }
     }
     public IRazerDriverInstallJournal OpenJournal() => new RazerDriverInstallJournal();
 
-    public Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken)
+    public Task<string> AcquireVerifiedAsync(string destination, RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken)
     {
+        RequireKnownRecipe(recipe);
         RazerDriverInstallJournal.EnsureProtectedDirectory(destination);
-        return RazerKeyboardDriverPackage.AcquireVerifiedAsync(destination, cancellationToken);
+        return RazerKeyboardDriverPackage.AcquireVerifiedAsync(destination, recipe, cancellationToken);
     }
 
-    public async Task<RazerDriverMutationResult> MutateAsync(string root, RazerDriverMutation operation, CancellationToken cancellationToken)
+    public async Task<RazerDriverMutationResult> MutateAsync(string root, RazerDriverMutation operation,
+        RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken)
     {
+        RequireKnownRecipe(recipe);
         string fullRoot = Path.GetFullPath(root);
         string allowedRoot = Path.GetFullPath(RazerDriverInstallJournal.Root) + Path.DirectorySeparatorChar;
         if (!fullRoot.StartsWith(allowedRoot, StringComparison.OrdinalIgnoreCase)
-            || !RazerKeyboardDriverInstaller.Operations().Contains(operation))
+            || !RazerKeyboardDriverInstaller.Operations(recipe).Contains(operation))
         {
             throw new UnauthorizedAccessException("Unrecognized driver operation.");
         }
@@ -211,7 +269,7 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
             throw new UnauthorizedAccessException();
         }
 
-        foreach (var pin in RazerKeyboardDriverPackage.Files)
+        foreach (var pin in recipe.Files)
         {
             string pinnedPath = Path.Combine(fullRoot, pin.RelativePath);
             RazerDriverInstallJournal.RejectReparse(pinnedPath);
@@ -221,7 +279,8 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
             }
         }
         cancellationToken.ThrowIfCancellationRequested();
-        if (!Capture().Admitted)
+        RazerDriverInstallSnapshot admission = Capture();
+        if (!admission.Admitted || !string.Equals(admission.RecipeId, recipe.Id, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Fresh driver-install admission failed.");
         }
@@ -258,6 +317,14 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
             await timeout.CancelAsync().ConfigureAwait(false);
             try { await Task.WhenAll(output, error).ConfigureAwait(false); } catch (Exception) { }
             throw;
+        }
+    }
+
+    private static void RequireKnownRecipe(RazerKeyboardDriverRecipe recipe)
+    {
+        if (!ReferenceEquals(RazerKeyboardDriverRecipes.FindById(recipe.Id), recipe))
+        {
+            throw new UnauthorizedAccessException("The driver installation recipe is not admitted.");
         }
     }
 
@@ -309,7 +376,7 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
         catch (DirectoryNotFoundException) { return null; }
     }
 
-    private static List<Device> ReadDevices(RegistryKey registry)
+    private static List<Device> ReadDevices(RegistryKey registry, RazerKeyboardDriverRecipe recipe)
     {
         nint set = SetupDiGetClassDevs(0, null, 0, 6);
         if (set == -1)
@@ -333,22 +400,29 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
                     throw NativeError();
                 }
                 string id = DeviceId(device.Instance);
-                if (!id.Contains("VID_1532&PID_02E0", StringComparison.OrdinalIgnoreCase))
+                string[] hardwareIds = Property(set, ref device, 1).Concat(Property(set, ref device, 2))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                bool matchesCommon = hardwareIds.Any(value => Equal(value, @"RAZER\DeviceContol"));
+                if (!ShouldInspectDevice(id, hardwareIds, recipe))
                 {
                     continue;
                 }
 
                 var key = new PropertyKey(new Guid("8C7ED206-3F8A-4827-B3AB-AE9E1FAEFC6C"), 2);
                 byte[] bytes = new byte[16];
-                if (!SetupDiGetDeviceProperty(set, ref device, ref key, out uint type, bytes, 16, out uint required, 0)
-                    || type != 13 || required != 16)
+                if (!SetupDiGetDeviceProperty(set, ref device, ref key, out uint type, bytes, 16, out uint required, 0))
                 {
                     throw NativeError();
                 }
-
-                if (CM_Get_DevNode_Status(out uint status, out uint problem, device.Instance, 0) != 0)
+                if (type != 13 || required != 16)
                 {
-                    throw new IOException("Device state unavailable.");
+                    throw new InvalidDataException($"Device container property has type {type} and size {required}; expected GUID type 13 and 16 bytes.");
+                }
+
+                int stateResult = CM_Get_DevNode_Status(out uint status, out uint problem, device.Instance, 0);
+                if (stateResult != 0)
+                {
+                    throw new IOException($"Device state query failed (CONFIGRET=0x{stateResult:X8}).");
                 }
 
                 var ancestors = new List<string>();
@@ -374,7 +448,11 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
                     }
                 }
                 result.Add(new(id, new Guid(bytes), Property(set, ref device, 4).SingleOrDefault() ?? string.Empty,
-                    Property(set, ref device, 0x11), Property(set, ref device, 0x12), ancestors.ToArray(), status, problem, infHash));
+                    Property(set, ref device, 0x11), Property(set, ref device, 0x12), ancestors.ToArray(), status, problem, infHash)
+                {
+                    MatchesCommonHardware = matchesCommon,
+                    HardwareIds = hardwareIds,
+                });
             }
             throw new IOException("Device inventory exceeded its bound.");
         }
@@ -404,9 +482,10 @@ internal sealed class WindowsRazerDriverInstallPlatform : IRazerDriverInstallPla
     private static string DeviceId(uint instance)
     {
         var id = new StringBuilder(512);
-        if (CM_Get_Device_ID(instance, id, id.Capacity, 0) != 0)
+        int result = CM_Get_Device_ID(instance, id, id.Capacity, 0);
+        if (result != 0)
         {
-            throw new IOException("Device identity unavailable.");
+            throw new IOException($"Device identity query failed (CONFIGRET=0x{result:X8}).");
         }
 
         return id.ToString();

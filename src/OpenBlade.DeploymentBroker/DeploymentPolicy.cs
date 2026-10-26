@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using OpenBlade.Contracts;
 using OpenBlade.Deployment;
 
 namespace OpenBlade.DeploymentBroker;
@@ -637,12 +638,16 @@ public sealed class BrokerDurableRecordStore
             return existing.AsSpan().SequenceEqual(
                 SerializeCanonicalReport(report with { CompletedAt = recordedAt }));
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
+            DiagnosticTrace.TraceException(nameof(BrokerDurableRecordStore),
+                nameof(MatchesExistingTerminalReportAsync), exception);
             return false;
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
+            DiagnosticTrace.TraceException(nameof(BrokerDurableRecordStore),
+                nameof(MatchesExistingTerminalReportAsync), exception);
             return false;
         }
     }

@@ -1651,4 +1651,55 @@
   <data name="The touchpad change could not be confirmed. Check Windows Settings." xml:space="preserve">
     <value>Не удалось подтвердить изменение состояния сенсорной панели. Проверьте параметры Windows.</value>
   </data>
+  <data name="Display brightness is unavailable." xml:space="preserve">
+    <value>Яркость дисплея недоступна.</value>
+  </data>
+  <data name="Display brightness" xml:space="preserve">
+    <value>Яркость дисплея</value>
+  </data>
+  <data name="Brightness {0}%" xml:space="preserve">
+    <value>Яркость {0}%</value>
+  </data>
+  <data name="Application profiles" xml:space="preserve">
+    <value>Профили приложений</value>
+  </data>
+  <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
+    <value>Применяйте переопределения для конкретного исполняемого файла игры или приложения.</value>
+  </data>
+  <data name="Battery history" xml:space="preserve">
+    <value>История аккумулятора</value>
+  </data>
+  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
+    <value>Просмотрите историю аккумулятора Windows и предварительно оцените набор настроек для длительной работы от аккумулятора.</value>
+  </data>
+  <data name="Enter a name of up to 80 characters." xml:space="preserve">
+    <value>Введите имя длиной до 80 символов.</value>
+  </data>
+  <data name="Choose an application activation mode." xml:space="preserve">
+    <value>Выберите режим активации приложения.</value>
+  </data>
+  <data name="Choose at least one application profile setting." xml:space="preserve">
+    <value>Выберите хотя бы один параметр профиля приложения.</value>
+  </data>
+  <data name="Unknown application" xml:space="preserve">
+    <value>Неизвестное приложение</value>
+  </data>
+  <data name="Power-source profile" xml:space="preserve">
+    <value>Профиль питания</value>
+  </data>
+  <data name="Battery history is unavailable." xml:space="preserve">
+    <value>История аккумулятора недоступна.</value>
+  </data>
+  <data name="Telemetry recording reached its limit and was saved to {0}." xml:space="preserve">
+    <value>Запись телеметрии достигла ограничения и сохранена в {0}.</value>
+  </data>
+  <data name="The telemetry recording could not be finalized. The partial recording remains at {0}. {1}" xml:space="preserve">
+    <value>Не удалось завершить запись телеметрии. Незавершённая запись осталась в {0}. {1}</value>
+  </data>
+  <data name="Telemetry recording stopped. The partial recording remains at {0}. {1}" xml:space="preserve">
+    <value>Запись телеметрии остановлена. Незавершённая запись осталась в {0}. {1}</value>
+  </data>
+  <data name="Telemetry is disabled." xml:space="preserve">
+    <value>Телеметрия отключена.</value>
+  </data>
 </root>

@@ -51,8 +51,12 @@
     <Compile Include="..\..\src\OpenBlade.Tray\GpuAppCleanupCoordinator.cs" Link="GpuAppCleanupCoordinator.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\GpuAppForceCloseOutcomeTracker.cs"
              Link="GpuAppForceCloseOutcomeTracker.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\ApplicationDiscoveryCatalog.cs"
+             Link="ApplicationDiscoveryCatalog.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\PageHeaderLayoutPolicy.cs"
              Link="PageHeaderLayoutPolicy.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\PresentationTimestamp.cs"
+             Link="PresentationTimestamp.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\LocalizationSnapshotPixelCanonicalizer.cs"
              Link="LocalizationSnapshotPixelCanonicalizer.cs" />
     <Compile Include="..\..\build\localization\LocalizationSnapshotFailureEvidence.cs"

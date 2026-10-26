@@ -260,6 +260,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(TurnOffForLowPowerAsync), exception,
+                "Lighting write admission failed before submission.");
             return new(before, LightingLowPowerOffOutcome.KnownNotApplied, exception.Message);
         }
         bool retired = false;
@@ -299,6 +301,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(TurnOffForLowPowerAsync), exception);
             LightingLowPowerOffOutcome outcome = submissionStarted
                 && exception is not BladeWriteException
                 { SubmissionState: WriteSubmissionState.KnownNotApplied }
@@ -353,8 +356,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 : await QueryLogoModeCoreAsync(cancellationToken).ConfigureAwait(false);
             byte requestedRaw = LightingBrightnessProtocol.PercentToRaw(settings.Brightness);
             OwnedEffectSnapshot? previous = CaptureOwnedEffectCore();
+            bool wakingFromDark = baselineRaw == 0 && requestedRaw != 0;
 
-            if (CanRetainRenderer(previous, settings))
+            if (!wakingFromDark && CanRetainRenderer(previous, settings))
             {
                 try
                 {
@@ -380,6 +384,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 }
                 catch (Exception exception)
                 {
+                    DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(SetLightingAsync), exception,
+                        "Brightness-only lighting transition failed.");
                     bool brightnessRestored = baselineRaw == requestedRaw
                         || await TryRestoreBrightnessCoreAsync(baselineRaw)
                             .ConfigureAwait(false);
@@ -398,12 +404,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 }
             }
 
+            // On wake, keep the keyboard dark until the selected frame is ready.
+            // Raising brightness first exposes stale firmware/transition colors.
+            bool brightnessAttempted = false;
             await StopStreamCoreAsync().ConfigureAwait(false);
 
             try
             {
-                if (baselineRaw != requestedRaw)
+                if (!wakingFromDark && baselineRaw != requestedRaw)
                 {
+                    brightnessAttempted = true;
                     await SetBrightnessAndVerifyCoreAsync(requestedRaw, cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -436,6 +446,13 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     await WriteMatrixCoreAsync(initialFrame, cancellationToken)
                         .ConfigureAwait(false);
 
+                    if (wakingFromDark)
+                    {
+                        brightnessAttempted = true;
+                        await SetBrightnessAndVerifyCoreAsync(requestedRaw, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
                     lock (effectSync)
                     {
                         activeEffect = effect;
@@ -458,7 +475,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             }
             catch (Exception exception)
             {
-                bool brightnessRestored = baselineRaw == requestedRaw
+                DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(SetLightingAsync), exception,
+                    "Lighting transition failed.");
+                bool brightnessRestored = !brightnessAttempted || baselineRaw == requestedRaw
                     || await TryRestoreBrightnessCoreAsync(baselineRaw).ConfigureAwait(false);
                 bool rendererRestored = previous is not null
                     && await TryRestoreOwnedEffectCoreAsync(previous).ConfigureAwait(false);

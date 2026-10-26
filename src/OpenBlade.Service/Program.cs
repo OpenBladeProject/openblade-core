@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
@@ -42,4 +43,15 @@ builder.Services.AddSingleton<ControlRequestHandler>();
 builder.Services.AddHostedService<Worker>();
 
 using IHost host = builder.Build();
-host.Run();
+var diagnosticTraceListener = new DiagnosticHistoryTraceListener(
+    host.Services.GetRequiredService<DiagnosticHistory>());
+Trace.Listeners.Add(diagnosticTraceListener);
+try
+{
+    host.Run();
+}
+finally
+{
+    Trace.Listeners.Remove(diagnosticTraceListener);
+    diagnosticTraceListener.Dispose();
+}

@@ -10,6 +10,7 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
     private readonly FileStream stream;
     private readonly List<RazerDriverInventoryEntry> baseline = [];
     private bool hasIntent;
+    private string? recipeId;
     public bool RequiresRecovery { get; private set; }
     public string PackageDestination { get; }
 
@@ -78,13 +79,15 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
 
     public void Begin(RazerDriverInstallSnapshot snapshot)
     {
+        recipeId = snapshot.RecipeId;
+        baseline.Clear();
         baseline.AddRange(snapshot.Inventory);
-        Append(new { kind = "baseline", at = DateTimeOffset.UtcNow, snapshot });
+        Append(new { kind = "baseline", recipeVersion = 1, recipeId, at = DateTimeOffset.UtcNow, snapshot });
     }
 
     public void Intent(RazerDriverMutation operation)
     {
-        Append(new { kind = "intent", at = DateTimeOffset.UtcNow, operation });
+        Append(new { kind = "intent", recipeId, at = DateTimeOffset.UtcNow, operation });
         hasIntent = true;
         RequiresRecovery = true;
     }
@@ -101,6 +104,37 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
             string.Equals(previous.PublishedName, entry.PublishedName, StringComparison.OrdinalIgnoreCase))).ToArray();
         Append(new { kind = "observed", at = DateTimeOffset.UtcNow, result, after, introduced });
     }
+
+    public void WindowsUpdateIntent(RazerKeyboardWindowsUpdateSelection selection)
+    {
+        if (!string.Equals(selection.RecipeId, recipeId, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Windows Update intent does not match the journal recipe.");
+        }
+        Append(new
+        {
+            kind = "intent",
+            source = "WindowsUpdate",
+            recipeVersion = 2,
+            recipeId,
+            at = DateTimeOffset.UtcNow,
+            selection
+        });
+        hasIntent = true;
+        RequiresRecovery = true;
+    }
+
+    public void WindowsUpdateObserve(RazerKeyboardWindowsUpdateResult result, RazerDriverInstallSnapshot after) =>
+        Append(new
+        {
+            kind = "observed",
+            source = "WindowsUpdate",
+            recipeVersion = 2,
+            recipeId,
+            at = DateTimeOffset.UtcNow,
+            result,
+            after
+        });
 
     public void Complete()
     {

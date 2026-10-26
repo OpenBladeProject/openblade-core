@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Security;
 using System.Text.Json;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -26,11 +27,12 @@ public sealed record SnapTapRuntimeStatus(
     DateTimeOffset UpdatedAt,
     int ProcessId = 0,
     string? DriverModel = null,
-    bool ExperimentalDriver = false);
+    bool ExperimentalDriver = false,
+    DiagnosticFailure? Failure = null);
 
 public static class SnapTapStatusStore
 {
-    private const int MaximumFileSize = 8192;
+    internal const int MaximumFileSize = 2 * 1024 * 1024;
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     public static string GetDefaultPath()
@@ -42,8 +44,33 @@ public static class SnapTapStatusStore
             $"snap-tap-status-{process.SessionId}.json");
     }
 
-    public static SnapTapRuntimeStatus? Read(string? path = null)
+    public static SnapTapRuntimeStatus? Read(string? path = null) =>
+        ReadCore(path, out _);
+
+    public static SnapTapDiagnosticReport CaptureDiagnostics(string? path = null)
     {
+        SnapTapRuntimeStatus? status = ReadCore(path, out DiagnosticFailure? failure);
+        if (status is not null)
+        {
+            // Export only the reviewed model number, never arbitrary text from a local file.
+            status = status with
+            {
+                DriverModel = RazerBladeModelCatalog.All.FirstOrDefault(model =>
+                    status.DriverModel?.EndsWith(" - " + model.ModelNumber, StringComparison.Ordinal) == true)
+                    ?.ModelNumber,
+            };
+        }
+        return new(DateTimeOffset.UtcNow, status, failure);
+    }
+
+    public static bool IsTerminalState(SnapTapRuntimeState state) => state is
+        SnapTapRuntimeState.Failed or SnapTapRuntimeState.Unavailable
+        or SnapTapRuntimeState.RecoveryRequired or SnapTapRuntimeState.DriverMissing
+        or SnapTapRuntimeState.UnsupportedModel or SnapTapRuntimeState.ManualDriverSetupRequired;
+
+    private static SnapTapRuntimeStatus? ReadCore(string? path, out DiagnosticFailure? failure)
+    {
+        failure = null;
         try
         {
             using FileStream file = new(
@@ -51,6 +78,7 @@ public static class SnapTapStatusStore
                 FileShare.ReadWrite | FileShare.Delete);
             if (file.Length > MaximumFileSize)
             {
+                failure = InvalidStatus("StatusTooLarge");
                 return null;
             }
 
@@ -65,6 +93,7 @@ public static class SnapTapStatusStore
             }
             if (length > MaximumFileSize)
             {
+                failure = InvalidStatus("StatusTooLarge");
                 return null;
             }
 
@@ -73,15 +102,13 @@ public static class SnapTapStatusStore
             if (envelope is not { Version: 1, Status: { } status }
                 || !IsValid(status))
             {
+                failure = InvalidStatus("InvalidStatusEnvelope");
                 return null;
             }
 
             // A surviving file is not proof that its helper still owns the input hook.
             // The process start time also rejects a PID reused since the last update.
-            return status.State is SnapTapRuntimeState.Off or SnapTapRuntimeState.Failed
-                    or SnapTapRuntimeState.Unavailable or SnapTapRuntimeState.RecoveryRequired
-                    or SnapTapRuntimeState.DriverMissing
-                    or SnapTapRuntimeState.UnsupportedModel or SnapTapRuntimeState.ManualDriverSetupRequired
+            return status.State == SnapTapRuntimeState.Off || IsTerminalState(status.State)
                 || IsProcessCurrent(status)
                     ? status
                     : status with { State = SnapTapRuntimeState.Paused };
@@ -90,9 +117,15 @@ public static class SnapTapStatusStore
             or UnauthorizedAccessException or SecurityException or JsonException
             or ArgumentException or NotSupportedException)
         {
+            failure = DiagnosticFailure.FromException("SnapTap", "Status", "Read",
+                exception is FileNotFoundException or DirectoryNotFoundException
+                    ? "StatusNotObserved" : "StatusReadFailed", exception);
             return null;
         }
     }
+
+    private static DiagnosticFailure InvalidStatus(string reason) =>
+        new("SnapTap", "Status", "Read", reason);
 
     public static void Write(SnapTapRuntimeStatus status, string? path = null)
     {
@@ -143,6 +176,10 @@ public static class SnapTapStatusStore
             catch (Exception exception) when (exception is IOException
                 or UnauthorizedAccessException or SecurityException)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.SnapTapStatusStore",
+                    "DeleteTemporaryStatus",
+                    exception);
             }
         }
     }
@@ -151,7 +188,9 @@ public static class SnapTapStatusStore
         Enum.IsDefined(status.State)
         && status.ProcessId >= 0
         && status.UpdatedAt >= DateTimeOffset.UnixEpoch
-        && status.UpdatedAt <= DateTimeOffset.UtcNow.AddMinutes(1);
+        && status.UpdatedAt <= DateTimeOffset.UtcNow.AddMinutes(1)
+        && (status.Failure is null || IsTerminalState(status.State) && status.Failure.IsValid())
+        && (status.DriverModel is null || status.DriverModel.Length <= 96);
 
     private static bool IsProcessCurrent(SnapTapRuntimeStatus status)
     {
@@ -177,3 +216,8 @@ public static class SnapTapStatusStore
 
     private sealed record StatusEnvelope(int Version, SnapTapRuntimeStatus? Status);
 }
+
+public sealed record SnapTapDiagnosticReport(
+    DateTimeOffset CapturedAt,
+    SnapTapRuntimeStatus? Status,
+    DiagnosticFailure? CaptureFailure);

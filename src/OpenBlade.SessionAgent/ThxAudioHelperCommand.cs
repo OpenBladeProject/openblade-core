@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.SessionAgent;
@@ -141,6 +142,7 @@ internal sealed class ThxAudioHelperCommand(
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
+                    DiagnosticTrace.TraceException(nameof(ThxAudioHelperCommand), "ProcessRequest", exception);
                     response = new ThxAudioHelperResponse(
                         ThxAudioHelperProtocol.Version,
                         ThxAudioOperationStatus.Failed,
@@ -170,10 +172,11 @@ internal sealed class ThxAudioHelperCommand(
                     {
                         _ = native.RemoveDevice(device);
                     }
-                    catch
+                    catch (Exception exception)
                     {
                         // Cleanup changes no setting and never retries a write.
                         // The parent bounds shutdown; the DLL stays process-pinned.
+                        DiagnosticTrace.TraceException(nameof(ThxAudioHelperCommand), "RemoveDeviceDuringShutdown", exception);
                     }
                 }
                 native.Dispose();
@@ -378,6 +381,11 @@ internal sealed class ThxAudioHelperCommand(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(ThxAudioHelperCommand),
+                "Execute",
+                exception,
+                mayHaveSubmitted ? "A THX mutation may have been submitted." : "No THX mutation was submitted.");
             return request is ThxHelperReadRequest || !mayHaveSubmitted
                 ? Failed($"THX state could not be read: {exception.GetType().Name}.")
                 : Indeterminate(
@@ -424,9 +432,10 @@ internal sealed class ThxAudioHelperCommand(
         {
             return readSystemEffectsDisabled?.Invoke(productId, endpoint);
         }
-        catch
+        catch (Exception exception)
         {
             // A diagnostic failure cannot change an independently confirmed mutation.
+            DiagnosticTrace.TraceException(nameof(ThxAudioHelperCommand), "ReadSystemEffectsDisabled", exception);
             return null;
         }
     }

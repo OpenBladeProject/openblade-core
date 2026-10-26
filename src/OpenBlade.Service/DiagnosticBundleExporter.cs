@@ -87,6 +87,7 @@ public sealed record DiagnosticBundle(
     DiagnosticExperimentalSupportSnapshot? ExperimentalSupport = null)
 {
     internal IReadOnlyList<FirmwareQueryDiagnostic>? FirmwareQueries { get; init; }
+    internal DiagnosticHistorySnapshot? ServiceHistory { get; init; }
 }
 
 public static class DiagnosticBundleExporter
@@ -125,6 +126,22 @@ public static class DiagnosticBundleExporter
             bundle.CommandResults,
             bundle.SensitiveTokens,
             cancellationToken);
+        if (bundle.ServiceHistory is { } serviceHistory)
+        {
+            await WriteJsonEntryAsync(
+                archive,
+                "service-history.json",
+                new
+                {
+                    serviceHistory.EvictedEntries,
+                    serviceHistory.DroppedEntries,
+                    serviceHistory.TruncatedValues,
+                    serviceHistory.RetainedEntries,
+                    serviceHistory.RetainedCharacters,
+                },
+                sensitiveTokens: [],
+                cancellationToken);
+        }
         if (bundle.FirmwareQueries is { } queries)
         {
             // Closed command identities, bounded hex state payloads and typed

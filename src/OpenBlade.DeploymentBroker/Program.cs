@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenBlade.DeploymentBroker;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
@@ -21,4 +22,16 @@ builder.Services.AddSingleton<IBrokerRequestHandler, ApplyFixedInboxBrokerReques
 builder.Services.AddHostedService<Worker>();
 
 using IHost host = builder.Build();
-host.Run();
+var diagnosticTraceListener = new BrokerDiagnosticTraceListener(
+    host.Services.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("OpenBlade.DeploymentBroker.Diagnostics"));
+Trace.Listeners.Add(diagnosticTraceListener);
+try
+{
+    host.Run();
+}
+finally
+{
+    Trace.Listeners.Remove(diagnosticTraceListener);
+    diagnosticTraceListener.Dispose();
+}

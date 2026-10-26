@@ -46,6 +46,10 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ReportSessionPowerTransitionRequest request,
         CancellationToken token) => SendMutationAsync(request, token);
 
+    public Task<ControlOperationResult> ReportApplicationContextAsync(
+        ReportApplicationContextRequest request,
+        CancellationToken token) => SendMutationAsync(request, token);
+
     public async Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
     {
         var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
@@ -673,7 +677,9 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         CancellationToken token)
     {
         await IpcMessageCodec.WriteRequestAsync(connection, request, token).ConfigureAwait(false);
-        ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(connection, token)
+        ServiceServerFrame frame = await (request is ExportDiagnosticsRequest
+                ? IpcMessageCodec.ReadDiagnosticArchiveFrameAsync(connection, token)
+                : IpcMessageCodec.ReadServerFrameAsync(connection, token))
             .ConfigureAwait(false);
         return ValidateResponse(frame, request);
     }

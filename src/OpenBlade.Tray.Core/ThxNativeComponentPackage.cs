@@ -3,6 +3,7 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -124,8 +125,20 @@ public static class ThxNativeComponentPackage
                 // Only the unique file from this attempt is removed. A prior component is
                 // untouched on download, cancellation, hash, trust, or publication failure.
                 try { File.Delete(staging); }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
+                catch (IOException exception)
+                {
+                    DiagnosticTrace.TraceException(
+                        nameof(ThxNativeComponentPackage),
+                        "DeleteStagedDownload",
+                        exception);
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    DiagnosticTrace.TraceException(
+                        nameof(ThxNativeComponentPackage),
+                        "DeleteStagedDownload",
+                        exception);
+                }
             }
         }
     }

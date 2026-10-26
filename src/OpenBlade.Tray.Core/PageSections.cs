@@ -37,6 +37,8 @@ public enum PageSectionKind
     AboutDeviceInformation,
     AboutSupport,
     AboutTroubleshooting,
+    LaptopBatteryHistory,
+    ProfilesApplications,
 }
 
 public sealed record PageSectionPreference(
@@ -103,6 +105,11 @@ public static class PageLayoutPreferenceDefaults
             TrayText.Get("Saved profile comparison"),
             TrayText.Get("Compare the settings stored in AC, low-power, and battery profiles.")),
         new(
+            CustomizablePageKind.Profiles,
+            PageSectionKind.ProfilesApplications,
+            TrayText.Get("Application profiles"),
+            TrayText.Get("Apply overrides for an exact game or application executable.")),
+        new(
             CustomizablePageKind.Display,
             PageSectionKind.DisplayControls,
             TrayText.Get("Built-in display"),
@@ -122,6 +129,11 @@ public static class PageLayoutPreferenceDefaults
             PageSectionKind.LaptopBattery,
             TrayText.Get("Battery"),
             TrayText.Get("Manage battery protection and temporary full charge.")),
+        new(
+            CustomizablePageKind.Laptop,
+            PageSectionKind.LaptopBatteryHistory,
+            TrayText.Get("Battery history"),
+            TrayText.Get("Review Windows battery history and preview a long battery life preset.")),
         new(
             CustomizablePageKind.Laptop,
             PageSectionKind.LaptopKeyboardBehavior,

@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 using OpenBlade.Platform;
 
 namespace OpenBlade.SessionAgent;
@@ -59,6 +60,10 @@ internal static class WindowsThxDriverApiDiscovery
             or InvalidDataException or InvalidOperationException or ArgumentException
             or Win32Exception or CryptographicException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.WindowsThxDriverApiDiscovery",
+                "Discover",
+                exception);
             return ThxDriverApiEvidence.Rejected(
                 $"The installed THX API packages could not be verified ({DescribeVerificationFailure(exception)}).");
         }
@@ -161,6 +166,11 @@ internal static class WindowsThxDriverApiDiscovery
             }
             catch (Exception exception) when (IsTrustFailure(exception))
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.WindowsThxDriverApiDiscovery",
+                    "VerifyBoundPackage",
+                    exception,
+                    contract.Role);
                 return ThxDriverApiEvidence.Rejected(
                     $"The installed THX {contract.Role} package {Path.GetFileName(storeInf)} failed "
                     + $"catalog trust ({DescribeVerificationFailure(exception)}).");

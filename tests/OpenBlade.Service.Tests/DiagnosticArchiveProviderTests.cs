@@ -1,6 +1,9 @@
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using static OpenBlade.Service.Tests.VerifiedBladeProviderFixture;
@@ -126,7 +129,8 @@ public sealed class DiagnosticArchiveProviderTests
         var provider = new DiagnosticArchiveProvider(
             runtime,
             history,
-            new FixedMetadataSource(secret));
+            new FixedMetadataSource(secret),
+            new FirmwareQueryDiagnostics());
 
         DiagnosticArchive result = await provider.CreateAsync(
             liveReadingsEnabled: true,
@@ -142,7 +146,7 @@ public sealed class DiagnosticArchiveProviderTests
 
         using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
         Assert.Equal(
-            ["versions.json", "device.json", "device-verification.json", "capabilities.json", "configuration.json", "command-results.json", "firmware-queries.json", "hyperboost-ownership.json", "logs.jsonl"],
+            ["versions.json", "device.json", "device-verification.json", "capabilities.json", "configuration.json", "command-results.json", "service-history.json", "firmware-queries.json", "hyperboost-ownership.json", "logs.jsonl"],
             archive.Entries.Select(entry => entry.FullName));
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
@@ -477,22 +481,105 @@ public sealed class DiagnosticArchiveProviderTests
     }
 
     [Fact]
-    public async Task CreateAsync_RejectsArchiveLargerThanThirtyTwoKiB()
+    public async Task CreateAsync_RoundTripsRetainedExceptionArchiveLargerThanLegacyFrameLimit()
     {
-        byte[] randomBytes = new byte[50_000];
-        new Random(1_337).NextBytes(randomBytes);
-        string incompressible = Convert.ToBase64String(randomBytes);
+        var runtime = new SnapshotOnlyRuntime(CreateStatus());
+        var history = new DiagnosticHistory();
+        ILogger logger = history.CreateLogger("OpenBlade.Service.ArchiveRegression");
+        try
+        {
+            ThrowRetainedArchiveFailure();
+        }
+        catch (InvalidOperationException exception)
+        {
+            logger.LogError(exception, "Archive source failure was retained.");
+        }
+        for (int index = 0; index < 200; index++)
+        {
+            logger.LogInformation(
+                "entropy-{Index:D3} {Payload}",
+                index,
+                CreateDeterministicEntropy(index));
+        }
+        DiagnosticHistorySnapshot expectedHistory = history.Snapshot();
         var provider = new DiagnosticArchiveProvider(
-            new SnapshotOnlyRuntime(CreateStatus()),
-            new DiagnosticHistory(),
-            new FixedMetadataSource(windowsVersion: incompressible));
+            runtime,
+            history,
+            new FixedMetadataSource());
 
-        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
-            () => provider.CreateAsync(
-                liveReadingsEnabled: true,
+        DiagnosticArchive produced = await provider.CreateAsync(
+            liveReadingsEnabled: false,
+            CancellationToken.None);
+        Assert.InRange(
+            produced.ZipBytes.Length,
+            32 * 1024 + 1,
+            OpenBladeIpc.MaximumDiagnosticArchiveBytes);
+
+        Guid requestId = Guid.Parse("13d74214-4e19-48ec-afc4-734a02fe1168");
+        using var wire = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            wire,
+            new ServiceResponse(
+                OpenBladeIpc.ProtocolVersion,
+                requestId,
+                Success: true,
+                Error: null,
+                Status: null,
+                Result: null,
+                Archive: produced),
+            CancellationToken.None);
+        wire.Position = 0;
+        ServiceResponse response = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadDiagnosticArchiveFrameAsync(
+                wire,
                 CancellationToken.None));
 
-        Assert.Contains("32 KiB", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(requestId, response.RequestId);
+        DiagnosticArchive returned = Assert.IsType<DiagnosticArchive>(response.Archive);
+        Assert.Equal(produced.SuggestedFileName, returned.SuggestedFileName);
+        Assert.Equal(produced.ZipBytes, returned.ZipBytes);
+        using var archive = new ZipArchive(
+            new MemoryStream(returned.ZipBytes),
+            ZipArchiveMode.Read);
+        using JsonDocument serviceHistory = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "service-history.json"));
+        Assert.Equal(
+            expectedHistory.EvictedEntries,
+            serviceHistory.RootElement.GetProperty("evictedEntries").GetInt64());
+        Assert.Equal(
+            expectedHistory.DroppedEntries,
+            serviceHistory.RootElement.GetProperty("droppedEntries").GetInt64());
+        Assert.Equal(
+            expectedHistory.TruncatedValues,
+            serviceHistory.RootElement.GetProperty("truncatedValues").GetInt64());
+        Assert.Equal(
+            expectedHistory.RetainedEntries,
+            serviceHistory.RootElement.GetProperty("retainedEntries").GetInt32());
+        Assert.Equal(
+            expectedHistory.RetainedCharacters,
+            serviceHistory.RootElement.GetProperty("retainedCharacters").GetInt32());
+        string retainedLogs = await ReadEntryAsync(archive, "logs.jsonl");
+        Assert.Contains("archive-source-exception", retainedLogs, StringComparison.Ordinal);
+        Assert.Contains(nameof(ThrowRetainedArchiveFailure), retainedLogs, StringComparison.Ordinal);
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowRetainedArchiveFailure()
+    {
+        throw new InvalidOperationException("archive-source-exception");
+    }
+
+    private static string CreateDeterministicEntropy(int line)
+    {
+        byte[] payload = new byte[8 * 32];
+        for (int block = 0; block < 8; block++)
+        {
+            byte[] input = Encoding.UTF8.GetBytes($"archive-line-{line:D3}-block-{block:D2}");
+            byte[] hash = SHA256.HashData(input);
+            hash.CopyTo(payload, block * hash.Length);
+        }
+        return Convert.ToBase64String(payload);
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
@@ -310,6 +311,7 @@ public sealed class DisplaySettingsViewModelTests
         await viewModel.RefreshAsync();
         IReadOnlyList<DisplayRefreshRateOption> refreshOptions = viewModel.RefreshRateOptions;
         IReadOnlyList<DisplayColorProfileOption> colorOptions = viewModel.ColorProfileOptions;
+        IReadOnlyList<byte> brightnessLevels = viewModel.SupportedBrightnessLevels;
         List<string?> notifications = [];
         viewModel.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
         adapter.SetExternalState(
@@ -319,11 +321,14 @@ public sealed class DisplaySettingsViewModelTests
 
         Assert.Same(refreshOptions, viewModel.RefreshRateOptions);
         Assert.Same(colorOptions, viewModel.ColorProfileOptions);
+        Assert.Same(brightnessLevels, viewModel.SupportedBrightnessLevels);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.RefreshRateOptions), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.ColorProfileOptions), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.SupportedBrightnessLevels), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.IsBusy), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeRefreshRate), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeHdr), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeBrightness), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeColorProfile), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanCaptureCurrentSettings), notifications);
     }
@@ -477,10 +482,12 @@ public sealed class DisplaySettingsViewModelTests
         await viewModel.SelectRefreshRateAsync(Dynamic);
 
         string diagnostic = Assert.Single(diagnostics);
-        Assert.Contains("refresh-rate change", diagnostic, StringComparison.Ordinal);
-        Assert.Contains(nameof(InvalidOperationException), diagnostic, StringComparison.Ordinal);
-        Assert.Contains("HRESULT 0x", diagnostic, StringComparison.Ordinal);
-        Assert.DoesNotContain(sensitiveDetail, diagnostic, StringComparison.Ordinal);
+        DiagnosticFailure failure = JsonSerializer.Deserialize<DiagnosticFailure>(diagnostic)!;
+        Assert.Equal("refresh-rate change", failure.Context);
+        Assert.Equal(nameof(InvalidOperationException), failure.ExceptionType);
+        Assert.Equal(adapter.UnexpectedRefreshChangeFailure!.HResult, failure.HResult);
+        Assert.Contains("Sensitive path", failure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Example", diagnostic, StringComparison.Ordinal);
         Assert.Equal("Display setting failed.", viewModel.StatusMessage);
 
         await viewModel.SelectRefreshRateAsync(Dynamic);
@@ -543,7 +550,8 @@ public sealed class DisplaySettingsViewModelTests
         await viewModel.RefreshAsync();
 
         Assert.Single(diagnostics);
-        Assert.Contains("display refresh", diagnostics[0], StringComparison.Ordinal);
+        Assert.Equal("refresh",
+            JsonSerializer.Deserialize<DiagnosticFailure>(diagnostics[0])?.Context);
 
         time.AdvanceTimestamp(DisplaySettingsViewModel.RefreshFailureDiagnosticInterval);
         await viewModel.RefreshAsync();
@@ -574,11 +582,18 @@ public sealed class DisplaySettingsViewModelTests
         await viewModel.RefreshAsync();
 
         Assert.Equal(3, diagnostics.Count);
-        Assert.Contains("IOException, HRESULT 0x00000001", diagnostics[0], StringComparison.Ordinal);
-        Assert.Contains("IOException, HRESULT 0x00000002", diagnostics[1], StringComparison.Ordinal);
-        Assert.Contains("ExternalException, HRESULT 0x00000002", diagnostics[2], StringComparison.Ordinal);
-        Assert.All(diagnostics, diagnostic =>
-            Assert.DoesNotContain("Sensitive", diagnostic, StringComparison.Ordinal));
+        DiagnosticFailure[] failures = diagnostics
+            .Select(diagnostic => JsonSerializer.Deserialize<DiagnosticFailure>(diagnostic)!)
+            .ToArray();
+        Assert.Equal(nameof(IOException), failures[0].ExceptionType);
+        Assert.Equal(1, failures[0].HResult);
+        Assert.Equal(nameof(IOException), failures[1].ExceptionType);
+        Assert.Equal(2, failures[1].HResult);
+        Assert.Equal(nameof(System.Runtime.InteropServices.ExternalException),
+            failures[2].ExceptionType);
+        Assert.Equal(2, failures[2].HResult);
+        Assert.All(failures, failure =>
+            Assert.Contains("Sensitive", failure.Message, StringComparison.Ordinal));
     }
 
     [Fact]

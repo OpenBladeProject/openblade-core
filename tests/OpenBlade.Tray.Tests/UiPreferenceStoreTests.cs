@@ -6,6 +6,23 @@ namespace OpenBlade.Tray.Tests;
 public sealed class UiPreferenceStoreTests : IDisposable
 {
     [Fact]
+    public async Task TelemetryDefaultsOffForExistingPreferencesAndRoundTrips()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "telemetry-preferences.json");
+        await File.WriteAllTextAsync(path, "{\"theme\":\"FollowWindows\"}");
+        var store = new UiPreferenceStore(path);
+
+        UiPreferences original = await store.LoadAsync();
+        Assert.False(UiPreferences.Default.TelemetryEnabled);
+        Assert.False(original.TelemetryEnabled);
+
+        await store.SaveAsync(original with { TelemetryEnabled = true });
+
+        Assert.True((await store.LoadAsync()).TelemetryEnabled);
+    }
+
+    [Fact]
     public async Task ThxOptInDefaultsOffForExistingPreferencesAndRoundTrips()
     {
         Directory.CreateDirectory(directory);
@@ -19,7 +36,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task LegacyNumericNavigationPreservesCustomOrderAndPersistsThxAudio()
+    public async Task LegacyNumericNavigationPreservesCustomOrderAndPersistsNewItems()
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "navigation-preferences.json");
@@ -35,6 +52,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             PrimaryNavigationItemKind.Profiles,
             PrimaryNavigationItemKind.Lighting,
             PrimaryNavigationItemKind.ThxAudio,
+            PrimaryNavigationItemKind.Telemetry,
         ];
         Assert.Equal(expected, loaded.EffectivePrimaryNavigationItems);
         await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
@@ -358,6 +376,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             preferences.TrayHoverLabelMode);
         Assert.False(preferences.StartMinimized);
         Assert.False(preferences.LabFeaturesEnabled);
+        Assert.False(preferences.TelemetryEnabled);
         Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
         Assert.Equal(
@@ -638,6 +657,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 PrimaryNavigationItemKind.Profiles,
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
+                PrimaryNavigationItemKind.Telemetry,
             ],
             reloaded.EffectivePrimaryNavigationItems);
         Assert.Equal(AppAccentColorMode.Custom, reloaded.EffectiveAccentColorMode);

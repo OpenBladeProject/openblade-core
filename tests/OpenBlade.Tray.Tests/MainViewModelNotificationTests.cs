@@ -60,9 +60,14 @@ public sealed partial class MainViewModelTests
         await PushAsync(client, dispatcher, status with { Revision = status.Revision + 1 });
         Assert.Empty(Drain(notifications));
 
-        // The tooltip is still announced once its text changes.
+        // An older observation cannot refresh the timestamp after a newer push.
         time.Advance(TimeSpan.FromSeconds(5));
         await ObserveAsync(client, () => viewModel.ObserveStateAsync(CancellationToken.None), status);
+        Assert.Empty(Drain(notifications));
+
+        // The tooltip is still announced once an accepted reading changes it.
+        await ObserveAsync(client, () => viewModel.ObserveStateAsync(CancellationToken.None),
+            status with { Revision = status.Revision + 1 });
         Assert.Equal(
             [nameof(MainViewModel.LiveReadingsRefreshToolTip)],
             Drain(notifications));

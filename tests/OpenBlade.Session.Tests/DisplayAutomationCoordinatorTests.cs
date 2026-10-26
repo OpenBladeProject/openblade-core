@@ -1,10 +1,727 @@
 using OpenBlade.Contracts;
+using OpenBlade.Display;
 using OpenBlade.Session;
 
 namespace OpenBlade.Session.Tests;
 
 public sealed class DisplayAutomationCoordinatorTests
 {
+    [Fact]
+    public async Task ApplicationEntryAndExitApplyOverrideThenRestoreCapturedBaseline()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        Guid id = Guid.NewGuid();
+        ProfileSet profiles = defaults with
+        {
+            ApplicationProfiles =
+            [
+                new ApplicationProfileDefinition(
+                    id,
+                    "Game",
+                    @"C:\Games\game.exe",
+                    ApplicationActivationMode.Foreground,
+                    new ApplicationProfileOverrideSet
+                    {
+                        PluggedIn = new ApplicationPowerProfileOverride
+                        {
+                            Display = new DisplayProfileSettings(null, true, null),
+                        },
+                    }),
+            ],
+        };
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+
+        Assert.Equal(DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+            {
+                ActiveApplicationProfileId = id,
+            }));
+        await coordinator.WhenIdleAsync();
+        Assert.True(Assert.Single(applier.Transitions).Settings.HdrEnabled);
+
+        Assert.Equal(DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles)));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(2, applier.Transitions.Count);
+        Assert.False(applier.Transitions[1].Settings.HdrEnabled);
+    }
+
+    [Fact]
+    public async Task CanceledPreAdmissionQueryCannotLatchManualHoldForNewerTransition()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new PreAdmissionSupersessionApplier();
+        var staleCancellationRecorded = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            context,
+            applier,
+            recordRecoveryState: state =>
+            {
+                if (state.ManualHold)
+                {
+                    staleCancellationRecorded.TrySetResult();
+                }
+                return true;
+            });
+        ProfileSet profiles = Profiles("base");
+        Guid id = Guid.NewGuid();
+        profiles = profiles with
+        {
+            ApplicationProfiles =
+            [
+                new ApplicationProfileDefinition(
+                    id,
+                    "Game",
+                    @"C:\Games\game.exe",
+                    ApplicationActivationMode.Foreground,
+                    new ApplicationProfileOverrideSet
+                    {
+                        PluggedIn = new ApplicationPowerProfileOverride
+                        {
+                            Display = new DisplayProfileSettings(null, true, null),
+                        },
+                    }),
+            ],
+        };
+        ServiceStatusSnapshot baseline = Status(PowerSource.PluggedIn, profiles);
+        ServiceStatusSnapshot application = baseline with
+        {
+            ActiveApplicationProfileId = id,
+        };
+        coordinator.Observe(baseline);
+
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(application));
+        await applier.FirstQueryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(baseline));
+        await applier.NewerTransitionStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Task cancellationOutcome = await Task.WhenAny(
+            staleCancellationRecorded.Task,
+            Task.Delay(TimeSpan.FromMilliseconds(250)));
+        Assert.NotSame(staleCancellationRecorded.Task, cancellationOutcome);
+        applier.ReleaseNewerTransition.TrySetResult();
+        await coordinator.WhenIdleAsync();
+        Assert.Single(applier.Transitions);
+
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(application));
+        await coordinator.WhenIdleAsync();
+        Assert.Equal(2, applier.Transitions.Count);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CanceledPreAdmissionQueryCannotOverrideCompletedManualMutation(
+        bool throwsFault)
+    {
+        DisplayAutomationRecoveryState? checkpoint = null;
+        var applier = new ManualSupersessionQueryApplier(throwsFault);
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+            {
+                ActiveApplicationProfileId = id,
+            }));
+        await applier.QueryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(coordinator.BeginManualOperation(
+            new DisplayProfileSettings(null, true, null)));
+        await applier.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        coordinator.CompleteManualOperation(
+            SessionDisplayOperationStatus.Succeeded,
+            applier.State);
+        applier.ReleaseQuery.TrySetResult();
+        await coordinator.WhenIdleAsync();
+
+        Assert.Null(coordinator.LastTransitionResult);
+        Assert.NotNull(checkpoint);
+        Assert.False(checkpoint.AutomaticWritesPaused);
+        Assert.False(checkpoint.UncertainHdr);
+    }
+
+    [Fact]
+    public async Task IndeterminateTransitionBlocksTargetAndPowerChanges()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        applier.Results.Enqueue(Indeterminate());
+        DisplayAutomationRecoveryState? checkpoint = null;
+        await using var coordinator = new DisplayAutomationCoordinator(
+            context,
+            applier,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(SessionDisplayOperationStatus.Indeterminate,
+            coordinator.LastTransitionResult?.Result.Status);
+        Assert.True(checkpoint?.AutomaticWritesPaused);
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles)));
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.Battery, profiles)));
+        await coordinator.WhenIdleAsync();
+        Assert.Single(applier.Transitions);
+        Assert.Equal(PowerSource.Battery, coordinator.LastConfirmedPowerSource);
+    }
+
+    [Fact]
+    public async Task FailedWriteAheadCheckpointBlocksAutomaticMutation()
+    {
+        int saves = 0;
+        var applier = new FakeApplier();
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: _ => Interlocked.Increment(ref saves) == 1);
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await coordinator.WhenIdleAsync();
+
+        Assert.Empty(applier.Transitions);
+        Assert.Equal(SessionDisplayOperationStatus.Blocked,
+            coordinator.LastTransitionResult?.Result.Status);
+    }
+
+    [Fact]
+    public async Task FailedCompletionCheckpointKeepsAutomationPaused()
+    {
+        int saves = 0;
+        var applier = new FakeApplier();
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: _ => Interlocked.Increment(ref saves) != 3);
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await coordinator.WhenIdleAsync();
+
+        Assert.Single(applier.Transitions);
+        Assert.Equal(SessionDisplayOperationStatus.Blocked,
+            coordinator.LastTransitionResult?.Result.Status);
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles)));
+        Assert.Single(applier.Transitions);
+    }
+
+    [Fact]
+    public async Task WriteAheadCheckpointRemainsPausedAcrossCrashDuringMutation()
+    {
+        DisplayAutomationRecoveryState? checkpoint = null;
+        var applier = new FakeApplier { BlockFirstTransition = true };
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await applier.FirstTransitionStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(checkpoint?.AutomaticWritesPaused);
+        Assert.True(checkpoint?.UncertainHdr);
+        await coordinator.DisposeAsync();
+
+        var restartedApplier = new FakeApplier();
+        await using var restarted = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            restartedApplier,
+            recoveryState: checkpoint);
+        restarted.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await restarted.WhenIdleAsync();
+        Assert.Empty(restartedApplier.Transitions);
+    }
+
+    [Fact]
+    public async Task PartialReadbackDoesNotClearAffectedBrightnessAmbiguity()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var recovery = new DisplayAutomationRecoveryState(
+            PowerSource.PluggedIn,
+            null,
+            null,
+            OwnedRefreshRate: false,
+            OwnedHdr: false,
+            OwnedColorProfile: false,
+            OwnedBrightness: false,
+            ManualHold: false,
+            AutomaticWritesPaused: true,
+            UncertainRefreshRate: false,
+            UncertainHdr: false,
+            UncertainColorProfile: false,
+            UncertainBrightness: true);
+        var applier = new FakeApplier();
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recoveryState: recovery);
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        DisplaySettingsSnapshot partial = applier.QueryResult.State with
+        {
+            BrightnessPercent = null,
+            SupportedBrightnessLevels = [],
+        };
+
+        Assert.False(coordinator.ResumeAfterSuccessfulExplicitRead(partial));
+        Assert.Empty(applier.Transitions);
+
+        DisplaySettingsSnapshot complete = partial with
+        {
+            BrightnessPercent = 40,
+            SupportedBrightnessLevels = [20, 40, 60],
+        };
+        Assert.True(coordinator.ResumeAfterSuccessfulExplicitRead(complete));
+        await coordinator.WhenIdleAsync();
+        Assert.Single(applier.Transitions);
+    }
+
+    [Fact]
+    public async Task BrightnessManualReadDoesNotClearPriorHdrAmbiguity()
+    {
+        DisplayAutomationRecoveryState? checkpoint = null;
+        var recovery = new DisplayAutomationRecoveryState(
+            PowerSource.PluggedIn,
+            ApplicationProfileId: null,
+            Baseline: null,
+            OwnedRefreshRate: false,
+            OwnedHdr: false,
+            OwnedColorProfile: false,
+            OwnedBrightness: false,
+            ManualHold: true,
+            AutomaticWritesPaused: true,
+            UncertainRefreshRate: false,
+            UncertainHdr: true,
+            UncertainColorProfile: false,
+            UncertainBrightness: false);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            new FakeApplier(),
+            recoveryState: recovery,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+
+        Assert.True(coordinator.BeginManualOperation(
+            DisplayProfileSettings.Unconfigured() with { BrightnessPercent = 50 }));
+        DisplaySettingsSnapshot brightnessKnownButHdrUnavailable =
+            SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native") with
+            {
+                HdrSupported = false,
+                BrightnessPercent = 50,
+                SupportedBrightnessLevels = [0, 50, 100],
+            };
+        coordinator.CompleteManualOperation(
+            SessionDisplayOperationStatus.Succeeded,
+            brightnessKnownButHdrUnavailable);
+
+        Assert.NotNull(checkpoint);
+        Assert.True(checkpoint.AutomaticWritesPaused);
+        Assert.True(checkpoint.UncertainHdr);
+        Assert.True(checkpoint.UncertainBrightness);
+    }
+
+    [Fact]
+    public async Task FailedManualAdmissionCanRecoverThroughSuccessfulRead()
+    {
+        bool allowCheckpoint = true;
+        DisplayAutomationRecoveryState? checkpoint = null;
+        var applier = new FakeApplier();
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return allowCheckpoint;
+            });
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+
+        allowCheckpoint = false;
+        Assert.False(coordinator.BeginManualOperation(
+            DisplayProfileSettings.Unconfigured() with { BrightnessPercent = 50 }));
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+            {
+                ActiveApplicationProfileId = id,
+            }));
+
+        allowCheckpoint = true;
+        Assert.True(coordinator.ResumeAfterSuccessfulExplicitRead(applier.QueryResult.State));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Single(applier.Transitions);
+        Assert.NotNull(checkpoint);
+        Assert.False(checkpoint.AutomaticWritesPaused);
+        Assert.True(applier.Transitions[0].Settings.HdrEnabled);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ManualAdmissionPreservesAutomaticUncertaintyAfterLateTransition(
+        bool returnsLateSuccess)
+    {
+        DisplayAutomationRecoveryState? checkpoint = null;
+        var applier = new FakeApplier
+        {
+            BlockFirstTransition = !returnsLateSuccess,
+            ReturnLateSuccess = returnsLateSuccess,
+        };
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await applier.FirstTransitionStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(coordinator.BeginManualOperation(
+            DisplayProfileSettings.Unconfigured() with { BrightnessPercent = 50 }));
+        applier.ReleaseFirstTransition.TrySetResult();
+        await coordinator.WhenIdleAsync();
+
+        Assert.NotNull(checkpoint);
+        Assert.True(checkpoint.AutomaticWritesPaused);
+        Assert.True(checkpoint.UncertainHdr);
+        Assert.True(checkpoint.UncertainBrightness);
+
+        DisplaySettingsSnapshot brightnessKnownButHdrUnavailable =
+            applier.QueryResult.State with
+            {
+                HdrSupported = false,
+                BrightnessPercent = 50,
+                SupportedBrightnessLevels = [0, 50, 100],
+            };
+        coordinator.CompleteManualOperation(
+            SessionDisplayOperationStatus.Succeeded,
+            brightnessKnownButHdrUnavailable);
+
+        Assert.True(checkpoint.AutomaticWritesPaused);
+        Assert.True(checkpoint.UncertainHdr);
+        Assert.True(checkpoint.UncertainBrightness);
+    }
+
+    [Fact]
+    public async Task InvalidRecoveryCheckpointStartsPausedAndRequiresCompleteReadback()
+    {
+        var applier = new FakeApplier();
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: _ => true,
+            recoveryStateInvalid: true);
+
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await coordinator.WhenIdleAsync();
+
+        Assert.Empty(applier.Transitions);
+        Assert.False(coordinator.ResumeAfterSuccessfulExplicitRead(
+            applier.QueryResult.State));
+    }
+
+    [Fact]
+    public async Task RestartFromIndeterminateCheckpointBlocksAutomaticReplay()
+    {
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        var recovery = new DisplayAutomationRecoveryState(
+            PowerSource.PluggedIn,
+            id,
+            new DisplayProfileSettings("fixed-60", false, "native"),
+            OwnedRefreshRate: false,
+            OwnedHdr: true,
+            OwnedColorProfile: false,
+            OwnedBrightness: false,
+            ManualHold: false,
+            AutomaticWritesPaused: true,
+            UncertainRefreshRate: false,
+            UncertainHdr: true,
+            UncertainColorProfile: false,
+            UncertainBrightness: false);
+        var applier = new FakeApplier();
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recoveryState: recovery);
+
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+            {
+                ActiveApplicationProfileId = id,
+            }));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Empty(applier.Transitions);
+    }
+
+    [Fact]
+    public async Task TargetChangeDuringWriteWaitsForLateIndeterminateResult()
+    {
+        var applier = new FakeApplier { ReturnLateIndeterminate = true };
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier);
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await applier.FirstTransitionStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        applier.ReleaseFirstTransition.TrySetResult();
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(SessionDisplayOperationStatus.Indeterminate,
+            coordinator.LastTransitionResult?.Result.Status);
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.Battery, profiles)));
+        Assert.Single(applier.Transitions);
+    }
+
+    [Fact]
+    public async Task SuccessfulExplicitReadReconcilesLatestTargetAfterAmbiguity()
+    {
+        var applier = new FakeApplier();
+        applier.Results.Enqueue(Indeterminate());
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier);
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await coordinator.WhenIdleAsync();
+
+        coordinator.ResumeAfterSuccessfulExplicitRead(applier.QueryResult.State);
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(2, applier.Transitions.Count);
+        Assert.True(applier.Transitions[1].Settings.HdrEnabled);
+        Assert.Equal(SessionDisplayOperationStatus.Succeeded,
+            coordinator.LastTransitionResult?.Result.Status);
+    }
+
+    [Fact]
+    public async Task ManualChangeDuringApplicationPreventsExitRestore()
+    {
+        var applier = new FakeApplier();
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier);
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await coordinator.WhenIdleAsync();
+
+        Assert.True(coordinator.BeginManualOperation(
+            new DisplayProfileSettings(null, false, null)));
+        coordinator.CompleteManualOperation(
+            SessionDisplayOperationStatus.Succeeded,
+            applier.QueryResult.State);
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles)));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Single(applier.Transitions);
+    }
+
+    [Fact]
+    public async Task ManualMutationAdmissionDurablyDropsApplicationRestoreOwnership()
+    {
+        DisplayAutomationRecoveryState? checkpoint = null;
+        Guid id = Guid.NewGuid();
+        var recovery = new DisplayAutomationRecoveryState(
+            PowerSource.PluggedIn,
+            id,
+            new DisplayProfileSettings("fixed-60", false, "native"),
+            OwnedRefreshRate: false,
+            OwnedHdr: true,
+            OwnedColorProfile: false,
+            OwnedBrightness: false,
+            ManualHold: false,
+            AutomaticWritesPaused: false,
+            UncertainRefreshRate: false,
+            UncertainHdr: false,
+            UncertainColorProfile: false,
+            UncertainBrightness: false);
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            new FakeApplier(),
+            recoveryState: recovery,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+
+        Assert.True(coordinator.BeginManualOperation(
+            new DisplayProfileSettings(null, true, null)));
+
+        Assert.NotNull(checkpoint);
+        Assert.Null(checkpoint.Baseline);
+        Assert.Null(checkpoint.ApplicationProfileId);
+        Assert.False(checkpoint.OwnedHdr);
+        Assert.True(checkpoint.ManualHold);
+        Assert.True(checkpoint.AutomaticWritesPaused);
+        Assert.True(checkpoint.UncertainHdr);
+    }
+
+    [Fact]
+    public async Task RestartPreservesManualHoldUntilPowerSourceChanges()
+    {
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true);
+        var recovery = new DisplayAutomationRecoveryState(
+            PowerSource.PluggedIn,
+            id,
+            new DisplayProfileSettings("fixed-60", false, "native"),
+            OwnedRefreshRate: false,
+            OwnedHdr: true,
+            OwnedColorProfile: false,
+            OwnedBrightness: false,
+            ManualHold: true,
+            AutomaticWritesPaused: false,
+            UncertainRefreshRate: false,
+            UncertainHdr: false,
+            UncertainColorProfile: false,
+            UncertainBrightness: false);
+        var applier = new FakeApplier();
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recoveryState: recovery);
+
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+            {
+                ActiveApplicationProfileId = id,
+            }));
+        Assert.Empty(applier.Transitions);
+
+        Assert.Equal(
+            DisplayAutomationObservation.TransitionScheduled,
+            coordinator.Observe(Status(PowerSource.Battery, profiles) with
+            {
+                ActiveApplicationProfileId = id,
+            }));
+        await coordinator.WhenIdleAsync();
+        Assert.Single(applier.Transitions);
+    }
+
+    [Fact]
+    public async Task ApplicationExitRestoresCapturedFieldBeforeConfiguredBase()
+    {
+        var applier = new FakeApplier
+        {
+            QueryResult = new SessionDisplayExecutionResult(
+                SessionDisplayOperationStatus.Succeeded,
+                null,
+                SessionDisplayIpcCodecTests.Snapshot("fixed-60", true, "native")),
+        };
+        (ProfileSet original, Guid id) = ApplicationProfiles(hdr: false);
+        ProfileSet profiles = original with
+        {
+            PluggedIn = original.PluggedIn with
+            {
+                Display = new DisplayProfileSettings(null, false, null),
+            },
+        };
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier);
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with
+        {
+            ActiveApplicationProfileId = id,
+        });
+        await coordinator.WhenIdleAsync();
+
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(2, applier.Transitions.Count);
+        Assert.False(applier.Transitions[0].Settings.HdrEnabled);
+        Assert.True(applier.Transitions[1].Settings.HdrEnabled);
+    }
+
     [Fact]
     public async Task FirstConfirmedStatus_IsObservationOnly()
     {
@@ -198,7 +915,7 @@ public sealed class DisplayAutomationCoordinatorTests
     }
 
     [Fact]
-    public async Task UnknownInterruptingNewDestination_ReschedulesDestinationOnRecovery()
+    public async Task UnknownInterruptingPotentialWriteRequiresReadBeforeReschedule()
     {
         var context = new DisplayPowerContextState();
         var applier = new FakeApplier { BlockFirstTransition = true };
@@ -212,7 +929,10 @@ public sealed class DisplayAutomationCoordinatorTests
             Status(PowerSource.Battery, Profiles("recovered-b"), revision: 4));
         await coordinator.WhenIdleAsync();
 
-        Assert.Equal(DisplayAutomationObservation.TransitionScheduled, recovered);
+        Assert.Equal(DisplayAutomationObservation.SameSource, recovered);
+        Assert.True(applier.FirstTransitionCanceled);
+        Assert.True(coordinator.ResumeAfterSuccessfulExplicitRead(applier.QueryResult.State));
+        await coordinator.WhenIdleAsync();
         Assert.Equal(2, applier.Transitions.Count);
         Assert.Equal("first-b-battery", applier.Transitions[0].Settings.RefreshRateKey);
         Assert.Equal("recovered-b-battery", applier.Transitions[1].Settings.RefreshRateKey);
@@ -223,7 +943,7 @@ public sealed class DisplayAutomationCoordinatorTests
     }
 
     [Fact]
-    public async Task SubscriptionUnavailable_SuspendsAndReschedulesIncompleteDestination()
+    public async Task SubscriptionUnavailableRequiresReadBeforeReschedulingPotentialWrite()
     {
         var context = new DisplayPowerContextState();
         var applier = new FakeApplier { BlockFirstTransition = true };
@@ -240,7 +960,9 @@ public sealed class DisplayAutomationCoordinatorTests
             Status(PowerSource.Battery, Profiles("reconnected-b"), revision: 1));
         await coordinator.WhenIdleAsync();
 
-        Assert.Equal(DisplayAutomationObservation.TransitionScheduled, recovered);
+        Assert.Equal(DisplayAutomationObservation.SameSource, recovered);
+        Assert.True(coordinator.ResumeAfterSuccessfulExplicitRead(applier.QueryResult.State));
+        await coordinator.WhenIdleAsync();
         Assert.Equal(2, applier.Transitions.Count);
         Assert.True(applier.FirstTransitionCanceled);
         Assert.Equal(
@@ -249,7 +971,7 @@ public sealed class DisplayAutomationCoordinatorTests
     }
 
     [Fact]
-    public async Task RapidTransitions_CancelOlderAndOnlyPublishLatestResult()
+    public async Task RapidTransitionRequiresReadBeforeApplyingLatestTarget()
     {
         var context = new DisplayPowerContextState();
         var applier = new FakeApplier { BlockFirstTransition = true };
@@ -261,8 +983,11 @@ public sealed class DisplayAutomationCoordinatorTests
         coordinator.Observe(Status(PowerSource.UsbC, Profiles("usb"), revision: 3));
         await coordinator.WhenIdleAsync();
 
-        Assert.Equal(2, applier.Transitions.Count);
         Assert.True(applier.FirstTransitionCanceled);
+        Assert.Single(applier.Transitions);
+        Assert.True(coordinator.ResumeAfterSuccessfulExplicitRead(applier.QueryResult.State));
+        await coordinator.WhenIdleAsync();
+        Assert.Equal(2, applier.Transitions.Count);
         Assert.Equal(PowerSource.UsbC, coordinator.LastTransitionResult?.PowerSource);
         Assert.Equal("usb-usbc", applier.Transitions[1].Settings.RefreshRateKey);
     }
@@ -302,6 +1027,30 @@ public sealed class DisplayAutomationCoordinatorTests
                 Display = new DisplayProfileSettings($"{prefix}-usbc", false, "native"),
             },
         };
+    }
+
+    private static (ProfileSet Profiles, Guid Id) ApplicationProfiles(bool hdr)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        Guid id = Guid.NewGuid();
+        return (defaults with
+        {
+            ApplicationProfiles =
+            [
+                new ApplicationProfileDefinition(
+                    id,
+                    "Game",
+                    @"C:\Games\game.exe",
+                    ApplicationActivationMode.Foreground,
+                    new ApplicationProfileOverrideSet
+                    {
+                        PluggedIn = new ApplicationPowerProfileOverride
+                        {
+                            Display = new DisplayProfileSettings(null, hdr, null),
+                        },
+                    }),
+            ],
+        }, id);
     }
 
     private static ServiceStatusSnapshot Status(
@@ -349,14 +1098,19 @@ public sealed class DisplayAutomationCoordinatorTests
 
         public List<Transition> Transitions { get; } = [];
         public Queue<SessionDisplayExecutionResult> Results { get; } = [];
+        public SessionDisplayExecutionResult QueryResult { get; init; } = Success();
         public bool BlockFirstTransition { get; init; }
+        public bool ReturnLateIndeterminate { get; init; }
+        public bool ReturnLateSuccess { get; init; }
         public bool FirstTransitionCanceled { get; private set; }
         public TaskCompletionSource FirstTransitionStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseFirstTransition { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<SessionDisplayExecutionResult> QueryAsync(
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(Success());
+            Task.FromResult(QueryResult);
 
         public Task<SessionDisplayExecutionResult> SetRefreshRateAsync(
             PowerSource expectedPowerSource,
@@ -376,6 +1130,12 @@ public sealed class DisplayAutomationCoordinatorTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(Success());
 
+        public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Success());
+
         public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
             PowerSource expectedPowerSource,
             DisplayProfileSettings settings,
@@ -390,6 +1150,18 @@ public sealed class DisplayAutomationCoordinatorTests
         {
             int ordinal = Interlocked.Increment(ref transitionCount);
             Transitions.Add(new Transition(expectedPowerSource, expectedGeneration, settings));
+            if (ReturnLateIndeterminate && ordinal == 1)
+            {
+                FirstTransitionStarted.TrySetResult();
+                await ReleaseFirstTransition.Task;
+                return Indeterminate();
+            }
+            if (ReturnLateSuccess && ordinal == 1)
+            {
+                FirstTransitionStarted.TrySetResult();
+                await ReleaseFirstTransition.Task;
+                return Success();
+            }
             if (BlockFirstTransition && ordinal == 1)
             {
                 FirstTransitionStarted.TrySetResult();
@@ -412,6 +1184,153 @@ public sealed class DisplayAutomationCoordinatorTests
             DisplayAutomationCoordinatorTests.Success();
     }
 
+    private sealed class PreAdmissionSupersessionApplier : IDisplayProfileApplier
+    {
+        private int queryCount;
+
+        public List<DisplayProfileSettings> Transitions { get; } = [];
+        public TaskCompletionSource FirstQueryStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource NewerTransitionStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseNewerTransition { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<SessionDisplayExecutionResult> QueryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref queryCount) != 1)
+            {
+                return Success();
+            }
+
+            FirstQueryStarted.TrySetResult();
+            var canceled = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            using CancellationTokenRegistration registration = cancellationToken.Register(
+                () => canceled.TrySetResult());
+            await canceled.Task;
+            await NewerTransitionStarted.Task;
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        public Task<SessionDisplayExecutionResult> SetRefreshRateAsync(
+            PowerSource expectedPowerSource,
+            string refreshRateKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetHdrAsync(
+            PowerSource expectedPowerSource,
+            bool enabled,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetColorProfileAsync(
+            PowerSource expectedPowerSource,
+            string colorProfileKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
+            PowerSource expectedPowerSource,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async Task<SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(
+            PowerSource expectedPowerSource,
+            long expectedGeneration,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken)
+        {
+            Transitions.Add(settings);
+            if (Transitions.Count == 1)
+            {
+                NewerTransitionStarted.TrySetResult();
+                await ReleaseNewerTransition.Task;
+            }
+            return Success();
+        }
+    }
+
+    private sealed class ManualSupersessionQueryApplier : IDisplayProfileApplier
+    {
+        private readonly bool throwsFault;
+
+        public ManualSupersessionQueryApplier(bool throwsFault)
+        {
+            this.throwsFault = throwsFault;
+        }
+
+        public DisplaySettingsSnapshot State { get; } =
+            SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native");
+        public TaskCompletionSource QueryStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CancellationObserved { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseQuery { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<SessionDisplayExecutionResult> QueryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            QueryStarted.TrySetResult();
+            using CancellationTokenRegistration registration = cancellationToken.Register(
+                () => CancellationObserved.TrySetResult());
+            await ReleaseQuery.Task;
+            if (throwsFault)
+            {
+                throw new IOException(
+                    "The canceled baseline query failed after manual completion.");
+            }
+            return Failure("The canceled baseline query returned a stale failure.");
+        }
+
+        public Task<SessionDisplayExecutionResult> SetRefreshRateAsync(
+            PowerSource expectedPowerSource,
+            string refreshRateKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetHdrAsync(
+            PowerSource expectedPowerSource,
+            bool enabled,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetColorProfileAsync(
+            PowerSource expectedPowerSource,
+            string colorProfileKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
+            PowerSource expectedPowerSource,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(
+            PowerSource expectedPowerSource,
+            long expectedGeneration,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
     private static SessionDisplayExecutionResult Success() => new(
             SessionDisplayOperationStatus.Succeeded,
             null,
@@ -420,5 +1339,10 @@ public sealed class DisplayAutomationCoordinatorTests
     private static SessionDisplayExecutionResult Failure(string error) => new(
         SessionDisplayOperationStatus.Failed,
         error,
+        SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native"));
+
+    private static SessionDisplayExecutionResult Indeterminate() => new(
+        SessionDisplayOperationStatus.Indeterminate,
+        "The write may have been submitted.",
         SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native"));
 }

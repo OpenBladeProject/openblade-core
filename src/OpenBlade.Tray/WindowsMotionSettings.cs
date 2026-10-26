@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -17,8 +18,12 @@ internal static class WindowsMotionSettings
                     0)
                 || enabled != 0;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsMotionSettings),
+                "ReadAnimationSetting",
+                exception);
             return true;
         }
     }

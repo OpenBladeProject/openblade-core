@@ -1171,6 +1171,7 @@ internal sealed class ProductionBatteryPort :
                             cancellationToken).ConfigureAwait(false);
                     }
                 }
+                bool hadPriorSubmission = submitted;
                 submitted = true;
                 HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
                     new RazerCommandSpec(
@@ -1185,7 +1186,6 @@ internal sealed class ProductionBatteryPort :
                 if (result.Failure is not null
                     || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
                 {
-                    poisoned = true;
                     bool manualEntryCommand = requireAutomaticEntry && index < 2;
                     string stage = manualEntryCommand ? "manual entry" : "fan target";
                     int stageIndex = manualEntryCommand
@@ -1202,6 +1202,24 @@ internal sealed class ProductionBatteryPort :
                             : BladeWriteFailurePhase
                                 .AdjustableFanSecondManualEntrySubmission
                         : BladeWriteFailurePhase.Unspecified;
+
+                    if (result.Failure is { } knownFailure
+                        && !hadPriorSubmission
+                        && IsKnownNotAppliedWriteFailure(knownFailure, result.Diagnostic))
+                    {
+                        submitted = false;
+                        throw new BladeWriteException(
+                            WriteSubmissionState.KnownNotApplied,
+                            failurePhase,
+                            "The adjustable fan command was definitively not applied.")
+                        {
+                            Diagnostic = result.Diagnostic,
+                            CommandClass = command.CommandClass,
+                            CommandId = command.CommandId,
+                        };
+                    }
+
+                    poisoned = true;
                     throw new BladeWriteException(
                         WriteSubmissionState.Indeterminate,
                         failurePhase,
@@ -1986,6 +2004,7 @@ internal sealed class ProductionBatteryPort :
                 foreach (RazerCommandDefinition command in exitCommands)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    bool hadPriorSubmission = submitted;
                     submitted = true;
                     HidSessionResult<ReadOnlyMemory<byte>> result =
                         await ExecuteThermalCommandAsync(command, cancellationToken)
@@ -1993,9 +2012,30 @@ internal sealed class ProductionBatteryPort :
                     if (result.Failure is not null
                         || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
                     {
+                        if (result.Failure is { } knownFailure
+                            && !hadPriorSubmission
+                            && IsKnownNotAppliedWriteFailure(knownFailure, result.Diagnostic))
+                        {
+                            submitted = false;
+                            throw new BladeWriteException(
+                                WriteSubmissionState.KnownNotApplied,
+                                "The HyperBoost restoration command was definitively not applied.")
+                            {
+                                Diagnostic = result.Diagnostic,
+                                CommandClass = command.CommandClass,
+                                CommandId = command.CommandId,
+                            };
+                        }
+
                         poisoned = true;
-                        throw Indeterminate(
-                            "The HyperBoost restoration outcome is indeterminate.");
+                        throw new BladeWriteException(
+                            WriteSubmissionState.Indeterminate,
+                            "The HyperBoost restoration outcome is indeterminate.")
+                        {
+                            Diagnostic = result.Diagnostic,
+                            CommandClass = command.CommandClass,
+                            CommandId = command.CommandId,
+                        };
                     }
                 }
 
@@ -2036,6 +2076,7 @@ internal sealed class ProductionBatteryPort :
                 {
                     await validateEligibility(cancellationToken).ConfigureAwait(false);
                 }
+                bool hadPriorSubmission = submitted;
                 submitted = true;
                 HidSessionResult<ReadOnlyMemory<byte>> result =
                     await ExecuteThermalCommandAsync(command, cancellationToken,
@@ -2049,9 +2090,30 @@ internal sealed class ProductionBatteryPort :
                 if (result.Failure is not null
                     || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
                 {
+                    if (result.Failure is { } knownFailure
+                        && !hadPriorSubmission
+                        && IsKnownNotAppliedWriteFailure(knownFailure, result.Diagnostic))
+                    {
+                        submitted = false;
+                        throw new BladeWriteException(
+                            WriteSubmissionState.KnownNotApplied,
+                            "The thermal command was definitively not applied.")
+                        {
+                            Diagnostic = result.Diagnostic,
+                            CommandClass = command.CommandClass,
+                            CommandId = command.CommandId,
+                        };
+                    }
+
                     poisoned = true;
-                    throw Indeterminate(
-                        "The multi-command thermal write outcome is indeterminate.");
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        "The multi-command thermal write outcome is indeterminate.")
+                    {
+                        Diagnostic = result.Diagnostic,
+                        CommandClass = command.CommandClass,
+                        CommandId = command.CommandId,
+                    };
                 }
 
                 if (applyMaximumTiming && index < commands.Length - 1)
@@ -2571,16 +2633,7 @@ internal sealed class ProductionBatteryPort :
         HidSessionFailureDiagnostic? diagnostic,
         RazerCommandDefinition command)
     {
-        bool knownNotApplied = failure is
-            HidSessionFailureKind.ConflictBlocked
-            or HidSessionFailureKind.ConflictDetectionFailed
-            or HidSessionFailureKind.QueuedCanceled
-            or HidSessionFailureKind.Exhausted
-            || (failure == HidSessionFailureKind.Canceled
-                && diagnostic is null
-                && session.Disposition == RazerCommandSessionDisposition.Healthy)
-            || (failure == HidSessionFailureKind.ProtocolFailure
-                && diagnostic?.ProtocolValidationFailure == HidProtocolValidationFailure.Status);
+        bool knownNotApplied = IsKnownNotAppliedWriteFailure(failure, diagnostic);
 
         return new BladeWriteException(
             knownNotApplied
@@ -2595,6 +2648,21 @@ internal sealed class ProductionBatteryPort :
             CommandId = command.CommandId,
         };
     }
+
+    private bool IsKnownNotAppliedWriteFailure(
+        HidSessionFailureKind failure,
+        HidSessionFailureDiagnostic? diagnostic) =>
+        failure is
+            HidSessionFailureKind.ConflictBlocked
+            or HidSessionFailureKind.ConflictDetectionFailed
+            or HidSessionFailureKind.QueuedCanceled
+            or HidSessionFailureKind.Exhausted
+            || diagnostic?.Phase == HidSessionFailurePhase.SharedGateAdmission
+            || (failure == HidSessionFailureKind.Canceled
+                && diagnostic is null
+                && session.Disposition == RazerCommandSessionDisposition.Healthy)
+            || (failure == HidSessionFailureKind.ProtocolFailure
+                && diagnostic?.ProtocolValidationFailure == HidProtocolValidationFailure.Status);
 
     private static BladeWriteException KnownNotApplied(string message) => new(
         WriteSubmissionState.KnownNotApplied,

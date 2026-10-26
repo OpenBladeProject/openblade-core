@@ -3,19 +3,29 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class RazerKeyboardDriverInstallerTests
 {
-    [Fact]
-    public async Task StagesAllPackagesBeforeBindingAndConfirmsReadback()
+    [Theory]
+    [InlineData("02E0")]
+    [InlineData("02C6")]
+    [InlineData("029F")]
+    [InlineData("029D")]
+    [InlineData("02C5")]
+    [InlineData("0255")]
+    [InlineData("02A0")]
+    public async Task StagesAllPackagesBeforeBindingAndConfirmsReadback(string productId)
     {
-        var platform = new FakePlatform();
+        var recipe = RazerKeyboardDriverRecipes.All.Single(value => value.ProductId == productId);
+        var platform = new FakePlatform { Recipe = recipe };
         Assert.Equal(RazerDriverInstallOutcome.Installed, await new RazerKeyboardDriverInstaller(platform).InstallAsync(default));
-        Assert.Equal(RazerKeyboardDriverPackage.StageOrder, platform.Mutations.Take(5).Select(operation => operation.RelativeInf));
+        Assert.Equal(recipe.StageOrder, platform.Mutations.Take(5).Select(operation => operation.RelativeInf));
         Assert.All(platform.Mutations.Take(5), operation => Assert.False(operation.Bind));
-        Assert.Equal(RazerKeyboardDriverPackage.InstallOrder, platform.Mutations.Skip(5).Select(operation => operation.RelativeInf));
+        Assert.Equal(recipe.InstallOrder, platform.Mutations.Skip(5).Select(operation => operation.RelativeInf));
         Assert.All(platform.Mutations.Skip(5), operation => Assert.True(operation.Bind));
         Assert.True(platform.Journal.Completed);
         Assert.True(platform.Captures >= 23);
         Assert.Equal(10, platform.Journal.IntentCount);
         Assert.Equal(10, platform.Journal.ObservationCount);
+        Assert.Equal(recipe.Id, platform.AcquiredRecipeId);
+        Assert.Equal(recipe.Id, platform.Journal.Baseline!.RecipeId);
     }
 
     [Fact]
@@ -157,6 +167,47 @@ public sealed class RazerKeyboardDriverInstallerTests
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("{\"kind\":\"intent\"}\n{\"kind\":\"comp"));
         Assert.ThrowsAny<System.Text.Json.JsonException>(() => RazerDriverInstallJournal.HasUnfinishedTransaction(stream));
     }
+    [Theory]
+    [InlineData(2, 0, RazerDriverInstallOutcome.Unavailable)]
+    [InlineData(3, 0, RazerDriverInstallOutcome.Unavailable)]
+    [InlineData(4, 1, RazerDriverInstallOutcome.RecoveryRequired)]
+    [InlineData(5, 1, RazerDriverInstallOutcome.RecoveryRequired)]
+    [InlineData(23, 10, RazerDriverInstallOutcome.RecoveryRequired)]
+    public async Task ChangingRecipeNeverMixesModelPackages(int changeAt, int mutations, RazerDriverInstallOutcome expected)
+    {
+        var platform = new FakePlatform { Recipe = RazerKeyboardDriverRecipes.Pid02C6, ChangeRecipeAt = changeAt };
+        Assert.Equal(expected, await new RazerKeyboardDriverInstaller(platform).InstallAsync(default));
+        Assert.Equal(mutations, platform.Mutations.Count);
+        Assert.All(platform.Mutations, operation => Assert.Contains(operation, RazerKeyboardDriverInstaller.Operations(platform.Recipe)));
+        if (mutations > 0)
+        {
+            Assert.True(platform.Journal.RequiresRecovery);
+            Assert.False(platform.Journal.Completed);
+        }
+    }
+
+    [Fact]
+    public async Task UnknownRecipeCannotDownloadOrInstall()
+    {
+        var platform = new FakePlatform { UnknownRecipe = true };
+        Assert.Equal(RazerDriverInstallOutcome.Unavailable, await new RazerKeyboardDriverInstaller(platform).InstallAsync(default));
+        Assert.False(platform.Downloaded);
+        Assert.False(platform.OpenedJournal);
+        Assert.Empty(platform.Mutations);
+    }
+
+    [Theory]
+    [InlineData(false, RazerDriverInstallOutcome.Failed)]
+    [InlineData(true, RazerDriverInstallOutcome.RecoveryRequired)]
+    public async Task InvalidPackageIsContainedAndPreservesSubmissionBoundary(bool afterIntent, RazerDriverInstallOutcome expected)
+    {
+        var platform = new FakePlatform { InvalidPackageDuringMutation = afterIntent, InvalidPackageDuringDownload = !afterIntent };
+        Assert.Equal(expected, await new RazerKeyboardDriverInstaller(platform).InstallAsync(default));
+        Assert.Equal(afterIntent ? 1 : 0, platform.Mutations.Count);
+        Assert.Equal(afterIntent ? 1 : 0, platform.Journal.IntentCount);
+        Assert.Equal(afterIntent, platform.Journal.RequiresRecovery);
+    }
+
     private sealed class FakePlatform : IRazerDriverInstallPlatform
     {
         internal readonly List<RazerDriverMutation> Mutations = [];
@@ -164,24 +215,36 @@ public sealed class RazerKeyboardDriverInstallerTests
         internal bool AlreadyInstalled, Pending, OpenedJournal, Downloaded, DownloadCanceled, ReadbackFails;
         internal int Captures, RefuseCapture = -1, AmbiguousAt = -1, ExitCode;
         internal RazerDriverInstallOutcome Refusal = RazerDriverInstallOutcome.Unavailable;
+        internal RazerKeyboardDriverRecipe Recipe = RazerKeyboardDriverRecipes.Pid02E0;
+        internal int ChangeRecipeAt = int.MaxValue;
+        internal bool UnknownRecipe, InvalidPackageDuringDownload, InvalidPackageDuringMutation;
+        internal string? AcquiredRecipeId;
 
         public RazerDriverInstallSnapshot Capture()
         {
             Captures++;
             return new(Captures != RefuseCapture, AlreadyInstalled || (Mutations.Count == 10 && !ReadbackFails),
-                [new("oem101.inf", "already-present")], "test snapshot", Refusal);
+                [new("oem101.inf", "already-present")], "test snapshot", Refusal)
+            {
+                RecipeId = UnknownRecipe ? "unknown-recipe"
+                    : Captures >= ChangeRecipeAt ? RazerKeyboardDriverRecipes.Pid02E0.Id : Recipe.Id,
+            };
         }
         public bool HasUnfinishedTransaction() => Pending;
         public IRazerDriverInstallJournal OpenJournal() { OpenedJournal = true; return Journal; }
-        public Task<string> AcquireVerifiedAsync(string destination, CancellationToken cancellationToken)
+        public Task<string> AcquireVerifiedAsync(string destination, RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken)
         {
             Downloaded = true;
+            AcquiredRecipeId = recipe.Id;
+            if (InvalidPackageDuringDownload) { throw new InvalidDataException("Untrusted package input"); }
             return DownloadCanceled ? Task.FromCanceled<string>(new CancellationToken(true)) : Task.FromResult(destination);
         }
-        public Task<RazerDriverMutationResult> MutateAsync(string root, RazerDriverMutation operation, CancellationToken cancellationToken)
+        public Task<RazerDriverMutationResult> MutateAsync(string root, RazerDriverMutation operation, RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken)
         {
             Assert.Equal(Mutations.Count + 1, Journal.IntentCount);
+            Assert.Equal(Recipe.Id, recipe.Id);
             Mutations.Add(operation);
+            if (InvalidPackageDuringMutation) { throw new InvalidDataException("Changed staged package"); }
             if (Mutations.Count - 1 == AmbiguousAt)
             {
                 throw new OperationCanceledException();

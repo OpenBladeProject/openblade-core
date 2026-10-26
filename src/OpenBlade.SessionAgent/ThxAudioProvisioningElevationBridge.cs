@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -49,6 +50,10 @@ internal static class ThxAudioProvisioningElevationBridge
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException
             or IOException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioProvisioningElevationBridge",
+                "Run",
+                exception);
             return (int)(requested ? ThxAudioProvisioningResult.RecoveryRequired : ThxAudioProvisioningResult.Failed);
         }
     }

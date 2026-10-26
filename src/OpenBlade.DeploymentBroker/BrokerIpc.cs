@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.DeploymentBroker;
 
@@ -552,6 +553,8 @@ public sealed class BrokerPipeServer
         }
         catch (Exception exception) when (exception is InvalidDataException or OperationCanceledException)
         {
+            DiagnosticTrace.TraceException(nameof(BrokerPipeServer), nameof(ServeOnceAsync), exception,
+                "Broker request framing or validation failed.");
             await WriteResponseWithDeadlineAsync(
                 pipe,
                 new BrokerResponse(
@@ -591,8 +594,10 @@ public sealed class BrokerPipeServer
                 {
                     throw;
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
+                    DiagnosticTrace.TraceException(nameof(BrokerPipeServer), nameof(ServeOnceAsync), exception,
+                        "Accepted broker request handler failed.");
                     // The replay marker already makes this accepted request
                     // non-retriable. Return an explicit terminal ambiguity
                     // instead of disconnecting and tempting a blind retry.

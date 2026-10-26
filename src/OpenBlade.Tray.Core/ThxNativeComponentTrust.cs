@@ -65,7 +65,7 @@ internal static class ThxNativeComponentTrust
                 int status = WinVerifyTrust(new nint(-1), ref action, ref data);
                 if (status != 0)
                 {
-                    throw new CryptographicException($"Windows rejected THX component trust (0x{status:X8}).");
+                    throw new CryptographicException($"Windows rejected signed component trust (0x{status:X8}).");
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 VerifySigner(data.State, signerSubject, signerThumbprint);
@@ -92,12 +92,12 @@ internal static class ThxNativeComponentTrust
         nint certificate = signer == nint.Zero ? nint.Zero : WTHelperGetProvCertFromChain(signer, 0);
         if (certificate == nint.Zero)
         {
-            throw new CryptographicException("Windows did not provide the verified THX component signer.");
+            throw new CryptographicException("Windows did not provide the verified signed component signer.");
         }
         var info = Marshal.PtrToStructure<ProviderCertificateHeader>(certificate);
         if (info.Certificate == nint.Zero)
         {
-            throw new CryptographicException("Windows did not provide the verified THX component certificate.");
+            throw new CryptographicException("Windows did not provide the verified signed component certificate.");
         }
 #pragma warning disable SYSLIB0057
         using var signedBy = new X509Certificate2(info.Certificate);

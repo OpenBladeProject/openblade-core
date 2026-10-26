@@ -70,6 +70,13 @@ public interface IServiceControlRuntime
         ProfileSet profiles,
         CancellationToken token);
 
+    Task<ControlOperationResult> ReportApplicationContextAsync(
+        ReportApplicationContextRequest request,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Application profiles are unavailable."));
+
     Task<ControlOperationResult> SetPerformanceOverrideAsync(
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
@@ -485,6 +492,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly Func<CancellationToken, Task> hyperBoostLifecycleExitBoundary;
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
+    private static readonly TimeSpan ApplicationContextLeaseDuration = TimeSpan.FromSeconds(15);
+    private CancellationTokenSource? applicationContextLeaseCancellation;
+    private Guid applicationContextInstanceId;
+    private long applicationContextSequence;
     private readonly ThermalConvergenceArbiter thermalConvergenceArbiter = new();
     private readonly ProfileSetValidator validator;
     private readonly object initializationGate = new();
@@ -509,6 +520,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? lastOwnedLightingSettings;
     private long lastLightingOffSuspendGeneration = -1;
     private static readonly TimeSpan LowPowerLightingBudget = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ShutdownFinalCleanupBudget = TimeSpan.FromSeconds(5);
     private ExactFanControlOwnership exactFanControlOwnership =
         ExactFanControlOwnership.Unowned;
     private long fanAuthorityEpoch;
@@ -1499,9 +1511,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             bool lightingWasSuppressed = lightingSuppressions.Count > 0;
+            Guid? priorApplicationProfileId = Automation.ActiveApplicationProfileId;
             FanControlSettings priorFanIntent = ResolveCurrentFanIntent();
             ConfirmedDeviceState profileResolutionState =
                 GetStatus().ConfirmedState ?? UnknownConfirmedState;
+            DesiredDeviceState priorDesired = ResolveAutomationDesired(profileResolutionState);
             LightingSettings priorLightingIntent =
                 ResolveAutomationDesired(profileResolutionState).Lighting.Value;
             try
@@ -1557,6 +1571,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 Message = message,
                 Profiles = Automation.Profiles,
+                ActiveApplicationProfileId = Automation.ActiveApplicationProfileId,
+                EffectiveLaptopBehavior = Automation.EffectiveLaptopBehavior,
                 DesiredState = ResolveAutomationDesired(confirmed),
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,
@@ -1568,6 +1584,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LightingSuppressions = CurrentLightingSuppressions(),
             });
             history.RecordSummary(ControlOperationStatus.Stored, message);
+
+            bool activeApplicationIntentChanged = priorApplicationProfileId.HasValue
+                && (Automation.ActiveApplicationProfileId != priorApplicationProfileId
+                    || ResolveAutomationDesired(confirmed) != priorDesired);
 
             if (lightingWasSuppressed && lightingSuppressions.Count == 0)
             {
@@ -1597,12 +1617,177 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
             }
 
+            current = GetStatus();
+            if (activeApplicationIntentChanged
+                && current.ActivePowerSource is
+                    PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                && current.DeviceVerified && !current.WritesBlocked)
+            {
+                await ApplyFullTransitionAsync(current.ActivePowerSource, token)
+                    .ConfigureAwait(false);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "Profiles were stored and the active application profile was reconciled.");
+            }
+
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    public async Task<ControlOperationResult> ReportApplicationContextAsync(
+        ReportApplicationContextRequest request,
+        Func<bool> stillControlsSession,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
+        EnsureInitialized();
+        if (request.InstanceId == Guid.Empty || request.Sequence <= 0)
+        {
+            return RecordRejectedIntent(
+                new ArgumentException("Application context sequencing is invalid."));
+        }
+        if (request.ExecutablePath is not null)
+        {
+            try
+            {
+                _ = ApplicationProfileDefinition.NormalizeExecutablePath(
+                    request.ExecutablePath);
+            }
+            catch (Exception exception) when (exception is
+                ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return RecordRejectedIntent(exception);
+            }
+        }
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (!stillControlsSession())
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Application context requires the active local Windows session.");
+            }
+            if (request.InstanceId == applicationContextInstanceId
+                && request.Sequence <= applicationContextSequence)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    "A stale application context was ignored.");
+            }
+
+            applicationContextInstanceId = request.InstanceId;
+            applicationContextSequence = request.Sequence;
+            applicationContextLeaseCancellation?.Cancel();
+            applicationContextLeaseCancellation?.Dispose();
+            applicationContextLeaseCancellation = null;
+            bool changed = Automation.SetApplicationContext(request.ExecutablePath);
+            if (Automation.ActiveApplicationProfileId.HasValue)
+            {
+                var leaseCancellation = new CancellationTokenSource();
+                applicationContextLeaseCancellation = leaseCancellation;
+                _ = ExpireApplicationContextAsync(
+                    request.InstanceId,
+                    request.Sequence,
+                    leaseCancellation);
+            }
+
+            PublishApplicationContextStatus(
+                changed
+                    ? "The active application profile changed."
+                    : "The active application profile lease was renewed.");
+            ServiceStatusSnapshot current = GetStatus();
+            if (changed && current.ActivePowerSource is
+                    PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                && current.DeviceVerified && !current.WritesBlocked)
+            {
+                await ApplyFullTransitionAsync(
+                    current.ActivePowerSource,
+                    token,
+                    stillControlsSession: stillControlsSession).ConfigureAwait(false);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "The active application profile was reconciled.");
+            }
+            return new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                changed
+                    ? "The active application profile was recorded."
+                    : "The active application profile lease was renewed.");
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private async Task ExpireApplicationContextAsync(
+        Guid instanceId,
+        long sequence,
+        CancellationTokenSource ownedCancellation)
+    {
+        try
+        {
+            await Task.Delay(
+                ApplicationContextLeaseDuration,
+                timeProvider,
+                ownedCancellation.Token).ConfigureAwait(false);
+            await operationGate.WaitAsync(ownedCancellation.Token).ConfigureAwait(false);
+            try
+            {
+                if (!ReferenceEquals(applicationContextLeaseCancellation, ownedCancellation)
+                    || applicationContextInstanceId != instanceId
+                    || applicationContextSequence != sequence)
+                {
+                    return;
+                }
+                applicationContextLeaseCancellation = null;
+                if (!Automation.SetApplicationContext(null))
+                {
+                    return;
+                }
+                PublishApplicationContextStatus(
+                    "The application profile lease expired; the current power profile is active.");
+                ServiceStatusSnapshot current = GetStatus();
+                if (current.ActivePowerSource is
+                        PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                    && current.DeviceVerified && !current.WritesBlocked)
+                {
+                    await ApplyFullTransitionAsync(
+                        current.ActivePowerSource,
+                        ownedCancellation.Token).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                operationGate.Release();
+            }
+        }
+        catch (OperationCanceledException) when (ownedCancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            ownedCancellation.Dispose();
+        }
+    }
+
+    private void PublishApplicationContextStatus(string message)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        PublishIfChanged(current with
+        {
+            Message = message,
+            ActiveApplicationProfileId = Automation.ActiveApplicationProfileId,
+            EffectiveLaptopBehavior = Automation.EffectiveLaptopBehavior,
+            DesiredState = ResolveAutomationDesired(
+                current.ConfirmedState ?? UnknownConfirmedState),
+        });
     }
 
     public async Task<ControlOperationResult> SetGpuClockTuningAsync(
@@ -4073,22 +4258,34 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState confirmed = await deviceProvider.ResumeExperimentalWritesAsync(
                 observed =>
                 {
+                    bool unavailableLightingIsBeingAbandoned = uncertainLighting
+                        && observed.Lighting is null;
                     if (!StillAuthorized()
                         || pendingWriteConfirmations.Snapshot().Any(entry => entry.Value.Match(
                             entry.Key, observed, source, Automation, managementState: null)
-                                == PendingConfirmationResult.Unavailable))
+                                == PendingConfirmationResult.Unavailable
+                            && !(unavailableLightingIsBeingAbandoned
+                                && entry.Key == DeviceSubsystem.Lighting)))
                     {
                         return false;
                     }
-                    ReconcilePendingWriteConfirmations(observed, source, device);
-                    // The user may submit a new request; do not continue the paused transition.
-                    pendingTransitionContinuation = null;
+                    if (unavailableLightingIsBeingAbandoned)
+                    {
+                        // Recovery observed enough protocol state to permit a new
+                        // explicit request, but not enough to confirm or contradict
+                        // the interrupted lighting write. Retire only that pending
+                        // confirmation without attributing unknown state as drift.
+                        pendingWriteConfirmations.Remove(DeviceSubsystem.Lighting);
+                    }
                     if (uncertainLighting)
                     {
                         pendingLightingRestore = null;
                         pendingLightingRestoreFromLifecycle = false;
-                        experimentalLightingResumeAwaitingRequest = observed.Lighting is not null;
+                        experimentalLightingResumeAwaitingRequest = true;
                     }
+                    ReconcilePendingWriteConfirmations(observed, source, device);
+                    // The user may submit a new request; do not continue the paused transition.
+                    pendingTransitionContinuation = null;
                     return true;
                 }, StillAuthorized, token).ConfigureAwait(false);
             bool retainedHyperBoostRecovery = hyperBoostRestorePending
@@ -11728,9 +11925,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RestoreOwnedHyperBoostForLifecycleCoreAsync(
                 "shutdown",
                 cancellationToken).ConfigureAwait(false);
-        CancellationToken cleanupToken = cancellationToken.IsCancellationRequested
-            ? CancellationToken.None
-            : cancellationToken;
+        // HyperBoost may consume the caller's whole shutdown budget. Still give
+        // keyboard release and fan handback one shared, bounded final attempt.
+        // The worker's five-second budget plus this reserve is at most ten
+        // seconds of cooperative cleanup; individual steps never renew it.
+        using var cleanupBudget = new CancellationTokenSource(ShutdownFinalCleanupBudget);
+        using var cleanupCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cleanupBudget.Token,
+            cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken);
+        CancellationToken cleanupToken = cleanupCancellation.Token;
         await operationGate.WaitAsync(cleanupToken).ConfigureAwait(false);
         try
         {
@@ -12936,6 +13139,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public void Dispose()
     {
+        applicationContextLeaseCancellation?.Cancel();
+        applicationContextLeaseCancellation?.Dispose();
         thermalConvergenceArbiter.Dispose();
         operationGate.Dispose();
         if (fanTemperatureSource is IDisposable disposable)
@@ -15426,9 +15631,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceCapabilities? capabilities,
         CancellationToken token)
     {
-        LaptopBehaviorProfileSettings behavior = Automation.Profiles
-            .ForPowerSource(powerSource)
-            .EffectiveLaptopBehavior;
+        LaptopBehaviorProfileSettings behavior = Automation.EffectiveLaptopBehavior;
         if (!behavior.IsConfigured)
         {
             return null;
@@ -16284,6 +16487,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PadlessHyperBoostEligibility = ResolvePadlessHyperBoostEligibility(
                 observation.Capabilities),
             Profiles = Automation.Profiles,
+            ActiveApplicationProfileId = Automation.ActiveApplicationProfileId,
+            EffectiveLaptopBehavior = Automation.EffectiveLaptopBehavior,
             DesiredState = ResolveAutomationDesired(observation.Confirmed, observation.Capabilities),
             ActivePowerSource = powerSource,
             LiveReadings = includeLiveReadings
@@ -17391,6 +17596,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
             Profiles = Automation.Profiles,
+            ActiveApplicationProfileId = Automation.ActiveApplicationProfileId,
+            EffectiveLaptopBehavior = Automation.EffectiveLaptopBehavior,
             DesiredState = ResolveAutomationDesired(confirmed),
             ActivePowerSource = powerSource,
             LiveReadings = liveReadings,
@@ -17503,6 +17710,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanControlOverride = Automation.FanControlOverride,
             BatteryPolicyOverride = Automation.BatteryPolicyOverride,
             BatteryProtectionOverride = Automation.BatteryProtectionOverride,
+            ActiveApplicationProfileId = Automation.ActiveApplicationProfileId,
+            EffectiveLaptopBehavior = Automation.EffectiveLaptopBehavior,
             ThermalConvergence = new ThermalConvergenceStatus(
                 ThermalControlPolicy.Strict,
                 preferences.ThermalPolicyUpgradeDisclosure,
@@ -17625,6 +17834,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRefreshRate = EffectiveLightingRefreshRate(capabilities),
             ConfirmedState = confirmed,
             Profiles = Automation.Profiles,
+            ActiveApplicationProfileId = Automation.ActiveApplicationProfileId,
+            EffectiveLaptopBehavior = Automation.EffectiveLaptopBehavior,
             DesiredState = ResolveAutomationDesired(confirmed ?? UnknownConfirmedState, capabilities ?? UnavailableCapabilities),
             ActivePowerSource = powerSource,
             PerformanceOverride = Automation.PerformanceOverride,
@@ -17886,6 +18097,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private ControlOperationResult RecordRejectedIntent(Exception exception)
     {
+        DiagnosticTrace.TraceException(nameof(ServiceControlRuntime), nameof(RecordRejectedIntent), exception);
         if (exception is ConfigurationQuarantinedException)
         {
             return ConfigurationQuarantineBlocked();

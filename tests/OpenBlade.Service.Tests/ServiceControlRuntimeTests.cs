@@ -2921,6 +2921,78 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().ExternalChanges);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PrepareForShutdown_HyperBoostCancellationAllowsBoundedDriverModeCleanup(
+        bool blockDriverModeRelease)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostOwnershipJournalStore: journal,
+            hyperBoostLifecycleExitBoundary: token =>
+            {
+                cancellation.Cancel();
+                token.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        context.Device.DriverModeActive = true;
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        int fanWrites = context.Device.FanSetCalls;
+        var release = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken releaseToken = default;
+        if (blockDriverModeRelease)
+        {
+            context.Device.DriverModeReleaseOverride = token =>
+            {
+                releaseToken = token;
+                return release.Task.WaitAsync(token);
+            };
+        }
+
+        Task<ControlOperationResult> shutdown = context.Runtime.PrepareForShutdownAsync(
+            cancellation.Token);
+        try
+        {
+            if (blockDriverModeRelease)
+            {
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                    shutdown.WaitAsync(TimeSpan.FromSeconds(10)));
+                Assert.True(releaseToken.CanBeCanceled);
+                Assert.True(releaseToken.IsCancellationRequested);
+                Assert.True(context.Device.DriverModeActive);
+                Assert.Equal(fanWrites, context.Device.FanSetCalls);
+            }
+            else
+            {
+                ControlOperationResult result = await shutdown.WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.Equal(ControlOperationStatus.Failed, result.Status);
+                Assert.Contains("HyperBoost lifecycle restoration was canceled", result.Message);
+                Assert.False(context.Device.DriverModeActive);
+            }
+
+            Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+            Assert.Equal(hyperBoostWrites, context.Device.HyperBoostSetCalls);
+        }
+        finally
+        {
+            release.TrySetResult(false);
+            try
+            {
+                await shutdown.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+    }
+
     [Fact]
     public async Task PrepareForShutdown_UsesConfirmedManualStateAfterClearWasRefused()
     {
@@ -6147,7 +6219,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             .SetValue(context.Runtime, true);
 
     [Fact]
-    public async Task ResumeExperimentalWrites_DoesNotReplayUncertainLightingThroughOwnershipPolicy()
+    public async Task ResumeExperimentalWrites_NullLightingRetiresOnlyLightingPendingAndWaitsForNewRequest()
     {
         var gate = new LowPowerGate();
         TestContext context = CreateWritableContext(lowPowerGate: gate);
@@ -6179,13 +6251,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             }, before.ConfirmedState!));
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
-            Lighting = LightingSettingsFactory.SpectrumCycling(45),
+            Lighting = null,
         };
         context.Provider.IsExperimentalWritesPaused = true;
         int writes = context.Device.TotalSetterCalls;
         ControlOperationResult resumed = await context.Runtime.ResumeExperimentalWritesAsync(
             static () => true, CancellationToken.None);
         Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
+        Assert.False(pending.Blocks(DeviceSubsystem.Lighting));
+        Assert.Null(context.Runtime.GetStatus().ConfirmedState!.Lighting);
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
         typeof(ServiceControlRuntime).GetField("pendingLightingRestore",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
@@ -6211,6 +6285,50 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         gate.Exit();
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
         Assert.True(context.Device.LightingSetCalls > lightingWrites);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResumeExperimentalWrites_CrossPowerNullLightingPreservesExistingDrift(
+        bool controllerPresent)
+    {
+        TestContext context = CreateWritableContext(
+            conflicts: controllerPresent ? ["RazerAppEngine"] : null,
+            initialPowerSource: PowerSource.Battery);
+        context.Provider.AvailableWhenExperimentalAllowed = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        if (!controllerPresent)
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Lighting = LightingSettingsFactory.SpectrumCycling(45),
+            };
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+        bool lightingDriftBefore = context.Runtime.GetStatus().ExternalChanges
+            .Contains(DeviceSubsystem.Lighting);
+        Assert.Equal(!controllerPresent, lightingDriftBefore);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        var pending = Assert.IsType<PendingWriteConfirmationTracker>(typeof(ServiceControlRuntime)
+            .GetField("pendingWriteConfirmations", System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
+        pending.Set(DeviceSubsystem.Lighting, new PendingWriteConfirmation(
+            PowerSource.PluggedIn,
+            before.DesiredState,
+            before.ConfirmedState!));
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { Lighting = null };
+        context.Provider.IsExperimentalWritesPaused = true;
+
+        ControlOperationResult resumed = await context.Runtime.ResumeExperimentalWritesAsync(
+            static () => true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, resumed.Status);
+        Assert.False(pending.Blocks(DeviceSubsystem.Lighting));
+        Assert.Equal(
+            lightingDriftBefore,
+            context.Runtime.GetStatus().ExternalChanges.Contains(DeviceSubsystem.Lighting));
     }
 
     [Theory]
@@ -31970,6 +32088,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? DriverModeReleaseFailure { get; set; }
 
+        public Func<CancellationToken, Task<bool?>>? DriverModeReleaseOverride { get; set; }
+
         public int OneShotSetCalls { get; private set; }
 
         public ApplyOneShotLaptopControl? LastOneShotLaptopControl { get; private set; }
@@ -32216,6 +32336,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             DriverModeReleaseCalls++;
+            if (DriverModeReleaseOverride is not null)
+            {
+                return DriverModeReleaseOverride(cancellationToken);
+            }
             if (DriverModeReleaseFailure is not null)
             {
                 return Task.FromException<bool?>(DriverModeReleaseFailure);

@@ -889,8 +889,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
             }
             catch (Exception exception)
             {
-                Trace.TraceError(
-                    "OpenBlade automatic firmware-check shutdown failed: {0}",
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.RazerFirmwareUpdateChecking",
+                    "DisposeAutomaticCheck",
                     exception);
             }
         }
@@ -1005,8 +1006,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
         }
         catch (RazerFirmwareUpdateException exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade firmware update check failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.RazerFirmwareUpdateChecking",
+                "CheckFirmwareUpdates",
                 exception);
             RecordFailureRetry(page.ModelNumber);
             PresentVbiosCheckFailure();
@@ -1015,8 +1017,9 @@ public sealed class FirmwareUpdateAssistantViewModel :
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade firmware update check failed unexpectedly: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.RazerFirmwareUpdateChecking",
+                "CheckFirmwareUpdates",
                 exception);
             RecordFailureRetry(page.ModelNumber);
             PresentVbiosCheckFailure();

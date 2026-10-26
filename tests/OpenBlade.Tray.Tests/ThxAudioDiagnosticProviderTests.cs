@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using OpenBlade.Session;
 using OpenBlade.Tray;
 
@@ -87,6 +88,25 @@ public sealed class ThxAudioDiagnosticProviderTests
         Assert.Null(report.OperationStatus);
         Assert.Null(report.Availability);
         Assert.Equal("The Session Agent THX admission query timed out.", report.Error);
+        Assert.Equal("TimedOut", report.Failure?.Reason);
+        Assert.Equal(nameof(OperationCanceledException), report.Failure?.ExceptionType);
+    }
+
+    [Fact]
+    public async Task CaptureAsync_PreservesWrappedNativeFailureWithRedactedMessage()
+    {
+        var exception = new IOException(
+            @"query failed at C:\Users\Alice\thx.json",
+            new Win32Exception(5, "private service unavailable"));
+        var provider = new ThxAudioDiagnosticProvider(new StubAdapter(exception));
+        ThxAudioDiagnosticReport report = await provider.CaptureAsync(CancellationToken.None);
+        Assert.Equal("Discovery", report.Failure?.Stage);
+        Assert.Equal(exception.HResult, report.Failure?.HResult);
+        Assert.Equal(5, report.Failure?.Cause?.NativeErrorCode);
+        string serialized = System.Text.Json.JsonSerializer.Serialize(report);
+        Assert.Contains("query failed", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("private service unavailable", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Alice", serialized, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

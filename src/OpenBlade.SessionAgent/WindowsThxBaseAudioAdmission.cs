@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -39,6 +40,10 @@ internal static class WindowsThxBaseAudioAdmission
         catch (Exception exception) when (exception is Win32Exception or IOException or InvalidDataException or UnauthorizedAccessException
             or CryptographicException or InvalidOperationException or ArgumentException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.WindowsThxBaseAudioAdmission",
+                "ReadInventory",
+                exception);
             return new(false, false, false, string.Empty,
                 $"Base-audio inventory was not readable ({exception.GetType().Name}, 0x{exception.HResult:X8}).");
         }
@@ -282,6 +287,10 @@ internal static class WindowsThxBaseAudioAdmission
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or CryptographicException
             or Win32Exception or InvalidOperationException or ArgumentException)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.WindowsThxBaseAudioAdmission",
+                "VerifyPackages",
+                exception);
             return Result(false, false, $"Base-audio package or inbox trust was not confirmed ({exception.GetType().Name}, 0x{exception.HResult:X8})." + (exception is InvalidDataException ? " " + exception.Message : ""));
         }
     }

@@ -85,6 +85,10 @@ public sealed class WindowsPowerModeController : IWindowsPowerModeController
         catch (Exception exception) when (exception is
             EntryPointNotFoundException or DllNotFoundException or BadImageFormatException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsPowerModeController),
+                "ApplyAsync",
+                exception);
             return Task.FromResult(new WindowsPowerModeApplyResult(
                 Succeeded: false,
                 Changed: false,

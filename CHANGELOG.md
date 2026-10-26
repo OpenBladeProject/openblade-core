@@ -5,6 +5,78 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Install SnapTap drivers through Windows Update first on all reviewed Blade models, with pinned-package fallback when the initial scan finds no matching offer. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+
+### Fixed
+
+- Keep keyboard driver setup visible for incomplete stacks and retain exact blocked checks and Windows Update results in diagnostics. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+- Wait for SnapTap driver devices to appear after installation, keep canceled pre-install checks retryable, and distinguish refused driver offers from Windows Update availability problems. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+
+## [0.43.0-nightly.103] - 2026-10-25
+
+### Added
+
+- Offer **Install driver** for all seven reviewed SnapTap models, including eligible partial stacks. Verify each model's complete signed driver inputs, retain detailed setup failures, and preserve unrelated drivers. ([#852](https://github.com/OpenBladeProject/openblade-core/pull/852))
+
+## [0.42.2-nightly.102] - 2026-10-24
+
+### Fixed
+
+- Retain redacted exception messages, stack locations, native results and complete ordinary cause chains across runtime diagnostics. Preserve driver and controller discovery context, log-writer health and export omissions, and deliver larger diagnostic archives without widening control requests. ([#850](https://github.com/OpenBladeProject/openblade-core/pull/850))
+
+## [0.42.1-nightly.101] - 2026-10-24
+
+### Fixed
+
+- Preserve failure stages and native error details in SnapTap, Windows battery reports, Session Agent dispatch and THX diagnostics. Include SnapTap runtime failures and collection results in support exports, and keep healthy logs when another log is unreadable. ([#847](https://github.com/OpenBladeProject/openblade-core/pull/847))
+
+## [0.42.0-nightly.100] - 2026-10-23
+
+### Added
+
+- Compare telemetry sensors in separate temperature, power and fan-speed lanes with a shared time axis and an analysis table. Choose visible metrics and custom colors, drag the time window or edit precise bounds, and inspect exact raw-sample values and range statistics. Pinned moments stay fixed as live readings arrive. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+
+### Changed
+
+- Keep telemetry off by default with a saved Enable telemetry switch. Turning it off stops history collection and finishes an active CSV recording. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Show timestamped sensor values beside the telemetry crosshair while hovering. Use flat desktop toolbar controls, grouped sample navigation and a live-follow toggle, with an inline Full range action beside the timeline label. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Standardize app typography around the native WinUI type scale and shared command sizing. Telemetry table headers use strong text while body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+
+### Fixed
+
+- Align telemetry status text with CSV actions and center shared toolbar content at native display scaling. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Hide graph readouts, crosshairs and sample markers when the pointer leaves, without clearing pinned table values. Keep hover inspection available after telemetry range edits and preserve selection when recording starts or stops. Explain expired readings and adjusted time bounds, and retain unrelated preferences when a saved sensor is unknown. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Keep application and display automation current after cancellation or rapid app switches, and let telemetry recording stop cleanly after a disk error. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
+- Avoid unnecessary control pauses when performance, fan or battery changes are canceled or blocked before they are sent. Keep shutdown cleanup bounded. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
+- Prevent stale keyboard colors from flashing before the selected effect when activity wakes idle lighting, across all supported Blade models. ([#844](https://github.com/OSSBlade/openblade-core/pull/844))
+- Keep the minimize, maximize and close buttons in sync with the window theme, including when following Windows. ([#843](https://github.com/OSSBlade/openblade-core/pull/843))
+
+## [0.41.1-nightly.99] - 2026-10-22
+
+### Changed
+
+- Use sliders with percentage readouts for display brightness and application brightness overrides. Show Unavailable for the live display control when its brightness reading is unknown. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+- Move application profile editing and installed-game discovery into full-width pages with Back and Save actions, searchable game groups, executable icons and fewer duplicate suggestions. Keep actual game executables available alongside distinct launchers or bootstrappers. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+- Add timestamp and value axes, a vertical crosshair, same-sample readings and keyboard inspection controls to telemetry charts. Show the selected time window and missing data without interpolation. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+
+### Fixed
+
+- Avoid rebuilding hidden telemetry charts while recording continues in the background. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+
+## [0.41.0-nightly.98] - 2026-10-21
+
+### Added
+
+- Add application profiles for exact game and app executables, with foreground or activated-process lifetime rules, separate power-source overrides, HDR and brightness settings, installed-game discovery, and profile import/export. Manual controls keep priority while automation continues in the Session Agent. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+- Add telemetry charts with raw-sample statistics, missing-reading gaps, power/profile events, source and freshness labels, and explicit bounded local CSV recording and replay. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+- Add per-source display brightness, Windows battery history with capacity and activity details, and a previewable Long battery life preset. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+
+### Fixed
+
+- Preserve display ownership and uncertainty across application changes, manual controls, cancellation and restart. Require acknowledged recovery checkpoints and complete readback before resuming uncertain automation, and stop guessed refresh-rate rollback. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+
 ## [0.40.0] - 2026-10-21
 
 ### Added
@@ -2175,7 +2247,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...HEAD
+[0.43.0-nightly.103]: https://github.com/OSSBlade/openblade-core/compare/v0.42.2-nightly.102...v0.43.0-nightly.103
+[0.42.2-nightly.102]: https://github.com/OSSBlade/openblade-core/compare/v0.42.1-nightly.101...v0.42.2-nightly.102
+[0.42.1-nightly.101]: https://github.com/OSSBlade/openblade-core/compare/v0.42.0-nightly.100...v0.42.1-nightly.101
+[0.42.0-nightly.100]: https://github.com/OSSBlade/openblade-core/compare/v0.41.1-nightly.99...v0.42.0-nightly.100
+[0.41.1-nightly.99]: https://github.com/OSSBlade/openblade-core/compare/v0.41.0-nightly.98...v0.41.1-nightly.99
+[0.41.0-nightly.98]: https://github.com/OSSBlade/openblade-core/compare/v0.40.0...v0.41.0-nightly.98
 [0.40.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.30.0...v0.40.0
 [0.39.0-nightly.97]: https://github.com/OSSBlade/openblade-core/compare/v0.37.3-nightly.96...v0.39.0-nightly.97
 [0.37.3-nightly.96]: https://github.com/OSSBlade/openblade-core/compare/v0.37.1-nightly.95...v0.37.3-nightly.96

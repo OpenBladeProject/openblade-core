@@ -2522,6 +2522,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             BladeWriteException? manualEntryContinuationFailure = null;
             BladeWriteFailurePhase retryFailurePhase = BladeWriteFailurePhase.Unspecified;
             bool retryPreWriteOpen = false;
+            bool writeDelegateEntered = false;
             bool continuingAfterManualEntry = isManualEntryContinuation;
             Func<IProductionBatteryPort, Task> attemptWrite = write;
             try
@@ -2566,6 +2567,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     bool isFreshPreWriteRetry = attempt > 0;
                     retryPreWriteOpen = isFreshPreWriteRetry;
+                    writeDelegateEntered = false;
                     try
                     {
                         if (isFreshPreWriteRetry)
@@ -2595,6 +2597,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
                             cancellationToken.ThrowIfCancellationRequested();
                             retryPreWriteOpen = false;
+                            writeDelegateEntered = true;
                             await attemptWrite(port).ConfigureAwait(false);
                             try
                             {
@@ -2727,12 +2730,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         manualEntryContinuationFailure);
                 }
 
-                if (retryPreWriteOpen)
+                if (!writeDelegateEntered)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
                         retryFailurePhase,
-                        "The fresh pre-write read retry was canceled before any hardware command was submitted.");
+                        retryPreWriteOpen
+                            ? "The fresh pre-write read retry was canceled before any hardware command was submitted."
+                            : "The hardware write was canceled before the setter was entered.");
                 }
 
                 throw new BladeWriteException(

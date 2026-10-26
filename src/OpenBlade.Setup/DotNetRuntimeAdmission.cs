@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Setup;
 
@@ -92,6 +93,7 @@ internal sealed class WindowsDotNetInstallRootSource : IDotNetInstallRootSource
             or UnauthorizedAccessException
             or System.Security.SecurityException)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsDotNetInstallRootSource), nameof(ReadRegisteredX64Root), exception);
             return new(Succeeded: false, Path: null);
         }
     }
@@ -188,6 +190,7 @@ internal sealed class InstalledDotNetRuntimeAdmission : IDotNetRuntimeAdmission
             or System.Security.SecurityException
             or JsonException)
         {
+            DiagnosticTrace.TraceException(nameof(InstalledDotNetRuntimeAdmission), nameof(HasCompatibleRuntime), exception);
             return false;
         }
     }

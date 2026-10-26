@@ -8,7 +8,8 @@ public static class OverrideResolver
         T? profileValue,
         T confirmedValue,
         ManualOverride<T>? temporaryOverride,
-        ManualOverride<T>? persistentOverride)
+        ManualOverride<T>? persistentOverride,
+        SettingValueSource profileSource = SettingValueSource.PowerProfile)
     {
         if (persistentOverride is not null)
         {
@@ -26,7 +27,7 @@ public static class OverrideResolver
 
         if (profileValue is not null)
         {
-            return new ResolvedSetting<T>(profileValue, SettingValueSource.PowerProfile);
+            return new ResolvedSetting<T>(profileValue, profileSource);
         }
 
         return new ResolvedSetting<T>(confirmedValue, SettingValueSource.ConfirmedFirmwareState);

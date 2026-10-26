@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 internal sealed class WindowsPid02E0MatrixFeatureOpener
@@ -576,6 +578,8 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         }
         catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(nameof(WindowsPid02E0MatrixFeatureWriter),
+                nameof(ExecuteFeatureWriteAsync), exception);
             Poison();
             // Preserve the closed public diagnostic shape. Native Win32 errors
             // are non-negative; a negative value in the same numeric slot is

@@ -9,10 +9,11 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(70, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(72, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
-        Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
+        Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
+        Assert.Equal(24 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticResponseBytes);
     }
 
     [Fact]
@@ -56,6 +57,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetFullChargeOverrideRequest), "setFullChargeOverride"),
             (typeof(ApplyOneShotLaptopControlRequest), "applyOneShotLaptopControl"),
             (typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition"),
+            (typeof(ReportApplicationContextRequest), "reportApplicationContext"),
             (typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade"));
         AssertDerivedTypes(
             typeof(ServiceServerFrame),
@@ -71,6 +73,7 @@ public sealed class ServiceMessageContractTests
             "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
             "ControllerDetectionWarning", "ExternalChanges", "UnconfirmedWrites", "Message", "ObservationReason",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
+            "ActiveApplicationProfileId", "EffectiveLaptopBehavior",
             "ActivePowerSource", "LiveReadings",
             "PadlessHyperBoostEligibility",
             "HyperBoostRestorePending", "UnsupportedLaptop", "HyperBoostBlockingControllers",
@@ -115,6 +118,8 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(BatteryPolicy), typeof(ServiceStatusSnapshot).GetProperty("BatteryPolicyOverride")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("BatteryProtectionOverride")!.PropertyType);
         Assert.Equal(typeof(ThermalConvergenceStatus), typeof(ServiceStatusSnapshot).GetProperty("ThermalConvergence")!.PropertyType);
+        Assert.Equal(typeof(Guid?), typeof(ServiceStatusSnapshot).GetProperty("ActiveApplicationProfileId")!.PropertyType);
+        Assert.Equal(typeof(LaptopBehaviorProfileSettings), typeof(ServiceStatusSnapshot).GetProperty("EffectiveLaptopBehavior")!.PropertyType);
     }
 
     [Fact]

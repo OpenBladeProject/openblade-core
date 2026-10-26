@@ -1,6 +1,7 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using OpenBlade.Contracts;
 using Windows.UI.ViewManagement;
 using Color = Windows.UI.Color;
 
@@ -97,8 +98,12 @@ public sealed class AccentColorManager : IDisposable
                 uiSettings.GetColorValue(UIColorType.AccentDark2),
                 uiSettings.GetColorValue(UIColorType.AccentDark3));
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                nameof(AccentColorManager),
+                "ReadWindowsPalette",
+                exception);
             return CreatePalette(ParseHexColor(
                 AppAccentColorPreferenceDefaults.RazerGreenHex));
         }

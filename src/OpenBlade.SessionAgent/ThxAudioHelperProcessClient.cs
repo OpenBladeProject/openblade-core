@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.SessionAgent;
@@ -83,6 +84,10 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
                 }
                 catch (Exception exception)
                 {
+                    DiagnosticTrace.TraceException(
+                        "OpenBlade.SessionAgent.ThxAudioHelperProcessClient",
+                        "StartHelper",
+                        exception);
                     return new ThxAudioWorkerResult(
                         ThxAudioOperationStatus.Failed,
                         ThxAudioAvailability.ComponentsUnavailable,
@@ -156,6 +161,10 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.ThxAudioHelperProcessClient",
+                    "Exchange",
+                    exception);
                 bool stopped = await RetireActiveChildAsync(graceful: false).ConfigureAwait(false);
                 return mutation
                     ? new ThxAudioWorkerResult(
@@ -227,10 +236,14 @@ internal sealed class ThxAudioHelperProcessClient : IThxAudioWorker, IAsyncDispo
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 exited = await child.ConfirmExitAsync(deadline.Token).ConfigureAwait(false);
             }
-            catch
+            catch (Exception exception)
             {
                 // A broken pipe or failed graceful exit still requires a
                 // bounded termination attempt before another helper may run.
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.ThxAudioHelperProcessClient",
+                    "CloseHelperConnection",
+                    exception);
             }
         }
         if (!exited)
@@ -495,8 +508,12 @@ internal sealed class WindowsThxAudioHelperChild(
             {
                 return process.HasExited;
             }
-            catch
+            catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.ThxAudioHelperProcessClient",
+                    "ReadHelperExitState",
+                    exception);
                 return false;
             }
         }
@@ -510,8 +527,12 @@ internal sealed class WindowsThxAudioHelperChild(
             {
                 return process.HasExited ? process.ExitCode : null;
             }
-            catch
+            catch (Exception exception)
             {
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.SessionAgent.ThxAudioHelperProcessClient",
+                    "ReadHelperExitCode",
+                    exception);
                 return null;
             }
         }
@@ -523,8 +544,12 @@ internal sealed class WindowsThxAudioHelperChild(
         {
             return AssignProcessToJobObject(job, process.SafeHandle);
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioHelperProcessClient",
+                "AssignHelperToLifetimeOwner",
+                exception);
             return false;
         }
     }
@@ -584,8 +609,12 @@ internal sealed class WindowsThxAudioHelperChild(
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
             return process.HasExited;
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioHelperProcessClient",
+                "ConfirmHelperExit",
+                exception);
             return false;
         }
     }
@@ -602,8 +631,12 @@ internal sealed class WindowsThxAudioHelperChild(
             await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
             return process.HasExited;
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.SessionAgent.ThxAudioHelperProcessClient",
+                "TerminateHelper",
+                exception);
             return false;
         }
     }

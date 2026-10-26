@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -8,28 +9,43 @@ internal static class SnapTapDriverLoop
     internal static int Run(int parentId, Func<bool> shouldStop)
     {
         var admission = new RazerSnapTapDriverAdmission();
-        if (!admission.TryGetEndpoint(out var endpoint))
-        {
-            return 3;
-        }
-        using EventWaitHandle heartbeat = EventWaitHandle.OpenExisting(SnapTapDriverSupervisor.HeartbeatName(parentId));
-        using var publisher = new SnapTapStatusPublisher(endpoint.Profile);
+        using var publisher = new SnapTapStatusPublisher();
+        RazerSnapTapDriverEndpoint? endpoint = null;
         nint targetWindow = 0;
         nint targetLayout = 0;
         bool stopping = false;
         bool confirmedInput = false;
-        using var transport = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint),
-            () => !shouldStop() && AllReleased(), CanOutput);
-        var session = new RazerSnapTapHookSession(transport);
-        if (!Native.SystemParametersInfo(0x000A, 0, out uint speed, 0) || speed > 31)
-        {
-            return 1;
-        }
-        var processor = new SnapTapDriverInputProcessor(Send,
-            repeatInterval: TimeSpan.FromSeconds(1 / (2.5 + 27.5 * speed / 31)));
+        string stage = "Admission";
+        RazerSnapTapDriverTransport? transport = null;
+        RazerSnapTapHookSession? session = null;
+        SnapTapDriverInputProcessor? processor = null;
         try
         {
+            if (!admission.TryGetEndpointWithFailure(out endpoint, out _, out DiagnosticFailure? admissionFailure))
+            {
+                publisher.Publish(SnapTapRuntimeState.Unavailable, admissionFailure
+                    ?? SnapTapDiagnosticFailure.Create(
+                        SnapTapDiagnosticFailure.Worker, "Admission", stage, "AdmissionRejected"));
+                return 3;
+            }
+            publisher.SetProfile(endpoint.Profile);
+            stage = "HeartbeatOpen";
+            using EventWaitHandle heartbeat = EventWaitHandle.OpenExisting(
+                SnapTapDriverSupervisor.HeartbeatName(parentId));
+            stage = "TransportOpen";
+            transport = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint),
+                () => !shouldStop() && AllReleased(), CanOutput);
+            stage = "InputConfiguration";
+            if (!Native.SystemParametersInfo(0x000A, 0, out uint speed, 0) || speed > 31)
+            {
+                publisher.Publish(SnapTapRuntimeState.Failed, SnapTapDiagnosticFailure.Create(
+                    SnapTapDiagnosticFailure.Worker, "Run", stage, "KeyboardSpeedUnavailable"));
+                return 1;
+            }
+            processor = new SnapTapDriverInputProcessor(Send,
+                repeatInterval: TimeSpan.FromSeconds(1 / (2.5 + 27.5 * speed / 31)));
             publisher.Publish(SnapTapRuntimeState.WaitingForRelease);
+            stage = "WaitingForRelease";
             // Do not hook an in-flight hold whose initial down we did not see.
             while (!AllReleased() && !shouldStop())
             {
@@ -40,10 +56,18 @@ internal static class SnapTapDriverLoop
             {
                 return 0;
             }
+            stage = "HookSetup";
+            session = new RazerSnapTapHookSession(transport);
             if (!session.Start())
             {
+                publisher.Publish(SnapTapRuntimeState.Failed, session.Failure
+                    ?? SnapTapDiagnosticFailure.Create(
+                        SnapTapDiagnosticFailure.Worker, "HookSession", stage, "HookSetupFailed",
+                        session.FailureMayHaveSubmitted));
                 return 1;
             }
+            stage = "InputLoop";
+            DiagnosticFailure? loopFailure = null;
             while (!shouldStop() && !processor.Faulted && !publisher.Failed)
             {
                 nint foreground = Native.GetForegroundWindow();
@@ -51,6 +75,8 @@ internal static class SnapTapDriverLoop
                 if (processor.Winner != 0 && (foreground != targetWindow || layout != targetLayout))
                 {
                     processor.Poison();
+                    loopFailure = SnapTapDiagnosticFailure.Create(
+                        SnapTapDiagnosticFailure.Worker, "Run", stage, "ForegroundChanged", true);
                     break;
                 }
                 if (processor.Winner == 0)
@@ -61,6 +87,8 @@ internal static class SnapTapDriverLoop
                     {
                         // Close promptly rather than consume input on a desktop
                         // where current-user output ownership is unavailable.
+                        loopFailure = SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Worker, "Run", stage, "ForegroundUnavailable");
                         break;
                     }
                 }
@@ -72,6 +100,8 @@ internal static class SnapTapDriverLoop
                 {
                     if (!processor.Handle(stroke))
                     {
+                        loopFailure = processor.Failure ?? SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Worker, "Run", stage, "InputProcessingFailed");
                         break;
                     }
                     confirmedInput = true;
@@ -82,6 +112,16 @@ internal static class SnapTapDriverLoop
                 // Only the actual input loop can report progress. A blocked
                 // driver request cannot be masked by a heartbeat timer thread.
                 heartbeat.Set();
+            }
+            if (processor.Faulted && loopFailure is null)
+            {
+                loopFailure = processor.Failure ?? SnapTapDiagnosticFailure.Create(
+                    SnapTapDiagnosticFailure.Worker, "Run", stage, "ProcessorFaulted");
+            }
+            else if (publisher.Failed && loopFailure is null)
+            {
+                loopFailure = SnapTapDiagnosticFailure.Create(
+                    SnapTapDiagnosticFailure.Worker, "PublishStatus", stage, "StatusWriteFailed");
             }
             stopping = true;
             if (!processor.Faulted && Native.GetForegroundWindow() == targetWindow
@@ -95,17 +135,42 @@ internal static class SnapTapDriverLoop
             }
             // On ambiguous output, close the subscription without more writes.
             // The guardian reconciles only owned hook configuration after exit.
+            stage = "Cleanup";
             bool stopped = !processor.Faulted && session.Stop();
+            DiagnosticFailure? terminalFailure = session.Failure ?? processor.Failure ?? loopFailure;
             bool failed = !stopped || publisher.Failed;
-            publisher.Publish(failed ? SnapTapRuntimeState.Failed : SnapTapRuntimeState.Off);
+            if (failed || terminalFailure is not null)
+            {
+                terminalFailure ??= SnapTapDiagnosticFailure.Create(
+                    SnapTapDiagnosticFailure.Worker, "Run", stage,
+                    publisher.Failed ? "StatusWriteFailed" : "CleanupFailed",
+                    session.FailureMayHaveSubmitted || processor.Failure?.MayHaveSubmitted == true);
+                publisher.Publish(SnapTapRuntimeState.Failed, terminalFailure);
+            }
+            else
+            {
+                publisher.Publish(SnapTapRuntimeState.Off);
+            }
             return failed ? 1 : 0;
         }
-        catch (Exception exception) when (exception is IOException or InvalidOperationException
-            or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+        catch (Exception exception)
         {
-            processor.Poison();
-            publisher.Publish(SnapTapRuntimeState.Failed);
+            bool mayHaveSubmitted = session?.FailureMayHaveSubmitted == true
+                || processor?.Failure?.MayHaveSubmitted == true;
+            DiagnosticFailure failure = session?.Failure ?? processor?.Failure ?? SnapTapDiagnosticFailure.FromException(
+                SnapTapDiagnosticFailure.Worker,
+                "Run",
+                stage,
+                "UnexpectedFailure",
+                exception,
+                mayHaveSubmitted);
+            processor?.Poison();
+            publisher.Publish(SnapTapRuntimeState.Failed, failure);
             return 1;
+        }
+        finally
+        {
+            transport?.Dispose();
         }
 
         bool CanOutput() => targetWindow != 0 && Native.GetForegroundWindow() == targetWindow
@@ -120,7 +185,7 @@ internal static class SnapTapDriverLoop
             int sent = 0;
             for (int index = 0; index < batch.Count; index++)
             {
-                transport.Send(index == 0 ? batch.First : batch.Second);
+                transport!.Send(index == 0 ? batch.First : batch.Second);
                 sent++;
             }
             return sent;

@@ -36,6 +36,8 @@ internal static class ServiceStatusSnapshotComparer
         && left.ConfirmedState == right.ConfirmedState
         && left.Profiles == right.Profiles
         && left.DesiredState == right.DesiredState
+        && left.ActiveApplicationProfileId == right.ActiveApplicationProfileId
+        && left.EffectiveLaptopBehavior == right.EffectiveLaptopBehavior
         && left.ActivePowerSource == right.ActivePowerSource
         && left.LiveReadings == right.LiveReadings
         && left.PerformanceOverride == right.PerformanceOverride

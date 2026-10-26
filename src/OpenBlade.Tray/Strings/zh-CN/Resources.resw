@@ -2240,6 +2240,12 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="SnapTap_Driver_Failed" xml:space="preserve">
     <value>驱动安装未完成。请打开安装指南。</value>
   </data>
+  <data name="SnapTap_Driver_WindowsUpdateUnavailable" xml:space="preserve">
+    <value>Windows 更新不可用。请检查 Windows 更新，然后重试。</value>
+  </data>
+  <data name="SnapTap_Driver_WindowsUpdateRefused" xml:space="preserve">
+    <value>无法安全安装可用的驱动程序。请导出诊断信息以获取帮助。</value>
+  </data>
   <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
     <value>按键屏蔽在 OpenBlade 运行期间对所有键盘生效。</value>
   </data>
@@ -2266,5 +2272,500 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="Touchpad_Toggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>触摸板</value>
+  </data>
+  <data name="Applications_Add.Content" xml:space="preserve">
+    <value>添加应用</value>
+  </data>
+  <data name="Applications_CopyPowerProfile" xml:space="preserve">
+    <value>从此电源配置复制已保存的设置</value>
+  </data>
+  <data name="Applications_Description.Text" xml:space="preserve">
+    <value>为游戏或应用指定设置。每种供电方式都有独立的覆盖设置。</value>
+  </data>
+  <data name="Applications_Discover.Content" xml:space="preserve">
+    <value>查找已安装的游戏</value>
+  </data>
+  <data name="Applications_Empty.Text" xml:space="preserve">
+    <value>没有应用配置。电源配置仍然生效。</value>
+  </data>
+  <data name="Applications_FanAutomatic" xml:space="preserve">
+    <value>自动</value>
+  </data>
+  <data name="Applications_FanCurve" xml:space="preserve">
+    <value>手动曲线（已保存的点）</value>
+  </data>
+  <data name="Applications_FanFixed" xml:space="preserve">
+    <value>固定</value>
+  </data>
+  <data name="Applications_FanMaximum" xml:space="preserve">
+    <value>最大</value>
+  </data>
+  <data name="Applications_Title.Text" xml:space="preserve">
+    <value>应用配置</value>
+  </data>
+  <data name="Applications_UnavailableSetting" xml:space="preserve">
+    <value>{0}（当前不可用）</value>
+  </data>
+  <data name="BatteryHistory_AC" xml:space="preserve">
+    <value>交流电源</value>
+  </data>
+  <data name="BatteryHistory_Active" xml:space="preserve">
+    <value>活动</value>
+  </data>
+  <data name="BatteryHistory_Battery" xml:space="preserve">
+    <value>电池</value>
+  </data>
+  <data name="BatteryHistory_Description.Text" xml:space="preserve">
+    <value>Windows 电池报告中的最近 24 小时。未知时段仍显示为未知。</value>
+  </data>
+  <data name="BatteryHistory_Health" xml:space="preserve">
+    <value>满充容量 {0} · 设计容量 {1} · 健康度 {2} · 循环次数 {3}</value>
+  </data>
+  <data name="BatteryHistory_Interval" xml:space="preserve">
+    <value>{0} – {1} · {2} · {3} · 电量 {4} · 放电 {5}</value>
+  </data>
+  <data name="BatteryHistory_Load.Content" xml:space="preserve">
+    <value>加载电池历史记录</value>
+  </data>
+  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
+    <value>加载 Windows 电池报告以查看最近 24 小时。</value>
+  </data>
+  <data name="BatteryHistory_SourceTime" xml:space="preserve">
+    <value>Windows 电池报告 · 生成于 {0}</value>
+  </data>
+  <data name="BatteryHistory_Standby" xml:space="preserve">
+    <value>现代待机</value>
+  </data>
+  <data name="BatteryHistory_Suspended" xml:space="preserve">
+    <value>已挂起</value>
+  </data>
+  <data name="BatteryHistory_Title.Text" xml:space="preserve">
+    <value>电池历史记录</value>
+  </data>
+  <data name="BatteryHistory_Unknown" xml:space="preserve">
+    <value>未知</value>
+  </data>
+  <data name="BatteryPreset_Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="BatteryPreset_Change" xml:space="preserve">
+    <value>{0}: {1} → {2}</value>
+  </data>
+  <data name="BatteryPreset_Description" xml:space="preserve">
+    <value>将这些更改保存到电池配置。手动控制和应用覆盖设置仍保持优先。</value>
+  </data>
+  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
+    <value>延长电池续航</value>
+  </data>
+  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
+    <value>保存前预览受支持的电池配置更改。</value>
+  </data>
+  <data name="BatteryPreset_NoChanges" xml:space="preserve">
+    <value>受支持的电池设置已与此预设一致。</value>
+  </data>
+  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
+    <value>预览预设</value>
+  </data>
+  <data name="BatteryPreset_Save" xml:space="preserve">
+    <value>保存到电池配置</value>
+  </data>
+  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
+    <value>电池配置已更改或无法保存。请关闭此预览后重试。</value>
+  </data>
+  <data name="BatteryPreset_Title" xml:space="preserve">
+    <value>延长电池续航</value>
+  </data>
+  <data name="BatteryTimeline_AC" xml:space="preserve">
+    <value>交流电源</value>
+  </data>
+  <data name="BatteryTimeline_Battery" xml:space="preserve">
+    <value>电池</value>
+  </data>
+  <data name="BatteryTimeline_Unknown" xml:space="preserve">
+    <value>未知</value>
+  </data>
+  <data name="Feature_061b9b48e177" xml:space="preserve">
+    <value>供电方式</value>
+  </data>
+  <data name="Feature_0d94e35e8475" xml:space="preserve">
+    <value>直到激活的进程退出</value>
+  </data>
+  <data name="Feature_155db46f9362" xml:space="preserve">
+    <value>风扇</value>
+  </data>
+  <data name="Feature_19ad9b4c6b5c" xml:space="preserve">
+    <value>固定风扇转速 (RPM)</value>
+  </data>
+  <data name="Feature_207f5db133a0" xml:space="preserve">
+    <value>复制此电源配置的灯光设置</value>
+  </data>
+  <data name="Feature_3a29f5ccc091" xml:space="preserve">
+    <value>颜色配置文件</value>
+  </data>
+  <data name="Feature_3d621a53b31e" xml:space="preserve">
+    <value>位于前台时</value>
+  </data>
+  <data name="Feature_496960c3c1f5" xml:space="preserve">
+    <value>电池</value>
+  </data>
+  <data name="Feature_50accd740fa2" xml:space="preserve">
+    <value>关</value>
+  </data>
+  <data name="Feature_612a36db4fc9" xml:space="preserve">
+    <value>保留为此应用保存的灯光设置</value>
+  </data>
+  <data name="Feature_6cc5df35f033" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="Feature_6fce74ac10dd" xml:space="preserve">
+    <value>选择可执行文件</value>
+  </data>
+  <data name="Feature_7a0afacfb221" xml:space="preserve">
+    <value>继承电源配置</value>
+  </data>
+  <data name="Feature_847ced6ca02b" xml:space="preserve">
+    <value>已启用</value>
+  </data>
+  <data name="Feature_877cb5a94232" xml:space="preserve">
+    <value>交流电源</value>
+  </data>
+  <data name="Feature_9c7c8919be0e" xml:space="preserve">
+    <value>游戏模式</value>
+  </data>
+  <data name="Feature_9cb7099bc130" xml:space="preserve">
+    <value>显示器亮度 (%)</value>
+  </data>
+  <data name="Feature_9cc01faad79c" xml:space="preserve">
+    <value>开</value>
+  </data>
+  <data name="Feature_9d2725011acd" xml:space="preserve">
+    <value>键盘灯光</value>
+  </data>
+  <data name="Feature_a66522394a37" xml:space="preserve">
+    <value>无法保存配置。请检查服务状态后重试。</value>
+  </data>
+  <data name="Feature_af4123249281" xml:space="preserve">
+    <value>可执行文件路径</value>
+  </data>
+  <data name="Feature_b26de372b4b0" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="Feature_c83928a24959" xml:space="preserve">
+    <value>活动配置：{0}</value>
+  </data>
+  <data name="Feature_c88a6043293f" xml:space="preserve">
+    <value>覆盖显示器亮度</value>
+  </data>
+  <data name="Feature_ce6bbac0215e" xml:space="preserve">
+    <value>浏览可执行文件</value>
+  </data>
+  <data name="Feature_d7c76cf63323" xml:space="preserve">
+    <value>HDR</value>
+  </data>
+  <data name="Feature_ea008cd08808" xml:space="preserve">
+    <value>USB-C</value>
+  </data>
+  <data name="Feature_f7e6729d30cf" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="Feature_f8ed8576f5a9" xml:space="preserve">
+    <value>激活方式</value>
+  </data>
+  <data name="Feature_fb51849e03f2" xml:space="preserve">
+    <value>刷新率</value>
+  </data>
+  <data name="Feature_fb8bc434078d" xml:space="preserve">
+    <value>性能</value>
+  </data>
+  <data name="MainWindow_BatteryHistoryRowsText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Windows 电池历史记录区间</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessDescription.Text" xml:space="preserve">
+    <value>为每种电源分别保存亮度。</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessEditor.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>显示器亮度百分比</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessTitle.Text" xml:space="preserve">
+    <value>显示器亮度</value>
+  </data>
+  <data name="MainWindow_ProfileDisplayBrightnessCompactTitle.Text" xml:space="preserve">
+    <value>显示器亮度</value>
+  </data>
+  <data name="MainWindow_ProfileDisplayBrightnessTitle.Text" xml:space="preserve">
+    <value>显示器亮度</value>
+  </data>
+  <data name="Navigation_Telemetry" xml:space="preserve">
+    <value>遥测</value>
+  </data>
+  <data name="Telemetry_Description.Text" xml:space="preserve">
+    <value>查看温度、风扇和电池功率随时间的变化。缺失的读数会保留为空缺。</value>
+  </data>
+  <data name="Telemetry_EventsTitle.Text" xml:space="preserve">
+    <value>电源和配置变化</value>
+  </data>
+  <data name="Telemetry_Live.Content" xml:space="preserve">
+    <value>返回实时数据</value>
+  </data>
+  <data name="Telemetry_Navigation.Content" xml:space="preserve">
+    <value>遥测</value>
+  </data>
+  <data name="Telemetry_Open.Content" xml:space="preserve">
+    <value>打开 CSV 回放</value>
+  </data>
+  <data name="Telemetry_Record.Content" xml:space="preserve">
+    <value>记录 CSV</value>
+  </data>
+  <data name="Telemetry_Stop.Content" xml:space="preserve">
+    <value>停止记录</value>
+  </data>
+  <data name="Telemetry_Title.Text" xml:space="preserve">
+    <value>遥测</value>
+  </data>
+  <data name="ApplicationsUI_BackToProfiles" xml:space="preserve">
+    <value>返回配置方案</value>
+  </data>
+  <data name="ApplicationsUI_BrightnessPercent" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="ApplicationsUI_Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryCount" xml:space="preserve">
+    <value>匹配的可执行文件：{0} · 已安装的游戏：{1}</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryDescription" xml:space="preserve">
+    <value>选择检测到的游戏的可执行文件。保存配置前请确认完整路径。</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryEmpty" xml:space="preserve">
+    <value>未找到已安装的游戏。请使用“添加应用程序”手动选择可执行文件。</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLimitedCount" xml:space="preserve">
+    <value>仅显示前 {0} 个可执行文件。请缩小搜索范围以查看更多结果。</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryLoading" xml:space="preserve">
+    <value>正在查找已安装的游戏…</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryNoMatches" xml:space="preserve">
+    <value>没有符合搜索条件的已安装游戏。</value>
+  </data>
+  <data name="ApplicationsUI_DiscoveryTitle" xml:space="preserve">
+    <value>查找已安装的游戏</value>
+  </data>
+  <data name="ApplicationsUI_EditProfileTitle" xml:space="preserve">
+    <value>编辑应用配置</value>
+  </data>
+  <data name="ApplicationsUI_EditorDescription" xml:space="preserve">
+    <value>此应用配置仅匹配一个指定的可执行文件路径。未设置的选项沿用当前电源配置方案，手动设置优先。</value>
+  </data>
+  <data name="ApplicationsUI_NewProfileTitle" xml:space="preserve">
+    <value>添加应用配置</value>
+  </data>
+  <data name="ApplicationsUI_SaveProfile" xml:space="preserve">
+    <value>保存配置</value>
+  </data>
+  <data name="ApplicationsUI_SearchLabel" xml:space="preserve">
+    <value>搜索已安装的游戏</value>
+  </data>
+  <data name="ApplicationsUI_SearchPlaceholder" xml:space="preserve">
+    <value>名称、启动器或可执行文件</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutable" xml:space="preserve">
+    <value>选择</value>
+  </data>
+  <data name="ApplicationsUI_UseExecutableNamed" xml:space="preserve">
+    <value>选择 {0}</value>
+  </data>
+  <data name="TelemetryUI_ActionFailed" xml:space="preserve">
+    <value>遥测操作失败：{0}</value>
+  </data>
+  <data name="TelemetryUI_BatteryPower" xml:space="preserve">
+    <value>电池功率</value>
+  </data>
+  <data name="TelemetryUI_ChartAutomationName" xml:space="preserve">
+    <value>遥测时间轴。将指针移至图表上，或使用采样按钮查看精确读数。</value>
+  </data>
+  <data name="TelemetryUI_CpuTemperature" xml:space="preserve">
+    <value>CPU 温度</value>
+  </data>
+  <data name="TelemetryUI_CsvFiles" xml:space="preserve">
+    <value>CSV 文件</value>
+  </data>
+  <data name="TelemetryUI_Fan1Speed" xml:space="preserve">
+    <value>风扇 1 转速</value>
+  </data>
+  <data name="TelemetryUI_Fan2Speed" xml:space="preserve">
+    <value>风扇 2 转速</value>
+  </data>
+  <data name="TelemetryUI_FollowLatest" xml:space="preserve">
+    <value>跟随最新读数</value>
+  </data>
+  <data name="TelemetryUI_Fresh" xml:space="preserve">
+    <value>最新</value>
+  </data>
+  <data name="TelemetryUI_GpuTemperature" xml:space="preserve">
+    <value>GPU 温度</value>
+  </data>
+  <data name="TelemetryUI_LiveSource" xml:space="preserve">
+    <value>实时数据 · {0}</value>
+  </data>
+  <data name="TelemetryUI_NextSample" xml:space="preserve">
+    <value>下一条采样</value>
+  </data>
+  <data name="TelemetryUI_NoEvents" xml:space="preserve">
+    <value>此时间范围内没有供电方式或配置方案变化。</value>
+  </data>
+  <data name="TelemetryUI_NoSampleSelected" xml:space="preserve">
+    <value>未选择采样。</value>
+  </data>
+  <data name="TelemetryUI_OpenCsvTitle" xml:space="preserve">
+    <value>打开遥测 CSV</value>
+  </data>
+  <data name="TelemetryUI_PowerSource" xml:space="preserve">
+    <value>供电方式</value>
+  </data>
+  <data name="TelemetryUI_PreviousSample" xml:space="preserve">
+    <value>上一条采样</value>
+  </data>
+  <data name="TelemetryUI_Profile" xml:space="preserve">
+    <value>配置方案</value>
+  </data>
+  <data name="TelemetryUI_RecordCsvTitle" xml:space="preserve">
+    <value>将遥测记录到 CSV</value>
+  </data>
+  <data name="TelemetryUI_RecordingActive" xml:space="preserve">
+    <value>正在记录 · {0}。隐藏此窗口后仍会继续采样。</value>
+  </data>
+  <data name="TelemetryUI_RecordingOff" xml:space="preserve">
+    <value>未记录 · 开始 CSV 记录前，读数仅保存在内存中。</value>
+  </data>
+  <data name="TelemetryUI_ReplaySource" xml:space="preserve">
+    <value>CSV 回放 · {0}</value>
+  </data>
+  <data name="TelemetryUI_Stale" xml:space="preserve">
+    <value>已过期</value>
+  </data>
+  <data name="TelemetryUI_Unavailable" xml:space="preserve">
+    <value>不可用</value>
+  </data>
+  <data name="TelemetryUI_WaitingForReadings" xml:space="preserve">
+    <value>正在等待读数</value>
+  </data>
+  <data name="TelemetryUI_AnalysisTitle" xml:space="preserve">
+    <value>所选采样和范围统计</value>
+  </data>
+  <data name="TelemetryUI_ApplyColor" xml:space="preserve">
+    <value>应用颜色</value>
+  </data>
+  <data name="TelemetryUI_ColorPattern" xml:space="preserve">
+    <value>各项指标还通过不同线型加以区分。</value>
+  </data>
+  <data name="TelemetryUI_ColorPreference" xml:space="preserve">
+    <value>颜色和可见指标将为当前用户保存。</value>
+  </data>
+  <data name="TelemetryUI_DefaultColor" xml:space="preserve">
+    <value>默认颜色</value>
+  </data>
+  <data name="TelemetryUI_FanLane" xml:space="preserve">
+    <value>风扇转速 (RPM)</value>
+  </data>
+  <data name="TelemetryUI_Following" xml:space="preserve">
+    <value>正在跟随最新读数</value>
+  </data>
+  <data name="TelemetryUI_FullRange" xml:space="preserve">
+    <value>完整范围</value>
+  </data>
+  <data name="TelemetryUI_InspectHint" xml:space="preserve">
+    <value>悬停可查看。单击可固定采样。</value>
+  </data>
+  <data name="TelemetryUI_InvalidRangeTime" xml:space="preserve">
+    <value>请输入有效的日期和时间。</value>
+  </data>
+  <data name="TelemetryUI_MetricColor" xml:space="preserve">
+    <value>{0} 颜色</value>
+  </data>
+  <data name="TelemetryUI_MetricsAndColors" xml:space="preserve">
+    <value>指标和颜色</value>
+  </data>
+  <data name="TelemetryUI_Pinned" xml:space="preserve">
+    <value>已固定</value>
+  </data>
+  <data name="TelemetryUI_PowerLane" xml:space="preserve">
+    <value>电池功率 (W)</value>
+  </data>
+  <data name="TelemetryUI_RangeAutomation" xml:space="preserve">
+    <value>可见时间范围。拖动其边缘，或编辑开始和结束时间字段。</value>
+  </data>
+  <data name="TelemetryUI_RangeEnd" xml:space="preserve">
+    <value>结束</value>
+  </data>
+  <data name="TelemetryUI_RangeHint" xml:space="preserve">
+    <value>拖动任一边缘可调整大小，拖动所选窗口可移动范围。也可编辑开始和结束时间。</value>
+  </data>
+  <data name="TelemetryUI_RangeOverview" xml:space="preserve">
+    <value>可见时间范围 · {0}</value>
+  </data>
+  <data name="TelemetryUI_RangeScope" xml:space="preserve">
+    <value>范围 · {0} 至 {1}</value>
+  </data>
+  <data name="TelemetryUI_RangeStart" xml:space="preserve">
+    <value>开始</value>
+  </data>
+  <data name="TelemetryUI_RangeStatistics" xml:space="preserve">
+    <value>范围统计</value>
+  </data>
+  <data name="TelemetryUI_ReadingCounts" xml:space="preserve">
+    <value>{0} 条读数 · 缺失 {1} 条</value>
+  </data>
+  <data name="TelemetryUI_ResetColors" xml:space="preserve">
+    <value>重置颜色</value>
+  </data>
+  <data name="TelemetryUI_SelectedMoment" xml:space="preserve">
+    <value>所选时刻 · {0}</value>
+  </data>
+  <data name="TelemetryUI_TableAverage" xml:space="preserve">
+    <value>平均</value>
+  </data>
+  <data name="TelemetryUI_TableMaximum" xml:space="preserve">
+    <value>最大</value>
+  </data>
+  <data name="TelemetryUI_TableMetric" xml:space="preserve">
+    <value>指标</value>
+  </data>
+  <data name="TelemetryUI_TableMinimum" xml:space="preserve">
+    <value>最小</value>
+  </data>
+  <data name="TelemetryUI_TableMoment" xml:space="preserve">
+    <value>所选采样</value>
+  </data>
+  <data name="TelemetryUI_TableReadings" xml:space="preserve">
+    <value>读数</value>
+  </data>
+  <data name="TelemetryUI_Temperatures" xml:space="preserve">
+    <value>温度 (°C)</value>
+  </data>
+  <data name="TelemetryUI_VisibleTimeRange" xml:space="preserve">
+    <value>可见时间范围</value>
+  </data>
+  <data name="MainWindow_DisplayBrightnessUnavailableText.Text" xml:space="preserve">
+    <value>不可用</value>
+  </data>
+  <data name="TelemetryUI_RangeHistoryExpired" xml:space="preserve">
+    <value>较早的读数已不再保留。可见时间范围已调整。</value>
+  </data>
+  <data name="TelemetryUI_RangeTimeAdjusted" xml:space="preserve">
+    <value>已调整至可用时间范围内。</value>
+  </data>
+  <data name="TelemetryUI_SelectedReadingExpired" xml:space="preserve">
+    <value>所选读数已不再保留。</value>
+  </data>
+  <data name="Telemetry_Enable.Text" xml:space="preserve">
+    <value>启用遥测</value>
+  </data>
+  <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>启用遥测</value>
+  </data>
+  <data name="Telemetry_Disabled.Text" xml:space="preserve">
+    <value>启用遥测以收集传感器历史数据并将数据记录到 CSV 文件。</value>
   </data>
 </root>

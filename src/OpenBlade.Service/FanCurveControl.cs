@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
 
@@ -107,6 +109,71 @@ internal interface IGpuTemperatureSession
     int? TryRead();
 
     void Release();
+}
+
+internal sealed class NativeStatusChangeObserver(
+    string component,
+    string operation,
+    Action<string>? traceWarning = null)
+{
+    private readonly object gate = new();
+    private string? failureKey;
+    private readonly Action<string> traceWarning = traceWarning ?? (message => Trace.TraceWarning(message));
+
+    internal void ObserveFailure(string reason, uint status) => ObserveFailure(
+        reason,
+        status.ToString(CultureInfo.InvariantCulture),
+        status);
+
+    internal void ObserveFailure(string reason, int status) => ObserveFailure(
+        reason,
+        status.ToString(CultureInfo.InvariantCulture),
+        unchecked((uint)status));
+
+    private void ObserveFailure(string reason, string numericStatus, uint hexadecimalStatus)
+    {
+        string key = $"{reason}:{numericStatus}";
+        lock (gate)
+        {
+            if (string.Equals(failureKey, key, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            failureKey = key;
+        }
+
+        TryTrace(
+            $"component={component} operation={operation} state=failed reason={reason} "
+            + $"status={numericStatus} statusHex=0x{hexadecimalStatus:X8}");
+    }
+
+    internal void ObserveRecovery()
+    {
+        lock (gate)
+        {
+            if (failureKey is null)
+            {
+                return;
+            }
+
+            failureKey = null;
+        }
+
+        TryTrace($"component={component} operation={operation} state=recovered status=0 statusHex=0x00000000");
+    }
+
+    private void TryTrace(string message)
+    {
+        try
+        {
+            traceWarning(message);
+        }
+        catch
+        {
+            // Diagnostics must not change sensor availability or fan fail-safe behavior.
+        }
+    }
 }
 
 // The exact target firmware exposes a Razer-specific ACPI thermal zone named
@@ -338,6 +405,9 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         private nint query;
         private nint counter;
         private bool disposed;
+        private readonly NativeStatusChangeObserver statusObserver = new(
+            nameof(WindowsThermalZone),
+            nameof(TryRead));
 
         public int? TryRead()
         {
@@ -353,18 +423,34 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
                     return null;
                 }
 
-                if (PdhCollectQueryData(query) != 0
-                    || PdhGetFormattedCounterValue(
-                        counter,
-                        PdhFormatDouble,
-                        out _,
-                        out PdhFormattedCounterValue value) != 0
-                    || value.Status is not PdhStatusValidData and not PdhStatusNewData)
+                uint collectStatus = PdhCollectQueryData(query);
+                if (collectStatus != 0)
                 {
+                    statusObserver.ObserveFailure("CollectQueryData", collectStatus);
                     CloseQuery();
                     return null;
                 }
 
+                uint formatStatus = PdhGetFormattedCounterValue(
+                    counter,
+                    PdhFormatDouble,
+                    out _,
+                    out PdhFormattedCounterValue value);
+                if (formatStatus != 0)
+                {
+                    statusObserver.ObserveFailure("GetFormattedCounterValue", formatStatus);
+                    CloseQuery();
+                    return null;
+                }
+
+                if (value.Status is not PdhStatusValidData and not PdhStatusNewData)
+                {
+                    statusObserver.ObserveFailure("FormattedValue", value.Status);
+                    CloseQuery();
+                    return null;
+                }
+
+                statusObserver.ObserveRecovery();
                 return TryConvertHighPrecisionKelvin(value.DoubleValue);
             }
             catch (DllNotFoundException)
@@ -379,31 +465,58 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
 
         private bool TryOpenAnyCounter()
         {
+            string? lastReason = null;
+            uint lastStatus = 0;
             foreach (string counterPath in RazerEcCounterPaths)
             {
-                if (PdhOpenQueryW(null, 0, out nint candidate) != 0)
+                uint openStatus = PdhOpenQueryW(null, 0, out nint candidate);
+                if (openStatus != 0)
                 {
+                    lastReason = "OpenQuery";
+                    lastStatus = openStatus;
                     continue;
                 }
 
-                if (PdhAddEnglishCounterW(candidate, counterPath, 0, out nint candidateCounter) != 0
-                    || PdhCollectQueryData(candidate) != 0
-                    || PdhGetFormattedCounterValue(
+                uint addStatus = PdhAddEnglishCounterW(candidate, counterPath, 0, out nint candidateCounter);
+                uint collectStatus = addStatus == 0 ? PdhCollectQueryData(candidate) : 0;
+                PdhFormattedCounterValue value = default;
+                uint formatStatus = addStatus == 0 && collectStatus == 0
+                    ? PdhGetFormattedCounterValue(
                         candidateCounter,
                         PdhFormatDouble,
                         out _,
-                        out PdhFormattedCounterValue value) != 0
+                        out value)
+                    : 0;
+                if (addStatus != 0
+                    || collectStatus != 0
+                    || formatStatus != 0
                     || value.Status is not PdhStatusValidData and not PdhStatusNewData)
                 {
-                    _ = PdhCloseQuery(candidate);
+                    (lastReason, lastStatus) = addStatus != 0
+                        ? ("AddEnglishCounter", addStatus)
+                        : collectStatus != 0
+                            ? ("PrimeCollectQueryData", collectStatus)
+                            : formatStatus != 0
+                                ? ("PrimeGetFormattedCounterValue", formatStatus)
+                                : ("PrimeFormattedValue", value.Status);
+                    uint closeStatus = PdhCloseQuery(candidate);
+                    if (closeStatus != 0)
+                    {
+                        statusObserver.ObserveFailure("CloseRejectedCounter", closeStatus);
+                    }
                     continue;
                 }
 
                 query = candidate;
                 counter = candidateCounter;
+                statusObserver.ObserveRecovery();
                 return true;
             }
 
+            if (lastReason is not null)
+            {
+                statusObserver.ObserveFailure(lastReason, lastStatus);
+            }
             return false;
         }
 
@@ -411,7 +524,11 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         {
             if (query != 0)
             {
-                _ = PdhCloseQuery(query);
+                uint closeStatus = PdhCloseQuery(query);
+                if (closeStatus != 0)
+                {
+                    statusObserver.ObserveFailure("CloseQuery", closeStatus);
+                }
                 query = 0;
                 counter = 0;
             }
@@ -498,6 +615,9 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         private const uint TemperatureGpu = 0;
 
         private bool initialized;
+        private readonly NativeStatusChangeObserver statusObserver = new(
+            nameof(NvidiaNvmlTemperatureSession),
+            nameof(TryRead));
 
         public int? TryRead()
         {
@@ -505,24 +625,40 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             {
                 if (!initialized)
                 {
-                    if (nvmlInit_v2() != 0)
+                    int initStatus = nvmlInit_v2();
+                    if (initStatus != 0)
                     {
+                        statusObserver.ObserveFailure("Initialize", initStatus);
                         return null;
                     }
 
                     initialized = true;
                 }
 
-                if (nvmlDeviceGetHandleByIndex_v2(0, out nint device) != 0
-                    || nvmlDeviceGetTemperature(device, TemperatureGpu, out uint value) != 0)
+                int handleStatus = nvmlDeviceGetHandleByIndex_v2(0, out nint device);
+                if (handleStatus != 0)
                 {
-                    // A failed device call means the session is no longer
-                    // trustworthy; drop it so the next read re-initializes.
+                    statusObserver.ObserveFailure("GetDeviceHandle", handleStatus);
                     Release();
                     return null;
                 }
 
-                return value <= 125 ? checked((int)value) : null;
+                int temperatureStatus = nvmlDeviceGetTemperature(device, TemperatureGpu, out uint value);
+                if (temperatureStatus != 0)
+                {
+                    statusObserver.ObserveFailure("GetTemperature", temperatureStatus);
+                    Release();
+                    return null;
+                }
+
+                if (value > 125)
+                {
+                    statusObserver.ObserveFailure("TemperatureOutOfRange", value);
+                    return null;
+                }
+
+                statusObserver.ObserveRecovery();
+                return checked((int)value);
             }
             catch (DllNotFoundException)
             {
@@ -544,7 +680,11 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             initialized = false;
             try
             {
-                _ = nvmlShutdown();
+                int shutdownStatus = nvmlShutdown();
+                if (shutdownStatus != 0)
+                {
+                    statusObserver.ObserveFailure("Shutdown", shutdownStatus);
+                }
             }
             catch (DllNotFoundException)
             {

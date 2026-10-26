@@ -1,5 +1,7 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray.Tests;
 
@@ -27,6 +29,86 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
             DriverModel: "Blade 16 - RZ09-0528", ExperimentalDriver: experimental);
         SnapTapStatusStore.Write(status, StatusPath);
         Assert.Equal(status, SnapTapStatusStore.Read(StatusPath));
+    }
+
+    [Fact]
+    public void LegacyEnvelopeWithoutFailureRemainsReadable()
+    {
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(StatusPath,
+            "{\"version\":1,\"status\":{\"state\":5,\"updatedAt\":\"2026-01-01T00:00:00Z\"}}");
+        Assert.Equal(SnapTapRuntimeState.Failed, SnapTapStatusStore.Read(StatusPath)?.State);
+        Assert.Null(SnapTapStatusStore.Read(StatusPath)?.Failure);
+    }
+
+    [Fact]
+    public void TerminalFailureSurvivesExitAndDiagnosticExport()
+    {
+        DiagnosticFailure failure = DiagnosticFailure.FromException("SnapTap", "Driver", "HookSetup",
+            "HookWriteFailed", new Win32Exception(5,
+                @"native failure at C:\Users\Alice\hook.bin"), mayHaveSubmitted: true);
+        var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Failed, DateTimeOffset.UtcNow,
+            DriverModel: "Blade 16 - RZ09-0528", ExperimentalDriver: true, Failure: failure);
+        SnapTapStatusStore.Write(status, StatusPath);
+
+        Assert.Equal(status, SnapTapStatusStore.Read(StatusPath));
+        SnapTapDiagnosticReport report = SnapTapStatusStore.CaptureDiagnostics(StatusPath);
+        Assert.Null(report.CaptureFailure);
+        Assert.Equal(failure, report.Status?.Failure);
+        Assert.Equal("RZ09-0528", report.Status?.DriverModel);
+        string serialized = JsonSerializer.Serialize(report);
+        Assert.Contains("native failure", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Alice", serialized, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DetailedAggregateFailureSurvivesExpandedStatusEnvelope()
+    {
+        var aggregate = new AggregateException(
+            new IOException(new string('x', 8192)),
+            new Win32Exception(5, "secondary failure"));
+        DiagnosticFailure failure = DiagnosticFailure.FromException(
+            "SnapTap",
+            "Driver",
+            "Run",
+            "WorkerFailed",
+            aggregate);
+        var status = new SnapTapRuntimeStatus(
+            SnapTapRuntimeState.Failed,
+            DateTimeOffset.UtcNow,
+            Failure: failure);
+
+        SnapTapStatusStore.Write(status, StatusPath);
+
+        SnapTapRuntimeStatus restored = Assert.IsType<SnapTapRuntimeStatus>(
+            SnapTapStatusStore.Read(StatusPath));
+        Assert.Equal(failure.ExceptionType, restored.Failure?.ExceptionType);
+        Assert.Equal(8192, restored.Failure?.Cause?.Message?.Length);
+        Assert.Single(restored.Failure?.Related ?? []);
+    }
+
+    [Fact]
+    public void DiagnosticsDistinguishMissingMalformedAndOversizedStatus()
+    {
+        Assert.Equal("StatusNotObserved", SnapTapStatusStore.CaptureDiagnostics(StatusPath).CaptureFailure?.Reason);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(StatusPath, "{invalid-json");
+        SnapTapDiagnosticReport malformed = SnapTapStatusStore.CaptureDiagnostics(StatusPath);
+        Assert.Equal(nameof(JsonException), malformed.CaptureFailure?.ExceptionType);
+        Assert.NotNull(malformed.CaptureFailure?.Message);
+        File.WriteAllText(StatusPath, new string(' ', SnapTapStatusStore.MaximumFileSize + 1));
+        Assert.Equal("StatusTooLarge", SnapTapStatusStore.CaptureDiagnostics(StatusPath).CaptureFailure?.Reason);
+    }
+
+    [Fact]
+    public void FailureCannotBeAttachedToHealthyStatusOrContainUnboundedText()
+    {
+        var failure = new DiagnosticFailure("SnapTap", "Driver", "HookSetup", "Failed");
+        Assert.Throws<ArgumentException>(() => SnapTapStatusStore.Write(
+            new(SnapTapRuntimeState.Active, DateTimeOffset.UtcNow, Environment.ProcessId, Failure: failure), StatusPath));
+        Assert.Throws<ArgumentException>(() => SnapTapStatusStore.Write(
+            new(SnapTapRuntimeState.Failed, DateTimeOffset.UtcNow,
+                Failure: failure with { Reason = "C:\\private\\path" }), StatusPath));
     }
     private readonly string directory = Path.Combine(
         Path.GetTempPath(), "OpenBlade.Tray.Tests", Guid.NewGuid().ToString("N"));

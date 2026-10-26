@@ -6,7 +6,7 @@ namespace OpenBlade.Session;
 
 public static class SessionDisplayIpc
 {
-    public const int ProtocolVersion = 1;
+    public const int ProtocolVersion = 2;
     public const int MaximumMessageBytes = 64 * 1024;
     public const string PipeNamePrefix = "OpenBlade.Session.Display.v1";
 }
@@ -16,6 +16,7 @@ public static class SessionDisplayIpc
 [JsonDerivedType(typeof(SetRefreshRateRequest), "setRefreshRate")]
 [JsonDerivedType(typeof(SetHdrRequest), "setHdr")]
 [JsonDerivedType(typeof(SetColorProfileRequest), "setColorProfile")]
+[JsonDerivedType(typeof(SetBrightnessRequest), "setBrightness")]
 [JsonDerivedType(typeof(ApplyDisplayProfileRequest), "applyProfile")]
 public abstract record SessionDisplayRequest(int Version, Guid RequestId);
 
@@ -43,6 +44,13 @@ public sealed record SetColorProfileRequest(
     string ColorProfileKey)
     : SessionDisplayRequest(Version, RequestId);
 
+public sealed record SetBrightnessRequest(
+    int Version,
+    Guid RequestId,
+    PowerSource ExpectedPowerSource,
+    byte Percent)
+    : SessionDisplayRequest(Version, RequestId);
+
 public sealed record ApplyDisplayProfileRequest(
     int Version,
     Guid RequestId,
@@ -55,6 +63,7 @@ public enum SessionDisplayOperationStatus
     Succeeded,
     Blocked,
     Failed,
+    Indeterminate,
 }
 
 public sealed record SessionDisplayResponse(

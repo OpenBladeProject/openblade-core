@@ -224,6 +224,21 @@ public sealed class ColorProfileMutationTransactionTests
         Assert.Empty(state.Associations);
     }
 
+    [Fact]
+    public void FailedReconciliationRead_StopsWithoutRestorationWrites()
+    {
+        var state = new FakeColorProfileState(WindowsDisplayNative.CurrentUserScope, "Blade.icm", ["Blade.icm"]);
+        bool reconcile = false;
+        ColorProfileMutationOperations operations = state.Operations();
+        operations = operations with
+        {
+            GetAssociations = () => reconcile ? throw new IOException("read unavailable") : state.Associations,
+        };
+        Assert.Throws<InvalidOperationException>(() => ColorProfileMutationTransaction.Execute(
+            "Native_CTR.icm", state.Baseline(), operations, () => { reconcile = true; return false; }));
+        Assert.Equal(["add:Native_CTR.icm", "default:Native_CTR.icm"], state.Writes);
+    }
+
     private sealed class FakeColorProfileState(
         uint scope,
         string? defaultProfile,

@@ -1371,6 +1371,7 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "AutomationProperties.Name") == "Profile to review");
         Assert.Contains(retainedDropdowns, element =>
             Attribute(element, "SelectionChanged") == "OnSpecialKeyActionSelectionChanged");
+        Assert.DoesNotContain(retainedDropdowns, element => Attribute(element, "Name") == "TelemetryRange");
     }
 
     [Fact]
@@ -1382,6 +1383,7 @@ public sealed class CapabilityPresentationTests
                  {
                      "HomePage",
                      "ProfilesPage",
+                     "TelemetryPage",
                      "LaptopPage",
                      "ThxAudioPage",
                      "LightingPage",
@@ -1407,7 +1409,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_DisplayPageUsesSettingsRowsAndHdrGatesColorProfiles()
+    public void MainWindow_DisplayPageUsesSettingsRowsAndGatesAvailableControls()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         XElement display = NamedElement(document, "ScrollViewer", "DisplayPage");
@@ -1418,7 +1420,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Content") == "Display"
             && Attribute(element, "Tag") == "display");
         Assert.Equal(
-            2,
+            3,
             displayTemplate.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Single(displayTemplate.Descendants(), element =>
@@ -1452,6 +1454,17 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("OnDisplayPickerOpened", Attribute(color, "DropDownOpened"));
         Assert.Equal("OnDisplayPickerClosed", Attribute(color, "DropDownClosed"));
         Assert.Equal("OnDisplayColorProfileChanged", Attribute(color, "SelectionChanged"));
+
+        XElement brightness = Assert.Single(displayTemplate.Descendants(), element =>
+            element.Name.LocalName == "Slider"
+            && Attribute(element, "AutomationProperties.Name") == "Display brightness in percent");
+        Assert.Equal("0", Attribute(brightness, "Minimum"));
+        Assert.Equal("100", Attribute(brightness, "Maximum"));
+        Assert.Equal(
+            "{x:Bind CanChangeBrightness, Mode=OneWay}",
+            Attribute(brightness, "IsEnabled"));
+        Assert.Equal("OnDisplayBrightnessSliderValueChanged", Attribute(brightness, "ValueChanged"));
+        Assert.Equal("{x:Bind HasBrightnessReading, Mode=OneWay}", Attribute(brightness.Parent!, "Visibility"));
     }
 
     [Fact]
@@ -2380,8 +2393,8 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "ContentTemplate")
                     == "{StaticResource CompactProfileValuePresentationTemplate}")
             .ToArray();
-        Assert.Equal(60, comparisonValues.Length);
-        Assert.Equal(20, compactValues.Length);
+        Assert.Equal(63, comparisonValues.Length);
+        Assert.Equal(21, compactValues.Length);
         string[] expectedProperties =
         [
             "PowerMode",
@@ -2398,6 +2411,7 @@ public sealed class CapabilityPresentationTests
             "DisplayRefreshRate",
             "DisplayHdr",
             "DisplayColorProfile",
+            "DisplayBrightness",
             "FunctionKeyBehavior",
             "GamingMode",
             "GamingModeWindowsKey",
@@ -2468,10 +2482,10 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("DispatcherQueuePriority.Low", badgeHandlerSource, StringComparison.Ordinal);
         Assert.Contains("VerticalAlignmentRatio = 0", badgeHandlerSource, StringComparison.Ordinal);
 
-        AssertStyleBasedOn(document, "PageTitleStyle", "{StaticResource TitleTextBlockStyle}");
-        AssertStyleBasedOn(document, "SectionHeaderStyle", "{StaticResource SubtitleTextBlockStyle}");
-        AssertStyleBasedOn(document, "CardTitleStyle", "{StaticResource BodyStrongTextBlockStyle}");
-        AssertStyleBasedOn(document, "SecondaryTextStyle", "{StaticResource BodyTextBlockStyle}");
+        AssertStyleBasedOn(document, "PageTitleStyle", "{StaticResource AppPageTitleTextStyle}");
+        AssertStyleBasedOn(document, "SectionHeaderStyle", "{StaticResource AppSectionTitleTextStyle}");
+        AssertStyleBasedOn(document, "CardTitleStyle", "{StaticResource AppBodyStrongTextStyle}");
+        AssertStyleBasedOn(document, "SecondaryTextStyle", "{StaticResource AppBodyTextStyle}");
         Assert.Equal(
             "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
             Attribute(NamedElement(document, "InfoBar", "OperationErrorInfoBar"), "Visibility"));

@@ -138,9 +138,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard presenter setup failed: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "ConfigurePresenter",
+                exception);
         }
 
         ApplyPreferences(preference);
@@ -298,9 +299,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard edit owner change failed: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "SetEditOwner",
+                exception);
         }
     }
 
@@ -359,8 +361,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard placement failed; keeping the Windows placement: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "Position",
                 exception);
         }
     }
@@ -435,8 +438,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard placement failed; keeping the Windows placement: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "ResolvePlacement",
                 exception);
             placement = default;
             return false;
@@ -489,8 +493,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         catch (Exception exception)
         {
             CancelRevealAnimation();
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard reveal failed; showing without animation: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "StartReveal",
                 exception);
             return false;
         }
@@ -537,9 +542,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard reveal frame failed: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "AdvanceRevealFrame",
+                exception);
             AppWindow.MoveAndResize(ToRectInt32(revealPlacement));
             y = revealPlacement.Y;
         }
@@ -562,9 +568,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             }
             catch (Exception exception)
             {
-                Trace.TraceWarning(
-                    "OpenBlade tray dashboard activation positioning failed: {0}",
-                    exception.Message);
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.TrayDashboardWindow",
+                    "PositionForActivation",
+                    exception);
             }
         }
 
@@ -605,9 +612,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard final positioning failed: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "CompleteReveal",
+                exception);
         }
         CancelRevealAnimation();
         if (!foregroundEstablished && visible && !pinnedForEditing)
@@ -703,9 +711,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         catch (Exception exception)
         {
             Volatile.Write(ref revealAnimationActive, false);
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard frame clock failed: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "RunRevealFrameClock",
+                exception);
         }
         finally
         {
@@ -854,9 +863,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             }
             catch (Exception exception)
             {
-                Trace.TraceWarning(
-                    "OpenBlade tray dashboard parking failed: {0}",
-                    exception.Message);
+                DiagnosticTrace.TraceException(
+                    "OpenBlade.Tray.TrayDashboardWindow",
+                    "ParkSurface",
+                    exception);
             }
         }
 
@@ -867,9 +877,10 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard hide failed: {0}",
-                exception.Message);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "HideSurface",
+                exception);
         }
 
         ShowDashboardPage();
@@ -1178,8 +1189,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard performance selection failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "SelectPerformanceMode",
                 exception);
         }
         finally
@@ -1221,8 +1233,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard fan selection failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "SelectFanMode",
                 exception);
         }
         finally
@@ -1312,9 +1325,11 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard laptop-control change failed: {0}",
-                exception);
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "ApplyOneShotControl",
+                exception,
+                action.ToString());
         }
     }
 
@@ -1396,8 +1411,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard gaming-mode policy change failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "SetGamingModePolicy",
                 exception);
         }
         finally
@@ -1454,8 +1470,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard battery-protection change failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "SetBatteryProtection",
                 exception);
         }
         finally
@@ -1522,8 +1539,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard charge-limit change failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "SetChargeLimit",
                 exception);
         }
     }
@@ -1545,8 +1563,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard GPU tuning change failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "SetGpuClockTuning",
                 exception);
         }
         finally
@@ -1641,8 +1660,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         catch (Exception exception)
         {
-            Trace.TraceError(
-                "OpenBlade tray dashboard GPU clock-offset change failed: {0}",
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.TrayDashboardWindow",
+                "SetGpuClockOffsets",
                 exception);
         }
         finally

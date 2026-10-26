@@ -111,9 +111,30 @@ public sealed class DisplayProfileApplierTests
             PowerSource.PluggedIn,
             new DisplayProfileSettings("fixed-240", false, "sRGB_CTR.icm"));
 
-        Assert.Equal(SessionDisplayOperationStatus.Failed, result.Status);
+        Assert.Equal(SessionDisplayOperationStatus.Indeterminate, result.Status);
         Assert.Equal(["query", "refresh:fixed-240"], controller.Calls);
         Assert.Equal("fixed-60", result.State.CurrentRefreshKey);
+    }
+
+    [Fact]
+    public async Task BrightnessSelectsNearestSupportedLevelAndConfirmsReadback()
+    {
+        var context = ConfirmedContext();
+        var controller = new FakeDisplayController(
+            SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native") with
+            {
+                BrightnessPercent = 0,
+                SupportedBrightnessLevels = [0, 40, 60, 100],
+            });
+        using var applier = new DisplayProfileApplier(controller, context);
+
+        SessionDisplayExecutionResult result = await applier.SetBrightnessAsync(
+            PowerSource.PluggedIn,
+            50);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal<byte?>(40, result.State.BrightnessPercent);
+        Assert.Equal(["query", "brightness:40"], controller.Calls);
     }
 
     [Fact]
@@ -243,6 +264,24 @@ public sealed class DisplayProfileApplierTests
                 cancellationToken.ThrowIfCancellationRequested();
                 Calls.Add($"color:{id}");
                 state = state with { ActiveColorProfileId = id };
+                return Task.FromResult(DisplayOperationResult.Success(state));
+            }
+            finally
+            {
+                Exit();
+            }
+        }
+
+        public Task<DisplayOperationResult> SetBrightnessAsync(
+            byte percent,
+            CancellationToken cancellationToken = default)
+        {
+            Enter();
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Calls.Add($"brightness:{percent}");
+                state = state with { BrightnessPercent = percent };
                 return Task.FromResult(DisplayOperationResult.Success(state));
             }
             finally

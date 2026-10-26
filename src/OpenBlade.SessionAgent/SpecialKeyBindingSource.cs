@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -329,6 +330,10 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
             or PlatformNotSupportedException)
         {
             watcher?.Dispose();
+            DiagnosticTrace.TraceException(
+                nameof(SpecialKeyBindingSource),
+                "CreatePreferenceWatcher",
+                exception);
             return null;
         }
 
@@ -347,8 +352,12 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
         {
             errorHandler?.Invoke(exception);
         }
-        catch
+        catch (Exception reportingException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(SpecialKeyBindingSource),
+                "ReportFailure",
+                reportingException);
         }
     }
 

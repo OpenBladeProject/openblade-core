@@ -8,6 +8,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -344,6 +345,10 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsThxAudioProvisioningPlatform),
+                "InspectPristineState",
+                exception);
             return false;
         }
     }
@@ -458,6 +463,10 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsThxAudioProvisioningPlatform),
+                "InspectProvisioningProcesses",
+                exception);
             return false;
         }
     }
@@ -493,6 +502,10 @@ internal sealed class WindowsThxAudioProvisioningPlatform : IThxAudioProvisionin
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or CryptographicException or Win32Exception)
         {
+            DiagnosticTrace.TraceException(
+                nameof(WindowsThxAudioProvisioningPlatform),
+                "VerifyCatalogMembership",
+                exception);
             return false;
         }
     }

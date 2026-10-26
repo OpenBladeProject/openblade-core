@@ -29,6 +29,30 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
+    public void ApplicationContextReportsRequireTheActiveLocalSession()
+    {
+        var request = new ReportApplicationContextRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            @"C:\Games\game.exe");
+        var authority = new FixedSessionAuthority(4);
+
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
+            request, Client(sessionId: 4), authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request, Client(sessionId: 3), authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 4) with
+            {
+                LogonKind = ServiceClientLogonKind.RemoteInteractive,
+            },
+            authority));
+    }
+
+    [Fact]
     public void BackgroundSession_CanReadButCannotMutate()
     {
         ServiceClientContext client = Client(sessionId: 3);

@@ -29,6 +29,7 @@ public static class WindowsDriverApiTrust
     private const uint RevocationCheckChainExcludeRoot = 0x80;
     private const uint CacheOnlyUrlRetrieval = 0x1000;
     private const uint DisableMd2Md4 = 0x2000;
+    private const int TrustENoSignature = unchecked((int)0x800B0100);
 
     private static readonly Guid GenericVerify = new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
     private static readonly Guid DriverVerify = new("F750E6C3-38EE-11D1-85E5-00C04FC295EE");
@@ -225,9 +226,39 @@ public static class WindowsDriverApiTrust
 
     private static void VerifyCatalogMember(string catalogPath, LockedFile member,
         CancellationToken cancellationToken)
+        => VerifyCatalogMemberAlgorithms(algorithm =>
+            VerifyCatalogMember(catalogPath, member, algorithm, cancellationToken), cancellationToken);
+
+    internal static void VerifyCatalogMemberAlgorithms(Func<string, int> verify,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(verify);
+        // VerifyCatalogMembers authenticates the locked catalog and its current publisher before
+        // reaching this policy. SHA1 is only a legacy catalog member key; content identity remains SHA256.
+        cancellationToken.ThrowIfCancellationRequested();
+        int status = verify("SHA256");
+        cancellationToken.ThrowIfCancellationRequested();
+        if (status == 0)
+        {
+            return;
+        }
+        if (status == TrustENoSignature)
+        {
+            status = verify("SHA1");
+            cancellationToken.ThrowIfCancellationRequested();
+            if (status == 0)
+            {
+                return;
+            }
+        }
+        throw new CryptographicException($"Windows rejected driver catalog member trust (0x{status:X8}).");
+    }
+
+    private static int VerifyCatalogMember(string catalogPath, LockedFile member, string algorithm,
+        CancellationToken cancellationToken)
     {
         Guid subsystem = DriverVerify;
-        if (!CryptCATAdminAcquireContext2(out nint admin, ref subsystem, "SHA256", nint.Zero, 0))
+        if (!CryptCATAdminAcquireContext2(out nint admin, ref subsystem, algorithm, nint.Zero, 0))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
@@ -262,7 +293,8 @@ public static class WindowsDriverApiTrust
                     HashLength = hashLength,
                     CatalogAdmin = admin,
                 };
-                VerifyObject(info, ChoiceCatalog, DriverVerify, null, "driver catalog member", cancellationToken);
+                return VerifyObjectStatus(info, ChoiceCatalog, DriverVerify, null,
+                    "driver catalog member", cancellationToken);
             }
             finally
             {
@@ -276,6 +308,17 @@ public static class WindowsDriverApiTrust
     }
 
     private static void VerifyObject<T>(T info, uint choice, Guid action,
+        IReadOnlyList<string>? expectedPublishers, string description,
+        CancellationToken cancellationToken) where T : struct
+    {
+        int status = VerifyObjectStatus(info, choice, action, expectedPublishers, description, cancellationToken);
+        if (status != 0)
+        {
+            throw new CryptographicException($"Windows rejected {description} trust (0x{status:X8}).");
+        }
+    }
+
+    private static int VerifyObjectStatus<T>(T info, uint choice, Guid action,
         IReadOnlyList<string>? expectedPublishers, string description,
         CancellationToken cancellationToken) where T : struct
     {
@@ -296,20 +339,19 @@ public static class WindowsDriverApiTrust
             try
             {
                 int status = WinVerifyTrust(new nint(-1), ref action, ref data);
-                if (status != 0)
+                if (status == 0)
                 {
-                    throw new CryptographicException($"Windows rejected {description} trust (0x{status:X8}).");
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                if (expectedPublishers is not null)
-                {
-                    string publisher = GetVerifiedPublisher(data.State, description);
-                    if (!MatchesExpectedPublisher(publisher, expectedPublishers))
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (expectedPublishers is not null)
                     {
-                        throw new CryptographicException($"The verified {description} publisher is not allowed.");
+                        string publisher = GetVerifiedPublisher(data.State, description);
+                        if (!MatchesExpectedPublisher(publisher, expectedPublishers))
+                        {
+                            throw new CryptographicException($"The verified {description} publisher is not allowed.");
+                        }
                     }
                 }
+                return status;
             }
             finally
             {

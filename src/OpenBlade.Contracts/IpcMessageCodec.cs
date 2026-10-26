@@ -8,10 +8,11 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 70;
+    public const int ProtocolVersion = 72;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
-    public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
+    public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
+    public const int MaximumDiagnosticResponseBytes = 24 * 1024 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
 }
 
@@ -98,6 +99,17 @@ public static class IpcMessageCodec
         return frame;
     }
 
+    public static async Task<ServiceServerFrame> ReadDiagnosticArchiveFrameAsync(
+        Stream stream,
+        CancellationToken token)
+    {
+        ServiceServerFrame frame = await ReadFramedAsync<ServiceServerFrame>(
+                stream, token, maximumMessageBytes: OpenBladeIpc.MaximumDiagnosticResponseBytes)
+            .ConfigureAwait(false);
+        ValidateServerFrame(frame);
+        return frame;
+    }
+
     public static Task WriteProtocol51ReadOnlyServerFrameAsync(
         Stream stream,
         ServiceServerFrame frame,
@@ -151,9 +163,13 @@ public static class IpcMessageCodec
             throw new InvalidDataException("IPC message body is invalid.", exception);
         }
 
-        if (payload.Length > OpenBladeIpc.MaximumMessageBytes)
+        int maximum = serializerOptions is null && message is ServiceResponse { Archive: not null }
+            ? OpenBladeIpc.MaximumDiagnosticResponseBytes : OpenBladeIpc.MaximumMessageBytes;
+        if (payload.Length > maximum)
         {
-            throw new InvalidDataException("IPC message exceeds the 64 KiB limit.");
+            throw new InvalidDataException(maximum == OpenBladeIpc.MaximumMessageBytes
+                ? "IPC message exceeds the 64 KiB limit."
+                : "Diagnostic response exceeds the 24 MiB limit.");
         }
 
         byte[] prefix = new byte[sizeof(int)];
@@ -166,13 +182,14 @@ public static class IpcMessageCodec
     private static async Task<T> ReadFramedAsync<T>(
         Stream stream,
         CancellationToken cancellationToken,
-        bool allowProtocol51 = false)
+        bool allowProtocol51 = false,
+        int maximumMessageBytes = OpenBladeIpc.MaximumMessageBytes)
     {
         ArgumentNullException.ThrowIfNull(stream);
         byte[] prefix = new byte[sizeof(int)];
         await stream.ReadExactlyAsync(prefix, cancellationToken).ConfigureAwait(false);
         int length = BinaryPrimitives.ReadInt32LittleEndian(prefix);
-        if (length is <= 0 or > OpenBladeIpc.MaximumMessageBytes)
+        if (length <= 0 || length > maximumMessageBytes)
         {
             throw new InvalidDataException("IPC message length is invalid.");
         }
@@ -183,8 +200,14 @@ public static class IpcMessageCodec
         {
             ValidateNoDuplicateObjectMembers(payload);
             ValidatePayloadVersion(payload, allowProtocol51);
-            return JsonSerializer.Deserialize<T>(payload, SerializerOptions)
+            T message = JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("IPC message body is invalid.");
+            if (length > OpenBladeIpc.MaximumMessageBytes
+                && message is not ServiceResponse { Archive: not null })
+            {
+                throw new InvalidDataException("Only a diagnostic archive may use the larger response limit.");
+            }
+            return message;
         }
         catch (JsonException exception)
         {
@@ -222,7 +245,13 @@ public static class IpcMessageCodec
             ExportDiagnosticsRequest => true,
             UpdateProfilesRequest update => update.Profiles is not null
                 && ValidWindowsPowerModes(update.Profiles.WindowsPowerModes)
-                && LegacyWindowsPowerModesAreClear(update.Profiles),
+                && LegacyWindowsPowerModesAreClear(update.Profiles)
+                && ValidApplicationProfiles(update.Profiles.ApplicationProfiles)
+                && ValidProfileDisplays(update.Profiles),
+            ReportApplicationContextRequest report => report.InstanceId != Guid.Empty
+                && report.Sequence > 0
+                && (report.ExecutablePath is null
+                    || ValidApplicationExecutablePath(report.ExecutablePath)),
             SetPerformanceOverrideRequest set =>
                 set.Value is null
                 || set.Value.IsWellFormed(),
@@ -492,6 +521,21 @@ public static class IpcMessageCodec
         if (!ValidWindowsPowerModes(status.Profiles.WindowsPowerModes))
         {
             throw InvalidStatus("Windows power mode associations are malformed");
+        }
+        if (!ValidApplicationProfiles(status.Profiles.ApplicationProfiles)
+            || status.ActiveApplicationProfileId.HasValue
+                && !status.Profiles.ApplicationProfiles.Any(profile =>
+                    profile.Id == status.ActiveApplicationProfileId.Value && profile.Enabled))
+        {
+            throw InvalidStatus("application profile state is invalid");
+        }
+        if (!ValidProfileDisplays(status.Profiles))
+        {
+            throw InvalidStatus("display profile state is invalid");
+        }
+        if (status.EffectiveLaptopBehavior is null)
+        {
+            throw InvalidStatus("effective laptop behavior is missing");
         }
 
         if (!LegacyWindowsPowerModesAreClear(status.Profiles))
@@ -994,6 +1038,70 @@ public static class IpcMessageCodec
         && (profiles.UsbC.ThxAudio is null
             || ThxAudioProfileSettings.IsWellFormed(profiles.UsbC.ThxAudio));
 
+    private static bool ValidApplicationProfiles(
+        IReadOnlyList<ApplicationProfileDefinition>? profiles)
+    {
+        if (profiles is null || profiles.Count > ApplicationProfileDefinition.MaximumProfiles)
+        {
+            return false;
+        }
+        var ids = new HashSet<Guid>();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return profiles.All(profile => profile is not null
+            && profile.Id != Guid.Empty
+            && ids.Add(profile.Id)
+            && !string.IsNullOrWhiteSpace(profile.Name)
+            && profile.Name.Length <= ApplicationProfileDefinition.MaximumNameLength
+            && !profile.Name.Any(char.IsControl)
+            && Enum.IsDefined(profile.ActivationMode)
+            && profile.Overrides?.IsConfigured == true
+            && ValidApplicationOverrides(profile.Overrides)
+            && ValidApplicationExecutablePath(profile.ExecutablePath)
+            && paths.Add(profile.ExecutablePath));
+    }
+
+    private static bool ValidApplicationExecutablePath(string path)
+    {
+        try
+        {
+            return string.Equals(
+                path,
+                ApplicationProfileDefinition.NormalizeExecutablePath(path),
+                StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ValidApplicationOverrides(ApplicationProfileOverrideSet overrides) =>
+        ValidApplicationOverride(overrides.PluggedIn)
+        && ValidApplicationOverride(overrides.Battery)
+        && ValidApplicationOverride(overrides.UsbC);
+
+    private static bool ValidApplicationOverride(ApplicationPowerProfileOverride? value) =>
+        value is null
+        || value.IsConfigured
+        && (!value.Performance.HasValue || Enum.IsDefined(value.Performance.Value))
+        && (value.CustomPerformance is null
+            || CustomPerformanceSettings.IsWellFormed(value.CustomPerformance))
+        && (value.GpuClockTuning is null
+            || GpuClockTuningSettings.IsWellFormed(value.GpuClockTuning))
+        && (!value.Fans.HasValue || Enum.IsDefined(value.Fans.Value))
+        && (value.Lighting is null
+            || LightingSettingsValidation.IsWellFormed(value.Lighting))
+        && ValidDisplay(value.Display);
+
+    private static bool ValidProfileDisplays(ProfileSet profiles) =>
+        ValidDisplay(profiles.PluggedIn.Display)
+        && ValidDisplay(profiles.Battery.Display)
+        && ValidDisplay(profiles.UsbC.Display);
+
+    private static bool ValidDisplay(DisplayProfileSettings? display) =>
+        display?.BrightnessPercent is not > 100;
+
     private static CustomPerformanceCapabilities? ProjectProtocol51CustomCapabilities(
         CustomPerformanceCapabilities? capabilities)
     {
@@ -1023,6 +1131,12 @@ public static class IpcMessageCodec
                         "windowsPowerModes",
                         StringComparison.OrdinalIgnoreCase));
                 windowsPowerModes.IsRequired = true;
+                if (protocol51Projection)
+                {
+                    typeInfo.Properties.Single(property => string.Equals(
+                        property.Name, "applicationProfiles", StringComparison.OrdinalIgnoreCase))
+                        .ShouldSerialize = static (_, _) => false;
+                }
             }
 
             if (protocol51Projection
@@ -1099,6 +1213,12 @@ public static class IpcMessageCodec
                         "unsupportedLaptop",
                         StringComparison.OrdinalIgnoreCase));
                 unsupportedLaptop.ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "activeApplicationProfileId", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "effectiveLaptopBehavior", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
             }
 
             if (protocol51Projection
@@ -1150,6 +1270,14 @@ public static class IpcMessageCodec
             {
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "thxAudio", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+            }
+
+            if (protocol51Projection
+                && typeInfo.Type == typeof(DisplayProfileSettings))
+            {
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "brightnessPercent", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
             }
         });

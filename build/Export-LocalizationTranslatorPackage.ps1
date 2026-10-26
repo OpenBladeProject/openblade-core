@@ -88,10 +88,11 @@ controlling hardware.
         -Raw | ConvertFrom-Json
     if ($captureManifest.schemaVersion -ne 2 -or
         [string]$captureManifest.culture -cne 'en-US' -or
+        [string]$captureManifest.renderProfile.timeZone -cne 'UTC-for-snapshot-timestamps' -or
         [string]$captureManifest.renderProfile.dpi -cne
             '96-process-local-DPIUNAWARE' -or
         [string]$captureManifest.renderProfile.pixelCanonicalization -cne
-            'bgra8-4-bit-midpoint-local-majority-v2' -or
+            'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4' -or
         [string]$captureManifest.renderProfile.frameStabilization -cne
             'two-consecutive-canonical-frames-v1') {
         throw 'Localization snapshot manifest has an unexpected render profile.'
