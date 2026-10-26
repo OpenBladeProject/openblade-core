@@ -2239,6 +2239,9 @@ OpenBlade did not retry any stop request.</value>
   <data name="SnapTap_Driver_Failed" xml:space="preserve">
     <value>Driver setup couldn't finish. Open the setup guide.</value>
   </data>
+  <data name="SnapTap_Driver_WindowsUpdateUnavailable" xml:space="preserve">
+    <value>Windows Update is unavailable. Check Windows Update, then try again.</value>
+  </data>
   <data name="SnapTap_Driver_Installed" xml:space="preserve">
     <value>Driver installed. Turn SnapTap off and on.</value>
   </data>

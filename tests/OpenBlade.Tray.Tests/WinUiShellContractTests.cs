@@ -219,7 +219,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void MissingSnapTapDriverOffersTheSharedModelSetupGuide()
+    public void MissingOrUnavailableSnapTapDriverKeepsSetupDiscoverableAndRetryable()
     {
         XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
         XElement link = NamedElement(document, "HyperlinkButton", "SnapTapDriverLink");
@@ -237,13 +237,71 @@ public sealed class WinUiShellContractTests
         Assert.Equal(
             "https://github.com/OpenBladeProject/blade-driver-catalog",
             Attribute(link, "NavigateUri"));
-        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs");
-        Assert.Contains("snapTapEnabled && status?.State == SnapTapRuntimeState.DriverMissing", source, StringComparison.Ordinal);
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.SnapTap.cs")
+            .ReplaceLineEndings("\n");
+        Assert.Contains(
+            "private static bool CanOfferSnapTapDriverSetup(SnapTapRuntimeState? state) => state is\n"
+                + "        SnapTapRuntimeState.DriverMissing or SnapTapRuntimeState.Unavailable;",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "!CanOfferSnapTapDriverSetup(SnapTapStatusStore.Read()?.State)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "snapTapEnabled && CanOfferSnapTapDriverSetup(status?.State)",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains("&& snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed", source, StringComparison.Ordinal);
-        Assert.Contains("RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.Unavailable", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.RestartRequired\n"
+                + "                or RazerDriverInstallOutcome.RecoveryRequired",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.Unavailable",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RazerDriverInstallOutcome.WindowsUpdateUnavailable => LocalizedResources.Get(\n"
+                + "            \"SnapTap_Driver_WindowsUpdateUnavailable\", \"Windows Update is unavailable. Check Windows Update, then try again.\")",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"runtime-unavailable\" => SnapTapRuntimeState.Unavailable",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains("\"unavailable\" => RazerDriverInstallOutcome.Unavailable", source, StringComparison.Ordinal);
         string harness = ReadRepositoryFile("src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
+        Assert.Contains("\"laptop-snap-tap-runtime-unavailable\"", harness, StringComparison.Ordinal);
         Assert.Contains("\"laptop-snap-tap-driver-unavailable\"", harness, StringComparison.Ordinal);
+        Assert.Contains("\"laptop-snap-tap-driver-windows-update-unavailable\"", harness, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DriverSetupHelperFlushesItsDedicatedLogBeforeProcessExit()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs")
+            .ReplaceLineEndings("\n");
+        int helperStart = app.IndexOf(
+            "private async Task RunRazerDriverInstallHelperAsync()",
+            StringComparison.Ordinal);
+        int helperEnd = app.IndexOf(
+            "private async Task RunElevatedServiceControlHelperAsync(",
+            helperStart,
+            StringComparison.Ordinal);
+        Assert.True(helperStart >= 0 && helperEnd > helperStart);
+        string helper = app[helperStart..helperEnd];
+
+        int registration = helper.IndexOf("PersistentTraceLog.RegisterDefault(", StringComparison.Ordinal);
+        int install = helper.IndexOf("new RazerKeyboardDriverInstaller().InstallAsync(", StringComparison.Ordinal);
+        int completion = helper.IndexOf("Razer driver setup completed with outcome", StringComparison.Ordinal);
+        int dispose = helper.IndexOf("logging.Dispose();", StringComparison.Ordinal);
+        int exit = helper.IndexOf("Environment.Exit((int)outcome);", StringComparison.Ordinal);
+
+        Assert.Contains("\"OpenBlade.Tray.DriverSetup\"", helper, StringComparison.Ordinal);
+        Assert.True(registration >= 0 && registration < install);
+        Assert.True(install < completion && completion < dispose && dispose < exit);
     }
 
     [Fact]

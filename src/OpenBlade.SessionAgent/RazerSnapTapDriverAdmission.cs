@@ -194,6 +194,7 @@ internal sealed class RazerSnapTapDriverAdmission
                 "InstallerAdmission",
                 inspection.AdmissionFailure.ToString())
             {
+                Cause = inspection.FailureDetail,
                 Context = System.Text.Json.JsonSerializer.Serialize(new
                 {
                     inspection.Admitted,

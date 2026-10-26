@@ -2240,6 +2240,9 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="SnapTap_Driver_Failed" xml:space="preserve">
     <value>驱动安装未完成。请打开安装指南。</value>
   </data>
+  <data name="SnapTap_Driver_WindowsUpdateUnavailable" xml:space="preserve">
+    <value>Windows 更新不可用。请检查 Windows 更新，然后重试。</value>
+  </data>
   <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
     <value>按键屏蔽在 OpenBlade 运行期间对所有键盘生效。</value>
   </data>
