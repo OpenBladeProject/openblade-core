@@ -6,7 +6,7 @@ namespace OpenBlade.Tray;
 public sealed partial class RazerKeyboardDriverInstaller
 {
     private async Task<RazerDriverInstallOutcome?> InstallWindowsUpdateAsync(RazerDriverInstallSnapshot baseline,
-        RazerKeyboardDriverRecipe recipe, IRazerDriverInstallJournal journal, Action markSubmission,
+        RazerKeyboardDriverRecipe recipe, IRazerDriverInstallJournal journal, Action<bool> markSubmission,
         CancellationToken cancellationToken)
     {
         journal.Begin(baseline);
@@ -39,19 +39,44 @@ public sealed partial class RazerKeyboardDriverInstaller
                     }
                     // A durable selected-update intent precedes fresh admission and native submission.
                     journal.WindowsUpdateIntent(selection);
-                    submitted = true;
-                    markSubmission();
+                    // An unexpected escape remains uncertain until the source explicitly reports
+                    // whether BeginInstall was reached. Intent alone is not submission evidence.
+                    markSubmission(true);
                     RazerDriverInstallSnapshot fresh = platform.CaptureForWindowsUpdate();
                     if (!MatchesRecipe(fresh, recipe) || fresh.Installed
                         || !SameWindowsUpdateTargets(selection.Targets, fresh.WindowsUpdateTargets))
                     {
                         TraceBlocked(fresh);
-                        throw new InvalidOperationException("Windows Update target identity or setup admission changed before submission.");
+                        throw RazerKeyboardWindowsUpdateException.Refused("Admission", "SetupAdmissionChanged",
+                            new { fresh.Admitted, fresh.Installed, fresh.RecipeId, fresh.AdmissionFailure, fresh.FailureDetail });
                     }
                 }, cancellationToken).ConfigureAwait(false);
             submitted |= result.InstallationAttempted;
-            if (submitted) { markSubmission(); }
+            markSubmission(submitted);
+            if (result.Status == RazerKeyboardWindowsUpdateStatus.Failed && !submitted)
+            {
+                // The source completed with proof that native installation was never entered.
+                // Retain its exact failure and close intent before any fallible readback; a
+                // refused/canceled operation still stops here without pinned-package fallback.
+                TraceWindowsUpdate(result, null);
+                journal.Complete();
+                return cancellationToken.IsCancellationRequested ? RazerDriverInstallOutcome.Canceled
+                    : result.FailureDetail?.Stage is "Admission" or "Selection" or "NativeAdmission" or "SearchMetadata"
+                        ? RazerDriverInstallOutcome.WindowsUpdateRefused : RazerDriverInstallOutcome.WindowsUpdateUnavailable;
+            }
             RazerDriverInstallSnapshot after = platform.CaptureForWindowsUpdate();
+            if (result.Status == RazerKeyboardWindowsUpdateStatus.Installed && result.InstallationAttempted)
+            {
+                // WUA completion is not a barrier for derived PnP child enumeration. Retry
+                // only independent reads, at most 25 times, without resubmitting an update.
+                for (int readback = 0; readback < 25
+                    && !(MatchesRecipe(after, recipe) && (after.Installed
+                        || HasNewWindowsUpdateChild(before.WindowsUpdateTargets, after.WindowsUpdateTargets, recipe))); readback++)
+                {
+                    await waitForWindowsUpdateReadback(cancellationToken).ConfigureAwait(false);
+                    after = platform.CaptureForWindowsUpdate();
+                }
+            }
             journal.WindowsUpdateObserve(result, after);
             TraceWindowsUpdate(result, after.FailureDetail);
             switch (result.Status)
@@ -61,9 +86,6 @@ public sealed partial class RazerKeyboardDriverInstaller
                     return null;
                 case RazerKeyboardWindowsUpdateStatus.RestartRequired:
                     return RazerDriverInstallOutcome.RestartRequired;
-                case RazerKeyboardWindowsUpdateStatus.Failed when !submitted:
-                    journal.Complete();
-                    return cancellationToken.IsCancellationRequested ? RazerDriverInstallOutcome.Canceled : RazerDriverInstallOutcome.WindowsUpdateUnavailable;
                 case RazerKeyboardWindowsUpdateStatus.Installed when result.InstallationAttempted
                     && MatchesRecipe(after, recipe):
                     if (after.Installed)

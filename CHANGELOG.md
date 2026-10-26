@@ -12,6 +12,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Keep keyboard driver setup visible for incomplete stacks and retain exact blocked checks and Windows Update results in diagnostics. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+- Wait for SnapTap driver devices to appear after installation, keep canceled pre-install checks retryable, and distinguish refused driver offers from Windows Update availability problems. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
 
 ## [0.43.0-nightly.103] - 2026-10-25
 

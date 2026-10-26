@@ -33,6 +33,7 @@ public sealed partial class MainWindow
                 "installed" => RazerDriverInstallOutcome.Installed,
                 "unavailable" => RazerDriverInstallOutcome.Unavailable,
                 "windows-update-unavailable" => RazerDriverInstallOutcome.WindowsUpdateUnavailable,
+                "windows-update-refused" => RazerDriverInstallOutcome.WindowsUpdateRefused,
                 "restart" => RazerDriverInstallOutcome.RestartRequired,
                 "failed" => RazerDriverInstallOutcome.RecoveryRequired,
                 _ => null,
@@ -169,6 +170,8 @@ public sealed partial class MainWindow
             "SnapTap_Driver_CloseSynapse", "Close Razer Synapse, then try again."),
         RazerDriverInstallOutcome.WindowsUpdateUnavailable => LocalizedResources.Get(
             "SnapTap_Driver_WindowsUpdateUnavailable", "Windows Update is unavailable. Check Windows Update, then try again."),
+        RazerDriverInstallOutcome.WindowsUpdateRefused => LocalizedResources.Get(
+            "SnapTap_Driver_WindowsUpdateRefused", "The available driver could not be installed safely. Export diagnostics for help."),
         _ => LocalizedResources.Get(
             "SnapTap_Driver_Failed", "Driver setup couldn't finish. Open the setup guide."),
     };

@@ -207,6 +207,18 @@ public sealed class RazerKeyboardWindowsUpdateSourceTests
     }
 
     [Fact]
+    public async Task CancellationAfterAdmissionCallbackStillProvesNoNativeSubmission()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var session = new FakeSession { Optional = [Offer()] };
+        var result = await Source(session).TryInstallAsync(Recipe, [Target()], _ => cancellation.Cancel(), cancellation.Token);
+        Assert.Equal(RazerKeyboardWindowsUpdateStatus.Failed, result.Status);
+        Assert.False(result.InstallationAttempted);
+        Assert.False(session.Submitted);
+        Assert.Equal("OperationCanceled", result.FailureDetail!.Reason);
+    }
+
+    [Fact]
     public async Task MissingTargetAdmissionHasConcreteBoundedReasonWithoutOpeningSession()
     {
         var source = new RazerKeyboardWindowsUpdateSource(() => throw new Exception("No session expected"), _ => [KeyboardId]);

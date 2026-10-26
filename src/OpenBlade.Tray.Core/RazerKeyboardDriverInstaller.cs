@@ -5,7 +5,7 @@ namespace OpenBlade.Tray;
 
 public enum RazerDriverInstallOutcome
 {
-    Installed = 0, Failed = 1, Unavailable = 2, RecoveryRequired = 4, Canceled = 1602, RestartRequired = 3010, AcPowerRequired = 10, RazerSoftwareRunning = 11, WindowsUpdateUnavailable = 12,
+    Installed = 0, Failed = 1, Unavailable = 2, RecoveryRequired = 4, Canceled = 1602, RestartRequired = 3010, AcPowerRequired = 10, RazerSoftwareRunning = 11, WindowsUpdateUnavailable = 12, WindowsUpdateRefused = 13,
 }
 
 internal sealed record RazerDriverInventoryEntry(string PublishedName, string Sha256);
@@ -48,15 +48,19 @@ public sealed partial class RazerKeyboardDriverInstaller
 {
     private readonly IRazerDriverInstallPlatform platform;
     private readonly IRazerKeyboardWindowsUpdateSource? windowsUpdate;
+    private readonly Func<CancellationToken, Task> waitForWindowsUpdateReadback;
     public RazerKeyboardDriverInstaller() : this(new WindowsRazerDriverInstallPlatform(),
         new RazerKeyboardWindowsUpdateSource(() => new RazerKeyboardWindowsUpdateNativeSession(),
             WindowsRazerDriverInstallPlatform.ReviewedWindowsUpdateHardwareIds))
     { }
     // The internal overload also keeps the pinned installer independently testable without WUA activation.
-    internal RazerKeyboardDriverInstaller(IRazerDriverInstallPlatform platform, IRazerKeyboardWindowsUpdateSource? windowsUpdate = null)
+    internal RazerKeyboardDriverInstaller(IRazerDriverInstallPlatform platform, IRazerKeyboardWindowsUpdateSource? windowsUpdate = null,
+        Func<CancellationToken, Task>? waitForWindowsUpdateReadback = null)
     {
         this.platform = platform;
         this.windowsUpdate = windowsUpdate;
+        this.waitForWindowsUpdateReadback = waitForWindowsUpdateReadback
+            ?? (cancellationToken => Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken));
     }
 
     public static RazerDriverInstallationInspection Inspect()
@@ -116,7 +120,7 @@ public sealed partial class RazerKeyboardDriverInstaller
             if (windowsUpdate is not null)
             {
                 RazerDriverInstallOutcome? updateOutcome = await InstallWindowsUpdateAsync(baseline, recipe, journal,
-                    () => possiblySubmitted = true, cancellationToken).ConfigureAwait(false);
+                    value => possiblySubmitted = value, cancellationToken).ConfigureAwait(false);
                 if (updateOutcome is { } outcome) { return outcome; }
                 // Only an initial, successful search with no matching offers reaches this fallback.
                 // Fresh fixed-package admission still refuses incompatible existing files.

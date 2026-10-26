@@ -268,6 +268,11 @@ public sealed class WinUiShellContractTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
+            "RazerDriverInstallOutcome.WindowsUpdateRefused => LocalizedResources.Get(\n"
+                + "            \"SnapTap_Driver_WindowsUpdateRefused\", \"The available driver could not be installed safely. Export diagnostics for help.\")",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "\"runtime-unavailable\" => SnapTapRuntimeState.Unavailable",
             source,
             StringComparison.Ordinal);
@@ -276,6 +281,11 @@ public sealed class WinUiShellContractTests
         Assert.Contains("\"laptop-snap-tap-runtime-unavailable\"", harness, StringComparison.Ordinal);
         Assert.Contains("\"laptop-snap-tap-driver-unavailable\"", harness, StringComparison.Ordinal);
         Assert.Contains("\"laptop-snap-tap-driver-windows-update-unavailable\"", harness, StringComparison.Ordinal);
+        Assert.Contains("\"laptop-snap-tap-driver-windows-update-refused\"", harness, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"laptop-snap-tap-driver-windows-update-refused\" => \"windows-update-refused\"",
+            harness,
+            StringComparison.Ordinal);
     }
 
     [Fact]

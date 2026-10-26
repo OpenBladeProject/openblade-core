@@ -698,7 +698,8 @@ public partial class App
                 or "laptop-snap-tap-driver-installing" or "laptop-snap-tap-driver-installed"
                 or "laptop-snap-tap-driver-unavailable" or "laptop-snap-tap-driver-restart"
                 or "laptop-snap-tap-driver-failed" or "laptop-snap-tap-runtime-unavailable"
-                or "laptop-snap-tap-driver-windows-update-unavailable";
+                or "laptop-snap-tap-driver-windows-update-unavailable"
+                or "laptop-snap-tap-driver-windows-update-refused";
             string? driverSetupState = requestedPage switch
             {
                 "laptop-snap-tap-manual-driver" => "manual",
@@ -709,6 +710,7 @@ public partial class App
                 "laptop-snap-tap-driver-unavailable" => "unavailable",
                 "laptop-snap-tap-runtime-unavailable" => "runtime-unavailable",
                 "laptop-snap-tap-driver-windows-update-unavailable" => "windows-update-unavailable",
+                "laptop-snap-tap-driver-windows-update-refused" => "windows-update-refused",
                 "laptop-snap-tap-driver-restart" => "restart",
                 "laptop-snap-tap-driver-failed" => "failed",
                 _ => null,

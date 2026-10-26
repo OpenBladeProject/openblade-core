@@ -96,12 +96,14 @@ public sealed class RazerKeyboardDriverWindowsUpdateInstallerTests
     }
 
     [Fact]
-    public async Task SuccessWithoutReadbackOrNewChildDoesNotRetry()
+    public async Task SuccessWithoutReadbackOrNewChildBoundsReadOnlyRetries()
     {
         var platform = new Platform("02C6");
         var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed);
+        int waits = 0;
         Assert.Equal(RazerDriverInstallOutcome.RecoveryRequired,
-            await new RazerKeyboardDriverInstaller(platform, updates).InstallAsync(default));
+            await new RazerKeyboardDriverInstaller(platform, updates, _ => { waits++; return Task.CompletedTask; }).InstallAsync(default));
+        Assert.Equal(25, waits);
         Assert.Equal(1, updates.NativeInstalls);
         Assert.True(platform.Journal.RequiresRecovery);
         Assert.False(platform.DownloadedPinned);
@@ -112,10 +114,123 @@ public sealed class RazerKeyboardDriverWindowsUpdateInstallerTests
     {
         var platform = new Platform("02C6");
         var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed) { ChangeTargetsBeforeIntent = true };
-        Assert.Equal(RazerDriverInstallOutcome.RecoveryRequired,
+        Assert.Equal(RazerDriverInstallOutcome.WindowsUpdateRefused,
             await new RazerKeyboardDriverInstaller(platform, updates).InstallAsync(default));
         Assert.Equal(0, updates.NativeInstalls);
+        Assert.False(platform.Journal.RequiresRecovery);
+        Assert.False(platform.DownloadedPinned);
+    }
+
+    [Fact]
+    public async Task DelayedCompleteReadbackDoesNotResubmitInstallation()
+    {
+        var platform = new Platform("02C6");
+        var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed);
+        int waits = 0;
+        Assert.Equal(RazerDriverInstallOutcome.Installed,
+            await new RazerKeyboardDriverInstaller(platform, updates, _ =>
+            {
+                waits++;
+                if (waits == 2) { platform.Installed = true; }
+                return Task.CompletedTask;
+            }).InstallAsync(default));
+        Assert.Equal(2, waits);
+        Assert.Equal(1, updates.NativeInstalls);
+        Assert.Equal(1, updates.Queries);
+        Assert.False(platform.Journal.RequiresRecovery);
+    }
+
+    [Fact]
+    public async Task DelayedChildPermitsOnlyTheNextDistinctDependencyPass()
+    {
+        var platform = new Platform("02C6");
+        var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed)
+        { AfterInstall = count => { if (count == 2) { platform.Installed = true; } } };
+        int waits = 0;
+        Assert.Equal(RazerDriverInstallOutcome.Installed,
+            await new RazerKeyboardDriverInstaller(platform, updates, _ =>
+            {
+                waits++;
+                platform.Targets.Add(new(@"RZCONTROL\VID_1532&PID_02C6&MI_00\child", [@"RAZER\DeviceContol"]));
+                return Task.CompletedTask;
+            }).InstallAsync(default));
+        Assert.Equal(1, waits);
+        Assert.Equal(2, updates.NativeInstalls);
+        Assert.Equal(2, updates.Selections.SelectMany(selection => selection.Offers).Select(offer => offer.Identity).Distinct().Count());
+        Assert.False(platform.Journal.RequiresRecovery);
+        Assert.False(platform.DownloadedPinned);
+    }
+
+    [Fact]
+    public async Task CancellationWhileReadbackSettlesRetainsUncertainSubmission()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var platform = new Platform("02C6");
+        var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed);
+        Assert.Equal(RazerDriverInstallOutcome.RecoveryRequired,
+            await new RazerKeyboardDriverInstaller(platform, updates, token =>
+            {
+                cancellation.Cancel();
+                return Task.FromCanceled(token);
+            }).InstallAsync(cancellation.Token));
+        Assert.Equal(1, updates.NativeInstalls);
         Assert.True(platform.Journal.RequiresRecovery);
+        Assert.False(platform.DownloadedPinned);
+    }
+
+    [Fact]
+    public async Task CancellationDuringFreshAdmissionClosesProvenUnsubmittedIntent()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var platform = new Platform("02C6");
+        platform.OnCapture = () => { if (platform.Journal.RequiresRecovery) { cancellation.Cancel(); } };
+        var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed);
+        Assert.Equal(RazerDriverInstallOutcome.Canceled,
+            await new RazerKeyboardDriverInstaller(platform, updates).InstallAsync(cancellation.Token));
+        Assert.Equal(0, updates.NativeInstalls);
+        Assert.False(platform.Journal.RequiresRecovery);
+        Assert.False(platform.DownloadedPinned);
+        platform.OnCapture = null;
+        Assert.Equal(RazerDriverInstallOutcome.Installed, await new RazerKeyboardDriverInstaller(platform,
+            new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed) { CompleteStack = true }).InstallAsync(default));
+    }
+
+    [Fact]
+    public async Task CaptureFailureBeforeNativeSubmissionDoesNotLatchRecovery()
+    {
+        var platform = new Platform("02C6");
+        platform.OnCapture = () => { if (platform.Journal.RequiresRecovery) { throw new IOException("Fresh capture failed"); } };
+        var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed);
+        Assert.Equal(RazerDriverInstallOutcome.WindowsUpdateUnavailable,
+            await new RazerKeyboardDriverInstaller(platform, updates).InstallAsync(default));
+        Assert.Equal(0, updates.NativeInstalls);
+        Assert.False(platform.Journal.RequiresRecovery);
+    }
+
+    [Fact]
+    public async Task PreSubmissionRefusalAfterEarlierInstallKeepsRecoveryPending()
+    {
+        var platform = new Platform("02C6");
+        var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Installed)
+        { AddChildFirst = true, ChangeTargetsBeforeIntentOnSecondPass = true };
+        Assert.Equal(RazerDriverInstallOutcome.RecoveryRequired,
+            await new RazerKeyboardDriverInstaller(platform, updates).InstallAsync(default));
+        Assert.Equal(1, updates.NativeInstalls);
+        Assert.True(platform.Journal.RequiresRecovery);
+        Assert.False(platform.DownloadedPinned);
+    }
+
+    [Theory]
+    [InlineData("Selection")]
+    [InlineData("NativeAdmission")]
+    [InlineData("SearchMetadata")]
+    public async Task SafetyRefusalHasSeparateUserOutcome(string stage)
+    {
+        var platform = new Platform("02C6");
+        var updates = new Updates(platform, RazerKeyboardWindowsUpdateStatus.Failed) { RefusalStage = stage };
+        Assert.Equal(RazerDriverInstallOutcome.WindowsUpdateRefused,
+            await new RazerKeyboardDriverInstaller(platform, updates).InstallAsync(default));
+        Assert.False(platform.Journal.RequiresRecovery);
         Assert.False(platform.DownloadedPinned);
     }
 
@@ -179,6 +294,7 @@ public sealed class RazerKeyboardDriverWindowsUpdateInstallerTests
         internal bool DownloadedPinned { get; private set; }
         internal int PinnedMutations { get; private set; }
         internal List<RazerKeyboardWindowsUpdateTarget> Targets { get; } = [];
+        internal Action? OnCapture { get; set; }
         internal Platform(string productId)
         {
             Recipe = RazerKeyboardDriverRecipes.All.Single(recipe => recipe.ProductId == productId);
@@ -194,6 +310,7 @@ public sealed class RazerKeyboardDriverWindowsUpdateInstallerTests
         public RazerDriverInstallSnapshot CaptureForWindowsUpdate()
         {
             Events.Add("capture:wu");
+            OnCapture?.Invoke();
             return Snapshot(true, Installed);
         }
         private RazerDriverInstallSnapshot Snapshot(bool admitted, bool installed) => new(admitted, installed, [], "test")
@@ -231,6 +348,9 @@ public sealed class RazerKeyboardDriverWindowsUpdateInstallerTests
         internal bool CompleteStack { get; init; }
         internal bool AddChildFirst { get; init; }
         internal bool ChangeTargetsBeforeIntent { get; init; }
+        internal bool ChangeTargetsBeforeIntentOnSecondPass { get; init; }
+        internal Action<int>? AfterInstall { get; init; }
+        internal string? RefusalStage { get; init; }
         internal Action? OnQuery { get; init; }
         public Task<RazerKeyboardWindowsUpdateResult> TryInstallAsync(RazerKeyboardDriverRecipe recipe,
             IReadOnlyList<RazerKeyboardWindowsUpdateTarget> targets,
@@ -250,11 +370,12 @@ public sealed class RazerKeyboardDriverWindowsUpdateInstallerTests
                         [new(new(Queries == 1 ? "c2898874-6a4d-4491-99f1-1f34df0fb8f1" : "1696e3ab-de48-46a7-b292-17860f50ce5e", 1),
                             [new(targets[0].HardwareIds[0], "Razer Inc.")])], targets);
                     Selections.Add(selection);
-                    if (ChangeTargetsBeforeIntent)
+                    if (ChangeTargetsBeforeIntent || ChangeTargetsBeforeIntentOnSecondPass && Queries == 2)
                     {
                         platform.Targets.Add(new("foreign", ["foreign"]));
                     }
                     beforeInstall(selection);
+                    cancellationToken.ThrowIfCancellationRequested();
                     platform.Events.Add("native:wu-install");
                     NativeInstalls++;
                     attempted = true;
@@ -266,14 +387,17 @@ public sealed class RazerKeyboardDriverWindowsUpdateInstallerTests
                     {
                         platform.Installed = true;
                     }
+                    AfterInstall?.Invoke(NativeInstalls);
                 }
             }
             catch (Exception exception)
             {
                 return Task.FromResult(new RazerKeyboardWindowsUpdateResult(RazerKeyboardWindowsUpdateStatus.Failed,
-                    "Install", exception.Message, attempted, selection, []));
+                    "Install", exception.Message, attempted, selection, [])
+                { FailureDetail = (exception as RazerKeyboardWindowsUpdateException)?.FailureDetail });
             }
-            return Task.FromResult(new RazerKeyboardWindowsUpdateResult(status, "Test", null, attempted, selection, []));
+            return Task.FromResult(new RazerKeyboardWindowsUpdateResult(status, "Test", null, attempted, selection, [])
+            { FailureDetail = RefusalStage is null ? null : new DiagnosticFailure("SnapTapWindowsUpdate", "Install", RefusalStage, "Refused") });
         }
     }
 
