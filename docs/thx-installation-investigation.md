@@ -721,3 +721,77 @@ of Synapse. OpenBlade's existing installer also provisions its pinned x64 Visual
 C++ runtime; the import audit does not establish a new THX dependency on it. A
 clean installation with Synapse absent still needs to validate dynamic loading,
 service initialization, endpoint creation and audible processing.
+
+### Output APO and configuration continuation (2026-10-26)
+
+The remaining `FastEqualizer` continuation at service VA `0x1400AA570` reads
+the configuration through `readFile` at `0x1400B0870`, an `std::ifstream` and
+the JSON input-stream adapter. It traverses the supplied
+`/SpeakerPath/FastEqualizer` or `/HeadphonePath/FastEqualizer` JSON pointer,
+selects named modes and extracts `Targets`/`targets` arrays into memory.
+The reviewed parser bodies provide no Windows endpoint association writer.
+
+The output event consumer was traced in a separately pinned 2.6.5 AVX2 APO:
+`THXOutAPO-AVX2-v2.6.dll`, 6,576,152 bytes, SHA-256
+`49962CC201A76B5BCA85B5D2E9DA60A68D2DB3B076AA481F629418118EA350DE`.
+`LockForProcess` at `0x180010810` calls `CreateThread` at `0x180012598` with
+thunk `0x180022BE0`, which calls `AsynchronousEventLoop` at `0x18001EBB0`.
+The loop opens `VSOutAPOVADUpdateEvent` and `VSOutAPOParamUpdateEvent` and
+creates the service's `IVSSrvTHXOutMFXAPO` object. Assembly-checked interface
+slots match the extracted type library's getters for output device, processing
+state/mode, listening mode, EQ and related parameters. Results update the
+existing APO's processing state. The VAD branch opens an existing endpoint and
+initializes an audio stream; it is runtime audio activity, not an FX association
+declaration.
+
+APO `Initialize` at `0x180014740` reads
+[`APOInitSystemEffects2.pAPOEndpointProperties`](https://learn.microsoft.com/en-us/windows/win32/api/audioenginebaseapo/ns-audioenginebaseapo-apoinitsystemeffects2)
+through `IPropertyStore::GetValue`. Vendor property GUID
+`{D5E8F0AB-4DE6-4D91-AB21-68868DDA6A4A}`, PID 0 supplies device classification;
+PID 1 supplies the configuration path saved in `m_configurationFileFullPath`.
+These are the same properties read by VSHelper. Original binding evidence
+should preserve these values and the referenced configuration alongside the
+Windows FX properties. Their runtime reads do not establish who provisioned
+them or how Windows initially associated the APO.
+
+This closes the reviewed parser/output-event continuation at a finite boundary.
+The path consumes existing properties after APO creation and then services
+processing updates. It supplies no missing installation recipe. Other APO
+variants, input/settings consumers, arbitrary registration paths and recursive
+DSP/library internals were not audited. Automatic analysis was time-bounded;
+targeted decompilations and consequential indirect calls were checked against
+assembly. No vendor code was executed, and legacy fresh setup remains blocked.
+
+### Current Windows catalog policy (2026-10-26)
+
+The recovered legacy packages were checked on Windows `10.0.26300.0` through
+the current, unmodified `WindowsDriverApiTrust.VerifyCatalogMembers` code
+(Git blob `5999926595203ac7f1e2cb2adce2bca880166d93`). The scratch probe used
+OpenBlade's catalog signature/publisher validation and Windows driver-policy
+membership checks, including its bounded legacy member-hash fallback. All seven
+cases passed. This host version records the check's conditions; it establishes
+no new minimum Windows version.
+
+| Catalog input | Catalog SHA-256 | Tested members |
+| --- | --- | --- |
+| Exact-codec `THXHDAudio.cat` | `FB496566667F6AE7C415A96BFE3D97B14BD63C1681C19B9906A21EBF0AFFE799` | Original CRLF extension INF |
+| THX service 2.6.5 | `925B47DF9D2D9A3FE9F85D42CA27C1D1020E16043FA3B99081D521EDDC233063` | INF, VSSrv, VSSrvInit and VSHelper |
+| THX APO 2.6.5, variant 07c8c7dc | `2EB157516387C315AD71B8F4240E06C6156633439C8EFA8D7148B2F3D0C54D3C` | INF and both AVX2/SSE2 DLLs |
+| THX APO 2.6.5, variant db1dcd58 | `1AFD3D5004863075A6FF4A0B8D4A697F5480D414C13E2DC30AA9E8CC90F431CE` | INF and both AVX2/SSE2 DLLs |
+| THX SCU 2.6.5 | `8CD57D8BEB3A9F4DE7787D094F54199915FCB6C2DFBB1764FEBAF8D3BCDBC505` | INF and spatial-config-util |
+| THX HSA declaration 2.6.5 | `77C87F21C02E3ABD1452005A7072B8B501500348669A2B61D129C9D09C8E1237` | INF only; its SourceDisksFiles section is empty |
+| Realtek 6.0.9909.1 | `6C69D9BC1A1F030AFDCBD3BB78C49075EEE11677405991CDD96F5D3F2CB7A35D` | Both exact Razer root INFs, RTKVHD64.sys and RTAIODAT.DAT |
+
+An independent Windows SDK SignTool check also passed for one INF from each
+catalog using the default Windows driver policy and
+[`verify /o 2:10.0.26300 /c <catalog> <inf>`](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool#verify-command-options).
+No vendor executable or DLL was run or loaded. The HSA check covers its signed
+declaration, which names a Store package family; it does not verify or acquire
+the Store application. The Realtek check covers the listed files rather than
+every file in the base CAB.
+
+These results identify no additional catalog-trust blocker for these inputs on
+the checked host. They do not establish the missing FX association, a complete
+combined installation recipe, successful child creation or audible processing.
+The hashes identify research artifacts, not runtime driver allowlists. Legacy
+fresh installation remains blocked and untested under #833.
