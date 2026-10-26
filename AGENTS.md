@@ -390,6 +390,22 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    INFs and their complete source-file closure. RZ09-0328 uses the separately reviewed
    complete Microsoft Catalog .66 pair and its current-Windows signed U INFs;
    never substitute the Razer .71 legacy catalogs that fail current OS policy.
+   The explicitly user-initiated keyboard setup helper may search Windows Update first
+   for all seven reviewed models, including optional driver offers, using the configured
+   source and policy. Match only the reviewed INF hardware IDs and provider, admit every
+   actual matching devnode in the exact model/container/ancestry, retain searched update
+   identities, and journal intent before each fresh per-submission check. Never change
+   update policy, disable the orchestrator or services, install unrelated updates, or
+   select by a display title. Existing bound partial packages retain trust checks;
+   compatible installed updates are not pinned to artifact hashes. A successful initial
+   no-offer search before any WU installation may use the pinned packages. Failed,
+   partial, canceled or uncertain WU operations must stop without alternate installation.
+   A successful dependency pass may continue only after independent progress exposes a
+   reviewed child while preserving prior targets; bound the passes and never replay
+   an update identity. Require independent complete installed-package readback before
+   claiming success. Setup failures retain their exact component, stage and observed
+   state in persistent exported diagnostics. This is implementation authority only;
+   development-time WU scans, downloads, installations and hardware actions remain gated.
    The selected model recipe binds acquisition, each native operation and independent
    readback. Setup on the six additional models remains source-backed experimental
    until each model's own physical setup validation.

@@ -2239,6 +2239,12 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SnapTap_Driver_Failed" xml:space="preserve">
     <value>[!! Drívér sétúp cóúldn't fínísh. Ópén thé sétúp gúídé. ~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="SnapTap_Driver_WindowsUpdateUnavailable" xml:space="preserve">
+    <value>[!! Windows Úpdáté ís únáváíláblé. Chéck Windows Úpdáté, thén trý ágáín. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SnapTap_Driver_WindowsUpdateRefused" xml:space="preserve">
+    <value>[!! Thé áváíláblé drívér cóúld nót bé ínstálléd sáfélý. Éxpórt díágnóstícs fór hélp. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="SnapTap_Driver_Installed" xml:space="preserve">
     <value>[!! Drívér ínstálléd. Túrn SnápTáp óff ánd ón. ~~~~~~~~~~~~ !!]</value>
   </data>

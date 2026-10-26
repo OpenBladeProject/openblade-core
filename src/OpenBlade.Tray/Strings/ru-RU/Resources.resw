@@ -2257,6 +2257,12 @@ OpenBlade повторно проверит этот список и остан�
   <data name="SnapTap_Driver_Failed" xml:space="preserve">
     <value>Не удалось завершить установку драйвера. Откройте инструкцию.</value>
   </data>
+  <data name="SnapTap_Driver_WindowsUpdateUnavailable" xml:space="preserve">
+    <value>Центр обновления Windows недоступен. Проверьте Центр обновления Windows и повторите попытку.</value>
+  </data>
+  <data name="SnapTap_Driver_WindowsUpdateRefused" xml:space="preserve">
+    <value>Не удалось безопасно установить доступный драйвер. Экспортируйте диагностику, чтобы получить помощь.</value>
+  </data>
   <data name="MainWindow_GamingModeKeyBlockingScope.Text" xml:space="preserve">
     <value>Блокировка клавиш действует на всех клавиатурах, пока работает OpenBlade.</value>
   </data>

@@ -907,6 +907,10 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private async Task RunRazerDriverInstallHelperAsync()
     {
+        // This entrypoint returns before ordinary Tray logging is initialized.
+        // Keep driver setup outcomes and native failures in an exported per-process log.
+        using IDisposable logging = PersistentTraceLog.RegisterDefault(
+            "OpenBlade.Tray.DriverSetup", OpenBladeProductVersion.Read(typeof(App).Assembly));
         RazerDriverInstallOutcome outcome = RazerDriverInstallOutcome.Unavailable;
         try
         {
@@ -923,6 +927,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 exception);
             outcome = RazerDriverInstallOutcome.RecoveryRequired;
         }
+        Trace.TraceInformation("Razer driver setup completed with outcome {0} ({1}).", outcome, (int)outcome);
+        logging.Dispose();
         Environment.Exit((int)outcome);
     }
 
