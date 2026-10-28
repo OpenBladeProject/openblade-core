@@ -6,6 +6,8 @@ namespace OpenBlade.SessionAgent;
 
 internal static class SnapTapDriverLoop
 {
+    internal const int ForegroundPauseExitCode = 8;
+
     internal static int Run(int parentId, Func<bool> shouldStop)
     {
         var admission = new RazerSnapTapDriverAdmission();
@@ -47,8 +49,15 @@ internal static class SnapTapDriverLoop
             publisher.Publish(SnapTapRuntimeState.WaitingForRelease);
             stage = "WaitingForRelease";
             // Do not hook an in-flight hold whose initial down we did not see.
-            while (!AllReleased() && !shouldStop())
+            while (!shouldStop())
             {
+                nint foreground = Native.GetForegroundWindow();
+                bool hasForeground = foreground != 0 && KeyboardLayout(foreground) != 0;
+                if (hasForeground && AllReleased())
+                {
+                    break;
+                }
+                publisher.Publish(hasForeground ? SnapTapRuntimeState.WaitingForRelease : SnapTapRuntimeState.Paused);
                 heartbeat.Set();
                 Thread.Sleep(10);
             }
@@ -68,6 +77,7 @@ internal static class SnapTapDriverLoop
             }
             stage = "InputLoop";
             DiagnosticFailure? loopFailure = null;
+            bool foregroundPause = false;
             while (!shouldStop() && !processor.Faulted && !publisher.Failed)
             {
                 nint foreground = Native.GetForegroundWindow();
@@ -85,10 +95,15 @@ internal static class SnapTapDriverLoop
                     targetLayout = layout;
                     if (foreground == 0 || layout == 0)
                     {
-                        // Close promptly rather than consume input on a desktop
-                        // where current-user output ownership is unavailable.
+                        // GetForegroundWindow may briefly return null during activation.
+                        // Close without reading queued input; only the guardian may rearm
+                        // a fresh worker after verified cleanup of this subscription.
+                        foregroundPause = CanPauseForForegroundLoss(processor);
                         loopFailure = SnapTapDiagnosticFailure.Create(
-                            SnapTapDiagnosticFailure.Worker, "Run", stage, "ForegroundUnavailable");
+                            SnapTapDiagnosticFailure.Worker, "Run", stage, "ForegroundUnavailable") with
+                        {
+                            Context = $"ForegroundAvailable={foreground != 0}; KeyboardLayoutAvailable={layout != 0}; PhysicallyReleased={processor.ArePhysicallyReleased}",
+                        };
                         break;
                     }
                 }
@@ -139,6 +154,11 @@ internal static class SnapTapDriverLoop
             bool stopped = !processor.Faulted && session.Stop();
             DiagnosticFailure? terminalFailure = session.Failure ?? processor.Failure ?? loopFailure;
             bool failed = !stopped || publisher.Failed;
+            if (foregroundPause && !failed && session.Failure is null && processor.Failure is null)
+            {
+                publisher.Publish(SnapTapRuntimeState.Paused, loopFailure);
+                return ForegroundPauseExitCode;
+            }
             if (failed || terminalFailure is not null)
             {
                 terminalFailure ??= SnapTapDiagnosticFailure.Create(
@@ -191,6 +211,9 @@ internal static class SnapTapDriverLoop
             return sent;
         }
     }
+
+    internal static bool CanPauseForForegroundLoss(SnapTapDriverInputProcessor processor) =>
+        !processor.Faulted && processor.Winner == 0 && processor.ArePhysicallyReleased;
 
     private static nint KeyboardLayout(nint window)
     {

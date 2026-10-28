@@ -104,132 +104,134 @@ internal static class SnapTapDriverSupervisor
             };
             start.ArgumentList.Add(WorkerMode);
             start.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
-            Process? worker = null;
-            bool clean = false;
-            try
+            while (true)
             {
-                stage = "WorkerLaunch";
-                DateTimeOffset workerStartedAt = DateTimeOffset.UtcNow;
-                worker = Process.Start(start) ?? throw new InvalidOperationException("The keyboard worker could not start.");
-                job.Assign(worker);
-                startGate.Set();
-                long lastHeartbeat = Environment.TickCount64;
-                bool started = false;
-                while (!worker.HasExited)
+                Process? worker = null;
+                bool clean = false;
+                try
                 {
-                    if (heartbeat.WaitOne(50))
+                    startGate.Reset();
+                    stop.Reset();
+                    heartbeat.Reset();
+                    observedWorkerFailure = null;
+                    bool interrupted = false;
+                    stage = "WorkerLaunch";
+                    DateTimeOffset workerStartedAt = DateTimeOffset.UtcNow;
+                    worker = Process.Start(start) ?? throw new InvalidOperationException("The keyboard worker could not start.");
+                    job.Assign(worker);
+                    startGate.Set();
+                    long lastHeartbeat = Environment.TickCount64;
+                    bool started = false;
+                    while (!worker.HasExited)
                     {
-                        lastHeartbeat = Environment.TickCount64;
-                        started = true;
-                    }
-                    bool requestedStop = shouldStop();
-                    bool timedOut = Environment.TickCount64 - lastHeartbeat > (started ? 1500 : 10000);
-                    if (requestedStop || timedOut)
-                    {
-                        if (timedOut)
+                        if (heartbeat.WaitOne(50))
                         {
-                            observedWorkerFailure = SnapTapDiagnosticFailure.Create(
-                                SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
-                                started ? "InputLoop" : "WorkerStartup", "HeartbeatTimeout", started);
+                            lastHeartbeat = Environment.TickCount64;
+                            started = true;
                         }
-                        stop.Set();
-                        if (!worker.WaitForExit(1500))
+                        bool requestedStop = shouldStop();
+                        bool timedOut = Environment.TickCount64 - lastHeartbeat > (started ? 1500 : 10000);
+                        if (requestedStop || timedOut)
                         {
-                            worker.Kill();
+                            interrupted = true;
+                            if (timedOut)
+                            {
+                                observedWorkerFailure = SnapTapDiagnosticFailure.Create(
+                                    SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
+                                    started ? "InputLoop" : "WorkerStartup", "HeartbeatTimeout", started);
+                            }
+                            stop.Set();
                             if (!worker.WaitForExit(1500))
                             {
-                                return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
-                                    observedWorkerFailure ?? SnapTapDiagnosticFailure.Create(
-                                        SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
-                                        "WorkerExit", "WorkerDidNotExit", started), 1);
+                                worker.Kill();
+                                if (!worker.WaitForExit(1500))
+                                {
+                                    return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
+                                        observedWorkerFailure ?? SnapTapDiagnosticFailure.Create(
+                                            SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
+                                            "WorkerExit", "WorkerDidNotExit", started), 1);
+                                }
                             }
-                        }
-                        break;
-                    }
-                }
-                // Prove the exact child exited before touching global hook records.
-                if (!worker.HasExited)
-                {
-                    return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
-                        SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
-                            "SuperviseWorker", "WorkerExit", "WorkerDidNotExit"), 1);
-                }
-                observedWorkerFailure ??= MatchingTerminalFailure(
-                    SnapTapStatusStore.Read(), worker.Id, workerStartedAt);
-                if (worker.ExitCode != 0 && observedWorkerFailure is null)
-                {
-                    observedWorkerFailure = SnapTapDiagnosticFailure.Create(
-                        SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
-                        "WorkerExit", worker.ExitCode == 3 ? "WorkerAdmissionUnavailable" : "UnexpectedExit",
-                        processExitCode: worker.ExitCode);
-                }
-                stage = "Reconciliation";
-                IReadOnlyList<byte[]> hooks = guardian.ReadHooks();
-                if (!SameUnownedHooks(baseline, hooks))
-                {
-                    return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
-                        SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
-                            "ReconcileHooks", stage, "HookOwnershipChanged", true, observedWorkerFailure), 1);
-                }
-                foreach (ushort scan in new ushort[] { 0x1E, 0x20 })
-                {
-                    byte[] owned = RazerSnapTapDriverProtocol.EncodeHook(scan);
-                    if (hooks.Any(record => record.AsSpan().SequenceEqual(owned)))
-                    {
-                        // A fresh read reconciles hook ownership after child closure.
-                        // Never synthesize a guessed key release or reset the driver.
-                        reconciliationMayHaveSubmitted = true;
-                        guardian.ClearHook(RazerSnapTapDriverProtocol.EncodeClearHook(scan));
-                        hooks = guardian.ReadHooks();
-                        reconciliationMayHaveSubmitted = false;
-                        if (hooks.Any(record => record.AsSpan().SequenceEqual(owned))
-                            || !SameUnownedHooks(baseline, hooks))
-                        {
-                            return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
-                                SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
-                                    "ReconcileHooks", stage, "HookCleanupUnconfirmed", true, observedWorkerFailure), 1);
+                            break;
                         }
                     }
-                }
-                clean = hooks.Count == baseline.Count && SameUnownedHooks(baseline, hooks)
-                    && worker.ExitCode is 0 or 3;
-                int exitCode = clean ? worker.ExitCode : 4;
-                if (!clean)
-                {
-                    DiagnosticFailure cleanupFailure = SnapTapDiagnosticFailure.Create(
-                        SnapTapDiagnosticFailure.Supervisor, "ReconcileHooks", stage,
-                        "RecoveryRequired", observedWorkerFailure?.MayHaveSubmitted == true, observedWorkerFailure);
-                    return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
-                        cleanupFailure, exitCode);
-                }
-                if (observedWorkerFailure is not null)
-                {
-                    return PublishTerminal(endpoint.Profile,
-                        exitCode == 3 ? SnapTapRuntimeState.Unavailable : SnapTapRuntimeState.Failed,
-                        observedWorkerFailure, exitCode);
-                }
-                return exitCode;
-            }
-            finally
-            {
-                // Exceptions in admission, enumeration or recovery must also close
-                // the mutator. Do not leave it alive behind a failed supervisor.
-                if (worker is not null)
-                {
+                    // Prove the exact child exited before touching global hook records.
                     if (!worker.HasExited)
                     {
-                        stop.Set();
-                        if (!worker.WaitForExit(1500))
-                        {
-                            worker.Kill();
-                            worker.WaitForExit(1500);
-                        }
+                        return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
+                            SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
+                                "SuperviseWorker", "WorkerExit", "WorkerDidNotExit"), 1);
                     }
-                    worker.Dispose();
+                    SnapTapRuntimeStatus? finalStatus = SnapTapStatusStore.Read();
+                    observedWorkerFailure ??= MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt);
+                    bool foregroundPause = IsCleanForegroundPause(worker.ExitCode, finalStatus, worker.Id, workerStartedAt)
+                        && observedWorkerFailure is null;
+                    if (worker.ExitCode != 0 && !foregroundPause && observedWorkerFailure is null)
+                    {
+                        observedWorkerFailure = SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
+                            "WorkerExit", worker.ExitCode == 3 ? "WorkerAdmissionUnavailable" : "UnexpectedExit",
+                            processExitCode: worker.ExitCode);
+                    }
+                    stage = "Reconciliation";
+                    if (!TryReconcileHooks(guardian, baseline,
+                        pending => reconciliationMayHaveSubmitted = pending, out string? cleanupReason))
+                    {
+                        return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
+                            SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
+                                "ReconcileHooks", stage, cleanupReason!, true, observedWorkerFailure), 1);
+                    }
+                    clean = worker.ExitCode is 0 or 3 || foregroundPause;
+                    if (foregroundPause)
+                    {
+                        Trace.TraceInformation("SnapTap foreground pause reconciled; waiting to rearm: {0}", finalStatus?.Failure);
+                        if (interrupted || shouldStop())
+                        {
+                            return 0;
+                        }
+                        // Keep the original baseline and durable journal across workers.
+                        // A new process must pass fresh admission, focus and all-release gates.
+                        clean = false;
+                        continue;
+                    }
+                    int exitCode = clean ? worker.ExitCode : 4;
+                    if (!clean)
+                    {
+                        DiagnosticFailure cleanupFailure = SnapTapDiagnosticFailure.Create(
+                            SnapTapDiagnosticFailure.Supervisor, "ReconcileHooks", stage,
+                            "RecoveryRequired", observedWorkerFailure?.MayHaveSubmitted == true, observedWorkerFailure);
+                        return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
+                            cleanupFailure, exitCode);
+                    }
+                    if (observedWorkerFailure is not null)
+                    {
+                        return PublishTerminal(endpoint.Profile,
+                            exitCode == 3 ? SnapTapRuntimeState.Unavailable : SnapTapRuntimeState.Failed,
+                            observedWorkerFailure, exitCode);
+                    }
+                    return exitCode;
                 }
-                if (clean)
+                finally
                 {
-                    File.Delete(journal);
+                    // Exceptions in admission, enumeration or recovery must also close
+                    // the mutator. Do not leave it alive behind a failed supervisor.
+                    if (worker is not null)
+                    {
+                        if (!worker.HasExited)
+                        {
+                            stop.Set();
+                            if (!worker.WaitForExit(1500))
+                            {
+                                worker.Kill();
+                                worker.WaitForExit(1500);
+                            }
+                        }
+                        worker.Dispose();
+                    }
+                    if (clean)
+                    {
+                        File.Delete(journal);
+                    }
                 }
             }
         }
@@ -242,6 +244,62 @@ internal static class SnapTapDriverSupervisor
                 observedWorkerFailure);
             return PublishTerminal(endpoint?.Profile, SnapTapRuntimeState.Failed, failure, 1);
         }
+    }
+
+    internal static bool IsCleanForegroundPause(
+        int exitCode, SnapTapRuntimeStatus? status, int processId, DateTimeOffset startedAt) =>
+        exitCode == SnapTapDriverLoop.ForegroundPauseExitCode
+        && status is { State: SnapTapRuntimeState.Paused, Failure: { } failure }
+        && status.ProcessId == processId && status.UpdatedAt >= startedAt
+        && failure is
+        {
+            Component: SnapTapDiagnosticFailure.Worker,
+            Operation: "Run",
+            Stage: "InputLoop",
+            Reason: "ForegroundUnavailable",
+            MayHaveSubmitted: false,
+            Cause: null,
+            Related: null,
+        };
+
+    internal static bool TryReconcileHooks(
+        IRazerSnapTapHookTransport guardian,
+        IReadOnlyList<byte[]> baseline,
+        Action<bool> setSubmissionPending,
+        out string? failureReason)
+    {
+        failureReason = null;
+        IReadOnlyList<byte[]> hooks = guardian.ReadHooks();
+        if (!SameUnownedHooks(baseline, hooks))
+        {
+            failureReason = "HookOwnershipChanged";
+            return false;
+        }
+        foreach (ushort scan in new ushort[] { 0x1E, 0x20 })
+        {
+            byte[] owned = RazerSnapTapDriverProtocol.EncodeHook(scan);
+            if (hooks.Any(record => record.AsSpan().SequenceEqual(owned)))
+            {
+                // The caller must prove child exit before this independent read/clear.
+                // Never synthesize a guessed key release or reset the driver.
+                setSubmissionPending(true);
+                guardian.ClearHook(RazerSnapTapDriverProtocol.EncodeClearHook(scan));
+                hooks = guardian.ReadHooks();
+                setSubmissionPending(false);
+                if (hooks.Any(record => record.AsSpan().SequenceEqual(owned))
+                    || !SameUnownedHooks(baseline, hooks))
+                {
+                    failureReason = "HookCleanupUnconfirmed";
+                    return false;
+                }
+            }
+        }
+        if (hooks.Count != baseline.Count || !SameUnownedHooks(baseline, hooks))
+        {
+            failureReason = "RecoveryRequired";
+            return false;
+        }
+        return true;
     }
 
     internal static DiagnosticFailure? MatchingTerminalFailure(

@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Let SnapTap recover automatically from a brief loss of foreground focus while idle, after verified hook cleanup and a fresh key-release check. Preserve safety stops for held keys and uncertain input. ([#854](https://github.com/OpenBladeProject/openblade-core/pull/854))
+
 ## [0.44.0-nightly.104] - 2026-10-26
 
 ### Added
