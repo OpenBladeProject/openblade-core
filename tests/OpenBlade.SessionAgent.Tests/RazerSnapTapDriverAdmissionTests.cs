@@ -851,4 +851,21 @@ public sealed class RazerSnapTapDriverAdmissionTests
         CompetingControllerDetected: false,
         ControllerObservationComplete: true,
         ActiveConsoleSession: true);
+    [Fact]
+    public void RefusedSetupPreservesExactPlatformFailureUnderOriginalRuntimeFailure()
+    {
+        RazerSnapTapDriverSnapshot snapshot = ExactSnapshot();
+        snapshot = snapshot with { CommonDriver = RazerDriverApiPackageEvidence.Missing };
+        var blocked = new OpenBlade.Contracts.DiagnosticFailure(
+            "RazerDriverInstall", "Inspect", "ExistingImages", "ExistingImageDiffersFromPinnedPackage")
+        { Context = "{\"Component\":\"RzCommon\",\"ObservedHash\":\"different\"}" };
+        var admission = new RazerSnapTapDriverAdmission(() => snapshot,
+            () => new RazerDriverInstallationInspection(false, false, RazerDriverInstallOutcome.Unavailable)
+            { FailureDetail = blocked });
+        Assert.False(admission.TryGetEndpointWithFailure(out _, out _, out var detail));
+        Assert.Equal(blocked, detail?.Related?[0].Cause);
+        Assert.Equal("ExistingImageDiffersFromPinnedPackage", detail?.Related?[0].Cause?.Reason);
+        Assert.True(detail?.IsValid());
+    }
+
 }

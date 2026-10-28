@@ -24,6 +24,7 @@ public sealed partial class MainWindow
             {
                 "manual" => SnapTapRuntimeState.ManualDriverSetupRequired,
                 "unsupported" => SnapTapRuntimeState.UnsupportedModel,
+                "runtime-unavailable" => SnapTapRuntimeState.Unavailable,
                 _ => localizationSnapshotSnapTapState,
             };
             localizationSnapshotSnapTapExperimental = driverSetupState == "experimental";
@@ -31,6 +32,8 @@ public sealed partial class MainWindow
             {
                 "installed" => RazerDriverInstallOutcome.Installed,
                 "unavailable" => RazerDriverInstallOutcome.Unavailable,
+                "windows-update-unavailable" => RazerDriverInstallOutcome.WindowsUpdateUnavailable,
+                "windows-update-refused" => RazerDriverInstallOutcome.WindowsUpdateRefused,
                 "restart" => RazerDriverInstallOutcome.RestartRequired,
                 "failed" => RazerDriverInstallOutcome.RecoveryRequired,
                 _ => null,
@@ -78,7 +81,7 @@ public sealed partial class MainWindow
     private async Task InstallSnapTapDriverAsync()
     {
         if (localizationSnapshotMode || Volatile.Read(ref disposed) != 0 || snapTapDriverInstalling
-            || !snapTapEnabled || SnapTapStatusStore.Read()?.State != SnapTapRuntimeState.DriverMissing)
+            || !snapTapEnabled || !CanOfferSnapTapDriverSetup(SnapTapStatusStore.Read()?.State))
         {
             return;
         }
@@ -137,15 +140,15 @@ public sealed partial class MainWindow
                     "SnapTap_Status_Unavailable", "Waiting for the input helper…"),
                 _ => string.Empty,
             };
-        SnapTapDriverActions.Visibility = snapTapEnabled && status?.State == SnapTapRuntimeState.DriverMissing
+        SnapTapDriverActions.Visibility = snapTapEnabled && CanOfferSnapTapDriverSetup(status?.State)
             && snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed
             ? Visibility.Visible
             : Visibility.Collapsed;
         SnapTapToggle.IsEnabled = !snapTapDriverInstalling;
         SnapTapInstallDriverButton.IsEnabled = !snapTapDriverInstalling;
         SnapTapInstallDriverButton.Visibility = snapTapDriverInstallOutcome is
-            RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.Unavailable
-                or RazerDriverInstallOutcome.RestartRequired or RazerDriverInstallOutcome.RecoveryRequired
+            RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.RestartRequired
+                or RazerDriverInstallOutcome.RecoveryRequired
             ? Visibility.Collapsed
             : Visibility.Visible;
         SnapTapStatusText.Visibility = string.IsNullOrEmpty(SnapTapStatusText.Text)
@@ -165,8 +168,15 @@ public sealed partial class MainWindow
             "SnapTap_Driver_AcPower", "Connect AC power to install the driver."),
         RazerDriverInstallOutcome.RazerSoftwareRunning => LocalizedResources.Get(
             "SnapTap_Driver_CloseSynapse", "Close Razer Synapse, then try again."),
+        RazerDriverInstallOutcome.WindowsUpdateUnavailable => LocalizedResources.Get(
+            "SnapTap_Driver_WindowsUpdateUnavailable", "Windows Update is unavailable. Check Windows Update, then try again."),
+        RazerDriverInstallOutcome.WindowsUpdateRefused => LocalizedResources.Get(
+            "SnapTap_Driver_WindowsUpdateRefused", "The available driver could not be installed safely. Export diagnostics for help."),
         _ => LocalizedResources.Get(
             "SnapTap_Driver_Failed", "Driver setup couldn't finish. Open the setup guide."),
     };
+
+    private static bool CanOfferSnapTapDriverSetup(SnapTapRuntimeState? state) => state is
+        SnapTapRuntimeState.DriverMissing or SnapTapRuntimeState.Unavailable;
 
 }

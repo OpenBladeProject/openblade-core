@@ -9,6 +9,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Let SnapTap recover automatically from a brief loss of foreground focus while idle, after verified hook cleanup and a fresh key-release check. Preserve safety stops for held keys and uncertain input. ([#854](https://github.com/OpenBladeProject/openblade-core/pull/854))
 
+## [0.44.0-nightly.104] - 2026-10-26
+
+### Added
+
+- Install SnapTap drivers through Windows Update first on all reviewed Blade models, with pinned-package fallback when the initial scan finds no matching offer. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+
+### Fixed
+
+- Keep keyboard driver setup visible for incomplete stacks and retain exact blocked checks and Windows Update results in diagnostics. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+- Wait for SnapTap driver devices to appear after installation, keep canceled pre-install checks retryable, and distinguish refused driver offers from Windows Update availability problems. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+
 ## [0.43.0-nightly.103] - 2026-10-25
 
 ### Added
@@ -2242,7 +2253,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.44.0-nightly.104...HEAD
+[0.44.0-nightly.104]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...v0.44.0-nightly.104
 [0.43.0-nightly.103]: https://github.com/OSSBlade/openblade-core/compare/v0.42.2-nightly.102...v0.43.0-nightly.103
 [0.42.2-nightly.102]: https://github.com/OSSBlade/openblade-core/compare/v0.42.1-nightly.101...v0.42.2-nightly.102
 [0.42.1-nightly.101]: https://github.com/OSSBlade/openblade-core/compare/v0.42.0-nightly.100...v0.42.1-nightly.101

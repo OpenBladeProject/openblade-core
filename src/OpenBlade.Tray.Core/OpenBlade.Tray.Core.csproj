@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
+    <ProjectReference Include="..\OpenBlade.Platform\OpenBlade.Platform.csproj" />
     <ProjectReference Include="..\OpenBlade.Session\OpenBlade.Session.csproj" />
   </ItemGroup>
   <ItemGroup>
