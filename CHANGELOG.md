@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Show what's new automatically on the first launch of each version, with offline release notes and a button to reopen them from About. ([#862](https://github.com/OSSBlade/openblade-core/pull/862))
+
 ### Changed
 
 - Refine the application icon's laptop proportions and replace the white README logo with a dark-display, silver-deck color treatment. ([#860](https://github.com/OpenBladeProject/openblade-core/pull/860))

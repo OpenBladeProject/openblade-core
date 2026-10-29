@@ -152,6 +152,7 @@ try {
             'settings',
             'settings-appearance',
             'about',
+            'whats-new',
             'tray-dashboard')) {
         $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage
         $startInfo = New-Object System.Diagnostics.ProcessStartInfo
