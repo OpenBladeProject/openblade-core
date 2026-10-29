@@ -47,6 +47,29 @@ public sealed class WhatsNewShellContractTests
         Assert.Contains("dialog, Path.Combine(resolvedDirectory, \"main-whats-new.png\")", harness, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AutomaticAcknowledgementsCannotOverwriteFallbackPreferences()
+    {
+        string window = Read("MainWindow.xaml.cs");
+        Assert.Contains("preferencesLoadedForEditing = preferenceStore.LastLoadSucceeded;", window, StringComparison.Ordinal);
+        int start = window.IndexOf("private void QueuePreferenceSave()", StringComparison.Ordinal);
+        string save = window[start..window.IndexOf("private void PlaceInitialWindow()", start, StringComparison.Ordinal)];
+        Assert.True(save.IndexOf("if (!preferencesLoadedForEditing)", StringComparison.Ordinal)
+            < save.IndexOf("preferenceSaveQueue.Enqueue", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void OptionalNotesFailureDoesNotBlockUpdatesAndLiveLocalizationSuppressesPopup()
+    {
+        string dialog = Read("MainWindow.WhatsNew.cs");
+        int start = dialog.IndexOf("private async Task ShowWhatsNewIfNeededAsync()", StringComparison.Ordinal);
+        string automatic = dialog[start..dialog.IndexOf("private async void OnShowWhatsNew", start, StringComparison.Ordinal)];
+        Assert.Contains("catch (Exception exception)", automatic, StringComparison.Ordinal);
+        Assert.Contains("\"ShowWhatsNew\"", automatic, StringComparison.Ordinal);
+        Assert.DoesNotContain("throw;", automatic, StringComparison.Ordinal);
+        Assert.Contains("suppressWhatsNew: liveLocalizationSmokeContext is not null", Read("App.xaml.cs"), StringComparison.Ordinal);
+    }
+
     private static string Read(string name, [CallerFilePath] string source = "") =>
         File.ReadAllText(Path.GetFullPath(Path.Combine(
             Path.GetDirectoryName(source)!, "..", "..", "src", "OpenBlade.Tray", name)));

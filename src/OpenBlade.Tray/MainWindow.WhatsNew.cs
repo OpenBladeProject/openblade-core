@@ -8,14 +8,32 @@ public sealed partial class MainWindow
     private readonly TaskCompletionSource rootLoaded =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly WhatsNewRelease whatsNewRelease;
+    private readonly bool suppressWhatsNew;
+    private bool preferencesLoadedForEditing;
     private string? lastSeenWhatsNewVersion;
     private bool whatsNewOpen;
 
     public bool NeedsWhatsNew =>
-        !localizationSnapshotMode && whatsNewRelease.ShouldShow(lastSeenWhatsNewVersion);
+        !suppressWhatsNew && whatsNewRelease.ShouldShow(lastSeenWhatsNewVersion);
 
-    private Task ShowWhatsNewIfNeededAsync() =>
-        NeedsWhatsNew ? ShowWhatsNewAsync() : Task.CompletedTask;
+    private async Task ShowWhatsNewIfNeededAsync()
+    {
+        if (!NeedsWhatsNew)
+        {
+            return;
+        }
+        try
+        {
+            await ShowWhatsNewAsync();
+        }
+        catch (Exception exception)
+        {
+            // Release notes are optional; their failure must not prevent update
+            // consent or the user's configured automatic checks.
+            OpenBlade.Contracts.DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow", "ShowWhatsNew", exception);
+        }
+    }
 
     private async void OnShowWhatsNew(object sender, RoutedEventArgs args) =>
         await RunHandlerAsync(ShowWhatsNewAsync, nameof(OnShowWhatsNew));

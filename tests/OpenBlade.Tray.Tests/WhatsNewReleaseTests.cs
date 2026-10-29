@@ -181,6 +181,69 @@ public sealed class WhatsNewReleaseTests : IDisposable
         });
     }
 
+    [Fact]
+    public void ContinuationParagraphsNestedItemsAndCodeRemainInTheirBullet()
+    {
+        const string changelog = """
+            ## [Unreleased]
+            ### Added
+            - Parent
+            lazy continuation.
+
+            Second paragraph.
+              - Child.
+              ```powershell
+              echo test
+              ```
+            - Next.
+            """;
+        var release = new WhatsNewRelease("0.45.0", changelog);
+
+        Assert.Equal(
+            ["Parent lazy continuation.\n\nSecond paragraph.\n• Child.\n  echo test", "Next."],
+            Assert.Single(release.Sections).Items);
+    }
+
+    [Fact]
+    public void CombinedPullRequestReferencesAreOmittedFromSummary()
+    {
+        const string changelog = """
+            ## [Unreleased]
+            ### Fixed
+            - Fix setup. ([#819](https://github.com/a/b/pull/819), [catalog #27](https://github.com/a/c/pull/27))
+            """;
+        var release = new WhatsNewRelease("0.45.0", changelog);
+
+        Assert.Equal("Fix setup.", Assert.Single(Assert.Single(release.Sections).Items));
+    }
+
+    [Fact]
+    public async Task UnreadableOrInvalidPreferencesAreNotEligibleForAutomaticSaving()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        var store = new UiPreferenceStore(path);
+        await store.LoadAsync();
+        Assert.True(store.LastLoadSucceeded);
+
+        await File.WriteAllTextAsync(path, "{invalid json}");
+        await store.LoadAsync();
+        Assert.False(store.LastLoadSucceeded);
+        Assert.Equal("{invalid json}", await File.ReadAllTextAsync(path));
+
+        await store.SaveAsync(UiPreferences.Default with { Theme = ThemePreference.Dark });
+        await store.LoadAsync();
+        Assert.True(store.LastLoadSucceeded);
+        await using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            await Assert.ThrowsAsync<IOException>(() => store.LoadAsync());
+            Assert.False(store.LastLoadSucceeded);
+        }
+        UiPreferences recovered = await store.LoadAsync();
+        Assert.True(store.LastLoadSucceeded);
+        Assert.Equal(ThemePreference.Dark, recovered.Theme);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

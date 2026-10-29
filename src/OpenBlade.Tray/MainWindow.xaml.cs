@@ -139,9 +139,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         UiLanguagePreference? initialLanguageOverride = null,
         UiPreferenceStore? preferenceStore = null,
         UpdateCheckInterval? initialUpdateCheckConsentOverride = null,
-        ITouchpadController? touchpadController = null)
+        ITouchpadController? touchpadController = null,
+        bool suppressWhatsNew = false)
     {
         this.localizationSnapshotMode = localizationSnapshotMode;
+        this.suppressWhatsNew = suppressWhatsNew || localizationSnapshotMode;
         TouchpadViewModel = new(touchpadController ?? new WindowsTouchpadController());
         if (localizationSnapshotMode && touchpadController is not null)
         {
@@ -981,6 +983,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialLastNotifiedFirmwareSignature =
                 preferences.LastNotifiedFirmwareSignature;
             initialLabFeaturesEnabled = preferences.LabFeaturesEnabled;
+            preferencesLoadedForEditing = preferenceStore.LastLoadSucceeded;
         }
         catch (Exception exception)
         {
@@ -1419,6 +1422,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void QueuePreferenceSave()
     {
+        // A transient read failure or invalid file must not turn automatic UI
+        // acknowledgements into a full overwrite with fallback defaults.
+        if (!preferencesLoadedForEditing)
+        {
+            return;
+        }
+
         try
         {
             preferenceSaveQueue.Enqueue(new UiPreferences(

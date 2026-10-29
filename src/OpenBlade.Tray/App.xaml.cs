@@ -318,7 +318,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             TryShowTrayNotification,
             initialLanguageOverride: initialLanguageOverride,
             preferenceStore: preferenceStore,
-            initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride);
+            initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride,
+            suppressWhatsNew: liveLocalizationSmokeContext is not null);
     }
 
     private void AttachWindowSurfaces(
