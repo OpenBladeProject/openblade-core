@@ -12,6 +12,7 @@ public enum TrayIconState
     UsbCBalanced,
     BatteryBalanced,
     BatterySaver,
+    AcHyperBoost,
 }
 
 public static class TrayIconStateResolver
@@ -20,7 +21,8 @@ public static class TrayIconStateResolver
         bool isConnected,
         bool deviceVerified,
         PowerSource powerSource,
-        PerformancePreset? effectivePerformance)
+        PerformancePreset? effectivePerformance,
+        bool hyperBoostActive = false)
     {
         if (!isConnected
             || !deviceVerified
@@ -28,6 +30,17 @@ public static class TrayIconStateResolver
             || effectivePerformance is null)
         {
             return TrayIconState.GenericError;
+        }
+
+        if (hyperBoostActive)
+        {
+            return powerSource == PowerSource.PluggedIn
+                && effectivePerformance is PerformancePreset.Balanced
+                    or PerformancePreset.Silent
+                    or PerformancePreset.Performance
+                    or PerformancePreset.Custom
+                ? TrayIconState.AcHyperBoost
+                : TrayIconState.GenericError;
         }
 
         return (powerSource, effectivePerformance.Value) switch

@@ -24,6 +24,7 @@ src/OpenBlade.Tray/Assets/Brand/*
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.ico
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.png
+!src/OpenBlade.Tray/Assets/Brand/TRAY-ASSETS.md
 !src/OpenBlade.Tray/Assets/Brand/Notifications/
 src/OpenBlade.Tray/Assets/Brand/Notifications/*
 !src/OpenBlade.Tray/Assets/Brand/Notifications/*.png
@@ -35,6 +36,8 @@ src/OpenBlade.Tray/Assets/Brand/Tray/*
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-custom-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-performance-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-performance-light.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/ac-hyperboost-dark.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/ac-hyperboost-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-silent-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-silent-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/battery-balanced-dark.ico

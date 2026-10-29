@@ -4,6 +4,34 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class TrayIconStateResolverTests
 {
+    [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Performance)]
+    [InlineData(PerformancePreset.Custom)]
+    public void ConfirmedHyperBoostOverridesItsUnderlyingAcMode(PerformancePreset performance)
+    {
+        Assert.Equal(TrayIconState.AcHyperBoost,
+            TrayIconStateResolver.Resolve(true, true, PowerSource.PluggedIn, performance, true));
+        Assert.NotEqual(TrayIconState.AcHyperBoost,
+            TrayIconStateResolver.Resolve(true, true, PowerSource.PluggedIn, performance, false));
+    }
+
+    [Theory]
+    [InlineData(false, true, PowerSource.PluggedIn, PerformancePreset.Balanced)]
+    [InlineData(true, false, PowerSource.PluggedIn, PerformancePreset.Balanced)]
+    [InlineData(true, true, PowerSource.ExternalUnknown, PerformancePreset.Balanced)]
+    [InlineData(true, true, PowerSource.UsbC, PerformancePreset.Balanced)]
+    [InlineData(true, true, PowerSource.Battery, PerformancePreset.BatteryBalanced)]
+    [InlineData(true, true, PowerSource.PluggedIn, PerformancePreset.BatterySaver)]
+    [InlineData(true, true, PowerSource.PluggedIn, null)]
+    public void HyperBoostDoesNotMaskUnavailableOrInconsistentState(
+        bool connected, bool verified, PowerSource source, PerformancePreset? performance)
+    {
+        Assert.Equal(TrayIconState.GenericError,
+            TrayIconStateResolver.Resolve(connected, verified, source, performance, true));
+    }
+
     public static TheoryData<PowerSource, PerformancePreset, TrayIconState> EffectiveStates =>
         new()
         {
