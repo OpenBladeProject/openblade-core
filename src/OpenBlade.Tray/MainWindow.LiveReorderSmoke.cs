@@ -51,11 +51,16 @@ public sealed partial class MainWindow
         Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
             "A card behind an overlay became a drop target.");
         Root.Children.Remove(overlay);
+        accentColorManager.Apply(AppAccentColorMode.Custom, "#B83E8B");
         liveReorder.ShowIndicator(secondCard, after: true);
-        Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is not null,
-            "Drop insertion indicator was not shown.");
+        var insertion = ElementCompositionPreview.GetElementChildVisual(secondCard)
+            as Microsoft.UI.Composition.SpriteVisual;
+        var accentBrush = insertion?.Brush as Microsoft.UI.Composition.CompositionColorBrush;
+        Require(accentBrush is not null && accentBrush.Color.Equals(accentColorManager.CurrentColor),
+            "Drop insertion indicator did not use the custom application accent.");
         await capture("dashboard-insertion");
         liveReorder.EndDrag();
+        accentColorManager.Apply(accentColorMode, customAccentColor);
         Require(!liveReorder.TryMove(secondCard, after: true)
             && DashboardCards[0] == first, "Cancel changed card order.");
         Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
@@ -76,6 +81,15 @@ public sealed partial class MainWindow
         Require(liveReorder.TryBeginDrag(firstCard, firstCard), "Cross-group setup failed.");
         Require(!liveReorder.TryMove(ProfilesNavigationItem, false),
             "A dashboard card moved into navigation.");
+        double originalOpacity = firstCard.Opacity;
+        Require(liveReorder.TryBeginDrag(firstCard, firstCard), "Detached-source setup failed.");
+        DashboardCardHost.Children.Remove(firstCard);
+        liveReorder.UpdateTarget(new Windows.Foundation.Point(0, 0));
+        bool movedAfterRemoval = liveReorder.TryMove(secondCard, true);
+        Require(!movedAfterRemoval && firstCard.Opacity == originalOpacity,
+            $"A detached source retained its drag: moved={movedAfterRemoval}, opacity={firstCard.Opacity}, expected={originalOpacity}.");
+        RefreshDashboardCards();
+        await capture("dashboard-restored");
         SelectLocalizationSnapshotPage("settings");
         await capture("settings-before");
         foreach (var pair in pageSectionHosts)
@@ -141,6 +155,12 @@ public sealed partial class MainWindow
                 .SequenceEqual(sections.Select(section => (section.Kind, section.IsVisible))),
             "Direct ordering was not persisted with hidden state.");
         liveReorder.Dispose();
+        liveReorder.Register(firstCard, DashboardCards, first);
+        Require(!liveReorder.TryBeginDrag(firstCard, firstCard),
+            "A late refresh revived a disposed reorder behavior.");
+        liveReorder.ShowIndicator(secondCard, false);
+        Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
+            "A disposed reorder behavior recreated insertion feedback.");
         Require(!liveReorder.IsRegistered(firstCard) && !liveReorder.IsRegistered(sourceItem), "Disposed reorder behavior retained input handlers.");
     }
 }

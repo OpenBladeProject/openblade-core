@@ -37,6 +37,8 @@ internal sealed class LiveReorderBehavior : IDisposable
     private UIElement? keyRoot;
     private double originalOpacity;
     private bool transferringCapture;
+    private bool disposed;
+    private FrameworkElement? captureOwner;
 
     public LiveReorderBehavior()
     {
@@ -48,7 +50,13 @@ internal sealed class LiveReorderBehavior : IDisposable
     }
 
     public void Register<T>(FrameworkElement element, ObservableCollection<T> items, T item)
+        where T : class
     {
+        // A queued MainWindow refresh can arrive after disposal. It must not reattach input.
+        if (disposed)
+        {
+            return;
+        }
         var registration = new Registration(element, items, item!, (source, after) =>
         {
             int sourceIndex = items.IndexOf((T)source);
@@ -176,27 +184,51 @@ internal sealed class LiveReorderBehavior : IDisposable
 
     private void BeginPointerDrag(FrameworkElement element, Pointer activePointer)
     {
-        bool captured;
+        if (disposed || !IsVisible(element))
+        {
+            EndDrag();
+            return;
+        }
+        bool started = false;
         transferringCapture = true;
         try
         {
+            if (activePointer.PointerDeviceType == PointerDeviceType.Touch)
+            {
+                // Commit a held touch to reordering instead of the parent's system pan.
+                // False also means no manipulation was active; it is not a failure gate.
+                element.CancelDirectManipulations();
+            }
             // NavigationView's presenter captures on press. Hand that specific descendant
             // capture to the registered item after a reorder gesture has been established.
             ReleaseDescendantCapture(element, activePointer);
-            captured = element.CapturePointer(activePointer);
+            if (!element.CapturePointer(activePointer))
+            {
+                return;
+            }
+            captureOwner = element;
+            pointer = activePointer;
+            if (!TryBeginDrag(element, element))
+            {
+                return;
+            }
+            pressed = dragging;
+            keyRoot = element.XamlRoot.Content;
+            keyRoot.AddHandler(UIElement.KeyDownEvent, keyDown, true);
+            started = true;
         }
         finally
         {
             transferringCapture = false;
-        }
-        if (captured && TryBeginDrag(element, element))
-        {
-            pointer = activePointer;
-            pressed = dragging;
-            keyRoot = element.XamlRoot.Content;
-            keyRoot.AddHandler(UIElement.KeyDownEvent, keyDown, true);
+            if (!started)
+            {
+                // Also release a capture acquired before admission failed. Never retry a
+                // failed initiation on every subsequent move of the same contact.
+                EndDrag();
+            }
         }
     }
+
 
     private static void ReleaseDescendantCapture(DependencyObject parent, Pointer activePointer)
     {
@@ -214,7 +246,7 @@ internal sealed class LiveReorderBehavior : IDisposable
 
     internal bool TryBeginDrag(FrameworkElement element, DependencyObject origin)
     {
-        if (!element.IsLoaded || !CanStartFrom(element, origin)
+        if (disposed || dragging is not null || !IsVisible(element) || !CanStartFrom(element, origin)
             || !registrations.TryGetValue(element, out Registration? source))
         {
             return false;
@@ -230,6 +262,7 @@ internal sealed class LiveReorderBehavior : IDisposable
         && target != dragging.Element
         && registrations.TryGetValue(target, out Registration? destination)
         && ReferenceEquals(destination.Group, dragging.Group)
+        && ReferenceEquals(target.XamlRoot, dragging.Element.XamlRoot)
         && registrations.TryGetValue(dragging.Element, out Registration? source)
         && ReferenceEquals(source.Item, dragging.Item);
 
@@ -239,19 +272,39 @@ internal sealed class LiveReorderBehavior : IDisposable
         {
             return false;
         }
-        for (DependencyObject? current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+        UIElement? root = element.XamlRoot?.Content;
+        for (DependencyObject? current = element; current is not null;)
         {
             if (current is UIElement { Visibility: Visibility.Collapsed })
             {
                 return false;
             }
+            if (ReferenceEquals(current, root))
+            {
+                return true;
+            }
+            DependencyObject? parent = VisualTreeHelper.GetParent(current);
+            // Theme removal transitions can retain a visual parent after the item has
+            // left its host. Such outgoing visuals must no longer admit a drag or drop.
+            if (current is UIElement child
+                && (parent is Microsoft.UI.Xaml.Controls.Panel panel && !panel.Children.Contains(child)
+                    || parent is ItemsRepeater repeater && repeater.GetElementIndex(child) < 0))
+            {
+                return false;
+            }
+            current = parent;
         }
-        return true;
+        return false;
     }
 
     internal void UpdateTarget(Point position)
     {
-        UIElement root = dragging!.Element.XamlRoot.Content;
+        if (disposed || dragging is null || !IsVisible(dragging.Element))
+        {
+            EndDrag();
+            return;
+        }
+        UIElement root = dragging.Element.XamlRoot.Content;
         Point rootPosition = dragging.Element.TransformToVisual(root).TransformPoint(position);
         if (root is FrameworkElement bounds
             && (rootPosition.X < 0 || rootPosition.Y < 0
@@ -339,13 +392,17 @@ internal sealed class LiveReorderBehavior : IDisposable
 
     internal void ShowIndicator(FrameworkElement target, bool after)
     {
+        if (disposed)
+        {
+            return;
+        }
         if (!ReferenceEquals(indicatorTarget, target))
         {
             ClearIndicator();
             var compositor = ElementCompositionPreview.GetElementVisual(target).Compositor;
             indicator = compositor.CreateSpriteVisual();
-            var brush = (SolidColorBrush)Application.Current.Resources["SystemControlHighlightAccentBrush"];
-            indicator.Brush = compositor.CreateColorBrush(brush.Color);
+            var accent = (Windows.UI.Color)Application.Current.Resources["SystemAccentColor"];
+            indicator.Brush = compositor.CreateColorBrush(accent);
             indicatorTarget = target;
             ElementCompositionPreview.SetElementChildVisual(target, indicator);
         }
@@ -369,24 +426,31 @@ internal sealed class LiveReorderBehavior : IDisposable
     {
         ClearIndicator();
         Registration? source = dragging;
+        FrameworkElement? owner = captureOwner;
         Pointer? captured = pointer;
         dragging = null;
         pressed = null;
         pointer = null;
+        captureOwner = null;
         keyRoot?.RemoveHandler(UIElement.KeyDownEvent, keyDown);
         keyRoot = null;
         if (source is not null)
         {
             source.Element.Opacity = originalOpacity;
-            if (captured is not null)
-            {
-                source.Element.ReleasePointerCapture(captured);
-            }
+        }
+        if (owner is not null && captured is not null)
+        {
+            owner.ReleasePointerCapture(captured);
         }
     }
 
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+        disposed = true;
         EndDrag();
         foreach (FrameworkElement element in registrations.Keys)
         {
