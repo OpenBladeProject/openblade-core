@@ -346,11 +346,19 @@ another submission to the exact device.
 
 ### Original Razer download route
 
-The official model download listings for [RZ09-0482](https://mysupport.razer.com/app/answers/detail/a_id/13732),
-[RZ09-0483](https://mysupport.razer.com/app/answers/detail/a_id/9743) and
-[RZ09-0484](https://mysupport.razer.com/app/answers/detail/a_id/9676) did not expose
-a separately named Realtek/THX package in indexed official-page content. Direct
-page requests reached Razer's pre-check; this was not a complete live-link audit.
+The initial indexed-page review reached Razer's pre-check. A browser follow-up
+on 2026-10-21 loaded the actual model download tables, including the selected
+**Drivers & Downloads** panels where present:
+
+| Model | Official listing reviewed | Entries shown |
+| --- | --- | --- |
+| RZ09-0482 | [Blade 14 downloads](https://mysupport.razer.com/app/answers/detail/a_id/13732) | AMD APU driver and two firmware updaters |
+| RZ09-0483 | [Blade 16 update listing](https://mysupport.razer.com/app/answers/detail/a_id/9743) and [support-page downloads](https://mysupport.razer.com/app/answers/detail/a_id/9668) | Six firmware updaters |
+| RZ09-0484 | [Blade 18 support-page downloads](https://mysupport.razer.com/app/answers/detail/a_id/9676) | Four firmware updaters |
+
+None of these live tables listed a separate Realtek/THX audio installer. This
+closes the earlier page-access gap; it does not establish what Razer may supply
+through support, recovery or a different delivery channel.
 
 The [RZ09-0482 AMD APU guide](https://mysupport.razer.com/app/answers/detail/a_id/13229)
 links the original [APU package](https://rzr.to/oGIdKJ), an 888,405,128-byte ZIP.
@@ -450,6 +458,32 @@ also returned only MEDIA packages. These searches therefore cannot prove that
 the needed newer extension never existed or is unavailable through privately
 targeted Windows Update delivery.
 
+The 2026-10-21 follow-up also checked an independent
+[Blade 16 owner discussion](https://insider.razer.com/razer-support-45/razer-blade-16-driver-fresh-install-46247?sort=oldestFirst).
+A 2024-09-23 post lists `thxhdaudio.inf_amd64_a639441cfa75798e`, the same
+extension folder as the recovered factory export, alongside the legacy APO,
+SCU, service and HSA packages. This corroborates a package-family lead in a
+Blade 16 discussion. The post supplies no original package bytes, exact-model
+SetupAPI provenance or matching Realtek FX extension; it is not an installation
+or compatibility proof.
+
+Microsoft's [extension submission guidance](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/submit-dashboard-extension-inf-files)
+recommends separate base-driver and extension submissions. Windows Update
+targets extensions through hardware IDs and, where required, computer hardware
+IDs (CHIDs); `ExtensionID` identifies lineage and versioning rather than
+applicability. A shared extension GUID or a broadly advertised Realtek base CAB
+therefore cannot establish this model-specific binding. These rules also leave
+targeted delivery as an unresolved acquisition route when public Catalog
+searches do not locate a package.
+
+No new matching FX package was recovered by this follow-up. The selected
+`DeviceExtension_Install_RT_SKU_A` and `_C` AddReg paths were rechecked: their
+`OutAPO`/`HPAPO` references still lead to endpoint device/configuration metadata,
+not a complete FX CLSID chain. Legacy fresh installation remains blocked; the
+two modern Synapse-free runtime reports do not validate this legacy recipe.
+The remaining binding, installation-order and physical-validation work is
+tracked in [#833](https://github.com/OpenBladeProject/openblade-core/issues/833).
+
 The matching signed `RTKVHD64.sys` 6.0.9909.1 is 6,818,344 bytes, SHA-256
 `48C525F8E58DA40EE54BAE8EA95C44D6944A9D77E9EE98C500B90284257312CD`.
 It passed kernel-policy catalog membership verification. Bounded static analysis
@@ -496,6 +530,21 @@ separate `+0x158` field is zero or `0xFFFFFFFF`. The identified Razer override's
 behavior is established, but universal live selection and endpoint flags remain
 unproved. The fallback names are not confirmed runtime selections for every
 installation of the three laptops. This trace stops at that finite boundary.
+
+A further bounded trace followed the AMD-only
+`{E82A5EE8-44D2-44C1-897E-AA5AFBF146BA}` declaration into this same driver.
+Its sole stored GUID is at file offset `0x1BD0B0`, image VA `0x1401BEAB0`.
+Consumer `0x14003A8CC` calls `0x140032064` at `0x14003B016` on the
+`HAPEnableTHX` path. That helper allocates an internal state/position/GUID
+record and appends it to policy lists; it does not write an endpoint FX tree.
+The `SSTPPCfg` reader `0x1405E60FC` builds
+`SSTPPCfg\<GUID>\<SPK|HP|MIC>\<EFX|MFX|SFX|DET>` paths and calls
+`0x1405E6EEC`, which reads enabled/position/mandatory/mode/module policy into
+object state. Neither inspected path establishes the missing legacy THX CLSID
+chain or a connection to the `InterfaceSetting` registry copiers above.
+This resolves the reviewed E82 declaration as an internal HAP/DSP policy input,
+without proving that every driver path lacks an endpoint writer. The Intel
+model sections still do not declare that GUID.
 
 The recovered THX extension already appends `OutAPO`/`HPAPO` settings to ordinary,
 SST or HAP topology lists. Their shared sections supply device types and the
@@ -620,6 +669,50 @@ process side effects, successful registration or complete THX setup. COM
 registration and endpoint FX binding remain separate requirements; no native
 registration command was executed here.
 
+The 2026-10-22 follow-up also traced startup in the pinned 2.6.5 service:
+`VSSrv.exe`, 2,430,000 bytes, SHA-256
+`DC709A34D2CB043505B200316B4CA1A51B9AE1FC917B55DD804D5F30841C868F`.
+The reviewed chain `0x14005A220` -> `0x140059520` -> `0x140056FA0` ->
+`0x14006F6F0` creates APO/session events, local messaging and COM objects.
+A concrete registry write at `0x1400975F1` publishes
+`thx_sa_status_publisher` under `HKLM\SOFTWARE\THX\Discovery`; it supplies
+local connection discovery rather than endpoint FX association. Session
+logon/unlock handler `0x1400595A0` separately launches `VSHelper.exe` from the
+Windows system directory through `CreateProcessAsUserW`.
+
+The matching helper is 310,840 bytes, SHA-256
+`B1708DCA72A4392A1B4005570CCD6CFE36E7AC5454A1B34CBB303FCE64BD22F0`.
+Its application main `0x140001210` starts thread `0x140003D10`, which creates
+the service's `VSSrvAudioSession` COM object. `GetVSDeviceType` at
+`0x1400027A0`, `UpdateJackState` at `0x1400041D0` and the reviewed enumeration
+helpers open endpoint property stores with
+[`STGM_READ`](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-immdevice-openpropertystore)
+and call `GetValue`. They forward output/input device selection, device-list
+refresh and jack state to the server's typed methods. These inspected property
+accesses supply no FX-binding writer.
+
+The corresponding `CVSSrvAudioSession` vtable at `0x1401CE098` resolves those
+four server methods, corroborated by their embedded diagnostic names:
+
+| Method | Image VA | Inspected effect |
+| --- | --- | --- |
+| `SetVADOutputDevice` | `0x14006B210` | Saves output ID/path/type in the user's VisiSonics settings, loads THX parameters and signals the output-VAD event |
+| `SetVADInputDevice` | `0x14006BDC0` | Updates cached input IDs and signals the input-VAD event |
+| `UpdateDeviceLists` | `0x14006C750` | Signals `VSSettingsAppEvent` |
+| `SetJackState` | `0x14006CCF0` | Saves per-device listening mode, updates cached state and signals APO/settings events |
+
+These bodies and their reviewed direct state helpers supply no endpoint FX
+association writer. They do make state changes; event consumers and configuration
+parsing beyond these calls were not traced. The result therefore does not prove
+that the helper or service is globally read-only or exclude indirect effects.
+
+These are bounded static results, with no vendor process or live COM activation.
+Neither service startup nor the reviewed helper path supplies a recovered
+provisioning contract. Artifact identity matters: another 2.6.5 `VSSrv.exe`
+export has different bytes, and the previously cached `LegacyHelper` analysis
+targets `thxsahelper.exe`, not this `VSHelper.exe`. Findings from those inputs
+must not be attributed to the hashes above.
+
 OpenBlade already requires Windows 11 24H2 or later. Microsoft's
 [Framework installation table](https://learn.microsoft.com/en-us/dotnet/framework/install/on-windows-and-server)
 identifies .NET Framework 4.8.1 as included in 24H2 and able to run .NET Framework
@@ -628,3 +721,77 @@ of Synapse. OpenBlade's existing installer also provisions its pinned x64 Visual
 C++ runtime; the import audit does not establish a new THX dependency on it. A
 clean installation with Synapse absent still needs to validate dynamic loading,
 service initialization, endpoint creation and audible processing.
+
+### Output APO and configuration continuation (2026-10-26)
+
+The remaining `FastEqualizer` continuation at service VA `0x1400AA570` reads
+the configuration through `readFile` at `0x1400B0870`, an `std::ifstream` and
+the JSON input-stream adapter. It traverses the supplied
+`/SpeakerPath/FastEqualizer` or `/HeadphonePath/FastEqualizer` JSON pointer,
+selects named modes and extracts `Targets`/`targets` arrays into memory.
+The reviewed parser bodies provide no Windows endpoint association writer.
+
+The output event consumer was traced in a separately pinned 2.6.5 AVX2 APO:
+`THXOutAPO-AVX2-v2.6.dll`, 6,576,152 bytes, SHA-256
+`49962CC201A76B5BCA85B5D2E9DA60A68D2DB3B076AA481F629418118EA350DE`.
+`LockForProcess` at `0x180010810` calls `CreateThread` at `0x180012598` with
+thunk `0x180022BE0`, which calls `AsynchronousEventLoop` at `0x18001EBB0`.
+The loop opens `VSOutAPOVADUpdateEvent` and `VSOutAPOParamUpdateEvent` and
+creates the service's `IVSSrvTHXOutMFXAPO` object. Assembly-checked interface
+slots match the extracted type library's getters for output device, processing
+state/mode, listening mode, EQ and related parameters. Results update the
+existing APO's processing state. The VAD branch opens an existing endpoint and
+initializes an audio stream; it is runtime audio activity, not an FX association
+declaration.
+
+APO `Initialize` at `0x180014740` reads
+[`APOInitSystemEffects2.pAPOEndpointProperties`](https://learn.microsoft.com/en-us/windows/win32/api/audioenginebaseapo/ns-audioenginebaseapo-apoinitsystemeffects2)
+through `IPropertyStore::GetValue`. Vendor property GUID
+`{D5E8F0AB-4DE6-4D91-AB21-68868DDA6A4A}`, PID 0 supplies device classification;
+PID 1 supplies the configuration path saved in `m_configurationFileFullPath`.
+These are the same properties read by VSHelper. Original binding evidence
+should preserve these values and the referenced configuration alongside the
+Windows FX properties. Their runtime reads do not establish who provisioned
+them or how Windows initially associated the APO.
+
+This closes the reviewed parser/output-event continuation at a finite boundary.
+The path consumes existing properties after APO creation and then services
+processing updates. It supplies no missing installation recipe. Other APO
+variants, input/settings consumers, arbitrary registration paths and recursive
+DSP/library internals were not audited. Automatic analysis was time-bounded;
+targeted decompilations and consequential indirect calls were checked against
+assembly. No vendor code was executed, and legacy fresh setup remains blocked.
+
+### Current Windows catalog policy (2026-10-26)
+
+The recovered legacy packages were checked on Windows `10.0.26300.0` through
+the current, unmodified `WindowsDriverApiTrust.VerifyCatalogMembers` code
+(Git blob `5999926595203ac7f1e2cb2adce2bca880166d93`). The scratch probe used
+OpenBlade's catalog signature/publisher validation and Windows driver-policy
+membership checks, including its bounded legacy member-hash fallback. All seven
+cases passed. This host version records the check's conditions; it establishes
+no new minimum Windows version.
+
+| Catalog input | Catalog SHA-256 | Tested members |
+| --- | --- | --- |
+| Exact-codec `THXHDAudio.cat` | `FB496566667F6AE7C415A96BFE3D97B14BD63C1681C19B9906A21EBF0AFFE799` | Original CRLF extension INF |
+| THX service 2.6.5 | `925B47DF9D2D9A3FE9F85D42CA27C1D1020E16043FA3B99081D521EDDC233063` | INF, VSSrv, VSSrvInit and VSHelper |
+| THX APO 2.6.5, variant 07c8c7dc | `2EB157516387C315AD71B8F4240E06C6156633439C8EFA8D7148B2F3D0C54D3C` | INF and both AVX2/SSE2 DLLs |
+| THX APO 2.6.5, variant db1dcd58 | `1AFD3D5004863075A6FF4A0B8D4A697F5480D414C13E2DC30AA9E8CC90F431CE` | INF and both AVX2/SSE2 DLLs |
+| THX SCU 2.6.5 | `8CD57D8BEB3A9F4DE7787D094F54199915FCB6C2DFBB1764FEBAF8D3BCDBC505` | INF and spatial-config-util |
+| THX HSA declaration 2.6.5 | `77C87F21C02E3ABD1452005A7072B8B501500348669A2B61D129C9D09C8E1237` | INF only; its SourceDisksFiles section is empty |
+| Realtek 6.0.9909.1 | `6C69D9BC1A1F030AFDCBD3BB78C49075EEE11677405991CDD96F5D3F2CB7A35D` | Both exact Razer root INFs, RTKVHD64.sys and RTAIODAT.DAT |
+
+An independent Windows SDK SignTool check also passed for one INF from each
+catalog using the default Windows driver policy and
+[`verify /o 2:10.0.26300 /c <catalog> <inf>`](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool#verify-command-options).
+No vendor executable or DLL was run or loaded. The HSA check covers its signed
+declaration, which names a Store package family; it does not verify or acquire
+the Store application. The Realtek check covers the listed files rather than
+every file in the base CAB.
+
+These results identify no additional catalog-trust blocker for these inputs on
+the checked host. They do not establish the missing FX association, a complete
+combined installation recipe, successful child creation or audible processing.
+The hashes identify research artifacts, not runtime driver allowlists. Legacy
+fresh installation remains blocked and untested under #833.
