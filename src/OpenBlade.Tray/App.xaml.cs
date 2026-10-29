@@ -1184,6 +1184,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         if (initialLaunch
             && window.StartMinimized
+            && !window.NeedsWhatsNew
             && !window.UpdateViewModel.NeedsConsentPrompt
             && !window.ViewModel.ShouldForceWindowVisibleForThermalDisclosure)
         {

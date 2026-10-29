@@ -2785,4 +2785,37 @@ OpenBlade повторно проверит этот список и остан�
   <data name="Telemetry_Disabled.Text" xml:space="preserve">
     <value>Включите телеметрию, чтобы собирать историю показаний и записывать данные в CSV.</value>
   </data>
+  <data name="MainWindow_ButtonWhatsNew.Content" xml:space="preserve">
+    <value>Что нового</value>
+  </data>
+  <data name="WhatsNew_Title" xml:space="preserve">
+    <value>Что нового</value>
+  </data>
+  <data name="WhatsNew_Close" xml:space="preserve">
+    <value>Понятно</value>
+  </data>
+  <data name="WhatsNew_FullChangelog" xml:space="preserve">
+    <value>Полный список изменений</value>
+  </data>
+  <data name="WhatsNew_NoSummary" xml:space="preserve">
+    <value>Изменения в этой версии доступны в полном списке.</value>
+  </data>
+  <data name="WhatsNew_Added" xml:space="preserve">
+    <value>Добавлено</value>
+  </data>
+  <data name="WhatsNew_Changed" xml:space="preserve">
+    <value>Изменено</value>
+  </data>
+  <data name="WhatsNew_Fixed" xml:space="preserve">
+    <value>Исправлено</value>
+  </data>
+  <data name="WhatsNew_Removed" xml:space="preserve">
+    <value>Удалено</value>
+  </data>
+  <data name="WhatsNew_Deprecated" xml:space="preserve">
+    <value>Устаревшие функции</value>
+  </data>
+  <data name="WhatsNew_Security" xml:space="preserve">
+    <value>Безопасность</value>
+  </data>
 </root>

@@ -160,6 +160,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         IServiceClient serviceClient = new ServiceClient();
         IThxAudioAdapter thxAudioAdapter = CreateThxAudioAdapter(localizationSnapshotMode);
         string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);
+        whatsNewRelease = WhatsNewRelease.Load(uiVersion);
         ViewModel = new MainViewModel(
             serviceClient,
             new WinUiDispatcher(dispatcherQueue),
@@ -702,6 +703,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
+            if (!localizationSnapshotMode)
+            {
+                if (NeedsWhatsNew || UpdateViewModel.NeedsConsentPrompt)
+                {
+                    await rootLoaded.Task.WaitAsync(featureLifetime.Token);
+                }
+                await ShowWhatsNewIfNeededAsync();
+            }
             await ShowUpdateCheckConsentIfNeededAsync();
             UpdateViewModel.StartAutomaticCheck();
         }
@@ -895,6 +904,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
+            lastSeenWhatsNewVersion = preferences.LastSeenWhatsNewVersion;
             await ViewModel.SetTelemetryEnabledAsync(preferences.TelemetryEnabled);
             TelemetryPlot.ApplyPreferences(preferences.EffectiveTelemetryChartMetrics);
             ThemeSelectionPolicy.Resolve(preferences.Theme);
@@ -1481,7 +1491,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 SnapTapEnabled: snapTapEnabled,
                 ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled,
                 TelemetryChartMetrics: TelemetryPlot.MetricPreferences,
-                TelemetryEnabled: ViewModel.TelemetryEnabled));
+                TelemetryEnabled: ViewModel.TelemetryEnabled,
+                LastSeenWhatsNewVersion: lastSeenWhatsNewVersion));
         }
         catch (ObjectDisposedException)
         {
@@ -5374,6 +5385,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
+        rootLoaded.TrySetResult();
         MoveCanonicalLaptopCardsIntoPlace();
         RegisterPageSections();
         dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;
