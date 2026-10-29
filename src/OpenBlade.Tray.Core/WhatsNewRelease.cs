@@ -49,8 +49,8 @@ public sealed class WhatsNewRelease
         string[] lines = changelog.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         string exactHeading = $"## [{version}]";
         int start = Array.FindIndex(lines, line =>
-            line.Equals(exactHeading, StringComparison.Ordinal)
-            || line.StartsWith(exactHeading + " - ", StringComparison.Ordinal));
+            line.Trim().Equals(exactHeading, StringComparison.Ordinal)
+            || line.Trim().StartsWith(exactHeading + " - ", StringComparison.Ordinal));
         if (start < 0)
         {
             start = Array.FindIndex(lines, line => line.Trim() == "## [Unreleased]");

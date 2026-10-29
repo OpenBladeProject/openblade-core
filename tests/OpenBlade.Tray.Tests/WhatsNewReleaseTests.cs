@@ -41,9 +41,9 @@ public sealed class WhatsNewReleaseTests : IDisposable
         UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
         var release = new WhatsNewRelease("0.45.0", string.Empty);
 
-        Assert.Null(preferences.LastSeenWhatsNewVersion);
-        Assert.Null(UiPreferences.Default.LastSeenWhatsNewVersion);
-        Assert.True(release.ShouldShow(preferences.LastSeenWhatsNewVersion));
+        string? marker = await new WhatsNewSeenStore(Path.Combine(directory, "whats-new.version")).LoadAsync();
+        Assert.Null(marker);
+        Assert.True(release.ShouldShow(marker));
         Assert.Equal(ThemePreference.Dark, preferences.Theme);
         Assert.True(preferences.StartMinimized);
     }
@@ -55,38 +55,35 @@ public sealed class WhatsNewReleaseTests : IDisposable
         var release = new WhatsNewRelease("0.45.0-nightly.106-attempt.2+commit", string.Empty);
         UiPreferences preferences = UiPreferences.Default with
         {
-            LastSeenWhatsNewVersion = release.Version,
             Theme = ThemePreference.Dark,
             StartMinimized = true,
             TelemetryEnabled = true,
             UpdateChannel = UpdateChannel.Nightly,
         };
+        var preferencesStore = new UiPreferenceStore(path);
+        await preferencesStore.SaveAsync(preferences);
+        byte[] original = await File.ReadAllBytesAsync(path);
+        var seen = new WhatsNewSeenStore(Path.Combine(directory, "whats-new.version"));
 
-        await new UiPreferenceStore(path).SaveAsync(preferences);
-        UiPreferences reloaded = await new UiPreferenceStore(path).LoadAsync();
+        await seen.SaveAsync(release.Version);
+        string? reloaded = await seen.LoadAsync();
 
-        Assert.Equal(release.Version, reloaded.LastSeenWhatsNewVersion);
-        Assert.False(release.ShouldShow(reloaded.LastSeenWhatsNewVersion));
-        Assert.Equal(preferences.Theme, reloaded.Theme);
-        Assert.Equal(preferences.StartMinimized, reloaded.StartMinimized);
-        Assert.Equal(preferences.TelemetryEnabled, reloaded.TelemetryEnabled);
-        Assert.Equal(preferences.UpdateChannel, reloaded.UpdateChannel);
+        Assert.Equal(release.Version, reloaded);
+        Assert.False(release.ShouldShow(reloaded));
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
     }
 
     [Fact]
     public async Task MarkingOnePreferenceStoreSeen_LeavesAnotherStorePending()
     {
-        var first = new UiPreferenceStore(Path.Combine(directory, "first.json"));
-        var second = new UiPreferenceStore(Path.Combine(directory, "second.json"));
+        var first = new WhatsNewSeenStore(Path.Combine(directory, "first", "whats-new.version"));
+        var second = new WhatsNewSeenStore(Path.Combine(directory, "second", "whats-new.version"));
         var release = new WhatsNewRelease("0.45.0", string.Empty);
-        await second.SaveAsync(UiPreferences.Default with { Theme = ThemePreference.Light });
 
-        await first.SaveAsync(UiPreferences.Default with { LastSeenWhatsNewVersion = release.Version });
+        await first.SaveAsync(release.Version);
 
-        Assert.False(release.ShouldShow((await first.LoadAsync()).LastSeenWhatsNewVersion));
-        UiPreferences other = await second.LoadAsync();
-        Assert.True(release.ShouldShow(other.LastSeenWhatsNewVersion));
-        Assert.Equal(ThemePreference.Light, other.Theme);
+        Assert.False(release.ShouldShow(await first.LoadAsync()));
+        Assert.True(release.ShouldShow(await second.LoadAsync()));
     }
 
     [Fact]
@@ -218,30 +215,39 @@ public sealed class WhatsNewReleaseTests : IDisposable
     }
 
     [Fact]
-    public async Task UnreadableOrInvalidPreferencesAreNotEligibleForAutomaticSaving()
+    public async Task AcknowledgementDoesNotReadOrOverwriteLockedOrInvalidUserSettings()
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "preferences.json");
-        var store = new UiPreferenceStore(path);
-        await store.LoadAsync();
-        Assert.True(store.LastLoadSucceeded);
-
         await File.WriteAllTextAsync(path, "{invalid json}");
-        await store.LoadAsync();
-        Assert.False(store.LastLoadSucceeded);
-        Assert.Equal("{invalid json}", await File.ReadAllTextAsync(path));
-
-        await store.SaveAsync(UiPreferences.Default with { Theme = ThemePreference.Dark });
-        await store.LoadAsync();
-        Assert.True(store.LastLoadSucceeded);
+        var seen = new WhatsNewSeenStore(Path.Combine(directory, "whats-new.version"));
         await using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
-            await Assert.ThrowsAsync<IOException>(() => store.LoadAsync());
-            Assert.False(store.LastLoadSucceeded);
+            await seen.SaveAsync("0.45.0");
         }
-        UiPreferences recovered = await store.LoadAsync();
-        Assert.True(store.LastLoadSucceeded);
-        Assert.Equal(ThemePreference.Dark, recovered.Theme);
+        Assert.Equal("{invalid json}", await File.ReadAllTextAsync(path));
+        Assert.Equal("0.45.0", await seen.LoadAsync());
+    }
+
+    [Fact]
+    public async Task AcknowledgementReplacementIsBoundedAndLeavesNoTemporaryFiles()
+    {
+        string path = Path.Combine(directory, "whats-new.version");
+        var seen = new WhatsNewSeenStore(path);
+        await seen.SaveAsync("0.44.0");
+        await seen.SaveAsync("0.45.0");
+        Assert.Equal("0.45.0", await seen.LoadAsync());
+        Assert.Single(Directory.GetFiles(directory));
+        await File.WriteAllTextAsync(path, new string('x', 257));
+        Assert.Null(await seen.LoadAsync());
+    }
+
+    [Fact]
+    public void ExactReleaseHeadingAllowsSurroundingWhitespace()
+    {
+        var release = new WhatsNewRelease("0.45.0",
+            "## [Unreleased]\n### Added\n- Future.\n  ## [0.45.0]  \n### Fixed\n- Current.");
+        Assert.Equal("Current.", Assert.Single(Assert.Single(release.Sections).Items));
     }
 
     public void Dispose()

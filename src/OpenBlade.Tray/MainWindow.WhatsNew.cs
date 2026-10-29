@@ -9,12 +9,30 @@ public sealed partial class MainWindow
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly WhatsNewRelease whatsNewRelease;
     private readonly bool suppressWhatsNew;
-    private bool preferencesLoadedForEditing;
+    private readonly WhatsNewSeenStore whatsNewSeenStore = WhatsNewSeenStore.CreateDefault();
     private string? lastSeenWhatsNewVersion;
     private bool whatsNewOpen;
 
     public bool NeedsWhatsNew =>
         !suppressWhatsNew && whatsNewRelease.ShouldShow(lastSeenWhatsNewVersion);
+
+    private async Task LoadWhatsNewStateAsync()
+    {
+        if (suppressWhatsNew)
+        {
+            return;
+        }
+        try
+        {
+            lastSeenWhatsNewVersion = await whatsNewSeenStore.LoadAsync();
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            OpenBlade.Contracts.DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow", "LoadWhatsNewState", exception);
+        }
+    }
 
     private async Task ShowWhatsNewIfNeededAsync()
     {
@@ -54,7 +72,7 @@ public sealed partial class MainWindow
             if (await ShowContentDialogAsync(dialog) is not null && !localizationSnapshotMode)
             {
                 lastSeenWhatsNewVersion = whatsNewRelease.Version;
-                QueuePreferenceSave();
+                await whatsNewSeenStore.SaveAsync(lastSeenWhatsNewVersion);
             }
         }
         finally

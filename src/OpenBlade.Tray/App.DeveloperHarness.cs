@@ -360,7 +360,8 @@ public partial class App
                 startupRegistration,
                 cases[0].Preference,
                 smokeContext.PreferenceStore,
-                UpdateCheckInterval.ManualOnly);
+                UpdateCheckInterval.ManualOnly,
+                suppressWhatsNew: true);
             AttachWindowSurfaces(initialWindow, sessionAgentEventEndpoint);
             await smokeContext.RunPhaseAsync(
                 "initialize Russian window",

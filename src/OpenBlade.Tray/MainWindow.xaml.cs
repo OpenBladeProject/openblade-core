@@ -906,7 +906,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
-            lastSeenWhatsNewVersion = preferences.LastSeenWhatsNewVersion;
             await ViewModel.SetTelemetryEnabledAsync(preferences.TelemetryEnabled);
             TelemetryPlot.ApplyPreferences(preferences.EffectiveTelemetryChartMetrics);
             ThemeSelectionPolicy.Resolve(preferences.Theme);
@@ -983,7 +982,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialLastNotifiedFirmwareSignature =
                 preferences.LastNotifiedFirmwareSignature;
             initialLabFeaturesEnabled = preferences.LabFeaturesEnabled;
-            preferencesLoadedForEditing = preferenceStore.LastLoadSucceeded;
         }
         catch (Exception exception)
         {
@@ -992,6 +990,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "InitializePreferences",
                 exception);
         }
+
+        await LoadWhatsNewStateAsync();
 
         if (initialUpdateCheckConsentOverride is { } consentOverride)
         {
@@ -1422,13 +1422,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void QueuePreferenceSave()
     {
-        // A transient read failure or invalid file must not turn automatic UI
-        // acknowledgements into a full overwrite with fallback defaults.
-        if (!preferencesLoadedForEditing)
-        {
-            return;
-        }
-
         try
         {
             preferenceSaveQueue.Enqueue(new UiPreferences(
@@ -1501,8 +1494,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 SnapTapEnabled: snapTapEnabled,
                 ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled,
                 TelemetryChartMetrics: TelemetryPlot.MetricPreferences,
-                TelemetryEnabled: ViewModel.TelemetryEnabled,
-                LastSeenWhatsNewVersion: lastSeenWhatsNewVersion));
+                TelemetryEnabled: ViewModel.TelemetryEnabled));
         }
         catch (ObjectDisposedException)
         {

@@ -23,16 +23,16 @@ public sealed class WhatsNewShellContractTests
     }
 
     [Fact]
-    public void OnlyCompletedDialogAcknowledgesReleaseAndEveryPreferenceSaveRetainsIt()
+    public void OnlyCompletedDialogAcknowledgesReleaseInItsSeparateStore()
     {
         string dialog = Read("MainWindow.WhatsNew.cs");
         Assert.Contains("if (whatsNewOpen || Volatile.Read(ref disposed) != 0)", dialog, StringComparison.Ordinal);
         Assert.Contains("if (await ShowContentDialogAsync(dialog) is not null && !localizationSnapshotMode)", dialog, StringComparison.Ordinal);
         Assert.Contains("lastSeenWhatsNewVersion = whatsNewRelease.Version;", dialog, StringComparison.Ordinal);
-        Assert.Contains("QueuePreferenceSave();", dialog, StringComparison.Ordinal);
+        Assert.Contains("await whatsNewSeenStore.SaveAsync(lastSeenWhatsNewVersion)", dialog, StringComparison.Ordinal);
+        Assert.DoesNotContain("QueuePreferenceSave", dialog, StringComparison.Ordinal);
         string window = Read("MainWindow.xaml.cs");
-        Assert.Contains("lastSeenWhatsNewVersion = preferences.LastSeenWhatsNewVersion;", window, StringComparison.Ordinal);
-        Assert.Contains("LastSeenWhatsNewVersion: lastSeenWhatsNewVersion", window, StringComparison.Ordinal);
+        Assert.Contains("await LoadWhatsNewStateAsync();", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -48,17 +48,6 @@ public sealed class WhatsNewShellContractTests
     }
 
     [Fact]
-    public void AutomaticAcknowledgementsCannotOverwriteFallbackPreferences()
-    {
-        string window = Read("MainWindow.xaml.cs");
-        Assert.Contains("preferencesLoadedForEditing = preferenceStore.LastLoadSucceeded;", window, StringComparison.Ordinal);
-        int start = window.IndexOf("private void QueuePreferenceSave()", StringComparison.Ordinal);
-        string save = window[start..window.IndexOf("private void PlaceInitialWindow()", start, StringComparison.Ordinal)];
-        Assert.True(save.IndexOf("if (!preferencesLoadedForEditing)", StringComparison.Ordinal)
-            < save.IndexOf("preferenceSaveQueue.Enqueue", StringComparison.Ordinal));
-    }
-
-    [Fact]
     public void OptionalNotesFailureDoesNotBlockUpdatesAndLiveLocalizationSuppressesPopup()
     {
         string dialog = Read("MainWindow.WhatsNew.cs");
@@ -67,7 +56,8 @@ public sealed class WhatsNewShellContractTests
         Assert.Contains("catch (Exception exception)", automatic, StringComparison.Ordinal);
         Assert.Contains("\"ShowWhatsNew\"", automatic, StringComparison.Ordinal);
         Assert.DoesNotContain("throw;", automatic, StringComparison.Ordinal);
-        Assert.Contains("suppressWhatsNew: initialUpdateCheckConsentOverride is not null", Read("App.xaml.cs"), StringComparison.Ordinal);
+        Assert.Contains("suppressWhatsNew: liveLocalizationSmokeContext is not null", Read("App.xaml.cs"), StringComparison.Ordinal);
+        Assert.Contains("suppressWhatsNew: true", Read("App.DeveloperHarness.cs"), StringComparison.Ordinal);
     }
 
     private static string Read(string name, [CallerFilePath] string source = "") =>

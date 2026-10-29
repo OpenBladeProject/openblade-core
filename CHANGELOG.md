@@ -16,8 +16,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Preserve saved tray preferences when the settings file cannot be read at startup. ([#862](https://github.com/OSSBlade/openblade-core/pull/862))
-
 - Make tray power sources and performance modes easier to distinguish, with clearer monochrome icons and a dedicated HyperBoost symbol. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
 - Preserve local-development installer logs after rollback and recognize Session Agent helpers during deployment and relaunch. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
 

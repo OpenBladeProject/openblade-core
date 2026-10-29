@@ -66,8 +66,7 @@ public sealed record UiPreferences(
     bool ThxAudioIntegrationEnabled = false,
     bool SnapTapEnabled = false,
     IReadOnlyList<TelemetryChartMetricPreference>? TelemetryChartMetrics = null,
-    bool TelemetryEnabled = false,
-    string? LastSeenWhatsNewVersion = null)
+    bool TelemetryEnabled = false)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -203,8 +202,6 @@ public sealed class UiPreferenceStore
     private readonly string path;
     private readonly Action<string> diagnosticSink;
 
-    public bool LastLoadSucceeded { get; private set; }
-
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "OpenBlade",
@@ -292,10 +289,8 @@ public sealed class UiPreferenceStore
 
     public async Task<UiPreferences> LoadAsync(CancellationToken cancellationToken = default)
     {
-        LastLoadSucceeded = false;
         if (!File.Exists(path))
         {
-            LastLoadSucceeded = true;
             return UiPreferences.Default;
         }
 
@@ -321,7 +316,6 @@ public sealed class UiPreferenceStore
                     document.RootElement,
                     schemaVersion)
                 : document.RootElement.Deserialize<UiPreferences>(SerializerOptions);
-            LastLoadSucceeded = preferences is not null;
             return preferences ?? UiPreferences.Default;
         }
         catch (Exception exception) when (
