@@ -11,11 +11,11 @@ using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using Application = Microsoft.UI.Xaml.Application;
 using ButtonBase = Microsoft.UI.Xaml.Controls.Primitives.ButtonBase;
-using Control = Microsoft.UI.Xaml.Controls.Control;
 using ContentControl = Microsoft.UI.Xaml.Controls.ContentControl;
-using TextBox = Microsoft.UI.Xaml.Controls.TextBox;
-using Point = Windows.Foundation.Point;
+using Control = Microsoft.UI.Xaml.Controls.Control;
 using KeyEventHandler = Microsoft.UI.Xaml.Input.KeyEventHandler;
+using Point = Windows.Foundation.Point;
+using TextBox = Microsoft.UI.Xaml.Controls.TextBox;
 
 namespace OpenBlade.Tray;
 
