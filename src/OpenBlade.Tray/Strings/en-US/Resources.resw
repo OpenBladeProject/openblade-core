@@ -2785,4 +2785,37 @@ OpenBlade did not retry any stop request.</value>
   <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Enable telemetry</value>
   </data>
+  <data name="MainWindow_ButtonWhatsNew.Content" xml:space="preserve">
+    <value>What's new</value>
+  </data>
+  <data name="WhatsNew_Added" xml:space="preserve">
+    <value>Added</value>
+  </data>
+  <data name="WhatsNew_Changed" xml:space="preserve">
+    <value>Changed</value>
+  </data>
+  <data name="WhatsNew_Close" xml:space="preserve">
+    <value>Got it</value>
+  </data>
+  <data name="WhatsNew_Deprecated" xml:space="preserve">
+    <value>Deprecated</value>
+  </data>
+  <data name="WhatsNew_Fixed" xml:space="preserve">
+    <value>Fixed</value>
+  </data>
+  <data name="WhatsNew_FullChangelog" xml:space="preserve">
+    <value>Full changelog</value>
+  </data>
+  <data name="WhatsNew_NoSummary" xml:space="preserve">
+    <value>See the full changelog for this release.</value>
+  </data>
+  <data name="WhatsNew_Removed" xml:space="preserve">
+    <value>Removed</value>
+  </data>
+  <data name="WhatsNew_Security" xml:space="preserve">
+    <value>Security</value>
+  </data>
+  <data name="WhatsNew_Title" xml:space="preserve">
+    <value>What's new</value>
+  </data>
 </root>

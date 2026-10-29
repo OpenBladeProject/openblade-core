@@ -4922,21 +4922,24 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid Margin="0,0,0,20" ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                        <local:ContextualToolbar x:Name="AboutPageHeader" Margin="0,0,0,20">
                             <TextBlock x:Uid="MainWindow_TextBlockAbout"
-                                       Text="About" Style="{StaticResource PageHeaderTitleStyle}" />
-                            <Button x:Uid="MainWindow_ButtonCustomize7"
-                                    Grid.Column="1"
-                                    Content="Customize"
-                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
-                                    Tag="About"
-                                    Click="OnCustomizePageSections"
-                                    AutomationProperties.Name="Customize About page" />
-                        </Grid>
+                                       Text="About" Style="{StaticResource PageHeaderTitleStyle}"
+                                       local:ContextualToolbar.Role="Context" />
+                            <local:ContentWrapPanel Grid.Column="1"
+                                                    local:ContextualToolbar.Role="Actions">
+                                <Button x:Uid="MainWindow_ButtonWhatsNew"
+                                        Content="What's new"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                        Click="OnShowWhatsNew" />
+                                <Button x:Uid="MainWindow_ButtonCustomize7"
+                                        Content="Customize"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                        Tag="About"
+                                        Click="OnCustomizePageSections"
+                                        AutomationProperties.Name="Customize About page" />
+                            </local:ContentWrapPanel>
+                        </local:ContextualToolbar>
 
                         <StackPanel x:Name="AboutSectionHost">
                         <StackPanel x:Name="AboutOverviewSection">

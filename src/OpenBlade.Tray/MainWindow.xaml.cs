@@ -140,9 +140,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         UiLanguagePreference? initialLanguageOverride = null,
         UiPreferenceStore? preferenceStore = null,
         UpdateCheckInterval? initialUpdateCheckConsentOverride = null,
-        ITouchpadController? touchpadController = null)
+        ITouchpadController? touchpadController = null,
+        bool suppressWhatsNew = false)
     {
         this.localizationSnapshotMode = localizationSnapshotMode;
+        this.suppressWhatsNew = suppressWhatsNew || localizationSnapshotMode;
         TouchpadViewModel = new(touchpadController ?? new WindowsTouchpadController());
         if (localizationSnapshotMode && touchpadController is not null)
         {
@@ -161,6 +163,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         IServiceClient serviceClient = new ServiceClient();
         IThxAudioAdapter thxAudioAdapter = CreateThxAudioAdapter(localizationSnapshotMode);
         string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);
+        whatsNewRelease = WhatsNewRelease.Load(uiVersion);
         ViewModel = new MainViewModel(
             serviceClient,
             new WinUiDispatcher(dispatcherQueue),
@@ -703,6 +706,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
+            if (!localizationSnapshotMode)
+            {
+                if (NeedsWhatsNew || UpdateViewModel.NeedsConsentPrompt)
+                {
+                    await rootLoaded.Task.WaitAsync(featureLifetime.Token);
+                }
+                await ShowWhatsNewIfNeededAsync();
+            }
             await ShowUpdateCheckConsentIfNeededAsync();
             UpdateViewModel.StartAutomaticCheck();
         }
@@ -981,6 +992,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "InitializePreferences",
                 exception);
         }
+
+        await LoadWhatsNewStateAsync();
 
         if (initialUpdateCheckConsentOverride is { } consentOverride)
         {
@@ -5385,6 +5398,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
+        rootLoaded.TrySetResult();
         MoveCanonicalLaptopCardsIntoPlace();
         RegisterPageSections();
         dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;
