@@ -122,6 +122,18 @@ public partial class App
             return true;
         }
         if (commandLineArguments is
+            [_, "--live-reorder-gesture", string gestureReportPath])
+        {
+            ShowLiveReorderGestureWindow(gestureReportPath);
+            return true;
+        }
+        if (commandLineArguments is
+            [_, "--live-reorder-smoke", string reorderReportPath])
+        {
+            _ = RunLiveReorderSmokeAsync(reorderReportPath);
+            return true;
+        }
+        if (commandLineArguments is
             [_, ResponsivePageHeaderSmokeArgument, string headerSmokeReportPath])
         {
             _ = RunResponsivePageHeaderSmokeAsync(headerSmokeReportPath);

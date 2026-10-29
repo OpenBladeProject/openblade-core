@@ -9,6 +9,11 @@ public sealed class TrayXamlStartupSmokeTests
 {
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
+    public Task LiveCardsAndMenuReorderWithoutCustomizationMode() =>
+        RunTraySmokeAsync("--live-reorder-smoke", "OpenBlade-live-reorder-smoke");
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
     public Task DashboardCompiledXamlLoadsWithEveryDefinitionVisible() =>
         RunTraySmokeAsync("--xaml-startup-smoke", "OpenBlade-xaml-smoke");
 

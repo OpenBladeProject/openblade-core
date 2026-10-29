@@ -118,6 +118,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private TrayDashboardPreference trayDashboardPreference =
         TrayDashboardPreferenceDefaults.Preference;
     private readonly TrayDashboardPreferenceEditor trayDashboardEditor = new();
+    private readonly LiveReorderBehavior liveReorder = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -748,6 +749,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         trayDashboardEditor.EditAccepted -= OnTrayDashboardEditorEditAccepted;
         trayDashboardEditor.AvailabilityChanged -= UpdateTrayDashboardEditorAvailability;
         trayDashboardEditor.Dispose();
+        liveReorder.Dispose();
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
         {
@@ -5076,6 +5078,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             .Where(section => section.IsVisible)
             .Select(section => pageSectionPresentations[section.Kind])
             .ToArray();
+        foreach (PageSectionOption option in sections)
+        {
+            liveReorder.Register(pageSectionPresentations[option.Kind], sections, option);
+        }
         var desiredSet = desiredSections.ToHashSet();
 
         foreach (FrameworkElement child in host.Children
@@ -5147,6 +5153,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 NavigationViewItem item = GetPrimaryNavigationItem(
                     PrimaryNavigationItems[targetIndex].Kind);
+                liveReorder.Register(item, PrimaryNavigationItems, PrimaryNavigationItems[targetIndex]);
                 int menuTargetIndex = targetIndex + 1;
                 int currentIndex = MainNavigation.MenuItems.IndexOf(item);
                 if (currentIndex < 0 || currentIndex == menuTargetIndex)
@@ -5263,6 +5270,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             .Where(option => option.IsPinned)
             .Select(GetOrCreateDashboardCard)
             .ToArray();
+        foreach (DashboardCardOption option in DashboardCards.Where(option => option.IsPinned))
+        {
+            liveReorder.Register(GetOrCreateDashboardCard(option), DashboardCards, option);
+        }
         var desiredSet = desiredCards.ToHashSet();
 
         foreach (FrameworkElement child in DashboardCardHost.Children
