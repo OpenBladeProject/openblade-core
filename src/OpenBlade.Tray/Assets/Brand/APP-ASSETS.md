@@ -21,10 +21,10 @@ Copy these generated assets together:
 | `assets/brand/svg/openblade-mark-light.svg` | `OpenBlade.Mark.Light.svg` beside this guide |
 | `assets/brand/windows/{StoreLogo,Square44x44Logo,Square150x150Logo}.png` | Matching names under `build/identity/Assets` |
 
-The dimensional PNG remains the About image, installer header, and default
-notification logo. README headers use the matching flat mark: dark ink on light
-surfaces; on dark surfaces, a dark display, silver-gray deck, subtle bezel outline
-and green curves replace the white silhouette. Keyboard details remain transparent.
+The dimensional PNG is shared by README headers, the About image, installer
+header, and default notification logo. README headers use this same app icon
+on light and dark backgrounds. The flat marks remain available as separate
+branding assets.
 The installer retains its download badge and established adaptive tile at 48
 pixels and below. Tray-state and performance-notification artwork are separate
 and unchanged by this update.
