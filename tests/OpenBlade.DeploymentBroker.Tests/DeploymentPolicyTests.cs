@@ -50,7 +50,7 @@ public sealed class DeploymentPolicyTests : IDisposable
         Assert.False(plan.UseShellExecute);
         Assert.Equal(installer, plan.FileName);
         Assert.Equal(root, plan.WorkingDirectory);
-        Assert.Equal(["/install", "/quiet", "/norestart"], plan.ArgumentList);
+        Assert.Equal(["/install", "/quiet", "/norestart", "/log", Path.Combine(root, "OpenBlade-Install.log")], plan.ArgumentList);
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         Assert.Equal(windows, plan.Environment["SystemRoot"]);
         Assert.Equal(windows, plan.Environment["WINDIR"]);
@@ -61,6 +61,47 @@ public sealed class DeploymentPolicyTests : IDisposable
         Assert.DoesNotContain(
             plan.Environment.Keys,
             BrokerInstallerProcessPlan.IsBlockedEnvironmentVariable);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ProcessPlan_RejectsExistingLogFileOrDirectoryWithoutReplacingIt(bool directory)
+    {
+        Directory.CreateDirectory(root);
+        File.WriteAllBytes(Path.Combine(root, OpenBladeReleaseManifestCodec.InstallerFileName), [1]);
+        string log = Path.Combine(root, "OpenBlade-Install.log");
+        if (directory)
+        {
+            Directory.CreateDirectory(log);
+        }
+        else
+        {
+            File.WriteAllText(log, "prior evidence");
+        }
+        Assert.Throws<InvalidDataException>(() => BrokerInstallerProcessPlan.Create(root));
+        if (directory)
+        {
+            Assert.True(Directory.Exists(log));
+        }
+        else
+        {
+            Assert.Equal("prior evidence", File.ReadAllText(log));
+        }
+    }
+
+    [Fact]
+    public void ProcessPlan_KeepsSpaceContainingLogPathAsOneBrokerDerivedArgument()
+    {
+        string staging = Path.Combine(root, "protected request with spaces");
+        Directory.CreateDirectory(staging);
+        File.WriteAllBytes(Path.Combine(staging, OpenBladeReleaseManifestCodec.InstallerFileName), [1]);
+        ProcessStartInfo plan = BrokerInstallerProcessPlan.Create(staging);
+        Assert.Equal(5, plan.ArgumentList.Count);
+        Assert.Equal("/log", plan.ArgumentList[3]);
+        Assert.Equal(Path.Combine(staging, "OpenBlade-Install.log"), plan.ArgumentList[4]);
+        Assert.Empty(plan.Arguments);
+        Assert.False(File.Exists(plan.ArgumentList[4]));
     }
 
     [Theory]

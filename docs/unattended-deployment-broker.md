@@ -49,8 +49,11 @@ and THX helpers. Helpers must belong to a verified parent chain in the same
 user session. Unknown roles, orphaned helpers, or duplicate primary agents block
 deployment. Shutdown waits for the complete process family to exit.
 
+The broker passes Burn a fixed `OpenBlade-Install.log` path inside protected
+request staging; Burn also derives Setup's package-log path from it. Redirecting
+`TEMP` and `TMP` alone is not the logging contract.
 Before cleaning completed request staging, the broker preserves bounded Burn
-and Setup logs in its protected `diagnostic-logs` directory, grouped by request
+and Setup logs in its protected `installer-logs` directory, grouped by request
 ID. The journal records whether log retention completed, was truncated, found
 no logs, or failed. A retention failure preserves the original staging for
 inspection; it does not change a separately verified installation or rollback

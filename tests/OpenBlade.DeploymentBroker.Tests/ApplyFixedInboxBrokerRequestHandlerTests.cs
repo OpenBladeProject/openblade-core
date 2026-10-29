@@ -34,7 +34,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
                 fixture.Request.RequestId.ToString("N"),
                 OpenBladeReleaseManifestCodec.InstallerFileName),
             plan.FileName);
-        Assert.Equal(["/install", "/quiet", "/norestart"], plan.ArgumentList);
+        Assert.Equal(["/install", "/quiet", "/norestart", "/log", Path.Combine(plan.WorkingDirectory, "OpenBlade-Install.log")], plan.ArgumentList);
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         Assert.Equal(windows, plan.Environment["SystemRoot"]);
         Assert.Equal(windows, plan.Environment["WINDIR"]);
@@ -62,6 +62,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
             new BrokerPostInstallVerification(false, true, true));
         fixture.Runner.BeforeResult = plan =>
         {
+            Assert.Equal("/log", plan.ArgumentList[3]);
+            File.WriteAllText(plan.ArgumentList[4], "burn failure details");
             string nested = Path.Combine(plan.WorkingDirectory, "burn-temp", ".be");
             Directory.CreateDirectory(nested);
             File.WriteAllText(Path.Combine(nested, "setup.log"), "original installer cause");
@@ -72,7 +74,10 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         Assert.Equal(BrokerResponseStatus.RolledBack, response.Status);
         Assert.Equal("install-rolled-back", response.Code);
         string archive = Path.Combine(fixture.Paths.InstallerLogDirectory, fixture.Request.RequestId.ToString("N"));
-        Assert.Equal("original installer cause", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(archive, "*.log"))));
+        string[] retained = await Task.WhenAll(Directory.GetFiles(archive, "*.log").Select(log => File.ReadAllTextAsync(log)));
+        Assert.Equal(2, retained.Length);
+        Assert.Contains("burn failure details", retained);
+        Assert.Contains("original installer cause", retained);
         Assert.False(Directory.Exists(fixture.Runner.CapturedPlan!.WorkingDirectory));
         Assert.False(File.Exists(fixture.Paths.InFlightPath));
         Assert.Contains("installer-logs-retained", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(fixture.Paths.JournalDirectory))));
