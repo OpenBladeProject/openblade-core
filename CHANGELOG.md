@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Reorder customizable cards and side-menu items by dragging them directly, with changes saved immediately. ([#861](https://github.com/OpenBladeProject/openblade-core/pull/861))
+
 ### Changed
 
 - Refresh the application and installer icons with the Monolith laptop design and add matching light/dark logos. ([#859](https://github.com/OpenBladeProject/openblade-core/pull/859))
