@@ -12,3 +12,4 @@ src/OpenBlade.Contracts/Fixtures/Blade18KeyboardLightingLayout.json text eol=crl
 
 # Legacy sanitized evidence is hash-bound. Preserve the imported Git blob bytes.
 evidence/legacy-captures/**/*.json text eol=lf
+src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.*.svg text eol=lf

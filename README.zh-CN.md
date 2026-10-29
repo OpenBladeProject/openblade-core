@@ -1,5 +1,8 @@
 <div align="center">
-  <img src="src/OpenBlade.Tray/Assets/Brand/OpenBlade.png" width="128" alt="OpenBlade">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Light.svg">
+    <img src="src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Dark.svg" width="128" alt="OpenBlade">
+  </picture>
   <h1>OpenBlade</h1>
   <p><strong>不用 Razer Synapse，也能管理你的 Razer Blade。</strong></p>
   <p>
