@@ -67,7 +67,7 @@ public sealed class WhatsNewShellContractTests
         Assert.Contains("catch (Exception exception)", automatic, StringComparison.Ordinal);
         Assert.Contains("\"ShowWhatsNew\"", automatic, StringComparison.Ordinal);
         Assert.DoesNotContain("throw;", automatic, StringComparison.Ordinal);
-        Assert.Contains("suppressWhatsNew: liveLocalizationSmokeContext is not null", Read("App.xaml.cs"), StringComparison.Ordinal);
+        Assert.Contains("suppressWhatsNew: initialUpdateCheckConsentOverride is not null", Read("App.xaml.cs"), StringComparison.Ordinal);
     }
 
     private static string Read(string name, [CallerFilePath] string source = "") =>

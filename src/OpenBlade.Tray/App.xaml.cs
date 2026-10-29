@@ -319,7 +319,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             initialLanguageOverride: initialLanguageOverride,
             preferenceStore: preferenceStore,
             initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride,
-            suppressWhatsNew: liveLocalizationSmokeContext is not null);
+            // The consent override is used only by the live-localization harness.
+            suppressWhatsNew: initialUpdateCheckConsentOverride is not null);
     }
 
     private void AttachWindowSurfaces(
