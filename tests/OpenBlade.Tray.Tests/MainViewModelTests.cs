@@ -9738,7 +9738,9 @@ public sealed partial class MainViewModelTests
             },
         };
         client.Publish(active);
-        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        // Status applies HyperBoostActive before the icon; await the complete presentation.
+        await WaitUntilAsync(() => viewModel.HyperBoostActive
+            && viewModel.TrayIconState == TrayIconState.AcHyperBoost);
         await viewModel.SetHyperBoostEnabledAsync(false, default);
 
         Assert.True(viewModel.HyperBoostActive);
@@ -9755,7 +9757,8 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = false,
             },
         });
-        await WaitUntilAsync(() => !viewModel.HyperBoostActive);
+        await WaitUntilAsync(() => !viewModel.HyperBoostActive
+            && viewModel.TrayIconState == TrayIconState.AcBalanced);
 
         Assert.False(viewModel.HyperBoostActive);
         Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);

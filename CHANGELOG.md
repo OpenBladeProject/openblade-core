@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Refine the application icon's laptop proportions and replace the white README logo with a dark-display, silver-deck color treatment. ([#860](https://github.com/OpenBladeProject/openblade-core/pull/860))
 - Refresh the application and installer icons with the Monolith laptop design and add matching light/dark logos. ([#859](https://github.com/OpenBladeProject/openblade-core/pull/859))
 
 ### Fixed
