@@ -5491,7 +5491,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             isConnected: true,
             status.DeviceVerified,
             status.ActivePowerSource,
-            SelectedPerformance);
+            SelectedPerformance,
+            HyperBoostActive);
         ApplyLiveReadings(status);
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
@@ -6363,6 +6364,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             SelectedPerformance = restored;
                         }
                         HyperBoostActive = enabled;
+                        TrayIconState = TrayIconStateResolver.Resolve(
+                            IsConnected,
+                            latestStatus?.DeviceVerified is true,
+                            ActivePowerSource,
+                            SelectedPerformance,
+                            HyperBoostActive);
                     }
                 });
         }

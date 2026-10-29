@@ -34,7 +34,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
                 fixture.Request.RequestId.ToString("N"),
                 OpenBladeReleaseManifestCodec.InstallerFileName),
             plan.FileName);
-        Assert.Equal(["/install", "/quiet", "/norestart"], plan.ArgumentList);
+        Assert.Equal(["/install", "/quiet", "/norestart", "/log", Path.Combine(plan.WorkingDirectory, "OpenBlade-Install.log")], plan.ArgumentList);
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         Assert.Equal(windows, plan.Environment["SystemRoot"]);
         Assert.Equal(windows, plan.Environment["WINDIR"]);
@@ -52,6 +52,67 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
             fixture.Request.RequestId.ToString("N"))));
         Assert.False(fixture.Inbox.TokenCanBeCanceled);
         Assert.Equal(1, fixture.Sequence.Consumed);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RollbackRetainsNestedInstallerLogsBeforeCleanup()
+    {
+        using HandlerFixture fixture = CreateFixture(
+            new BrokerInstallerExecutionResult(true, 1, false),
+            new BrokerPostInstallVerification(false, true, true));
+        fixture.Runner.BeforeResult = plan =>
+        {
+            Assert.Equal("/log", plan.ArgumentList[3]);
+            File.WriteAllText(plan.ArgumentList[4], "burn failure details");
+            string nested = Path.Combine(plan.WorkingDirectory, "burn-temp", ".be");
+            Directory.CreateDirectory(nested);
+            File.WriteAllText(Path.Combine(nested, "setup.log"), "original installer cause");
+        };
+
+        BrokerResponse response = await fixture.Handler.HandleAsync(fixture.Request, fixture.Enrollment, CancellationToken.None);
+
+        Assert.Equal(BrokerResponseStatus.RolledBack, response.Status);
+        Assert.Equal("install-rolled-back", response.Code);
+        string archive = Path.Combine(fixture.Paths.InstallerLogDirectory, fixture.Request.RequestId.ToString("N"));
+        string[] retained = await Task.WhenAll(Directory.GetFiles(archive, "*.log").Select(log => File.ReadAllTextAsync(log)));
+        Assert.Equal(2, retained.Length);
+        Assert.Contains("burn failure details", retained);
+        Assert.Contains("original installer cause", retained);
+        Assert.False(Directory.Exists(fixture.Runner.CapturedPlan!.WorkingDirectory));
+        Assert.False(File.Exists(fixture.Paths.InFlightPath));
+        Assert.Contains("installer-logs-retained", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(fixture.Paths.JournalDirectory))));
+    }
+
+    [Theory]
+    [InlineData(0, BrokerResponseStatus.Succeeded)]
+    [InlineData(1, BrokerResponseStatus.RolledBack)]
+    public async Task HandleAsync_DiagnosticFailurePreservesOutcomeAndOriginalStaging(int exitCode, BrokerResponseStatus expected)
+    {
+        using HandlerFixture fixture = CreateFixture(
+            new BrokerInstallerExecutionResult(true, exitCode, false),
+            new BrokerPostInstallVerification(exitCode == 0, true, exitCode != 0));
+        FileStream? lockedLog = null;
+        fixture.Runner.BeforeResult = plan =>
+        {
+            string log = Path.Combine(plan.WorkingDirectory, "setup.log");
+            File.WriteAllText(log, "preserve this failure");
+            lockedLog = new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.None);
+        };
+        BrokerResponse response;
+        try
+        {
+            response = await fixture.Handler.HandleAsync(fixture.Request, fixture.Enrollment, CancellationToken.None);
+        }
+        finally
+        {
+            lockedLog?.Dispose();
+        }
+        Assert.Equal(expected, response.Status);
+        Assert.Equal(exitCode == 0 ? "install-succeeded" : "install-rolled-back", response.Code);
+        Assert.True(File.Exists(fixture.Paths.InFlightPath));
+        Assert.Equal("preserve this failure", await File.ReadAllTextAsync(Path.Combine(fixture.Runner.CapturedPlan!.WorkingDirectory, "setup.log")));
+        Assert.Contains("installer-logs-unavailable", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(fixture.Paths.JournalDirectory))));
+        Assert.Contains(exitCode == 0 ? "Succeeded" : "RolledBack", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(fixture.Paths.ReportDirectory))));
     }
 
     [Fact]
@@ -469,6 +530,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
     {
         public int CallCount { get; private set; }
         public ProcessStartInfo? CapturedPlan { get; private set; }
+        public Action<ProcessStartInfo>? BeforeResult { get; set; }
 
         public Task<BrokerInstallerExecutionResult> RunAsync(
             ProcessStartInfo startInfo,
@@ -477,6 +539,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         {
             CallCount++;
             CapturedPlan = startInfo;
+            BeforeResult?.Invoke(startInfo);
             try
             {
                 processStarted(4242);

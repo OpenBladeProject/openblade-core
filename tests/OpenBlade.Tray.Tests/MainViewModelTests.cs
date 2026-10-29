@@ -9668,6 +9668,7 @@ public sealed partial class MainViewModelTests
 
         Assert.True(client.HyperBoostEnabled);
         Assert.True(viewModel.HyperBoostActive);
+        Assert.Equal(TrayIconState.AcHyperBoost, viewModel.TrayIconState);
         Assert.True(viewModel.SelectedLaptopPerformanceOption?.IsHyperBoost);
         Assert.Equal("HyperBoost", viewModel.ActivePerformanceLabel);
         Assert.Contains("HyperBoost", viewModel.TrayHoverLabelText, StringComparison.Ordinal);
@@ -9686,6 +9687,7 @@ public sealed partial class MainViewModelTests
 
         Assert.False(client.HyperBoostEnabled);
         Assert.False(viewModel.HyperBoostActive);
+        Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);
         Assert.Equal(
             PerformancePreset.Balanced,
             viewModel.SelectedLaptopPerformanceOption?.Value);
@@ -9738,6 +9740,7 @@ public sealed partial class MainViewModelTests
         await viewModel.SetHyperBoostEnabledAsync(false, default);
 
         Assert.True(viewModel.HyperBoostActive);
+        Assert.Equal(TrayIconState.AcHyperBoost, viewModel.TrayIconState);
         Assert.Equal(
             "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
             viewModel.OperationFeedbackMessage);
@@ -9753,6 +9756,7 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() => !viewModel.HyperBoostActive);
 
         Assert.False(viewModel.HyperBoostActive);
+        Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);
     }
 
     [Fact]

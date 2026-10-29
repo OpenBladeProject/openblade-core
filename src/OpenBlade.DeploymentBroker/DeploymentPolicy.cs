@@ -141,6 +141,8 @@ public sealed class BrokerAcceptedSequenceStore(BrokerPaths paths) : IBrokerAcce
 
 public static class BrokerInstallerProcessPlan
 {
+    internal const string LogFileName = "OpenBlade-Install.log";
+
     private static readonly string[] BlockedEnvironmentPrefixes =
     [
         "COMPLUS_",
@@ -169,6 +171,17 @@ public static class BrokerInstallerProcessPlan
         }
 
         ProtectedBrokerStorage.RejectReparsePoint(installer);
+        string logPath = Path.Combine(staging, LogFileName);
+        try
+        {
+            _ = File.GetAttributes(logPath);
+            throw new InvalidDataException("The fixed installer log path must not already exist.");
+        }
+        catch (FileNotFoundException)
+        {
+            // Only a new broker-derived log path is admitted. In particular, an
+            // existing file, directory or reparse point must never be replaced.
+        }
         ProcessStartInfo startInfo = new()
         {
             FileName = installer,
@@ -182,6 +195,11 @@ public static class BrokerInstallerProcessPlan
         {
             startInfo.ArgumentList.Add(argument);
         }
+        // TEMP/TMP alone do not control Burn's system-context temp selection.
+        // Burn derives chained package logs (including Setup's --log) from this
+        // explicit path, keeping both logs inside protected request staging.
+        startInfo.ArgumentList.Add("/log");
+        startInfo.ArgumentList.Add(logPath);
 
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         if (string.IsNullOrWhiteSpace(windows))

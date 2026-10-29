@@ -44,6 +44,21 @@ one Session Agent at normal integrity. Only an exact broker-attested rollback
 may restore the prior process shape; a rejected, failed, mismatched, or
 indeterminate deployment does not relaunch a potentially partial installation.
 
+The process inventory distinguishes the primary Session Agent from its SnapTap
+and THX helpers. Helpers must belong to a verified parent chain in the same
+user session. Unknown roles, orphaned helpers, or duplicate primary agents block
+deployment. Shutdown waits for the complete process family to exit.
+
+The broker passes Burn a fixed `OpenBlade-Install.log` path inside protected
+request staging; Burn also derives Setup's package-log path from it. Redirecting
+`TEMP` and `TMP` alone is not the logging contract.
+Before cleaning completed request staging, the broker preserves bounded Burn
+and Setup logs in its protected `installer-logs` directory, grouped by request
+ID. The journal records whether log retention completed, was truncated, found
+no logs, or failed. A retention failure preserves the original staging for
+inspection; it does not change a separately verified installation or rollback
+outcome. These logs are local administrator diagnostics, not release artifacts.
+
 The client checks the current user's Windows desktop shell before stopping
 OpenBlade for deployment. It uses that verified, normal-integrity shell as the
 parent of each relaunched app, with no inherited handles. Closing the deployment

@@ -190,9 +190,15 @@ public sealed class BrokerStartupReconciler(
             return false;
         }
 
+        bool logsRetained = await BrokerInstallerLogRetention.RetainAndRecordAsync(
+            paths, durableRecords, state.RequestId, timeProvider.GetUtcNow(), logger)
+            .ConfigureAwait(false);
         try
         {
-            paths.DeleteRequestStagingDirectory(state.RequestId);
+            if (logsRetained)
+            {
+                paths.DeleteRequestStagingDirectory(state.RequestId);
+            }
         }
         catch (Exception exception) when (exception is
             IOException or UnauthorizedAccessException or InvalidDataException)
@@ -243,7 +249,10 @@ public sealed class BrokerStartupReconciler(
                     ? "startup-target-reconciled"
                     : "startup-rollback-reconciled"),
             cancellationToken).ConfigureAwait(false);
-        inFlightStore.ClearResolved(state.RequestId);
-        return true;
+        if (logsRetained)
+        {
+            inFlightStore.ClearResolved(state.RequestId);
+        }
+        return logsRetained;
     }
 }

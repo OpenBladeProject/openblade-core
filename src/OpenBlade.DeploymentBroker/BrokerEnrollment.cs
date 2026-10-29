@@ -28,6 +28,7 @@ public sealed class BrokerPaths
         StagingDirectory = Path.Combine(RootDirectory, "staging");
         JournalDirectory = Path.Combine(RootDirectory, "journal");
         ReportDirectory = Path.Combine(RootDirectory, "reports");
+        InstallerLogDirectory = Path.Combine(RootDirectory, "installer-logs");
         InFlightPath = Path.Combine(RootDirectory, "unresolved-deployment.json");
         AcceptedSequencePath = Path.Combine(RootDirectory, "accepted-local-dev-sequence.txt");
         InboxDirectory = Path.GetFullPath(inboxDirectory ?? Path.Combine(
@@ -42,6 +43,7 @@ public sealed class BrokerPaths
     public string StagingDirectory { get; }
     public string JournalDirectory { get; }
     public string ReportDirectory { get; }
+    public string InstallerLogDirectory { get; }
     public string InFlightPath { get; }
     public string AcceptedSequencePath { get; }
     public string InboxDirectory { get; }

@@ -586,6 +586,15 @@ internal static class LaunchFixture
 
     private static int Main(string[] args)
     {
+        // Inventory tests execute only this harmless fixture, never the real
+        // Session Agent helper or any hardware/input path.
+        string? inventoryStop = Environment.GetEnvironmentVariable("OpenBlade.InventoryFixtureStop");
+        if (inventoryStop is not null)
+        {
+            using EventWaitHandle stop = EventWaitHandle.OpenExisting(inventoryStop);
+            return stop.WaitOne(TimeSpan.FromSeconds(15)) ? 0 : 2;
+        }
+
         if (args.Length == 0) { TryRecordChildManagedEntry(); }
 
         if (args.Length == 4 && args[0] == "ci-normal-orchestrator")
