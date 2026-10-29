@@ -749,10 +749,16 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
         if (disposition is BrokerDeploymentDisposition.Succeeded
             or BrokerDeploymentDisposition.RolledBack)
         {
+            bool logsRetained = await BrokerInstallerLogRetention.RetainAndRecordAsync(
+                paths, durableRecords, request.RequestId, timeProvider.GetUtcNow(), logger)
+                .ConfigureAwait(false);
             try
             {
-                paths.DeleteRequestStagingDirectory(request.RequestId);
-                stagingCreated = false;
+                if (logsRetained)
+                {
+                    paths.DeleteRequestStagingDirectory(request.RequestId);
+                    stagingCreated = false;
+                }
             }
             catch (Exception exception) when (exception is
                 IOException or UnauthorizedAccessException or InvalidDataException)
