@@ -113,7 +113,7 @@ Assert-True ((Get-Item -LiteralPath $installerIcon).Length -gt 6) `
     'The dedicated OpenBlade installer icon is empty or truncated.'
 Assert-True (
     (Get-FileHash -LiteralPath $installerIcon -Algorithm SHA256).Hash -eq
-        '286A783AC117BF96D92D5B77E41BE847CC7FC225AC002BD19F076A1A7F743766') `
+        '51A212E578401BC551635609C40513124CA9EAB1BAB6EE0EE118C889F38EF396') `
     'The installer icon no longer matches the selected taskbar artwork.'
 Assert-True (
     $bundle.GetAttribute('Condition') -eq

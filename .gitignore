@@ -25,6 +25,10 @@ src/OpenBlade.Tray/Assets/Brand/*
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.png
 !src/OpenBlade.Tray/Assets/Brand/TRAY-ASSETS.md
+!src/OpenBlade.Tray/Assets/Brand/APP-ASSETS.md
+!src/OpenBlade.Tray/Assets/Brand/app-assets.json
+!src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Dark.svg
+!src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Light.svg
 !src/OpenBlade.Tray/Assets/Brand/Notifications/
 src/OpenBlade.Tray/Assets/Brand/Notifications/*
 !src/OpenBlade.Tray/Assets/Brand/Notifications/*.png

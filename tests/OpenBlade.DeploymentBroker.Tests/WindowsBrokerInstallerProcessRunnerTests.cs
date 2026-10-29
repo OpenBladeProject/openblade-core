@@ -9,11 +9,13 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
     public async Task RunAsync_BindingFailureKeepsMonitoringUntilTheChildExits()
     {
         Process? child = null;
+        string releaseEventName = "Local\\OpenBlade.BrokerTest." + Guid.NewGuid().ToString("N");
+        using EventWaitHandle release = new(false, EventResetMode.ManualReset, releaseEventName);
         WindowsBrokerInstallerProcessRunner runner = new(
             plan => child = Process.Start(plan), TimeSpan.FromSeconds(30));
         IOException bindingFailure = new("Injected PID persistence failure.");
         Task<BrokerInstallerExecutionResult> execution = runner.RunAsync(
-            CreateWaitingChildPlan(), _ => throw bindingFailure, CancellationToken.None);
+            CreateSignaledChildPlan(releaseEventName), _ => throw bindingFailure, CancellationToken.None);
 
         Assert.NotNull(child);
         try
@@ -23,8 +25,9 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
         }
         finally
         {
-            await child.StandardInput.WriteLineAsync("finish");
-            await child.StandardInput.FlushAsync();
+            // Releasing the child must not access the Process wrapper, which the
+            // runner may dispose as soon as it observes the child's exit.
+            release.Set();
         }
 
         BrokerInstallerExecutionResult result = await execution.WaitAsync(TimeSpan.FromSeconds(30));
@@ -79,21 +82,6 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
             release.Set();
             await observation.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
         }
-    }
-
-    private static ProcessStartInfo CreateWaitingChildPlan()
-    {
-        ProcessStartInfo plan = new(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"))
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-        };
-        plan.ArgumentList.Add("/d");
-        plan.ArgumentList.Add("/c");
-        plan.ArgumentList.Add("set /p reviewFixInput= & exit /b 17");
-        return plan;
     }
 
     private static ProcessStartInfo CreateSignaledChildPlan(string releaseEventName)

@@ -10,4 +10,4 @@ glyphs have contour-following transparent clearance.
 Copy only the `dark` and `light` files from `assets/brand/ico/tray` and
 `assets/brand/ico/tray-status`. Each ICO contains 16, 20, 24, 32, and 48 pixel
 frames. Light glyphs belong on a dark taskbar. Application, installer, and
-notification artwork is separate and unchanged.
+notification artwork is separate; see [application artwork](APP-ASSETS.md).

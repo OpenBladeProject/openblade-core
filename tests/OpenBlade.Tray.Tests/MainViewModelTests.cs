@@ -7492,7 +7492,8 @@ public sealed partial class MainViewModelTests
                 PerformancePreset.Performance),
         });
         await WaitUntilAsync(
-            () => viewModel.SelectedPerformance == PerformancePreset.Performance);
+            () => viewModel.SelectedPerformance == PerformancePreset.Performance
+                && viewModel.TrayIconState == TrayIconState.AcPerformance);
 
         Assert.Equal(TrayIconState.AcPerformance, viewModel.TrayIconState);
 
@@ -7502,7 +7503,8 @@ public sealed partial class MainViewModelTests
             PerformanceShortcutPreview = null,
         });
         await WaitUntilAsync(
-            () => viewModel.SelectedPerformance == PerformancePreset.Balanced);
+            () => viewModel.SelectedPerformance == PerformancePreset.Balanced
+                && viewModel.TrayIconState == TrayIconState.AcBalanced);
 
         Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);
     }
