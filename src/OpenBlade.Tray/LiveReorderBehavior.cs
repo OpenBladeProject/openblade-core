@@ -121,7 +121,7 @@ internal sealed class LiveReorderBehavior : IDisposable
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs args)
     {
-        if (dragging is not null)
+        if (disposed || dragging is not null)
         {
             return;
         }
