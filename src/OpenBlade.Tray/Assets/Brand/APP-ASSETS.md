@@ -4,10 +4,11 @@ The selected Monolith artwork is generated in
 [openblade-branding](https://github.com/OSSBlade/openblade-branding) by
 `tools/monolith_geometry.py` and `tools/generate_brand_assets.py`.
 
-The app icon has a 16:10 display, graphite keyboard deck, inset connected hinge
+The app icon has a 16:10 display, a deeper silver-gray keyboard deck, inset connected hinge
 and vertically centered green curves. A single curve is used below 48 pixels;
 keyboard detail simplifies below 64 pixels. Optical enlargement through 64
-pixels preserves the display proportions. All frames retain outer transparency.
+pixels preserves the display proportions. The deck has 30% more visible depth
+without increasing the front lip thickness. All frames retain outer transparency.
 
 Copy these generated assets together:
 
@@ -22,7 +23,8 @@ Copy these generated assets together:
 
 The dimensional PNG remains the About image, installer header, and default
 notification logo. README headers use the matching flat mark: dark ink on light
-surfaces, light ink on dark surfaces, with genuinely transparent keyboard details.
+surfaces; on dark surfaces, a dark display, silver-gray deck, subtle bezel outline
+and green curves replace the white silhouette. Keyboard details remain transparent.
 The installer retains its download badge and established adaptive tile at 48
 pixels and below. Tray-state and performance-notification artwork are separate
 and unchanged by this update.

@@ -1,16 +1,17 @@
 {
   "design": "Monolith",
   "source": "https://github.com/OSSBlade/openblade-branding",
-  "sourceRevision": "129b57b4c325fec3203b481f0fe624ed7c38f43b",
+  "sourceRevision": "836546348ddd770c38bb620e24ab3305051f1a8b",
+  "generatorSha256": "B679A80805FBDA48E76E12FAFDAC78AF7E6C5D40652D053F19493279D7690641",
   "generator": "tools/monolith_geometry.py",
   "assets": [
-    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.ico", "sha256": "B48C2433AE4179AB109F3D52BBAD07F0481E5ECD3EDB3DC7D939AAC2779FDDE7" },
-    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico", "sha256": "51A212E578401BC551635609C40513124CA9EAB1BAB6EE0EE118C889F38EF396" },
-    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.png", "sha256": "1986CF2051993E4AD10818874837F8F91F304AA55E9A2BE63933DB5C34318B58" },
-    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Dark.svg", "sha256": "8B7522E1EE03206E337376C0E0A74132845DC82D2649211353478473E4272AA8" },
-    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Light.svg", "sha256": "F728D5080D81813B8977103A176B796BFA6FFFE2E4237D9A02394BF30A7590A3" },
-    { "path": "build/identity/Assets/StoreLogo.png", "sha256": "6B23E57997A41757205231679EEF7E8F5845AAB1591EF08F9466815879E91525" },
-    { "path": "build/identity/Assets/Square44x44Logo.png", "sha256": "EDE2DBB5E9CB547947AC93C473B659F3D085C8F371BA3799393F5FCAB5B2CDD4" },
-    { "path": "build/identity/Assets/Square150x150Logo.png", "sha256": "BDB26BCA23A02D9E0A54EE00AA883514131F2D5A7D9ECD1398535D204637D9DE" }
+    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.ico", "sha256": "BDF60FA662F87F65CFBDFD80E1F6B5302452BB30C3A7E2E317357050047870FD" },
+    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico", "sha256": "08BA700F1FBA33A488DDD693AC8F33491651E7EBFC3388BF910374ECB5A6B57F" },
+    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.png", "sha256": "864E2F7C561BDEA06A77D7EE31F71275022103F499E63487B3ADEB255CC46DD3" },
+    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Dark.svg", "sha256": "060FEB94050D7007637A8A3A4F283C15B671D532CF335F6C32489FB61AFFBD19" },
+    { "path": "src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Light.svg", "sha256": "0A899C07FD0F6B3F7F445E6C5DF9FAFC6A0A5FF4FBAFFD956F0A9163C8B05A03" },
+    { "path": "build/identity/Assets/StoreLogo.png", "sha256": "479D9CDC1A5A7BD0CEF6BE20F25B63914617E11E510A68773A784EF36E4D1A1A" },
+    { "path": "build/identity/Assets/Square44x44Logo.png", "sha256": "551D1A966DAEF93D2F08A9121963D3511F3D437AF9C1FA7B27CE88EEBD90705A" },
+    { "path": "build/identity/Assets/Square150x150Logo.png", "sha256": "A67FE28F47498EA050CBDD9942ABE6EE01FE4445E93462B68E991EEEB8FB632F" }
   ]
 }
