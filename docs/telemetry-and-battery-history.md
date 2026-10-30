@@ -64,21 +64,14 @@ its recorded source and timestamps, marks the view as local replay, and leaves
 live history separate. **Return to live** resumes the live view. Recordings stay
 on the selected computer; OpenBlade does not upload them.
 
-## Battery history and preset
+## Windows battery report
 
-Open **Laptop > Battery history** and choose **Load battery history**. The
+Open **Telemetry > Windows battery report** and choose **Load battery history**. The
 current-user agent asks Windows `powercfg /batteryreport` for the last 24 hours.
-The timeline distinguishes AC, battery, active, standby, suspended and unknown
-periods. The interval list includes the charge and discharged energy Windows
-reported. Missing activity or energy remains unknown. This is Windows' historical
-report, separate from OpenBlade's live telemetry.
+The timeline shows battery, AC power and unknown periods in labeled rows on a
+shared time scale. Expand **Interval details** for activity, start charge and
+discharged energy. Missing activity or energy remains unknown. This is Windows'
+historical report, separate from OpenBlade's live telemetry.
 
 The summary shows design capacity, full-charge capacity, health and cycle count
 when Windows provides them. The report's generation time identifies its age.
-
-Choose **Preview preset** under **Long battery life** to inspect changes before
-saving them to the Battery profile. The preset selects supported lower-power
-performance, Automatic fans, lighting Off, the lowest recognized fixed refresh
-rate and a usable reported brightness level nearest 35%. Unavailable settings remain
-unchanged. The preview shows each changed value; saving preserves the other
-power-source profiles and existing manual or application override priority.

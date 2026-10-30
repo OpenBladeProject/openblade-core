@@ -1666,12 +1666,6 @@ Details: {1}</value>
   <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
     <value>Apply overrides for an exact game or application executable.</value>
   </data>
-  <data name="Battery history" xml:space="preserve">
-    <value>Battery history</value>
-  </data>
-  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
-    <value>Review Windows battery history and preview a long battery life preset.</value>
-  </data>
   <data name="Enter a name of up to 80 characters." xml:space="preserve">
     <value>Enter a name of up to 80 characters.</value>
   </data>
@@ -1704,5 +1698,8 @@ Details: {1}</value>
   </data>
   <data name="Notifications" xml:space="preserve">
     <value>Notifications</value>
+  </data>
+  <data name="Plugged in, battery discharging" xml:space="preserve">
+    <value>Plugged in, battery discharging</value>
   </data>
 </root>

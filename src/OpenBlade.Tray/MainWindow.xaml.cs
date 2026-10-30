@@ -89,7 +89,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingNotificationPreferences;
     private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
-    private bool canonicalLaptopCardsPlaced;
     private bool fanControlCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private bool? dashboardIsStacked;
@@ -225,6 +224,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
+        InitializeKeyboardBackendSelectors();
         InitializeApplicationProfilePages();
         BatteryHistoryViewModel.PropertyChanged += OnBatteryHistoryPropertyChanged;
         RefreshBatteryHistoryPresentation();
@@ -514,6 +514,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         set => SetNotificationPreference(
             NotificationCategory.ProfileAndPowerSourceChanges,
             value);
+    }
+
+    public bool ExternalPowerDischargeNotificationsEnabled
+    {
+        get => notificationPreferences.ExternalPowerDischargeEnabled;
+        set => SetNotificationPreference(NotificationCategory.ExternalPowerDischarge, value);
     }
 
     public bool AppUpdateNotificationsEnabled
@@ -938,6 +944,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
             snapTapEnabled = preferences.SnapTapEnabled;
+            snapTapBackend = preferences.EffectiveSnapTapBackend;
+            functionRowBackend = preferences.EffectiveFunctionRowBackend;
             initialUpdateChannel = preferences.EffectiveUpdateChannel;
             initialUpdateCheckInterval = preferences.EffectiveUpdateCheckInterval;
             initialUpdateCheckPromptShown = preferences.UpdateCheckPromptShown;
@@ -1028,6 +1036,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        InitializeKeyboardBackendSelectors();
         SnapTapToggle.IsOn = snapTapEnabled;
         RefreshSnapTapStatus();
         ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
@@ -1163,7 +1172,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             RefreshTelemetryPresentation();
         }
-        if (args.PropertyName == nameof(MainViewModel.RequiresTelemetryObservation))
+        if (args.PropertyName is nameof(MainViewModel.RequiresTelemetryObservation)
+            or nameof(MainViewModel.RequiresExternalPowerDischargeObservation))
         {
             UpdateActiveObservationLoop();
         }
@@ -1497,6 +1507,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
                 Language: ViewModel.LanguagePreference,
                 SnapTapEnabled: snapTapEnabled,
+                SnapTapBackend: snapTapBackend,
+                FunctionRowBackend: functionRowBackend,
                 ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled,
                 TelemetryChartMetrics: TelemetryPlot.MetricPreferences,
                 TelemetryEnabled: ViewModel.TelemetryEnabled));
@@ -1739,6 +1751,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         OnPropertyChanged(nameof(PerformanceNotificationsEnabled));
         OnPropertyChanged(nameof(ProfileAndPowerSourceNotificationsEnabled));
+        OnPropertyChanged(nameof(ExternalPowerDischargeNotificationsEnabled));
         OnPropertyChanged(nameof(AppUpdateNotificationsEnabled));
         OnPropertyChanged(nameof(FirmwareUpdateNotificationsEnabled));
         OnPropertyChanged(nameof(ControllerAdvisoryNotificationsEnabled));
@@ -1748,7 +1761,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private WindowNotificationObservation CaptureNotificationObservation() => new(
         ViewModel.ActivePowerSource,
         ViewModel.HasControllerAdvisory ? ViewModel.ControllerAdvisoryText : string.Empty,
-        ViewModel.TroubleshootingRecentErrorStatus);
+        ViewModel.TroubleshootingRecentErrorStatus,
+        ViewModel.ExternalPowerDischargeEpisode);
 
     private void PrimeNotificationObservation() =>
         notificationCoordinator.Prime(CaptureNotificationObservation());
@@ -1757,6 +1771,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         if (notificationCoordinator.ObservationReady
             && propertyName is nameof(MainViewModel.ActivePowerSource)
+                or nameof(MainViewModel.ExternalPowerDischargeEpisode)
                 or nameof(MainViewModel.ControllerAdvisoryText)
                 or nameof(MainViewModel.TroubleshootingRecentErrorStatus))
         {
@@ -3627,7 +3642,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void WakeActiveObservationLoop()
     {
-        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation)
+        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation
+            || ViewModel.RequiresExternalPowerDischargeObservation)
         {
             visibleObservationLoop.StartOrWake();
         }
@@ -3638,12 +3654,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         bool dashboardVisible = Volatile.Read(ref trayDashboardVisible);
         try
         {
-            await (dashboardVisible
-                ? ViewModel.ObserveTrayDashboardStateAsync(
-                    includeMainDashboardReadings: Volatile.Read(ref windowVisible),
-                    dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
-                        ref trayDashboardLiveReadingSensors), cancellationToken)
-                : ViewModel.ObserveStateAsync(cancellationToken)).ConfigureAwait(false);
+            if (!Volatile.Read(ref windowVisible) && !dashboardVisible
+                && !ViewModel.RequiresTelemetryObservation)
+            {
+                await ViewModel.ObserveExternalPowerDischargeAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await (dashboardVisible
+                    ? ViewModel.ObserveTrayDashboardStateAsync(
+                        includeMainDashboardReadings: Volatile.Read(ref windowVisible),
+                        dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
+                            ref trayDashboardLiveReadingSensors), cancellationToken)
+                    : ViewModel.ObserveStateAsync(cancellationToken)).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -3659,7 +3683,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void UpdateActiveObservationLoop()
     {
-        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation)
+        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation
+            || ViewModel.RequiresExternalPowerDischargeObservation)
         {
             visibleObservationLoop.StartOrWake();
         }
@@ -5384,31 +5409,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         };
     }
 
-    private void MoveCanonicalLaptopCardsIntoPlace()
+    private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
-        if (canonicalLaptopCardsPlaced)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
 
-        foreach (FrameworkElement card in new[] { PowerModeCard, FansCard, BatteryCard })
-        {
-            if (card.Parent is Microsoft.UI.Xaml.Controls.Panel current)
-            {
-                current.Children.Remove(card);
-            }
-        }
-
-        LaptopCardsHost.Children.Insert(0, BatteryCard);
-        LaptopCardsHost.Children.Insert(0, FansCard);
-        LaptopCardsHost.Children.Insert(0, PowerModeCard);
-        canonicalLaptopCardsPlaced = true;
-    }
-
-    private void OnRootLoaded(object sender, RoutedEventArgs args)
-    {
         rootLoaded.TrySetResult();
-        MoveCanonicalLaptopCardsIntoPlace();
         RegisterPageSections();
         dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;
         dashboardCardsReady = true;
@@ -5436,7 +5444,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         pageSectionPresentations[PageSectionKind.LaptopPowerMode] = PowerModeCard;
         pageSectionPresentations[PageSectionKind.LaptopFans] = FansCard;
         pageSectionPresentations[PageSectionKind.LaptopBattery] = BatteryCard;
-        pageSectionPresentations[PageSectionKind.LaptopBatteryHistory] = BatteryHistorySection;
         pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =
             KeyboardSection;
         pageSectionPresentations[PageSectionKind.LaptopStartupAnimation] =

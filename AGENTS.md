@@ -377,12 +377,19 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    authorization, notice, hashes, and signature validation.
    SnapTap may use the already installed, trusted model-specific keyboard
    driver profiles reviewed in [SnapTap](docs/snap-tap.md) through the shared
-   typed A/D-only backend. Newly reviewed models remain source-backed experimental
+   typed keyboard backend. Users choose Windows-hook or Razer-driver handling
+   separately for SnapTap and the function row. The Windows SnapTap helper is
+   fixed to A/D and has global keyboard scope. One supervised driver helper owns
+   the complete selected A/D and F1-F12 hook set; stop its subscription and verify
+   owned-hook restoration before changing that set. Function-row driver handling
+   remains source-backed experimental and requires the existing exact-model Fn
+   semantics. Newly reviewed models remain source-backed experimental
    until their own physical SnapTap validation is complete. Keep exact host, driver,
    keyboard-collection and container admission, supervised subscription lifetime,
    owned-hook restoration and uncertain-output recovery. It must not load the
    Synapse mapping engine, acquire the service's HID handle, install or bundle
-   drivers, or fall back to a system-wide keyboard hook. A separate, explicitly
+   drivers. Backend failures remain visible; never automatically select another
+   backend or bypass an uncertain ownership or output recovery gate. A separate, explicitly
    user-initiated elevated helper may install each of the seven reviewed models'
    separately pinned complete stack after exact host, topology, package hash and
    Windows catalog verification. Original Razer carriers are data-only sources:

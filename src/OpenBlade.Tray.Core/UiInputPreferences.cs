@@ -4,4 +4,6 @@ namespace OpenBlade.Tray;
 public sealed record UiInputPreferences(
     SpecialKeyBindingPreference[]? SpecialKeyBindings = null,
     bool SnapTapEnabled = false,
-    bool ThxAudioIntegrationEnabled = false);
+    bool ThxAudioIntegrationEnabled = false,
+    KeyboardInputBackend SnapTapBackend = KeyboardInputBackend.RazerDriver,
+    KeyboardInputBackend FunctionRowBackend = KeyboardInputBackend.WindowsHook);

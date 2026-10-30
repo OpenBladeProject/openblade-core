@@ -1756,12 +1756,6 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
     <value>[!! Ápplý óvérrídés fór án éxáct gámé ór ápplícátíón éxécútáblé. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Battery history" xml:space="preserve">
-    <value>[!! Báttérý hístórý ~~~~~ !!]</value>
-  </data>
-  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
-    <value>[!! Révíéw Windows báttérý hístórý ánd prévíéw á lóng báttérý lífé prését. ~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="Enter a name of up to 80 characters." xml:space="preserve">
     <value>[!! Éntér á námé óf úp tó 80 cháráctérs. ~~~~~~~~~~ !!]</value>
   </data>
@@ -1794,5 +1788,8 @@ Détáíls: {1} ~~~ !!]</value>
   </data>
   <data name="Notifications" xml:space="preserve">
     <value>[!! Nótífícátíóns ~~~~~ !!]</value>
+  </data>
+  <data name="Plugged in, battery discharging" xml:space="preserve">
+    <value>[!! Plúggéd ín, báttérý díschárgíng ~~~~~~~~~~ !!]</value>
   </data>
 </root>

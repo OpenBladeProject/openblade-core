@@ -1216,11 +1216,23 @@ public sealed class CapabilityPresentationTests
         XElement[] usages = mainWindow.Descendants()
             .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
             .ToArray();
-        Assert.Equal(28, usages.Length);
+        Assert.Equal(30, usages.Length);
+        string backendSource = ReadTraySource("MainWindow.KeyboardBackends.cs");
         Assert.All(usages, usage =>
         {
-            Assert.NotNull(Attribute(usage, "ItemsSource"));
-            Assert.NotNull(Attribute(usage, "SelectedItem"));
+            string? name = Attribute(usage, "Name");
+            if (name is "SnapTapBackendSelector" or "FunctionRowBackendSelector")
+            {
+                string selected = name == "SnapTapBackendSelector" ? "snapTapBackend" : "functionRowBackend";
+                Assert.Contains(name + ".ItemsSource = options;", backendSource, StringComparison.Ordinal);
+                Assert.Contains(name + ".SelectedItem = options.FirstOrDefault(option => option.Value == "
+                    + selected + ");", backendSource, StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.NotNull(Attribute(usage, "ItemsSource"));
+                Assert.NotNull(Attribute(usage, "SelectedItem"));
+            }
             Assert.NotNull(Attribute(usage, "AccessibleName"));
             Assert.NotNull(Attribute(usage, "ExpandedMinWindowWidth"));
             Assert.Null(Attribute(usage, "SelectedIndex"));
@@ -1554,7 +1566,7 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(picker, "MaxExpandedItems"));
         }
         Assert.Contains(
-            "Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered.",
+            "Choose how often to refresh live readings and check for battery discharge while plugged in.",
             xaml,
             StringComparison.Ordinal);
         XElement hoverContents = Assert.Single(settings.Descendants(), element =>

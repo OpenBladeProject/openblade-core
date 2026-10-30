@@ -429,6 +429,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? throw new ArgumentNullException(nameof(startupRegistration));
         lightingEditor.Changed += OnLightingEditorChanged;
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        externalPowerDischarge = new ExternalPowerDischargeTracker(this.timeProvider);
         this.uiVersion = string.IsNullOrWhiteSpace(uiVersion)
             ? OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly)
             : uiVersion.Trim();
@@ -641,6 +642,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref isConnected, value);
+            NotifyComputed(nameof(RequiresExternalPowerDischargeObservation), RequiresExternalPowerDischargeObservation);
             NotifyPresentationState();
             NotifyTrayHoverLabel();
             NotifyFirmwareFieldLoadingState();
@@ -4541,6 +4543,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref liveReadingsRefreshCadence, value);
+            NotifyComputed(nameof(RequiresExternalPowerDischargeObservation), RequiresExternalPowerDischargeObservation);
             Notify(nameof(LiveReadingsEnabled));
             Notify(nameof(SelectedLiveReadingsRefreshOption));
             Notify(nameof(LiveReadingsObservationInterval));
@@ -4548,6 +4551,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(ShowDashboardLiveReadings));
             if (!LiveReadingsEnabled)
             {
+                ResetExternalPowerDischarge();
                 LiveReadings = null;
                 ClearLiveReadingsRefreshTime();
             }
@@ -4627,9 +4631,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public string TrayHoverLabelText => BuildTrayHoverLabel().Text;
+    public string TrayHoverLabelText => IsConnected
+        && IsExternalPowerDischarging && TrayIconStateResolver.CanShowDischargeBadge(TrayIconState)
+        ? TrayText.Get("Plugged in, battery discharging")
+        : BuildTrayHoverLabel().Text;
 
-    public bool HasTrayHoverLabelOverflow => BuildTrayHoverLabel().HasOmittedItems;
+    public bool HasTrayHoverLabelOverflow => (!IsConnected || !IsExternalPowerDischarging
+        || !TrayIconStateResolver.CanShowDischargeBadge(TrayIconState))
+        && BuildTrayHoverLabel().HasOmittedItems;
 
     public string TrayHoverLabelOverflowMessage
     {
@@ -4654,7 +4663,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public TrayIconState TrayIconState
     {
         get => trayIconState;
-        private set => SetField(ref trayIconState, value);
+        private set
+        {
+            if (trayIconState != value)
+            {
+                SetField(ref trayIconState, value);
+                NotifyTrayHoverLabel();
+            }
+        }
     }
 
     public bool StartAtSignIn
@@ -5125,7 +5141,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool includeMainDashboardReadings,
         LiveReadingSensors additionalLiveReadings,
         bool trayOnly,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool batteryPowerOnly = false)
     {
         ObservationRequestStamp stamp = default;
         LiveReadingSensors requestedLiveReadings = LiveReadingSensors.None;
@@ -5136,9 +5153,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 stamp = new ObservationRequestStamp(
                     connectionGeneration,
                     subscriptionConnected);
-                requestedLiveReadings = ResolveRequestedLiveReadings(
-                    includeMainDashboardReadings);
-                if (LiveReadingsEnabled)
+                requestedLiveReadings = batteryPowerOnly
+                    ? RequiresExternalPowerDischargeObservation
+                        ? LiveReadingSensors.BatteryPower
+                        : LiveReadingSensors.None
+                    : ResolveRequestedLiveReadings(includeMainDashboardReadings);
+                if (LiveReadingsEnabled && !batteryPowerOnly)
                 {
                     requestedLiveReadings |= additionalLiveReadings;
                 }
@@ -5186,6 +5206,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     }
                     if (accepted)
                     {
+                        // Only this explicit battery request establishes a fresh sample.
+                        // Subscription snapshots may contain retained readings.
+                        if ((requestedLiveReadings & LiveReadingSensors.BatteryPower) != 0)
+                        {
+                            ObserveExternalPowerDischarge(status);
+                        }
                         telemetryBatch = CaptureTelemetryObservation(status);
                     }
                 },
@@ -5942,6 +5968,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LiveReadingSensors requested = RequiresTelemetryObservation
             ? LiveReadingSensors.All
             : LiveReadingSensors.None;
+        if (RequiresExternalPowerDischargeObservation)
+        {
+            // Keep this Windows battery read independent of optional hover sensors.
+            requested |= LiveReadingSensors.BatteryPower;
+        }
         bool replayOnly = TelemetryReplaySession is not null
             && IsTelemetryPresentationActive
             && !dashboardTelemetryPresentationActive
@@ -5974,6 +6005,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot status,
         bool publishPresentation = true)
     {
+        ObserveExternalPowerDischargeSource(status);
+        NotifyComputed(nameof(RequiresExternalPowerDischargeObservation), RequiresExternalPowerDischargeObservation);
+        NotifyTrayHoverLabel();
         if (!LiveReadingsEnabled || !status.DeviceVerified)
         {
             SetLiveReadings(null, publishPresentation);
@@ -6077,6 +6111,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         reconnectGeneration++;
         subscriptionConnected = false;
         latestAcceptedRevision = -1;
+        externalPowerDischarge.ObserveSource(PowerSource.ExternalUnknown, deviceVerified: false);
         IsConnected = false;
         TrayIconState = TrayIconState.GenericError;
         IsReadOnly = true;

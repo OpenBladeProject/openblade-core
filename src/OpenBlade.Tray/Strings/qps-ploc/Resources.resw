@@ -1040,7 +1040,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Chóósé hów lóng présséd kéýs rémáín lít. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>[!! Chóósé hów óftén OpenBlade réfréshés témpérátúrés, fán spééd, ánd nét báttérý pówér whílé thé wíndów ís ópén ór thé tráý ícón ís hóvéréd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chóósé hów óftén tó réfrésh lívé réádíngs ánd chéck fór báttérý díschárgé whílé plúggéd ín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
     <value>[!! Chóósé thé cóntróls ánd lívé détáíls shówn whén ýóú clíck thé tráý ícón. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -2207,7 +2207,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>[!! SnápTáp úsés thé Razer kéýbóárd drívér fór thé láptóp’s búílt-ín kéýbóárd. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Razer drívér hándlés thé búílt-ín kéýbóárd. Windows hóók ápplíés tó áll kéýbóárds. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
     <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>
@@ -2336,13 +2336,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Fúll chárgé {0} · Désígn {1} · Héálth {2} · Cýclés {3} ~~~~~~~~~~ !!]</value>
   </data>
   <data name="BatteryHistory_Interval" xml:space="preserve">
-    <value>[!! {0} – {1} · {2} · {3} · Chárgé {4} · Díschárgéd {5} ~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryHistory_Load.Content" xml:space="preserve">
-    <value>[!! Lóád báttérý hístórý ~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
-    <value>[!! Lóád Windows' báttérý répórt tó ínspéct thé lást 24 hóúrs. ~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! {0} – {1} · {2} · {3} · Stárt chárgé {4} · Díschárgéd {5} ~~~~~~~~ !!]</value>
   </data>
   <data name="BatteryHistory_SourceTime" xml:space="preserve">
     <value>[!! Windows báttérý répórt · Générátéd {0} ~~~~~~~~ !!]</value>
@@ -2353,44 +2347,11 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="BatteryHistory_Suspended" xml:space="preserve">
     <value>[!! Súspéndéd ~~~~ !!]</value>
   </data>
-  <data name="BatteryHistory_Title.Text" xml:space="preserve">
-    <value>[!! Báttérý hístórý ~~~~~ !!]</value>
-  </data>
   <data name="BatteryHistory_Unknown" xml:space="preserve">
     <value>[!! Únknówn ~~~ !!]</value>
   </data>
-  <data name="BatteryPreset_Cancel" xml:space="preserve">
-    <value>[!! Cáncél ~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Change" xml:space="preserve">
-    <value>{0}: {1} → {2}</value>
-  </data>
-  <data name="BatteryPreset_Description" xml:space="preserve">
-    <value>[!! Sávé thésé chángés tó thé báttérý prófílé. Mánúál cóntróls ánd ápplícátíón óvérrídés kéép théír príórítý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
-    <value>[!! Lóng báttérý lífé ~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
-    <value>[!! Prévíéw súppórtéd báttérý-prófílé chángés béfóré sávíng. ~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_NoChanges" xml:space="preserve">
-    <value>[!! Thé súppórtéd báttérý séttíngs álréádý mátch thís prését. ~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
-    <value>[!! Prévíéw prését ~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Save" xml:space="preserve">
-    <value>[!! Sávé tó báttérý prófílé ~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
-    <value>[!! Thé báttérý prófílé chángéd ór cóúld nót bé sávéd. Clósé thís prévíéw ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Title" xml:space="preserve">
-    <value>[!! Lóng báttérý lífé ~~~~~~ !!]</value>
-  </data>
   <data name="BatteryTimeline_AC" xml:space="preserve">
-    <value>[!! ÁC ~~ !!]</value>
+    <value>[!! ÁC pówér ~~~ !!]</value>
   </data>
   <data name="BatteryTimeline_Battery" xml:space="preserve">
     <value>[!! Báttérý ~~~ !!]</value>
@@ -2814,5 +2775,95 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="WhatsNew_Title" xml:space="preserve">
     <value>[!! Whát's néw ~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_DriverMissing" xml:space="preserve">
+    <value>[!! Thé Razer kéýbóárd drívér ís míssíng. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.AccessibleName" xml:space="preserve">
+    <value>[!! Múltímédíá kéý ínpút ~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.PlaceholderText" xml:space="preserve">
+    <value>[!! Chóósé ínpút méthód ~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
+    <value>[!! Múltímédíá kéý ínpút ~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowWindowsHelp.Text" xml:space="preserve">
+    <value>[!! Ápplíés tó áll kéýbóárds. Sómé gámés máý álsó récéívé thé órígínál fúnctíón kéý. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
+    <value>[!! Ínstáll drívér ~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Ínstáll thé Razer kéýbóárd drívér ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_ManualSetup" xml:space="preserve">
+    <value>[!! Ínstáll thís láptóp’s Razer kéýbóárd drívér, thén swítch ínpút méthóds tó rétrý. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Paused" xml:space="preserve">
+    <value>[!! Ínpút hándlíng ís páúséd. Éxpórt díágnóstícs fór détáíls. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_RazerDriver" xml:space="preserve">
+    <value>[!! Razer drívér ~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Recovery" xml:space="preserve">
+    <value>[!! Réstárt Windows béfóré úsíng thís ínpút méthód ágáín. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
+    <value>[!! SnápTáp ínpút ~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.PlaceholderText" xml:space="preserve">
+    <value>[!! Chóósé ínpút méthód ~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
+    <value>[!! SnápTáp ínpút ~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapWindowsHelp.Text" xml:space="preserve">
+    <value>[!! Ápplíés tó áll kéýbóárds. Sómé gámés máý ígnóré Windows hóók ínpút. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Unknown" xml:space="preserve">
+    <value>[!! Chóósé án ínpút méthód tó résúmé. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Unsupported" xml:space="preserve">
+    <value>[!! Thís ínpút méthód ís únáváíláblé fór thís láptóp. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Waiting" xml:space="preserve">
+    <value>[!! Wáítíng fór thé séléctéd ínpút méthód… ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_WindowsHook" xml:space="preserve">
+    <value>[!! Windows hóók ~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_DriverInstalled" xml:space="preserve">
+    <value>[!! Drívér ínstálléd. Swítch ínpút méthóds tó rétrý. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
+    <value>[!! Préss Fn óncé tó áctíváté múltímédíá kéýs. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
+    <value>[!! Báttérý pówér ís béíng úséd whílé éxtérnál pówér ís cónnéctéd. Rédúcé thé wórklóád ór chéck thé chárgér ánd cáblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeTitle" xml:space="preserve">
+    <value>[!! Báttérý díschárgíng whílé plúggéd ín ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
+    <value>[!! Báttérý díschárgé whílé plúggéd ín ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Nótífý whén thé báttérý díschárgés whílé plúggéd ín ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Details.Header" xml:space="preserve">
+    <value>[!! Íntérvál détáíls ~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
+    <value>[!! Pówér sóúrcé ~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Report.Header" xml:space="preserve">
+    <value>[!! Windows báttérý répórt ~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_SnapshotError" xml:space="preserve">
+    <value>[!! Báttérý hístórý ís únáváíláblé. Trý lóádíng ít ágáín. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
+    <value>[!! Lóád báttérý hístórý ~~~~~~~ !!]</value>
   </data>
 </root>

@@ -2577,20 +2577,6 @@
                             </StackPanel>
                         </Border>
 
-                        <ContentControl x:Name="PowerModeCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardPowerModeCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
-
-                        <ContentControl x:Name="FansCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardFansCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
-
-                        <ContentControl x:Name="BatteryCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
                     </StackPanel>
                 </ScrollViewer>
 
@@ -3233,6 +3219,43 @@
                         <TextBlock x:Uid="Telemetry_EventsTitle" Text="Power and profile changes" Style="{StaticResource CardTitleStyle}" />
                         <TextBlock x:Name="TelemetryEventsText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                         </StackPanel>
+                        <Expander x:Name="BatteryHistorySection" x:Uid="BatteryHistory_Report" Header="Windows battery report"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
+                            <StackPanel Spacing="12">
+                                <TextBlock x:Uid="BatteryHistory_Description" Text="The last 24 hours from Windows' battery report. Unknown periods remain unknown."
+                                           Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                <local:ContentWrapPanel>
+                                    <Button x:Name="BatteryHistoryLoadButton" Click="OnLoadBatteryHistory" Style="{StaticResource AppToolbarButtonStyle}">
+                                        <TextBlock x:Uid="BatteryHistory_LoadLabel" Text="Load battery history" TextWrapping="Wrap" Style="{StaticResource AppBodyTextStyle}" />
+                                    </Button>
+                                    <ProgressRing x:Name="BatteryHistoryProgress" Width="24" Height="24" IsActive="False" Visibility="Collapsed" />
+                                </local:ContentWrapPanel>
+                                <TextBlock x:Name="BatteryHistoryError" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap"
+                                           Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+                                <StackPanel x:Name="BatteryHistoryReportBody" Spacing="12" Visibility="Collapsed">
+                                    <TextBlock x:Name="BatteryHistorySummary" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <StackPanel Spacing="8">
+                                        <TextBlock x:Uid="BatteryHistory_PowerSource" Text="Power source" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                        <local:BatteryTimeline x:Name="BatteryHistoryTimeline"
+                                                               AccentStroke="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                               UnknownStroke="{ThemeResource TextFillColorSecondaryBrush}"
+                                                               SegmentBackground="{ThemeResource ControlFillColorDefaultBrush}" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="BatteryHealthText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <Expander x:Uid="BatteryHistory_Details" x:Name="BatteryHistoryDetails" Header="Interval details"
+                                              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
+                                        <ListView x:Uid="MainWindow_BatteryHistoryRowsText" x:Name="BatteryHistoryRows" MaxHeight="280" SelectionMode="None"
+                                                  AutomationProperties.Name="Windows battery history intervals">
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,4" Style="{StaticResource SecondaryTextStyle}" />
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </Expander>
+                                </StackPanel>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -3295,47 +3318,21 @@
                         </local:ResponsivePageHeader>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
-                        <StackPanel x:Name="BatteryHistorySection">
-                            <TextBlock local:CardReorder.IsHeader="True" x:Uid="BatteryHistory_Title" Text="Battery history" Style="{StaticResource SectionHeaderStyle}" />
-                            <Border Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel local:CardReorder.GroupId="BatteryHistoryLoadButtonRows">
-                                    <Border local:CardReorder.CardId="BatteryHistoryLoadButton" Style="{StaticResource SettingsEditorSubcardStyle}">
-                                        <StackPanel Spacing="12">
-                                            <TextBlock x:Uid="BatteryHistory_Description" Text="The last 24 hours from Windows' battery report. Unknown periods remain unknown."
-                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <Button x:Uid="BatteryHistory_Load" x:Name="BatteryHistoryLoadButton" Content="Load battery history" Click="OnLoadBatteryHistory" />
-                                                <ProgressRing x:Name="BatteryHistoryProgress" Width="24" Height="24" IsActive="False" />
-                                            </StackPanel>
-                                            <TextBlock x:Name="BatteryHistorySummary" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                            <TextBlock x:Name="BatteryHealthText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                            <TextBlock x:Name="BatteryHistoryError" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                                            <local:BatteryTimeline x:Name="BatteryHistoryTimeline"
-                                                                   AccentStroke="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                                                   UnknownStroke="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                   SegmentBackground="{ThemeResource ControlFillColorDefaultBrush}" />
-                                            <ListView x:Uid="MainWindow_BatteryHistoryRowsText" x:Name="BatteryHistoryRows" MaxHeight="280" SelectionMode="None"
-                                                      AutomationProperties.Name="Windows battery history intervals">
-                                                <ListView.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,4"
-                                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                                    </DataTemplate>
-                                                </ListView.ItemTemplate>
-                                            </ListView>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border local:CardReorder.CardId="BatteryPreset_Heading" Style="{StaticResource SettingsEditorSubcardStyle}">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock x:Uid="BatteryPreset_Heading" Text="Long battery life" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock x:Uid="BatteryPreset_Hint" Text="Preview supported battery-profile changes before saving."
-                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                            <Button x:Uid="BatteryPreset_Preview" Content="Preview preset" Click="OnPreviewLongBatteryLife" HorizontalAlignment="Left" />
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                        <ContentControl x:Name="PowerModeCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardPowerModeCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="FansCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardFansCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="BatteryCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
                         <StackPanel x:Name="KeyboardSection">
                             <TextBlock local:CardReorder.IsHeader="True" x:Name="KeyboardHeader" x:Uid="SnapTap_KeyboardHeader"
                                        Text="Keyboard" Style="{StaticResource SectionHeaderStyle}" />
@@ -3346,6 +3343,27 @@
                                                     ContentTemplate="{StaticResource KeyboardBehaviorRowsTemplate}"
                                                     HorizontalContentAlignment="Stretch"
                                                     Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
+                                    <Border local:CardReorder.CardId="FunctionRowBackendRow" x:Name="FunctionRowBackendRow" Style="{StaticResource SettingsRowStyle}" Visibility="{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="4" VerticalAlignment="Center">
+                                                <TextBlock x:Uid="KeyboardBackend_FunctionRowTitle" Text="Multimedia key input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                <TextBlock x:Name="FunctionRowWindowsHookHelp" x:Uid="KeyboardBackend_FunctionRowWindowsHelp"
+                                                           Text="Applies to all keyboards. Some games may also receive the original function key." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                                <TextBlock x:Name="FunctionRowBackendStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
+                                                <Button x:Name="FunctionRowInstallDriverButton" x:Uid="KeyboardBackend_InstallFunctionRowDriver"
+                                                        Content="Install driver" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}"
+                                                        Click="OnInstallFunctionRowDriver" AutomationProperties.Name="Install the Razer keyboard driver" Visibility="Collapsed" />
+                                            </StackPanel>
+                                            <local:ResponsiveChoiceSelector x:Name="FunctionRowBackendSelector" x:Uid="KeyboardBackend_FunctionRowSelector"
+                                                                            Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                                            AccessibleName="Multimedia key input" DisplayMemberPath="Label"
+                                                                            PlaceholderText="Choose input method" SelectionChanged="OnFunctionRowBackendChanged" />
+                                        </Grid>
+                                    </Border>
                                     <Border local:CardReorder.CardId="TouchpadRow" x:Name="TouchpadRow" Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>
@@ -3368,7 +3386,7 @@
                                                           Toggled="OnTouchpadToggled" />
                                         </Grid>
                                     </Border>
-                                    <Border local:CardReorder.CardId="SnapTapRow" x:Name="SnapTapRow" Style="{StaticResource SettingsLastRowStyle}">
+                                    <Border local:CardReorder.CardId="SnapTapRow" x:Name="SnapTapRow" Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -3388,7 +3406,7 @@
                                                                 <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
                                                                     <StackPanel MaxWidth="320" Spacing="12">
                                                                         <TextBlock x:Uid="SnapTap_InfoTitle" Text="About SnapTap" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
-                                                                        <TextBlock x:Uid="SnapTap_InfoInput" Text="SnapTap uses the Razer keyboard driver for the laptop’s built-in keyboard." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                                        <TextBlock x:Uid="SnapTap_InfoInput" Text="Razer driver handles the built-in keyboard. Windows hook applies to all keyboards." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                                         <TextBlock x:Uid="SnapTap_InfoCompatibility" Text="Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                                     </StackPanel>
                                                                 </ScrollViewer>
@@ -3418,6 +3436,23 @@
                                                 </StackPanel>
                                             </StackPanel>
                                             <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
+                                        </Grid>
+                                    </Border>
+                                    <Border local:CardReorder.CardId="SnapTapBackendRow" x:Name="SnapTapBackendRow" Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="4" VerticalAlignment="Center">
+                                                <TextBlock x:Uid="KeyboardBackend_SnapTapTitle" Text="SnapTap input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                <TextBlock x:Name="SnapTapWindowsHookHelp" x:Uid="KeyboardBackend_SnapTapWindowsHelp"
+                                                           Text="Applies to all keyboards. Some games may ignore Windows hook input." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                            </StackPanel>
+                                            <local:ResponsiveChoiceSelector x:Name="SnapTapBackendSelector" x:Uid="KeyboardBackend_SnapTapSelector"
+                                                                            Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                                            AccessibleName="SnapTap input" DisplayMemberPath="Label"
+                                                                            PlaceholderText="Choose input method" SelectionChanged="OnSnapTapBackendChanged" />
                                         </Grid>
                                     </Border>
                                 </StackPanel>
@@ -4132,7 +4167,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock x:Uid="MainWindow_TextBlockLiveReadings" Text="Live readings" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock x:Uid="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan" Text="Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered."
+                                        <TextBlock x:Uid="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan" Text="Choose how often to refresh live readings and check for battery discharge while plugged in."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorLiveReadingsRefreshInterval" Grid.Column="1"
@@ -4362,6 +4397,22 @@
                                                       Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Notify when the active power profile changes"
                                                       IsOn="{x:Bind ProfileAndPowerSourceNotificationsEnabled, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockExternalPowerDischarge" Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                          ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock x:Uid="MainWindow_TextBlockExternalPowerDischarge" Text="Battery discharge while plugged in"
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchExternalPowerDischarge" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                      AutomationProperties.Name="Notify when the battery discharges while plugged in"
+                                                      IsOn="{x:Bind ExternalPowerDischargeNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                                 <Border local:CardReorder.CardId="MainWindow_TextBlockAppUpdates" Style="{StaticResource SettingsRowStyle}">

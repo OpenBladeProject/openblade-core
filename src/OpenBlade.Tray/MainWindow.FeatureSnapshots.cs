@@ -74,8 +74,25 @@ public sealed partial class MainWindow
                     destination == "telemetry-hover-edge" ? 1 : 0.4);
                 TelemetryPlot.ShowLocalizationSnapshotLayout(destination);
                 break;
-            case "laptop-battery-history":
-                ApplyBatteryHistoryFixture();
+            case "telemetry-battery-report":
+            case "telemetry-battery-report-narrow":
+            case "telemetry-battery-report-dark":
+            case "telemetry-battery-report-details":
+            case "telemetry-battery-report-empty":
+            case "telemetry-battery-report-loading":
+            case "telemetry-battery-report-error":
+            case "telemetry-battery-report-refresh-error":
+            case "telemetry-battery-report-gaps":
+                if (destination is not ("telemetry-battery-report-empty" or "telemetry-battery-report-loading" or "telemetry-battery-report-error"))
+                {
+                    ApplyBatteryHistoryFixture(gaps: destination == "telemetry-battery-report-gaps");
+                }
+                SetBatteryHistorySnapshotField("isLoading", destination == "telemetry-battery-report-loading");
+                SetBatteryHistorySnapshotField("error", destination is "telemetry-battery-report-error" or "telemetry-battery-report-refresh-error"
+                    ? LocalizedResources.Get("BatteryHistory_SnapshotError", "Battery history is unavailable. Try loading it again.") : null);
+                RefreshBatteryHistoryPresentation();
+                BatteryHistorySection.IsExpanded = true;
+                BatteryHistoryDetails.IsExpanded = destination is "telemetry-battery-report-details" or "telemetry-battery-report-gaps";
                 BatteryHistorySection.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
                 break;
             case "display-brightness-known":
@@ -90,6 +107,92 @@ public sealed partial class MainWindow
         }
     }
 
+    private void SetBatteryHistorySnapshotField(string name, object? value) =>
+        (typeof(WindowsBatteryHistoryViewModel).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Battery fixture field {name} was not found."))
+        .SetValue(BatteryHistoryViewModel, value);
+
+    internal void VerifyLocalizationSnapshotBatteryHistory(string destination)
+    {
+        bool loaded = BatteryHistoryViewModel.Report is not null;
+        if (ViewModel.TelemetryEnabled || TelemetryEnabledToggle.IsOn || TelemetryContent.Visibility != Visibility.Collapsed
+            || !BatteryHistorySection.IsExpanded || BatteryHistoryReportBody.Visibility != (loaded ? Visibility.Visible : Visibility.Collapsed)
+            || BatteryHistoryProgress.Visibility != (BatteryHistoryViewModel.IsLoading ? Visibility.Visible : Visibility.Collapsed)
+            || BatteryHistoryProgress.IsActive != BatteryHistoryViewModel.IsLoading
+            || BatteryHistoryLoadButton.IsEnabled == BatteryHistoryViewModel.IsLoading
+            || BatteryHistoryError.Visibility != (BatteryHistoryViewModel.Error is null ? Visibility.Collapsed : Visibility.Visible))
+        {
+            throw new InvalidOperationException("Battery report loading, failure, or empty presentation is inconsistent.");
+        }
+        if (loaded)
+        {
+            if (BatteryHistoryRows.Items.Count != 5 || string.IsNullOrWhiteSpace(BatteryHistorySummary.Text)
+                || string.IsNullOrWhiteSpace(BatteryHealthText.Text)
+                || BatteryHistoryDetails.IsExpanded != (destination is "telemetry-battery-report-details" or "telemetry-battery-report-gaps"))
+            {
+                throw new InvalidOperationException("Battery report metadata or interval details are missing.");
+            }
+            BatteryHistoryTimeline.VerifySnapshotLayout();
+            WindowsBatteryReport report = BatteryHistoryViewModel.Report!;
+            string[] expectedRows = WindowsBatteryReportCoverage.CreateIntervals(report).Select(FormatBatteryInterval).ToArray();
+            if (!BatteryHistoryRows.Items.Cast<string>().SequenceEqual(expectedRows)
+                || (destination == "telemetry-battery-report-gaps" && report.Intervals.Count != 2))
+            {
+                throw new InvalidOperationException("Battery interval details do not preserve source data and unknown coverage.");
+            }
+            VerifyBatteryHistoryTransientPresentation();
+        }
+        else if (BatteryHistoryReportBody.ActualHeight > 0 || BatteryHistoryTimeline.ActualHeight > 0)
+        {
+            throw new InvalidOperationException("Unloaded battery report reserves empty graph space.");
+        }
+        if (BatteryHistoryViewModel.IsLoading)
+        {
+            // Assert the production busy state above, then use a static native arc for
+            // deterministic frames in this disposable disconnected snapshot process.
+            BatteryHistoryProgress.IsIndeterminate = false;
+            BatteryHistoryProgress.Value = 35;
+        }
+    }
+
+    private void VerifyBatteryHistoryTransientPresentation()
+    {
+        object rows = BatteryHistoryRows.ItemsSource;
+        object[] segments = BatteryHistoryTimeline.SnapshotSegments();
+        bool wasLoading = BatteryHistoryViewModel.IsLoading;
+        string? error = BatteryHistoryViewModel.Error;
+        try
+        {
+            SetBatteryHistorySnapshotField("isLoading", true);
+            RefreshBatteryHistoryPresentation();
+            if (BatteryHistoryLoadButton.IsEnabled || !BatteryHistoryProgress.IsActive
+                || BatteryHistoryProgress.Visibility != Visibility.Visible)
+            {
+                throw new InvalidOperationException("Retained battery report did not expose its busy state.");
+            }
+            SetBatteryHistorySnapshotField("isLoading", false);
+            SetBatteryHistorySnapshotField("error", "Disconnected refresh failure fixture");
+            RefreshBatteryHistoryPresentation();
+            if (!BatteryHistoryLoadButton.IsEnabled || BatteryHistoryProgress.IsActive
+                || BatteryHistoryError.Visibility != Visibility.Visible)
+            {
+                throw new InvalidOperationException("Retained battery report did not expose its refresh failure.");
+            }
+            object[] retainedSegments = BatteryHistoryTimeline.SnapshotSegments();
+            if (!ReferenceEquals(rows, BatteryHistoryRows.ItemsSource)
+                || segments.Length != retainedSegments.Length
+                || !segments.Zip(retainedSegments).All(pair => ReferenceEquals(pair.First, pair.Second)))
+            {
+                throw new InvalidOperationException("Transient battery report state replaced confirmed rows or plot segments.");
+            }
+        }
+        finally
+        {
+            SetBatteryHistorySnapshotField("isLoading", wasLoading);
+            SetBatteryHistorySnapshotField("error", error);
+            RefreshBatteryHistoryPresentation();
+        }
+    }
     internal void VerifyLocalizationSnapshotTelemetry()
     {
         TelemetryPageHeader.VerifyLocalizationSnapshotLayout();
@@ -353,7 +456,7 @@ public sealed partial class MainWindow
                 gpu);
     }
 
-    private void ApplyBatteryHistoryFixture()
+    private void ApplyBatteryHistoryFixture(bool gaps = false)
     {
         DateTimeOffset start = FeatureSnapshotTime.AddHours(-24);
         var report = new WindowsBatteryReport(
@@ -362,6 +465,13 @@ public sealed partial class MainWindow
             start,
             FeatureSnapshotTime,
             new WindowsBatteryStatus(95_200, 82_600, 86.8, 184),
+            gaps ?
+            [
+                Interval(2, 8, WindowsBatteryPowerSource.Battery,
+                    WindowsBatteryActivity.Active, 86, 11_700),
+                Interval(10, 22, WindowsBatteryPowerSource.Ac,
+                    WindowsBatteryActivity.Active, 61, null),
+            ] :
             [
                 Interval(0, 4, WindowsBatteryPowerSource.Battery,
                     WindowsBatteryActivity.Active, 86, 11_700),

@@ -7,17 +7,21 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Choose Windows hook or Razer driver separately for SnapTap and multimedia keys. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
+- Warn after 10 seconds of battery discharge while plugged in, with a tray badge and configurable notification. ([#866](https://github.com/OSSBlade/openblade-core/pull/866))
 - Reorder customizable cards and side-menu items by dragging them directly, with changes saved immediately. ([#861](https://github.com/OpenBladeProject/openblade-core/pull/861))
 - Show what's new automatically on the first launch of each version, with offline release notes and a button to reopen them from About. ([#862](https://github.com/OSSBlade/openblade-core/pull/862))
 
 ### Changed
 
 - Reorder cards within their section and move complete sections by their headings. The dragged item follows the cursor at half opacity while nearby items move into place. ([#868](https://github.com/OpenBladeProject/openblade-core/pull/868))
+- Move Windows battery reports into Telemetry with a labeled power-source timeline, explicit unknown periods and a compact empty state, and remove the Long battery life preset. ([#869](https://github.com/OpenBladeProject/openblade-core/pull/869))
 - Refine the application icon's laptop proportions and replace the white README logo with a dark-display, silver-deck color treatment. ([#860](https://github.com/OpenBladeProject/openblade-core/pull/860))
 - Refresh the application and installer icons with the Monolith laptop design and add matching light/dark logos. ([#859](https://github.com/OpenBladeProject/openblade-core/pull/859))
 
 ### Fixed
 
+- Fix a dashboard loading crash during application language changes. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
 - Make tray power sources and performance modes easier to distinguish, with clearer monochrome icons and a dedicated HyperBoost symbol. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
 - Preserve local-development installer logs after rollback and recognize Session Agent helpers during deployment and relaunch. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
 

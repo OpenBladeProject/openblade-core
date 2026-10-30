@@ -14,8 +14,10 @@ internal static class SnapTapDriverSupervisor
     internal static string HeartbeatName(int parent) => $"Local\\OpenBlade.SnapTap.Heartbeat.{parent}";
     internal static string StartGateName(int parent) => $"Local\\OpenBlade.SnapTap.Start.{parent}";
 
-    internal static int Run(Func<bool> shouldStop)
+    internal static int Run(Func<bool> shouldStop, KeyboardDriverFeatures features = KeyboardDriverFeatures.SnapTap)
     {
+        KeyboardDriverStatusStore.ConfigureScope(features);
+        KeyboardDriverFeatures requestedFeatures = features;
         // Helpers bypass the main agent's logging setup. Use a separate file
         // that the diagnostic exporter already includes, without logging from
         // the input loop or contending with the agent's active log.
@@ -39,51 +41,60 @@ internal static class SnapTapDriverSupervisor
                         "AdmissionRejected"), exitCode);
                 return exitCode;
             }
+            features = AdmitFeatures(features, endpoint.Profile);
+            if (features == KeyboardDriverFeatures.None)
+            {
+                return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.UnsupportedModel,
+                    SnapTapDiagnosticFailure.Create("FunctionRowDriver", "Admission", "Model", "UnsupportedModel"), 6);
+            }
+            KeyboardDriverStatusStore.ConfigureScope(features);
+            RazerKeyboardHookPurpose purpose = RazerKeyboardHookScope.Purpose(features);
             Trace.TraceInformation("SnapTap driver admitted: {0}; PID={1}; provenance={2}.",
                 endpoint.Profile.ProductName, endpoint.Profile.ProductId,
                 endpoint.Profile.PhysicallyValidated ? "PhysicallyValidated" : "SourceReviewedExperimental");
             // This independent CreateFile remains unsubscribed. Duplicating the
             // worker's handle would retain its subscription after worker death.
             stage = "GuardianOpen";
-            using var guardian = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint));
+            using var guardian = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint), purpose: purpose);
             stage = "BaselineEnumeration";
             IReadOnlyList<byte[]> baseline = guardian.ReadHooks();
-            if (baseline.Any(IsAdHook))
-            {
-                return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
-                    SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
-                        "GuardHooks", stage, "PreexistingHook"), 1);
-            }
             stage = "OwnershipJournal";
             string journal = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OpenBlade", "snaptap-driver-ownership.json");
+                "OpenBlade", features.HasFlag(KeyboardDriverFeatures.SnapTap)
+                    ? "snaptap-driver-ownership.json" : "function-row-driver-ownership.json");
             string boot = ReadBootIdentity();
             // An interrupted supervisor cannot establish ownership from coincidentally
             // matching global records. Keep that case closed for explicit recovery.
-            if (File.Exists(journal))
+            foreach (string previousPath in new[] { "snaptap-driver-ownership.json", "function-row-driver-ownership.json" }
+                .Select(name => Path.Combine(Path.GetDirectoryName(journal)!, name)))
             {
-                using var previousFile = new FileStream(journal, FileMode.Open, FileAccess.Read, FileShare.Read);
-                if (previousFile.Length > 131072)
-                {
-                    return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
-                        SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
-                            "OwnershipJournal", stage, "JournalTooLarge"), 4);
-                }
-                OwnershipJournal? previous = JsonSerializer.Deserialize<OwnershipJournal>(previousFile);
-                if (!CanDiscardJournal(previous?.BootIdentity, boot, baseline))
+                OwnershipJournal? previous = DriverOwnershipJournalReader.Read(previousPath);
+                if (previous is null) { continue; }
+                if (!CanDiscardJournal(previous.BootIdentity, boot, baseline))
                 {
                     return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
                         SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
                             "OwnershipJournal", stage, "RecoveryRequired"), 4);
                 }
-                previousFile.Dispose();
-                File.Delete(journal);
+                File.Delete(previousPath);
+            }
+            if (!CanStartWithHooks(baseline))
+            {
+                // RzCommon fans every matched global record to the subscribed
+                // file. We cannot forward an unknown owner's keyboard/mouse
+                // packets, and must not enable a subscriber that consumes them.
+                // Preserve every foreign record; no mutation has occurred here.
+                bool orphanFeature = baseline.Any(record => IsPurposeHook(record, RazerKeyboardHookPurpose.Combined));
+                return PublishTerminal(endpoint.Profile,
+                    orphanFeature ? SnapTapRuntimeState.RecoveryRequired : SnapTapRuntimeState.Unavailable,
+                    SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
+                        "GuardHooks", stage, "ExistingHooks"), orphanFeature ? 4 : 3);
             }
             Directory.CreateDirectory(Path.GetDirectoryName(journal)!);
             using (var stream = new FileStream(journal, FileMode.CreateNew, FileAccess.Write, FileShare.Read,
                        4096, FileOptions.WriteThrough))
             {
-                JsonSerializer.Serialize(stream, new OwnershipJournal(boot, baseline.ToArray()));
+                JsonSerializer.Serialize(stream, new OwnershipJournal(boot, baseline.ToArray(), features));
                 stream.Flush(true);
             }
             stage = "WorkerInfrastructure";
@@ -104,6 +115,7 @@ internal static class SnapTapDriverSupervisor
             };
             start.ArgumentList.Add(WorkerMode);
             start.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+            start.ArgumentList.Add(SnapTapInputHost.FeaturesArgument(requestedFeatures));
             while (true)
             {
                 Process? worker = null;
@@ -116,6 +128,7 @@ internal static class SnapTapDriverSupervisor
                     observedWorkerFailure = null;
                     bool interrupted = false;
                     stage = "WorkerLaunch";
+                    File.Delete(RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId));
                     DateTimeOffset workerStartedAt = DateTimeOffset.UtcNow;
                     worker = Process.Start(start) ?? throw new InvalidOperationException("The keyboard worker could not start.");
                     job.Assign(worker);
@@ -141,7 +154,7 @@ internal static class SnapTapDriverSupervisor
                                     started ? "InputLoop" : "WorkerStartup", "HeartbeatTimeout", started);
                             }
                             stop.Set();
-                            if (!worker.WaitForExit(1500))
+                            if (!worker.WaitForExit(6000))
                             {
                                 worker.Kill();
                                 if (!worker.WaitForExit(1500))
@@ -162,7 +175,7 @@ internal static class SnapTapDriverSupervisor
                             SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
                                 "SuperviseWorker", "WorkerExit", "WorkerDidNotExit"), 1);
                     }
-                    SnapTapRuntimeStatus? finalStatus = SnapTapStatusStore.Read();
+                    SnapTapRuntimeStatus? finalStatus = KeyboardDriverStatusStore.Read();
                     observedWorkerFailure ??= MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt);
                     bool foregroundPause = IsCleanForegroundPause(worker.ExitCode, finalStatus, worker.Id, workerStartedAt)
                         && observedWorkerFailure is null;
@@ -175,7 +188,8 @@ internal static class SnapTapDriverSupervisor
                     }
                     stage = "Reconciliation";
                     if (!TryReconcileHooks(guardian, baseline,
-                        pending => reconciliationMayHaveSubmitted = pending, out string? cleanupReason))
+                        pending => reconciliationMayHaveSubmitted = pending, out string? cleanupReason, purpose,
+                        RazerKeyboardOwnedHookEvidence.Read(Environment.ProcessId, worker.Id, workerStartedAt, purpose)))
                     {
                         return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
                             SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
@@ -220,7 +234,7 @@ internal static class SnapTapDriverSupervisor
                         if (!worker.HasExited)
                         {
                             stop.Set();
-                            if (!worker.WaitForExit(1500))
+                            if (!worker.WaitForExit(6000))
                             {
                                 worker.Kill();
                                 worker.WaitForExit(1500);
@@ -231,6 +245,7 @@ internal static class SnapTapDriverSupervisor
                     if (clean)
                     {
                         File.Delete(journal);
+                        File.Delete(RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId));
                     }
                 }
             }
@@ -266,35 +281,49 @@ internal static class SnapTapDriverSupervisor
         IRazerSnapTapHookTransport guardian,
         IReadOnlyList<byte[]> baseline,
         Action<bool> setSubmissionPending,
-        out string? failureReason)
+        out string? failureReason,
+        RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap,
+        IReadOnlyList<byte[]>? confirmedOwned = null)
     {
+        using var mutation = RazerKeyboardHookMutationGate.Enter();
         failureReason = null;
         IReadOnlyList<byte[]> hooks = guardian.ReadHooks();
-        if (!SameUnownedHooks(baseline, hooks))
+        if (baseline.Any(record => IsPurposeHook(record, purpose))
+            || !SameUnownedHooks(baseline, hooks, purpose)
+            || RazerSnapTapDriverProtocol.ScanCodes(purpose).Any(scan =>
+                hooks.Count(record => record.AsSpan().SequenceEqual(
+                    RazerSnapTapDriverProtocol.EncodeHook(scan, purpose))) > 1)
+            || (confirmedOwned is not null && hooks.Where(record => IsPurposeHook(record, purpose))
+                .Any(record => !confirmedOwned.Any(owned => owned.AsSpan().SequenceEqual(record)))))
         {
             failureReason = "HookOwnershipChanged";
             return false;
         }
-        foreach (ushort scan in new ushort[] { 0x1E, 0x20 })
+        // Preserve the independently observed current disjoint feature records,
+        // which may have changed since our own session started. During this
+        // bounded transaction, every unrelated byte must remain unchanged.
+        IReadOnlyList<byte[]> currentUnowned = hooks.Where(record => !IsPurposeHook(record, purpose)).ToArray();
+        foreach (ushort scan in RazerSnapTapDriverProtocol.ScanCodes(purpose))
         {
-            byte[] owned = RazerSnapTapDriverProtocol.EncodeHook(scan);
+            byte[] owned = RazerSnapTapDriverProtocol.EncodeHook(scan, purpose);
             if (hooks.Any(record => record.AsSpan().SequenceEqual(owned)))
             {
                 // The caller must prove child exit before this independent read/clear.
                 // Never synthesize a guessed key release or reset the driver.
                 setSubmissionPending(true);
-                guardian.ClearHook(RazerSnapTapDriverProtocol.EncodeClearHook(scan));
+                guardian.ClearHook(RazerSnapTapDriverProtocol.EncodeClearHook(scan, purpose));
                 hooks = guardian.ReadHooks();
                 setSubmissionPending(false);
                 if (hooks.Any(record => record.AsSpan().SequenceEqual(owned))
-                    || !SameUnownedHooks(baseline, hooks))
+                    || !SameRecords(currentUnowned, hooks.Where(record => !IsCanonical(record, purpose)))
+                    || hooks.Any(record => IsPurposeHook(record, purpose) && !IsCanonical(record, purpose)))
                 {
                     failureReason = "HookCleanupUnconfirmed";
                     return false;
                 }
             }
         }
-        if (hooks.Count != baseline.Count || !SameUnownedHooks(baseline, hooks))
+        if (!SameRecords(currentUnowned, hooks))
         {
             failureReason = "RecoveryRequired";
             return false;
@@ -320,7 +349,7 @@ internal static class SnapTapDriverSupervisor
         TraceTerminalFailure(failure, exitCode);
         try
         {
-            SnapTapStatusStore.Write(new(
+            KeyboardDriverStatusStore.Write(new(
                 state,
                 DateTimeOffset.UtcNow,
                 Environment.ProcessId,
@@ -353,8 +382,23 @@ internal static class SnapTapDriverSupervisor
     };
 
     internal static bool CanDiscardJournal(string? previousBoot, string currentBoot, IReadOnlyList<byte[]> hooks) =>
-        !string.IsNullOrWhiteSpace(previousBoot) && !string.IsNullOrWhiteSpace(currentBoot)
-        && !string.Equals(previousBoot, currentBoot, StringComparison.Ordinal) && !hooks.Any(IsAdHook);
+        DriverOwnershipJournalReader.IsLaterBoot(previousBoot, currentBoot)
+        && !hooks.Any(record => IsPurposeHook(record, RazerKeyboardHookPurpose.Combined));
+
+    internal static bool CanStartWithHooks(IReadOnlyList<byte[]> hooks) => hooks.Count == 0;
+
+    internal static KeyboardDriverFeatures AdmitFeatures(KeyboardDriverFeatures features, RazerSnapTapDriverProfile profile)
+    {
+        if (features.HasFlag(KeyboardDriverFeatures.FunctionRow) && profile.ProductId is not ("02E0" or "02C6"))
+        {
+            FunctionRowBackendStatusStore.Write(new(SnapTapRuntimeState.UnsupportedModel, DateTimeOffset.UtcNow,
+                Environment.ProcessId, profile.ProductName, true,
+                SnapTapDiagnosticFailure.Create("FunctionRowDriver", "Admission", "Model", "UnsupportedModel"))
+            { Backend = KeyboardInputBackend.RazerDriver });
+            return features & ~KeyboardDriverFeatures.FunctionRow;
+        }
+        return features;
+    }
 
     internal static int AdmissionExitCode(RazerSnapTapAdmissionFailure failure) => failure switch
     {
@@ -365,7 +409,7 @@ internal static class SnapTapDriverSupervisor
         _ => 3,
     };
 
-    private static string ReadBootIdentity()
+    internal static string ReadBootIdentity()
     {
         using var query = new ManagementObjectSearcher("SELECT LastBootUpTime FROM Win32_OperatingSystem");
         query.Options.Timeout = TimeSpan.FromSeconds(2);
@@ -383,15 +427,33 @@ internal static class SnapTapDriverSupervisor
         throw new InvalidOperationException("Windows boot identity is unavailable.");
     }
 
-    private sealed record OwnershipJournal(string BootIdentity, byte[][] BaselineHooks);
+    internal sealed record OwnershipJournal(string BootIdentity, byte[][] BaselineHooks,
+        KeyboardDriverFeatures Features = KeyboardDriverFeatures.SnapTap);
+
+    internal static bool IsValidOwnershipJournalScope(string fileName, KeyboardDriverFeatures features) => fileName switch
+    {
+        "snaptap-driver-ownership.json" => features is KeyboardDriverFeatures.SnapTap
+            or (KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow),
+        "function-row-driver-ownership.json" => features == KeyboardDriverFeatures.FunctionRow,
+        _ => false,
+    };
 
     private static bool IsAdHook(byte[] record) =>
         RazerSnapTapDriverProtocol.TryDecodeHook(record, record.Length, out var hook)
         && hook is not null && RazerSnapTapDriverProtocol.IsAdHook(hook);
 
-    internal static bool SameUnownedHooks(IReadOnlyList<byte[]> baseline, IReadOnlyList<byte[]> current)
+    internal static bool SameUnownedHooks(IReadOnlyList<byte[]> baseline, IReadOnlyList<byte[]> current,
+        RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap)
     {
-        var remaining = current.Where(record => !IsCanonical(record)).ToList();
+        RazerKeyboardHookPurpose other = purpose == RazerKeyboardHookPurpose.SnapTap
+            ? RazerKeyboardHookPurpose.FunctionRow : RazerKeyboardHookPurpose.SnapTap;
+        return SameRecords(baseline.Where(record => !IsCanonical(record, other)),
+            current.Where(record => !IsCanonical(record, purpose) && !IsCanonical(record, other)));
+    }
+
+    private static bool SameRecords(IEnumerable<byte[]> baseline, IEnumerable<byte[]> current)
+    {
+        var remaining = current.ToList();
         foreach (byte[] record in baseline)
         {
             int index = remaining.FindIndex(candidate => candidate.AsSpan().SequenceEqual(record));
@@ -404,6 +466,11 @@ internal static class SnapTapDriverSupervisor
         return remaining.Count == 0;
     }
 
-    private static bool IsCanonical(byte[] record) => record.AsSpan().SequenceEqual(RazerSnapTapDriverProtocol.EncodeHook(0x1E))
-        || record.AsSpan().SequenceEqual(RazerSnapTapDriverProtocol.EncodeHook(0x20));
+    private static bool IsCanonical(byte[] record, RazerKeyboardHookPurpose purpose) =>
+        RazerSnapTapDriverProtocol.TryDecodeHook(record, record.Length, out var hook)
+        && hook is not null && RazerSnapTapDriverProtocol.IsOwnedHook(hook, purpose);
+
+    private static bool IsPurposeHook(byte[] record, RazerKeyboardHookPurpose purpose) =>
+        RazerSnapTapDriverProtocol.TryDecodeHook(record, record.Length, out var hook)
+        && hook is not null && RazerSnapTapDriverProtocol.IsPurposeHook(hook, purpose);
 }

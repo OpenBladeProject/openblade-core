@@ -669,7 +669,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Replay_SuppressesVisibleLiveDemandUnlessRecordingIsActive()
+    public async Task Replay_SuppressesVisibleLiveDemandButRetainsBatteryWarningReadings()
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "replay.csv");
@@ -699,8 +699,11 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await viewModel.OpenTelemetryReplayAsync(path, CancellationToken.None);
         Assert.False(viewModel.RequiresTelemetryObservation);
         client.Requests.Clear();
+        client.Observation = Status(1, withReadings: true);
         await viewModel.ObserveStateAsync(CancellationToken.None);
-        Assert.Empty(client.Requests);
+        Assert.Equal([LiveReadingSensors.BatteryPower], client.Requests);
+        Assert.NotNull(viewModel.TelemetryReplaySession);
+        client.Requests.Clear();
 
         var recording = new GatedRecordingSession();
         recording.AllowAppend.TrySetResult();

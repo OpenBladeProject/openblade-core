@@ -1666,12 +1666,6 @@
   <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
     <value>为指定的游戏或应用可执行文件应用覆盖设置。</value>
   </data>
-  <data name="Battery history" xml:space="preserve">
-    <value>电池历史记录</value>
-  </data>
-  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
-    <value>查看 Windows 电池历史记录并预览延长电池续航预设。</value>
-  </data>
   <data name="Enter a name of up to 80 characters." xml:space="preserve">
     <value>请输入不超过 80 个字符的名称。</value>
   </data>
@@ -1704,5 +1698,8 @@
   </data>
   <data name="Notifications" xml:space="preserve">
     <value>通知</value>
+  </data>
+  <data name="Plugged in, battery discharging" xml:space="preserve">
+    <value>已接通电源，电池正在放电</value>
   </data>
 </root>
