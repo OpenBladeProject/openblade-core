@@ -793,7 +793,8 @@ public partial class App
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(1120, 900);
                     }
-                    else if (destination is "telemetry-narrow" or "telemetry-controls-narrow" or "telemetry-battery-report-narrow")
+                    else if (destination is "telemetry-narrow" or "telemetry-controls-narrow" or "telemetry-battery-report-narrow"
+                        or "telemetry-battery-report-gaps")
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(800, 1120);
                     }
@@ -876,7 +877,8 @@ public partial class App
                         }
                         if (destination == "telemetry" || destination.StartsWith("telemetry-", StringComparison.Ordinal))
                         {
-                            await snapshotMainWindow.ViewModel.SetTelemetryEnabledAsync(destination != "telemetry-disabled");
+                            await snapshotMainWindow.ViewModel.SetTelemetryEnabledAsync(
+                                !captureBatteryReport && destination != "telemetry-disabled");
                         }
                         snapshotMainWindow.ShowLocalizationSnapshotFeature(destination);
                         if (captureTelemetrySource)

@@ -40,6 +40,7 @@ public sealed class BatteryTimeline : Grid
     private readonly TextBlock endLabel = new();
     private readonly Canvas ticks = new();
     private WindowsBatteryReport? report;
+    private IReadOnlyList<WindowsBatteryReportInterval> intervals = [];
 
     public BatteryTimeline()
     {
@@ -89,9 +90,10 @@ public sealed class BatteryTimeline : Grid
         ActualThemeChanged += (_, _) => Draw();
     }
 
-    public void Update(WindowsBatteryReport? value)
+    public void Update(WindowsBatteryReport? value, IReadOnlyList<WindowsBatteryReportInterval> effectiveIntervals)
     {
         report = value;
+        intervals = effectiveIntervals;
         Draw();
     }
 
@@ -141,7 +143,7 @@ public sealed class BatteryTimeline : Grid
             ticks.Children.Add(label);
             previousRight = right + 16;
         }
-        foreach (WindowsBatteryReportInterval interval in report.Intervals)
+        foreach (WindowsBatteryReportInterval interval in intervals)
         {
             double startSeconds = Math.Clamp((interval.StartUtc - report.WindowStartUtc).TotalSeconds, 0, duration);
             double endSeconds = Math.Clamp((interval.EndUtc - report.WindowStartUtc).TotalSeconds, 0, duration);
@@ -181,6 +183,8 @@ public sealed class BatteryTimeline : Grid
     }
 
 #if OPENBLADE_DEVELOPER_HARNESS
+    internal object[] SnapshotSegments() => lanes.SelectMany(lane => lane.Children.Cast<object>()).ToArray();
+
     internal void VerifySnapshotLayout()
     {
         if (report is null || axis.ActualWidth <= 0 || ActualHeight < 100)
@@ -204,7 +208,7 @@ public sealed class BatteryTimeline : Grid
             }
         }
         double duration = (report.WindowEndUtc - report.WindowStartUtc).TotalSeconds;
-        foreach (WindowsBatteryReportInterval interval in report.Intervals)
+        foreach (WindowsBatteryReportInterval interval in intervals)
         {
             int row = interval.PowerSource switch
             {

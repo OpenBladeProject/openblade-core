@@ -1,7 +1,5 @@
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using OpenBlade.Contracts;
 using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
@@ -10,6 +8,7 @@ public sealed partial class MainWindow
 {
     private WindowsBatteryHistoryViewModel BatteryHistoryViewModel { get; } =
         new(new SessionBatteryReportAdapter());
+    private WindowsBatteryReport? presentedBatteryReport;
 
     private void OnBatteryHistoryPropertyChanged(object? sender, PropertyChangedEventArgs args) =>
         RefreshBatteryHistoryPresentation();
@@ -23,6 +22,12 @@ public sealed partial class MainWindow
         BatteryHistoryError.Visibility = string.IsNullOrWhiteSpace(BatteryHistoryViewModel.Error) ? Visibility.Collapsed : Visibility.Visible;
         WindowsBatteryReport? report = BatteryHistoryViewModel.Report;
         BatteryHistoryReportBody.Visibility = report is null ? Visibility.Collapsed : Visibility.Visible;
+        if (ReferenceEquals(report, presentedBatteryReport))
+        {
+            return;
+        }
+        IReadOnlyList<WindowsBatteryReportInterval> intervals = report is null
+            ? [] : WindowsBatteryReportCoverage.CreateIntervals(report);
         BatteryHistorySummary.Text = report is null
             ? string.Empty
             : LocalizedResources.Format("BatteryHistory_SourceTime", "Windows battery report · Generated {0}", PresentationTimestamp.ForDisplay(report.GeneratedAtUtc).ToString("g"));
@@ -31,8 +36,9 @@ public sealed partial class MainWindow
             Capacity(report.Status.FullChargeCapacityMilliwattHours), Capacity(report.Status.DesignCapacityMilliwattHours),
             report.Status.HealthPercent is { } health ? $"{health:0.#}%" : Unavailable(),
             report.Status.CycleCount?.ToString() ?? Unavailable());
-        BatteryHistoryRows.ItemsSource = report?.Intervals.Select(interval => FormatBatteryInterval(interval)).ToArray() ?? [];
-        BatteryHistoryTimeline.Update(report);
+        BatteryHistoryRows.ItemsSource = intervals.Select(FormatBatteryInterval).ToArray();
+        BatteryHistoryTimeline.Update(report, intervals);
+        presentedBatteryReport = report;
 
         static string Capacity(long? value) => value is { } capacity ? $"{capacity / 1000d:0.##} Wh" : Unavailable();
         static string Unavailable() => LocalizedResources.Get("BatteryHistory_Unknown", "Unknown");
@@ -57,8 +63,10 @@ public sealed partial class MainWindow
             : LocalizedResources.Get("BatteryHistory_Unknown", "Unknown");
         string discharge = interval.DischargeMilliwattHours is { } energy ? $"{energy / 1000d:0.##} Wh"
             : LocalizedResources.Get("BatteryHistory_Unknown", "Unknown");
+        DateTimeOffset start = PresentationTimestamp.ForDisplay(interval.StartUtc);
+        DateTimeOffset end = PresentationTimestamp.ForDisplay(interval.EndUtc);
         return LocalizedResources.Format("BatteryHistory_Interval", "{0} – {1} · {2} · {3} · Start charge {4} · Discharged {5}",
-            PresentationTimestamp.ForDisplay(interval.StartUtc).ToString("g"), PresentationTimestamp.ForDisplay(interval.EndUtc).ToString("t"),
+            start.ToString("g"), PresentationTimestamp.FormatIntervalEnd(start, end),
             source, activity, charge, discharge);
     }
 
