@@ -619,9 +619,21 @@ public sealed class WinUiShellContractTests
             Attribute(button, "Style")));
 
         XElement aboutCustomize = UidElement(document, "Button", "MainWindow_ButtonCustomize7");
-        Assert.Equal("Grid", aboutCustomize.Parent?.Name.LocalName);
-        Assert.Equal("1", Attribute(aboutCustomize, "Grid.Column"));
-        Assert.Null(Attribute(aboutCustomize, "Grid.Row"));
+        XElement aboutNotes = UidElement(document, "Button", "MainWindow_ButtonWhatsNew");
+        XElement aboutActions = Assert.IsType<XElement>(aboutCustomize.Parent);
+        Assert.Equal("ContentWrapPanel", aboutActions.Name.LocalName);
+        Assert.Same(aboutActions, aboutNotes.Parent);
+        Assert.Equal("1", Attribute(aboutActions, "Grid.Column"));
+        Assert.Equal("Actions", Attribute(aboutActions, "ContextualToolbar.Role"));
+        XElement aboutHeader = NamedElement(document, "ContextualToolbar", "AboutPageHeader");
+        Assert.Same(aboutHeader, aboutActions.Parent);
+        Assert.Equal(
+            "Context",
+            Attribute(UidElement(document, "TextBlock", "MainWindow_TextBlockAbout"), "ContextualToolbar.Role"));
+        Assert.Equal([aboutNotes, aboutCustomize], aboutActions.Elements().ToArray());
+        Assert.Equal(
+            "{StaticResource PageHeaderSecondaryButtonStyle}",
+            Attribute(aboutNotes, "Style"));
     }
 
     [Fact]

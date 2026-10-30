@@ -9,6 +9,7 @@
     "installer/installer-progress.png",
     "installer/installer-success.png",
     "tray/main-about.png",
+    "tray/main-whats-new.png",
     "tray/main-display.png",
     "tray/main-display-brightness-known.png",
     "tray/main-display-brightness-unavailable.png",
@@ -53,6 +54,13 @@
     "tray/tray-dashboard.png"
   ],
   "rules": [
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^(?:WhatsNew_|MainWindow_ButtonWhatsNew)",
+      "context": "Release notes opened automatically once per version or from About. The bundled changelog entries are in English.",
+      "screenshots": ["tray/main-whats-new.png", "tray/main-about.png"]
+    },
     {
       "surface": "tray",
       "match": "key",

@@ -310,7 +310,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         IStartupRegistration startupRegistration,
         UiLanguagePreference? initialLanguageOverride = null,
         UiPreferenceStore? preferenceStore = null,
-        UpdateCheckInterval? initialUpdateCheckConsentOverride = null)
+        UpdateCheckInterval? initialUpdateCheckConsentOverride = null,
+        bool suppressWhatsNew = false)
     {
         return new MainWindow(
             processorPolicy,
@@ -318,7 +319,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             TryShowTrayNotification,
             initialLanguageOverride: initialLanguageOverride,
             preferenceStore: preferenceStore,
-            initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride);
+            initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride,
+            suppressWhatsNew: suppressWhatsNew);
     }
 
     private void AttachWindowSurfaces(
@@ -459,7 +461,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 liveLocalizationSmokeContext?.PreferenceStore,
                 liveLocalizationSmokeContext is null
                     ? null
-                    : UpdateCheckInterval.ManualOnly);
+                    : UpdateCheckInterval.ManualOnly,
+                suppressWhatsNew: liveLocalizationSmokeContext is not null);
             Task replacementInitialization = replacement.InitializeAsync();
             liveLocalizationSmokeContext?.Report(
                 $"initialize {preference} replacement window");
@@ -1184,6 +1187,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         if (initialLaunch
             && window.StartMinimized
+            && !window.NeedsWhatsNew
             && !window.UpdateViewModel.NeedsConsentPrompt
             && !window.ViewModel.ShouldForceWindowVisibleForThermalDisclosure)
         {

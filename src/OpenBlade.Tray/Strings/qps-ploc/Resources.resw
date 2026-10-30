@@ -2785,4 +2785,37 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Énáblé télémétrý ~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ButtonWhatsNew.Content" xml:space="preserve">
+    <value>[!! Whát's néw ~~~ !!]</value>
+  </data>
+  <data name="WhatsNew_Added" xml:space="preserve">
+    <value>[!! Áddéd ~~ !!]</value>
+  </data>
+  <data name="WhatsNew_Changed" xml:space="preserve">
+    <value>[!! Chángéd ~~~ !!]</value>
+  </data>
+  <data name="WhatsNew_Close" xml:space="preserve">
+    <value>[!! Gót ít ~~ !!]</value>
+  </data>
+  <data name="WhatsNew_Deprecated" xml:space="preserve">
+    <value>[!! Déprécátéd ~~~~ !!]</value>
+  </data>
+  <data name="WhatsNew_Fixed" xml:space="preserve">
+    <value>[!! Fíxéd ~~ !!]</value>
+  </data>
+  <data name="WhatsNew_FullChangelog" xml:space="preserve">
+    <value>[!! Fúll chángélóg ~~~~~ !!]</value>
+  </data>
+  <data name="WhatsNew_NoSummary" xml:space="preserve">
+    <value>[!! Séé thé fúll chángélóg fór thís réléásé. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="WhatsNew_Removed" xml:space="preserve">
+    <value>[!! Rémóvéd ~~~ !!]</value>
+  </data>
+  <data name="WhatsNew_Security" xml:space="preserve">
+    <value>[!! Sécúrítý ~~~ !!]</value>
+  </data>
+  <data name="WhatsNew_Title" xml:space="preserve">
+    <value>[!! Whát's néw ~~~ !!]</value>
+  </data>
 </root>

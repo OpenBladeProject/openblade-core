@@ -18,6 +18,7 @@ using Windows.Storage.Streams;
 using WinRT.Interop;
 using XamlBorder = Microsoft.UI.Xaml.Controls.Border;
 using XamlButton = Microsoft.UI.Xaml.Controls.Button;
+using XamlContentDialog = Microsoft.UI.Xaml.Controls.ContentDialog;
 using XamlColumnDefinition = Microsoft.UI.Xaml.Controls.ColumnDefinition;
 using XamlGrid = Microsoft.UI.Xaml.Controls.Grid;
 using XamlOrientation = Microsoft.UI.Xaml.Controls.Orientation;
@@ -359,7 +360,8 @@ public partial class App
                 startupRegistration,
                 cases[0].Preference,
                 smokeContext.PreferenceStore,
-                UpdateCheckInterval.ManualOnly);
+                UpdateCheckInterval.ManualOnly,
+                suppressWhatsNew: true);
             AttachWindowSurfaces(initialWindow, sessionAgentEventEndpoint);
             await smokeContext.RunPhaseAsync(
                 "initialize Russian window",
@@ -662,6 +664,7 @@ public partial class App
                 "settings-appearance",
                 "settings-experimental",
                 "about",
+                "whats-new",
             };
             string? requestedPage = Environment.GetEnvironmentVariable(
                 LocalizationSnapshotPageVariable);
@@ -806,6 +809,7 @@ public partial class App
                             or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                             or "profiles-application-discovery-empty" => "profiles",
                         _ when destination.StartsWith("telemetry-", StringComparison.Ordinal) => "telemetry",
+                        "whats-new" => "about",
                         "laptop-battery-history" => "laptop",
                         "display-brightness-known" or "display-brightness-unavailable" => "display",
                         _ when captureSnapTap => "laptop",
@@ -918,9 +922,33 @@ public partial class App
                     {
                         snapshotMainWindow.VerifyLocalizationSnapshotTelemetry();
                     }
-                    await SaveSnapshotAsync(
-                        snapshotMainWindow.Content,
-                        Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                    if (destination == "whats-new")
+                    {
+                        XamlContentDialog dialog = snapshotMainWindow.CreateWhatsNewDialog();
+                        var opened = new TaskCompletionSource(
+                            TaskCreationOptions.RunContinuationsAsynchronously);
+                        dialog.XamlRoot = ((FrameworkElement)snapshotMainWindow.Content).XamlRoot;
+                        dialog.Opened += (_, _) => opened.TrySetResult();
+                        Task shown = dialog.ShowAsync().AsTask();
+                        try
+                        {
+                            await opened.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                            await WaitForSnapshotLayoutAsync();
+                            await SaveSnapshotAsync(
+                                dialog, Path.Combine(resolvedDirectory, "main-whats-new.png"));
+                        }
+                        finally
+                        {
+                            dialog.Hide();
+                            await shown;
+                        }
+                    }
+                    else
+                    {
+                        await SaveSnapshotAsync(
+                            snapshotMainWindow.Content,
+                            Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                    }
                 }
                 finally
                 {

@@ -2768,4 +2768,37 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="Telemetry_Disabled.Text" xml:space="preserve">
     <value>启用遥测以收集传感器历史数据并将数据记录到 CSV 文件。</value>
   </data>
+  <data name="MainWindow_ButtonWhatsNew.Content" xml:space="preserve">
+    <value>更新内容</value>
+  </data>
+  <data name="WhatsNew_Title" xml:space="preserve">
+    <value>更新内容</value>
+  </data>
+  <data name="WhatsNew_Close" xml:space="preserve">
+    <value>知道了</value>
+  </data>
+  <data name="WhatsNew_FullChangelog" xml:space="preserve">
+    <value>完整更新日志</value>
+  </data>
+  <data name="WhatsNew_NoSummary" xml:space="preserve">
+    <value>请查看此版本的完整更新日志。</value>
+  </data>
+  <data name="WhatsNew_Added" xml:space="preserve">
+    <value>新增</value>
+  </data>
+  <data name="WhatsNew_Changed" xml:space="preserve">
+    <value>改进</value>
+  </data>
+  <data name="WhatsNew_Fixed" xml:space="preserve">
+    <value>修复</value>
+  </data>
+  <data name="WhatsNew_Removed" xml:space="preserve">
+    <value>移除</value>
+  </data>
+  <data name="WhatsNew_Deprecated" xml:space="preserve">
+    <value>已弃用</value>
+  </data>
+  <data name="WhatsNew_Security" xml:space="preserve">
+    <value>安全修复</value>
+  </data>
 </root>
