@@ -27,7 +27,7 @@ public sealed partial class MainViewModelTests
         }
         Assert.True(viewModel.RequiresExternalPowerDischargeObservation);
         Drain(notifications);
-        for (int seconds = 0; seconds <= 30; seconds += 2)
+        for (int seconds = 0; seconds <= 10; seconds += 2)
         {
             if (seconds > 0)
             {
@@ -35,7 +35,7 @@ public sealed partial class MainViewModelTests
             }
             await ObserveAsync(client,
                 () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
-            Assert.Equal(seconds == 30, viewModel.IsExternalPowerDischarging);
+            Assert.Equal(seconds == 10, viewModel.IsExternalPowerDischarging);
         }
         Assert.All(client.RequestedLiveReadings, sensors => Assert.Equal(LiveReadingSensors.BatteryPower, sensors));
         Assert.Equal(baseState, viewModel.TrayIconState);

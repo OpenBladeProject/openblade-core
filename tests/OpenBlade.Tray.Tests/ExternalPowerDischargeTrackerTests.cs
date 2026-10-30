@@ -12,10 +12,10 @@ public sealed class ExternalPowerDischargeTrackerTests
     public void ConfirmsSustainedDischargeAndRearmsOnlyAfterKnownRecovery()
     {
         var tracker = new ExternalPowerDischargeTracker();
-        for (int seconds = 0; seconds <= 30; seconds += 5)
+        for (int seconds = 0; seconds <= 10; seconds += 2)
         {
             tracker.Observe(Start.AddSeconds(seconds), -5000, MaximumGap);
-            Assert.Equal(seconds == 30, tracker.IsDischarging);
+            Assert.Equal(seconds == 10, tracker.IsDischarging);
         }
         Assert.Equal(1, tracker.Episode);
         tracker.ObserveSource(PowerSource.Battery, deviceVerified: false);
@@ -28,7 +28,7 @@ public sealed class ExternalPowerDischargeTrackerTests
         Assert.Equal(1, tracker.Episode);
         tracker.Observe(Start.AddSeconds(95), 0, MaximumGap);
         Assert.False(tracker.IsDischarging);
-        for (int seconds = 100; seconds <= 130; seconds += 5)
+        for (int seconds = 100; seconds <= 110; seconds += 2)
         {
             tracker.Observe(Start.AddSeconds(seconds), -5000, MaximumGap);
         }
