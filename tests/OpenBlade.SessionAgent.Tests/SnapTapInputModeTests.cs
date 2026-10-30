@@ -77,18 +77,34 @@ public sealed class SnapTapInputModeTests
     }
 
     [Fact]
-    public void ExistingDriverJournalRequiresRecoveryWithoutReadingOrChangingContents()
+    public void InvalidDriverJournalRequiresRecoveryWithoutChangingContents()
     {
         string directory = Path.Combine(Path.GetTempPath(), "OpenBlade-journal-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "snaptap-driver-ownership.json");
         try
         {
-            Assert.False(SnapTapInputHost.HasDriverOwnershipJournal(path));
+            Assert.Null(SnapTapInputHost.InspectWindowsDriverOwnership(directory, () => throw new InvalidOperationException()));
             File.WriteAllText(path, "untrusted or incomplete evidence");
-            Assert.True(SnapTapInputHost.HasDriverOwnershipJournal(path));
+            Assert.NotNull(SnapTapInputHost.InspectWindowsDriverOwnership(directory, () => throw new InvalidOperationException()));
             Assert.Equal("untrusted or incomplete evidence", File.ReadAllText(path));
         }
         finally { File.Delete(path); Directory.Delete(directory); }
+    }
+
+    [Theory]
+    [InlineData("--snap-tap-input", "windows-hook")]
+    [InlineData("--snap-tap-input", "razer-driver")]
+    [InlineData("--snap-tap-driver-worker", "snap-tap")]
+    public void PreferencesDisabledAfterLaunchReturnNoWriteAdmissionCode(string mode, string selector)
+    {
+        Assert.True(SnapTapInputHost.TryParseArguments([mode, "123", selector], out _, out var backend, out var features));
+        var disabled = new UiInputPreferences(SnapTapEnabled: false,
+            FunctionRowBackend: KeyboardInputBackend.WindowsHook);
+        Assert.Equal(3, SnapTapInputHost.PreferenceRejection(disabled, backend, features));
+        var changed = new UiInputPreferences(SnapTapEnabled: true,
+            SnapTapBackend: backend == KeyboardInputBackend.WindowsHook ? KeyboardInputBackend.RazerDriver : KeyboardInputBackend.WindowsHook,
+            FunctionRowBackend: KeyboardInputBackend.WindowsHook);
+        Assert.Equal(3, SnapTapInputHost.PreferenceRejection(changed, backend, features));
     }
 }

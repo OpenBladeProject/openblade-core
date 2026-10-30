@@ -234,13 +234,15 @@ public sealed class FunctionRowDriverTests
     [Fact]
     public void InterruptedJournalRequiresDifferentBootAndNoFunctionSelectors()
     {
-        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal("one", "one", []));
-        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(null, "two", []));
-        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal("one", "two",
+        string previous = DateTime.UtcNow.AddDays(-4).ToString("O");
+        string current = DateTime.UtcNow.AddDays(-1).ToString("O");
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(previous, previous, []));
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(null, current, []));
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(previous, current,
             [RazerSnapTapDriverProtocol.EncodeHook(0x42, Purpose)]));
-        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal("one", "two",
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(previous, current,
             [RazerSnapTapDriverProtocol.EncodeHook(0x1E)]));
-        Assert.True(SnapTapDriverSupervisor.CanDiscardJournal("one", "two", []));
+        Assert.True(SnapTapDriverSupervisor.CanDiscardJournal(previous, current, []));
     }
 
     [Fact]

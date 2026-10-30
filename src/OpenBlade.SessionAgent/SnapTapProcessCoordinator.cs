@@ -31,7 +31,9 @@ public sealed class SnapTapProcessCoordinator(
     TimeSpan? stopTimeout = null,
     Func<bool>? ownsSharedInput = null,
     Func<bool>? ownsFunctionRowInput = null,
-    Action? prepareChild = null)
+    Action? prepareChild = null,
+    Func<KeyboardDriverFeatures>? publicationFeatures = null,
+    Func<bool>? canPublishIdleStatus = null)
 {
     private readonly Channel<bool> changes = Channel.CreateBounded<bool>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
@@ -46,11 +48,28 @@ public sealed class SnapTapProcessCoordinator(
     private int ownershipRecovery;
     private int functionRowInput;
     private int functionRowRecovery;
+    private SnapTapRuntimeStatus? lastPublishedStatus;
+    private KeyboardDriverFeatures? lastPublishedFeatures;
+    public event Action<bool>? OwnershipChanged;
     public bool HasChild => Volatile.Read(ref hasChild) != 0;
+    public bool HasFunctionRowOwner => HasChild && Volatile.Read(ref functionRowInput) != 0;
+    public bool FunctionRowRecoveryRequired => Volatile.Read(ref functionRowRecovery) != 0;
     public bool CanTransferOwnership => (!HasChild || Volatile.Read(ref sharedInput) == 0)
         && Volatile.Read(ref ownershipRecovery) == 0;
     public bool CanTransferFunctionRowOwnership => (!HasChild || Volatile.Read(ref functionRowInput) == 0)
         && Volatile.Read(ref functionRowRecovery) == 0;
+
+    internal SnapTapRuntimeStatus? FunctionRowWindowsTransferStatus(KeyboardInputBackend requested,
+        DiagnosticFailure? startupFailure)
+    {
+        if (requested != KeyboardInputBackend.WindowsHook || CanTransferFunctionRowOwnership && startupFailure is null) { return null; }
+        bool recovery = FunctionRowRecoveryRequired || startupFailure is not null && !HasFunctionRowOwner;
+        return new(recovery ? SnapTapRuntimeState.RecoveryRequired : SnapTapRuntimeState.WaitingForRelease,
+            DateTimeOffset.UtcNow, Environment.ProcessId, Failure: recovery
+                ? startupFailure ?? SnapTapDiagnosticFailure.Create("FunctionRowWindowsOwnership", "TransferInput",
+                    "OwnershipJournal", "DriverFunctionRowOwnershipRecoveryRequired", true) : null)
+        { Backend = KeyboardInputBackend.WindowsHook };
+    }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -178,10 +197,12 @@ public sealed class SnapTapProcessCoordinator(
                         latched = false;
                         admissionOnlyLatch = false;
                     }
+                    bool cleanupConfirmed = successful && stopping && terminal?.Failure?.MayHaveSubmitted != true;
                     stopping = false;
                     // Complete terminal publication before another coordinator may
                     // transfer ownership of the same physical pair.
                     Volatile.Write(ref hasChild, 0);
+                    NotifyOwnershipChanged(cleanupConfirmed);
                 }
 
                 requested = Volatile.Read(ref enabled) != 0;
@@ -204,7 +225,7 @@ public sealed class SnapTapProcessCoordinator(
                     else if (canStartChild?.Invoke() == false)
                     {
                         launchBlocked = true;
-                        Publish(SnapTapRuntimeState.WaitingForRelease);
+                        latched |= !Publish(SnapTapRuntimeState.WaitingForRelease);
                     }
                     // The child publishes its own Active/Waiting/Paused state after launch.
                     else if (!Publish(SnapTapRuntimeState.Starting, Environment.ProcessId))
@@ -223,6 +244,7 @@ public sealed class SnapTapProcessCoordinator(
                             child = startBackendChild is null ? startChild() : startBackendChild(selected);
                             Volatile.Write(ref hasChild, 1);
                             exited = child.WaitForExitAsync(CancellationToken.None);
+                            NotifyOwnershipChanged(cleanupConfirmed: false);
                         }
                         catch (Exception exception)
                         {
@@ -236,22 +258,28 @@ public sealed class SnapTapProcessCoordinator(
                                 child is null ? "ProcessStart" : "ExitObservation",
                                 child is null ? "HelperStartFailed" : "ExitObservationFailed",
                                 exception);
-                            Publish(SnapTapRuntimeState.Failed, failure: coordinatorFailure);
                             if (child is not null)
                             {
                                 LatchOwnedRecovery();
+                                NotifyOwnershipChanged(cleanupConfirmed: false);
                                 // A process may exist even when observing it failed. Keep ownership.
                                 stopping = true;
                                 try { child.RequestStop(); } catch (Exception) { }
                                 throw;
                             }
+                            Publish(SnapTapRuntimeState.Failed, failure: coordinatorFailure);
                         }
                     }
                 }
                 else if (child is null && !requested && !latched)
                 {
-                    publicationBackend = selected;
-                    latched = !Publish(SnapTapRuntimeState.Off);
+                    // The retired producer must not overwrite a different selected
+                    // backend, even when its previous status was an admission error.
+                    if (canPublishIdleStatus?.Invoke() != false)
+                    {
+                        publicationBackend = selected;
+                        latched = !Publish(SnapTapRuntimeState.Off);
+                    }
                 }
 
                 changed ??= changes.Reader.WaitToReadAsync(cancellationToken).AsTask();
@@ -332,6 +360,7 @@ public sealed class SnapTapProcessCoordinator(
                     }
                     if (!success && !IsNoWriteAdmission(exitCode, terminal)) { LatchOwnedRecovery(); }
                     Volatile.Write(ref hasChild, 0);
+                    NotifyOwnershipChanged(success && terminal?.Failure?.MayHaveSubmitted != true);
                 }
                 else
                 {
@@ -384,6 +413,15 @@ public sealed class SnapTapProcessCoordinator(
     {
         if (Volatile.Read(ref sharedInput) != 0) { Volatile.Write(ref ownershipRecovery, 1); }
         if (Volatile.Read(ref functionRowInput) != 0) { Volatile.Write(ref functionRowRecovery, 1); }
+    }
+
+    private void NotifyOwnershipChanged(bool cleanupConfirmed)
+    {
+        try { OwnershipChanged?.Invoke(cleanupConfirmed); }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapProcessCoordinator", "OwnershipChanged", exception);
+        }
     }
 
     private static bool IsNoWriteAdmission(int exitCode, SnapTapRuntimeStatus? terminal) =>
@@ -444,6 +482,12 @@ public sealed class SnapTapProcessCoordinator(
 
     private bool Publish(SnapTapRuntimeStatus status)
     {
+        KeyboardDriverFeatures? features = publicationFeatures?.Invoke();
+        if (lastPublishedStatus is { } previous && features == lastPublishedFeatures
+            && status with { UpdatedAt = previous.UpdatedAt } == previous)
+        {
+            return true;
+        }
         if (status.Failure is { } failure)
         {
             TraceFailure(failure);
@@ -451,6 +495,8 @@ public sealed class SnapTapProcessCoordinator(
         try
         {
             publishStatus(status);
+            lastPublishedStatus = status;
+            lastPublishedFeatures = features;
             return true;
         }
         catch (Exception exception)

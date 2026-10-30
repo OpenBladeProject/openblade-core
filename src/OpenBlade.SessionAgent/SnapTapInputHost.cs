@@ -80,12 +80,19 @@ internal static class SnapTapInputHost
         return backend != KeyboardInputBackend.Unknown && features != KeyboardDriverFeatures.None;
     }
 
-    internal static bool HasDriverOwnershipJournal(string path)
+    internal static DiagnosticFailure? InspectWindowsDriverOwnership(string directory, Func<string> readBootIdentity)
     {
-        try { _ = File.GetAttributes(path); return true; }
-        catch (FileNotFoundException) { return false; }
-        catch (DirectoryNotFoundException) { return false; }
-        // Unreadable evidence is not proof that no driver ownership remains.
+        try
+        {
+            return DriverOwnershipJournalReader.AllowsWindowsBackend(directory, KeyboardDriverFeatures.SnapTap, readBootIdentity)
+                ? null : SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Worker,
+                    "SelectBackend", "OwnershipJournal", "DriverOwnershipRecoveryRequired", true);
+        }
+        catch (Exception exception) when (DriverOwnershipJournalReader.IsObservationException(exception))
+        {
+            return SnapTapDiagnosticFailure.FromException(SnapTapDiagnosticFailure.Worker,
+                "SelectBackend", "OwnershipJournal", "DriverOwnershipObservationFailed", exception, true);
+        }
     }
 
     internal static int Run(string[] args)
@@ -178,12 +185,12 @@ internal static class SnapTapInputHost
                     if (PreferenceRejection() is { } rejection) { return rejection; }
                     if (backend == KeyboardInputBackend.WindowsHook)
                     {
-                        string journal = Path.Combine(Path.GetDirectoryName(preferencesPath)!, "snaptap-driver-ownership.json");
-                        if (HasDriverOwnershipJournal(journal))
+                        DiagnosticFailure? driverOwnershipFailure = InspectWindowsDriverOwnership(
+                            Path.GetDirectoryName(preferencesPath)!, SnapTapDriverSupervisor.ReadBootIdentity);
+                        if (driverOwnershipFailure is not null)
                         {
                             using var publisher = new SnapTapStatusPublisher(backend: backend);
-                            publisher.Publish(SnapTapRuntimeState.RecoveryRequired, SnapTapDiagnosticFailure.Create(
-                                SnapTapDiagnosticFailure.Worker, "SelectBackend", "OwnershipJournal", "DriverOwnershipRecoveryRequired"));
+                            publisher.Publish(SnapTapRuntimeState.RecoveryRequired, driverOwnershipFailure);
                             return 4;
                         }
                         return SnapTapWindowsHookLoop.Run(ShouldStop);
@@ -222,12 +229,12 @@ internal static class SnapTapInputHost
     {
         if (backend == KeyboardInputBackend.WindowsHook)
         {
-            return !preferences.SnapTapEnabled ? 0
+            return !preferences.SnapTapEnabled ? 3
                 : preferences.SnapTapBackend != KeyboardInputBackend.WindowsHook ? 3 : null;
         }
         KeyboardDriverFeatures current = RazerKeyboardDriverPreferenceSource.SelectFeatures(
             preferences.SnapTapEnabled, preferences.SnapTapBackend, preferences.FunctionRowBackend);
-        return current == KeyboardDriverFeatures.None ? 0 : current != features ? 3 : null;
+        return current == KeyboardDriverFeatures.None || current != features ? 3 : null;
     }
 
     private static bool ValidateParent(SafeProcessHandle parent, int parentId)

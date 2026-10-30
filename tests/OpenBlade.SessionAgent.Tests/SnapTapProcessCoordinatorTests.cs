@@ -614,6 +614,183 @@ public sealed class SnapTapProcessCoordinatorTests
         finally { child.Exit(1); cancel.Cancel(); await run; }
     }
 
+    [Fact]
+    public async Task CleanTransferPublishesFinalOffBeforeNotificationAndNeverClobbersNewOwner()
+    {
+        var firstPreference = new Preference(true);
+        var firstChild = new Child();
+        var secondChild = new Child();
+        SnapTapRuntimeStatus? visible = null;
+        using var firstCancel = new CancellationTokenSource();
+        using var secondCancel = new CancellationTokenSource();
+        Task? secondRun = null;
+        var secondPreference = new BackendPreference();
+        secondPreference.SetBackend(KeyboardInputBackend.WindowsHook);
+        var first = new SnapTapProcessCoordinator(firstPreference, () => firstChild,
+            status => visible = status, publicationFeatures: () => KeyboardDriverFeatures.SnapTap);
+        var second = new SnapTapProcessCoordinator(secondPreference, () => secondChild, status => visible = status,
+            startBackendChild: _ =>
+            {
+                visible = new(SnapTapRuntimeState.Active, DateTimeOffset.UtcNow, secondChild.Id)
+                { Backend = KeyboardInputBackend.WindowsHook };
+                return secondChild;
+            }, canStartChild: () => first.CanTransferOwnership);
+        first.OwnershipChanged += clean =>
+        {
+            if (!clean) { return; }
+            Assert.False(first.HasChild);
+            Assert.True(first.CanTransferOwnership);
+            Assert.Equal(SnapTapRuntimeState.Off, visible?.State);
+            secondRun = second.RunAsync(secondCancel.Token);
+            // The old coordinator must finish its current disabled iteration
+            // without writing Off over the new owner's synchronous Active status.
+            firstCancel.Cancel();
+        };
+        Task firstRun = first.RunAsync(firstCancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => first.HasChild);
+            firstPreference.Set(false);
+            await firstRun;
+            Assert.NotNull(secondRun);
+            Assert.Equal(SnapTapRuntimeState.Active, visible?.State);
+            Assert.Equal(KeyboardInputBackend.WindowsHook, visible?.Backend);
+        }
+        finally
+        {
+            firstCancel.Cancel();
+            secondCancel.Cancel();
+            await firstRun;
+            if (secondRun is not null) { await secondRun; }
+        }
+    }
+
+    [Fact]
+    public async Task StableBlockedLaunchWritesOncePerStateOwnerAndScope()
+    {
+        int attempts = 0;
+        KeyboardDriverFeatures scope = KeyboardDriverFeatures.FunctionRow;
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        using var cancel = new CancellationTokenSource();
+        var coordinator = new SnapTapProcessCoordinator(new Preference(true),
+            () => throw new InvalidOperationException("blocked launch"), statuses.Enqueue,
+            canStartChild: () => false, prepareChild: () => Interlocked.Increment(ref attempts),
+            publicationFeatures: () => scope);
+        Task run = coordinator.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => Volatile.Read(ref attempts) >= 5);
+            Assert.Single(statuses);
+            Assert.Equal(SnapTapRuntimeState.WaitingForRelease, statuses.Single().State);
+            scope |= KeyboardDriverFeatures.SnapTap;
+            int before = Volatile.Read(ref attempts);
+            await WaitUntilAsync(() => Volatile.Read(ref attempts) >= before + 3);
+            Assert.Equal(2, statuses.Count);
+        }
+        finally { cancel.Cancel(); await run; }
+    }
+
+    [Fact]
+    public async Task NormalDriverFnHandoffWaitsWithoutClaimingRecoveryAndRefreshesOnCleanCompletion()
+    {
+        var source = new Preference(true);
+        var child = new Child { ExitOnStop = false };
+        using var cancel = new CancellationTokenSource();
+        var coordinator = new SnapTapProcessCoordinator(source, () => child, _ => { },
+            ownsSharedInput: () => false, ownsFunctionRowInput: () => true);
+        bool cleanNotification = false;
+        coordinator.OwnershipChanged += clean => { if (clean) { cleanNotification = true; } };
+        Task run = coordinator.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => coordinator.HasChild);
+            var liveJournal = new DiagnosticFailure("FunctionRowWindowsOwnership", "InspectStartup", "OwnershipJournal", "RecoveryRequired", true);
+            SnapTapRuntimeStatus? pending = coordinator.FunctionRowWindowsTransferStatus(KeyboardInputBackend.WindowsHook, liveJournal);
+            Assert.Equal(SnapTapRuntimeState.WaitingForRelease, pending?.State);
+            Assert.Null(pending?.Failure);
+            source.Set(false);
+            await WaitUntilAsync(() => child.StopRequested);
+            Assert.Equal(SnapTapRuntimeState.WaitingForRelease,
+                coordinator.FunctionRowWindowsTransferStatus(KeyboardInputBackend.WindowsHook, liveJournal)?.State);
+            child.Exit(0);
+            await WaitUntilAsync(() => cleanNotification);
+            Assert.Null(coordinator.FunctionRowWindowsTransferStatus(KeyboardInputBackend.WindowsHook, null));
+        }
+        finally { child.Exit(0); cancel.Cancel(); await run; }
+    }
+
+    [Fact]
+    public async Task DisabledHostPreferenceIsNoWriteAdmissionRatherThanCleanLiveOwnerCompletion()
+    {
+        int exitCode = SnapTapInputHost.PreferenceRejection(new UiInputPreferences(), KeyboardInputBackend.WindowsHook,
+            KeyboardDriverFeatures.SnapTap)!.Value;
+        Assert.Equal(3, exitCode);
+        var child = new Child();
+        bool cleanCompletion = false;
+        var coordinator = new SnapTapProcessCoordinator(new Preference(true), () => child, _ => { });
+        coordinator.OwnershipChanged += clean => cleanCompletion |= clean;
+        using var cancel = new CancellationTokenSource();
+        Task run = coordinator.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => coordinator.HasChild);
+            child.Exit(exitCode);
+            await WaitUntilAsync(() => !coordinator.HasChild);
+            Assert.True(coordinator.CanTransferOwnership);
+            Assert.False(cleanCompletion);
+        }
+        finally { cancel.Cancel(); await run; }
+    }
+
+    [Fact]
+    public async Task RetiredAdmissionFailureCannotPublishIdleOffOverNewOwner()
+    {
+        var firstPreference = new Preference(true);
+        var firstChild = new Child();
+        SnapTapRuntimeStatus? visible = null;
+        bool selected = true;
+        int idleChecks = 0;
+        using var firstCancel = new CancellationTokenSource();
+        using var secondCancel = new CancellationTokenSource();
+        Task? secondRun = null;
+        var nextPreference = new BackendPreference();
+        nextPreference.SetBackend(KeyboardInputBackend.WindowsHook);
+        var first = new SnapTapProcessCoordinator(firstPreference, () => firstChild, status => visible = status,
+            canPublishIdleStatus: () => { Interlocked.Increment(ref idleChecks); return selected; });
+        var second = new SnapTapProcessCoordinator(nextPreference, () => new Child(), status => visible = status,
+            startBackendChild: _ =>
+            {
+                visible = new(SnapTapRuntimeState.Active, DateTimeOffset.UtcNow)
+                { Backend = KeyboardInputBackend.WindowsHook };
+                return new Child();
+            }, canStartChild: () => first.CanTransferOwnership);
+        first.OwnershipChanged += _ =>
+        {
+            if (first.HasChild) { return; }
+            selected = false;
+            secondRun = second.RunAsync(secondCancel.Token);
+            firstPreference.Set(false);
+        };
+        Task firstRun = first.RunAsync(firstCancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => first.HasChild);
+            firstChild.Exit(3);
+            await WaitUntilAsync(() => Volatile.Read(ref idleChecks) != 0);
+            firstCancel.Cancel();
+            await firstRun;
+            Assert.Equal(SnapTapRuntimeState.Active, visible?.State);
+            Assert.Equal(KeyboardInputBackend.WindowsHook, visible?.Backend);
+        }
+        finally
+        {
+            firstCancel.Cancel();
+            secondCancel.Cancel();
+            await firstRun;
+            if (secondRun is not null) { await secondRun; }
+        }
+    }
+
     private sealed class BackendPreference : ISnapTapBackendPreferenceSource
     {
         public bool SnapTapEnabled => true;

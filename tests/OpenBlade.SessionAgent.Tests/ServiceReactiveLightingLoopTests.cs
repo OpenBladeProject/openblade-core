@@ -1183,6 +1183,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
 
     private sealed class RecordingSourceFactory : IReactiveKeyboardSourceFactory
     {
+        public bool CanTransferFunctionRowOwnership => Last?.CanTransferFunctionRowOwnership ?? true;
         public int CreateCount { get; private set; }
 
         public RecordingSource? Last { get; private set; }
@@ -1198,6 +1199,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
     private sealed class RecordingSource : IReactiveKeyboardSource
     {
         public bool HasActiveFunctionRowKeys { get; set; }
+        public bool CanTransferFunctionRowOwnership => !HasActiveFunctionRowKeys && (!Completion.IsCompleted || Disposed);
 
         private readonly TaskCompletionSource completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);

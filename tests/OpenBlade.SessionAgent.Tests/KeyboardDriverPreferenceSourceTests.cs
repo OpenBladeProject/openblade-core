@@ -53,7 +53,7 @@ public sealed class KeyboardDriverPreferenceSourceTests
         var preferences = new UiInputPreferences(SnapTapEnabled: false, FunctionRowBackend: KeyboardInputBackend.RazerDriver);
         Assert.Null(SnapTapInputHost.PreferenceRejection(preferences, KeyboardInputBackend.RazerDriver, KeyboardDriverFeatures.FunctionRow));
         Assert.Equal(3, SnapTapInputHost.PreferenceRejection(preferences, KeyboardInputBackend.RazerDriver, KeyboardDriverFeatures.SnapTap));
-        Assert.Equal(0, SnapTapInputHost.PreferenceRejection(preferences, KeyboardInputBackend.WindowsHook, KeyboardDriverFeatures.SnapTap));
+        Assert.Equal(3, SnapTapInputHost.PreferenceRejection(preferences, KeyboardInputBackend.WindowsHook, KeyboardDriverFeatures.SnapTap));
     }
 
     [Fact]

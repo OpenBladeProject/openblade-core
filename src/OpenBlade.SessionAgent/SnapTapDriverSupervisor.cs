@@ -68,24 +68,14 @@ internal static class SnapTapDriverSupervisor
             foreach (string previousPath in new[] { "snaptap-driver-ownership.json", "function-row-driver-ownership.json" }
                 .Select(name => Path.Combine(Path.GetDirectoryName(journal)!, name)))
             {
-                if (!File.Exists(previousPath)) { continue; }
-                using var previousFile = new FileStream(previousPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                if (previousFile.Length > 131072)
-                {
-                    return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
-                        SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
-                            "OwnershipJournal", stage, "JournalTooLarge"), 4);
-                }
-                OwnershipJournal? previous = JsonSerializer.Deserialize<OwnershipJournal>(previousFile);
-                if (previous is null
-                    || !IsValidOwnershipJournalScope(Path.GetFileName(previousPath), previous.Features)
-                    || !CanDiscardJournal(previous.BootIdentity, boot, baseline))
+                OwnershipJournal? previous = DriverOwnershipJournalReader.Read(previousPath);
+                if (previous is null) { continue; }
+                if (!CanDiscardJournal(previous.BootIdentity, boot, baseline))
                 {
                     return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
                         SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
                             "OwnershipJournal", stage, "RecoveryRequired"), 4);
                 }
-                previousFile.Dispose();
                 File.Delete(previousPath);
             }
             if (!CanStartWithHooks(baseline))
@@ -392,8 +382,7 @@ internal static class SnapTapDriverSupervisor
     };
 
     internal static bool CanDiscardJournal(string? previousBoot, string currentBoot, IReadOnlyList<byte[]> hooks) =>
-        !string.IsNullOrWhiteSpace(previousBoot) && !string.IsNullOrWhiteSpace(currentBoot)
-        && !string.Equals(previousBoot, currentBoot, StringComparison.Ordinal)
+        DriverOwnershipJournalReader.IsLaterBoot(previousBoot, currentBoot)
         && !hooks.Any(record => IsPurposeHook(record, RazerKeyboardHookPurpose.Combined));
 
     internal static bool CanStartWithHooks(IReadOnlyList<byte[]> hooks) => hooks.Count == 0;

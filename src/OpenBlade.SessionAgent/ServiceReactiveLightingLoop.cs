@@ -29,6 +29,7 @@ public interface IReactiveKeyboardSource : IDisposable
     Task Completion { get; }
 
     bool HasActiveFunctionRowKeys => false;
+    bool CanTransferFunctionRowOwnership => false;
 
     void ResetFunctionPInput() { }
 }
@@ -63,6 +64,7 @@ public sealed record ReactiveKeyboardSourceOptions(
 
 public interface IReactiveKeyboardSourceFactory
 {
+    bool CanTransferFunctionRowOwnership => false;
     IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions options);
 }
 
@@ -79,7 +81,8 @@ public sealed record ServiceReactiveLightingLoopOptions(
     Func<Blade18FnShortcut, CancellationToken, Task>? ExecuteBlade18FnShortcutAsync = null,
     Action<Blade18FnDiagnostic>? Blade18FnDiagnostic = null,
     Func<KeyboardInputBackend>? ReadFunctionRowBackend = null,
-    Action<SnapTapRuntimeStatus>? PublishFunctionRowStatus = null);
+    Action<SnapTapRuntimeStatus>? PublishFunctionRowStatus = null,
+    Func<SnapTapRuntimeStatus?>? ReadFunctionRowStatusOverride = null);
 
 /// <summary>
 /// Owns the one session-local Raw Input registration used by key-triggered
@@ -88,10 +91,15 @@ public sealed record ServiceReactiveLightingLoopOptions(
 /// </summary>
 public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 {
-    public bool CanTransferFunctionRowInput => Volatile.Read(ref source) is
-    { HasActiveFunctionRowKeys: false } current && !current.Completion.IsCompleted;
+    public bool CanTransferFunctionRowInput => Volatile.Read(ref source)?.CanTransferFunctionRowOwnership
+        ?? sourceFactory.CanTransferFunctionRowOwnership;
 
-    public void InvalidateFunctionRowBackendStatus() => Interlocked.Increment(ref functionRowStatusGeneration);
+    /// <summary>Called by preference/ownership notifications, never the keyboard callback.</summary>
+    public void InvalidateFunctionRowBackendStatus()
+    {
+        Interlocked.Increment(ref functionRowStatusGeneration);
+        PublishWindowsFunctionRowStatus();
+    }
 
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
 
@@ -112,10 +120,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly Action<Blade18FnDiagnostic> reportBlade18FnDiagnostic;
     private readonly FunctionRowInputPump? functionRowInputPump;
     private readonly Func<KeyboardInputBackend> readFunctionRowBackend;
-    private SnapTapRuntimeState? lastWindowsFunctionRowState;
+    private readonly object functionRowStatusSync = new();
+    private SnapTapRuntimeStatus? lastWindowsFunctionRowStatus;
     private int functionRowStatusGeneration;
     private int lastWindowsFunctionRowGeneration = -1;
     private readonly Action<SnapTapRuntimeStatus> publishFunctionRowStatus;
+    private readonly Func<SnapTapRuntimeStatus?> readFunctionRowStatusOverride;
     private readonly object performanceShortcutStateSync = new();
     private readonly SemaphoreSlim performanceShortcutPreviewGate = new(1, 1);
     private readonly Guid performanceShortcutSessionId = Guid.NewGuid();
@@ -152,6 +162,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         errorHandler = options.ErrorHandler;
         readFunctionRowBackend = options.ReadFunctionRowBackend ?? (() => KeyboardInputBackend.WindowsHook);
         publishFunctionRowStatus = options.PublishFunctionRowStatus ?? (_ => { });
+        readFunctionRowStatusOverride = options.ReadFunctionRowStatusOverride ?? (() => null);
         reportBlade18FnDiagnostic = options.Blade18FnDiagnostic ?? (_ => { });
         shortcutNotifications = options.ShortcutNotifications
             ?? NullPerformanceShortcutNotificationSink.Instance;
@@ -432,34 +443,42 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void PublishWindowsFunctionRowStatus()
     {
-        if (readFunctionRowBackend().Normalize() != KeyboardInputBackend.WindowsHook)
+        lock (functionRowStatusSync)
         {
-            lastWindowsFunctionRowState = null;
-            return;
-        }
-        SnapTapRuntimeState state = Volatile.Read(ref source) is { } current
-            && !current.Completion.IsCompleted
-            && ReadDriverModeObservation().AllowsFunctionRowInterception
-            && ReadFunctionKeyPrimaryMode() is not null
-            && RazerBladeFunctionRowMediaInput.SupportsDevice(ReadVerifiedInputDeviceKind())
-                ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Paused;
-        int generation = Volatile.Read(ref functionRowStatusGeneration);
-        if (lastWindowsFunctionRowState == state && lastWindowsFunctionRowGeneration == generation)
-        {
-            return;
-        }
-        try
-        {
-            publishFunctionRowStatus(new(state, DateTimeOffset.UtcNow,
-                Environment.ProcessId)
-            { Backend = KeyboardInputBackend.WindowsHook });
-            lastWindowsFunctionRowState = state;
-            lastWindowsFunctionRowGeneration = generation;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or System.Security.SecurityException)
-        {
-            ReportFailure(exception);
+            SnapTapRuntimeStatus? status = readFunctionRowStatusOverride();
+            if (status is null)
+            {
+                if (readFunctionRowBackend().Normalize() != KeyboardInputBackend.WindowsHook)
+                {
+                    lastWindowsFunctionRowStatus = null;
+                    return;
+                }
+                SnapTapRuntimeState state = Volatile.Read(ref source) is { } current
+                    && !current.Completion.IsCompleted
+                    && ReadDriverModeObservation().AllowsFunctionRowInterception
+                    && ReadFunctionKeyPrimaryMode() is not null
+                    && RazerBladeFunctionRowMediaInput.SupportsDevice(ReadVerifiedInputDeviceKind())
+                        ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Paused;
+                status = new(state, DateTimeOffset.UtcNow, Environment.ProcessId)
+                { Backend = KeyboardInputBackend.WindowsHook };
+            }
+            int generation = Volatile.Read(ref functionRowStatusGeneration);
+            if (lastWindowsFunctionRowStatus is { } previous && lastWindowsFunctionRowGeneration == generation
+                && status with { UpdatedAt = previous.UpdatedAt } == previous)
+            {
+                return;
+            }
+            try
+            {
+                publishFunctionRowStatus(status);
+                lastWindowsFunctionRowStatus = status;
+                lastWindowsFunctionRowGeneration = generation;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or System.Security.SecurityException)
+            {
+                ReportFailure(exception);
+            }
         }
     }
 
@@ -483,6 +502,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
 
         observed.Dispose();
+        PublishWindowsFunctionRowStatus();
         if (Volatile.Read(ref disposed) != 0 || Volatile.Read(ref inputConnected) == 0)
         {
             return;

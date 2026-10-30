@@ -280,24 +280,18 @@ internal static class Program
                 SnapTapProcessCoordinator? keyboardDriver = null;
                 DiagnosticFailure? functionRowStartupFailure = WindowsFunctionRowOwnershipGuard.InspectStartup(
                     Path.GetDirectoryName(preferencesPath)!, SnapTapDriverSupervisor.ReadBootIdentity);
+                object functionRowGuardSync = new();
                 KeyboardInputBackend ReadEffectiveFunctionRowBackend() => WindowsFunctionRowOwnershipGuard.SelectBackend(
                     specialKeyBindings.FunctionRowBackend, keyboardDriver?.CanTransferFunctionRowOwnership != false,
-                    functionRowStartupFailure);
-                void PublishBlockedWindowsFunctionRowStatus()
+                    Volatile.Read(ref functionRowStartupFailure));
+                SnapTapRuntimeStatus? ReadFunctionRowStatusOverride() => keyboardDriver?.FunctionRowWindowsTransferStatus(
+                    specialKeyBindings.FunctionRowBackend, Volatile.Read(ref functionRowStartupFailure));
+                void RefreshFunctionRowOwnershipGuard()
                 {
-                    if (specialKeyBindings.FunctionRowBackend != KeyboardInputBackend.WindowsHook
-                        || ReadEffectiveFunctionRowBackend() == KeyboardInputBackend.WindowsHook) { return; }
-                    try
+                    lock (functionRowGuardSync)
                     {
-                        FunctionRowBackendStatusStore.Write(new(SnapTapRuntimeState.RecoveryRequired, DateTimeOffset.UtcNow,
-                            Environment.ProcessId, Failure: functionRowStartupFailure ?? SnapTapDiagnosticFailure.Create(
-                                "FunctionRowWindowsOwnership", "TransferInput", "OwnershipJournal", "DriverFunctionRowOwnershipRecoveryRequired", true))
-                        { Backend = KeyboardInputBackend.WindowsHook });
-                        reactiveOwner?.InvalidateFunctionRowBackendStatus();
-                    }
-                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-                    {
-                        DiagnosticTrace.TraceException("OpenBlade.SessionAgent.FunctionRowOwnership", "PublishRecovery", exception);
+                        Volatile.Write(ref functionRowStartupFailure, WindowsFunctionRowOwnershipGuard.InspectStartup(
+                            Path.GetDirectoryName(preferencesPath)!, SnapTapDriverSupervisor.ReadBootIdentity));
                     }
                 }
                 KeyboardDriverFeatures driverPublicationFeatures = driverDemand.RequestedFeatures;
@@ -308,14 +302,14 @@ internal static class Program
                     status => SnapTapStatusStore.Write(status),
                     () => SnapTapStatusStore.Read(),
                     startBackendChild: SnapTapInputProcess.Start,
-                    canStartChild: () => keyboardDriver?.CanTransferOwnership != false);
+                    canStartChild: () => keyboardDriver?.CanTransferOwnership != false,
+                    canPublishIdleStatus: () => specialKeyBindings.SnapTapBackend == KeyboardInputBackend.WindowsHook);
                 keyboardDriver = new SnapTapProcessCoordinator(
                     driverDemand,
                     () => SnapTapInputProcess.Start(KeyboardInputBackend.RazerDriver, driverLaunchFeatures),
                     status =>
                     {
                         KeyboardDriverStatusStore.Write(status, driverPublicationFeatures);
-                        PublishBlockedWindowsFunctionRowStatus();
                     },
                     () => KeyboardDriverStatusStore.Read(),
                     startBackendChild: backend =>
@@ -329,7 +323,21 @@ internal static class Program
                     stopTimeout: TimeSpan.FromSeconds(10),
                     ownsSharedInput: () => (driverLaunchFeatures & KeyboardDriverFeatures.SnapTap) != 0,
                     ownsFunctionRowInput: () => (driverLaunchFeatures & KeyboardDriverFeatures.FunctionRow) != 0,
-                    prepareChild: () => driverPublicationFeatures = driverLaunchFeatures = driverDemand.RequestedFeatures);
+                    prepareChild: () => driverPublicationFeatures = driverLaunchFeatures = driverDemand.RequestedFeatures,
+                    publicationFeatures: () => driverPublicationFeatures,
+                    canPublishIdleStatus: () =>
+                    {
+                        // Off belongs to the selected backend even when SnapTap is
+                        // disabled. Retired roles must not receive an idle projection.
+                        driverPublicationFeatures = RazerKeyboardDriverPreferenceSource.SelectFeatures(true,
+                            specialKeyBindings.SnapTapBackend, specialKeyBindings.FunctionRowBackend);
+                        return driverPublicationFeatures != KeyboardDriverFeatures.None;
+                    });
+                keyboardDriver.OwnershipChanged += cleanupConfirmed =>
+                {
+                    if (cleanupConfirmed) { RefreshFunctionRowOwnershipGuard(); }
+                    reactiveOwner?.InvalidateFunctionRowBackendStatus();
+                };
                 specialKeyBindings.PreferencesObserved += preferences =>
                     audioAutomationCoordinator.SetIntegrationEnabled(preferences?.ThxAudioIntegrationEnabled == true);
                 KeyboardInputBackend observedFunctionRowBackend = specialKeyBindings.FunctionRowBackend;
@@ -339,11 +347,10 @@ internal static class Program
                     if (next != observedFunctionRowBackend)
                     {
                         observedFunctionRowBackend = next;
+                        RefreshFunctionRowOwnershipGuard();
                         reactiveOwner?.InvalidateFunctionRowBackendStatus();
                     }
-                    PublishBlockedWindowsFunctionRowStatus();
                 };
-                PublishBlockedWindowsFunctionRowStatus();
                 var specialKeyInput = new WindowsSpecialKeyInputSender();
                 await using var specialKeyServiceClient = new ServiceClient();
                 var specialKeyExecutor = new SpecialKeyActionExecutor(
@@ -423,6 +430,7 @@ internal static class Program
                         ResetFunctionRowInputAsync: functionRowActions.ResetAsync,
                         ReadFunctionRowBackend: ReadEffectiveFunctionRowBackend,
                         PublishFunctionRowStatus: status => FunctionRowBackendStatusStore.Write(status),
+                        ReadFunctionRowStatusOverride: ReadFunctionRowStatusOverride,
                         ExecuteBlade18FnShortcutAsync: blade18FnActions.ExecuteAsync,
                         Blade18FnDiagnostic: diagnostic =>
                             System.Diagnostics.Trace.TraceInformation(
