@@ -12,10 +12,15 @@ Copy only the `dark` and `light` files from `assets/brand/ico/tray` and
 frames. Light glyphs belong on a dark taskbar. Application, installer, and
 notification artwork is separate; see [application artwork](APP-ASSETS.md).
 
-The external-power discharge warning keeps the laptop silhouette and uses an
-empty-battery cutout with amber glyphs. Its SVG source is checked in beside the
-ICOs. Regenerate only these two icons with
-`build/Generate-ExternalPowerDischargeIcons.ps1`; pass `-PreviewPath` to inspect
-all five native sizes on light and dark backgrounds. This warning takes
+The external-power discharge warning uses the same laptop silhouette, neutral
+theme colors, round-capped negative-space strokes, and plug badge with
+contour-following clearance. A single downward arrow replaces the performance
+mark to show depletion. The plug represents external power for this combined
+AC/USB-C warning; the tooltip identifies the battery discharge condition.
+Regenerate its SVG and two ICOs with
+`build/Generate-ExternalPowerDischargeIcons.ps1`. SVG and raster output share
+one ordered geometry definition. Pass `-PreviewPath` to compare all five native
+sizes with the approved family on light and dark backgrounds, and `-DetailPath`
+for an enlarged view with native 16 and 20 pixel samples. This warning takes
 precedence over a known performance mode, including HyperBoost; connection and
 unverified-state errors retain priority.
