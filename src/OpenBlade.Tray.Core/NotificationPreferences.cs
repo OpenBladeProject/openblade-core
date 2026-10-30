@@ -8,6 +8,7 @@ public enum NotificationCategory
     FirmwareUpdates,
     ControllerAdvisories,
     OperationFailures,
+    ExternalPowerDischarge,
 }
 
 public sealed record NotificationPreferences(
@@ -16,7 +17,8 @@ public sealed record NotificationPreferences(
     bool AppUpdatesEnabled = true,
     bool FirmwareUpdatesEnabled = true,
     bool ControllerAdvisoriesEnabled = true,
-    bool OperationFailuresEnabled = true)
+    bool OperationFailuresEnabled = true,
+    bool ExternalPowerDischargeEnabled = true)
 {
     public static NotificationPreferences Default { get; } = new();
 
@@ -29,6 +31,7 @@ public sealed record NotificationPreferences(
         NotificationCategory.FirmwareUpdates => FirmwareUpdatesEnabled,
         NotificationCategory.ControllerAdvisories => ControllerAdvisoriesEnabled,
         NotificationCategory.OperationFailures => OperationFailuresEnabled,
+        NotificationCategory.ExternalPowerDischarge => ExternalPowerDischargeEnabled,
         _ => false,
     };
 
@@ -59,6 +62,10 @@ public sealed record NotificationPreferences(
             NotificationCategory.OperationFailures => this with
             {
                 OperationFailuresEnabled = enabled,
+            },
+            NotificationCategory.ExternalPowerDischarge => this with
+            {
+                ExternalPowerDischargeEnabled = enabled,
             },
             _ => this,
         };

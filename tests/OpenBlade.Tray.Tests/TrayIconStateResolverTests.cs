@@ -5,6 +5,19 @@ namespace OpenBlade.Tray.Tests;
 public sealed class TrayIconStateResolverTests
 {
     [Theory]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.Custom, false)]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.Performance, true)]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, false)]
+    public void DischargeWarningOverridesKnownExternalPowerMode(
+        PowerSource source, PerformancePreset performance, bool hyperBoost)
+    {
+        Assert.Equal(TrayIconState.ExternalPowerDischarging,
+            TrayIconStateResolver.Resolve(true, true, source, performance, hyperBoost, true));
+        Assert.NotEqual(TrayIconState.ExternalPowerDischarging,
+            TrayIconStateResolver.Resolve(true, true, source, performance, hyperBoost, false));
+    }
+
+    [Theory]
     [InlineData(PerformancePreset.Balanced)]
     [InlineData(PerformancePreset.Silent)]
     [InlineData(PerformancePreset.Performance)]
@@ -81,5 +94,8 @@ public sealed class TrayIconStateResolverTests
             performance);
 
         Assert.Equal(TrayIconState.GenericError, actual);
+        Assert.Equal(TrayIconState.GenericError,
+            TrayIconStateResolver.Resolve(isConnected, deviceVerified, source, performance,
+                externalPowerDischarging: true));
     }
 }

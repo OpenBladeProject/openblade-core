@@ -50,6 +50,9 @@ src/OpenBlade.Tray/Assets/Brand/Tray/*
 !src/OpenBlade.Tray/Assets/Brand/Tray/battery-saver-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/usb-c-balanced-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/usb-c-balanced-light.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/external-power-discharging-dark.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/external-power-discharging-light.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/external-power-discharging.svg
 !src/OpenBlade.Tray/Assets/Brand/TrayStatus/
 src/OpenBlade.Tray/Assets/Brand/TrayStatus/*
 !src/OpenBlade.Tray/Assets/Brand/TrayStatus/generic-error-dark.ico

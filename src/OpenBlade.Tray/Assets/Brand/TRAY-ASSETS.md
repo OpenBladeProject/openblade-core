@@ -11,3 +11,11 @@ Copy only the `dark` and `light` files from `assets/brand/ico/tray` and
 `assets/brand/ico/tray-status`. Each ICO contains 16, 20, 24, 32, and 48 pixel
 frames. Light glyphs belong on a dark taskbar. Application, installer, and
 notification artwork is separate; see [application artwork](APP-ASSETS.md).
+
+The external-power discharge warning keeps the laptop silhouette and uses an
+empty-battery cutout with amber glyphs. Its SVG source is checked in beside the
+ICOs. Regenerate only these two icons with
+`build/Generate-ExternalPowerDischargeIcons.ps1`; pass `-PreviewPath` to inspect
+all five native sizes on light and dark backgrounds. This warning takes
+precedence over a known performance mode, including HyperBoost; connection and
+unverified-state errors retain priority.

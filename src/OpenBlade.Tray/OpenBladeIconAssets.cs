@@ -13,6 +13,7 @@ public static class OpenBladeIconAssets
             [TrayIconState.UsbCBalanced] = "usb-c-balanced",
             [TrayIconState.BatteryBalanced] = "battery-balanced",
             [TrayIconState.BatterySaver] = "battery-saver",
+            [TrayIconState.ExternalPowerDischarging] = "external-power-discharging",
         };
 
     public static string? ApplicationIconPath

@@ -12,10 +12,12 @@ public sealed class TrayIconAssetTests
         string loader = File.ReadAllText(Path.Combine(root, "src", "OpenBlade.Tray", "OpenBladeIconAssets.cs"));
         string brand = Path.Combine(root, "src", "OpenBlade.Tray", "Assets", "Brand");
         string[] keys = ["ac-balanced", "ac-silent", "ac-performance", "ac-custom",
-            "usb-c-balanced", "battery-balanced", "battery-saver", "ac-hyperboost"];
+            "usb-c-balanced", "battery-balanced", "battery-saver", "ac-hyperboost",
+            "external-power-discharging"];
         TrayIconState[] states = [TrayIconState.AcBalanced, TrayIconState.AcSilent,
             TrayIconState.AcPerformance, TrayIconState.AcCustom, TrayIconState.UsbCBalanced,
-            TrayIconState.BatteryBalanced, TrayIconState.BatterySaver, TrayIconState.AcHyperBoost];
+            TrayIconState.BatteryBalanced, TrayIconState.BatterySaver, TrayIconState.AcHyperBoost,
+            TrayIconState.ExternalPowerDischarging];
         Assert.Equal(Enum.GetValues<TrayIconState>().Length - 1, states.Length);
         for (int i = 0; i < states.Length; i++)
         {

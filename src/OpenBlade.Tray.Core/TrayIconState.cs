@@ -13,6 +13,7 @@ public enum TrayIconState
     BatteryBalanced,
     BatterySaver,
     AcHyperBoost,
+    ExternalPowerDischarging,
 }
 
 public static class TrayIconStateResolver
@@ -22,7 +23,8 @@ public static class TrayIconStateResolver
         bool deviceVerified,
         PowerSource powerSource,
         PerformancePreset? effectivePerformance,
-        bool hyperBoostActive = false)
+        bool hyperBoostActive = false,
+        bool externalPowerDischarging = false)
     {
         if (!isConnected
             || !deviceVerified
@@ -39,11 +41,13 @@ public static class TrayIconStateResolver
                     or PerformancePreset.Silent
                     or PerformancePreset.Performance
                     or PerformancePreset.Custom
-                ? TrayIconState.AcHyperBoost
+                ? externalPowerDischarging
+                    ? TrayIconState.ExternalPowerDischarging
+                    : TrayIconState.AcHyperBoost
                 : TrayIconState.GenericError;
         }
 
-        return (powerSource, effectivePerformance.Value) switch
+        TrayIconState state = (powerSource, effectivePerformance.Value) switch
         {
             (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
                 TrayIconState.AcBalanced,
@@ -63,5 +67,9 @@ public static class TrayIconStateResolver
                 TrayIconState.BatterySaver,
             _ => TrayIconState.GenericError,
         };
+        return externalPowerDischarging && state != TrayIconState.GenericError
+            && powerSource is PowerSource.PluggedIn or PowerSource.UsbC
+            ? TrayIconState.ExternalPowerDischarging
+            : state;
     }
 }

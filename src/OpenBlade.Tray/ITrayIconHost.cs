@@ -4,6 +4,7 @@ public enum TrayNotificationSeverity
 {
     Information,
     Error,
+    Warning,
 }
 
 public enum TrayNotificationDestination

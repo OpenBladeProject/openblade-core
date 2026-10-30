@@ -120,7 +120,9 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             timeout: 2000,
             notification.Title,
             notification.Body,
-            ToolTipIcon.None);
+            notification.Severity == TrayNotificationSeverity.Warning
+                ? ToolTipIcon.Warning
+                : ToolTipIcon.None);
     }
 
     private void OnBalloonTipClicked(object? sender, EventArgs args)
