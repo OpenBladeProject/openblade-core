@@ -92,27 +92,43 @@ public partial class App
 
     private static async Task RunLiveReorderSmokeAsync(string reportPath)
     {
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        void Phase(string phase)
+        {
+            File.WriteAllText(reportPath, $"{elapsed.ElapsedMilliseconds}ms {phase}");
+        }
         try
         {
-            File.WriteAllText(reportPath, "construct disconnected reorder window");
+            Phase("discover processor policy");
+            var processor = WindowsProcessorEfficiencyPolicy.Discover();
+            Phase("construct disconnected reorder window");
             var store = new UiPreferenceStore(reportPath + ".preferences.json");
             var window = new MainWindow(
-                WindowsProcessorEfficiencyPolicy.Discover(),
+                processor,
                 new WindowsStartupRegistration(),
                 localizationSnapshotMode: true,
                 preferenceStore: store);
+            Phase("constructor complete; apply fixture");
             ApplyControlAvailabilitySnapshotState(window);
+            Phase("configure reorder fixture");
             window.ConfigureLiveReorderSmoke();
             window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 900));
+            Phase("show reorder window");
             ShowNoninteractiveSnapshotWindow(window);
+            Phase("wait initial layout");
             await WaitForSnapshotLayoutAsync();
+            Phase("verify reorder");
             await window.VerifyLiveReorderSmokeAsync(async name =>
             {
+                Phase("wait capture " + name);
                 await WaitForSnapshotLayoutAsync();
+                Phase("save capture " + name);
                 await SaveSnapshotAsync((FrameworkElement)window.Content, reportPath + "." + name + ".png");
-            });
+                Phase("saved capture " + name);
+            }, Phase);
+            Phase("close reorder window");
             window.Close();
-            File.WriteAllText(reportPath, "completed");
+            Phase("completed");
             Environment.Exit(0);
         }
         catch (Exception exception)

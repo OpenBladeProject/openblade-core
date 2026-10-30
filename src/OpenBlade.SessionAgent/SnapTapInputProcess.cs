@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
@@ -18,17 +19,27 @@ internal sealed class SnapTapInputProcess : ISnapTapChildProcess
     public bool HasExited => process.HasExited;
     public int ExitCode => process.ExitCode;
 
-    internal static string StopEventName(int parentId) =>
-        $"Local\\OpenBlade.SnapTap.Stop.{parentId.ToString(CultureInfo.InvariantCulture)}";
+    internal static string StopEventName(int parentId, KeyboardInputBackend backend = KeyboardInputBackend.RazerDriver) =>
+        $"Local\\OpenBlade.SnapTap.Stop.{parentId.ToString(CultureInfo.InvariantCulture)}.{SnapTapInputHost.BackendArgument(backend)}";
 
-    internal static ISnapTapChildProcess Start()
+    internal static ISnapTapChildProcess Start() => Start(KeyboardInputBackend.RazerDriver);
+
+    internal static ISnapTapChildProcess Start(KeyboardInputBackend backend) => Start(backend, KeyboardDriverFeatures.SnapTap);
+
+    internal static ISnapTapChildProcess Start(KeyboardInputBackend backend, KeyboardDriverFeatures features)
     {
+        string argument = SnapTapInputHost.BackendArgument(backend);
+        string featureArgument = SnapTapInputHost.FeaturesArgument(features);
+        if (backend == KeyboardInputBackend.WindowsHook && features != KeyboardDriverFeatures.SnapTap)
+        {
+            throw new ArgumentOutOfRangeException(nameof(features));
+        }
         string path = Environment.ProcessPath
             ?? throw new InvalidOperationException("The input helper path is unavailable.");
         var stopEvent = new EventWaitHandle(
             false,
             EventResetMode.ManualReset,
-            StopEventName(Environment.ProcessId));
+            StopEventName(Environment.ProcessId, backend));
         try
         {
             stopEvent.Reset();
@@ -41,6 +52,8 @@ internal sealed class SnapTapInputProcess : ISnapTapChildProcess
             };
             start.ArgumentList.Add(SnapTapInputHost.ModeArgument);
             start.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+            start.ArgumentList.Add(argument);
+            if (backend == KeyboardInputBackend.RazerDriver) { start.ArgumentList.Add(featureArgument); }
             Process process = Process.Start(start)
                 ?? throw new InvalidOperationException("The input helper could not start.");
             return new SnapTapInputProcess(process, stopEvent);

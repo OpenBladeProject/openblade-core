@@ -20,6 +20,7 @@ public enum SnapTapRuntimeState
     DriverMissing,
     UnsupportedModel,
     ManualDriverSetupRequired,
+    WaitingForFunctionKey,
 }
 
 public sealed record SnapTapRuntimeStatus(
@@ -28,7 +29,10 @@ public sealed record SnapTapRuntimeStatus(
     int ProcessId = 0,
     string? DriverModel = null,
     bool ExperimentalDriver = false,
-    DiagnosticFailure? Failure = null);
+    DiagnosticFailure? Failure = null)
+{
+    public KeyboardInputBackend Backend { get; init; } = KeyboardInputBackend.RazerDriver;
+}
 
 public static class SnapTapStatusStore
 {
@@ -186,6 +190,11 @@ public static class SnapTapStatusStore
 
     private static bool IsValid(SnapTapRuntimeStatus status) =>
         Enum.IsDefined(status.State)
+        && Enum.IsDefined(status.Backend)
+        && (status.Backend == KeyboardInputBackend.RazerDriver
+            || status.DriverModel is null && !status.ExperimentalDriver)
+        && (status.Backend != KeyboardInputBackend.Unknown
+            || status.State is not (SnapTapRuntimeState.Active or SnapTapRuntimeState.Armed))
         && status.ProcessId >= 0
         && status.UpdatedAt >= DateTimeOffset.UnixEpoch
         && status.UpdatedAt <= DateTimeOffset.UtcNow.AddMinutes(1)
