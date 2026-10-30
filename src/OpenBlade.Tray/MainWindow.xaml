@@ -562,12 +562,12 @@
             </DataTemplate>
             <DataTemplate x:Key="DashboardPowerModeCardTemplate" x:DataType="local:MainViewModel">
                         <StackPanel>
-                        <TextBlock x:Uid="MainWindow_TextBlockPerformance" Text="Performance"
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockPerformance" Text="Performance"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <StackPanel local:CardReorder.GroupId="DashboardPerformanceSelectorRows">
+                            <Border local:CardReorder.CardId="DashboardPerformanceSelector" Style="{StaticResource SettingsRowStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
@@ -619,7 +619,7 @@
                                              AutomationProperties.LiveSetting="Polite" />
                                 </StackPanel>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                            <Border local:CardReorder.CardId="WindowsPowerModeSelector" Style="{StaticResource SettingsLastRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -647,7 +647,7 @@
                                                                     SelectionChanged="OnWindowsPowerModeChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                            <Border local:CardReorder.CardId="GpuClockTuningToggle" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
                                 <Grid ColumnSpacing="20">
@@ -671,7 +671,7 @@
                                                   Toggled="OnGpuClockTuningToggled" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                            <Border local:CardReorder.CardId="GpuCoreClockOffsetSlider" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningEnabled}">
@@ -714,7 +714,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                            <Border local:CardReorder.CardId="GpuMemoryClockOffsetSlider" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningEnabled}">
@@ -757,7 +757,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                            <Border local:CardReorder.CardId="DashboardCustomCpuSelector" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
@@ -783,7 +783,7 @@
                                                                     SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                            <Border local:CardReorder.CardId="DashboardCustomGpuSelector" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
@@ -809,7 +809,7 @@
                                                                     SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockCustomMaximumFans" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomMaximumFansVisible}">
@@ -833,7 +833,7 @@
                                                   Toggled="OnCustomMaximumFansToggled" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}"
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockAppsUsingTheNVIDIAGPU" Style="{StaticResource SettingsLastNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuAppCleanupVisible}">
                                 <Grid ColumnSpacing="20">
@@ -861,12 +861,12 @@
             </DataTemplate>
             <DataTemplate x:Key="DashboardFansCardTemplate" x:DataType="local:MainViewModel">
                         <StackPanel>
-                        <TextBlock x:Uid="MainWindow_TextBlockFans" Text="Fans"
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockFans" Text="Fans"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                            <StackPanel local:CardReorder.GroupId="DashboardFanModeSelectorRows">
+                            <Border local:CardReorder.CardId="DashboardFanModeSelector" Style="{StaticResource SettingsLastRowStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsFanControlVisible}">
@@ -912,7 +912,7 @@
                                      IsClosable="False"
                                      Margin="12,0,12,12"
                                      AutomationProperties.Name="Fan control availability" />
-                            <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
+                            <Border local:CardReorder.CardId="FixedFanSpeedSlider" Style="{StaticResource SettingsLastEditorSubcardStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsFixedFanSpeedVisible}">
@@ -956,7 +956,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastEditorSubcardStyle}"
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockUseTheHotterSensorForBothFans" Style="{StaticResource SettingsLastEditorSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsManualFanCurveVisible}">
                                 <StackPanel Spacing="12">
@@ -1063,12 +1063,12 @@
             </DataTemplate>
             <DataTemplate x:Key="DashboardBatteryCardTemplate" x:DataType="local:MainViewModel">
                         <StackPanel>
-                        <TextBlock x:Uid="MainWindow_TextBlockBattery" Text="Battery"
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockBattery" Text="Battery"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <StackPanel local:CardReorder.GroupId="BatteryProtectionToggleRows">
+                            <Border local:CardReorder.CardId="BatteryProtectionToggle" Style="{StaticResource SettingsRowStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}">
                                 <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
                                       ColumnSpacing="20">
@@ -1094,7 +1094,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <Border local:CardReorder.CardId="DashboardChargeLimitSlider" Style="{StaticResource SettingsRowStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}">
                                 <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
                                       ColumnSpacing="20">
@@ -1145,7 +1145,7 @@
                                     </Grid>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockTemporaryFullCharge" Style="{StaticResource SettingsLastRowStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}">
                                 <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
                                       ColumnSpacing="20">
@@ -1298,7 +1298,7 @@
             </DataTemplate>
             <DataTemplate x:Key="DashboardKeyboardBehaviorCardTemplate" x:DataType="local:MainViewModel">
                         <StackPanel>
-                        <TextBlock x:Uid="MainWindow_TextBlockKeyboard" Text="Keyboard"
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockKeyboard" Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10"
                                    Visibility="{x:Bind HasKeyboardLaptopControls, Mode=OneWay}" />
@@ -1312,7 +1312,7 @@
             </DataTemplate>
             <DataTemplate x:Key="DashboardStartupAnimationCardTemplate" x:DataType="local:MainViewModel">
                         <StackPanel>
-                        <TextBlock x:Uid="MainWindow_TextBlockStartup" Text="Startup"
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockStartup" Text="Startup"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10"
                                    Visibility="{x:Bind SupportsStartupAnimation, Mode=OneWay}" />
@@ -1365,7 +1365,11 @@
                                  Severity="Informational"
                                  Title="Lighting controls unavailable"
                                  Message="{x:Bind LightingControlUnavailableMessage, Mode=OneWay}" />
-                        <TextBlock x:Uid="MainWindow_TextBlockKeyboard2" Text="Keyboard"
+                        <ContentControl x:Name="LightingControls"
+                                        HorizontalContentAlignment="Stretch">
+                            <StackPanel x:Name="LightingSectionHost">
+                        <StackPanel x:Name="LightingKeyboardSection">
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockKeyboard2" Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}"
@@ -1392,15 +1396,12 @@
                                 </Grid>
                             </Border>
                         </Border>
-                        <ContentControl x:Name="LightingControls"
-                                        HorizontalContentAlignment="Stretch"
-                                        IsEnabled="{x:Bind CanRequestHardwareControl, Mode=OneWay}">
-                            <StackPanel x:Name="LightingSectionHost">
-                        <StackPanel x:Name="LightingKeyboardSection"
-                                    Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
+                        <StackPanel Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
+                        <ContentControl IsEnabled="{x:Bind CanRequestHardwareControl, Mode=OneWay}" HorizontalContentAlignment="Stretch">
+                        <StackPanel>
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                            <StackPanel local:CardReorder.GroupId="LightingEffectPickerRows">
+                                <Border local:CardReorder.CardId="LightingEffectPicker" Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1424,7 +1425,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="DashboardLightingBrightnessSlider" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsBrightness, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1466,7 +1467,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockScreenRegion" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAmbientAwarenessRegion, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1489,7 +1490,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="DashboardAudioMeterColorBoostSlider" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAudioMeterControls, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1527,7 +1528,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="DashboardAudioMeterDecaySlider" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAudioMeterControls, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1565,7 +1566,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockBreathingColors" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsBreathingColorMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1587,7 +1588,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockStarlightColors" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsStarlightColorMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1609,7 +1610,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockRandomColors" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsRandomColors, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1629,7 +1630,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockDirection" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsDirection, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1652,7 +1653,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockRotation" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsRotationDirection, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1674,7 +1675,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_ButtonChooseKeyboardColor" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsPrimaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1719,7 +1720,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockSecondColor" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsSecondaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1763,7 +1764,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockReactiveDuration" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsReactiveDuration, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1785,7 +1786,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockStarlightDuration" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
                                         local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsStarlightDuration, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1871,10 +1872,16 @@
                             </Border>
                         </Border>
                         </StackPanel>
+                        </ContentControl>
+                        </StackPanel>
+
+                        </StackPanel>
 
                         <StackPanel x:Name="LightingLogoSection"
                                     Visibility="{x:Bind IsLogoLightingVisible, Mode=OneWay}">
-                        <TextBlock x:Uid="MainWindow_TextBlockLaptopLogo" Text="Laptop logo"
+                        <ContentControl IsEnabled="{x:Bind CanRequestHardwareControl, Mode=OneWay}" HorizontalContentAlignment="Stretch">
+                        <StackPanel>
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockLaptopLogo" Text="Laptop logo"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,24,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
@@ -1904,15 +1911,19 @@
                             </StackPanel>
                         </Border>
                         </StackPanel>
+                        </ContentControl>
+                        </StackPanel>
 
                         <StackPanel x:Name="LightingPowerSavingSection"
                                     Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
-                        <TextBlock x:Uid="MainWindow_TextBlockSwitchOffLighting" Text="Switch off lighting"
+                        <ContentControl IsEnabled="{x:Bind CanRequestHardwareControl, Mode=OneWay}" HorizontalContentAlignment="Stretch">
+                        <StackPanel>
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockSwitchOffLighting" Text="Switch off lighting"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,24,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                            <StackPanel local:CardReorder.GroupId="LightingDisplayOffToggleRows">
+                                <Border local:CardReorder.CardId="LightingDisplayOffToggle" Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1931,7 +1942,7 @@
                                                       IsOn="{x:Bind LightingTurnOffWithDisplayEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="LightingIdleTimeoutToggle" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1950,7 +1961,7 @@
                                                       IsOn="{x:Bind LightingIdleTimeoutEnabledEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border local:CardReorder.CardId="LightingIdleTimeoutNumberBox" Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1981,18 +1992,20 @@
                             </StackPanel>
                         </Border>
                         </StackPanel>
+                        </ContentControl>
+                        </StackPanel>
                             </StackPanel>
                         </ContentControl>
                         </StackPanel>
             </DataTemplate>
             <DataTemplate x:Key="DashboardDisplayCardTemplate" x:DataType="local:DisplaySettingsViewModel">
                         <StackPanel>
-                        <TextBlock x:Uid="MainWindow_TextBlockBuiltInDisplay" Text="Built-in display"
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockBuiltInDisplay" Text="Built-in display"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                            <StackPanel local:CardReorder.GroupId="DisplayRefreshRatePickerRows">
+                                <Border local:CardReorder.CardId="DisplayRefreshRatePicker" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -2018,7 +2031,7 @@
                                                                         SelectionChanged="OnDisplayRefreshRateChanged" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="DisplayHdrToggle" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -2039,7 +2052,7 @@
                                                       Toggled="OnDisplayHdrToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="DisplayColorProfilePicker" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -2066,7 +2079,7 @@
                                                                         SelectionChanged="OnDisplayColorProfileChanged" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border local:CardReorder.CardId="DisplayBrightnessSlider" Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -3017,7 +3030,7 @@
                         </StackPanel>
                         </StackPanel>
                         <StackPanel x:Name="ApplicationProfilesSection">
-                            <TextBlock x:Uid="Applications_Title" Text="Application profiles" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock local:CardReorder.IsHeader="True" x:Uid="Applications_Title" Text="Application profiles" Style="{StaticResource SectionHeaderStyle}" />
                             <TextBlock x:Uid="Applications_Description"
                                        Text="Apply settings for a game or application. Each power source has its own overrides."
                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Margin="0,0,0,12" />
@@ -3283,10 +3296,10 @@
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
                         <StackPanel x:Name="BatteryHistorySection">
-                            <TextBlock x:Uid="BatteryHistory_Title" Text="Battery history" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock local:CardReorder.IsHeader="True" x:Uid="BatteryHistory_Title" Text="Battery history" Style="{StaticResource SectionHeaderStyle}" />
                             <Border Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                <StackPanel local:CardReorder.GroupId="BatteryHistoryLoadButtonRows">
+                                    <Border local:CardReorder.CardId="BatteryHistoryLoadButton" Style="{StaticResource SettingsEditorSubcardStyle}">
                                         <StackPanel Spacing="12">
                                             <TextBlock x:Uid="BatteryHistory_Description" Text="The last 24 hours from Windows' battery report. Unknown periods remain unknown."
                                                        Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
@@ -3312,7 +3325,7 @@
                                             </ListView>
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                    <Border local:CardReorder.CardId="BatteryPreset_Heading" Style="{StaticResource SettingsEditorSubcardStyle}">
                                         <StackPanel Spacing="8">
                                             <TextBlock x:Uid="BatteryPreset_Heading" Text="Long battery life" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock x:Uid="BatteryPreset_Hint" Text="Preview supported battery-profile changes before saving."
@@ -3324,16 +3337,16 @@
                             </Border>
                         </StackPanel>
                         <StackPanel x:Name="KeyboardSection">
-                            <TextBlock x:Name="KeyboardHeader" x:Uid="SnapTap_KeyboardHeader"
+                            <TextBlock local:CardReorder.IsHeader="True" x:Name="KeyboardHeader" x:Uid="SnapTap_KeyboardHeader"
                                        Text="Keyboard" Style="{StaticResource SectionHeaderStyle}" />
                             <Border x:Name="SnapTapCard" Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel>
-                                    <ContentControl x:Name="KeyboardBehaviorCard"
+                                <StackPanel local:CardReorder.GroupId="SnapTapCardRows">
+                                    <ContentControl local:CardReorder.CardId="KeyboardBehaviorCard" x:Name="KeyboardBehaviorCard"
                                                     Content="{x:Bind ViewModel}"
                                                     ContentTemplate="{StaticResource KeyboardBehaviorRowsTemplate}"
                                                     HorizontalContentAlignment="Stretch"
                                                     Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
-                                    <Border x:Name="TouchpadRow" Style="{StaticResource SettingsRowStyle}">
+                                    <Border local:CardReorder.CardId="TouchpadRow" x:Name="TouchpadRow" Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -3355,7 +3368,7 @@
                                                           Toggled="OnTouchpadToggled" />
                                         </Grid>
                                     </Border>
-                                    <Border x:Name="SnapTapRow" Style="{StaticResource SettingsLastRowStyle}">
+                                    <Border local:CardReorder.CardId="SnapTapRow" x:Name="SnapTapRow" Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -3418,7 +3431,7 @@
 
                         <StackPanel x:Name="ShortcutKeysSection"
                                     Visibility="{x:Bind ViewModel.IsSpecialKeyBindingsEditable, Mode=OneWay}">
-                            <TextBlock x:Uid="MainWindow_TextBlockShortcutKeys" Text="Shortcut keys"
+                            <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockShortcutKeys" Text="Shortcut keys"
                                        Style="{StaticResource SectionHeaderStyle}"
                                        Margin="0,0,0,10" />
                             <Border Style="{StaticResource SettingsGroupStyle}">
@@ -4050,10 +4063,10 @@
 
                         <StackPanel x:Name="SettingsSectionHost">
                         <StackPanel x:Name="SettingsBehaviorSection">
-                        <TextBlock x:Uid="MainWindow_TextBlockBehavior" Text="Behavior" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockBehavior" Text="Behavior" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <StackPanel local:CardReorder.GroupId="ThermalControlPolicySelectorRows">
+                            <Border local:CardReorder.CardId="ThermalControlPolicySelector" Style="{StaticResource SettingsRowStyle}"
                                     Visibility="{x:Bind ViewModel.IsThermalControlPolicyAvailable, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -4079,7 +4092,7 @@
                                                                     SelectionChanged="OnThermalControlPolicyChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <Border local:CardReorder.CardId="HasThermalConvergenceAttention" Style="{StaticResource SettingsRowStyle}"
                                     Visibility="{x:Bind ViewModel.HasThermalConvergenceAttention, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -4111,7 +4124,7 @@
                                             AutomationProperties.Name="{x:Bind ViewModel.ThermalReapplyActionLabel, Mode=OneWay}" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockLiveReadings" Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -4131,7 +4144,7 @@
                                                                     SelectedItem="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockShownOnDashboard" Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20" RowSpacing="12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -4167,7 +4180,7 @@
                                     </ItemsControl>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockStartAtSignIn" Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -4185,7 +4198,7 @@
                                                   Toggled="OnStartAtSignInToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="StartMinimizedToggle" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -4204,7 +4217,7 @@
                                                       Toggled="OnStartMinimizedToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}"
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockForceRunOnIncompatibleFirmware" Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.HasIncompatibleFirmware, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -4225,7 +4238,7 @@
                                                       Toggled="OnFirmwareCompatibilityOverrideToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockOverrideExternalLightingChanges" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -4245,7 +4258,7 @@
                                                       Toggled="OnExternalLightingOverridePolicyToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border local:CardReorder.CardId="LabFeaturesInfoButton" Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -4314,13 +4327,16 @@
                                 </Border>
                             </StackPanel>
                         </Border>
-                        <TextBlock x:Uid="MainWindow_TextBlockNotifications" Text="Notifications"
+                        </StackPanel>
+
+                        <StackPanel x:Name="SettingsNotificationsSection">
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockNotifications" Text="Notifications"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,18,0,10" />
                         <Border x:Uid="MainWindow_BorderNotificationPreferences" Style="{StaticResource SettingsGroupStyle}"
                                 AutomationProperties.Name="Notification preferences">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                            <StackPanel local:CardReorder.GroupId="MainWindow_BorderNotificationPreferencesRows">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockPerformanceChanges" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
@@ -4334,7 +4350,7 @@
                                                       IsOn="{x:Bind PerformanceNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockPowerProfileChanges" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
@@ -4348,7 +4364,7 @@
                                                       IsOn="{x:Bind ProfileAndPowerSourceNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockAppUpdates" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
@@ -4362,7 +4378,7 @@
                                                       IsOn="{x:Bind AppUpdateNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockFirmwareUpdates" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
@@ -4376,7 +4392,7 @@
                                                       IsOn="{x:Bind FirmwareUpdateNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockControllerAdvisories" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
@@ -4390,7 +4406,7 @@
                                                       IsOn="{x:Bind ControllerAdvisoryNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockOperationFailures" Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
@@ -4409,10 +4425,10 @@
                         </StackPanel>
 
                         <StackPanel x:Name="SettingsAppearanceSection">
-                        <TextBlock x:Uid="MainWindow_TextBlockAppearance" Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockAppearance" Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <StackPanel local:CardReorder.GroupId="AppLanguageHeadingRows">
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockTrayDashboard" Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -4431,7 +4447,7 @@
                                             AutomationProperties.Name="Customize tray dashboard" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockAppTheme" Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -4451,7 +4467,7 @@
                                                                     SelectedItem="{x:Bind ViewModel.SelectedThemeOption, Mode=TwoWay}" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <Border local:CardReorder.CardId="AppLanguageHeading" Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -4473,7 +4489,7 @@
                                                                     SelectedItem="{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockAppAccentColor" Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -4503,7 +4519,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsEmphasizedSubcardStyle}"
+                            <Border local:CardReorder.CardId="MainWindow_TextBlockCustomColor" Style="{StaticResource SettingsEmphasizedSubcardStyle}"
                                     Visibility="{x:Bind CustomAccentColorVisibility, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -4522,7 +4538,7 @@
                                             Click="OnChooseCustomAccentColor" />
                                 </Grid>
                             </Border>
-                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            <Border local:CardReorder.CardId="NavigationMenuExpander" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                     BorderThickness="0,0,0,1">
                                 <Expander x:Uid="MainWindow_NavigationMenuExpanderText" x:Name="NavigationMenuExpander"
                                           Style="{StaticResource CardContentExpanderStyle}"
@@ -4640,10 +4656,10 @@
                         </StackPanel>
 
                         <StackPanel x:Name="SettingsUpdatesSection">
-                        <TextBlock x:Uid="MainWindow_TextBlockUpdates" Text="Updates" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockUpdates" Text="Updates" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                            <StackPanel local:CardReorder.GroupId="CheckNowButtonRows">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockUpdateChannel" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -4665,7 +4681,7 @@
                                                                         SelectedItem="{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockCheckInterval" Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -4687,7 +4703,7 @@
                                                                         SelectedItem="{x:Bind UpdateViewModel.SelectedIntervalOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border local:CardReorder.CardId="CheckNowButton" Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -4724,7 +4740,7 @@
                         </StackPanel>
 
                         <StackPanel x:Name="SettingsShutdownSection">
-                        <TextBlock x:Uid="MainWindow_TextBlockShutdown" Text="Shutdown" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockShutdown" Text="Shutdown" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <Border Style="{StaticResource SettingsLastRowStyle}">
                                 <Grid ColumnSpacing="20">
@@ -4966,7 +4982,7 @@
                         </StackPanel>
 
                         <StackPanel x:Name="AboutVersionsSection">
-                        <TextBlock x:Uid="MainWindow_TextBlockVersions" Text="Versions" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockVersions" Text="Versions" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsRowStyle}">
@@ -5003,7 +5019,7 @@
                         </StackPanel>
 
                         <StackPanel x:Name="AboutDeviceInformationSection">
-                        <TextBlock x:Uid="MainWindow_TextBlockDeviceInformation" Text="Device information" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockDeviceInformation" Text="Device information" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsRowStyle}">
@@ -5318,10 +5334,10 @@
                         </StackPanel>
 
                         <StackPanel x:Name="AboutSupportSection">
-                        <TextBlock x:Uid="MainWindow_TextBlockSupport" Text="Support" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockSupport" Text="Support" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}" Padding="0">
+                            <StackPanel local:CardReorder.GroupId="MainWindow_ButtonExportDiagnosticsRows">
+                                <Border local:CardReorder.CardId="MainWindow_ButtonExportDiagnostics" Style="{StaticResource SettingsRowStyle}" Padding="0">
                                     <Button x:Uid="MainWindow_ButtonExportDiagnostics" Style="{StaticResource IconActionButtonStyle}"
                                             CornerRadius="8,8,0,0"
                                             Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
@@ -5340,7 +5356,7 @@
                                     </Grid>
                                     </Button>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}" Padding="0">
+                                <Border local:CardReorder.CardId="MainWindow_HyperlinkButtonOpenGitHubIssues" Style="{StaticResource SettingsRowStyle}" Padding="0">
                                     <HyperlinkButton x:Uid="MainWindow_HyperlinkButtonOpenGitHubIssues" NavigateUri="https://github.com/OSSBlade/openblade-core/issues"
                                                      Style="{StaticResource ExternalLinkButtonStyle}"
                                                      AutomationProperties.Name="Open GitHub Issues"
@@ -5358,7 +5374,7 @@
                                     </Grid>
                                     </HyperlinkButton>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}" Padding="0">
+                                <Border local:CardReorder.CardId="MainWindow_HyperlinkButtonOpenDocumentation" Style="{StaticResource SettingsRowStyle}" Padding="0">
                                     <HyperlinkButton x:Uid="MainWindow_HyperlinkButtonOpenDocumentation" NavigateUri="https://github.com/OSSBlade/openblade-docs"
                                                      Style="{StaticResource ExternalLinkButtonStyle}"
                                                      AutomationProperties.Name="Open documentation"
@@ -5376,7 +5392,7 @@
                                     </Grid>
                                     </HyperlinkButton>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}" Padding="0">
+                                <Border local:CardReorder.CardId="MainWindow_HyperlinkButtonOpenReleaseNotes" Style="{StaticResource SettingsRowStyle}" Padding="0">
                                     <HyperlinkButton x:Uid="MainWindow_HyperlinkButtonOpenReleaseNotes" NavigateUri="https://github.com/OSSBlade/openblade-core/blob/main/CHANGELOG.md"
                                                      Style="{StaticResource ExternalLinkButtonStyle}"
                                                      AutomationProperties.Name="Open release notes"
@@ -5394,7 +5410,7 @@
                                     </Grid>
                                     </HyperlinkButton>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}" Padding="0">
+                                <Border local:CardReorder.CardId="MainWindow_HyperlinkButtonOpenSourceCode" Style="{StaticResource SettingsLastRowStyle}" Padding="0">
                                     <HyperlinkButton x:Uid="MainWindow_HyperlinkButtonOpenSourceCode" NavigateUri="https://github.com/OSSBlade/openblade-core"
                                                      Style="{StaticResource ExternalLinkButtonStyle}"
                                                      CornerRadius="0,0,8,8"
@@ -5418,7 +5434,7 @@
                         </StackPanel>
 
                         <StackPanel x:Name="AboutTroubleshootingSection">
-                        <TextBlock x:Uid="MainWindow_TextBlockTroubleshooting" Text="Troubleshooting" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock local:CardReorder.IsHeader="True" x:Uid="MainWindow_TextBlockTroubleshooting" Text="Troubleshooting" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <Expander x:Uid="MainWindow_TroubleshootingExpanderText" x:Name="TroubleshootingExpander"
                                       Style="{StaticResource CardContentExpanderStyle}"

@@ -5,6 +5,28 @@ namespace OpenBlade.Tray.Tests;
 public sealed class PageLayoutPreferenceTests
 {
     [Fact]
+    public void MissingNotificationsMigratesImmediatelyAfterBehaviorWithSameVisibility()
+    {
+        IReadOnlyList<PageSectionPreference> normalized = PageLayoutPreferenceDefaults.NormalizePage(
+            CustomizablePageKind.Settings,
+            [new(PageSectionKind.SettingsAppearance, true), new(PageSectionKind.SettingsBehavior, false)]);
+        int behavior = normalized.ToList().FindIndex(section => section.Kind == PageSectionKind.SettingsBehavior);
+        Assert.Equal(PageSectionKind.SettingsNotifications, normalized[behavior + 1].Kind);
+        Assert.False(normalized[behavior + 1].IsVisible);
+        Assert.Equal(normalized, PageLayoutPreferenceDefaults.NormalizePage(CustomizablePageKind.Settings, normalized));
+    }
+
+    [Fact]
+    public void ExplicitNotificationOrderAndVisibilityRemainIndependent()
+    {
+        IReadOnlyList<PageSectionPreference> normalized = PageLayoutPreferenceDefaults.NormalizePage(
+            CustomizablePageKind.Settings,
+            [new(PageSectionKind.SettingsNotifications, true), new(PageSectionKind.SettingsBehavior, false)]);
+        Assert.Equal(PageSectionKind.SettingsNotifications, normalized[0].Kind);
+        Assert.True(normalized[0].IsVisible);
+        Assert.False(normalized[1].IsVisible);
+    }
+    [Fact]
     public void DefaultsCoverEveryCustomizablePageWithVisibleSections()
     {
         Assert.Equal(
@@ -109,6 +131,7 @@ public sealed class PageLayoutPreferenceTests
                     PageSectionKind.SettingsShutdown,
                     PageSectionKind.SettingsAppearance,
                     PageSectionKind.SettingsBehavior,
+                    PageSectionKind.SettingsNotifications,
                 ],
                 settings.Sections.Select(section => section.Kind));
             Assert.False(settings.Sections[1].IsVisible);
@@ -218,6 +241,7 @@ public sealed class PageLayoutPreferenceTests
         Assert.Equal(
             [
                 PageSectionKind.SettingsBehavior,
+                PageSectionKind.SettingsNotifications,
                 PageSectionKind.SettingsAppearance,
                 PageSectionKind.SettingsUpdates,
                 PageSectionKind.SettingsShutdown,

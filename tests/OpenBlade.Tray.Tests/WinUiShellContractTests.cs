@@ -1516,16 +1516,22 @@ public sealed class WinUiShellContractTests
     public void WindowsLightingOwnershipUsesCompactSettingsRow()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
-        int cardStart = xaml.IndexOf(
-            "Text=\"Windows Dynamic Lighting\"",
-            StringComparison.Ordinal);
-        int cardEnd = xaml.IndexOf(
-            "x:Name=\"LightingControls\"",
-            cardStart,
-            StringComparison.Ordinal);
-
-        Assert.True(cardStart >= 0 && cardEnd > cardStart);
-        string card = xaml[cardStart..cardEnd];
+        XDocument document = XDocument.Parse(xaml);
+        XElement toggle = NamedElement(document, "ToggleSwitch", "WindowsDynamicLightingToggle");
+        XElement keyboardSection = NamedElement(document, "StackPanel", "LightingKeyboardSection");
+        XElement row = toggle.Ancestors().First(element =>
+            element.Name.LocalName == "Border"
+            && Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}");
+        Assert.Contains(keyboardSection, row.Ancestors());
+        XElement heading = UidElement(document, "TextBlock", "MainWindow_TextBlockKeyboard2");
+        Assert.Contains(keyboardSection, heading.Ancestors());
+        Assert.Equal("True", Attribute(heading, "CardReorder.IsHeader"));
+        Assert.DoesNotContain(toggle.Ancestors(), ancestor =>
+            Attribute(ancestor, "IsEnabled") == "{x:Bind CanRequestHardwareControl, Mode=OneWay}"
+            || Attribute(ancestor, "Visibility") == "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}");
+        Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", Attribute(toggle, "Style"));
+        Assert.Equal("1", Attribute(toggle, "Grid.Column"));
+        string card = row.ToString();
         Assert.Contains(
             "Text=\"Use Windows for keyboard effects and brightness.\"",
             card,
@@ -1535,8 +1541,6 @@ public sealed class WinUiShellContractTests
             "NavigateUri=\"ms-settings:personalization-lighting\"",
             card,
             StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"WindowsDynamicLightingToggle\"", card, StringComparison.Ordinal);
-        Assert.Contains("Grid.Column=\"1\"", card, StringComparison.Ordinal);
         Assert.Contains(
             "Text=\"Choose the lighting mode for the Razer logo on the lid.\"",
             xaml,

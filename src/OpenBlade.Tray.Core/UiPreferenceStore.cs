@@ -66,7 +66,8 @@ public sealed record UiPreferences(
     bool ThxAudioIntegrationEnabled = false,
     bool SnapTapEnabled = false,
     IReadOnlyList<TelemetryChartMetricPreference>? TelemetryChartMetrics = null,
-    bool TelemetryEnabled = false)
+    bool TelemetryEnabled = false,
+    IReadOnlyList<CardOrderPreference>? CardOrders = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,

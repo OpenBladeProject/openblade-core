@@ -760,6 +760,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         trayDashboardEditor.EditAccepted -= OnTrayDashboardEditorEditAccepted;
         trayDashboardEditor.AvailabilityChanged -= UpdateTrayDashboardEditorAvailability;
         trayDashboardEditor.Dispose();
+        cardReorderDisposed = true;
         liveReorder.Dispose();
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
@@ -922,6 +923,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
             specialKeyBindings = preferences.EffectiveSpecialKeyBindings;
             pageLayouts = preferences.EffectivePageLayouts;
+            RestoreCardOrders(preferences.CardOrders);
             try
             {
                 initialTrayDashboard = preferences.EffectiveTrayDashboard;
@@ -1447,6 +1449,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 SpecialKeyBindings: SpecialKeyBindings
                     .Select(binding => binding.ToPreference())
                     .ToArray(),
+                CardOrders: SnapshotCardOrders(),
                 PageLayouts: pageSections
                     .OrderBy(pair => pair.Key)
                     .Select(pair => new PageLayoutPreference(
@@ -5093,7 +5096,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             .ToArray();
         foreach (PageSectionOption option in sections)
         {
-            liveReorder.Register(pageSectionPresentations[option.Kind], sections, option);
+            FrameworkElement presentation = pageSectionPresentations[option.Kind];
+            RegisterCardGroups(presentation, $"Page.{option.Kind}");
+            liveReorder.Register(presentation, sections, option,
+                origin => CanStartSectionReorder(origin, presentation));
         }
         var desiredSet = desiredSections.ToHashSet();
 
@@ -5285,7 +5291,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             .ToArray();
         foreach (DashboardCardOption option in DashboardCards.Where(option => option.IsPinned))
         {
-            liveReorder.Register(GetOrCreateDashboardCard(option), DashboardCards, option);
+            FrameworkElement presentation = GetOrCreateDashboardCard(option);
+            RegisterCardGroups(presentation, $"Dashboard.{option.Kind}");
+            liveReorder.Register(presentation, DashboardCards, option,
+                origin => CanStartSectionReorder(origin, presentation));
         }
         var desiredSet = desiredCards.ToHashSet();
 
@@ -5436,6 +5445,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ShortcutKeysSection;
         pageSectionPresentations[PageSectionKind.SettingsBehavior] =
             SettingsBehaviorSection;
+        pageSectionPresentations[PageSectionKind.SettingsNotifications] =
+            SettingsNotificationsSection;
         pageSectionPresentations[PageSectionKind.SettingsAppearance] =
             SettingsAppearanceSection;
         pageSectionPresentations[PageSectionKind.SettingsUpdates] =

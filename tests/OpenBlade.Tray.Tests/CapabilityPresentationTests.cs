@@ -3340,10 +3340,36 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("lighting", Attribute(navigation, "Tag"));
         Assert.Null(Attribute(navigation, "Visibility"));
         Assert.Equal("Collapsed", Attribute(page, "Visibility"));
-        Assert.Equal(
-            "{x:Bind CanRequestHardwareControl, Mode=OneWay}",
-            Attribute(controls, "IsEnabled"));
         Assert.Contains(controls, effectPicker.Ancestors());
+        XElement windowsToggle = NamedElement(document, "ToggleSwitch", "WindowsDynamicLightingToggle");
+        string[] inputKinds = ["ResponsiveChoiceSelector", "ToggleSwitch", "Slider", "NumberBox", "Button", "ColorPicker"];
+        XElement[] hardwareInputs = lightingTemplate.Descendants()
+            .Where(element => inputKinds.Contains(element.Name.LocalName)
+                && !ReferenceEquals(element, windowsToggle))
+            .ToArray();
+        Assert.NotEmpty(hardwareInputs);
+        Assert.All(hardwareInputs, input =>
+        {
+            Assert.Contains(input.Ancestors(), ancestor =>
+                ancestor.Name.LocalName == "ContentControl"
+                && Attribute(ancestor, "IsEnabled") == "{x:Bind CanRequestHardwareControl, Mode=OneWay}");
+            if (input.Ancestors().Contains(keyboardSection)
+                || input.Ancestors().Contains(powerSavingSection))
+            {
+                Assert.Contains(input.Ancestors(), ancestor =>
+                    Attribute(ancestor, "Visibility") == "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}");
+            }
+        });
+        Assert.Contains(keyboardSection, windowsToggle.Ancestors());
+        Assert.DoesNotContain(windowsToggle.Ancestors(), ancestor =>
+            Attribute(ancestor, "IsEnabled") == "{x:Bind CanRequestHardwareControl, Mode=OneWay}"
+            || Attribute(ancestor, "Visibility") == "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}");
+        XElement keyboardHeading = keyboardSection.Descendants().Single(element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Uid") == "MainWindow_TextBlockKeyboard2");
+        Assert.Equal("True", Attribute(keyboardHeading, "CardReorder.IsHeader"));
+        Assert.DoesNotContain(keyboardHeading.Ancestors(), ancestor =>
+            Attribute(ancestor, "Visibility") == "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}");
         Assert.Equal(
             "{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}",
             Attribute(infoBar, "IsOpen"));
@@ -3356,13 +3382,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind SelectedLightingEffectOption, Mode=TwoWay}",
             Attribute(effectPicker, "SelectedItem"));
-        Assert.All([keyboardSection, powerSavingSection], section =>
-        {
-            Assert.Null(Attribute(section, "IsEnabled"));
-            Assert.Equal(
-                "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}",
-                Attribute(section, "Visibility"));
-        });
+        Assert.Null(Attribute(keyboardSection, "Visibility"));
+        Assert.Equal(
+            "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}",
+            Attribute(powerSavingSection, "Visibility"));
         Assert.All([displayOffToggle, idleTimeoutToggle], toggle =>
         {
             Assert.Equal(

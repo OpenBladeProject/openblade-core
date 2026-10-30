@@ -9,7 +9,6 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
-using Application = Microsoft.UI.Xaml.Application;
 using ButtonBase = Microsoft.UI.Xaml.Controls.Primitives.ButtonBase;
 using ContentControl = Microsoft.UI.Xaml.Controls.ContentControl;
 using Control = Microsoft.UI.Xaml.Controls.Control;
@@ -32,8 +31,14 @@ internal sealed class LiveReorderBehavior : IDisposable
     private Registration? dragging;
     private Pointer? pointer;
     private Point pressPosition;
+    private DependencyObject? pressOrigin;
     private FrameworkElement? indicatorTarget;
-    private SpriteVisual? indicator;
+    private bool indicatorAfter;
+    private Canvas? previewHost;
+    private Microsoft.UI.Xaml.Controls.Panel? previewRoot;
+    private SpriteVisual? preview;
+    private CompositionVisualSurface? previewSurface;
+    private CompositionSurfaceBrush? previewBrush;
     private UIElement? keyRoot;
     private double originalOpacity;
     private bool transferringCapture;
@@ -49,7 +54,8 @@ internal sealed class LiveReorderBehavior : IDisposable
         keyDown = OnKeyDown;
     }
 
-    public void Register<T>(FrameworkElement element, ObservableCollection<T> items, T item)
+    public void Register<T>(FrameworkElement element, ObservableCollection<T> items, T item,
+        Func<DependencyObject, bool>? canStart = null)
         where T : class
     {
         // A queued MainWindow refresh can arrive after disposal. It must not reattach input.
@@ -57,7 +63,7 @@ internal sealed class LiveReorderBehavior : IDisposable
         {
             return;
         }
-        var registration = new Registration(element, items, item!, (source, after) =>
+        var registration = new Registration(element, items, item!, canStart, (source, after) =>
         {
             int sourceIndex = items.IndexOf((T)source);
             int targetIndex = items.IndexOf(item);
@@ -126,12 +132,27 @@ internal sealed class LiveReorderBehavior : IDisposable
             return;
         }
         var element = (FrameworkElement)sender;
+        // The innermost registered card owns the gesture. A bubbling press must not
+        // replace it with its enclosing section (or clear an interactive child press).
+        if (args.OriginalSource is DependencyObject origin)
+        {
+            for (DependencyObject? current = origin; current is not null && current != element;
+                 current = VisualTreeHelper.GetParent(current))
+            {
+                if (current is FrameworkElement child && registrations.ContainsKey(child))
+                {
+                    return;
+                }
+            }
+        }
         var point = args.GetCurrentPoint(element);
         pressed = point.IsInContact
             && (args.Pointer.PointerDeviceType == PointerDeviceType.Touch || point.Properties.IsLeftButtonPressed)
             && CanStartFrom(element, args.OriginalSource as DependencyObject)
+            && (registrations[element].CanStart?.Invoke((DependencyObject)args.OriginalSource) ?? true)
                 ? registrations[element] : null;
         pointer = pressed is null ? null : args.Pointer;
+        pressOrigin = pressed is null ? null : args.OriginalSource as DependencyObject;
         pressPosition = point.Position;
     }
 
@@ -208,7 +229,7 @@ internal sealed class LiveReorderBehavior : IDisposable
             }
             captureOwner = element;
             pointer = activePointer;
-            if (!TryBeginDrag(element, element))
+            if (!TryBeginDrag(element, pressOrigin ?? element))
             {
                 return;
             }
@@ -247,14 +268,26 @@ internal sealed class LiveReorderBehavior : IDisposable
     internal bool TryBeginDrag(FrameworkElement element, DependencyObject origin)
     {
         if (disposed || dragging is not null || !IsVisible(element) || !CanStartFrom(element, origin)
-            || !registrations.TryGetValue(element, out Registration? source))
+            || !registrations.TryGetValue(element, out Registration? source)
+            || !(source.CanStart?.Invoke(origin) ?? true)
+            || element.XamlRoot.Content is not Microsoft.UI.Xaml.Controls.Panel root)
         {
             return false;
         }
         dragging = source;
         originalOpacity = element.Opacity;
-        element.Opacity = originalOpacity * 0.65;
-        return true;
+        try
+        {
+            CreatePreview(element, root);
+            return dragging is not null;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
+            or System.Runtime.InteropServices.COMException)
+        {
+            EndDrag();
+            System.Diagnostics.Trace.TraceWarning("Could not create the drag preview: {0}", exception);
+            return false;
+        }
     }
 
     private bool CanMoveTo(FrameworkElement target) =>
@@ -306,6 +339,12 @@ internal sealed class LiveReorderBehavior : IDisposable
         }
         UIElement root = dragging.Element.XamlRoot.Content;
         Point rootPosition = dragging.Element.TransformToVisual(root).TransformPoint(position);
+        if (preview is not null && previewHost is not null)
+        {
+            Point location = dragging.Element.TransformToVisual(previewHost)
+                .TransformPoint(new Point(position.X - pressPosition.X, position.Y - pressPosition.Y));
+            preview.Offset = new Vector3((float)location.X, (float)location.Y, 0);
+        }
         if (root is FrameworkElement bounds
             && (rootPosition.X < 0 || rootPosition.Y < 0
                 || rootPosition.X >= bounds.ActualWidth || rootPosition.Y >= bounds.ActualHeight))
@@ -341,8 +380,7 @@ internal sealed class LiveReorderBehavior : IDisposable
             FrameworkElement? target = indicatorTarget;
             if (target is not null)
             {
-                double y = args.GetCurrentPoint(target).Position.Y;
-                TryMove(target, y >= target.ActualHeight / 2);
+                TryMove(target, indicatorAfter);
             }
             args.Handled = true;
         }
@@ -396,41 +434,79 @@ internal sealed class LiveReorderBehavior : IDisposable
         {
             return;
         }
-        if (!ReferenceEquals(indicatorTarget, target))
-        {
-            ClearIndicator();
-            var compositor = ElementCompositionPreview.GetElementVisual(target).Compositor;
-            indicator = compositor.CreateSpriteVisual();
-            var accent = (Windows.UI.Color)Application.Current.Resources["SystemAccentColor"];
-            indicator.Brush = compositor.CreateColorBrush(accent);
-            indicatorTarget = target;
-            ElementCompositionPreview.SetElementChildVisual(target, indicator);
-        }
-        indicator!.Size = new Vector2((float)target.ActualWidth, 2);
-        indicator.Offset = new Vector3(0, after ? (float)Math.Max(0, target.ActualHeight - 2) : 0, 0);
+        indicatorTarget = target;
+        indicatorAfter = after;
     }
 
     private void ClearIndicator()
     {
-        if (indicatorTarget is not null)
-        {
-            ElementCompositionPreview.SetElementChildVisual(indicatorTarget, null);
-        }
-        indicator?.Brush?.Dispose();
-        indicator?.Dispose();
-        indicator = null;
         indicatorTarget = null;
+    }
+
+    internal SpriteVisual? DragPreview => preview;
+
+    private void CreatePreview(FrameworkElement element, Microsoft.UI.Xaml.Controls.Panel root)
+    {
+        // Mirror the actual live subtree without reparenting controls or copying their
+        // bindings. The hit-test-free root overlay stays outside scroll clipping.
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        var compositor = visual.Compositor;
+        previewSurface = compositor.CreateVisualSurface();
+        previewSurface.SourceVisual = visual;
+        previewSurface.SourceSize = new Vector2((float)element.ActualWidth, (float)element.ActualHeight);
+        previewBrush = compositor.CreateSurfaceBrush(previewSurface);
+        preview = compositor.CreateSpriteVisual();
+        preview.Brush = previewBrush;
+        preview.Size = previewSurface.SourceSize;
+        preview.Opacity = 0.5f;
+        previewHost = new Canvas { IsHitTestVisible = false };
+        if (root is Grid grid)
+        {
+            Grid.SetRowSpan(previewHost, Math.Max(1, grid.RowDefinitions.Count));
+            Grid.SetColumnSpan(previewHost, Math.Max(1, grid.ColumnDefinitions.Count));
+        }
+        // WinUI bounds Canvas.ZIndex; Int32.MaxValue is rejected by native XAML.
+        Canvas.SetZIndex(previewHost, 1000);
+        previewRoot = root;
+        root.Children.Add(previewHost);
+        root.UpdateLayout();
+        if (dragging is null || previewHost is null || preview is null)
+        {
+            return;
+        }
+        Point location = element.TransformToVisual(previewHost).TransformPoint(new Point());
+        preview.Offset = new Vector3((float)location.X, (float)location.Y, 0);
+        ElementCompositionPreview.SetElementChildVisual(previewHost, preview);
+    }
+
+    private void ClearPreview()
+    {
+        if (previewHost is not null)
+        {
+            ElementCompositionPreview.SetElementChildVisual(previewHost, null);
+            previewRoot?.Children.Remove(previewHost);
+        }
+        preview?.Dispose();
+        previewBrush?.Dispose();
+        previewSurface?.Dispose();
+        preview = null;
+        previewBrush = null;
+        previewSurface = null;
+        previewHost = null;
+        previewRoot = null;
     }
 
     internal void EndDrag()
     {
         ClearIndicator();
+        ClearPreview();
         Registration? source = dragging;
         FrameworkElement? owner = captureOwner;
         Pointer? captured = pointer;
         dragging = null;
         pressed = null;
         pointer = null;
+        pressOrigin = null;
         captureOwner = null;
         keyRoot?.RemoveHandler(UIElement.KeyDownEvent, keyDown);
         keyRoot = null;
@@ -470,5 +546,6 @@ internal sealed class LiveReorderBehavior : IDisposable
         FrameworkElement Element,
         object Group,
         object Item,
+        Func<DependencyObject, bool>? CanStart,
         Action<object, bool> MoveHere);
 }

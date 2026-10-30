@@ -27,6 +27,27 @@ public sealed partial class MainWindow
             }
         }
 
+        static DependencyObject DragOrigin(FrameworkElement presentation)
+        {
+            DependencyObject? FindHeader(DependencyObject root)
+            {
+                if (CardReorder.GetIsHeader(root))
+                {
+                    return root;
+                }
+                for (int index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root); index++)
+                {
+                    DependencyObject? header = FindHeader(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, index));
+                    if (header is not null)
+                    {
+                        return header;
+                    }
+                }
+                return null;
+            }
+            return FindHeader(presentation) ?? presentation;
+        }
+
         FrameworkElement status = dashboardCardPresentations[DashboardCardKind.DeviceStatus];
         DashboardCardOption first = DashboardCards[0];
         DashboardCardOption second = DashboardCards[1];
@@ -34,7 +55,9 @@ public sealed partial class MainWindow
         FrameworkElement secondCard = GetOrCreateDashboardCard(second);
         Require(liveReorder.IsRegistered(firstCard) && liveReorder.IsRegistered(secondCard), "Dashboard dragging requires an editor.");
         await capture("dashboard-before");
-        Require(liveReorder.TryBeginDrag(firstCard, firstCard), "Dashboard drag did not begin.");
+        DependencyObject firstOrigin = DragOrigin(firstCard);
+        Require(liveReorder.TryBeginDrag(firstCard, firstOrigin),
+            $"Dashboard drag did not begin: loaded={firstCard.IsLoaded}, size={firstCard.ActualWidth}x{firstCard.ActualHeight}, root={firstCard.XamlRoot.Content.GetType().Name}, origin={firstOrigin.GetType().Name}, passive={LiveReorderBehavior.CanStartFrom(firstCard, firstOrigin)}, heading={CanStartSectionReorder(firstOrigin, firstCard)}.");
         liveReorder.UpdateTarget(new Windows.Foundation.Point(-10000, -10000));
         Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
             "A pointer outside the window selected a drop target.");
@@ -51,22 +74,25 @@ public sealed partial class MainWindow
         Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
             "A card behind an overlay became a drop target.");
         Root.Children.Remove(overlay);
-        accentColorManager.Apply(AppAccentColorMode.Custom, "#B83E8B");
         liveReorder.ShowIndicator(secondCard, after: true);
-        var insertion = ElementCompositionPreview.GetElementChildVisual(secondCard)
-            as Microsoft.UI.Composition.SpriteVisual;
-        var accentBrush = insertion?.Brush as Microsoft.UI.Composition.CompositionColorBrush;
-        Require(accentBrush is not null && accentBrush.Color.Equals(accentColorManager.CurrentColor),
-            "Drop insertion indicator did not use the custom application accent.");
-        await capture("dashboard-insertion");
+        var preview = liveReorder.DragPreview;
+        Require(preview is not null && preview.Opacity == 0.5f
+            && preview.Brush is Microsoft.UI.Composition.CompositionSurfaceBrush
+            && preview.Size.X == (float)firstCard.ActualWidth
+            && preview.Size.Y == (float)firstCard.ActualHeight,
+            "Dragging did not mirror the actual card at half opacity.");
+        var initialOffset = preview!.Offset;
+        liveReorder.UpdateTarget(new Windows.Foundation.Point(36, 80));
+        Require(preview.Offset != initialOffset, "The preview did not follow the drag.");
+        await capture("dashboard-preview");
         liveReorder.EndDrag();
-        accentColorManager.Apply(accentColorMode, customAccentColor);
+        Require(liveReorder.DragPreview is null, "Canceled drag retained its preview.");
         Require(!liveReorder.TryMove(secondCard, after: true)
             && DashboardCards[0] == first, "Cancel changed card order.");
         Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
             "Canceled drag retained insertion feedback.");
 
-        Require(liveReorder.TryBeginDrag(firstCard, firstCard), "Second dashboard drag did not begin.");
+        Require(liveReorder.TryBeginDrag(firstCard, firstOrigin), "Second dashboard drag did not begin.");
         Require(liveReorder.TryMove(secondCard, after: true), "Dashboard drop failed.");
         Require(DashboardCards[0] == second && DashboardCards[1] == first
             && ReferenceEquals(GetOrCreateDashboardCard(first), firstCard)
@@ -78,11 +104,11 @@ public sealed partial class MainWindow
 
         Require(!liveReorder.TryBeginDrag(HomeNavigationItem, HomeNavigationItem),
             "An unregistered source began a drag.");
-        Require(liveReorder.TryBeginDrag(firstCard, firstCard), "Cross-group setup failed.");
+        Require(liveReorder.TryBeginDrag(firstCard, firstOrigin), "Cross-group setup failed.");
         Require(!liveReorder.TryMove(ProfilesNavigationItem, false),
             "A dashboard card moved into navigation.");
         double originalOpacity = firstCard.Opacity;
-        Require(liveReorder.TryBeginDrag(firstCard, firstCard), "Detached-source setup failed.");
+        Require(liveReorder.TryBeginDrag(firstCard, firstOrigin), "Detached-source setup failed.");
         DashboardCardHost.Children.Remove(firstCard);
         liveReorder.UpdateTarget(new Windows.Foundation.Point(0, 0));
         bool movedAfterRemoval = liveReorder.TryMove(secondCard, true);
@@ -92,6 +118,43 @@ public sealed partial class MainWindow
         await capture("dashboard-restored");
         SelectLocalizationSnapshotPage("settings");
         await capture("settings-before");
+        FrameworkElement appearance = pageSectionPresentations[PageSectionKind.SettingsAppearance];
+        appearance.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
+        await capture("settings-cards-before");
+        var rowGroup = cardRowGroups.Values.First(group => group.Id.StartsWith("Page.SettingsAppearance.", StringComparison.Ordinal));
+        FrameworkElement[] visibleRows = rowGroup.Items
+            .Where(row => row.IsLoaded && row.Visibility == Visibility.Visible && row.ActualHeight > 0)
+            .Take(2).ToArray();
+        Require(visibleRows.Length == 2, "Settings row fixture did not expose two live cards.");
+        FrameworkElement rowSource = visibleRows[0];
+        FrameworkElement rowTarget = visibleRows[1];
+        Require(!liveReorder.TryBeginDrag(appearance, rowSource), "A card body started a whole-section move.");
+        Require(liveReorder.TryBeginDrag(rowSource, rowSource), "Within-section card drag did not begin.");
+        FrameworkElement foreignRow = cardRowGroups.Values.First(group =>
+            group.Id.StartsWith("Page.SettingsBehavior.", StringComparison.Ordinal)).Items.First(row =>
+                row.IsLoaded && row.Visibility == Visibility.Visible && row.ActualHeight > 0);
+        Require(!liveReorder.TryMove(foreignRow, true),
+            "A card moved outside its section.");
+        Require(liveReorder.TryBeginDrag(rowSource, rowSource)
+            && liveReorder.TryMove(rowTarget, true)
+            && rowGroup.Items.IndexOf(rowSource) > rowGroup.Items.IndexOf(rowTarget),
+            "A card did not move within its section.");
+        string[] savedRows = rowGroup.Items.Select(row => CardReorder.GetCardId(row)!).ToArray();
+        // Fixed notices keep their exact slots even when multiple cards reverse around them.
+        var fixedSlots = new StackPanel();
+        var slotA = new Border();
+        var noticeX = new Border();
+        var slotB = new Border();
+        var noticeY = new Border();
+        var slotC = new Border();
+        foreach (var child in new[] { slotA, noticeX, slotB, noticeY, slotC })
+        {
+            fixedSlots.Children.Add(child);
+        }
+        RefreshCardRows(fixedSlots, new CardRowGroup("fixture", new([slotC, slotB, slotA])));
+        Require(fixedSlots.Children.SequenceEqual(new[] { slotC, noticeX, slotB, noticeY, slotA }),
+            "Reordering cards shifted a fixed notice.");
+        await capture("settings-cards-after");
         foreach (var pair in pageSectionHosts)
         {
             Require(pageSections[pair.Key].All(section =>
@@ -104,12 +167,16 @@ public sealed partial class MainWindow
         sections[1].IsVisible = false;
         FrameworkElement sectionCard = pageSectionPresentations[originalSection.Kind];
         FrameworkElement sectionTarget = pageSectionPresentations[targetSection.Kind];
-        Require(liveReorder.TryBeginDrag(sectionCard, sectionCard), "Section drag failed.");
+        Require(liveReorder.TryBeginDrag(sectionCard, DragOrigin(sectionCard)), "Section header drag failed.");
+        Require(liveReorder.DragPreview?.Size.Y == (float)sectionCard.ActualHeight,
+            "Section preview omitted its cards.");
         Require(liveReorder.TryMove(sectionTarget, true)
             && sections[2] == originalSection && !sections[0].IsVisible,
             "Section drop changed hidden siblings or did not preserve the canonical order.");
         Require(SettingsSectionHost.Children.IndexOf(sectionCard) > SettingsSectionHost.Children.IndexOf(sectionTarget),
             "Section presentation did not follow saved order.");
+        Require(rowGroup.Items.Select(row => CardReorder.GetCardId(row)).SequenceEqual(savedRows),
+            "Moving a section reset its inner card order.");
         await capture("settings-after");
 
         PrimaryNavigationItemOption navigationSource = PrimaryNavigationItems[0];
@@ -148,6 +215,8 @@ public sealed partial class MainWindow
 
         await preferenceSaveQueue.DisposeAsync();
         UiPreferences saved = await preferenceStore.LoadAsync();
+        Require(saved.CardOrders?.Single(group => group.GroupId == rowGroup.Id).CardIds.SequenceEqual(savedRows) == true,
+            "Within-section card ordering was not persisted.");
         Require(saved.EffectiveDashboardCards.Select(card => card.Kind).SequenceEqual(DashboardCards.Select(card => card.Kind))
             && saved.EffectivePrimaryNavigationItems.SequenceEqual(PrimaryNavigationItems.Select(item => item.Kind))
             && saved.EffectivePageLayouts.Single(layout => layout.Page == CustomizablePageKind.Settings)

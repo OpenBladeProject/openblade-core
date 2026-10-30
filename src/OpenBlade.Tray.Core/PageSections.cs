@@ -39,6 +39,7 @@ public enum PageSectionKind
     AboutTroubleshooting,
     LaptopBatteryHistory,
     ProfilesApplications,
+    SettingsNotifications,
 }
 
 public sealed record PageSectionPreference(
@@ -169,6 +170,11 @@ public static class PageLayoutPreferenceDefaults
             PageSectionKind.SettingsBehavior,
             TrayText.Get("Behavior"),
             TrayText.Get("Configure live readings, sign-in, and lighting ownership.")),
+        new(
+            CustomizablePageKind.Settings,
+            PageSectionKind.SettingsNotifications,
+            TrayText.Get("Notifications"),
+            TrayText.Get("Notifications")),
         new(
             CustomizablePageKind.Settings,
             PageSectionKind.SettingsAppearance,
@@ -323,6 +329,18 @@ public static class PageLayoutPreferenceDefaults
             }
         }
 
+        // Notifications formerly shared Behavior's position and visibility.
+        if (page == CustomizablePageKind.Settings && !sections.Any(section =>
+                section.Kind == PageSectionKind.SettingsNotifications))
+        {
+            int notificationIndex = normalized.FindIndex(section =>
+                section.Kind == PageSectionKind.SettingsNotifications);
+            normalized.RemoveAt(notificationIndex);
+            int behaviorIndex = normalized.FindIndex(section =>
+                section.Kind == PageSectionKind.SettingsBehavior);
+            normalized.Insert(behaviorIndex + 1, new PageSectionPreference(
+                PageSectionKind.SettingsNotifications, normalized[behaviorIndex].IsVisible));
+        }
         return normalized;
     }
 

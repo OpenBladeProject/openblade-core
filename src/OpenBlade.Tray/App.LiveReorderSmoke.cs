@@ -31,6 +31,8 @@ public partial class App
         var menu = new Dictionary<string, NavigationViewItem>();
         var slider = new Slider { Minimum = 0, Maximum = 100, Value = 50 };
         var button = new Microsoft.UI.Xaml.Controls.Button { Content = "Test button" };
+        var showPreview = new Microsoft.UI.Xaml.Controls.Button { Content = "Show drag preview" };
+        var clearPreview = new Microsoft.UI.Xaml.Controls.Button { Content = "Clear drag preview" };
         int clicks = 0;
         void Report() => File.WriteAllText(reportPath,
             $"cards={string.Join(',', cards)}; pages={string.Join(',', pages)}; slider={slider.Value}; clicks={clicks}");
@@ -81,9 +83,20 @@ public partial class App
         };
         slider.ValueChanged += (_, _) => Report();
         button.Click += (_, _) => { clicks++; Report(); };
-        window.Content = navigation;
+        showPreview.Click += (_, _) =>
+        {
+            behavior.EndDrag();
+            behavior.TryBeginDrag(presentations["Card A"], presentations["Card A"]);
+            behavior.UpdateTarget(new Windows.Foundation.Point(32, 90));
+        };
+        clearPreview.Click += (_, _) => behavior.EndDrag();
+        host.Children.Add(showPreview);
+        host.Children.Add(clearPreview);
+        var root = new Grid();
+        root.Children.Add(navigation);
+        window.Content = root;
         window.Closed += (_, _) => { behavior.Dispose(); Environment.Exit(0); };
-        window.AppWindow.Resize(new Windows.Graphics.SizeInt32(900, 650));
+        window.AppWindow.Resize(new Windows.Graphics.SizeInt32(900, 1000));
         Report();
         window.Activate();
     }
