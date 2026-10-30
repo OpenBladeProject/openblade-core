@@ -343,6 +343,32 @@ public sealed class WindowNotificationCoordinatorTests
     }
 
     [Fact]
+    public void RapidDischargeEpisodesSurviveTheNativeDuplicateFilter()
+    {
+        var notifications = new List<TrayNotification>();
+        var deduplicator = new NotificationDeduplicator();
+        var coordinator = new WindowNotificationCoordinator(notification =>
+        {
+            if (deduplicator.ShouldEmit(notification.ReplacementTag!, notification.Title,
+                notification.Body, notification.OccurrenceId))
+            {
+                notifications.Add(notification);
+            }
+            return true;
+        });
+        coordinator.Prime(Initial);
+
+        ObserveAll(coordinator, Initial with { ExternalPowerDischargeEpisode = 1 }, AllEnabled);
+        ObserveAll(coordinator, Initial with { ExternalPowerDischargeEpisode = 1 }, AllEnabled);
+        ObserveAll(coordinator, Initial with { ExternalPowerDischargeEpisode = 2 }, AllEnabled);
+
+        Assert.Equal(2, notifications.Count);
+        Assert.Equal(1, notifications[0].OccurrenceId);
+        Assert.Equal(2, notifications[1].OccurrenceId);
+        Assert.Equal(notifications[0].ReplacementTag, notifications[1].ReplacementTag);
+    }
+
+    [Fact]
     public void PrimedDischargeEpisodeAndDisabledEpisodeDoNotReplay()
     {
         int deliveries = 0;

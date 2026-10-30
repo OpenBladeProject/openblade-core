@@ -97,7 +97,10 @@ public sealed class NotificationDeduplicator
         this.repeatWindow = selectedRepeatWindow;
     }
 
-    public bool ShouldEmit(string replacementTag, string title, string body)
+    public bool ShouldEmit(string replacementTag, string title, string body) =>
+        ShouldEmit(replacementTag, title, body, occurrenceId: null);
+
+    public bool ShouldEmit(string replacementTag, string title, string body, long? occurrenceId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(replacementTag);
         ArgumentNullException.ThrowIfNull(title);
@@ -107,14 +110,15 @@ public sealed class NotificationDeduplicator
         string fingerprint = string.Concat(title, "\n", body);
         if (observations.TryGetValue(replacementTag, out Observation? previous)
             && string.Equals(previous.Fingerprint, fingerprint, StringComparison.Ordinal)
+            && previous.OccurrenceId == occurrenceId
             && now - previous.ObservedAt < repeatWindow)
         {
             return false;
         }
 
-        observations[replacementTag] = new(fingerprint, now);
+        observations[replacementTag] = new(fingerprint, now, occurrenceId);
         return true;
     }
 
-    private sealed record Observation(string Fingerprint, DateTimeOffset ObservedAt);
+    private sealed record Observation(string Fingerprint, DateTimeOffset ObservedAt, long? OccurrenceId);
 }

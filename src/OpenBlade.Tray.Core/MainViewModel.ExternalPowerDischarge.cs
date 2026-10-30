@@ -4,7 +4,7 @@ namespace OpenBlade.Tray;
 
 public sealed partial class MainViewModel
 {
-    private readonly ExternalPowerDischargeTracker externalPowerDischarge = new();
+    private readonly ExternalPowerDischargeTracker externalPowerDischarge;
 
     public bool IsExternalPowerDischarging => externalPowerDischarge.IsDischarging;
 
@@ -54,7 +54,6 @@ public sealed partial class MainViewModel
         bool wasDischarging = IsExternalPowerDischarging;
         long previousEpisode = ExternalPowerDischargeEpisode;
         externalPowerDischarge.Observe(
-            timeProvider.GetUtcNow(),
             status.LiveReadings?.BatteryPowerFlowMilliwatts,
             TimeSpan.FromSeconds(Math.Max(10, LiveReadingsObservationInterval.TotalSeconds * 3)));
         PublishExternalPowerDischarge(wasDischarging, previousEpisode);

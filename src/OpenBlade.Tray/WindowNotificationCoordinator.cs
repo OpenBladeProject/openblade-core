@@ -189,7 +189,8 @@ internal sealed class WindowNotificationCoordinator
                         "Battery power is being used while external power is connected. Reduce the workload or check the charger and cable."),
                     TrayNotificationSeverity.Warning,
                     ReplacementTag: ExternalPowerDischargeNotificationTag,
-                    Destination: TrayNotificationDestination.Laptop));
+                    Destination: TrayNotificationDestination.Laptop,
+                    OccurrenceId: current));
             }
         }
         else if (propertyName == nameof(MainViewModel.ControllerAdvisoryText))

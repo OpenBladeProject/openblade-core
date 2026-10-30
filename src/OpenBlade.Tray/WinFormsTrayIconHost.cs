@@ -106,7 +106,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             && !notificationDeduplicator.ShouldEmit(
                 notification.ReplacementTag,
                 notification.Title,
-                notification.Body))
+                notification.Body,
+                notification.OccurrenceId))
         {
             return;
         }

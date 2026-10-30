@@ -7477,7 +7477,8 @@ public sealed partial class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC
+            && viewModel.TrayIconState == TrayIconState.UsbCBalanced);
 
         Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
         Assert.Equal(TrayIconState.UsbCBalanced, viewModel.TrayIconState);
@@ -11130,9 +11131,19 @@ public sealed partial class MainViewModelTests
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     {
+        private long timestamp;
+
         public override DateTimeOffset GetUtcNow() => now;
 
-        public void Advance(TimeSpan amount) => now += amount;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => timestamp;
+
+        public void Advance(TimeSpan amount)
+        {
+            now += amount;
+            timestamp += amount.Ticks;
+        }
     }
 
     private sealed class FakeServiceClient : OpenBlade.Testing.UnavailableServiceClient, IServiceClient

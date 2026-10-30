@@ -113,6 +113,19 @@ public sealed class NotificationPreferencesTests
     }
 
     [Fact]
+    public void NewOccurrencesReplaceIdenticalContentInsideTheRepeatWindow()
+    {
+        var time = new SettableTimeProvider(DateTimeOffset.UnixEpoch);
+        var deduplicator = new NotificationDeduplicator(time);
+
+        Assert.True(deduplicator.ShouldEmit("discharge", "Battery", "Discharging", occurrenceId: 1));
+        Assert.False(deduplicator.ShouldEmit("discharge", "Battery", "Discharging", occurrenceId: 1));
+        time.Advance(TimeSpan.FromSeconds(14));
+        Assert.True(deduplicator.ShouldEmit("discharge", "Battery", "Discharging", occurrenceId: 2));
+        Assert.False(deduplicator.ShouldEmit("discharge", "Battery", "Discharging", occurrenceId: 2));
+    }
+
+    [Fact]
     public void NegativeRepeatWindowIsRejected()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>

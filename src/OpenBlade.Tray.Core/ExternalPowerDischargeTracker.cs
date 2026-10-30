@@ -6,8 +6,14 @@ namespace OpenBlade.Tray;
 internal sealed class ExternalPowerDischargeTracker
 {
     internal static readonly TimeSpan ConfirmationInterval = TimeSpan.FromSeconds(10);
-    private DateTimeOffset? dischargeStartedAt;
-    private DateTimeOffset? lastSampleAt;
+    private readonly TimeProvider timeProvider;
+    private long? dischargeStartedAt;
+    private long? lastSampleAt;
+
+    internal ExternalPowerDischargeTracker(TimeProvider timeProvider)
+    {
+        this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
 
     public bool IsDischarging { get; private set; }
 
@@ -28,10 +34,10 @@ internal sealed class ExternalPowerDischargeTracker
     }
 
     public void Observe(
-        DateTimeOffset observedAt,
         int? batteryPowerMilliwatts,
         TimeSpan maximumSampleGap)
     {
+        long observedAt = timeProvider.GetTimestamp();
         if (batteryPowerMilliwatts is null)
         {
             dischargeStartedAt = null;
@@ -40,7 +46,7 @@ internal sealed class ExternalPowerDischargeTracker
         }
 
         if (lastSampleAt is { } previous
-            && (observedAt < previous || observedAt - previous > maximumSampleGap))
+            && (observedAt < previous || timeProvider.GetElapsedTime(previous, observedAt) > maximumSampleGap))
         {
             dischargeStartedAt = null;
         }
@@ -53,7 +59,7 @@ internal sealed class ExternalPowerDischargeTracker
         }
 
         dischargeStartedAt ??= observedAt;
-        if (!IsDischarging && observedAt - dischargeStartedAt >= ConfirmationInterval)
+        if (!IsDischarging && timeProvider.GetElapsedTime(dischargeStartedAt.Value, observedAt) >= ConfirmationInterval)
         {
             IsDischarging = true;
             Episode++;
