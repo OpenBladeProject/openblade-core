@@ -98,12 +98,15 @@ public sealed class SnapTapDriverSupervisorTests
     [Fact]
     public void AmbiguousOutputJournalRequiresAnotherBootAndNoAdHooks()
     {
-        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal("boot1", "boot1", []));
-        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(null, "boot2", []));
-        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal("boot1", "", []));
-        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal("boot1", "boot2",
+        string previous = DateTime.UtcNow.AddDays(-4).ToString("O");
+        string current = DateTime.UtcNow.AddDays(-1).ToString("O");
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(previous, previous, []));
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(null, current, []));
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(previous, "", []));
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(previous, current,
             [RazerSnapTapDriverProtocol.EncodeHook(0x1E)]));
-        Assert.True(SnapTapDriverSupervisor.CanDiscardJournal("boot1", "boot2", []));
+        Assert.True(SnapTapDriverSupervisor.CanDiscardJournal(previous, current, []));
+        Assert.False(SnapTapDriverSupervisor.CanDiscardJournal(current, previous, []));
     }
 
     [Fact]

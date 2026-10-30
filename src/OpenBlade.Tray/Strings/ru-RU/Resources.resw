@@ -2210,7 +2210,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>О SnapTap</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>SnapTap использует драйвер Razer для встроенной клавиатуры ноутбука.</value>
+    <value>Драйвер Razer обрабатывает встроенную клавиатуру. Перехват Windows действует на все клавиатуры.</value>
   </data>
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>Совместимость с играми не проверена.</value>
@@ -2781,6 +2781,69 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="WhatsNew_Security" xml:space="preserve">
     <value>Безопасность</value>
+  </data>
+  <data name="KeyboardBackend_DriverMissing" xml:space="preserve">
+    <value>Драйвер клавиатуры Razer не установлен.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.AccessibleName" xml:space="preserve">
+    <value>Ввод мультимедийных клавиш</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
+    <value>Ввод мультимедийных клавиш</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
+    <value>Ввод SnapTap</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
+    <value>Ввод SnapTap</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.PlaceholderText" xml:space="preserve">
+    <value>Выберите способ ввода</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.PlaceholderText" xml:space="preserve">
+    <value>Выберите способ ввода</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowWindowsHelp.Text" xml:space="preserve">
+    <value>Действует на все клавиатуры. Некоторые игры могут также получать исходную функциональную клавишу.</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapWindowsHelp.Text" xml:space="preserve">
+    <value>Действует на все клавиатуры. Некоторые игры могут игнорировать ввод через перехват Windows.</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
+    <value>Установить драйвер</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Установить драйвер клавиатуры Razer</value>
+  </data>
+  <data name="KeyboardBackend_ManualSetup" xml:space="preserve">
+    <value>Установите драйвер клавиатуры Razer для этого ноутбука, затем переключите способ ввода для повторной попытки.</value>
+  </data>
+  <data name="KeyboardBackend_Paused" xml:space="preserve">
+    <value>Обработка ввода приостановлена. Экспортируйте диагностику для получения подробностей.</value>
+  </data>
+  <data name="KeyboardBackend_RazerDriver" xml:space="preserve">
+    <value>Драйвер Razer</value>
+  </data>
+  <data name="KeyboardBackend_Recovery" xml:space="preserve">
+    <value>Перезагрузите Windows перед повторным использованием этого способа ввода.</value>
+  </data>
+  <data name="KeyboardBackend_Unknown" xml:space="preserve">
+    <value>Выберите способ ввода, чтобы продолжить.</value>
+  </data>
+  <data name="KeyboardBackend_Unsupported" xml:space="preserve">
+    <value>Этот способ ввода недоступен для данного ноутбука.</value>
+  </data>
+  <data name="KeyboardBackend_Waiting" xml:space="preserve">
+    <value>Ожидание выбранного способа ввода…</value>
+  </data>
+  <data name="KeyboardBackend_WindowsHook" xml:space="preserve">
+    <value>Перехват Windows</value>
+  </data>
+  <data name="KeyboardBackend_DriverInstalled" xml:space="preserve">
+    <value>Драйвер установлен. Переключите способ ввода для повторной попытки.</value>
+  </data>
+  <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
+    <value>Нажмите Fn один раз, чтобы активировать мультимедийные клавиши.</value>
   </data>
   <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
     <value>Разряд батареи при подключённом питании</value>

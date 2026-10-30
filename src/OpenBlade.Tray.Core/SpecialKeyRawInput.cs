@@ -114,6 +114,8 @@ public sealed class RazerBladeFunctionRowInputState
     private readonly HashSet<uint> passedThroughKeys = [];
     private readonly HashSet<uint> passThroughReleases = [];
 
+    public bool HasActiveKeys => suppressedKeys.Count != 0 || passedThroughKeys.Count != 0;
+
     /// <summary>
     /// Clears a press whose release was never observed before Windows reports
     /// a new physical key-down. A held-key repeat keeps the existing latch.

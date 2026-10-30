@@ -149,7 +149,7 @@ public sealed class WinUiShellContractTests
         XElement description = document.Descendants().Single(element => Attribute(element, "Uid") == "SnapTap_Description");
         Assert.Equal("When A and D overlap, the last pressed key wins.", Attribute(description, "Text"));
         XElement[] details = button.Descendants().Where(element => element.Name.LocalName == "TextBlock").ToArray();
-        Assert.Contains(details, element => Attribute(element, "Text")?.Contains("built-in keyboard", StringComparison.Ordinal) == true);
+        Assert.Contains(details, element => Attribute(element, "Text") == "Razer driver handles the built-in keyboard. Windows hook applies to all keyboards.");
         Assert.Contains(details, element => Attribute(element, "Text") == "Game compatibility has not been verified.");
     }
 
@@ -169,10 +169,10 @@ public sealed class WinUiShellContractTests
         Assert.Equal("SnapTap_KeyboardHeader", Attribute(keyboardHeader, "Uid"));
         Assert.Null(Attribute(keyboardHeader, "Visibility"));
         Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
-        Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(row, "Style"));
+        Assert.Equal("{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
         XElement rows = Assert.Single(card.Elements());
         Assert.Equal("StackPanel", rows.Name.LocalName);
-        Assert.Equal([keyboardBehavior, NamedElement(document, "Border", "TouchpadRow"), row], rows.Elements().ToArray());
+        Assert.Equal([keyboardBehavior, NamedElement(document, "Border", "FunctionRowBackendRow"), NamedElement(document, "Border", "TouchpadRow"), row, NamedElement(document, "Border", "SnapTapBackendRow")], rows.Elements().ToArray());
         Assert.Equal([keyboardHeader, card], keyboardSection.Elements().ToArray());
         Assert.Equal(
             "{StaticResource KeyboardBehaviorRowsTemplate}",
@@ -217,7 +217,7 @@ public sealed class WinUiShellContractTests
             "localizationSnapshotMode\n"
                 + "            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch,\n"
                 + "                ExperimentalDriver: localizationSnapshotSnapTapExperimental)\n"
-                + "            : SnapTapStatusStore.Read()",
+                + "            : SelectedBackendStatus(SnapTapStatusStore.Read(), snapTapBackend);",
             source,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -238,6 +238,29 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("\"SnapTap_Status_Off\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("\"SnapTap_Status_Unknown\"", source, StringComparison.Ordinal);
         Assert.Contains("SnapTapRuntimeState.Failed => LocalizedResources.Get(", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IndependentKeyboardBackendSelectorsUseSharedPresentationAndExplicitDriverSetup()
+    {
+        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        foreach (string prefix in new[] { "SnapTap", "FunctionRow" })
+        {
+            XElement row = NamedElement(document, "Border", prefix + "BackendRow");
+            Assert.Equal(prefix == "SnapTap" ? "{StaticResource SettingsLastRowStyle}" : "{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
+            XElement selector = NamedElement(document, "ResponsiveChoiceSelector", prefix + "BackendSelector");
+            Assert.False(string.IsNullOrWhiteSpace(Attribute(selector, "AccessibleName")));
+            Assert.Equal("Label", Attribute(selector, "DisplayMemberPath"));
+            Assert.DoesNotContain(row.Descendants(), element => Attribute(element, "FontSize") is not null || Attribute(element, "Height") is not null);
+            Assert.Equal("Wrap", Attribute(NamedElement(document, "TextBlock", prefix + "WindowsHookHelp"), "TextWrapping"));
+        }
+        Assert.Equal("{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}", Attribute(NamedElement(document, "Border", "FunctionRowBackendRow"), "Visibility"));
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.KeyboardBackends.cs");
+        Assert.Contains("status?.Backend == selected", source, StringComparison.Ordinal);
+        Assert.Contains("functionRowBackend == KeyboardInputBackend.RazerDriver", source, StringComparison.Ordinal);
+        Assert.Contains("SnapTapStatusStore.Read()", source, StringComparison.Ordinal);
+        Assert.Contains("FunctionRowBackendStatusStore.Read()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApplyLaptopControlAsync", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -267,11 +290,11 @@ public sealed class WinUiShellContractTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "!CanOfferSnapTapDriverSetup(SnapTapStatusStore.Read()?.State)",
+            "!CanInstallSelectedKeyboardDriver()",
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "snapTapEnabled && CanOfferSnapTapDriverSetup(status?.State)",
+            "snapTapEnabled && snapTapBackend == KeyboardInputBackend.RazerDriver && CanOfferSnapTapDriverSetup(status?.State)",
             source,
             StringComparison.Ordinal);
         Assert.Contains("&& snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed", source, StringComparison.Ordinal);
@@ -356,6 +379,9 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "snapTapEnabled = showFailure || showEnabled || showDriverMissing;\n"
+                + "#if OPENBLADE_DEVELOPER_HARNESS\n"
+                + "            SetLocalizationSnapshotKeyboardBackends();\n"
+                + "#endif\n"
                 + "            SnapTapToggle.IsOn = snapTapEnabled;\n"
                 + "            RefreshSnapTapStatus();",
             preview,
@@ -1748,12 +1774,40 @@ public sealed class WinUiShellContractTests
         Assert.Contains("? DeviceStatusCard", window, StringComparison.Ordinal);
         Assert.Contains("DashboardCardHost.Children.Move", window, StringComparison.Ordinal);
         Assert.Contains("RefreshDashboardCards();", window, StringComparison.Ordinal);
-        Assert.Contains("MoveCanonicalLaptopCardsIntoPlace();", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("MoveCanonicalLaptopCardsIntoPlace", window, StringComparison.Ordinal);
         Assert.DoesNotContain("CompleteDashboardArrangement", window, StringComparison.Ordinal);
         Assert.DoesNotContain("DashboardLayoutRestartRequested", window, StringComparison.Ordinal);
         Assert.DoesNotContain("DashboardLayoutRestartRequested", app, StringComparison.Ordinal);
         Assert.DoesNotContain("--restart-after=", app, StringComparison.Ordinal);
         Assert.DoesNotContain("WaitForDashboardRestartParent", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanonicalLaptopCardsStartInTheirFinalHostBeforeLoaded()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        XDocument document = XDocument.Parse(xaml);
+        XElement laptopHost = NamedElement(document, "StackPanel", "LaptopCardsHost");
+        string[] cardNames = ["PowerModeCard", "FansCard", "BatteryCard"];
+        Assert.Equal(cardNames, laptopHost.Elements().Take(cardNames.Length)
+            .Select(element => Attribute(element, "Name")).ToArray());
+        foreach (string cardName in cardNames)
+        {
+            XElement card = NamedElement(document, "ContentControl", cardName);
+            Assert.Same(laptopHost, card.Parent);
+            Assert.Equal("{x:Bind ViewModel}", Attribute(card, "Content"));
+            string template = "Dashboard" + cardName + "Template";
+            Assert.Equal("{StaticResource " + template + "}", Attribute(card, "ContentTemplate"));
+            Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "DataTemplate" && Attribute(element, "Key") == template);
+        }
+
+        string loaded = SliceMethod(window, "private void OnRootLoaded(", "private void RegisterPageSections(");
+        Assert.Contains("if (Volatile.Read(ref disposed) != 0)", loaded, StringComparison.Ordinal);
+        Assert.True(loaded.IndexOf("Volatile.Read(ref disposed)", StringComparison.Ordinal)
+            < loaded.IndexOf("rootLoaded.TrySetResult()", StringComparison.Ordinal));
+        Assert.DoesNotContain("LaptopCardsHost.Children.Insert", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1796,7 +1850,7 @@ public sealed class WinUiShellContractTests
         string factory = SliceMethod(
             window,
             "private FrameworkElement CreateDashboardLiveCard",
-            "private void MoveCanonicalLaptopCardsIntoPlace");
+            "private void OnRootLoaded");
         Assert.Contains("? DisplayViewModel", factory, StringComparison.Ordinal);
         Assert.Contains(": ViewModel", factory, StringComparison.Ordinal);
         Assert.Contains("Content = content", factory, StringComparison.Ordinal);

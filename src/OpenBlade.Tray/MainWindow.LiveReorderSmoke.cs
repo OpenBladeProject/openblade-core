@@ -17,7 +17,9 @@ public sealed partial class MainWindow
         ApplyPrimaryNavigationPreferences(PrimaryNavigationPreferenceDefaults.Items);
     }
 
-    internal async Task VerifyLiveReorderSmokeAsync(Func<string, Task> capture)
+    internal async Task VerifyLiveReorderSmokeAsync(
+        Func<string, Task> capture,
+        Action<string>? reportPhase = null)
     {
         static void Require(bool condition, string message)
         {
@@ -131,6 +133,7 @@ public sealed partial class MainWindow
         // Exercise origin classification on real, templated controls and selectable values.
         SelectLocalizationSnapshotPage("laptop");
         await capture("laptop");
+        reportPhase?.Invoke("classify interactive controls");
         foreach (FrameworkElement control in new FrameworkElement[]
                  { new Slider(), new Microsoft.UI.Xaml.Controls.Button(), new ToggleSwitch(),
                    new Microsoft.UI.Xaml.Controls.TextBox(), new TextBlock { IsTextSelectionEnabled = true } })
@@ -146,14 +149,18 @@ public sealed partial class MainWindow
         Require(LiveReorderBehavior.CanStartFrom(passiveSurface, heading), "Passive card heading is not draggable.");
         Root.Children.Remove(passiveSurface);
 
+        reportPhase?.Invoke("flush saved preferences");
         await preferenceSaveQueue.DisposeAsync();
+        reportPhase?.Invoke("read saved preferences");
         UiPreferences saved = await preferenceStore.LoadAsync();
+        reportPhase?.Invoke("validate persisted reorder");
         Require(saved.EffectiveDashboardCards.Select(card => card.Kind).SequenceEqual(DashboardCards.Select(card => card.Kind))
             && saved.EffectivePrimaryNavigationItems.SequenceEqual(PrimaryNavigationItems.Select(item => item.Kind))
             && saved.EffectivePageLayouts.Single(layout => layout.Page == CustomizablePageKind.Settings)
                 .Sections.Select(section => (section.Kind, section.IsVisible))
                 .SequenceEqual(sections.Select(section => (section.Kind, section.IsVisible))),
             "Direct ordering was not persisted with hidden state.");
+        reportPhase?.Invoke("dispose reorder registrations");
         liveReorder.Dispose();
         liveReorder.Register(firstCard, DashboardCards, first);
         Require(!liveReorder.TryBeginDrag(firstCard, firstCard),

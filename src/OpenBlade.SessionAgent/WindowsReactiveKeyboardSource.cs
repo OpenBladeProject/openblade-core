@@ -12,12 +12,22 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
 {
     public static WindowsReactiveKeyboardSourceFactory Instance { get; } = new();
 
+    public bool CanTransferFunctionRowOwnership =>
+        WindowsReactiveKeyboardSource.FunctionRowOwnership.HasNoOutstandingSources;
+
     private WindowsReactiveKeyboardSourceFactory()
     {
     }
 
-    public IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions options) =>
-        new WindowsReactiveKeyboardSource(options);
+    public IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!options.ObserveOnly && !CanTransferFunctionRowOwnership)
+        {
+            throw new InvalidOperationException("The previous function-row keyboard hook has not confirmed cleanup.");
+        }
+        return new WindowsReactiveKeyboardSource(options);
+    }
 }
 
 /// <summary>
@@ -61,6 +71,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private static readonly LowLevelKeyboardProcedure KeyboardProcedureCallback =
         ProcessLowLevelKeyboard;
     private static WindowsReactiveKeyboardSource? keyboardHookOwner;
+    internal static WindowsFunctionRowOwnershipTracker FunctionRowOwnership { get; } = new();
 
     private readonly Action<ReactiveKeyPulse> publish;
     private readonly Action<PerformanceShortcutSource> publishPerformanceShortcut;
@@ -70,6 +81,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Action<FunctionRowInputEvent> publishFunctionRowInput;
     private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
     private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
+    private readonly Func<KeyboardInputBackend> readFunctionRowBackend;
+    private readonly bool observeOnly;
+    private int windowsFunctionRowHeld;
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
     private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
     private readonly Func<byte?> readBlade18KeyboardLayoutId;
@@ -101,6 +115,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private nint windowHandle;
     private uint messageThreadId;
     private bool performanceFunctionKeyPressed;
+    private readonly FunctionKeyObservation functionKeyObservation = new();
     private bool dedicatedPerformanceButtonPressed;
     private bool functionPPressed;
     private bool defaultGamingModePressed;
@@ -108,6 +123,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly bool[] specialKeyPressed = new bool[5];
     private nint keyboardHook;
     private int disposed;
+    private readonly WindowsFunctionRowOwnershipTracker.Registration? functionRowOwnership;
 
     internal WindowsReactiveKeyboardSource(ReactiveKeyboardSourceOptions options)
     {
@@ -136,6 +152,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         readSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted
             ?? throw new ArgumentNullException(nameof(options.IsSpecialKeyInputAdmitted));
         resetFunctionRowInput = options.ResetFunctionRowInput;
+        readFunctionRowBackend = options.ReadFunctionRowBackend;
+        observeOnly = options.ObserveOnly;
         publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
         isBlade18FnInputAdmitted = options.IsBlade18FnInputAdmitted ?? (() => false);
         reportBlade18FnDiagnostic = options.ReportBlade18FnDiagnostic;
@@ -144,7 +162,17 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             IsBackground = true,
             Name = "OpenBlade Reactive input",
         };
-        messageThread.Start();
+        functionRowOwnership = observeOnly ? null : FunctionRowOwnership.Begin();
+        try
+        {
+            messageThread.Start();
+        }
+        catch
+        {
+            // Thread.Start failed before the native worker could submit a hook.
+            functionRowOwnership?.Complete(hookCleanupConfirmed: true, hasActiveKeys: false);
+            throw;
+        }
         try
         {
             initialization.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
@@ -158,8 +186,23 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     public Task Completion => completion.Task;
 
+    public bool HasActiveFunctionRowKeys => Volatile.Read(ref windowsFunctionRowHeld) != 0;
+
+    public bool CanTransferFunctionRowOwnership => observeOnly
+        || functionRowOwnership?.CanTransferOwnership(
+            Volatile.Read(ref disposed) == 0
+            && !completion.Task.IsCompleted
+            && !HasActiveFunctionRowKeys) == true;
+
+    internal bool FunctionKeyPressed => functionKeyObservation.Pressed;
+
+    internal bool FunctionKeyKnown => functionKeyObservation.Known;
+
+    internal bool? FunctionKeyState => functionKeyObservation.Read();
+
     public void ResetFunctionPInput()
     {
+        functionKeyObservation.Invalidate();
         rz090528FunctionPInput.RequestReset();
         Interlocked.Exchange(ref blade18ResetRequested, 1);
     }
@@ -406,23 +449,27 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             Sources[created] = this;
             RegisterRawInput(created, RawInputDeviceInputSink | RawInputDeviceNotify);
             inputRegistered = true;
-            if (Interlocked.CompareExchange(ref keyboardHookOwner, this, null) is not null)
+            if (!observeOnly)
             {
-                throw new InvalidOperationException(
-                    "A special-key keyboard hook is already active in this session agent.");
+                if (Interlocked.CompareExchange(ref keyboardHookOwner, this, null) is not null)
+                {
+                    throw new InvalidOperationException(
+                        "A special-key keyboard hook is already active in this session agent.");
+                }
+                keyboardHook = SetWindowsHookEx(
+                    LowLevelKeyboardHook,
+                    KeyboardProcedureCallback,
+                    module,
+                    0);
+                if (keyboardHook == 0)
+                {
+                    Interlocked.CompareExchange(ref keyboardHookOwner, null, this);
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "Unable to observe shared Fn-layer keys.");
+                }
             }
-            keyboardHook = SetWindowsHookEx(
-                LowLevelKeyboardHook,
-                KeyboardProcedureCallback,
-                module,
-                0);
-            if (keyboardHook == 0)
-            {
-                Interlocked.CompareExchange(ref keyboardHookOwner, null, this);
-                throw new Win32Exception(
-                    Marshal.GetLastWin32Error(),
-                    "Unable to observe shared Fn-layer keys.");
-            }
+            functionRowOwnership?.ConfirmActive();
             initialization.TrySetResult();
 
             while (true)
@@ -456,7 +503,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         finally
         {
             nint hook = Interlocked.Exchange(ref keyboardHook, 0);
-            if (hook != 0 && !UnhookWindowsHookEx(hook))
+            bool hookCleanupConfirmed = hook == 0 || UnhookWindowsHookEx(hook);
+            if (!hookCleanupConfirmed)
             {
                 Trace.TraceWarning(
                     "Special-key keyboard hook cleanup failed: {0}",
@@ -489,6 +537,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 _ = UnregisterClass(windowClassName, module);
             }
+
+            // A failed unhook or an abandoned suppressed press remains unsafe even
+            // after Completion faults or the global callback owner is cleared.
+            functionRowOwnership?.Complete(hookCleanupConfirmed, HasActiveFunctionRowKeys);
 
             initialization.TrySetException(
                 new InvalidOperationException("Reactive input stopped before initialization."));
@@ -626,8 +678,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     keyWasAlreadyDown,
                     owner.performanceFunctionKeyPressed,
                     owner.readFunctionKeyPrimaryMode(),
-                    owner.readDriverModeObservation().AllowsFunctionRowInterception,
+                    FunctionRowKeyboardHookProcessor.ShouldAdmitNewPress(
+                        owner.readFunctionRowBackend(), owner.readDriverModeObservation()),
                     owner.publishFunctionRowInput);
+                Volatile.Write(ref owner.windowsFunctionRowHeld,
+                    owner.functionRowInput.HasActiveKeys ? 1 : 0);
                 if (suppressFunctionRow)
                 {
                     return 1;
@@ -751,6 +806,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     private void InvalidateBlade18Packet()
     {
+        // A malformed Raw Input packet may have hidden an Fn transition.
+        functionKeyObservation.Invalidate();
         blade18Fn.Invalidate();
         CancelBlade18Input();
     }
@@ -935,12 +992,15 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ReinstallKeyboardHook();
         }
         FunctionRowHookRecoveryResult recovery =
-            FunctionRowHookRecovery.EvaluateTargetPacket(
+            readFunctionRowBackend() != KeyboardInputBackend.WindowsHook && !functionRowInput.HasActiveKeys
+                ? default
+                : FunctionRowHookRecovery.EvaluateTargetPacket(
                 functionRowInput,
                 deviceKind,
                 observedByHook,
                 keyboard.MakeCode,
                 keyDown);
+        Volatile.Write(ref windowsFunctionRowHeld, functionRowInput.HasActiveKeys ? 1 : 0);
         if (recovery.ReinstallHook)
         {
             if (recovery.ReleaseEvent is { } inputEvent)
@@ -1094,6 +1154,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 ref performanceFunctionKeyPressed,
                 specialKeyPressed,
                 out SpecialKeySlot specialKey);
+            functionKeyObservation.Observe(deviceKind, report[..inspectedBytes]);
             bool inputAdmitted = specialTriggered
                 && readSpecialKeyInputAdmitted(specialKey);
             bool overrideSpecialKey = inputAdmitted
@@ -1156,6 +1217,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     private void ReinstallKeyboardHook()
     {
+        if (observeOnly)
+        {
+            return;
+        }
         nint replacement = SetWindowsHookEx(
             LowLevelKeyboardHook,
             KeyboardProcedureCallback,

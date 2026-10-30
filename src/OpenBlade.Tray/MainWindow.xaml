@@ -2564,20 +2564,6 @@
                             </StackPanel>
                         </Border>
 
-                        <ContentControl x:Name="PowerModeCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardPowerModeCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
-
-                        <ContentControl x:Name="FansCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardFansCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
-
-                        <ContentControl x:Name="BatteryCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
                     </StackPanel>
                 </ScrollViewer>
 
@@ -3319,6 +3305,21 @@
                         </local:ResponsivePageHeader>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
+                        <ContentControl x:Name="PowerModeCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardPowerModeCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="FansCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardFansCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="BatteryCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
                         <StackPanel x:Name="KeyboardSection">
                             <TextBlock x:Name="KeyboardHeader" x:Uid="SnapTap_KeyboardHeader"
                                        Text="Keyboard" Style="{StaticResource SectionHeaderStyle}" />
@@ -3329,6 +3330,27 @@
                                                     ContentTemplate="{StaticResource KeyboardBehaviorRowsTemplate}"
                                                     HorizontalContentAlignment="Stretch"
                                                     Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
+                                    <Border x:Name="FunctionRowBackendRow" Style="{StaticResource SettingsRowStyle}" Visibility="{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="4" VerticalAlignment="Center">
+                                                <TextBlock x:Uid="KeyboardBackend_FunctionRowTitle" Text="Multimedia key input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                <TextBlock x:Name="FunctionRowWindowsHookHelp" x:Uid="KeyboardBackend_FunctionRowWindowsHelp"
+                                                           Text="Applies to all keyboards. Some games may also receive the original function key." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                                <TextBlock x:Name="FunctionRowBackendStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
+                                                <Button x:Name="FunctionRowInstallDriverButton" x:Uid="KeyboardBackend_InstallFunctionRowDriver"
+                                                        Content="Install driver" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}"
+                                                        Click="OnInstallFunctionRowDriver" AutomationProperties.Name="Install the Razer keyboard driver" Visibility="Collapsed" />
+                                            </StackPanel>
+                                            <local:ResponsiveChoiceSelector x:Name="FunctionRowBackendSelector" x:Uid="KeyboardBackend_FunctionRowSelector"
+                                                                            Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                                            AccessibleName="Multimedia key input" DisplayMemberPath="Label"
+                                                                            PlaceholderText="Choose input method" SelectionChanged="OnFunctionRowBackendChanged" />
+                                        </Grid>
+                                    </Border>
                                     <Border x:Name="TouchpadRow" Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>
@@ -3351,7 +3373,7 @@
                                                           Toggled="OnTouchpadToggled" />
                                         </Grid>
                                     </Border>
-                                    <Border x:Name="SnapTapRow" Style="{StaticResource SettingsLastRowStyle}">
+                                    <Border x:Name="SnapTapRow" Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -3371,7 +3393,7 @@
                                                                 <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
                                                                     <StackPanel MaxWidth="320" Spacing="12">
                                                                         <TextBlock x:Uid="SnapTap_InfoTitle" Text="About SnapTap" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
-                                                                        <TextBlock x:Uid="SnapTap_InfoInput" Text="SnapTap uses the Razer keyboard driver for the laptop’s built-in keyboard." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                                        <TextBlock x:Uid="SnapTap_InfoInput" Text="Razer driver handles the built-in keyboard. Windows hook applies to all keyboards." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                                         <TextBlock x:Uid="SnapTap_InfoCompatibility" Text="Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                                                     </StackPanel>
                                                                 </ScrollViewer>
@@ -3401,6 +3423,23 @@
                                                 </StackPanel>
                                             </StackPanel>
                                             <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
+                                        </Grid>
+                                    </Border>
+                                    <Border x:Name="SnapTapBackendRow" Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="4" VerticalAlignment="Center">
+                                                <TextBlock x:Uid="KeyboardBackend_SnapTapTitle" Text="SnapTap input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                <TextBlock x:Name="SnapTapWindowsHookHelp" x:Uid="KeyboardBackend_SnapTapWindowsHelp"
+                                                           Text="Applies to all keyboards. Some games may ignore Windows hook input." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                            </StackPanel>
+                                            <local:ResponsiveChoiceSelector x:Name="SnapTapBackendSelector" x:Uid="KeyboardBackend_SnapTapSelector"
+                                                                            Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                                            AccessibleName="SnapTap input" DisplayMemberPath="Label"
+                                                                            PlaceholderText="Choose input method" SelectionChanged="OnSnapTapBackendChanged" />
                                         </Grid>
                                     </Border>
                                 </StackPanel>

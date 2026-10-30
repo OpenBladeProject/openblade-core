@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Choose Windows hook or Razer driver separately for SnapTap and multimedia keys. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
 - Warn after 10 seconds of battery discharge while plugged in, with a tray badge and configurable notification. ([#866](https://github.com/OSSBlade/openblade-core/pull/866))
 - Reorder customizable cards and side-menu items by dragging them directly, with changes saved immediately. ([#861](https://github.com/OpenBladeProject/openblade-core/pull/861))
 - Show what's new automatically on the first launch of each version, with offline release notes and a button to reopen them from About. ([#862](https://github.com/OSSBlade/openblade-core/pull/862))
@@ -19,6 +20,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fix a dashboard loading crash during application language changes. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
 - Make tray power sources and performance modes easier to distinguish, with clearer monochrome icons and a dedicated HyperBoost symbol. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
 - Preserve local-development installer logs after rollback and recognize Session Agent helpers during deployment and relaunch. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
 

@@ -89,7 +89,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingNotificationPreferences;
     private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
-    private bool canonicalLaptopCardsPlaced;
     private bool fanControlCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private bool? dashboardIsStacked;
@@ -225,6 +224,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
+        InitializeKeyboardBackendSelectors();
         InitializeApplicationProfilePages();
         BatteryHistoryViewModel.PropertyChanged += OnBatteryHistoryPropertyChanged;
         RefreshBatteryHistoryPresentation();
@@ -942,6 +942,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
             snapTapEnabled = preferences.SnapTapEnabled;
+            snapTapBackend = preferences.EffectiveSnapTapBackend;
+            functionRowBackend = preferences.EffectiveFunctionRowBackend;
             initialUpdateChannel = preferences.EffectiveUpdateChannel;
             initialUpdateCheckInterval = preferences.EffectiveUpdateCheckInterval;
             initialUpdateCheckPromptShown = preferences.UpdateCheckPromptShown;
@@ -1032,6 +1034,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        InitializeKeyboardBackendSelectors();
         SnapTapToggle.IsOn = snapTapEnabled;
         RefreshSnapTapStatus();
         ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
@@ -1501,6 +1504,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
                 Language: ViewModel.LanguagePreference,
                 SnapTapEnabled: snapTapEnabled,
+                SnapTapBackend: snapTapBackend,
+                FunctionRowBackend: functionRowBackend,
                 ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled,
                 TelemetryChartMetrics: TelemetryPlot.MetricPreferences,
                 TelemetryEnabled: ViewModel.TelemetryEnabled));
@@ -5395,31 +5400,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         };
     }
 
-    private void MoveCanonicalLaptopCardsIntoPlace()
+    private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
-        if (canonicalLaptopCardsPlaced)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
 
-        foreach (FrameworkElement card in new[] { PowerModeCard, FansCard, BatteryCard })
-        {
-            if (card.Parent is Microsoft.UI.Xaml.Controls.Panel current)
-            {
-                current.Children.Remove(card);
-            }
-        }
-
-        LaptopCardsHost.Children.Insert(0, BatteryCard);
-        LaptopCardsHost.Children.Insert(0, FansCard);
-        LaptopCardsHost.Children.Insert(0, PowerModeCard);
-        canonicalLaptopCardsPlaced = true;
-    }
-
-    private void OnRootLoaded(object sender, RoutedEventArgs args)
-    {
         rootLoaded.TrySetResult();
-        MoveCanonicalLaptopCardsIntoPlace();
         RegisterPageSections();
         dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;
         dashboardCardsReady = true;

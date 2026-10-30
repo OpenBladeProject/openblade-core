@@ -748,6 +748,29 @@ public sealed partial class ServiceReactiveLightingLoopTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
 
+    [Theory]
+    [InlineData(KeyboardInputBackend.WindowsHook)]
+    [InlineData(KeyboardInputBackend.RazerDriver)]
+    [InlineData(KeyboardInputBackend.Unknown)]
+    public async Task FunctionRowBackendSelectionIsLiveAndNeverSubstitutesUnknown(KeyboardInputBackend backend)
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory,
+            new ServiceReactiveLightingLoopOptions(ReadFunctionRowBackend: () => backend));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        Assert.Equal(backend, factory.Last!.ReadFunctionRowBackend());
+        backend = (KeyboardInputBackend)99;
+        Assert.Equal(KeyboardInputBackend.Unknown, factory.Last.ReadFunctionRowBackend());
+        backend = KeyboardInputBackend.RazerDriver;
+        Assert.Equal(KeyboardInputBackend.RazerDriver, factory.Last.ReadFunctionRowBackend());
+        Assert.Equal(1, factory.CreateCount);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     [Fact]
     public async Task AuthoritativeStatusControlsFunctionRowTranslation()
     {
@@ -1160,6 +1183,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
 
     private sealed class RecordingSourceFactory : IReactiveKeyboardSourceFactory
     {
+        public bool CanTransferFunctionRowOwnership => Last?.CanTransferFunctionRowOwnership ?? true;
         public int CreateCount { get; private set; }
 
         public RecordingSource? Last { get; private set; }
@@ -1174,6 +1198,9 @@ public sealed partial class ServiceReactiveLightingLoopTests
 
     private sealed class RecordingSource : IReactiveKeyboardSource
     {
+        public bool HasActiveFunctionRowKeys { get; set; }
+        public bool CanTransferFunctionRowOwnership => !HasActiveFunctionRowKeys && (!Completion.IsCompleted || Disposed);
+
         private readonly TaskCompletionSource completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Action<ReactiveKeyPulse> publish;
@@ -1183,6 +1210,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
         private readonly Action<SpecialKeySlot> publishDefaultLaptopKey;
         private readonly Action<FunctionRowInputEvent> publishFunctionRowInput;
         private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
+        private readonly Func<KeyboardInputBackend> readFunctionRowBackend;
         private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
         private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
@@ -1201,6 +1229,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
             publishDefaultLaptopKey = options.PublishDefaultLaptopKey;
             publishFunctionRowInput = options.PublishFunctionRowInput;
             readFunctionKeyPrimaryMode = options.ReadFunctionKeyPrimaryMode;
+            readFunctionRowBackend = options.ReadFunctionRowBackend;
             readDriverModeObservation = options.ReadDriverModeObservation;
             readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy;
             readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind;
@@ -1237,6 +1266,8 @@ public sealed partial class ServiceReactiveLightingLoopTests
 
         public FunctionKeyPrimaryMode? ReadFunctionKeyPrimaryMode() =>
             readFunctionKeyPrimaryMode();
+
+        public KeyboardInputBackend ReadFunctionRowBackend() => readFunctionRowBackend();
 
         public KeyboardDriverModeObservation ReadDriverModeObservation() =>
             readDriverModeObservation();

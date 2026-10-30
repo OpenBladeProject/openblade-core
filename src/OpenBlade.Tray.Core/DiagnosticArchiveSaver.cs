@@ -47,6 +47,7 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
     private readonly string userModeLogDirectory;
     private readonly IThxAudioDiagnosticProvider? thxAudioDiagnostics;
     private readonly Func<SnapTapDiagnosticReport> snapTapDiagnostics;
+    private readonly Func<SnapTapDiagnosticReport> functionRowDiagnostics;
 
     public DiagnosticArchiveSaver(IDiagnosticArchiveDestination destination)
         : this(destination, PersistentTraceLog.DefaultLogDirectory, thxAudioDiagnostics: null)
@@ -71,7 +72,8 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
         IDiagnosticArchiveDestination destination,
         string userModeLogDirectory,
         IThxAudioDiagnosticProvider? thxAudioDiagnostics,
-        Func<SnapTapDiagnosticReport>? snapTapDiagnostics = null)
+        Func<SnapTapDiagnosticReport>? snapTapDiagnostics = null,
+        Func<SnapTapDiagnosticReport>? functionRowDiagnostics = null)
     {
         this.destination = destination
             ?? throw new ArgumentNullException(nameof(destination));
@@ -79,6 +81,7 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
         this.userModeLogDirectory = userModeLogDirectory;
         this.thxAudioDiagnostics = thxAudioDiagnostics;
         this.snapTapDiagnostics = snapTapDiagnostics ?? (() => SnapTapStatusStore.CaptureDiagnostics());
+        this.functionRowDiagnostics = functionRowDiagnostics ?? (() => FunctionRowBackendStatusStore.CaptureDiagnostics());
     }
 
     public Task<DiagnosticArchiveSaveResult> SaveAsync(
@@ -151,6 +154,21 @@ public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
                         DiagnosticFailure.FromException("SnapTap", "Diagnostics", "Capture", "CaptureFailed", exception));
                 }
                 archiveBytes = TryAppendJson(archiveBytes, "snap-tap.json", snapTap, sections, token);
+                SnapTapDiagnosticReport functionRow;
+                try
+                {
+                    functionRow = functionRowDiagnostics();
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    functionRow = new(DateTimeOffset.UtcNow, null,
+                        DiagnosticFailure.FromException("FunctionRow", "Diagnostics", "Capture", "CaptureFailed", exception));
+                }
+                archiveBytes = TryAppendJson(archiveBytes, "function-row.json", functionRow, sections, token);
                 if (thxAudioDiagnostics is not null)
                 {
                     ThxAudioDiagnosticReport diagnostics;

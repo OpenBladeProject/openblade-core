@@ -2193,7 +2193,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>关于 SnapTap</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>SnapTap 通过 Razer 键盘驱动控制笔记本内置键盘。</value>
+    <value>Razer 驱动仅处理内置键盘，Windows 钩子会影响所有键盘。</value>
   </data>
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>尚未验证游戏兼容性。</value>
@@ -2764,6 +2764,69 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="WhatsNew_Security" xml:space="preserve">
     <value>安全修复</value>
+  </data>
+  <data name="KeyboardBackend_DriverMissing" xml:space="preserve">
+    <value>缺少 Razer 键盘驱动。</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.AccessibleName" xml:space="preserve">
+    <value>多媒体按键输入</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
+    <value>多媒体按键输入</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
+    <value>SnapTap 输入</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
+    <value>SnapTap 输入</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.PlaceholderText" xml:space="preserve">
+    <value>选择输入方式</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.PlaceholderText" xml:space="preserve">
+    <value>选择输入方式</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowWindowsHelp.Text" xml:space="preserve">
+    <value>此方式会影响所有键盘。部分游戏仍可能接收原始功能键。</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapWindowsHelp.Text" xml:space="preserve">
+    <value>此方式会影响所有键盘。部分游戏可能忽略 Windows 钩子输入。</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
+    <value>安装驱动</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>安装 Razer 键盘驱动</value>
+  </data>
+  <data name="KeyboardBackend_ManualSetup" xml:space="preserve">
+    <value>安装此笔记本的 Razer 键盘驱动后，切换输入方式以重试。</value>
+  </data>
+  <data name="KeyboardBackend_Paused" xml:space="preserve">
+    <value>输入处理已暂停。请导出诊断信息以查看详情。</value>
+  </data>
+  <data name="KeyboardBackend_RazerDriver" xml:space="preserve">
+    <value>Razer 驱动</value>
+  </data>
+  <data name="KeyboardBackend_Recovery" xml:space="preserve">
+    <value>请重启 Windows 后再使用此输入方式。</value>
+  </data>
+  <data name="KeyboardBackend_Unknown" xml:space="preserve">
+    <value>请选择输入方式以恢复。</value>
+  </data>
+  <data name="KeyboardBackend_Unsupported" xml:space="preserve">
+    <value>此笔记本无法使用该输入方式。</value>
+  </data>
+  <data name="KeyboardBackend_Waiting" xml:space="preserve">
+    <value>正在等待所选输入方式…</value>
+  </data>
+  <data name="KeyboardBackend_WindowsHook" xml:space="preserve">
+    <value>Windows 钩子</value>
+  </data>
+  <data name="KeyboardBackend_DriverInstalled" xml:space="preserve">
+    <value>驱动已安装。请切换输入方式以重试。</value>
+  </data>
+  <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
+    <value>按一下 Fn 以启用多媒体按键。</value>
   </data>
   <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
     <value>接通电源时电池放电</value>
