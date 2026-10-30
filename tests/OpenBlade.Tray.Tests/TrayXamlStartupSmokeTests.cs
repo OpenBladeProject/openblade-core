@@ -160,9 +160,11 @@ public sealed class TrayXamlStartupSmokeTests
 
             process = desktop.Start(startInfo);
             Assert.NotNull(process);
-            TimeSpan processTimeout = isolatePreferences
-                ? TimeSpan.FromSeconds(45)
-                : TimeSpan.FromSeconds(30);
+            // Reordering captures both section and nested-card states; its additional
+            // frames need a bounded render budget under full-solution test load.
+            TimeSpan processTimeout = argument == "--live-reorder-smoke"
+                ? TimeSpan.FromSeconds(60)
+                : isolatePreferences ? TimeSpan.FromSeconds(45) : TimeSpan.FromSeconds(30);
             using var timeout = new CancellationTokenSource(processTimeout);
             try
             {

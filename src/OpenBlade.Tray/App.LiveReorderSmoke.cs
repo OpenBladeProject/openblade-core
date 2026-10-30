@@ -20,12 +20,35 @@ public partial class App
         var cards = new ObservableCollection<string> { "Card A", "Card B", "Card C" };
         var pages = new ObservableCollection<string> { "Page A", "Page B", "Page C" };
         var host = new StackPanel { Spacing = 12, Padding = new Thickness(24) };
+        var cardHost = new StackPanel { Spacing = 12 };
+        var header = new TextBlock { Text = "Section A", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] };
+        var otherHeader = new TextBlock { Text = "Section B", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] };
+        var section = new StackPanel { Spacing = 8 };
+        section.Children.Add(header);
+        section.Children.Add(cardHost);
+        var otherSection = new StackPanel { Spacing = 8 };
+        otherSection.Children.Add(otherHeader);
+        var otherCard = new Border
+        {
+            Padding = new Thickness(20),
+            MinHeight = 100,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.LightGray),
+            Child = new TextBlock { Text = "Card D" },
+        };
+        otherSection.Children.Add(otherCard);
+        var sections = new ObservableCollection<StackPanel> { section, otherSection };
+        host.Children.Add(section);
+        host.Children.Add(otherSection);
+        behavior.Register(section, sections, section, origin => ReferenceEquals(origin, header));
+        behavior.Register(otherSection, sections, otherSection, origin => ReferenceEquals(origin, otherHeader));
+        var otherCards = new ObservableCollection<string> { "Card D" };
+        behavior.Register(otherCard, otherCards, otherCards[0]);
         var navigation = new NavigationView
         {
             IsSettingsVisible = false,
             IsPaneOpen = true,
             PaneDisplayMode = NavigationViewPaneDisplayMode.Left,
-            Content = host,
+            Content = new ScrollViewer { Content = host },
         };
         var presentations = new Dictionary<string, Border>();
         var menu = new Dictionary<string, NavigationViewItem>();
@@ -35,7 +58,7 @@ public partial class App
         var clearPreview = new Microsoft.UI.Xaml.Controls.Button { Content = "Clear drag preview" };
         int clicks = 0;
         void Report() => File.WriteAllText(reportPath,
-            $"cards={string.Join(',', cards)}; pages={string.Join(',', pages)}; slider={slider.Value}; clicks={clicks}");
+            $"cards={string.Join(',', cards)}; sections={string.Join(',', sections.Select(item => ReferenceEquals(item, section) ? "A" : "B"))}; pages={string.Join(',', pages)}; slider={slider.Value}; clicks={clicks}");
         foreach (string card in cards)
         {
             var content = new StackPanel { Spacing = 8 };
@@ -53,7 +76,7 @@ public partial class App
                 Child = content,
             };
             presentations.Add(card, border);
-            host.Children.Add(border);
+            cardHost.Children.Add(border);
             behavior.Register(border, cards, card);
         }
         foreach (string page in pages)
@@ -67,8 +90,17 @@ public partial class App
         {
             for (int i = 0; i < cards.Count; i++)
             {
-                int index = host.Children.IndexOf(presentations[cards[i]]);
-                host.Children.Move((uint)index, (uint)i);
+                int index = cardHost.Children.IndexOf(presentations[cards[i]]);
+                cardHost.Children.Move((uint)index, (uint)i);
+            }
+            Report();
+        };
+        sections.CollectionChanged += (_, _) =>
+        {
+            for (int index = 0; index < sections.Count; index++)
+            {
+                int current = host.Children.IndexOf(sections[index]);
+                host.Children.Move((uint)current, (uint)index);
             }
             Report();
         };
@@ -96,7 +128,7 @@ public partial class App
         root.Children.Add(navigation);
         window.Content = root;
         window.Closed += (_, _) => { behavior.Dispose(); Environment.Exit(0); };
-        window.AppWindow.Resize(new Windows.Graphics.SizeInt32(900, 1000));
+        window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1100, 1250));
         Report();
         window.Activate();
     }
@@ -121,6 +153,7 @@ public partial class App
             await WaitForSnapshotLayoutAsync();
             await window.VerifyLiveReorderSmokeAsync(async name =>
             {
+                File.WriteAllText(reportPath, $"capture {name}");
                 await WaitForSnapshotLayoutAsync();
                 await SaveSnapshotAsync((FrameworkElement)window.Content, reportPath + "." + name + ".png");
             });
