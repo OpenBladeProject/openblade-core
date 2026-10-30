@@ -2322,13 +2322,10 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>满充容量 {0} · 设计容量 {1} · 健康度 {2} · 循环次数 {3}</value>
   </data>
   <data name="BatteryHistory_Interval" xml:space="preserve">
-    <value>{0} – {1} · {2} · {3} · 电量 {4} · 放电 {5}</value>
+    <value>{0} – {1} · {2} · {3} · 起始电量 {4} · 耗电量 {5}</value>
   </data>
-  <data name="BatteryHistory_Load.Content" xml:space="preserve">
+  <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
     <value>加载电池历史记录</value>
-  </data>
-  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
-    <value>加载 Windows 电池报告以查看最近 24 小时。</value>
   </data>
   <data name="BatteryHistory_SourceTime" xml:space="preserve">
     <value>Windows 电池报告 · 生成于 {0}</value>
@@ -2339,44 +2336,11 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="BatteryHistory_Suspended" xml:space="preserve">
     <value>已挂起</value>
   </data>
-  <data name="BatteryHistory_Title.Text" xml:space="preserve">
-    <value>电池历史记录</value>
-  </data>
   <data name="BatteryHistory_Unknown" xml:space="preserve">
     <value>未知</value>
   </data>
-  <data name="BatteryPreset_Cancel" xml:space="preserve">
-    <value>取消</value>
-  </data>
-  <data name="BatteryPreset_Change" xml:space="preserve">
-    <value>{0}: {1} → {2}</value>
-  </data>
-  <data name="BatteryPreset_Description" xml:space="preserve">
-    <value>将这些更改保存到电池配置。手动控制和应用覆盖设置仍保持优先。</value>
-  </data>
-  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
-    <value>延长电池续航</value>
-  </data>
-  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
-    <value>保存前预览受支持的电池配置更改。</value>
-  </data>
-  <data name="BatteryPreset_NoChanges" xml:space="preserve">
-    <value>受支持的电池设置已与此预设一致。</value>
-  </data>
-  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
-    <value>预览预设</value>
-  </data>
-  <data name="BatteryPreset_Save" xml:space="preserve">
-    <value>保存到电池配置</value>
-  </data>
-  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
-    <value>电池配置已更改或无法保存。请关闭此预览后重试。</value>
-  </data>
-  <data name="BatteryPreset_Title" xml:space="preserve">
-    <value>延长电池续航</value>
-  </data>
   <data name="BatteryTimeline_AC" xml:space="preserve">
-    <value>交流电源</value>
+    <value>电源供电</value>
   </data>
   <data name="BatteryTimeline_Battery" xml:space="preserve">
     <value>电池</value>
@@ -2875,5 +2839,17 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
     <value>已连接外部电源，但仍在使用电池供电。请降低负载，或检查充电器和线缆。</value>
+  </data>
+  <data name="BatteryHistory_Report.Header" xml:space="preserve">
+    <value>Windows 电池报告</value>
+  </data>
+  <data name="BatteryHistory_Details.Header" xml:space="preserve">
+    <value>时段详情</value>
+  </data>
+  <data name="BatteryHistory_SnapshotError" xml:space="preserve">
+    <value>无法加载电池历史记录，请重试。</value>
+  </data>
+  <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
+    <value>供电来源</value>
   </data>
 </root>

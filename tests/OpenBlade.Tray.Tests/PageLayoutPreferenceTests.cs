@@ -47,7 +47,6 @@ public sealed class PageLayoutPreferenceTests
                 PageSectionKind.LaptopPowerMode,
                 PageSectionKind.LaptopFans,
                 PageSectionKind.LaptopBattery,
-                PageSectionKind.LaptopBatteryHistory,
                 PageSectionKind.LaptopKeyboardBehavior,
                 PageSectionKind.LaptopStartupAnimation,
             ],
@@ -55,6 +54,48 @@ public sealed class PageLayoutPreferenceTests
         Assert.False(laptop.Sections[0].IsVisible);
         Assert.True(laptop.Sections[1].IsVisible);
         Assert.All(laptop.Sections.Skip(2), section => Assert.True(section.IsVisible));
+    }
+
+    [Fact]
+    public async Task LegacyBatteryHistorySectionDoesNotResetOtherPreferences()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"OpenBlade.PageLayouts.{Guid.NewGuid():N}");
+        string path = Path.Combine(directory, "preferences.json");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await File.WriteAllTextAsync(path, """
+                {
+                  "theme": "Dark",
+                  "telemetryEnabled": true,
+                  "pageLayouts": [{
+                    "page": "Laptop",
+                    "sections": [
+                      { "kind": "LaptopBatteryHistory", "isVisible": false },
+                      { "kind": "LaptopKeyboardBehavior", "isVisible": false },
+                      { "kind": "LaptopPowerMode", "isVisible": true }
+                    ]
+                  }]
+                }
+                """);
+
+            UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
+            PageLayoutPreference laptop = preferences.EffectivePageLayouts
+                .Single(layout => layout.Page == CustomizablePageKind.Laptop);
+
+            Assert.Equal(ThemePreference.Dark, preferences.Theme);
+            Assert.True(preferences.TelemetryEnabled);
+            Assert.DoesNotContain(laptop.Sections, section => section.Kind == PageSectionKind.LaptopBatteryHistory);
+            Assert.Equal(PageSectionKind.LaptopKeyboardBehavior, laptop.Sections[0].Kind);
+            Assert.False(laptop.Sections[0].IsVisible);
+            Assert.Equal(PageSectionKind.LaptopPowerMode, laptop.Sections[1].Kind);
+            Assert.DoesNotContain(PageLayoutPreferenceDefaults.CreateOptions(CustomizablePageKind.Laptop, null),
+                option => option.Kind == PageSectionKind.LaptopBatteryHistory);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]

@@ -51,6 +51,48 @@ public sealed class WindowsBatteryHistoryViewModelTests
         Assert.False(viewModel.IsLoading);
     }
 
+    [Fact]
+    public async Task Refresh_InFlightKeepsConfirmedReportUntilNewReportArrives()
+    {
+        WindowsBatteryReport report = CreateReport();
+        var adapter = new ControlledAdapter(report);
+        await using var viewModel = new WindowsBatteryHistoryViewModel(adapter);
+        await viewModel.RefreshAsync();
+        adapter.Pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task refresh = viewModel.RefreshAsync();
+
+        Assert.True(viewModel.IsLoading);
+        Assert.Same(report, viewModel.Report);
+        Assert.Null(viewModel.Error);
+        adapter.Pending.SetException(new IOException("Report generation failed."));
+        await refresh;
+        Assert.False(viewModel.IsLoading);
+        Assert.Same(report, viewModel.Report);
+        Assert.Equal("Report generation failed.", viewModel.Error);
+    }
+
+    [Fact]
+    public async Task Refresh_InitialFailureDoesNotInventReportOrIntervals()
+    {
+        var adapter = new StubAdapter(CreateReport()) { Failure = new IOException("Report generation failed.") };
+        await using var viewModel = new WindowsBatteryHistoryViewModel(adapter);
+
+        await viewModel.RefreshAsync();
+
+        Assert.Null(viewModel.Report);
+        Assert.Empty(viewModel.Intervals);
+        Assert.Null(viewModel.Status);
+        Assert.False(viewModel.IsLoading);
+        Assert.Equal("Report generation failed.", viewModel.Error);
+    }
+
+    private sealed class ControlledAdapter(WindowsBatteryReport report) : IWindowsBatteryReportAdapter
+    {
+        internal TaskCompletionSource<WindowsBatteryReport>? Pending { get; set; }
+        public Task<WindowsBatteryReport> ReadAsync(CancellationToken cancellationToken) =>
+            Pending?.Task ?? Task.FromResult(report);
+    }
     private sealed class CancellableAdapter : IWindowsBatteryReportAdapter
     {
         internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

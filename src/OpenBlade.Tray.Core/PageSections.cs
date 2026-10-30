@@ -37,6 +37,7 @@ public enum PageSectionKind
     AboutDeviceInformation,
     AboutSupport,
     AboutTroubleshooting,
+    // Retained for old string-enum preferences; no longer a Laptop section.
     LaptopBatteryHistory,
     ProfilesApplications,
 }
@@ -129,11 +130,6 @@ public static class PageLayoutPreferenceDefaults
             PageSectionKind.LaptopBattery,
             TrayText.Get("Battery"),
             TrayText.Get("Manage battery protection and temporary full charge.")),
-        new(
-            CustomizablePageKind.Laptop,
-            PageSectionKind.LaptopBatteryHistory,
-            TrayText.Get("Battery history"),
-            TrayText.Get("Review Windows battery history and preview a long battery life preset.")),
         new(
             CustomizablePageKind.Laptop,
             PageSectionKind.LaptopKeyboardBehavior,

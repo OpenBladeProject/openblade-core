@@ -19,7 +19,9 @@
     "tray/main-thx-audio-enhancements.png",
     "tray/main-thx-audio-applications.png",
     "tray/main-laptop.png",
-    "tray/main-laptop-battery-history.png",
+    "tray/main-telemetry-battery-report.png",
+    "tray/main-telemetry-battery-report-narrow.png",
+    "tray/main-telemetry-battery-report-details.png",
     "tray/main-laptop-snap-tap-info.png",
     "tray/snap-tap-information.png",
     "tray/main-lighting.png",
@@ -78,9 +80,9 @@
     {
       "surface": "tray",
       "match": "key",
-      "pattern": "^(?:BatteryHistory_|BatteryPreset_|BatteryTimeline_|MainWindow_BatteryHistoryRowsText)",
-      "context": "Windows battery history and long battery life preset preview shown with disconnected sample intervals.",
-      "screenshots": ["tray/main-laptop-battery-history.png"]
+      "pattern": "^(?:BatteryHistory_|BatteryTimeline_|MainWindow_BatteryHistoryRowsText)",
+      "context": "Windows battery report in Telemetry, with disconnected sample intervals and optional details.",
+      "screenshots": ["tray/main-telemetry-battery-report.png", "tray/main-telemetry-battery-report-narrow.png", "tray/main-telemetry-battery-report-details.png"]
     },
     {
       "surface": "tray",
@@ -190,9 +192,9 @@
     {
       "surface": "tray-core",
       "match": "source",
-      "pattern": "(?i)(?:battery history|long battery life|last 24 hours|connected standby|discharged|full charge \\{0\\}.*design)",
-      "context": "Runtime Windows battery history and long battery life preset text.",
-      "screenshots": ["tray/main-laptop-battery-history.png"]
+      "pattern": "(?i)(?:battery history|last 24 hours|connected standby|discharged|full charge \\{0\\}.*design)",
+      "context": "Runtime Windows battery report text shown in Telemetry.",
+      "screenshots": ["tray/main-telemetry-battery-report.png", "tray/main-telemetry-battery-report-narrow.png", "tray/main-telemetry-battery-report-details.png"]
     },
     {
       "surface": "tray-core",

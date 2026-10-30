@@ -5435,7 +5435,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         pageSectionPresentations[PageSectionKind.LaptopPowerMode] = PowerModeCard;
         pageSectionPresentations[PageSectionKind.LaptopFans] = FansCard;
         pageSectionPresentations[PageSectionKind.LaptopBattery] = BatteryCard;
-        pageSectionPresentations[PageSectionKind.LaptopBatteryHistory] = BatteryHistorySection;
         pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =
             KeyboardSection;
         pageSectionPresentations[PageSectionKind.LaptopStartupAnimation] =

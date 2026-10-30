@@ -3,6 +3,22 @@ namespace OpenBlade.Tray.Tests;
 public sealed class PresentationTimestampTests
 {
     [Fact]
+    public void IntervalEndKeepsTimeOnlyOnSameDisplayedDay()
+    {
+        var start = new DateTimeOffset(2026, 10, 21, 12, 0, 0, TimeSpan.FromHours(8));
+        DateTimeOffset end = start.AddHours(2);
+        Assert.Equal(end.ToString("t"), PresentationTimestamp.FormatIntervalEnd(start, end));
+    }
+
+    [Fact]
+    public void IntervalEndIncludesDateAcrossDisplayedMidnight()
+    {
+        var start = new DateTimeOffset(2026, 10, 21, 23, 0, 0, TimeSpan.FromHours(8));
+        DateTimeOffset end = start.AddHours(2);
+        Assert.Equal(end.ToString("g"), PresentationTimestamp.FormatIntervalEnd(start, end));
+    }
+
+    [Fact]
     public void ProductionDisplayKeepsWindowsLocalTime()
     {
         var instant = new DateTimeOffset(2026, 10, 21, 12, 0, 0, TimeSpan.Zero).AddTicks(1234567);
