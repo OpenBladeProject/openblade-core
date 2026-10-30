@@ -1216,11 +1216,23 @@ public sealed class CapabilityPresentationTests
         XElement[] usages = mainWindow.Descendants()
             .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
             .ToArray();
-        Assert.Equal(28, usages.Length);
+        Assert.Equal(30, usages.Length);
+        string backendSource = ReadTraySource("MainWindow.KeyboardBackends.cs");
         Assert.All(usages, usage =>
         {
-            Assert.NotNull(Attribute(usage, "ItemsSource"));
-            Assert.NotNull(Attribute(usage, "SelectedItem"));
+            string? name = Attribute(usage, "Name");
+            if (name is "SnapTapBackendSelector" or "FunctionRowBackendSelector")
+            {
+                string selected = name == "SnapTapBackendSelector" ? "snapTapBackend" : "functionRowBackend";
+                Assert.Contains(name + ".ItemsSource = options;", backendSource, StringComparison.Ordinal);
+                Assert.Contains(name + ".SelectedItem = options.FirstOrDefault(option => option.Value == "
+                    + selected + ");", backendSource, StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.NotNull(Attribute(usage, "ItemsSource"));
+                Assert.NotNull(Attribute(usage, "SelectedItem"));
+            }
             Assert.NotNull(Attribute(usage, "AccessibleName"));
             Assert.NotNull(Attribute(usage, "ExpandedMinWindowWidth"));
             Assert.Null(Attribute(usage, "SelectedIndex"));

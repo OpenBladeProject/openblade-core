@@ -32,6 +32,23 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
     }
 
     [Fact]
+    public void WindowsHookStatusKeepsItsBackendAndUnknownCannotClaimActive()
+    {
+        var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, DateTimeOffset.UtcNow)
+        { Backend = KeyboardInputBackend.WindowsHook };
+        SnapTapStatusStore.Write(status, StatusPath);
+        Assert.Equal(KeyboardInputBackend.WindowsHook, SnapTapStatusStore.Read(StatusPath)!.Backend);
+        Assert.Throws<ArgumentException>(() => SnapTapStatusStore.Write(status with
+        { State = SnapTapRuntimeState.Active, Backend = KeyboardInputBackend.Unknown }, StatusPath));
+        Assert.Throws<ArgumentException>(() => SnapTapStatusStore.Write(status with
+        { Backend = (KeyboardInputBackend)99 }, StatusPath));
+        Assert.Throws<ArgumentException>(() => SnapTapStatusStore.Write(status with
+        { ExperimentalDriver = true }, StatusPath));
+        Assert.Throws<ArgumentException>(() => SnapTapStatusStore.Write(status with
+        { DriverModel = "Blade 16 - RZ09-0581" }, StatusPath));
+    }
+
+    [Fact]
     public void LegacyEnvelopeWithoutFailureRemainsReadable()
     {
         Directory.CreateDirectory(directory);

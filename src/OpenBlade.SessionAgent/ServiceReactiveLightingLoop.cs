@@ -28,6 +28,8 @@ public interface IReactiveKeyboardSource : IDisposable
 {
     Task Completion { get; }
 
+    bool HasActiveFunctionRowKeys => false;
+
     void ResetFunctionPInput() { }
 }
 
@@ -44,6 +46,10 @@ public sealed record ReactiveKeyboardSourceOptions(
     Func<RazerBladeInputDeviceKind> ReadVerifiedInputDeviceKind,
     Func<SpecialKeySlot, bool> IsSpecialKeyInputAdmitted)
 {
+    public bool ObserveOnly { get; init; }
+
+    public Func<KeyboardInputBackend> ReadFunctionRowBackend { get; init; } = () => KeyboardInputBackend.WindowsHook;
+
     public Action<Blade18FnShortcut> PublishBlade18FnShortcut { get; init; } = _ => { };
 
     public Func<bool> IsBlade18FnInputAdmitted { get; init; } = () => false;
@@ -71,7 +77,9 @@ public sealed record ServiceReactiveLightingLoopOptions(
     Func<CancellationToken, Task>? ResetFunctionRowInputAsync = null,
     TimeSpan? PerformanceShortcutQuietPeriod = null,
     Func<Blade18FnShortcut, CancellationToken, Task>? ExecuteBlade18FnShortcutAsync = null,
-    Action<Blade18FnDiagnostic>? Blade18FnDiagnostic = null);
+    Action<Blade18FnDiagnostic>? Blade18FnDiagnostic = null,
+    Func<KeyboardInputBackend>? ReadFunctionRowBackend = null,
+    Action<SnapTapRuntimeStatus>? PublishFunctionRowStatus = null);
 
 /// <summary>
 /// Owns the one session-local Raw Input registration used by key-triggered
@@ -80,6 +88,11 @@ public sealed record ServiceReactiveLightingLoopOptions(
 /// </summary>
 public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 {
+    public bool CanTransferFunctionRowInput => Volatile.Read(ref source) is
+    { HasActiveFunctionRowKeys: false } current && !current.Completion.IsCompleted;
+
+    public void InvalidateFunctionRowBackendStatus() => Interlocked.Increment(ref functionRowStatusGeneration);
+
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly IServiceClient serviceClient;
@@ -98,6 +111,11 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly Action<Exception>? errorHandler;
     private readonly Action<Blade18FnDiagnostic> reportBlade18FnDiagnostic;
     private readonly FunctionRowInputPump? functionRowInputPump;
+    private readonly Func<KeyboardInputBackend> readFunctionRowBackend;
+    private SnapTapRuntimeState? lastWindowsFunctionRowState;
+    private int functionRowStatusGeneration;
+    private int lastWindowsFunctionRowGeneration = -1;
+    private readonly Action<SnapTapRuntimeStatus> publishFunctionRowStatus;
     private readonly object performanceShortcutStateSync = new();
     private readonly SemaphoreSlim performanceShortcutPreviewGate = new(1, 1);
     private readonly Guid performanceShortcutSessionId = Guid.NewGuid();
@@ -132,6 +150,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
         statusWatcher = options.StatusWatcher ?? serviceClient;
         errorHandler = options.ErrorHandler;
+        readFunctionRowBackend = options.ReadFunctionRowBackend ?? (() => KeyboardInputBackend.WindowsHook);
+        publishFunctionRowStatus = options.PublishFunctionRowStatus ?? (_ => { });
         reportBlade18FnDiagnostic = options.Blade18FnDiagnostic ?? (_ => { });
         shortcutNotifications = options.ShortcutNotifications
             ?? NullPerformanceShortcutNotificationSink.Instance;
@@ -303,11 +323,13 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             CancelBlade18FnActions();
             ClearPendingBlade18FnActions();
             functionRowInputPump?.Reset();
+            PublishWindowsFunctionRowStatus();
             return;
         }
 
         if (Volatile.Read(ref source) is not null)
         {
+            PublishWindowsFunctionRowStatus();
             return;
         }
 
@@ -387,6 +409,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     },
                     IsBlade18FnInputAdmitted = IsBlade18FnInputAdmitted,
                     ReadBlade18KeyboardLayoutId = ReadBlade18KeyboardLayoutId,
+                    ReadFunctionRowBackend = () => readFunctionRowBackend().Normalize(),
                     ResetFunctionRowInput = () => functionRowInputPump?.Reset(),
                     ReportBlade18FnDiagnostic = ReportBlade18FnDiagnostic,
                 });
@@ -399,8 +422,42 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             {
                 _ = ObserveSourceCompletionAsync(created);
             }
+            PublishWindowsFunctionRowStatus();
         }
         catch (Exception exception)
+        {
+            ReportFailure(exception);
+        }
+    }
+
+    private void PublishWindowsFunctionRowStatus()
+    {
+        if (readFunctionRowBackend().Normalize() != KeyboardInputBackend.WindowsHook)
+        {
+            lastWindowsFunctionRowState = null;
+            return;
+        }
+        SnapTapRuntimeState state = Volatile.Read(ref source) is { } current
+            && !current.Completion.IsCompleted
+            && ReadDriverModeObservation().AllowsFunctionRowInterception
+            && ReadFunctionKeyPrimaryMode() is not null
+            && RazerBladeFunctionRowMediaInput.SupportsDevice(ReadVerifiedInputDeviceKind())
+                ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Paused;
+        int generation = Volatile.Read(ref functionRowStatusGeneration);
+        if (lastWindowsFunctionRowState == state && lastWindowsFunctionRowGeneration == generation)
+        {
+            return;
+        }
+        try
+        {
+            publishFunctionRowStatus(new(state, DateTimeOffset.UtcNow,
+                Environment.ProcessId)
+            { Backend = KeyboardInputBackend.WindowsHook });
+            lastWindowsFunctionRowState = state;
+            lastWindowsFunctionRowGeneration = generation;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or System.Security.SecurityException)
         {
             ReportFailure(exception);
         }

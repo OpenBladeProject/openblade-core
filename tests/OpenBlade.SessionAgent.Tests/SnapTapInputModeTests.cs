@@ -1,4 +1,5 @@
 using OpenBlade.SessionAgent;
+using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent.Tests;
 
@@ -41,5 +42,53 @@ public sealed class SnapTapInputModeTests
     {
         Assert.Equal(SnapTapInputProcess.StopEventName(123), SnapTapInputProcess.StopEventName(123));
         Assert.NotEqual(SnapTapInputProcess.StopEventName(123), SnapTapInputProcess.StopEventName(124));
+    }
+
+    [Theory]
+    [InlineData("windows-hook", KeyboardInputBackend.WindowsHook)]
+    [InlineData("razer-driver", KeyboardInputBackend.RazerDriver)]
+    public void ExplicitBackendRoundTripsFixedArgument(string argument, KeyboardInputBackend expected)
+    {
+        Assert.True(SnapTapInputHost.TryParseArguments(["--snap-tap-input", "123", argument], out int parent, out var backend));
+        Assert.Equal(123, parent);
+        Assert.Equal(expected, backend);
+        Assert.Equal(argument, SnapTapInputHost.BackendArgument(expected));
+        Assert.False(SnapTapInputHost.TryParseArguments(["--snap-tap-driver-worker", "123", argument], out _, out _));
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("WindowsHook")]
+    [InlineData("1")]
+    [InlineData("future-backend")]
+    public void UnknownBackendRejectsBeforeNativeOrPreferenceAccess(string argument)
+    {
+        Assert.Equal(2, SnapTapInputHost.Run(["--snap-tap-input", "123", argument]));
+    }
+
+    [Fact]
+    public void LegacyModeDefaultsToDriverAndUnknownCannotLaunch()
+    {
+        Assert.True(SnapTapInputHost.TryParseArguments(["--snap-tap-input", "123"], out _, out var backend));
+        Assert.Equal(KeyboardInputBackend.RazerDriver, backend);
+        Assert.True(SnapTapInputHost.TryParseArguments(["--snap-tap-driver-worker", "123"], out _, out backend));
+        Assert.Equal(KeyboardInputBackend.RazerDriver, backend);
+        Assert.Throws<ArgumentOutOfRangeException>(() => SnapTapInputProcess.Start(KeyboardInputBackend.Unknown));
+    }
+
+    [Fact]
+    public void ExistingDriverJournalRequiresRecoveryWithoutReadingOrChangingContents()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "OpenBlade-journal-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "snaptap-driver-ownership.json");
+        try
+        {
+            Assert.False(SnapTapInputHost.HasDriverOwnershipJournal(path));
+            File.WriteAllText(path, "untrusted or incomplete evidence");
+            Assert.True(SnapTapInputHost.HasDriverOwnershipJournal(path));
+            Assert.Equal("untrusted or incomplete evidence", File.ReadAllText(path));
+        }
+        finally { File.Delete(path); Directory.Delete(directory); }
     }
 }

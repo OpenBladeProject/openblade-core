@@ -2210,7 +2210,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Gámé cómpátíbílítý hás nót béén vérífíéd. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>[!! SnápTáp úsés thé Razer kéýbóárd drívér fór thé láptóp’s búílt-ín kéýbóárd. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Razer drívér hándlés thé búílt-ín kéýbóárd. Windows hóók ápplíés tó áll kéýbóárds. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
     <value>[!! Ábóút SnápTáp ~~~~~ !!]</value>
@@ -2817,5 +2817,68 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="WhatsNew_Title" xml:space="preserve">
     <value>[!! Whát's néw ~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_DriverMissing" xml:space="preserve">
+    <value>[!! Thé Razer kéýbóárd drívér ís míssíng. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.AccessibleName" xml:space="preserve">
+    <value>[!! Múltímédíá kéý ínpút ~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.PlaceholderText" xml:space="preserve">
+    <value>[!! Chóósé ínpút méthód ~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
+    <value>[!! Múltímédíá kéý ínpút ~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowWindowsHelp.Text" xml:space="preserve">
+    <value>[!! Ápplíés tó áll kéýbóárds. Sómé gámés máý álsó récéívé thé órígínál fúnctíón kéý. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
+    <value>[!! Ínstáll drívér ~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Ínstáll thé Razer kéýbóárd drívér ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_ManualSetup" xml:space="preserve">
+    <value>[!! Ínstáll thís láptóp’s Razer kéýbóárd drívér, thén swítch ínpút méthóds tó rétrý. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Paused" xml:space="preserve">
+    <value>[!! Ínpút hándlíng ís páúséd. Éxpórt díágnóstícs fór détáíls. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_RazerDriver" xml:space="preserve">
+    <value>[!! Razer drívér ~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Recovery" xml:space="preserve">
+    <value>[!! Réstárt Windows béfóré úsíng thís ínpút méthód ágáín. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
+    <value>[!! SnápTáp ínpút ~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.PlaceholderText" xml:space="preserve">
+    <value>[!! Chóósé ínpút méthód ~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
+    <value>[!! SnápTáp ínpút ~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapWindowsHelp.Text" xml:space="preserve">
+    <value>[!! Ápplíés tó áll kéýbóárds. Sómé gámés máý ígnóré Windows hóók ínpút. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Unknown" xml:space="preserve">
+    <value>[!! Chóósé án ínpút méthód tó résúmé. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Unsupported" xml:space="preserve">
+    <value>[!! Thís ínpút méthód ís únáváíláblé fór thís láptóp. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_Waiting" xml:space="preserve">
+    <value>[!! Wáítíng fór thé séléctéd ínpút méthód… ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_WindowsHook" xml:space="preserve">
+    <value>[!! Windows hóók ~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_DriverInstalled" xml:space="preserve">
+    <value>[!! Drívér ínstálléd. Swítch ínpút méthóds tó rétrý. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
+    <value>[!! Préss Fn óncé tó áctíváté múltímédíá kéýs. ~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

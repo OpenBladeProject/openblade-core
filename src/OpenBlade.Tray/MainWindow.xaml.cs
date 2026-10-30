@@ -225,6 +225,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
+        InitializeKeyboardBackendSelectors();
         InitializeApplicationProfilePages();
         BatteryHistoryViewModel.PropertyChanged += OnBatteryHistoryPropertyChanged;
         RefreshBatteryHistoryPresentation();
@@ -936,6 +937,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
             snapTapEnabled = preferences.SnapTapEnabled;
+            snapTapBackend = preferences.EffectiveSnapTapBackend;
+            functionRowBackend = preferences.EffectiveFunctionRowBackend;
             initialUpdateChannel = preferences.EffectiveUpdateChannel;
             initialUpdateCheckInterval = preferences.EffectiveUpdateCheckInterval;
             initialUpdateCheckPromptShown = preferences.UpdateCheckPromptShown;
@@ -1026,6 +1029,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        InitializeKeyboardBackendSelectors();
         SnapTapToggle.IsOn = snapTapEnabled;
         RefreshSnapTapStatus();
         ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
@@ -1494,6 +1498,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
                 Language: ViewModel.LanguagePreference,
                 SnapTapEnabled: snapTapEnabled,
+                SnapTapBackend: snapTapBackend,
+                FunctionRowBackend: functionRowBackend,
                 ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled,
                 TelemetryChartMetrics: TelemetryPlot.MetricPreferences,
                 TelemetryEnabled: ViewModel.TelemetryEnabled));

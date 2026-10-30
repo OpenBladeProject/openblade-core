@@ -8,8 +8,10 @@ internal static class SnapTapDriverLoop
 {
     internal const int ForegroundPauseExitCode = 8;
 
-    internal static int Run(int parentId, Func<bool> shouldStop)
+    internal static int Run(int parentId, Func<bool> shouldStop,
+        KeyboardDriverFeatures features = KeyboardDriverFeatures.SnapTap)
     {
+        KeyboardDriverStatusStore.ConfigureScope(features);
         var admission = new RazerSnapTapDriverAdmission();
         using var publisher = new SnapTapStatusPublisher();
         RazerSnapTapDriverEndpoint? endpoint = null;
@@ -21,6 +23,8 @@ internal static class SnapTapDriverLoop
         RazerSnapTapDriverTransport? transport = null;
         RazerSnapTapHookSession? session = null;
         SnapTapDriverInputProcessor? processor = null;
+        FunctionRowDriverContext? functionContext = null;
+        FunctionRowDriverInputProcessor? functionProcessor = null;
         try
         {
             if (!admission.TryGetEndpointWithFailure(out endpoint, out _, out DiagnosticFailure? admissionFailure))
@@ -31,12 +35,26 @@ internal static class SnapTapDriverLoop
                 return 3;
             }
             publisher.SetProfile(endpoint.Profile);
+            features = SnapTapDriverSupervisor.AdmitFeatures(features, endpoint.Profile);
+            if (features == KeyboardDriverFeatures.None) { return 3; }
+            KeyboardDriverStatusStore.ConfigureScope(features);
+            RazerKeyboardHookPurpose purpose = RazerKeyboardHookScope.Purpose(features);
+            bool snapEnabled = features.HasFlag(KeyboardDriverFeatures.SnapTap);
+            if (features.HasFlag(KeyboardDriverFeatures.FunctionRow))
+            {
+                stage = "FunctionRowMetadata";
+                functionContext = new(endpoint.Profile);
+            }
             stage = "HeartbeatOpen";
             using EventWaitHandle heartbeat = EventWaitHandle.OpenExisting(
                 SnapTapDriverSupervisor.HeartbeatName(parentId));
             stage = "TransportOpen";
             transport = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint),
-                () => !shouldStop() && AllReleased(), CanOutput);
+                () => !shouldStop() && AllReleased() && (functionContext is null || functionContext.Ready), CanOutput, purpose);
+            if (functionContext is not null)
+            {
+                functionProcessor = new(transport.Send, functionContext.Publish, functionContext.Reset);
+            }
             stage = "InputConfiguration";
             if (!Native.SystemParametersInfo(0x000A, 0, out uint speed, 0) || speed > 31)
             {
@@ -53,7 +71,11 @@ internal static class SnapTapDriverLoop
             {
                 nint foreground = Native.GetForegroundWindow();
                 bool hasForeground = foreground != 0 && KeyboardLayout(foreground) != 0;
-                if (hasForeground && AllReleased())
+                if (functionContext?.Failed == true)
+                {
+                    throw new InvalidOperationException("Function-row metadata observation failed.");
+                }
+                if (hasForeground && AllReleased() && (functionContext is null || functionContext.Ready))
                 {
                     break;
                 }
@@ -66,7 +88,12 @@ internal static class SnapTapDriverLoop
                 return 0;
             }
             stage = "HookSetup";
-            session = new RazerSnapTapHookSession(transport);
+            session = new RazerSnapTapHookSession(transport, purpose,
+                owned =>
+                {
+                    RazerKeyboardOwnedHookEvidence.Write(parentId, owned);
+                    heartbeat.Set();
+                });
             if (!session.Start())
             {
                 publisher.Publish(SnapTapRuntimeState.Failed, session.Failure
@@ -78,7 +105,8 @@ internal static class SnapTapDriverLoop
             stage = "InputLoop";
             DiagnosticFailure? loopFailure = null;
             bool foregroundPause = false;
-            while (!shouldStop() && !processor.Faulted && !publisher.Failed)
+            while (!shouldStop() && !processor.Faulted && !publisher.Failed
+                && functionProcessor?.Faulted != true && functionContext?.Failed != true)
             {
                 nint foreground = Native.GetForegroundWindow();
                 nint layout = KeyboardLayout(foreground);
@@ -98,7 +126,7 @@ internal static class SnapTapDriverLoop
                         // GetForegroundWindow may briefly return null during activation.
                         // Close without reading queued input; only the guardian may rearm
                         // a fresh worker after verified cleanup of this subscription.
-                        foregroundPause = CanPauseForForegroundLoss(processor);
+                        foregroundPause = CanPauseForForegroundLoss(processor) && functionProcessor?.HasTrackedKeys != true;
                         loopFailure = SnapTapDiagnosticFailure.Create(
                             SnapTapDiagnosticFailure.Worker, "Run", stage, "ForegroundUnavailable") with
                         {
@@ -107,22 +135,23 @@ internal static class SnapTapDriverLoop
                         break;
                     }
                 }
-                if (!processor.Enabled && foreground != 0 && layout != 0 && processor.ArePhysicallyReleased && Released())
+                if (snapEnabled && !processor.Enabled && foreground != 0 && layout != 0 && processor.ArePhysicallyReleased && Released())
                 {
                     processor.Enable();
                 }
                 if (transport.TryRead(out SnapTapKeyStroke stroke))
                 {
-                    if (!processor.Handle(stroke))
+                    if (!Handle(stroke))
                     {
-                        loopFailure = processor.Failure ?? SnapTapDiagnosticFailure.Create(
+                        loopFailure = functionProcessor?.Failure ?? processor.Failure ?? SnapTapDiagnosticFailure.Create(
                             SnapTapDiagnosticFailure.Worker, "Run", stage, "InputProcessingFailed");
                         break;
                     }
                     confirmedInput = true;
                 }
                 processor.RepeatRestoredWinner();
-                publisher.Publish(processor.Enabled ? (confirmedInput ? SnapTapRuntimeState.Active : SnapTapRuntimeState.Armed)
+                KeyboardDriverStatusStore.SetFunctionKeyKnown(functionContext?.FunctionKeyKnown ?? true);
+                publisher.Publish((processor.Enabled || !snapEnabled) ? (confirmedInput ? SnapTapRuntimeState.Active : SnapTapRuntimeState.Armed)
                     : foreground == 0 ? SnapTapRuntimeState.Paused : SnapTapRuntimeState.WaitingForRelease);
                 // Only the actual input loop can report progress. A blocked
                 // driver request cannot be masked by a heartbeat timer thread.
@@ -148,11 +177,33 @@ internal static class SnapTapDriverLoop
             {
                 processor.Poison();
             }
+            bool functionDrained = functionProcessor?.HasTrackedKeys != true;
+            if (!functionDrained && !processor.Faulted && functionProcessor?.Faulted != true
+                && functionContext?.Failed != true)
+            {
+                functionDrained = FunctionRowDriverLoop.Pump(functionProcessor!, () =>
+                {
+                    heartbeat.Set();
+                    if (!transport.TryRead(out var stroke)) { return null; }
+                    if (stroke.ScanCode is 0x1E or 0x20)
+                    {
+                        if (!processor.Handle(stroke)) { throw new IOException("Keyboard output became uncertain during drain."); }
+                        return null;
+                    }
+                    return stroke;
+                }, () => true, () => functionContext!.FunctionKeyPressed,
+                    () => functionContext!.PrimaryMode, () => functionContext!.DriverMode,
+                    () => functionContext!.DeviceKind, functionContext!.DeviceKind);
+            }
+            functionProcessor?.ReleaseMedia();
             // On ambiguous output, close the subscription without more writes.
             // The guardian reconciles only owned hook configuration after exit.
             stage = "Cleanup";
-            bool stopped = !processor.Faulted && session.Stop();
-            DiagnosticFailure? terminalFailure = session.Failure ?? processor.Failure ?? loopFailure;
+            bool closed = session.Stop();
+            bool functionStopped = functionContext?.Stop() ?? true;
+            bool stopped = !processor.Faulted && closed && functionDrained && functionStopped
+                && functionProcessor?.OutputUncertain != true;
+            DiagnosticFailure? terminalFailure = session.Failure ?? functionProcessor?.Failure ?? processor.Failure ?? loopFailure;
             bool failed = !stopped || publisher.Failed;
             if (foregroundPause && !failed && session.Failure is null && processor.Failure is null)
             {
@@ -176,8 +227,9 @@ internal static class SnapTapDriverLoop
         catch (Exception exception)
         {
             bool mayHaveSubmitted = session?.FailureMayHaveSubmitted == true
-                || processor?.Failure?.MayHaveSubmitted == true;
-            DiagnosticFailure failure = session?.Failure ?? processor?.Failure ?? SnapTapDiagnosticFailure.FromException(
+                || processor?.Failure?.MayHaveSubmitted == true || functionProcessor?.OutputUncertain == true
+                || functionProcessor?.HasTrackedKeys == true;
+            DiagnosticFailure failure = session?.Failure ?? functionProcessor?.Failure ?? processor?.Failure ?? SnapTapDiagnosticFailure.FromException(
                 SnapTapDiagnosticFailure.Worker,
                 "Run",
                 stage,
@@ -191,10 +243,24 @@ internal static class SnapTapDriverLoop
         finally
         {
             transport?.Dispose();
+            functionProcessor?.ReleaseMedia();
+            functionContext?.Dispose();
         }
 
-        bool CanOutput() => targetWindow != 0 && Native.GetForegroundWindow() == targetWindow
-            && KeyboardLayout(targetWindow) == targetLayout && (stopping || !shouldStop());
+        bool CanOutput() => IsOutputTargetCurrent(targetWindow, targetLayout,
+            Native.GetForegroundWindow(), KeyboardLayout(targetWindow), stopping || !shouldStop());
+
+        bool Handle(SnapTapKeyStroke stroke)
+        {
+            if (stroke.ScanCode is 0x1E or 0x20) { return processor!.Handle(stroke); }
+            if (functionProcessor is null || functionContext is null) { return false; }
+            // Known/pressed are one metadata observation. Reading them separately
+            // could combine an earlier false value with a newly known held Fn.
+            bool? functionKey = functionContext.FunctionKeyState;
+            return functionProcessor.Handle(stroke, functionContext.DeviceKind,
+                functionKey == true, functionContext.PrimaryMode,
+                functionContext.Ready && functionKey.HasValue);
+        }
 
         int Send(SnapTapOutputBatch batch)
         {
@@ -214,6 +280,11 @@ internal static class SnapTapDriverLoop
 
     internal static bool CanPauseForForegroundLoss(SnapTapDriverInputProcessor processor) =>
         !processor.Faulted && processor.Winner == 0 && processor.ArePhysicallyReleased;
+
+    internal static bool IsOutputTargetCurrent(nint targetWindow, nint targetLayout,
+        nint currentWindow, nint currentLayout, bool outputAllowed) =>
+        targetWindow != 0 && targetLayout != 0 && currentWindow == targetWindow
+            && currentLayout == targetLayout && outputAllowed;
 
     private static nint KeyboardLayout(nint window)
     {

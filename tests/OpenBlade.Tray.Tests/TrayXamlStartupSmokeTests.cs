@@ -160,7 +160,9 @@ public sealed class TrayXamlStartupSmokeTests
 
             process = desktop.Start(startInfo);
             Assert.NotNull(process);
-            TimeSpan processTimeout = isolatePreferences
+            // Nine stabilized captures bring the reorder workflow to about 28 seconds.
+            // Allow process startup and final persistence within a bounded budget.
+            TimeSpan processTimeout = isolatePreferences || argument == "--live-reorder-smoke"
                 ? TimeSpan.FromSeconds(45)
                 : TimeSpan.FromSeconds(30);
             using var timeout = new CancellationTokenSource(processTimeout);

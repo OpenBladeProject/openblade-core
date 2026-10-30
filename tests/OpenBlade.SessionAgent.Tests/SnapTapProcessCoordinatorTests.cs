@@ -288,6 +288,345 @@ public sealed class SnapTapProcessCoordinatorTests
             status with { Failure = null }, 123, startedAt));
     }
 
+    [Fact]
+    public async Task BackendSwitchWaitsForOldHelperExitBeforeStartingSelectedOwner()
+    {
+        var source = new BackendPreference();
+        var first = new Child { ExitOnStop = false };
+        var second = new Child();
+        var launches = new ConcurrentQueue<KeyboardInputBackend>();
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        using var cancel = new CancellationTokenSource();
+        Task run = new SnapTapProcessCoordinator(source, () => throw new InvalidOperationException("legacy launch"),
+            statuses.Enqueue, startBackendChild: backend =>
+            {
+                launches.Enqueue(backend);
+                Assert.Equal(backend, statuses.Last().Backend);
+                if (launches.Count == 1) { return first; }
+                Assert.True(first.HasExited);
+                Assert.True(first.Disposed);
+                return second;
+            }).RunAsync(cancel.Token);
+        await WaitUntilAsync(() => launches.Count == 1);
+        source.SetBackend(KeyboardInputBackend.WindowsHook);
+        await WaitUntilAsync(() => first.StopRequested);
+        Assert.Single(launches);
+        first.Exit(0);
+        await WaitUntilAsync(() => launches.Count == 2);
+        Assert.Equal(new[] { KeyboardInputBackend.RazerDriver, KeyboardInputBackend.WindowsHook }, launches);
+        cancel.Cancel();
+        await run;
+        Assert.True(second.Disposed);
+        Assert.Equal(KeyboardInputBackend.WindowsHook, statuses.Last().Backend);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(7)]
+    public async Task BackendSwitchCanRetryNoWriteAdmissionRejection(int exitCode)
+    {
+        var source = new BackendPreference();
+        var first = new Child();
+        int launches = 0;
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        using var cancel = new CancellationTokenSource();
+        Task run = new SnapTapProcessCoordinator(source, () => first, statuses.Enqueue,
+            startBackendChild: _ => ++launches == 1 ? first : new Child()).RunAsync(cancel.Token);
+        await WaitUntilAsync(() => launches == 1);
+        first.Exit(exitCode);
+        await WaitUntilAsync(() => statuses.Last().Failure is not null);
+        source.SetBackend(KeyboardInputBackend.WindowsHook);
+        await WaitUntilAsync(() => launches == 2);
+        cancel.Cancel();
+        await run;
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public async Task BackendSwitchDoesNotBypassFailedOrUncertainCleanup(int exitCode)
+    {
+        var source = new BackendPreference();
+        var first = new Child { StopExitCode = exitCode };
+        int launches = 0;
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        using var cancel = new CancellationTokenSource();
+        Task run = new SnapTapProcessCoordinator(source, () => first, statuses.Enqueue,
+            startBackendChild: _ => { launches++; return first; }).RunAsync(cancel.Token);
+        await WaitUntilAsync(() => launches == 1);
+        source.SetBackend(KeyboardInputBackend.WindowsHook);
+        await WaitUntilAsync(() => first.Disposed && statuses.Last().Failure is not null);
+        source.SetBackend(KeyboardInputBackend.RazerDriver);
+        source.SetBackend(KeyboardInputBackend.WindowsHook);
+        cancel.Cancel();
+        await run;
+        Assert.Equal(1, launches);
+        Assert.Equal(KeyboardInputBackend.RazerDriver, statuses.Last().Backend);
+    }
+
+    [Fact]
+    public async Task UnknownBackendPausesWithoutFallbackAndExplicitSelectionCanResume()
+    {
+        var source = new BackendPreference();
+        source.SetBackend((KeyboardInputBackend)999);
+        int launches = 0;
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        using var cancel = new CancellationTokenSource();
+        Task run = new SnapTapProcessCoordinator(source, () => throw new InvalidOperationException("fallback"),
+            statuses.Enqueue, startBackendChild: _ => { launches++; return new Child(); }).RunAsync(cancel.Token);
+        await WaitUntilAsync(() => !statuses.IsEmpty);
+        Assert.Equal(SnapTapRuntimeState.Unavailable, statuses.Last().State);
+        Assert.Equal(KeyboardInputBackend.Unknown, statuses.Last().Backend);
+        Assert.Equal(0, launches);
+        source.SetBackend(KeyboardInputBackend.WindowsHook);
+        await WaitUntilAsync(() => launches == 1);
+        cancel.Cancel();
+        await run;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DistinctFeaturesCoexistButSnapTapOwnershipTransfersOnlyAfterExit(bool functionRowOnly)
+    {
+        var source = new BackendPreference();
+        if (functionRowOnly) { source.SetBackend(KeyboardInputBackend.WindowsHook); }
+        using var windowsDemand = new WindowsSnapTapPreferenceSource(source);
+        using var driverDemand = new RazerKeyboardDriverPreferenceSource();
+        KeyboardDriverFeatures activeFeatures = functionRowOnly ? KeyboardDriverFeatures.FunctionRow : KeyboardDriverFeatures.SnapTap;
+        driverDemand.SetFeatures(activeFeatures);
+        var driverChild = new Child { ExitOnStop = functionRowOnly };
+        var windowsChild = new Child();
+        int windowsStarts = 0;
+        SnapTapProcessCoordinator? driver = null;
+        var windows = new SnapTapProcessCoordinator(windowsDemand, () => windowsChild, _ => { },
+            startBackendChild: _ =>
+            {
+                Assert.True(functionRowOnly || driver?.HasChild != true);
+                windowsStarts++;
+                return windowsChild;
+            }, canStartChild: () => driver?.CanTransferOwnership != false);
+        driver = new SnapTapProcessCoordinator(driverDemand, () => driverChild, _ => { },
+            canStartChild: () => activeFeatures == KeyboardDriverFeatures.FunctionRow || windows.CanTransferOwnership,
+            ownsSharedInput: () => activeFeatures != KeyboardDriverFeatures.FunctionRow);
+        using var cancel = new CancellationTokenSource();
+        Task windowsRun = windows.RunAsync(cancel.Token);
+        Task driverRun = driver.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => driver.HasChild);
+            if (functionRowOnly)
+            {
+                await WaitUntilAsync(() => windows.HasChild);
+                Assert.False(driverChild.StopRequested);
+                Assert.Equal(1, windowsStarts);
+            }
+            else
+            {
+                source.SetBackend(KeyboardInputBackend.WindowsHook);
+                driverDemand.SetFeatures(KeyboardDriverFeatures.None);
+                await WaitUntilAsync(() => driverChild.StopRequested);
+                Assert.Equal(0, windowsStarts);
+                driverChild.Exit(0);
+                await WaitUntilAsync(() => windowsStarts == 1);
+                Assert.False(driver.HasChild);
+            }
+        }
+        finally
+        {
+            driverChild.Exit(0);
+            cancel.Cancel();
+            await Task.WhenAll(windowsRun, driverRun);
+        }
+    }
+
+    [Fact]
+    public async Task LaunchGateDrainsExistingHoldWithoutNewPreferenceEvent()
+    {
+        bool released = false;
+        int starts = 0;
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        using var cancel = new CancellationTokenSource();
+        Task run = new SnapTapProcessCoordinator(new Preference(true), () => { starts++; return new Child(); },
+            statuses.Enqueue, canStartChild: () => Volatile.Read(ref released)).RunAsync(cancel.Token);
+        await WaitUntilAsync(() => !statuses.IsEmpty);
+        Assert.Equal(SnapTapRuntimeState.WaitingForRelease, statuses.Last().State);
+        Assert.Equal(0, starts);
+        Volatile.Write(ref released, true);
+        await WaitUntilAsync(() => starts == 1);
+        cancel.Cancel();
+        await run;
+    }
+
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(true, 4)]
+    [InlineData(false, 1)]
+    [InlineData(false, 4)]
+    [InlineData(true, 3)]
+    [InlineData(false, 3)]
+    public async Task ProductionDualOwnerGatesPreserveUncertaintyAcrossAdapterOffGeneration(bool windowsFirst, int exitCode)
+    {
+        var source = new BackendPreference();
+        if (windowsFirst) { source.SetBackend(KeyboardInputBackend.WindowsHook); }
+        using var windowsDemand = new WindowsSnapTapPreferenceSource(source);
+        using var driverDemand = new RazerKeyboardDriverPreferenceSource();
+        driverDemand.SetFeatures(windowsFirst ? KeyboardDriverFeatures.None : KeyboardDriverFeatures.SnapTap);
+        var first = new Child();
+        int nextStarts = 0;
+        int nextGateChecks = 0;
+        SnapTapProcessCoordinator? driver = null;
+        var windows = new SnapTapProcessCoordinator(windowsDemand, () => first, _ => { },
+            startBackendChild: _ =>
+            {
+                if (windowsFirst) { return first; }
+                Interlocked.Increment(ref nextStarts);
+                return new Child();
+            }, canStartChild: () =>
+            {
+                if (!windowsFirst) { Interlocked.Increment(ref nextGateChecks); }
+                return driver?.CanTransferOwnership != false;
+            });
+        driver = new SnapTapProcessCoordinator(driverDemand, () => first, _ => { },
+            startBackendChild: _ =>
+            {
+                if (!windowsFirst) { return first; }
+                Interlocked.Increment(ref nextStarts);
+                return new Child();
+            }, canStartChild: () =>
+            {
+                if (windowsFirst) { Interlocked.Increment(ref nextGateChecks); }
+                return windows.CanTransferOwnership;
+            });
+        using var cancel = new CancellationTokenSource();
+        Task windowsRun = windows.RunAsync(cancel.Token);
+        Task driverRun = driver.RunAsync(cancel.Token);
+        try
+        {
+            SnapTapProcessCoordinator original = windowsFirst ? windows : driver;
+            await WaitUntilAsync(() => original.HasChild);
+            first.Exit(exitCode);
+            await WaitUntilAsync(() => !original.HasChild);
+            Assert.Equal(exitCode == 3, original.CanTransferOwnership);
+            source.SetBackend(windowsFirst ? KeyboardInputBackend.RazerDriver : KeyboardInputBackend.WindowsHook);
+            driverDemand.SetFeatures(windowsFirst ? KeyboardDriverFeatures.SnapTap : KeyboardDriverFeatures.None);
+            await WaitUntilAsync(() => Volatile.Read(ref nextGateChecks) != 0);
+            if (exitCode == 3) { await WaitUntilAsync(() => Volatile.Read(ref nextStarts) == 1); }
+            else { Assert.Equal(0, Volatile.Read(ref nextStarts)); }
+        }
+        finally { cancel.Cancel(); await Task.WhenAll(windowsRun, driverRun); }
+    }
+
+    [Fact]
+    public async Task FunctionRowOnlyOwnerRemainsIndependentOfWindowsAdRecoveryBarrier()
+    {
+        var source = new BackendPreference();
+        source.SetBackend(KeyboardInputBackend.WindowsHook);
+        using var windowsDemand = new WindowsSnapTapPreferenceSource(source);
+        using var driverDemand = new RazerKeyboardDriverPreferenceSource();
+        var failed = new Child();
+        var windows = new SnapTapProcessCoordinator(windowsDemand, () => failed, _ => { },
+            startBackendChild: _ => failed);
+        var driver = new SnapTapProcessCoordinator(driverDemand, () => new Child(), _ => { },
+            canStartChild: () => (driverDemand.RequestedFeatures & KeyboardDriverFeatures.SnapTap) == 0 || windows.CanTransferOwnership,
+            ownsSharedInput: () => false);
+        using var cancel = new CancellationTokenSource();
+        Task windowsRun = windows.RunAsync(cancel.Token);
+        Task driverRun = driver.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => windows.HasChild);
+            failed.Exit(1);
+            await WaitUntilAsync(() => !windows.HasChild);
+            Assert.False(windows.CanTransferOwnership);
+            // This production condition bypasses the A/D barrier for Fn-only demand.
+            driverDemand.SetFeatures(KeyboardDriverFeatures.FunctionRow);
+            await WaitUntilAsync(() => driver.HasChild);
+            Assert.True(driver.CanTransferOwnership);
+        }
+        finally { cancel.Cancel(); await Task.WhenAll(windowsRun, driverRun); }
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(4, false)]
+    [InlineData(3, true)]
+    [InlineData(5, true)]
+    public async Task DriverFunctionRowTransferRequiresCleanOrNoWriteExitWithoutBlockingAd(int exitCode, bool allowed)
+    {
+        var source = new Preference(true);
+        var child = new Child { StopExitCode = exitCode };
+        using var cancel = new CancellationTokenSource();
+        var driver = new SnapTapProcessCoordinator(source, () => child, _ => { },
+            ownsSharedInput: () => false, ownsFunctionRowInput: () => true);
+        Task run = driver.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => driver.HasChild);
+            Assert.False(driver.CanTransferFunctionRowOwnership);
+            Assert.True(driver.CanTransferOwnership);
+            Assert.Equal(KeyboardInputBackend.Unknown, WindowsFunctionRowOwnershipGuard.SelectBackend(
+                KeyboardInputBackend.WindowsHook, driver.CanTransferFunctionRowOwnership, null));
+            source.Set(false);
+            await WaitUntilAsync(() => !driver.HasChild);
+            Assert.Equal(allowed, driver.CanTransferFunctionRowOwnership);
+            Assert.True(driver.CanTransferOwnership);
+            Assert.Equal(allowed ? KeyboardInputBackend.WindowsHook : KeyboardInputBackend.Unknown,
+                WindowsFunctionRowOwnershipGuard.SelectBackend(KeyboardInputBackend.WindowsHook,
+                    driver.CanTransferFunctionRowOwnership, null));
+        }
+        finally { cancel.Cancel(); await run; }
+    }
+
+    [Fact]
+    public async Task PreparedScopeBindsPublicationOwnershipAndChildDespitePreferenceRace()
+    {
+        using var demand = new RazerKeyboardDriverPreferenceSource();
+        demand.SetFeatures(KeyboardDriverFeatures.FunctionRow);
+        KeyboardDriverFeatures prepared = KeyboardDriverFeatures.None;
+        KeyboardDriverFeatures launched = KeyboardDriverFeatures.None;
+        var child = new Child { ExitOnStop = false };
+        using var cancel = new CancellationTokenSource();
+        var coordinator = new SnapTapProcessCoordinator(demand, () => child, status =>
+        {
+            if (status.State == SnapTapRuntimeState.Starting) { Assert.Equal(KeyboardDriverFeatures.FunctionRow, prepared); }
+        }, startBackendChild: _ => { launched = prepared; return child; },
+            ownsSharedInput: () =>
+            {
+                demand.SetFeatures(KeyboardDriverFeatures.SnapTap); // changed after prepare, before launch
+                return (prepared & KeyboardDriverFeatures.SnapTap) != 0;
+            },
+            ownsFunctionRowInput: () => (prepared & KeyboardDriverFeatures.FunctionRow) != 0,
+            prepareChild: () => prepared = demand.RequestedFeatures);
+        Task run = coordinator.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => coordinator.HasChild);
+            Assert.Equal(KeyboardDriverFeatures.FunctionRow, launched);
+            Assert.Equal(KeyboardDriverFeatures.SnapTap, demand.RequestedFeatures);
+            child.Exit(1);
+            await WaitUntilAsync(() => !coordinator.HasChild);
+            Assert.False(coordinator.CanTransferFunctionRowOwnership);
+            Assert.True(coordinator.CanTransferOwnership);
+        }
+        finally { child.Exit(1); cancel.Cancel(); await run; }
+    }
+
+    private sealed class BackendPreference : ISnapTapBackendPreferenceSource
+    {
+        public bool SnapTapEnabled => true;
+        public event Action<bool>? SnapTapEnabledChanged { add { } remove { } }
+        public KeyboardInputBackend SnapTapBackend { get; private set; } = KeyboardInputBackend.RazerDriver;
+        public event Action<KeyboardInputBackend>? SnapTapBackendChanged;
+        public void SetBackend(KeyboardInputBackend backend)
+        {
+            SnapTapBackend = backend;
+            SnapTapBackendChanged?.Invoke(backend);
+        }
+    }
+
     private sealed class Preference(bool initial = false) : ISnapTapPreferenceSource
     {
         public bool SnapTapEnabled { get; private set; } = initial;

@@ -66,8 +66,16 @@ public sealed record UiPreferences(
     bool ThxAudioIntegrationEnabled = false,
     bool SnapTapEnabled = false,
     IReadOnlyList<TelemetryChartMetricPreference>? TelemetryChartMetrics = null,
-    bool TelemetryEnabled = false)
+    bool TelemetryEnabled = false,
+    KeyboardInputBackend SnapTapBackend = KeyboardInputBackend.RazerDriver,
+    KeyboardInputBackend FunctionRowBackend = KeyboardInputBackend.WindowsHook)
 {
+    [JsonIgnore]
+    public KeyboardInputBackend EffectiveSnapTapBackend => SnapTapBackend.Normalize();
+
+    [JsonIgnore]
+    public KeyboardInputBackend EffectiveFunctionRowBackend => FunctionRowBackend.Normalize();
+
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
         LiveReadingsEnabled: true,
@@ -195,7 +203,7 @@ public sealed class UiPreferenceStore
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
-        Converters = { new JsonStringEnumConverter() },
+        Converters = { new KeyboardInputBackendJsonConverter(), new JsonStringEnumConverter() },
         WriteIndented = true,
     };
 

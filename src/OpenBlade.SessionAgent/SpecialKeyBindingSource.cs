@@ -19,7 +19,7 @@ public interface ISpecialKeyBindingSource
 /// directory exists. Failed reads back off to a capped retry interval and
 /// report only the first failure until a read succeeds.
 /// </summary>
-public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTapPreferenceSource
+public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTapPreferenceSource, ISnapTapBackendPreferenceSource
 {
     internal static readonly TimeSpan FallbackRefreshInterval = TimeSpan.FromSeconds(1);
     internal static readonly TimeSpan ChangeSettleDelay = TimeSpan.FromMilliseconds(100);
@@ -68,6 +68,8 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
             {
                 SpecialKeyBindings = input.SpecialKeyBindings,
                 SnapTapEnabled = input.SnapTapEnabled,
+                SnapTapBackend = input.SnapTapBackend.Normalize(),
+                FunctionRowBackend = input.FunctionRowBackend.Normalize(),
                 ThxAudioIntegrationEnabled = input.ThxAudioIntegrationEnabled,
             };
         };
@@ -113,6 +115,16 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
     }
 
     private int snapTapEnabled;
+    private int snapTapBackend = (int)KeyboardInputBackend.RazerDriver;
+    private int functionRowBackend = (int)KeyboardInputBackend.WindowsHook;
+
+    public KeyboardInputBackend SnapTapBackend =>
+        ((KeyboardInputBackend)Volatile.Read(ref snapTapBackend)).Normalize();
+
+    public KeyboardInputBackend FunctionRowBackend =>
+        ((KeyboardInputBackend)Volatile.Read(ref functionRowBackend)).Normalize();
+
+    public event Action<KeyboardInputBackend>? SnapTapBackendChanged;
 
     public bool SnapTapEnabled => Volatile.Read(ref snapTapEnabled) != 0;
 
@@ -248,6 +260,12 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource, ISnapTap
             Volatile.Write(
                 ref current,
                 preferences.EffectiveSpecialKeyBindings.ToArray());
+            int backend = (int)preferences.EffectiveSnapTapBackend;
+            Volatile.Write(ref functionRowBackend, (int)preferences.EffectiveFunctionRowBackend);
+            if (Interlocked.Exchange(ref snapTapBackend, backend) != backend)
+            {
+                SnapTapBackendChanged?.Invoke((KeyboardInputBackend)backend);
+            }
             int enabled = preferences.SnapTapEnabled ? 1 : 0;
             if (Interlocked.Exchange(ref snapTapEnabled, enabled) != enabled)
             {

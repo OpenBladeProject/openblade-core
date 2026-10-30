@@ -127,7 +127,7 @@ public sealed class WinUiShellContractTests
         XElement description = document.Descendants().Single(element => Attribute(element, "Uid") == "SnapTap_Description");
         Assert.Equal("When A and D overlap, the last pressed key wins.", Attribute(description, "Text"));
         XElement[] details = button.Descendants().Where(element => element.Name.LocalName == "TextBlock").ToArray();
-        Assert.Contains(details, element => Attribute(element, "Text")?.Contains("built-in keyboard", StringComparison.Ordinal) == true);
+        Assert.Contains(details, element => Attribute(element, "Text") == "Razer driver handles the built-in keyboard. Windows hook applies to all keyboards.");
         Assert.Contains(details, element => Attribute(element, "Text") == "Game compatibility has not been verified.");
     }
 
@@ -147,10 +147,10 @@ public sealed class WinUiShellContractTests
         Assert.Equal("SnapTap_KeyboardHeader", Attribute(keyboardHeader, "Uid"));
         Assert.Null(Attribute(keyboardHeader, "Visibility"));
         Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
-        Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(row, "Style"));
+        Assert.Equal("{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
         XElement rows = Assert.Single(card.Elements());
         Assert.Equal("StackPanel", rows.Name.LocalName);
-        Assert.Equal([keyboardBehavior, NamedElement(document, "Border", "TouchpadRow"), row], rows.Elements().ToArray());
+        Assert.Equal([keyboardBehavior, NamedElement(document, "Border", "FunctionRowBackendRow"), NamedElement(document, "Border", "TouchpadRow"), row, NamedElement(document, "Border", "SnapTapBackendRow")], rows.Elements().ToArray());
         Assert.Equal([keyboardHeader, card], keyboardSection.Elements().ToArray());
         Assert.Equal(
             "{StaticResource KeyboardBehaviorRowsTemplate}",
@@ -195,7 +195,7 @@ public sealed class WinUiShellContractTests
             "localizationSnapshotMode\n"
                 + "            ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch,\n"
                 + "                ExperimentalDriver: localizationSnapshotSnapTapExperimental)\n"
-                + "            : SnapTapStatusStore.Read()",
+                + "            : SelectedBackendStatus(SnapTapStatusStore.Read(), snapTapBackend);",
             source,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -216,6 +216,29 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("\"SnapTap_Status_Off\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("\"SnapTap_Status_Unknown\"", source, StringComparison.Ordinal);
         Assert.Contains("SnapTapRuntimeState.Failed => LocalizedResources.Get(", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IndependentKeyboardBackendSelectorsUseSharedPresentationAndExplicitDriverSetup()
+    {
+        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        foreach (string prefix in new[] { "SnapTap", "FunctionRow" })
+        {
+            XElement row = NamedElement(document, "Border", prefix + "BackendRow");
+            Assert.Equal(prefix == "SnapTap" ? "{StaticResource SettingsLastRowStyle}" : "{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
+            XElement selector = NamedElement(document, "ResponsiveChoiceSelector", prefix + "BackendSelector");
+            Assert.False(string.IsNullOrWhiteSpace(Attribute(selector, "AccessibleName")));
+            Assert.Equal("Label", Attribute(selector, "DisplayMemberPath"));
+            Assert.DoesNotContain(row.Descendants(), element => Attribute(element, "FontSize") is not null || Attribute(element, "Height") is not null);
+            Assert.Equal("Wrap", Attribute(NamedElement(document, "TextBlock", prefix + "WindowsHookHelp"), "TextWrapping"));
+        }
+        Assert.Equal("{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}", Attribute(NamedElement(document, "Border", "FunctionRowBackendRow"), "Visibility"));
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.KeyboardBackends.cs");
+        Assert.Contains("status?.Backend == selected", source, StringComparison.Ordinal);
+        Assert.Contains("functionRowBackend == KeyboardInputBackend.RazerDriver", source, StringComparison.Ordinal);
+        Assert.Contains("SnapTapStatusStore.Read()", source, StringComparison.Ordinal);
+        Assert.Contains("FunctionRowBackendStatusStore.Read()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApplyLaptopControlAsync", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -245,11 +268,11 @@ public sealed class WinUiShellContractTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "!CanOfferSnapTapDriverSetup(SnapTapStatusStore.Read()?.State)",
+            "!CanInstallSelectedKeyboardDriver()",
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "snapTapEnabled && CanOfferSnapTapDriverSetup(status?.State)",
+            "snapTapEnabled && snapTapBackend == KeyboardInputBackend.RazerDriver && CanOfferSnapTapDriverSetup(status?.State)",
             source,
             StringComparison.Ordinal);
         Assert.Contains("&& snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed", source, StringComparison.Ordinal);
@@ -334,6 +357,9 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "snapTapEnabled = showFailure || showEnabled || showDriverMissing;\n"
+                + "#if OPENBLADE_DEVELOPER_HARNESS\n"
+                + "            SetLocalizationSnapshotKeyboardBackends();\n"
+                + "#endif\n"
                 + "            SnapTapToggle.IsOn = snapTapEnabled;\n"
                 + "            RefreshSnapTapStatus();",
             preview,

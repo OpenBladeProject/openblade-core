@@ -2210,7 +2210,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Game compatibility has not been verified.</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>SnapTap uses the Razer keyboard driver for the laptop’s built-in keyboard.</value>
+    <value>Razer driver handles the built-in keyboard. Windows hook applies to all keyboards.</value>
   </data>
   <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
     <value>About SnapTap</value>
@@ -2817,5 +2817,68 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="WhatsNew_Title" xml:space="preserve">
     <value>What's new</value>
+  </data>
+  <data name="KeyboardBackend_DriverMissing" xml:space="preserve">
+    <value>The Razer keyboard driver is missing.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.AccessibleName" xml:space="preserve">
+    <value>Multimedia key input</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.PlaceholderText" xml:space="preserve">
+    <value>Choose input method</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
+    <value>Multimedia key input</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowWindowsHelp.Text" xml:space="preserve">
+    <value>Applies to all keyboards. Some games may also receive the original function key.</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
+    <value>Install driver</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Install the Razer keyboard driver</value>
+  </data>
+  <data name="KeyboardBackend_ManualSetup" xml:space="preserve">
+    <value>Install this laptop’s Razer keyboard driver, then switch input methods to retry.</value>
+  </data>
+  <data name="KeyboardBackend_Paused" xml:space="preserve">
+    <value>Input handling is paused. Export diagnostics for details.</value>
+  </data>
+  <data name="KeyboardBackend_RazerDriver" xml:space="preserve">
+    <value>Razer driver</value>
+  </data>
+  <data name="KeyboardBackend_Recovery" xml:space="preserve">
+    <value>Restart Windows before using this input method again.</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
+    <value>SnapTap input</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.PlaceholderText" xml:space="preserve">
+    <value>Choose input method</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
+    <value>SnapTap input</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapWindowsHelp.Text" xml:space="preserve">
+    <value>Applies to all keyboards. Some games may ignore Windows hook input.</value>
+  </data>
+  <data name="KeyboardBackend_Unknown" xml:space="preserve">
+    <value>Choose an input method to resume.</value>
+  </data>
+  <data name="KeyboardBackend_Unsupported" xml:space="preserve">
+    <value>This input method is unavailable for this laptop.</value>
+  </data>
+  <data name="KeyboardBackend_Waiting" xml:space="preserve">
+    <value>Waiting for the selected input method…</value>
+  </data>
+  <data name="KeyboardBackend_WindowsHook" xml:space="preserve">
+    <value>Windows hook</value>
+  </data>
+  <data name="KeyboardBackend_DriverInstalled" xml:space="preserve">
+    <value>Driver installed. Switch input methods to retry.</value>
+  </data>
+  <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
+    <value>Press Fn once to activate multimedia keys.</value>
   </data>
 </root>
