@@ -2696,7 +2696,11 @@ public sealed class WinUiShellContractTests
             bool isAccentColorManager = file.EndsWith(
                 "AccentColorManager.cs",
                 StringComparison.OrdinalIgnoreCase);
-            if (!isAccentColorManager && !isTextScaleConsumer && !isShellThemeSource)
+            // Reordering reads the native reduced-motion setting; it does not watch colors.
+            bool isReducedMotionConsumer = file.EndsWith(
+                "LiveReorderBehavior.cs",
+                StringComparison.OrdinalIgnoreCase);
+            if (!isAccentColorManager && !isTextScaleConsumer && !isShellThemeSource && !isReducedMotionConsumer)
             {
                 Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
             }

@@ -48,18 +48,25 @@ public sealed partial class MainWindow
             return FindHeader(presentation) ?? presentation;
         }
 
+        await VerifyProvisionalReflowAsync(capture);
         FrameworkElement status = dashboardCardPresentations[DashboardCardKind.DeviceStatus];
         DashboardCardOption first = DashboardCards[0];
         DashboardCardOption second = DashboardCards[1];
         FrameworkElement firstCard = GetOrCreateDashboardCard(first);
         FrameworkElement secondCard = GetOrCreateDashboardCard(second);
+        var originalTranslation = ReorderTransformOffset(firstCard);
+        object originalTransform = firstCard.ReadLocalValue(UIElement.RenderTransformProperty);
+        double sourceOpacity = firstCard.Opacity;
+        int sourceZIndex = Canvas.GetZIndex(firstCard);
+        var neighborTranslation = ReorderTransformOffset(secondCard);
         Require(liveReorder.IsRegistered(firstCard) && liveReorder.IsRegistered(secondCard), "Dashboard dragging requires an editor.");
         await capture("dashboard-before");
+        Windows.Foundation.Point start = firstCard.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point());
         DependencyObject firstOrigin = DragOrigin(firstCard);
         Require(liveReorder.TryBeginDrag(firstCard, firstOrigin),
             $"Dashboard drag did not begin: loaded={firstCard.IsLoaded}, size={firstCard.ActualWidth}x{firstCard.ActualHeight}, root={firstCard.XamlRoot.Content.GetType().Name}, origin={firstOrigin.GetType().Name}, passive={LiveReorderBehavior.CanStartFrom(firstCard, firstOrigin)}, heading={CanStartSectionReorder(firstOrigin, firstCard)}.");
         liveReorder.UpdateTarget(new Windows.Foundation.Point(-10000, -10000));
-        Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
+        Require(ReorderTransformOffset(secondCard) == neighborTranslation,
             "A pointer outside the window selected a drop target.");
         var overlay = new Border
         {
@@ -68,25 +75,34 @@ public sealed partial class MainWindow
         Grid.SetRowSpan(overlay, Math.Max(1, Root.RowDefinitions.Count));
         Root.Children.Add(overlay);
         Root.UpdateLayout();
-        Windows.Foundation.Point coveredTarget = secondCard.TransformToVisual(firstCard)
+        Windows.Foundation.Point coveredTarget = secondCard.TransformToVisual(Root)
             .TransformPoint(new Windows.Foundation.Point(10, 10));
         liveReorder.UpdateTarget(coveredTarget);
-        Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
+        Require(ReorderTransformOffset(secondCard) == neighborTranslation,
             "A card behind an overlay became a drop target.");
         Root.Children.Remove(overlay);
-        liveReorder.ShowIndicator(secondCard, after: true);
         var preview = liveReorder.DragPreview;
-        Require(preview is not null && preview.Opacity == 0.5f
-            && preview.Brush is Microsoft.UI.Composition.CompositionSurfaceBrush
-            && preview.Size.X == (float)firstCard.ActualWidth
-            && preview.Size.Y == (float)firstCard.ActualHeight,
-            "Dragging did not mirror the actual card at half opacity.");
-        var initialOffset = preview!.Offset;
-        liveReorder.UpdateTarget(new Windows.Foundation.Point(36, 80));
-        Require(preview.Offset != initialOffset, "The preview did not follow the drag.");
+        Require(ReferenceEquals(preview, firstCard) && preview.Opacity == sourceOpacity * 0.5,
+            "Dragging did not lift the actual card at half opacity.");
+        liveReorder.UpdateTarget(new Windows.Foundation.Point(start.X + 36, start.Y + 80));
+        Require(Math.Abs(ReorderTransformOffset(firstCard).X - originalTranslation.X - 36) < 0.1
+            && Math.Abs(ReorderTransformOffset(firstCard).Y - originalTranslation.Y - 80) < 0.1,
+            $"The lifted card did not follow the cursor: translation={ReorderTransformOffset(firstCard)}, start={start}, active={liveReorder.DragPreview is not null}.");
+        liveReorder.ShowIndicator(secondCard, after: true);
         await capture("dashboard-preview");
+        Require(ReorderTransformOffset(secondCard) != neighborTranslation && DashboardCards[0] == first,
+            "Neighbors did not move before release, or the preview saved the order early.");
+        liveReorder.UpdateTarget(new Windows.Foundation.Point(start.X + 41, start.Y + 85));
+        Require(Math.Abs(ReorderTransformOffset(firstCard).X - originalTranslation.X - 41) < 0.1
+            && Math.Abs(ReorderTransformOffset(firstCard).Y - originalTranslation.Y - 85) < 0.1,
+            "Reflow changed the cursor's grip on the lifted card.");
+        liveReorder.ShowIndicator(secondCard, after: true);
         liveReorder.EndDrag();
         Require(liveReorder.DragPreview is null, "Canceled drag retained its preview.");
+        Require(ReorderTransformOffset(firstCard) == originalTranslation && ReorderTransformOffset(secondCard) == neighborTranslation
+            && Equals(firstCard.ReadLocalValue(UIElement.RenderTransformProperty), originalTransform)
+            && firstCard.Opacity == sourceOpacity && Canvas.GetZIndex(firstCard) == sourceZIndex,
+            "Cancel did not restore the original presentation.");
         Require(!liveReorder.TryMove(secondCard, after: true)
             && DashboardCards[0] == first, "Cancel changed card order.");
         Require(ElementCompositionPreview.GetElementChildVisual(secondCard) is null,
@@ -168,7 +184,7 @@ public sealed partial class MainWindow
         FrameworkElement sectionCard = pageSectionPresentations[originalSection.Kind];
         FrameworkElement sectionTarget = pageSectionPresentations[targetSection.Kind];
         Require(liveReorder.TryBeginDrag(sectionCard, DragOrigin(sectionCard)), "Section header drag failed.");
-        Require(liveReorder.DragPreview?.Size.Y == (float)sectionCard.ActualHeight,
+        Require(ReferenceEquals(liveReorder.DragPreview, sectionCard),
             "Section preview omitted its cards.");
         Require(liveReorder.TryMove(sectionTarget, true)
             && sections[2] == originalSection && !sections[0].IsVisible,
@@ -232,5 +248,104 @@ public sealed partial class MainWindow
             "A disposed reorder behavior recreated insertion feedback.");
         Require(!liveReorder.IsRegistered(firstCard) && !liveReorder.IsRegistered(sourceItem), "Disposed reorder behavior retained input handlers.");
     }
+
+    private async Task VerifyProvisionalReflowAsync(Func<string, Task> capture)
+    {
+        static void Require(bool condition, string message)
+        {
+            if (!condition)
+            {
+                throw new InvalidOperationException(message);
+            }
+        }
+        using var behavior = new LiveReorderBehavior();
+        var host = new StackPanel
+        {
+            Width = 260,
+            Spacing = 4,
+            Margin = new Thickness(240, 50, 0, 0),
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        Border Card(string text, double height) => new()
+        {
+            Height = height,
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.LightGray),
+            Child = new TextBlock { Text = text },
+        };
+        Border a = Card("Short card", 40), b = Card("Tall card", 70), c = Card("Medium card", 50);
+        Border noticeX = Card("Fixed notice", 15), noticeY = Card("Other fixed notice", 20);
+        var cards = new System.Collections.ObjectModel.ObservableCollection<FrameworkElement> { a, b, c };
+        var group = new CardRowGroup("reflow-fixture", cards);
+        foreach (FrameworkElement child in new[] { a, noticeX, b, noticeY, c })
+        {
+            host.Children.Add(child);
+        }
+        foreach (FrameworkElement card in cards)
+        {
+            behavior.Register(card, cards, card);
+        }
+        int saves = 0;
+        cards.CollectionChanged += (_, _) => { saves++; RefreshCardRows(host, group); };
+        Grid.SetRowSpan(host, Math.Max(1, Root.RowDefinitions.Count));
+        Grid.SetColumnSpan(host, Math.Max(1, Root.ColumnDefinitions.Count));
+        Canvas.SetZIndex(host, 999);
+        Root.Children.Add(host);
+        Root.UpdateLayout();
+        try
+        {
+            await capture("uneven-cards-before");
+            var original = host.Children.OfType<FrameworkElement>().Select(ReorderTransformOffset).ToArray();
+            Windows.Foundation.Point start = a.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point());
+            Windows.Foundation.Point destination = c.TransformToVisual(Root)
+                .TransformPoint(new Windows.Foundation.Point(20, c.ActualHeight - 10));
+            Require(destination.X < Root.ActualWidth && destination.Y < Root.ActualHeight,
+                $"Uneven-card fixture exceeds the root: target={destination}, root={Root.ActualWidth}x{Root.ActualHeight}.");
+            Require(behavior.TryBeginDrag(a, a), "Uneven-card drag did not begin.");
+            behavior.UpdateTarget(destination);
+            await capture("uneven-cards-reflow");
+            var translations = host.Children.OfType<FrameworkElement>().Select(ReorderTransformOffset).ToArray();
+            Require(ReorderTransformOffset(b).Y != 0 && ReorderTransformOffset(c).Y != 0 && ReorderTransformOffset(noticeX).Y != 0
+                && saves == 0 && cards.SequenceEqual(new[] { a, b, c }),
+                $"Uneven cards/notices did not reflow provisionally: b={ReorderTransformOffset(b)}, c={ReorderTransformOffset(c)}, notice={ReorderTransformOffset(noticeX)}, saves={saves}, active={behavior.DragPreview is not null}.");
+            behavior.UpdateTarget(destination);
+            Require(host.Children.OfType<FrameworkElement>().Select(ReorderTransformOffset).SequenceEqual(translations),
+                "A stationary cursor oscillated the proposed order.");
+            Require(Math.Abs(ReorderTransformOffset(a).X - (destination.X - start.X)) < 0.1
+                && Math.Abs(ReorderTransformOffset(a).Y - (destination.Y - start.Y)) < 0.1,
+                "Uneven-card reflow lost the cursor grip.");
+            behavior.EndDrag();
+            Require(saves == 0 && host.Children.OfType<FrameworkElement>().Select(ReorderTransformOffset).SequenceEqual(original),
+                "Cancel saved the provisional order or left a translated notice.");
+            Require(behavior.TryBeginDrag(a, a), "Uneven-card commit did not begin.");
+            behavior.ShowIndicator(c, true);
+            Require(behavior.TryMove(c, true) && saves == 1 && cards.SequenceEqual(new[] { b, c, a }),
+                "Release did not commit exactly one canonical move.");
+            Root.UpdateLayout();
+            Require(host.Children.SequenceEqual(new[] { b, noticeX, c, noticeY, a })
+                && host.Children.OfType<FrameworkElement>().All(child => ReorderTransformOffset(child) == new Windows.Foundation.Point()),
+                "Drop changed fixed notice slots or retained preview transforms.");
+            Border appeared = Card("Newly visible card", 60);
+            appeared.Visibility = Visibility.Collapsed;
+            host.Children.Add(appeared);
+            cards.Add(appeared);
+            behavior.Register(appeared, cards, appeared);
+            Root.UpdateLayout();
+            Require(behavior.TryBeginDrag(a, a), "Changing-layout drag did not begin.");
+            appeared.Visibility = Visibility.Visible;
+            Root.UpdateLayout();
+            behavior.UpdateTarget(destination);
+            Require(behavior.DragPreview is null && a.Opacity == 1,
+                "A newly visible trailing card did not cancel the stale layout.");
+        }
+        finally
+        {
+            behavior.EndDrag();
+            Root.Children.Remove(host);
+        }
+    }
+
+    private static Windows.Foundation.Point ReorderTransformOffset(FrameworkElement element) =>
+        element.RenderTransform?.TransformPoint(new Windows.Foundation.Point()) ?? new Windows.Foundation.Point();
 }
 #endif

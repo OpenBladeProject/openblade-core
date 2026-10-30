@@ -119,7 +119,11 @@ public partial class App
         {
             behavior.EndDrag();
             behavior.TryBeginDrag(presentations["Card A"], presentations["Card A"]);
-            behavior.UpdateTarget(new Windows.Foundation.Point(32, 90));
+            var previewRoot = (UIElement)window.Content;
+            Windows.Foundation.Point start = presentations["Card A"].TransformToVisual(previewRoot)
+                .TransformPoint(new Windows.Foundation.Point());
+            behavior.UpdateTarget(new Windows.Foundation.Point(start.X + 32, start.Y + 90));
+            behavior.ShowIndicator(presentations["Card B"], after: true);
         };
         clearPreview.Click += (_, _) => behavior.EndDrag();
         host.Children.Add(showPreview);
@@ -150,6 +154,9 @@ public partial class App
             window.ConfigureLiveReorderSmoke();
             window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 900));
             ShowNoninteractiveSnapshotWindow(window);
+            // Exercise XAML hit testing on the private test desktop. Native no-activate
+            // input guards remain in place; ordinary snapshot windows disable this.
+            ((UIElement)window.Content).IsHitTestVisible = true;
             await WaitForSnapshotLayoutAsync();
             await window.VerifyLiveReorderSmokeAsync(async name =>
             {

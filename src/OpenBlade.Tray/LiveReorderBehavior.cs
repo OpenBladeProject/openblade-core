@@ -1,13 +1,11 @@
 using System.Collections.ObjectModel;
-using System.Numerics;
-using Microsoft.UI.Composition;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
 using ButtonBase = Microsoft.UI.Xaml.Controls.Primitives.ButtonBase;
 using ContentControl = Microsoft.UI.Xaml.Controls.ContentControl;
@@ -34,11 +32,13 @@ internal sealed class LiveReorderBehavior : IDisposable
     private DependencyObject? pressOrigin;
     private FrameworkElement? indicatorTarget;
     private bool indicatorAfter;
-    private Canvas? previewHost;
-    private Microsoft.UI.Xaml.Controls.Panel? previewRoot;
-    private SpriteVisual? preview;
-    private CompositionVisualSurface? previewSurface;
-    private CompositionSurfaceBrush? previewBrush;
+    private FrameworkElement? layoutHost;
+    private readonly List<DragRow> layoutRows = [];
+    private readonly List<FrameworkElement> members = [];
+    private readonly Dictionary<FrameworkElement, double> proposedTops = [];
+    private Point grabPosition;
+    private int originalZIndex;
+    private bool animateReflow;
     private UIElement? keyRoot;
     private double originalOpacity;
     private bool transferringCapture;
@@ -188,7 +188,7 @@ internal sealed class LiveReorderBehavior : IDisposable
         }
         if (dragging is not null)
         {
-            UpdateTarget(point.Position);
+            UpdateTarget(args.GetCurrentPoint(element.XamlRoot.Content).Position);
             args.Handled = true;
         }
     }
@@ -270,22 +270,25 @@ internal sealed class LiveReorderBehavior : IDisposable
         if (disposed || dragging is not null || !IsVisible(element) || !CanStartFrom(element, origin)
             || !registrations.TryGetValue(element, out Registration? source)
             || !(source.CanStart?.Invoke(origin) ?? true)
-            || element.XamlRoot.Content is not Microsoft.UI.Xaml.Controls.Panel root)
+            || element.XamlRoot.Content is not Microsoft.UI.Xaml.Controls.Panel)
         {
             return false;
         }
         dragging = source;
         originalOpacity = element.Opacity;
+        originalZIndex = Canvas.GetZIndex(element);
         try
         {
-            CreatePreview(element, root);
+            CaptureLayout(element);
+            element.Opacity = originalOpacity * 0.5;
+            Canvas.SetZIndex(element, 1000);
             return dragging is not null;
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
             or System.Runtime.InteropServices.COMException)
         {
             EndDrag();
-            System.Diagnostics.Trace.TraceWarning("Could not create the drag preview: {0}", exception);
+            System.Diagnostics.Trace.TraceWarning("Could not start live reordering: {0}", exception);
             return false;
         }
     }
@@ -330,41 +333,78 @@ internal sealed class LiveReorderBehavior : IDisposable
         return false;
     }
 
-    internal void UpdateTarget(Point position)
+    // Pointer coordinates stay relative to the root: the source itself now moves.
+    internal void UpdateTarget(Point rootPosition)
     {
-        if (disposed || dragging is null || !IsVisible(dragging.Element))
+        if (disposed || dragging is null || layoutHost is null || !IsLayoutCurrent())
         {
             EndDrag();
             return;
         }
         UIElement root = dragging.Element.XamlRoot.Content;
-        Point rootPosition = dragging.Element.TransformToVisual(root).TransformPoint(position);
-        if (preview is not null && previewHost is not null)
-        {
-            Point location = dragging.Element.TransformToVisual(previewHost)
-                .TransformPoint(new Point(position.X - pressPosition.X, position.Y - pressPosition.Y));
-            preview.Offset = new Vector3((float)location.X, (float)location.Y, 0);
-        }
+        Point position = root.TransformToVisual(layoutHost).TransformPoint(rootPosition);
+        DragRow source = layoutRows.Single(row => row.Element == dragging.Element);
+        source.Offset.X = position.X - grabPosition.X;
+        source.Offset.Y = position.Y - grabPosition.Y;
         if (root is FrameworkElement bounds
             && (rootPosition.X < 0 || rootPosition.Y < 0
-                || rootPosition.X >= bounds.ActualWidth || rootPosition.Y >= bounds.ActualHeight))
+                || rootPosition.X >= bounds.ActualWidth || rootPosition.Y >= bounds.ActualHeight)
+            || position.X < 0 || position.Y < 0
+            || position.X >= layoutHost.ActualWidth || position.Y >= layoutHost.ActualHeight)
         {
-            ClearIndicator();
+            ResetProposal();
             return;
         }
-        // Hit testing honors scroll clipping and overlays; off-screen cards are not targets.
-        DependencyObject? hit = VisualTreeHelper.FindElementsInHostCoordinates(rootPosition, root).FirstOrDefault();
+        // Ignore the lifted source, which covers the cursor. Everything underneath still
+        // participates in normal hit testing, including scroll clips and blocking overlays.
+        DependencyObject? hit = VisualTreeHelper.FindElementsInHostCoordinates(rootPosition, root)
+            .FirstOrDefault(candidate => !IsDescendantOf(candidate, source.Element));
+        if (hit is null || !IsDescendantOf(hit, layoutHost))
+        {
+            // A null-background host has no ink in the source's vacant slot. Spatial
+            // hits include it, in z-order: admit it only before the first normal hit,
+            // so a real overlay above the host continues to block dropping.
+            foreach (UIElement spatial in VisualTreeHelper.FindElementsInHostCoordinates(rootPosition, root, true))
+            {
+                if (ReferenceEquals(spatial, hit))
+                {
+                    break;
+                }
+                if (ReferenceEquals(spatial, layoutHost))
+                {
+                    hit = layoutHost;
+                    break;
+                }
+            }
+        }
         for (; hit is not null; hit = VisualTreeHelper.GetParent(hit))
         {
-            if (hit is not FrameworkElement candidate || !CanMoveTo(candidate))
+            if (!ReferenceEquals(hit, layoutHost))
             {
                 continue;
             }
-            Point local = dragging.Element.TransformToVisual(candidate).TransformPoint(position);
-            ShowIndicator(candidate, local.Y >= candidate.ActualHeight / 2);
+            // Use proposed positions, never the animated/transformed hit bounds. Keeping
+            // the source's vacant slot stable prevents a stationary cursor from oscillating.
+            double sourceTop = proposedTops[source.Element];
+            if (position.Y >= sourceTop && position.Y <= sourceTop + source.Height)
+            {
+                return;
+            }
+            FrameworkElement[] others = members.Where(member => member != source.Element)
+                .OrderBy(member => proposedTops[member]).ToArray();
+            FrameworkElement? target = others.FirstOrDefault(member =>
+                position.Y < proposedTops[member] + member.ActualHeight / 2);
+            if (target is not null)
+            {
+                ShowIndicator(target, after: false);
+            }
+            else if (others.Length > 0)
+            {
+                ShowIndicator(others[^1], after: true);
+            }
             return;
         }
-        ClearIndicator();
+        ResetProposal();
     }
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs args)
@@ -375,8 +415,7 @@ internal sealed class LiveReorderBehavior : IDisposable
         }
         if (dragging is not null)
         {
-            var source = (FrameworkElement)sender;
-            UpdateTarget(args.GetCurrentPoint(source).Position);
+            UpdateTarget(args.GetCurrentPoint(((FrameworkElement)sender).XamlRoot.Content).Position);
             FrameworkElement? target = indicatorTarget;
             if (target is not null)
             {
@@ -389,7 +428,7 @@ internal sealed class LiveReorderBehavior : IDisposable
 
     internal bool TryMove(FrameworkElement target, bool after)
     {
-        if (!CanMoveTo(target))
+        if (!CanMoveTo(target) || !IsLayoutCurrent())
         {
             EndDrag();
             return false;
@@ -422,7 +461,7 @@ internal sealed class LiveReorderBehavior : IDisposable
     private void OnUnloaded(object sender, RoutedEventArgs args)
     {
         if (ReferenceEquals(sender, pressed?.Element) || ReferenceEquals(sender, dragging?.Element)
-            || ReferenceEquals(sender, indicatorTarget))
+            || layoutRows.Any(row => ReferenceEquals(row.Element, sender)))
         {
             EndDrag();
         }
@@ -430,12 +469,16 @@ internal sealed class LiveReorderBehavior : IDisposable
 
     internal void ShowIndicator(FrameworkElement target, bool after)
     {
-        if (disposed)
+        if (disposed || !CanMoveTo(target) || !members.Contains(target))
         {
             return;
         }
         indicatorTarget = target;
         indicatorAfter = after;
+        var order = members.OrderBy(member => proposedTops[member]).ToList();
+        order.Remove(dragging!.Element);
+        order.Insert(order.IndexOf(target) + (after ? 1 : 0), dragging.Element);
+        ApplyProposal(order);
     }
 
     private void ClearIndicator()
@@ -443,63 +486,91 @@ internal sealed class LiveReorderBehavior : IDisposable
         indicatorTarget = null;
     }
 
-    internal SpriteVisual? DragPreview => preview;
+    internal FrameworkElement? DragPreview => dragging?.Element;
 
-    private void CreatePreview(FrameworkElement element, Microsoft.UI.Xaml.Controls.Panel root)
+    private static bool IsDescendantOf(DependencyObject candidate, DependencyObject ancestor)
     {
-        // Mirror the actual live subtree without reparenting controls or copying their
-        // bindings. The hit-test-free root overlay stays outside scroll clipping.
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        var compositor = visual.Compositor;
-        previewSurface = compositor.CreateVisualSurface();
-        previewSurface.SourceVisual = visual;
-        previewSurface.SourceSize = new Vector2((float)element.ActualWidth, (float)element.ActualHeight);
-        previewBrush = compositor.CreateSurfaceBrush(previewSurface);
-        preview = compositor.CreateSpriteVisual();
-        preview.Brush = previewBrush;
-        preview.Size = previewSurface.SourceSize;
-        preview.Opacity = 0.5f;
-        previewHost = new Canvas { IsHitTestVisible = false };
-        if (root is Grid grid)
+        for (DependencyObject? current = candidate; current is not null; current = VisualTreeHelper.GetParent(current))
         {
-            Grid.SetRowSpan(previewHost, Math.Max(1, grid.RowDefinitions.Count));
-            Grid.SetColumnSpan(previewHost, Math.Max(1, grid.ColumnDefinitions.Count));
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
         }
-        // WinUI bounds Canvas.ZIndex; Int32.MaxValue is rejected by native XAML.
-        Canvas.SetZIndex(previewHost, 1000);
-        previewRoot = root;
-        root.Children.Add(previewHost);
-        root.UpdateLayout();
-        if (dragging is null || previewHost is null || preview is null)
-        {
-            return;
-        }
-        Point location = element.TransformToVisual(previewHost).TransformPoint(new Point());
-        preview.Offset = new Vector3((float)location.X, (float)location.Y, 0);
-        ElementCompositionPreview.SetElementChildVisual(previewHost, preview);
+        return false;
     }
 
-    private void ClearPreview()
+    private void CaptureLayout(FrameworkElement element)
     {
-        if (previewHost is not null)
+        animateReflow = new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
+        layoutHost = VisualTreeHelper.GetParent(element) as FrameworkElement
+            ?? throw new InvalidOperationException("The reorder source has no layout host.");
+        members.AddRange(registrations.Values.Where(registration =>
+                ReferenceEquals(registration.Group, dragging!.Group) && IsVisible(registration.Element)
+                && ReferenceEquals(VisualTreeHelper.GetParent(registration.Element), layoutHost))
+            .Select(registration => registration.Element));
+        // Keep non-draggable notices in their existing child slots too. Their position can
+        // change when unequal-height cards pass them, just as it will after the real drop.
+        IEnumerable<FrameworkElement> peers = layoutHost is Microsoft.UI.Xaml.Controls.Panel panel
+            ? panel.Children.OfType<FrameworkElement>().Where(IsVisible) : members;
+        foreach (FrameworkElement peer in peers.OrderBy(peer => peer.TransformToVisual(layoutHost).TransformPoint(new Point()).Y))
         {
-            ElementCompositionPreview.SetElementChildVisual(previewHost, null);
-            previewRoot?.Children.Remove(previewHost);
+            Point origin = peer.TransformToVisual(layoutHost).TransformPoint(new Point());
+            var row = new DragRow(peer, origin.Y, peer.ActualHeight, LayoutInformation.GetLayoutSlot(peer));
+            layoutRows.Add(row);
+            proposedTops.Add(peer, origin.Y);
         }
-        preview?.Dispose();
-        previewBrush?.Dispose();
-        previewSurface?.Dispose();
-        preview = null;
-        previewBrush = null;
-        previewSurface = null;
-        previewHost = null;
-        previewRoot = null;
+        // Direct smoke gestures start at the source's top-left; real input keeps the exact
+        // point originally grabbed, even after the source or its neighbors move.
+        Point grip = captureOwner == element ? pressPosition : new Point();
+        grabPosition = element.TransformToVisual(layoutHost).TransformPoint(grip);
+    }
+
+    private bool IsLayoutCurrent() => layoutRows.Count > 0 && layoutRows.All(row =>
+        IsVisible(row.Element) && ReferenceEquals(VisualTreeHelper.GetParent(row.Element), layoutHost)
+        && LayoutInformation.GetLayoutSlot(row.Element) == row.LayoutSlot
+        && row.Element.ActualHeight == row.Height)
+        && (layoutHost is not Microsoft.UI.Xaml.Controls.Panel panel
+            || panel.Children.OfType<FrameworkElement>().Count(IsVisible) == layoutRows.Count)
+        && registrations.Values.Count(registration => ReferenceEquals(registration.Group, dragging!.Group)
+            && ReferenceEquals(VisualTreeHelper.GetParent(registration.Element), layoutHost)
+            && IsVisible(registration.Element)) == members.Count
+        && members.All(member => registrations.TryGetValue(member, out Registration? registration)
+            && ReferenceEquals(registration.Group, dragging!.Group))
+        && registrations.TryGetValue(dragging!.Element, out Registration? source)
+        && ReferenceEquals(source.Item, dragging.Item);
+
+    private void ApplyProposal(IReadOnlyList<FrameworkElement> order)
+    {
+        int memberIndex = 0;
+        double top = layoutRows[0].Top;
+        for (int index = 0; index < layoutRows.Count; index++)
+        {
+            DragRow slot = layoutRows[index];
+            FrameworkElement element = members.Contains(slot.Element) ? order[memberIndex++] : slot.Element;
+            DragRow row = layoutRows.Single(row => row.Element == element);
+            if (index > 0)
+            {
+                top += slot.Top - (layoutRows[index - 1].Top + layoutRows[index - 1].Height);
+            }
+            proposedTops[element] = top;
+            if (element != dragging!.Element)
+            {
+                row.MoveTo(top - row.Top, animateReflow);
+            }
+            top += row.Height;
+        }
+    }
+
+    private void ResetProposal()
+    {
+        ClearIndicator();
+        ApplyProposal(layoutRows.Where(row => members.Contains(row.Element)).Select(row => row.Element).ToArray());
     }
 
     internal void EndDrag()
     {
         ClearIndicator();
-        ClearPreview();
         Registration? source = dragging;
         FrameworkElement? owner = captureOwner;
         Pointer? captured = pointer;
@@ -513,7 +584,16 @@ internal sealed class LiveReorderBehavior : IDisposable
         if (source is not null)
         {
             source.Element.Opacity = originalOpacity;
+            Canvas.SetZIndex(source.Element, originalZIndex);
         }
+        foreach (DragRow row in layoutRows)
+        {
+            row.Restore();
+        }
+        layoutRows.Clear();
+        members.Clear();
+        proposedTops.Clear();
+        layoutHost = null;
         if (owner is not null && captured is not null)
         {
             owner.ReleasePointerCapture(captured);
@@ -548,4 +628,80 @@ internal sealed class LiveReorderBehavior : IDisposable
         object Item,
         Func<DependencyObject, bool>? CanStart,
         Action<object, bool> MoveHere);
+
+    private sealed class DragRow
+    {
+        public FrameworkElement Element { get; }
+        public double Top { get; }
+        public double Height { get; }
+        public Rect LayoutSlot { get; }
+        public TranslateTransform Offset { get; } = new();
+        private readonly object localTransform;
+        private readonly Microsoft.UI.Xaml.Data.Binding? transformBinding;
+        private Storyboard? animation;
+        private double destination;
+
+        public DragRow(FrameworkElement element, double top, double height, Rect layoutSlot)
+        {
+            Element = element;
+            Top = top;
+            Height = height;
+            LayoutSlot = layoutSlot;
+            localTransform = element.ReadLocalValue(UIElement.RenderTransformProperty);
+            transformBinding = element.GetBindingExpression(UIElement.RenderTransformProperty)?.ParentBinding;
+            // NavigationView already owns a handout composition visual. RenderTransform
+            // composes with it; the newer Translation facade throws on those native items.
+            var transform = new TransformGroup();
+            if (element.RenderTransform is { } original)
+            {
+                transform.Children.Add(original);
+            }
+            transform.Children.Add(Offset);
+            element.RenderTransform = transform;
+        }
+
+        public void MoveTo(double y, bool animate)
+        {
+            if (destination == y)
+            {
+                return;
+            }
+            double from = Offset.Y;
+            animation?.Stop();
+            animation = null;
+            destination = y;
+            Offset.Y = y;
+            if (animate)
+            {
+                var movement = new DoubleAnimation
+                {
+                    From = from,
+                    To = y,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(120)),
+                };
+                Storyboard.SetTarget(movement, Offset);
+                Storyboard.SetTargetProperty(movement, nameof(TranslateTransform.Y));
+                animation = new Storyboard();
+                animation.Children.Add(movement);
+                animation.Begin();
+            }
+        }
+
+        public void Restore()
+        {
+            animation?.Stop();
+            if (transformBinding is not null)
+            {
+                Element.SetBinding(UIElement.RenderTransformProperty, transformBinding);
+            }
+            else if (localTransform == DependencyProperty.UnsetValue)
+            {
+                Element.ClearValue(UIElement.RenderTransformProperty);
+            }
+            else
+            {
+                Element.SetValue(UIElement.RenderTransformProperty, localTransform);
+            }
+        }
+    }
 }
