@@ -2564,20 +2564,6 @@
                             </StackPanel>
                         </Border>
 
-                        <ContentControl x:Name="PowerModeCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardPowerModeCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
-
-                        <ContentControl x:Name="FansCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardFansCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
-
-                        <ContentControl x:Name="BatteryCard"
-                                        Content="{x:Bind ViewModel}"
-                                        ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
-                                        HorizontalContentAlignment="Stretch" />
                     </StackPanel>
                 </ScrollViewer>
 
@@ -3282,6 +3268,21 @@
                         </local:ResponsivePageHeader>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
+                        <ContentControl x:Name="PowerModeCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardPowerModeCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="FansCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardFansCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="BatteryCard"
+                                        Content="{x:Bind ViewModel}"
+                                        ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
                         <StackPanel x:Name="BatteryHistorySection">
                             <TextBlock x:Uid="BatteryHistory_Title" Text="Battery history" Style="{StaticResource SectionHeaderStyle}" />
                             <Border Style="{StaticResource SettingsGroupStyle}">

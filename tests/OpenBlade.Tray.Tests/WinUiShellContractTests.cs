@@ -1752,12 +1752,40 @@ public sealed class WinUiShellContractTests
         Assert.Contains("? DeviceStatusCard", window, StringComparison.Ordinal);
         Assert.Contains("DashboardCardHost.Children.Move", window, StringComparison.Ordinal);
         Assert.Contains("RefreshDashboardCards();", window, StringComparison.Ordinal);
-        Assert.Contains("MoveCanonicalLaptopCardsIntoPlace();", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("MoveCanonicalLaptopCardsIntoPlace", window, StringComparison.Ordinal);
         Assert.DoesNotContain("CompleteDashboardArrangement", window, StringComparison.Ordinal);
         Assert.DoesNotContain("DashboardLayoutRestartRequested", window, StringComparison.Ordinal);
         Assert.DoesNotContain("DashboardLayoutRestartRequested", app, StringComparison.Ordinal);
         Assert.DoesNotContain("--restart-after=", app, StringComparison.Ordinal);
         Assert.DoesNotContain("WaitForDashboardRestartParent", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanonicalLaptopCardsStartInTheirFinalHostBeforeLoaded()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        XDocument document = XDocument.Parse(xaml);
+        XElement laptopHost = NamedElement(document, "StackPanel", "LaptopCardsHost");
+        string[] cardNames = ["PowerModeCard", "FansCard", "BatteryCard"];
+        Assert.Equal(cardNames, laptopHost.Elements().Take(cardNames.Length)
+            .Select(element => Attribute(element, "Name")).ToArray());
+        foreach (string cardName in cardNames)
+        {
+            XElement card = NamedElement(document, "ContentControl", cardName);
+            Assert.Same(laptopHost, card.Parent);
+            Assert.Equal("{x:Bind ViewModel}", Attribute(card, "Content"));
+            string template = "Dashboard" + cardName + "Template";
+            Assert.Equal("{StaticResource " + template + "}", Attribute(card, "ContentTemplate"));
+            Assert.Single(document.Descendants().Where(element =>
+                element.Name.LocalName == "DataTemplate" && Attribute(element, "Key") == template));
+        }
+
+        string loaded = SliceMethod(window, "private void OnRootLoaded(", "private void RegisterPageSections(");
+        Assert.Contains("if (Volatile.Read(ref disposed) != 0)", loaded, StringComparison.Ordinal);
+        Assert.True(loaded.IndexOf("Volatile.Read(ref disposed)", StringComparison.Ordinal)
+            < loaded.IndexOf("rootLoaded.TrySetResult()", StringComparison.Ordinal));
+        Assert.DoesNotContain("LaptopCardsHost.Children.Insert", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1800,7 +1828,7 @@ public sealed class WinUiShellContractTests
         string factory = SliceMethod(
             window,
             "private FrameworkElement CreateDashboardLiveCard",
-            "private void MoveCanonicalLaptopCardsIntoPlace");
+            "private void OnRootLoaded");
         Assert.Contains("? DisplayViewModel", factory, StringComparison.Ordinal);
         Assert.Contains(": ViewModel", factory, StringComparison.Ordinal);
         Assert.Contains("Content = content", factory, StringComparison.Ordinal);

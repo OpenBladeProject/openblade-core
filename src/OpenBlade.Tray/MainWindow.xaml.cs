@@ -89,7 +89,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingNotificationPreferences;
     private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
-    private bool canonicalLaptopCardsPlaced;
     private bool fanControlCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private bool? dashboardIsStacked;
@@ -5401,31 +5400,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         };
     }
 
-    private void MoveCanonicalLaptopCardsIntoPlace()
+    private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
-        if (canonicalLaptopCardsPlaced)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
 
-        foreach (FrameworkElement card in new[] { PowerModeCard, FansCard, BatteryCard })
-        {
-            if (card.Parent is Microsoft.UI.Xaml.Controls.Panel current)
-            {
-                current.Children.Remove(card);
-            }
-        }
-
-        LaptopCardsHost.Children.Insert(0, BatteryCard);
-        LaptopCardsHost.Children.Insert(0, FansCard);
-        LaptopCardsHost.Children.Insert(0, PowerModeCard);
-        canonicalLaptopCardsPlaced = true;
-    }
-
-    private void OnRootLoaded(object sender, RoutedEventArgs args)
-    {
         rootLoaded.TrySetResult();
-        MoveCanonicalLaptopCardsIntoPlace();
         RegisterPageSections();
         dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;
         dashboardCardsReady = true;
