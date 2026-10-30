@@ -6411,7 +6411,8 @@ public sealed partial class MainViewModelTests
     public async Task ExperimentalLightingParameters_OfferOnlyAdmittedModesAndUpdateOnCapabilityChanges()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false) with
         {
@@ -6421,8 +6422,11 @@ public sealed partial class MainViewModelTests
                 SupportsWaveDirectionSelection = false,
             },
         };
+        int beforeInitial = dispatcher.CompletedCalls;
         client.Publish(initial);
-        await WaitUntilAsync(() => !viewModel.Capabilities.SupportsWaveDirectionSelection);
+        await WaitUntilAsync(() =>
+            dispatcher.CompletedCalls > beforeInitial
+            && !viewModel.Capabilities.SupportsWaveDirectionSelection);
         viewModel.LightingEffectEditor = LightingEffect.Breathing;
         Assert.Equal(new[] { BreathingColorMode.Random }, viewModel.LightingBreathingColorModes);
         Assert.Equal(BreathingColorMode.Random, viewModel.LightingBreathingColorModeEditor);
@@ -6432,6 +6436,7 @@ public sealed partial class MainViewModelTests
         Assert.Equal(LightingDirection.Rightward, Assert.Single(viewModel.LightingDirectionOptions).Value);
         Assert.Equal(LightingDirection.Rightward, viewModel.LightingDirectionEditor);
         Assert.False(viewModel.LightingShowsDirection);
+        int beforeCapabilityChange = dispatcher.CompletedCalls;
         client.Publish(initial with
         {
             Revision = initial.Revision + 1,
@@ -6441,7 +6446,10 @@ public sealed partial class MainViewModelTests
                 SupportsWaveDirectionSelection = true,
             },
         });
-        await WaitUntilAsync(() => viewModel.Capabilities.SupportsWaveDirectionSelection);
+        // The capability flag is assigned before the derived lighting option lists.
+        await WaitUntilAsync(() =>
+            dispatcher.CompletedCalls > beforeCapabilityChange
+            && viewModel.Capabilities.SupportsWaveDirectionSelection);
         Assert.Equal(2, viewModel.LightingDirectionOptions.Count);
         Assert.Equal(3, viewModel.LightingBreathingColorModes.Count);
     }
