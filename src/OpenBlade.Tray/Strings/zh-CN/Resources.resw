@@ -586,9 +586,6 @@
   <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>托盘图标悬停信息内容</value>
   </data>
-  <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
-    <value>False</value>
-  </data>
   <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>导航菜单顺序</value>
   </data>

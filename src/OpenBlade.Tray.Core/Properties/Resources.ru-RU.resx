@@ -1702,4 +1702,7 @@
   <data name="Telemetry is disabled." xml:space="preserve">
     <value>Телеметрия отключена.</value>
   </data>
+  <data name="Notifications" xml:space="preserve">
+    <value>Уведомления</value>
+  </data>
 </root>

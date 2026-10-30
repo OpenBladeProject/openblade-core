@@ -363,7 +363,7 @@ foreach ($path in @(Get-ChildItem (Join-Path $Repository 'src\OpenBlade.Tray') `
         $attributes = $tag.Groups['attributes'].Value
         $localizable = @([regex]::Matches(
             $attributes,
-            '(?<property>Text|Header|Content|PlaceholderText|Title|AccessibleName|AccessKey|AutomationProperties\.(?:Name|HelpText)|ToolTipService\.ToolTip)="(?<value>[^"{}]+)"') |
+            '(?<![\w.:])(?<property>Text|Header|Content|PlaceholderText|Title|AccessibleName|AccessKey|AutomationProperties\.(?:Name|HelpText)|ToolTipService\.ToolTip)="(?<value>[^"{}]+)"') |
             Where-Object {
                 $value = $_.Groups['value'].Value
                 -not [string]::IsNullOrWhiteSpace($value) -and

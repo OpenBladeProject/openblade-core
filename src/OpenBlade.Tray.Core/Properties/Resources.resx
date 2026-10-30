@@ -1702,4 +1702,7 @@ Details: {1}</value>
   <data name="Telemetry is disabled." xml:space="preserve">
     <value>Telemetry is disabled.</value>
   </data>
+  <data name="Notifications" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
 </root>
