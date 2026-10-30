@@ -1554,7 +1554,7 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(picker, "MaxExpandedItems"));
         }
         Assert.Contains(
-            "Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered.",
+            "Choose how often to refresh live readings and check for battery discharge while plugged in.",
             xaml,
             StringComparison.Ordinal);
         XElement hoverContents = Assert.Single(settings.Descendants(), element =>
