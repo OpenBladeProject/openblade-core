@@ -8,13 +8,12 @@ public sealed class TrayIconStateResolverTests
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Custom, false)]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Performance, true)]
     [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, false)]
-    public void DischargeWarningOverridesKnownExternalPowerMode(
+    public void ExternalPowerModesRemainTheBaseOfDischargeBadges(
         PowerSource source, PerformancePreset performance, bool hyperBoost)
     {
-        Assert.Equal(TrayIconState.ExternalPowerDischarging,
-            TrayIconStateResolver.Resolve(true, true, source, performance, hyperBoost, true));
-        Assert.NotEqual(TrayIconState.ExternalPowerDischarging,
-            TrayIconStateResolver.Resolve(true, true, source, performance, hyperBoost, false));
+        TrayIconState state = TrayIconStateResolver.Resolve(true, true, source, performance, hyperBoost);
+        Assert.True(TrayIconStateResolver.CanShowDischargeBadge(state));
+        Assert.NotEqual(TrayIconAssetPath.Resolve(state, true), TrayIconAssetPath.Resolve(state, true, true));
     }
 
     [Theory]
@@ -94,8 +93,6 @@ public sealed class TrayIconStateResolverTests
             performance);
 
         Assert.Equal(TrayIconState.GenericError, actual);
-        Assert.Equal(TrayIconState.GenericError,
-            TrayIconStateResolver.Resolve(isConnected, deviceVerified, source, performance,
-                externalPowerDischarging: true));
+        Assert.False(TrayIconStateResolver.CanShowDischargeBadge(actual));
     }
 }

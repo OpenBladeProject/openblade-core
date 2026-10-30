@@ -13,7 +13,6 @@ public enum TrayIconState
     BatteryBalanced,
     BatterySaver,
     AcHyperBoost,
-    ExternalPowerDischarging,
 }
 
 public static class TrayIconStateResolver
@@ -23,8 +22,7 @@ public static class TrayIconStateResolver
         bool deviceVerified,
         PowerSource powerSource,
         PerformancePreset? effectivePerformance,
-        bool hyperBoostActive = false,
-        bool externalPowerDischarging = false)
+        bool hyperBoostActive = false)
     {
         if (!isConnected
             || !deviceVerified
@@ -41,13 +39,11 @@ public static class TrayIconStateResolver
                     or PerformancePreset.Silent
                     or PerformancePreset.Performance
                     or PerformancePreset.Custom
-                ? externalPowerDischarging
-                    ? TrayIconState.ExternalPowerDischarging
-                    : TrayIconState.AcHyperBoost
+                ? TrayIconState.AcHyperBoost
                 : TrayIconState.GenericError;
         }
 
-        TrayIconState state = (powerSource, effectivePerformance.Value) switch
+        return (powerSource, effectivePerformance.Value) switch
         {
             (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
                 TrayIconState.AcBalanced,
@@ -67,9 +63,9 @@ public static class TrayIconStateResolver
                 TrayIconState.BatterySaver,
             _ => TrayIconState.GenericError,
         };
-        return externalPowerDischarging && state != TrayIconState.GenericError
-            && powerSource is PowerSource.PluggedIn or PowerSource.UsbC
-            ? TrayIconState.ExternalPowerDischarging
-            : state;
     }
+
+    public static bool CanShowDischargeBadge(TrayIconState state) => state is
+        TrayIconState.AcBalanced or TrayIconState.AcSilent or TrayIconState.AcPerformance
+        or TrayIconState.AcCustom or TrayIconState.AcHyperBoost or TrayIconState.UsbCBalanced;
 }

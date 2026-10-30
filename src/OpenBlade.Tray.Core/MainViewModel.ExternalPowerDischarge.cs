@@ -65,13 +65,6 @@ public sealed partial class MainViewModel
         if (wasDischarging != IsExternalPowerDischarging)
         {
             Notify(nameof(IsExternalPowerDischarging));
-            TrayIconState = TrayIconStateResolver.Resolve(
-                IsConnected,
-                latestStatus?.DeviceVerified is true,
-                ActivePowerSource,
-                SelectedPerformance,
-                HyperBoostActive,
-                IsExternalPowerDischarging);
             NotifyTrayHoverLabel();
         }
         if (previousEpisode != ExternalPowerDischargeEpisode)

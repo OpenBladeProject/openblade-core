@@ -15,162 +15,115 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.IO;
 using System.Globalization;
+using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
 
 public static class ExternalPowerDischargeIcons
 {
-    // Same 16-unit silhouette, source badge and clearance as the approved
-    // openblade-branding/tools/tray_geometry.py artwork (2026-10-29).
-    // One ordered mask definition drives both the SVG and the ICO frames.
-    private static readonly string[] Paths = {
-        "M2.6 1.5 L13.4 1.5 C14.2836556 1.5 15 2.2163444 15 3.1 L15 10.4 C15 11.2836556 14.2836556 12 13.4 12 L2.6 12 C1.7163444 12 1 11.2836556 1 10.4 L1 3.1 C1 2.2163444 1.7163444 1.5 2.6 1.5 Z",
-        "M0.5 13 L15.5 13 L14 14.5 L2 14.5 Z",
-        "M8 4.25 L8 9.25 M5.5 6.75 L8 9.25 L10.5 6.75",
-        "M1.4 10.5 L2.7 10.5 L2.7 12 L4.3 12 L4.3 10.5 L5.6 10.5 L5.6 12 L6.3 12 L6.3 13.1 Q6.3 14.7 4.2 14.7 L4.2 15.7 L2.8 15.7 L2.8 14.7 Q0.7 14.7 0.7 13.1 L0.7 12 L1.4 12 Z"
+    private static readonly string[] Bases = {
+        "ac-balanced", "ac-silent", "ac-performance", "ac-custom",
+        "ac-hyperboost", "usb-c-balanced"
     };
-    private static readonly int[] PathOrder = { 0, 1, 2, 3, 3, 3 };
-    private static readonly bool[] White = { true, true, false, false, false, true };
-    private static readonly float[] Stroke = { 0, 0, 1.85f, 0, 1.5f, 0 };
+    private static readonly int[] Sizes = { 16, 20, 24, 32, 48 };
+    // A lower-right status badge, opposite the existing source badge.
+    // Its halo follows the arrow contour; it never clears a rectangular tile.
+    private static readonly PointF[][] Arrow = {
+        new[] { new PointF(13, 11.1f), new PointF(13, 14.8f) },
+        new[] { new PointF(11.2f, 13), new PointF(13, 14.8f), new PointF(14.8f, 13) }
+    };
+    private const float ArrowWidth = 1.4f;
+    private const float ClearanceWidth = ArrowWidth + 1.5f;
 
-    private static float Number(MatchCollection tokens, ref int index)
+    private static string ArrowData()
     {
-        return float.Parse(tokens[index++].Value, CultureInfo.InvariantCulture);
-    }
-
-    private static GraphicsPath Shape(string data)
-    {
-        var path = new GraphicsPath();
-        var tokens = Regex.Matches(data, @"[MLCQZ]|-?\d+(?:\.\d+)?");
-        PointF current = new PointF();
-        for (int i = 0; i < tokens.Count; )
+        var data = new StringBuilder();
+        foreach (var segment in Arrow)
+        for (int i = 0; i < segment.Length; i++)
         {
-            string command = tokens[i++].Value;
-            if (command == "Z") { path.CloseFigure(); continue; }
-            var next = new PointF(Number(tokens, ref i), Number(tokens, ref i));
-            if (command == "M") { path.StartFigure(); current = next; continue; }
-            if (command == "L") { path.AddLine(current, next); current = next; continue; }
-            var end = new PointF(Number(tokens, ref i), Number(tokens, ref i));
-            if (command == "Q")
-            {
-                path.AddBezier(current,
-                    new PointF(current.X + (next.X-current.X)*2/3, current.Y + (next.Y-current.Y)*2/3),
-                    new PointF(end.X + (next.X-end.X)*2/3, end.Y + (next.Y-end.Y)*2/3), end);
-            }
-            else
-            {
-                var last = new PointF(Number(tokens, ref i), Number(tokens, ref i));
-                path.AddBezier(current, next, end, last);
-                end = last;
-            }
-            current = end;
+            data.Append(i == 0 ? "M" : " L");
+            data.Append(segment[i].X.ToString(CultureInfo.InvariantCulture));
+            data.Append(" ");
+            data.Append(segment[i].Y.ToString(CultureInfo.InvariantCulture));
+            data.Append(" ");
         }
-        return path;
+        return data.ToString().Trim();
     }
 
     private static void WriteSvg(string directory)
     {
-        var svg = new StringBuilder();
-        svg.AppendLine("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">");
-        svg.AppendLine("  <title>OpenBlade \u2014 plugged in, battery discharging</title>");
-        svg.AppendLine("  <defs><mask id=\"discharge\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"16\" height=\"16\" style=\"mask-type:luminance\">");
-        svg.AppendLine("    <rect width=\"16\" height=\"16\" fill=\"black\"/>");
-        for (int i = 0; i < PathOrder.Length; i++)
-        {
-            string color = White[i] ? "white" : "black";
-            string style = Stroke[i] == 0 ? "fill=\"" + color + "\"" :
-                "fill=\"none\" stroke=\"" + color + "\" stroke-width=\"" + Stroke[i].ToString(CultureInfo.InvariantCulture) + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"";
-            svg.AppendLine("    <path d=\"" + Paths[PathOrder[i]] + "\" " + style + "/>");
-        }
-        svg.AppendLine("  </mask></defs>");
-        svg.AppendLine("  <rect width=\"16\" height=\"16\" fill=\"currentColor\" mask=\"url(#discharge)\"/>");
-        svg.AppendLine("</svg>");
-        File.WriteAllText(Path.Combine(directory, "external-power-discharging.svg"),
-            svg.ToString().Replace("\r\n", "\n").Replace("\n", "\r\n"), new UTF8Encoding(false));
+        string data = ArrowData();
+        string svg =
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">\n" +
+            "  <title>OpenBlade battery discharge badge</title>\n" +
+            "  <desc>Apply discharge-clearance to the existing mode and source icon, then draw this badge above it.</desc>\n" +
+            "  <defs><mask id=\"discharge-clearance\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"16\" height=\"16\" style=\"mask-type:luminance\">\n" +
+            "    <rect width=\"16\" height=\"16\" fill=\"white\"/>\n" +
+            "    <path d=\"" + data + "\" fill=\"none\" stroke=\"black\" stroke-width=\"" + ClearanceWidth.ToString(CultureInfo.InvariantCulture) + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n" +
+            "  </mask></defs>\n" +
+            "  <path d=\"" + data + "\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"" + ArrowWidth.ToString(CultureInfo.InvariantCulture) + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n" +
+            "</svg>\n";
+        File.WriteAllText(Path.Combine(directory, "external-power-discharge-badge.svg"),
+            svg.Replace("\n", "\r\n"), new UTF8Encoding(false));
     }
 
-    private static Bitmap Frame(int size, Color color)
+    private static Bitmap Coverage(int size, float width)
     {
         using (var canvas = new Bitmap(size * 8, size * 8))
         using (var g = Graphics.FromImage(canvas))
+        using (var path = new GraphicsPath())
+        using (var pen = new Pen(Color.White, width))
         {
             g.Clear(Color.Black);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.ScaleTransform(size / 2f, size / 2f);
-            for (int i = 0; i < PathOrder.Length; i++)
-            using (var shape = Shape(Paths[PathOrder[i]]))
-            using (var brush = new SolidBrush(White[i] ? Color.White : Color.Black))
+            pen.StartCap = pen.EndCap = LineCap.Round;
+            pen.LineJoin = LineJoin.Round;
+            foreach (var segment in Arrow)
             {
-                if (Stroke[i] == 0) { g.FillPath(brush, shape); }
-                else using (var pen = new Pen(brush, Stroke[i]))
-                {
-                    pen.StartCap = pen.EndCap = LineCap.Round;
-                    pen.LineJoin = LineJoin.Round;
-                    g.DrawPath(pen, shape);
-                }
+                path.StartFigure();
+                path.AddLines(segment);
             }
+            g.DrawPath(pen, path);
             var result = new Bitmap(size, size);
             using (var output = Graphics.FromImage(result))
             {
-                output.CompositingMode = CompositingMode.SourceCopy;
                 output.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 output.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 output.DrawImage(canvas, new Rectangle(0, 0, size, size));
             }
-            // Resample coverage only, then assign the family's exact theme RGB.
-            // Transparent pixels never carry a taskbar-colored rectangle.
-            for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-                result.SetPixel(x, y, Color.FromArgb(result.GetPixel(x, y).R, color));
             return result;
         }
     }
 
-    public static void Write(string directory, string previewPath, string detailPath)
+    private static Bitmap Compose(Bitmap basis, Color color)
     {
-        int[] sizes = { 16, 20, 24, 32, 48 };
-        Directory.CreateDirectory(directory);
-        WriteSvg(directory);
-        for (int theme = 0; theme < 2; theme++)
+        // Keep the native approved frame: no scaling or rerasterization of its
+        // mode or source glyph. Only pixels covered by the badge/halo change.
+        var result = (Bitmap)basis.Clone();
+        using (var clearance = Coverage(basis.Width, ClearanceWidth))
+        using (var arrow = Coverage(basis.Width, ArrowWidth))
         {
-            Color foreground = ColorTranslator.FromHtml(theme == 0 ? "#F7F8FA" : "#202124");
-            var frames = new byte[sizes.Length][];
-            for (int i = 0; i < sizes.Length; i++)
+            for (int y = 0; y < basis.Height; y++)
+            for (int x = 0; x < basis.Width; x++)
             {
-                using (var bitmap = Frame(sizes[i], foreground))
-                using (var stream = new MemoryStream())
-                {
-                    bitmap.Save(stream, ImageFormat.Png);
-                    frames[i] = stream.ToArray();
-                }
-            }
-            using (var writer = new BinaryWriter(File.Create(Path.Combine(directory,
-                "external-power-discharging-" + (theme == 0 ? "light" : "dark") + ".ico"))))
-            {
-                writer.Write((ushort)0); writer.Write((ushort)1); writer.Write((ushort)sizes.Length);
-                int offset = 6 + sizes.Length * 16;
-                for (int i = 0; i < sizes.Length; i++)
-                {
-                    writer.Write((byte)sizes[i]); writer.Write((byte)sizes[i]);
-                    writer.Write((byte)0); writer.Write((byte)0);
-                    writer.Write((ushort)1); writer.Write((ushort)32);
-                    writer.Write(frames[i].Length); writer.Write(offset);
-                    offset += frames[i].Length;
-                }
-                foreach (byte[] frame in frames) { writer.Write(frame); }
+                int cut = clearance.GetPixel(x, y).R;
+                int ink = arrow.GetPixel(x, y).R;
+                if (cut == 0 && ink == 0) { continue; }
+                double remaining = basis.GetPixel(x, y).A * (255-cut) / 255.0;
+                int alpha = (int)Math.Round(ink + remaining * (255-ink) / 255.0);
+                result.SetPixel(x, y, Color.FromArgb(alpha, color));
             }
         }
-        if (!string.IsNullOrEmpty(previewPath)) { Comparison(directory, previewPath); }
-        if (!string.IsNullOrEmpty(detailPath)) { Detail(directory, detailPath); }
+        return result;
     }
 
     private static Bitmap ReadFrame(string path, int size)
     {
         using (var reader = new BinaryReader(File.OpenRead(path)))
         {
-            reader.ReadUInt16(); reader.ReadUInt16();
+            if (reader.ReadUInt16() != 0 || reader.ReadUInt16() != 1)
+                throw new InvalidDataException("Not an ICO: " + path);
             int count = reader.ReadUInt16();
             for (int i = 0; i < count; i++)
             {
@@ -181,80 +134,109 @@ public static class ExternalPowerDischargeIcons
                 if (width != size) { continue; }
                 reader.BaseStream.Position = offset;
                 using (var stream = new MemoryStream(reader.ReadBytes(length)))
-                using (var image = Image.FromStream(stream)) { return new Bitmap(image); }
+                using (var image = (Bitmap)Image.FromStream(stream))
+                {
+                    // Drawing an Image into a Bitmap round-trips premultiplied
+                    // alpha and changes edge RGB. Copy exact decoded pixels.
+                    var result = new Bitmap(image.Width, image.Height);
+                    for (int y = 0; y < image.Height; y++)
+                    for (int x = 0; x < image.Width; x++)
+                        result.SetPixel(x, y, image.GetPixel(x, y));
+                    return result;
+                }
             }
         }
         throw new InvalidDataException("Missing native ICO frame: " + path + " at " + size);
     }
 
-    private static void Comparison(string directory, string previewPath)
+    private static void WriteIco(string path, byte[][] frames)
     {
-        string[] names = { "ac-balanced", "ac-hyperboost", "usb-c-balanced", "battery-balanced", "generic-error", "external-power-discharging" };
-        string[] labels = { "AC / Balanced", "AC / HyperBoost", "USB-C / Balanced", "Battery / Balanced", "Unknown / error", "Plugged in / discharging" };
-        int[] sizes = { 16, 20, 24, 32, 48 };
-        using (var preview = new Bitmap(960, 760))
+        using (var writer = new BinaryWriter(File.Create(path)))
+        {
+            writer.Write((ushort)0); writer.Write((ushort)1); writer.Write((ushort)Sizes.Length);
+            int offset = 6 + Sizes.Length * 16;
+            for (int i = 0; i < Sizes.Length; i++)
+            {
+                writer.Write((byte)Sizes[i]); writer.Write((byte)Sizes[i]);
+                writer.Write((byte)0); writer.Write((byte)0);
+                writer.Write((ushort)1); writer.Write((ushort)32);
+                writer.Write(frames[i].Length); writer.Write(offset);
+                offset += frames[i].Length;
+            }
+            foreach (byte[] frame in frames) { writer.Write(frame); }
+        }
+    }
+
+    public static void Write(string directory, string previewPath, string detailPath)
+    {
+        WriteSvg(directory);
+        foreach (string basis in Bases)
+        foreach (string theme in new[] { "light", "dark" })
+        {
+            Color color = ColorTranslator.FromHtml(theme == "light" ? "#F7F8FA" : "#202124");
+            var frames = new byte[Sizes.Length][];
+            for (int i = 0; i < Sizes.Length; i++)
+            using (var original = ReadFrame(Path.Combine(directory, basis + "-" + theme + ".ico"), Sizes[i]))
+            using (var bitmap = Compose(original, color))
+            using (var stream = new MemoryStream())
+            {
+                bitmap.Save(stream, ImageFormat.Png);
+                frames[i] = stream.ToArray();
+            }
+            WriteIco(Path.Combine(directory, basis + "-discharging-" + theme + ".ico"), frames);
+        }
+        if (!string.IsNullOrEmpty(previewPath)) { Preview(directory, previewPath, false); }
+        if (!string.IsNullOrEmpty(detailPath)) { Preview(directory, detailPath, true); }
+    }
+
+    private static void DrawIcon(Graphics g, string directory, string name, string theme,
+        int size, int x, int y, int scale)
+    {
+        using (var frame = ReadFrame(Path.Combine(directory, name + "-" + theme + ".ico"), size))
+        {
+            if (scale == 1) { g.DrawImageUnscaled(frame, x, y); }
+            else
+            {
+                g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.DrawImage(frame, x, y, size*scale, size*scale);
+            }
+        }
+    }
+
+    private static void Preview(string directory, string path, bool detail)
+    {
+        int panelHeight = detail ? 760 : 530;
+        int rowHeight = detail ? 104 : 66;
+        string[] labels = { "AC / Balanced", "AC / Silent", "AC / Performance", "AC / Custom", "AC / HyperBoost", "USB-C / Balanced" };
+        using (var preview = new Bitmap(1120, panelHeight*2))
         using (var g = Graphics.FromImage(preview))
         using (var font = new Font("Segoe UI", 10))
         using (var heading = new Font("Segoe UI", 12, FontStyle.Bold))
         {
-            for (int theme = 0; theme < 2; theme++)
-            using (var bg = new SolidBrush(theme == 0 ? Color.FromArgb(32, 32, 32) : Color.White))
-            using (var text = new SolidBrush(theme == 0 ? Color.FromArgb(247,248,250) : Color.FromArgb(32,33,36)))
+            for (int themeIndex = 0; themeIndex < 2; themeIndex++)
+            using (var bg = new SolidBrush(themeIndex == 0 ? Color.FromArgb(32,32,32) : Color.White))
+            using (var text = new SolidBrush(themeIndex == 0 ? Color.FromArgb(247,248,250) : Color.FromArgb(32,33,36)))
             {
-                int top = theme * 380;
-                g.FillRectangle(bg, 0, top, 960, 380);
-                g.DrawString(theme == 0 ? "Dark taskbar / light glyphs" : "Light taskbar / dark glyphs", heading, text, 20, top+12);
-                for (int j = 0; j < sizes.Length; j++) g.DrawString(sizes[j] + " px", font, text, 290+j*100, top+50);
-                g.DrawString("16 px at 2x", font, text, 810, top+50);
-                for (int row = 0; row < names.Length; row++)
+                string theme = themeIndex == 0 ? "light" : "dark";
+                int top = themeIndex * panelHeight;
+                g.FillRectangle(bg, 0, top, 1120, panelHeight);
+                g.DrawString(themeIndex == 0 ? "Dark taskbar / light glyphs" : "Light taskbar / dark glyphs", heading, text, 20, top+12);
+                g.DrawString("Normal  /  discharging (same mode and power source)", font, text, 20, top+43);
+                int[] sizes = detail ? new[] { 16, 20, 48 } : Sizes;
+                for (int column = 0; column < sizes.Length; column++)
                 {
-                    int y = top+88+row*46;
-                    g.DrawString(labels[row], font, text, 20, y);
-                    string folder = names[row] == "generic-error" ? Path.Combine(directory, "..", "TrayStatus") : directory;
-                    string path = Path.Combine(folder, names[row]+(theme == 0 ? "-light.ico" : "-dark.ico"));
-                    for (int j = 0; j < sizes.Length; j++)
-                    using (var frame = ReadFrame(path, sizes[j]))
-                        g.DrawImageUnscaled(frame, 310+j*100-sizes[j]/2, y+9-sizes[j]/2);
-                    using (var frame = ReadFrame(path, 16))
+                    int scale = detail ? (sizes[column] == 48 ? 2 : 4) : 1;
+                    int columnX = 240 + column*(detail ? 280 : 170);
+                    g.DrawString(sizes[column] + " px" + (detail ? " at " + scale + "x" : ""), font, text, columnX, top+74);
+                    for (int row = 0; row < Bases.Length; row++)
                     {
-                        // 2x here keeps the sheet compact; separate detail holds larger views.
-                        g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                        g.PixelOffsetMode = PixelOffsetMode.Half;
-                        g.DrawImage(frame, 823, y-8, 32, 32);
+                        int y = top + 112 + row*rowHeight;
+                        if (column == 0) g.DrawString(labels[row], font, text, 20, y+8);
+                        int gap = detail ? 125 : 72;
+                        DrawIcon(g, directory, Bases[row], theme, sizes[column], columnX, y, scale);
+                        DrawIcon(g, directory, Bases[row]+"-discharging", theme, sizes[column], columnX+gap, y, scale);
                     }
-                }
-            }
-            preview.Save(previewPath, ImageFormat.Png);
-        }
-    }
-
-    private static void Detail(string directory, string path)
-    {
-        using (var preview = new Bitmap(640, 340))
-        using (var g = Graphics.FromImage(preview))
-        using (var font = new Font("Segoe UI", 11))
-        {
-            for (int theme = 0; theme < 2; theme++)
-            using (var bg = new SolidBrush(theme == 0 ? Color.FromArgb(32,32,32) : Color.White))
-            using (var text = new SolidBrush(theme == 0 ? Color.FromArgb(247,248,250) : Color.FromArgb(32,33,36)))
-            {
-                int left = theme * 320;
-                g.FillRectangle(bg, left, 0, 320, 340);
-                using (var frame = ReadFrame(Path.Combine(directory,
-                    "external-power-discharging-" + (theme == 0 ? "light" : "dark") + ".ico"), 48))
-                {
-                    g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                    g.PixelOffsetMode = PixelOffsetMode.Half;
-                    g.DrawImage(frame, left+64, 32, 192, 192);
-                }
-                g.DrawString("48 px ICO frame at 4x", font, text, left+80, 242);
-                foreach (int size in new[] { 16, 20 })
-                using (var frame = ReadFrame(Path.Combine(directory,
-                    "external-power-discharging-" + (theme == 0 ? "light" : "dark") + ".ico"), size))
-                {
-                    int x = left + (size == 16 ? 80 : 180);
-                    g.DrawImageUnscaled(frame, x, 286);
-                    g.DrawString(size + " px", font, text, x+27, 285);
                 }
             }
             preview.Save(path, ImageFormat.Png);

@@ -50,7 +50,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         menu = BuildTrayMenu(openTray, exitTray);
         currentIcon = OpenBladeIconAssets.LoadTrayIcon(
             viewModel.TrayIconState,
-            themeSource.UseLightTrayIconGlyphs);
+            themeSource.UseLightTrayIconGlyphs,
+            viewModel.IsExternalPowerDischarging);
         trayIcon = new NotifyIcon
         {
             Text = viewModel.TrayHoverLabelText,
@@ -152,7 +153,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         {
             trayIcon.Text = viewModel.TrayHoverLabelText;
         }
-        else if (args.PropertyName == nameof(MainViewModel.TrayIconState))
+        else if (args.PropertyName is nameof(MainViewModel.TrayIconState)
+            or nameof(MainViewModel.IsExternalPowerDischarging))
         {
             UpdateTrayIcon();
         }
@@ -231,7 +233,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     {
         Icon replacement = OpenBladeIconAssets.LoadTrayIcon(
             viewModel.TrayIconState,
-            themeSource.UseLightTrayIconGlyphs);
+            themeSource.UseLightTrayIconGlyphs,
+            viewModel.IsExternalPowerDischarging);
         Icon? previous = currentIcon;
         currentIcon = replacement;
         trayIcon.Icon = replacement;

@@ -4631,11 +4631,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public string TrayHoverLabelText => IsConnected
-        && TrayIconState == TrayIconState.ExternalPowerDischarging
+        && IsExternalPowerDischarging && TrayIconStateResolver.CanShowDischargeBadge(TrayIconState)
         ? TrayText.Get("Plugged in, battery discharging")
         : BuildTrayHoverLabel().Text;
 
-    public bool HasTrayHoverLabelOverflow => (!IsConnected || TrayIconState != TrayIconState.ExternalPowerDischarging)
+    public bool HasTrayHoverLabelOverflow => (!IsConnected || !IsExternalPowerDischarging
+        || !TrayIconStateResolver.CanShowDischargeBadge(TrayIconState))
         && BuildTrayHoverLabel().HasOmittedItems;
 
     public string TrayHoverLabelOverflowMessage
@@ -5509,8 +5510,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             status.DeviceVerified,
             status.ActivePowerSource,
             SelectedPerformance,
-            HyperBoostActive,
-            IsExternalPowerDischarging);
+            HyperBoostActive);
         ApplyLiveReadings(status);
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
@@ -6396,8 +6396,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             latestStatus?.DeviceVerified is true,
                             ActivePowerSource,
                             SelectedPerformance,
-                            HyperBoostActive,
-                            IsExternalPowerDischarging);
+                            HyperBoostActive);
                     }
                 });
         }

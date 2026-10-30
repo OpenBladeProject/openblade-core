@@ -12,15 +12,23 @@ Copy only the `dark` and `light` files from `assets/brand/ico/tray` and
 frames. Light glyphs belong on a dark taskbar. Application, installer, and
 notification artwork is separate; see [application artwork](APP-ASSETS.md).
 
-The external-power discharge warning uses the same laptop silhouette, neutral
-theme colors, round-capped negative-space strokes, and plug badge with
-contour-following clearance. A single downward arrow replaces the performance
-mark to show depletion. The plug represents external power for this combined
-AC/USB-C warning; the tooltip identifies the battery discharge condition.
-Regenerate its SVG and two ICOs with
-`build/Generate-ExternalPowerDischargeIcons.ps1`. SVG and raster output share
-one ordered geometry definition. Pass `-PreviewPath` to compare all five native
-sizes with the approved family on light and dark backgrounds, and `-DetailPath`
-for an enlarged view with native 16 and 20 pixel samples. This warning takes
-precedence over a known performance mode, including HyperBoost; connection and
-unverified-state errors retain priority.
+Battery discharge while plugged in adds a small downward-arrow badge at the
+lower right. The current mode and lower-left power-source glyph remain visible.
+The badge uses the approved neutral theme colors and contour-following
+transparent clearance. Its tooltip identifies the battery discharge condition.
+
+The six external-power icons have matching `{base}-discharging-{theme}.ico`
+variants: `ac-balanced`, `ac-silent`, `ac-performance`, `ac-custom`,
+`ac-hyperboost`, and `usb-c-balanced`. Connection and unverified-state errors
+retain their existing artwork and priority.
+
+Regenerate the twelve variants and `external-power-discharge-badge.svg` with
+`build/Generate-ExternalPowerDischargeIcons.ps1`. The generator composites the
+shared badge onto each checked-in native base frame, preserving pixels outside
+its contour clearance. It does not redraw the mode or source, rescale a base
+frame, or change the original ICOs. The SVG contains the same arrow geometry
+and a reusable `discharge-clearance` mask for the underlying icon.
+
+Pass `-PreviewPath` for normal/badged pairs at all five native sizes on light
+and dark backgrounds. `-DetailPath` enlarges the actual 16, 20, and 48 pixel ICO
+frames for inspection.
