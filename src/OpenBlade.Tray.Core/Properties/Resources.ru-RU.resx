@@ -1666,12 +1666,6 @@
   <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
     <value>Применяйте переопределения для конкретного исполняемого файла игры или приложения.</value>
   </data>
-  <data name="Battery history" xml:space="preserve">
-    <value>История аккумулятора</value>
-  </data>
-  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
-    <value>Просмотрите историю аккумулятора Windows и предварительно оцените набор настроек для длительной работы от аккумулятора.</value>
-  </data>
   <data name="Enter a name of up to 80 characters." xml:space="preserve">
     <value>Введите имя длиной до 80 символов.</value>
   </data>

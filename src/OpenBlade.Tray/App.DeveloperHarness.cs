@@ -695,11 +695,12 @@ public partial class App
                 or "telemetry-range" or "telemetry-metrics" or "telemetry-color"
                 or "telemetry-expired" or "telemetry-retention"
                 or "telemetry-recording" or "telemetry-replay";
-            bool captureFeatureSnapshot = captureTelemetryVariant || requestedPage is
+            bool captureBatteryReport = requestedPage?.StartsWith("telemetry-battery-report", StringComparison.Ordinal) == true;
+            bool captureFeatureSnapshot = captureBatteryReport || captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                 or "profiles-application-discovery-empty" or "telemetry-empty" or "telemetry-disabled"
-                or "laptop-battery-history" or "display-brightness-known"
+                or "display-brightness-known"
                 or "display-brightness-unavailable";
             bool captureSnapTapFailure = string.Equals(
                 requestedPage, "laptop-snap-tap-failed", StringComparison.Ordinal);
@@ -792,7 +793,7 @@ public partial class App
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(1120, 900);
                     }
-                    else if (destination is "telemetry-narrow" or "telemetry-controls-narrow")
+                    else if (destination is "telemetry-narrow" or "telemetry-controls-narrow" or "telemetry-battery-report-narrow")
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(800, 1120);
                     }
@@ -801,10 +802,7 @@ public partial class App
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(1120, 1120);
                     }
-                    else if (destination == "laptop-battery-history")
-                    {
-                        snapshotSize = new Windows.Graphics.SizeInt32(1120, 940);
-                    }
+
                     else if (destination == "thx-audio-headphones")
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
@@ -814,7 +812,7 @@ public partial class App
                     {
                         snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(800, 1600));
                     }
-                    if (destination == "telemetry-dark"
+                    if (destination is "telemetry-dark" or "telemetry-battery-report-dark"
                         && snapshotMainWindow.Content is XamlGrid telemetryRoot)
                     {
                         telemetryRoot.RequestedTheme = ElementTheme.Dark;
@@ -829,7 +827,7 @@ public partial class App
                             or "profiles-application-discovery-empty" => "profiles",
                         _ when destination.StartsWith("telemetry-", StringComparison.Ordinal) => "telemetry",
                         "whats-new" => "about",
-                        "laptop-battery-history" => "laptop",
+
                         "display-brightness-known" or "display-brightness-unavailable" => "display",
                         _ when captureSnapTap => "laptop",
                         _ when destination.StartsWith("thx-audio", StringComparison.Ordinal) => "thx-audio",
@@ -940,6 +938,10 @@ public partial class App
                     if (captureTelemetryVariant || destination is "telemetry" or "telemetry-empty" or "telemetry-disabled")
                     {
                         snapshotMainWindow.VerifyLocalizationSnapshotTelemetry();
+                    }
+                    if (captureBatteryReport)
+                    {
+                        snapshotMainWindow.VerifyLocalizationSnapshotBatteryHistory(destination);
                     }
                     if (destination == "whats-new")
                     {

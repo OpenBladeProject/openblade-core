@@ -2339,13 +2339,10 @@ OpenBlade повторно проверит этот список и остан�
     <value>Ёмкость при полной зарядке {0} · Расчётная ёмкость {1} · Состояние {2} · Циклы зарядки {3}</value>
   </data>
   <data name="BatteryHistory_Interval" xml:space="preserve">
-    <value>{0} – {1} · {2} · {3} · Заряд {4} · Разряжено {5}</value>
+    <value>{0} – {1} · {2} · {3} · Заряд в начале {4} · Израсходовано {5}</value>
   </data>
-  <data name="BatteryHistory_Load.Content" xml:space="preserve">
+  <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
     <value>Загрузить историю аккумулятора</value>
-  </data>
-  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
-    <value>Загрузите отчёт Windows об аккумуляторе, чтобы просмотреть последние 24 часа.</value>
   </data>
   <data name="BatteryHistory_SourceTime" xml:space="preserve">
     <value>Отчёт Windows об аккумуляторе · Создан {0}</value>
@@ -2356,44 +2353,11 @@ OpenBlade повторно проверит этот список и остан�
   <data name="BatteryHistory_Suspended" xml:space="preserve">
     <value>Спящий режим</value>
   </data>
-  <data name="BatteryHistory_Title.Text" xml:space="preserve">
-    <value>История аккумулятора</value>
-  </data>
   <data name="BatteryHistory_Unknown" xml:space="preserve">
     <value>Неизвестно</value>
   </data>
-  <data name="BatteryPreset_Cancel" xml:space="preserve">
-    <value>Отмена</value>
-  </data>
-  <data name="BatteryPreset_Change" xml:space="preserve">
-    <value>{0}: {1} → {2}</value>
-  </data>
-  <data name="BatteryPreset_Description" xml:space="preserve">
-    <value>Сохраните эти изменения в профиле питания от аккумулятора. Ручные настройки и переопределения приложений сохраняют приоритет.</value>
-  </data>
-  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
-    <value>Длительная работа от аккумулятора</value>
-  </data>
-  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
-    <value>Просмотрите поддерживаемые изменения профиля питания от аккумулятора перед сохранением.</value>
-  </data>
-  <data name="BatteryPreset_NoChanges" xml:space="preserve">
-    <value>Поддерживаемые параметры питания от аккумулятора уже соответствуют этому набору.</value>
-  </data>
-  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
-    <value>Предпросмотр набора настроек</value>
-  </data>
-  <data name="BatteryPreset_Save" xml:space="preserve">
-    <value>Сохранить в профиль питания от аккумулятора</value>
-  </data>
-  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
-    <value>Профиль питания от аккумулятора изменился или его не удалось сохранить. Закройте это окно предпросмотра и повторите попытку.</value>
-  </data>
-  <data name="BatteryPreset_Title" xml:space="preserve">
-    <value>Длительная работа от аккумулятора</value>
-  </data>
   <data name="BatteryTimeline_AC" xml:space="preserve">
-    <value>Сеть</value>
+    <value>От сети</value>
   </data>
   <data name="BatteryTimeline_Battery" xml:space="preserve">
     <value>Аккумулятор</value>
@@ -2829,5 +2793,17 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
     <value>Внешнее питание подключено, но используется энергия батареи. Снизьте нагрузку или проверьте зарядное устройство и кабель.</value>
+  </data>
+  <data name="BatteryHistory_Report.Header" xml:space="preserve">
+    <value>Отчёт Windows о батарее</value>
+  </data>
+  <data name="BatteryHistory_Details.Header" xml:space="preserve">
+    <value>Подробности по интервалам</value>
+  </data>
+  <data name="BatteryHistory_SnapshotError" xml:space="preserve">
+    <value>История батареи недоступна. Попробуйте загрузить её снова.</value>
+  </data>
+  <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
+    <value>Источник питания</value>
   </data>
 </root>

@@ -74,8 +74,24 @@ public sealed partial class MainWindow
                     destination == "telemetry-hover-edge" ? 1 : 0.4);
                 TelemetryPlot.ShowLocalizationSnapshotLayout(destination);
                 break;
-            case "laptop-battery-history":
-                ApplyBatteryHistoryFixture();
+            case "telemetry-battery-report":
+            case "telemetry-battery-report-narrow":
+            case "telemetry-battery-report-dark":
+            case "telemetry-battery-report-details":
+            case "telemetry-battery-report-empty":
+            case "telemetry-battery-report-loading":
+            case "telemetry-battery-report-error":
+            case "telemetry-battery-report-refresh-error":
+                if (destination is not ("telemetry-battery-report-empty" or "telemetry-battery-report-loading" or "telemetry-battery-report-error"))
+                {
+                    ApplyBatteryHistoryFixture();
+                }
+                SetBatteryHistorySnapshotField("isLoading", destination == "telemetry-battery-report-loading");
+                SetBatteryHistorySnapshotField("error", destination is "telemetry-battery-report-error" or "telemetry-battery-report-refresh-error"
+                    ? LocalizedResources.Get("BatteryHistory_SnapshotError", "Battery history is unavailable. Try loading it again.") : null);
+                RefreshBatteryHistoryPresentation();
+                BatteryHistorySection.IsExpanded = true;
+                BatteryHistoryDetails.IsExpanded = destination == "telemetry-battery-report-details";
                 BatteryHistorySection.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
                 break;
             case "display-brightness-known":
@@ -90,6 +106,44 @@ public sealed partial class MainWindow
         }
     }
 
+    private void SetBatteryHistorySnapshotField(string name, object? value) =>
+        (typeof(WindowsBatteryHistoryViewModel).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Battery fixture field {name} was not found."))
+        .SetValue(BatteryHistoryViewModel, value);
+
+    internal void VerifyLocalizationSnapshotBatteryHistory(string destination)
+    {
+        bool loaded = BatteryHistoryViewModel.Report is not null;
+        if (!BatteryHistorySection.IsExpanded || BatteryHistoryReportBody.Visibility != (loaded ? Visibility.Visible : Visibility.Collapsed)
+            || BatteryHistoryProgress.Visibility != (BatteryHistoryViewModel.IsLoading ? Visibility.Visible : Visibility.Collapsed)
+            || BatteryHistoryProgress.IsActive != BatteryHistoryViewModel.IsLoading
+            || BatteryHistoryLoadButton.IsEnabled == BatteryHistoryViewModel.IsLoading
+            || BatteryHistoryError.Visibility != (BatteryHistoryViewModel.Error is null ? Visibility.Collapsed : Visibility.Visible))
+        {
+            throw new InvalidOperationException("Battery report loading, failure, or empty presentation is inconsistent.");
+        }
+        if (loaded)
+        {
+            if (BatteryHistoryRows.Items.Count != 5 || string.IsNullOrWhiteSpace(BatteryHistorySummary.Text)
+                || string.IsNullOrWhiteSpace(BatteryHealthText.Text)
+                || BatteryHistoryDetails.IsExpanded != (destination == "telemetry-battery-report-details"))
+            {
+                throw new InvalidOperationException("Battery report metadata or interval details are missing.");
+            }
+            BatteryHistoryTimeline.VerifySnapshotLayout();
+        }
+        else if (BatteryHistoryReportBody.ActualHeight > 0 || BatteryHistoryTimeline.ActualHeight > 0)
+        {
+            throw new InvalidOperationException("Unloaded battery report reserves empty graph space.");
+        }
+        if (BatteryHistoryViewModel.IsLoading)
+        {
+            // Assert the production busy state above, then use a static native arc for
+            // deterministic frames in this disposable disconnected snapshot process.
+            BatteryHistoryProgress.IsIndeterminate = false;
+            BatteryHistoryProgress.Value = 35;
+        }
+    }
     internal void VerifyLocalizationSnapshotTelemetry()
     {
         TelemetryPageHeader.VerifyLocalizationSnapshotLayout();

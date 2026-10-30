@@ -2339,13 +2339,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Full charge {0} · Design {1} · Health {2} · Cycles {3}</value>
   </data>
   <data name="BatteryHistory_Interval" xml:space="preserve">
-    <value>{0} – {1} · {2} · {3} · Charge {4} · Discharged {5}</value>
-  </data>
-  <data name="BatteryHistory_Load.Content" xml:space="preserve">
-    <value>Load battery history</value>
-  </data>
-  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
-    <value>Load Windows' battery report to inspect the last 24 hours.</value>
+    <value>{0} – {1} · {2} · {3} · Start charge {4} · Discharged {5}</value>
   </data>
   <data name="BatteryHistory_SourceTime" xml:space="preserve">
     <value>Windows battery report · Generated {0}</value>
@@ -2356,44 +2350,11 @@ OpenBlade did not retry any stop request.</value>
   <data name="BatteryHistory_Suspended" xml:space="preserve">
     <value>Suspended</value>
   </data>
-  <data name="BatteryHistory_Title.Text" xml:space="preserve">
-    <value>Battery history</value>
-  </data>
   <data name="BatteryHistory_Unknown" xml:space="preserve">
     <value>Unknown</value>
   </data>
-  <data name="BatteryPreset_Cancel" xml:space="preserve">
-    <value>Cancel</value>
-  </data>
-  <data name="BatteryPreset_Change" xml:space="preserve">
-    <value>{0}: {1} → {2}</value>
-  </data>
-  <data name="BatteryPreset_Description" xml:space="preserve">
-    <value>Save these changes to the battery profile. Manual controls and application overrides keep their priority.</value>
-  </data>
-  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
-    <value>Long battery life</value>
-  </data>
-  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
-    <value>Preview supported battery-profile changes before saving.</value>
-  </data>
-  <data name="BatteryPreset_NoChanges" xml:space="preserve">
-    <value>The supported battery settings already match this preset.</value>
-  </data>
-  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
-    <value>Preview preset</value>
-  </data>
-  <data name="BatteryPreset_Save" xml:space="preserve">
-    <value>Save to battery profile</value>
-  </data>
-  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
-    <value>The battery profile changed or could not be saved. Close this preview and try again.</value>
-  </data>
-  <data name="BatteryPreset_Title" xml:space="preserve">
-    <value>Long battery life</value>
-  </data>
   <data name="BatteryTimeline_AC" xml:space="preserve">
-    <value>AC</value>
+    <value>AC power</value>
   </data>
   <data name="BatteryTimeline_Battery" xml:space="preserve">
     <value>Battery</value>
@@ -2829,5 +2790,20 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Notify when the battery discharges while plugged in</value>
+  </data>
+  <data name="BatteryHistory_Details.Header" xml:space="preserve">
+    <value>Interval details</value>
+  </data>
+  <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
+    <value>Power source</value>
+  </data>
+  <data name="BatteryHistory_Report.Header" xml:space="preserve">
+    <value>Windows battery report</value>
+  </data>
+  <data name="BatteryHistory_SnapshotError" xml:space="preserve">
+    <value>Battery history is unavailable. Try loading it again.</value>
+  </data>
+  <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
+    <value>Load battery history</value>
   </data>
 </root>

@@ -2339,13 +2339,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Fúll chárgé {0} · Désígn {1} · Héálth {2} · Cýclés {3} ~~~~~~~~~~ !!]</value>
   </data>
   <data name="BatteryHistory_Interval" xml:space="preserve">
-    <value>[!! {0} – {1} · {2} · {3} · Chárgé {4} · Díschárgéd {5} ~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryHistory_Load.Content" xml:space="preserve">
-    <value>[!! Lóád báttérý hístórý ~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
-    <value>[!! Lóád Windows' báttérý répórt tó ínspéct thé lást 24 hóúrs. ~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! {0} – {1} · {2} · {3} · Stárt chárgé {4} · Díschárgéd {5} ~~~~~~~~ !!]</value>
   </data>
   <data name="BatteryHistory_SourceTime" xml:space="preserve">
     <value>[!! Windows báttérý répórt · Générátéd {0} ~~~~~~~~ !!]</value>
@@ -2356,44 +2350,11 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="BatteryHistory_Suspended" xml:space="preserve">
     <value>[!! Súspéndéd ~~~~ !!]</value>
   </data>
-  <data name="BatteryHistory_Title.Text" xml:space="preserve">
-    <value>[!! Báttérý hístórý ~~~~~ !!]</value>
-  </data>
   <data name="BatteryHistory_Unknown" xml:space="preserve">
     <value>[!! Únknówn ~~~ !!]</value>
   </data>
-  <data name="BatteryPreset_Cancel" xml:space="preserve">
-    <value>[!! Cáncél ~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Change" xml:space="preserve">
-    <value>{0}: {1} → {2}</value>
-  </data>
-  <data name="BatteryPreset_Description" xml:space="preserve">
-    <value>[!! Sávé thésé chángés tó thé báttérý prófílé. Mánúál cóntróls ánd ápplícátíón óvérrídés kéép théír príórítý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
-    <value>[!! Lóng báttérý lífé ~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
-    <value>[!! Prévíéw súppórtéd báttérý-prófílé chángés béfóré sávíng. ~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_NoChanges" xml:space="preserve">
-    <value>[!! Thé súppórtéd báttérý séttíngs álréádý mátch thís prését. ~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
-    <value>[!! Prévíéw prését ~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Save" xml:space="preserve">
-    <value>[!! Sávé tó báttérý prófílé ~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
-    <value>[!! Thé báttérý prófílé chángéd ór cóúld nót bé sávéd. Clósé thís prévíéw ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="BatteryPreset_Title" xml:space="preserve">
-    <value>[!! Lóng báttérý lífé ~~~~~~ !!]</value>
-  </data>
   <data name="BatteryTimeline_AC" xml:space="preserve">
-    <value>[!! ÁC ~~ !!]</value>
+    <value>[!! ÁC pówér ~~~ !!]</value>
   </data>
   <data name="BatteryTimeline_Battery" xml:space="preserve">
     <value>[!! Báttérý ~~~ !!]</value>
@@ -2829,5 +2790,20 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Nótífý whén thé báttérý díschárgés whílé plúggéd ín ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Details.Header" xml:space="preserve">
+    <value>[!! Íntérvál détáíls ~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
+    <value>[!! Pówér sóúrcé ~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_Report.Header" xml:space="preserve">
+    <value>[!! Windows báttérý répórt ~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_SnapshotError" xml:space="preserve">
+    <value>[!! Báttérý hístórý ís únáváíláblé. Trý lóádíng ít ágáín. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
+    <value>[!! Lóád báttérý hístórý ~~~~~~~ !!]</value>
   </data>
 </root>

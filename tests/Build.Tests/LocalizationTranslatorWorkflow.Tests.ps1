@@ -273,8 +273,8 @@ try {
                     'context/tray/main-telemetry-replay.png')
             },
             @{
-                Key = 'BatteryHistory_Title.Text'
-                Screenshots = @('context/tray/main-laptop-battery-history.png')
+                Key = 'BatteryHistory_Report.Header'
+                Screenshots = @('context/tray/main-telemetry-battery-report.png', 'context/tray/main-telemetry-battery-report-narrow.png', 'context/tray/main-telemetry-battery-report-details.png')
             },
             @{
                 Key = 'TelemetryUI_NextSample'
@@ -305,10 +305,6 @@ try {
                     'context/tray/main-telemetry.png',
                     'context/tray/main-telemetry-empty.png',
                     'context/tray/main-telemetry-recording.png')
-            },
-            @{
-                Key = 'Battery history'
-                Screenshots = @('context/tray/main-laptop-battery-history.png')
             },
             @{
                 Key = 'Display brightness'

@@ -6,6 +6,24 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void WindowsBatteryReportLivesOutsideCollectionControlsAndKeepsDetailsOptional()
+    {
+        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement report = NamedElement(document, "Expander", "BatteryHistorySection");
+        XElement telemetry = NamedElement(document, "ScrollViewer", "TelemetryPage");
+        XElement controls = NamedElement(document, "StackPanel", "TelemetryContent");
+        XElement body = NamedElement(document, "StackPanel", "BatteryHistoryReportBody");
+        XElement details = NamedElement(document, "Expander", "BatteryHistoryDetails");
+
+        Assert.Contains(telemetry, report.Ancestors());
+        Assert.DoesNotContain(controls, report.Ancestors());
+        Assert.Equal("False", (string?)report.Attribute("IsExpanded"));
+        Assert.Equal("Collapsed", (string?)body.Attribute("Visibility"));
+        Assert.Contains(body, details.Ancestors());
+        Assert.Equal("False", (string?)details.Attribute("IsExpanded"));
+        Assert.DoesNotContain("OnPreviewLongBatteryLife", document.ToString(), StringComparison.Ordinal);
+    }
+    [Fact]
     public void TelemetryCaptureRoutesCoverCompactControlsAndRightEdgeInspection()
     {
         string app = ReadRepositoryFile(
@@ -17,14 +35,18 @@ public sealed class WinUiShellContractTests
         string catalog = ReadRepositoryFile(
             "build", "localization", "TranslatorScreenshotMap.json");
 
-        foreach (string route in new[] { "telemetry-disabled", "telemetry-controls-narrow", "telemetry-hover-edge", "telemetry-recording", "telemetry-replay" })
+        foreach (string route in new[] { "telemetry-disabled", "telemetry-controls-narrow", "telemetry-hover-edge", "telemetry-recording", "telemetry-replay", "telemetry-battery-report", "telemetry-battery-report-narrow", "telemetry-battery-report-details" })
         {
-            Assert.Contains($"\"{route}\"", app, StringComparison.Ordinal);
+            if (!route.StartsWith("telemetry-battery-report", StringComparison.Ordinal))
+            {
+                Assert.Contains($"\"{route}\"", app, StringComparison.Ordinal);
+            }
             Assert.Contains($"case \"{route}\":", features, StringComparison.Ordinal);
             Assert.Contains($"'{route}'", capture, StringComparison.Ordinal);
             Assert.Contains($"main-{route}.png", catalog, StringComparison.Ordinal);
         }
 
+        Assert.Contains("StartsWith(\"telemetry-battery-report\", StringComparison.Ordinal)", app, StringComparison.Ordinal);
         Assert.Contains(
             "destination is \"telemetry-narrow\" or \"telemetry-controls-narrow\"",
             app,
@@ -2726,7 +2748,11 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("OnCustomizeNavigation", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Title = \"Customize navigation\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"TaskbarHoverLabelExpander\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(4, CountOccurrences(xaml, "IsExpanded=\"False\""));
+        XDocument document = XDocument.Parse(xaml);
+        foreach (string name in new[] { "NavigationMenuExpander", "TaskbarHoverLabelExpander" })
+        {
+            Assert.Equal("False", (string?)NamedElement(document, "Expander", name).Attribute("IsExpanded"));
+        }
         Assert.Contains("App accent color", xaml, StringComparison.Ordinal);
         Assert.Contains("OpenBlade green", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Razer green", window, StringComparison.Ordinal);
