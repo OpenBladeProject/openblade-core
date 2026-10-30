@@ -5,6 +5,18 @@ namespace OpenBlade.Tray.Tests;
 public sealed class TrayIconStateResolverTests
 {
     [Theory]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.Custom, false)]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.Performance, true)]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, false)]
+    public void ExternalPowerModesRemainTheBaseOfDischargeBadges(
+        PowerSource source, PerformancePreset performance, bool hyperBoost)
+    {
+        TrayIconState state = TrayIconStateResolver.Resolve(true, true, source, performance, hyperBoost);
+        Assert.True(TrayIconStateResolver.CanShowDischargeBadge(state));
+        Assert.NotEqual(TrayIconAssetPath.Resolve(state, true), TrayIconAssetPath.Resolve(state, true, true));
+    }
+
+    [Theory]
     [InlineData(PerformancePreset.Balanced)]
     [InlineData(PerformancePreset.Silent)]
     [InlineData(PerformancePreset.Performance)]
@@ -81,5 +93,6 @@ public sealed class TrayIconStateResolverTests
             performance);
 
         Assert.Equal(TrayIconState.GenericError, actual);
+        Assert.False(TrayIconStateResolver.CanShowDischargeBadge(actual));
     }
 }

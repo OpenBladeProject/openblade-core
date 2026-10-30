@@ -1026,7 +1026,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>选择按下的按键保持点亮的时长。</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>设置窗口打开或鼠标悬停在托盘图标上时，温度、风扇转速和电池净功率的刷新频率。</value>
+    <value>设置实时数据刷新和接通电源时电池放电检查的频率。</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
     <value>选择单击托盘图标时显示的控制项和实时数据。</value>
@@ -2863,5 +2863,17 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
     <value>按一下 Fn 以启用多媒体按键。</value>
+  </data>
+  <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
+    <value>接通电源时电池放电</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>接通电源时，若电池放电则通知</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeTitle" xml:space="preserve">
+    <value>接通电源时电池正在放电</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
+    <value>已连接外部电源，但仍在使用电池供电。请降低负载，或检查充电器和线缆。</value>
   </data>
 </root>

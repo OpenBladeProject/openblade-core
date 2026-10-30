@@ -1043,7 +1043,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Chóósé hów lóng présséd kéýs rémáín lít. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>[!! Chóósé hów óftén OpenBlade réfréshés témpérátúrés, fán spééd, ánd nét báttérý pówér whílé thé wíndów ís ópén ór thé tráý ícón ís hóvéréd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Chóósé hów óftén tó réfrésh lívé réádíngs ánd chéck fór báttérý díschárgé whílé plúggéd ín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
     <value>[!! Chóósé thé cóntróls ánd lívé détáíls shówn whén ýóú clíck thé tráý ícón. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -2880,5 +2880,17 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
     <value>[!! Préss Fn óncé tó áctíváté múltímédíá kéýs. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
+    <value>[!! Báttérý pówér ís béíng úséd whílé éxtérnál pówér ís cónnéctéd. Rédúcé thé wórklóád ór chéck thé chárgér ánd cáblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeTitle" xml:space="preserve">
+    <value>[!! Báttérý díschárgíng whílé plúggéd ín ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
+    <value>[!! Báttérý díschárgé whílé plúggéd ín ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Nótífý whén thé báttérý díschárgés whílé plúggéd ín ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

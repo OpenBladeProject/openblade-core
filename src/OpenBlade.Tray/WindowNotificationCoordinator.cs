@@ -6,7 +6,8 @@ namespace OpenBlade.Tray;
 internal readonly record struct WindowNotificationObservation(
     PowerSource PowerSource,
     string ControllerAdvisoryText,
-    string OperationFailure);
+    string OperationFailure,
+    long ExternalPowerDischargeEpisode = 0);
 
 /// <summary>
 /// Owns notification baselines and delivered update keys on the caller's UI thread.
@@ -18,12 +19,14 @@ internal sealed class WindowNotificationCoordinator
     private const string FirmwareUpdateNotificationTag = "firmware-update";
     private const string ProfileNotificationTag = "profile-power-source";
     private const string ControllerAdvisoryNotificationTag = "controller-advisory";
+    private const string ExternalPowerDischargeNotificationTag = "external-power-discharge";
     private const string OperationFailureNotificationTag = "operation-failure";
     private readonly Func<TrayNotification, bool> showNotification;
     private bool notificationObservationReady;
     private PowerSource lastObservedPowerSource = PowerSource.ExternalUnknown;
     private string lastObservedControllerAdvisory = string.Empty;
     private string lastObservedOperationFailure = string.Empty;
+    private long lastObservedExternalPowerDischargeEpisode;
 
     internal WindowNotificationCoordinator(Func<TrayNotification, bool> showNotification)
     {
@@ -116,6 +119,7 @@ internal sealed class WindowNotificationCoordinator
         lastObservedPowerSource = observation.PowerSource;
         lastObservedControllerAdvisory = observation.ControllerAdvisoryText;
         lastObservedOperationFailure = observation.OperationFailure;
+        lastObservedExternalPowerDischargeEpisode = observation.ExternalPowerDischargeEpisode;
         notificationObservationReady = true;
     }
 
@@ -164,6 +168,29 @@ internal sealed class WindowNotificationCoordinator
                     TrayNotificationSeverity.Information,
                     ReplacementTag: ProfileNotificationTag,
                     Destination: TrayNotificationDestination.Laptop));
+            }
+        }
+        else if (propertyName == nameof(MainViewModel.ExternalPowerDischargeEpisode))
+        {
+            long current = observation.ExternalPowerDischargeEpisode;
+            bool entered = current > lastObservedExternalPowerDischargeEpisode;
+            // Consume the episode before preference checks or delivery so neither
+            // enabling notifications nor a failed delivery replays an old warning.
+            lastObservedExternalPowerDischargeEpisode = current;
+            if (entered
+                && preferences.IsEnabled(NotificationCategory.ExternalPowerDischarge))
+            {
+                TryShowNotification(new TrayNotification(
+                    LocalizedResources.Get(
+                        "MainWindow_Notification_ExternalPowerDischargeTitle",
+                        "Battery discharging while plugged in"),
+                    LocalizedResources.Get(
+                        "MainWindow_Notification_ExternalPowerDischargeBody",
+                        "Battery power is being used while external power is connected. Reduce the workload or check the charger and cable."),
+                    TrayNotificationSeverity.Warning,
+                    ReplacementTag: ExternalPowerDischargeNotificationTag,
+                    Destination: TrayNotificationDestination.Laptop,
+                    OccurrenceId: current));
             }
         }
         else if (propertyName == nameof(MainViewModel.ControllerAdvisoryText))

@@ -4157,7 +4157,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock x:Uid="MainWindow_TextBlockLiveReadings" Text="Live readings" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock x:Uid="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan" Text="Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered."
+                                        <TextBlock x:Uid="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan" Text="Choose how often to refresh live readings and check for battery discharge while plugged in."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorLiveReadingsRefreshInterval" Grid.Column="1"
@@ -4384,6 +4384,22 @@
                                                       Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       AutomationProperties.Name="Notify when the active power profile changes"
                                                       IsOn="{x:Bind ProfileAndPowerSourceNotificationsEnabled, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                        Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                          ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock x:Uid="MainWindow_TextBlockExternalPowerDischarge" Text="Battery discharge while plugged in"
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Uid="MainWindow_ToggleSwitchExternalPowerDischarge" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                      AutomationProperties.Name="Notify when the battery discharges while plugged in"
+                                                      IsOn="{x:Bind ExternalPowerDischargeNotificationsEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">

@@ -64,4 +64,8 @@ public static class TrayIconStateResolver
             _ => TrayIconState.GenericError,
         };
     }
+
+    public static bool CanShowDischargeBadge(TrayIconState state) => state is
+        TrayIconState.AcBalanced or TrayIconState.AcSilent or TrayIconState.AcPerformance
+        or TrayIconState.AcCustom or TrayIconState.AcHyperBoost or TrayIconState.UsbCBalanced;
 }

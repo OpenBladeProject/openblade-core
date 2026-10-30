@@ -517,6 +517,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             value);
     }
 
+    public bool ExternalPowerDischargeNotificationsEnabled
+    {
+        get => notificationPreferences.ExternalPowerDischargeEnabled;
+        set => SetNotificationPreference(NotificationCategory.ExternalPowerDischarge, value);
+    }
+
     public bool AppUpdateNotificationsEnabled
     {
         get => notificationPreferences.AppUpdatesEnabled;
@@ -1165,7 +1171,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             RefreshTelemetryPresentation();
         }
-        if (args.PropertyName == nameof(MainViewModel.RequiresTelemetryObservation))
+        if (args.PropertyName is nameof(MainViewModel.RequiresTelemetryObservation)
+            or nameof(MainViewModel.RequiresExternalPowerDischargeObservation))
         {
             UpdateActiveObservationLoop();
         }
@@ -1742,6 +1749,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         OnPropertyChanged(nameof(PerformanceNotificationsEnabled));
         OnPropertyChanged(nameof(ProfileAndPowerSourceNotificationsEnabled));
+        OnPropertyChanged(nameof(ExternalPowerDischargeNotificationsEnabled));
         OnPropertyChanged(nameof(AppUpdateNotificationsEnabled));
         OnPropertyChanged(nameof(FirmwareUpdateNotificationsEnabled));
         OnPropertyChanged(nameof(ControllerAdvisoryNotificationsEnabled));
@@ -1751,7 +1759,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private WindowNotificationObservation CaptureNotificationObservation() => new(
         ViewModel.ActivePowerSource,
         ViewModel.HasControllerAdvisory ? ViewModel.ControllerAdvisoryText : string.Empty,
-        ViewModel.TroubleshootingRecentErrorStatus);
+        ViewModel.TroubleshootingRecentErrorStatus,
+        ViewModel.ExternalPowerDischargeEpisode);
 
     private void PrimeNotificationObservation() =>
         notificationCoordinator.Prime(CaptureNotificationObservation());
@@ -1760,6 +1769,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         if (notificationCoordinator.ObservationReady
             && propertyName is nameof(MainViewModel.ActivePowerSource)
+                or nameof(MainViewModel.ExternalPowerDischargeEpisode)
                 or nameof(MainViewModel.ControllerAdvisoryText)
                 or nameof(MainViewModel.TroubleshootingRecentErrorStatus))
         {
@@ -3630,7 +3640,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void WakeActiveObservationLoop()
     {
-        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation)
+        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation
+            || ViewModel.RequiresExternalPowerDischargeObservation)
         {
             visibleObservationLoop.StartOrWake();
         }
@@ -3641,12 +3652,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         bool dashboardVisible = Volatile.Read(ref trayDashboardVisible);
         try
         {
-            await (dashboardVisible
-                ? ViewModel.ObserveTrayDashboardStateAsync(
-                    includeMainDashboardReadings: Volatile.Read(ref windowVisible),
-                    dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
-                        ref trayDashboardLiveReadingSensors), cancellationToken)
-                : ViewModel.ObserveStateAsync(cancellationToken)).ConfigureAwait(false);
+            if (!Volatile.Read(ref windowVisible) && !dashboardVisible
+                && !ViewModel.RequiresTelemetryObservation)
+            {
+                await ViewModel.ObserveExternalPowerDischargeAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await (dashboardVisible
+                    ? ViewModel.ObserveTrayDashboardStateAsync(
+                        includeMainDashboardReadings: Volatile.Read(ref windowVisible),
+                        dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
+                            ref trayDashboardLiveReadingSensors), cancellationToken)
+                    : ViewModel.ObserveStateAsync(cancellationToken)).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -3662,7 +3681,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void UpdateActiveObservationLoop()
     {
-        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation)
+        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation
+            || ViewModel.RequiresExternalPowerDischargeObservation)
         {
             visibleObservationLoop.StartOrWake();
         }

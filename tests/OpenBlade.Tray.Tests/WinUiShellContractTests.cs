@@ -2098,7 +2098,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(10, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(11, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
@@ -3610,7 +3610,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void VisibleObservationFollowsEveryShowAndStopsBeforeHideAndViewModelDisposal()
+    public void ObservationFollowsVisibilityAndBackgroundDemandAndStopsBeforeViewModelDisposal()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
@@ -3741,6 +3741,68 @@ public sealed class WinUiShellContractTests
         Assert.Contains("windowVisible || trayDashboardVisible", processorPolicyBody, StringComparison.Ordinal);
         Assert.Contains("TrySetProcessEcoQos(enabled: false)", processorPolicyBody, StringComparison.Ordinal);
         Assert.Contains("TrySetProcessEcoQos(enabled: true)", processorPolicyBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HiddenDischargeObservationReusesActiveLoopWithBatteryOnlyReadings()
+    {
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string observation = SliceMethod(
+            window,
+            "private async Task ObserveVisibleSurfacesAsync(",
+            "private void UpdateActiveObservationLoop()");
+        string compactObservation = string.Concat(
+            observation.Where(character => !char.IsWhiteSpace(character)));
+        Assert.Contains(
+            "if(!Volatile.Read(refwindowVisible)&&!dashboardVisible&&!ViewModel.RequiresTelemetryObservation)"
+                + "{awaitViewModel.ObserveExternalPowerDischargeAsync(cancellationToken).ConfigureAwait(false);}",
+            compactObservation,
+            StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ObserveTrayDashboardStateAsync(", observation, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ObserveStateAsync(cancellationToken)", observation, StringComparison.Ordinal);
+
+        foreach (string loopMethod in new[] { "WakeActiveObservationLoop", "UpdateActiveObservationLoop" })
+        {
+            int start = window.IndexOf($"private void {loopMethod}()", StringComparison.Ordinal);
+            int end = window.IndexOf("\n    private ", start + 1, StringComparison.Ordinal);
+            string loop = window[start..end];
+            Assert.Contains("ViewModel.RequiresExternalPowerDischargeObservation", loop, StringComparison.Ordinal);
+            Assert.Contains("visibleObservationLoop.StartOrWake()", loop, StringComparison.Ordinal);
+        }
+        string propertyHandler = SliceMethod(
+            window,
+            "private void OnViewModelPropertyChanged(",
+            "private void ApplyThemeAndQueueSave(");
+        Assert.Contains("nameof(MainViewModel.RequiresExternalPowerDischargeObservation)", propertyHandler, StringComparison.Ordinal);
+        Assert.Contains("UpdateActiveObservationLoop();", propertyHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("externalPowerDischargeObservationLoop", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DischargeNotificationRowUsesSharedSingleLineSettingsPresentation()
+    {
+        XDocument xaml = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement label = Assert.Single(xaml.Descendants(), element =>
+            (string?)element.Attribute(x + "Uid") == "MainWindow_TextBlockExternalPowerDischarge");
+        XElement reference = Assert.Single(xaml.Descendants(), element =>
+            (string?)element.Attribute(x + "Uid") == "MainWindow_TextBlockGPUCoreClockOffset");
+        XElement row = label.Ancestors().First(element => element.Name.LocalName == "Border");
+        XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
+        Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", (string?)row.Attribute("Style"));
+        Assert.Equal((string?)referenceRow.Attribute("Padding"), (string?)row.Attribute("Padding"));
+        Assert.Equal("{StaticResource DashboardSingleLineRowPadding}", (string?)row.Attribute("Padding"));
+        XElement layout = Assert.Single(row.Elements());
+        Assert.Equal("{StaticResource DashboardSingleLineRowContentMinHeight}", (string?)layout.Attribute("MinHeight"));
+        Assert.Equal("20", (string?)layout.Attribute("ColumnSpacing"));
+        Assert.Equal((string?)reference.Attribute("Style"), (string?)label.Attribute("Style"));
+        Assert.Equal((string?)reference.Attribute("SizeChanged"), (string?)label.Attribute("SizeChanged"));
+        Assert.Equal("Center", (string?)label.Parent?.Attribute("VerticalAlignment"));
+        Assert.Null(row.Attribute("Background"));
+        Assert.Null(row.Attribute("BorderBrush"));
+        Assert.Null(row.Attribute("Height"));
+        XElement toggle = Assert.Single(row.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+        Assert.Equal("{x:Bind ExternalPowerDischargeNotificationsEnabled, Mode=TwoWay}", (string?)toggle.Attribute("IsOn"));
     }
 
     [Fact]
