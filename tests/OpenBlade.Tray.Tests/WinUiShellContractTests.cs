@@ -1777,8 +1777,8 @@ public sealed class WinUiShellContractTests
             Assert.Equal("{x:Bind ViewModel}", Attribute(card, "Content"));
             string template = "Dashboard" + cardName + "Template";
             Assert.Equal("{StaticResource " + template + "}", Attribute(card, "ContentTemplate"));
-            Assert.Single(document.Descendants().Where(element =>
-                element.Name.LocalName == "DataTemplate" && Attribute(element, "Key") == template));
+            Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "DataTemplate" && Attribute(element, "Key") == template);
         }
 
         string loaded = SliceMethod(window, "private void OnRootLoaded(", "private void RegisterPageSections(");
