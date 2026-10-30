@@ -1792,4 +1792,7 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Telemetry is disabled." xml:space="preserve">
     <value>[!! Télémétrý ís dísábléd. ~~~~~~~ !!]</value>
   </data>
+  <data name="Plugged in, battery discharging" xml:space="preserve">
+    <value>[!! Plúggéd ín, báttérý díschárgíng ~~~~~~~~~~ !!]</value>
+  </data>
 </root>

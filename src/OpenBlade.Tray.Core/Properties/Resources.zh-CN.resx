@@ -1702,4 +1702,7 @@
   <data name="Telemetry is disabled." xml:space="preserve">
     <value>遥测已禁用。</value>
   </data>
+  <data name="Plugged in, battery discharging" xml:space="preserve">
+    <value>已接通电源，电池正在放电</value>
+  </data>
 </root>

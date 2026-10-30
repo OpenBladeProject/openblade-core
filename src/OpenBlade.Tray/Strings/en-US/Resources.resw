@@ -1043,7 +1043,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Choose how long pressed keys remain lit.</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered.</value>
+    <value>Choose how often to refresh live readings and check for battery discharge while plugged in.</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
     <value>Choose the controls and live details shown when you click the tray icon.</value>
@@ -2817,5 +2817,17 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="WhatsNew_Title" xml:space="preserve">
     <value>What's new</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
+    <value>Battery power is being used while external power is connected. Reduce the workload or check the charger and cable.</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeTitle" xml:space="preserve">
+    <value>Battery discharging while plugged in</value>
+  </data>
+  <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
+    <value>Battery discharge while plugged in</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notify when the battery discharges while plugged in</value>
   </data>
 </root>

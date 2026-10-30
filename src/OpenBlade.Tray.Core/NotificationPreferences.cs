@@ -8,6 +8,7 @@ public enum NotificationCategory
     FirmwareUpdates,
     ControllerAdvisories,
     OperationFailures,
+    ExternalPowerDischarge,
 }
 
 public sealed record NotificationPreferences(
@@ -16,7 +17,8 @@ public sealed record NotificationPreferences(
     bool AppUpdatesEnabled = true,
     bool FirmwareUpdatesEnabled = true,
     bool ControllerAdvisoriesEnabled = true,
-    bool OperationFailuresEnabled = true)
+    bool OperationFailuresEnabled = true,
+    bool ExternalPowerDischargeEnabled = true)
 {
     public static NotificationPreferences Default { get; } = new();
 
@@ -29,6 +31,7 @@ public sealed record NotificationPreferences(
         NotificationCategory.FirmwareUpdates => FirmwareUpdatesEnabled,
         NotificationCategory.ControllerAdvisories => ControllerAdvisoriesEnabled,
         NotificationCategory.OperationFailures => OperationFailuresEnabled,
+        NotificationCategory.ExternalPowerDischarge => ExternalPowerDischargeEnabled,
         _ => false,
     };
 
@@ -60,6 +63,10 @@ public sealed record NotificationPreferences(
             {
                 OperationFailuresEnabled = enabled,
             },
+            NotificationCategory.ExternalPowerDischarge => this with
+            {
+                ExternalPowerDischargeEnabled = enabled,
+            },
             _ => this,
         };
 }
@@ -90,7 +97,10 @@ public sealed class NotificationDeduplicator
         this.repeatWindow = selectedRepeatWindow;
     }
 
-    public bool ShouldEmit(string replacementTag, string title, string body)
+    public bool ShouldEmit(string replacementTag, string title, string body) =>
+        ShouldEmit(replacementTag, title, body, occurrenceId: null);
+
+    public bool ShouldEmit(string replacementTag, string title, string body, long? occurrenceId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(replacementTag);
         ArgumentNullException.ThrowIfNull(title);
@@ -100,14 +110,15 @@ public sealed class NotificationDeduplicator
         string fingerprint = string.Concat(title, "\n", body);
         if (observations.TryGetValue(replacementTag, out Observation? previous)
             && string.Equals(previous.Fingerprint, fingerprint, StringComparison.Ordinal)
+            && previous.OccurrenceId == occurrenceId
             && now - previous.ObservedAt < repeatWindow)
         {
             return false;
         }
 
-        observations[replacementTag] = new(fingerprint, now);
+        observations[replacementTag] = new(fingerprint, now, occurrenceId);
         return true;
     }
 
-    private sealed record Observation(string Fingerprint, DateTimeOffset ObservedAt);
+    private sealed record Observation(string Fingerprint, DateTimeOffset ObservedAt, long? OccurrenceId);
 }

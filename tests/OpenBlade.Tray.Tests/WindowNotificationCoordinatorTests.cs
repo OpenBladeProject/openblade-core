@@ -310,6 +310,108 @@ public sealed class WindowNotificationCoordinatorTests
         Assert.Equal(3, deliveries);
     }
 
+    [Fact]
+    public void DischargeEpisodeWarnsOnceAndLaterEpisodeCanWarnAgain()
+    {
+        var notifications = new List<TrayNotification>();
+        var coordinator = new WindowNotificationCoordinator(notification =>
+        {
+            notifications.Add(notification);
+            return true;
+        });
+        coordinator.Prime(Initial);
+        WindowNotificationObservation first = Initial with { ExternalPowerDischargeEpisode = 1 };
+
+        coordinator.Observe(null, first, AllEnabled);
+        coordinator.Observe("Unrelated", first, AllEnabled);
+        Assert.Empty(notifications);
+        ObserveAll(coordinator, first, AllEnabled);
+        ObserveAll(coordinator, first, AllEnabled);
+        coordinator.Observe(nameof(MainViewModel.IsExternalPowerDischarging), first, AllEnabled);
+
+        TrayNotification warning = Assert.Single(notifications);
+        Assert.Equal(TrayNotificationSeverity.Warning, warning.Severity);
+        Assert.Equal("external-power-discharge", warning.ReplacementTag);
+        Assert.Equal(TrayNotificationDestination.Laptop, warning.Destination);
+        Assert.Equal("Battery discharging while plugged in", warning.Title);
+        Assert.Equal(
+            "Battery power is being used while external power is connected. Reduce the workload or check the charger and cable.",
+            warning.Body);
+
+        ObserveAll(coordinator, first with { ExternalPowerDischargeEpisode = 2 }, AllEnabled);
+        Assert.Equal(2, notifications.Count);
+    }
+
+    [Fact]
+    public void RapidDischargeEpisodesSurviveTheNativeDuplicateFilter()
+    {
+        var notifications = new List<TrayNotification>();
+        var deduplicator = new NotificationDeduplicator();
+        var coordinator = new WindowNotificationCoordinator(notification =>
+        {
+            if (deduplicator.ShouldEmit(notification.ReplacementTag!, notification.Title,
+                notification.Body, notification.OccurrenceId))
+            {
+                notifications.Add(notification);
+            }
+            return true;
+        });
+        coordinator.Prime(Initial);
+
+        ObserveAll(coordinator, Initial with { ExternalPowerDischargeEpisode = 1 }, AllEnabled);
+        ObserveAll(coordinator, Initial with { ExternalPowerDischargeEpisode = 1 }, AllEnabled);
+        ObserveAll(coordinator, Initial with { ExternalPowerDischargeEpisode = 2 }, AllEnabled);
+
+        Assert.Equal(2, notifications.Count);
+        Assert.Equal(1, notifications[0].OccurrenceId);
+        Assert.Equal(2, notifications[1].OccurrenceId);
+        Assert.Equal(notifications[0].ReplacementTag, notifications[1].ReplacementTag);
+    }
+
+    [Fact]
+    public void PrimedDischargeEpisodeAndDisabledEpisodeDoNotReplay()
+    {
+        int deliveries = 0;
+        var coordinator = new WindowNotificationCoordinator(_ => { deliveries++; return true; });
+        WindowNotificationObservation current = Initial with { ExternalPowerDischargeEpisode = 4 };
+        ObserveAll(coordinator, current, AllEnabled);
+        coordinator.Prime(current);
+        ObserveAll(coordinator, current, AllEnabled);
+        Assert.Equal(0, deliveries);
+
+        WindowNotificationObservation disabledEpisode = current with { ExternalPowerDischargeEpisode = 5 };
+        ObserveAll(coordinator, disabledEpisode, AllEnabled with { ExternalPowerDischargeEnabled = false });
+        ObserveAll(coordinator, disabledEpisode, AllEnabled);
+        Assert.Equal(0, deliveries);
+        ObserveAll(coordinator, disabledEpisode with { ExternalPowerDischargeEpisode = 6 }, AllEnabled);
+        Assert.Equal(1, deliveries);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedDischargeDeliveryConsumesEpisodeWithoutReplay(bool throws)
+    {
+        int deliveries = 0;
+        var coordinator = new WindowNotificationCoordinator(_ =>
+        {
+            deliveries++;
+            if (throws)
+            {
+                throw new InvalidOperationException("Delivery failed.");
+            }
+            return false;
+        });
+        coordinator.Prime(Initial);
+        WindowNotificationObservation current = Initial with { ExternalPowerDischargeEpisode = 1 };
+
+        ObserveAll(coordinator, current, AllEnabled);
+        ObserveAll(coordinator, current, AllEnabled);
+        Assert.Equal(1, deliveries);
+        ObserveAll(coordinator, current with { ExternalPowerDischargeEpisode = 2 }, AllEnabled);
+        Assert.Equal(2, deliveries);
+    }
+
     private static bool DeliverUpdate(
         WindowNotificationCoordinator coordinator,
         bool firmware,
@@ -325,5 +427,6 @@ public sealed class WindowNotificationCoordinatorTests
         coordinator.Observe(nameof(MainViewModel.ActivePowerSource), observation, preferences);
         coordinator.Observe(nameof(MainViewModel.ControllerAdvisoryText), observation, preferences);
         coordinator.Observe(nameof(MainViewModel.TroubleshootingRecentErrorStatus), observation, preferences);
+        coordinator.Observe(nameof(MainViewModel.ExternalPowerDischargeEpisode), observation, preferences);
     }
 }

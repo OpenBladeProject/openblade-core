@@ -732,11 +732,13 @@ public partial class App
             };
             bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled || captureSnapTapInformation || captureSnapTapDriverMissing
                 || string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
+            bool captureDischargeSettings = requestedPage == "settings-notifications";
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
                 && !captureFeatureSnapshot
                 && !captureSnapTap
+                && !captureDischargeSettings
                 && !string.Equals(
                     requestedPage,
                     "tray-dashboard",
@@ -746,6 +748,7 @@ public partial class App
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
+                || captureDischargeSettings
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -807,6 +810,10 @@ public partial class App
                         snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                     }
                     snapshotMainWindow.AppWindow.Resize(snapshotSize);
+                    if (captureDischargeSettings)
+                    {
+                        snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(800, 1600));
+                    }
                     if (destination == "telemetry-dark"
                         && snapshotMainWindow.Content is XamlGrid telemetryRoot)
                     {
@@ -816,7 +823,7 @@ public partial class App
                     await WaitForSnapshotLayoutAsync();
                     string navigationDestination = destination switch
                     {
-                        "settings-appearance" or "settings-experimental" => "settings",
+                        "settings-appearance" or "settings-experimental" or "settings-notifications" => "settings",
                         "profiles-applications" or "profiles-applications-empty"
                             or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                             or "profiles-application-discovery-empty" => "profiles",

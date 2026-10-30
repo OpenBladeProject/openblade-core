@@ -1043,7 +1043,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Выберите, как долго нажатые клавиши остаются подсвеченными.</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>Выберите, как часто OpenBlade обновляет температуру, скорость вентиляторов и мощность зарядки или разрядки аккумулятора, пока открыто окно или указатель наведён на значок в области уведомлений.</value>
+    <value>Выберите интервал обновления показаний и проверки разряда батареи при подключённом питании.</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
     <value>Выберите элементы управления и текущие сведения, которые отображаются при нажатии значка в области уведомлений.</value>
@@ -2817,5 +2817,17 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="WhatsNew_Security" xml:space="preserve">
     <value>Безопасность</value>
+  </data>
+  <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
+    <value>Разряд батареи при подключённом питании</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уведомлять о разряде батареи при подключённом питании</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeTitle" xml:space="preserve">
+    <value>Батарея разряжается при подключённом питании</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
+    <value>Внешнее питание подключено, но используется энергия батареи. Снизьте нагрузку или проверьте зарядное устройство и кабель.</value>
   </data>
 </root>

@@ -1702,4 +1702,7 @@
   <data name="Telemetry is disabled." xml:space="preserve">
     <value>Телеметрия отключена.</value>
   </data>
+  <data name="Plugged in, battery discharging" xml:space="preserve">
+    <value>Питание подключено, батарея разряжается</value>
+  </data>
 </root>
