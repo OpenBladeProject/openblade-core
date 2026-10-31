@@ -2788,9 +2788,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
     <value>Multimedia key input</value>
   </data>
-  <data name="KeyboardBackend_FunctionRowWindowsHelp.Text" xml:space="preserve">
-    <value>Applies to all keyboards. Some games may also receive the original function key.</value>
-  </data>
   <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
     <value>Install driver</value>
   </data>
@@ -2817,9 +2814,6 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
     <value>SnapTap input</value>
-  </data>
-  <data name="KeyboardBackend_SnapTapWindowsHelp.Text" xml:space="preserve">
-    <value>Applies to all keyboards. Some games may ignore Windows hook input.</value>
   </data>
   <data name="KeyboardBackend_Unknown" xml:space="preserve">
     <value>Choose an input method to resume.</value>
@@ -2876,9 +2870,9 @@ OpenBlade did not retry any stop request.</value>
     <value>SnapTap (A/D)</value>
   </data>
   <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
-    <value>Razer driver uses the built-in keyboard. Windows hook uses all keyboards.</value>
+    <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (some games may trigger extra function-key actions).</value>
   </data>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
-    <value>Razer driver uses the built-in keyboard. Windows hook uses all keyboards.</value>
+    <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (SnapTap may not work in some games).</value>
   </data>
 </root>

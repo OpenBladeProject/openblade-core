@@ -1247,10 +1247,8 @@
                                     <StackPanel Spacing="4" VerticalAlignment="Center">
                                         <TextBlock x:Uid="KeyboardBackend_FunctionRowTitle" Text="Multimedia key input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
                                         <TextBlock x:Uid="KeyboardBackend_FunctionRowDescription"
-                                                   Text="Razer driver uses the built-in keyboard. Windows hook uses all keyboards."
+                                                   Text="Try Razer driver first. If it doesn’t work, switch to Windows hook (some games may trigger extra function-key actions)."
                                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                        <TextBlock x:Name="FunctionRowWindowsHookHelp" x:Uid="KeyboardBackend_FunctionRowWindowsHelp"
-                                                   Text="Applies to all keyboards. Some games may also receive the original function key." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
                                         <TextBlock x:Name="FunctionRowBackendStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
                                         <Button x:Name="FunctionRowInstallDriverButton" x:Uid="KeyboardBackend_InstallFunctionRowDriver"
                                                 Content="Install driver" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}"
@@ -3487,10 +3485,8 @@
                                                     <StackPanel Spacing="4" VerticalAlignment="Center">
                                                         <TextBlock x:Uid="KeyboardBackend_SnapTapTitle" Text="SnapTap input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
                                                         <TextBlock x:Uid="KeyboardBackend_SnapTapDescription"
-                                                                   Text="Razer driver uses the built-in keyboard. Windows hook uses all keyboards."
+                                                                   Text="Try Razer driver first. If it doesn’t work, switch to Windows hook (SnapTap may not work in some games)."
                                                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                                        <TextBlock x:Name="SnapTapWindowsHookHelp" x:Uid="KeyboardBackend_SnapTapWindowsHelp"
-                                                                   Text="Applies to all keyboards. Some games may ignore Windows hook input." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
                                                     </StackPanel>
                                                     <local:ResponsiveChoiceSelector x:Name="SnapTapBackendSelector" x:Uid="KeyboardBackend_SnapTapSelector"
                                                                                     Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"

@@ -14,6 +14,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Explain which keyboard input method to try first, with game compatibility notes for Windows hook. ([#872](https://github.com/OpenBladeProject/openblade-core/pull/872))
 - Group multimedia key input and SnapTap input beneath their related keyboard settings, with collapsible sections and brief descriptions. ([#870](https://github.com/OpenBladeProject/openblade-core/pull/870))
 - Reorder cards within their section and move complete sections by their headings. The dragged item follows the cursor at half opacity while nearby items move into place. ([#868](https://github.com/OpenBladeProject/openblade-core/pull/868))
 - Move Windows battery reports into Telemetry with a labeled power-source timeline, explicit unknown periods and a compact empty state, and remove the Long battery life preset. ([#869](https://github.com/OpenBladeProject/openblade-core/pull/869))

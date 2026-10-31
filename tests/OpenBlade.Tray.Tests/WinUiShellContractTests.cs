@@ -271,7 +271,6 @@ public sealed class WinUiShellContractTests
             Assert.False(string.IsNullOrWhiteSpace(Attribute(selector, "AccessibleName")));
             Assert.Equal("Label", Attribute(selector, "DisplayMemberPath"));
             Assert.DoesNotContain(row.Descendants(), element => Attribute(element, "FontSize") is not null || Attribute(element, "Height") is not null);
-            Assert.Equal("Wrap", Attribute(NamedElement(document, "TextBlock", prefix + "WindowsHookHelp"), "TextWrapping"));
         }
         foreach ((string key, string baseKey) in new[]
                  {
