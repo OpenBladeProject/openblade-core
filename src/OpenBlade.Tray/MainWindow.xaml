@@ -61,6 +61,19 @@
                    BasedOn="{StaticResource SettingsRowStyle}">
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <!-- Expanders let their headers and child rows own pointer feedback. -->
+            <Style x:Key="SettingsExpanderRowStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsRowStyle}">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="local:SettingsCardPointerVisual.IsEnabled" Value="False" />
+            </Style>
+            <Style x:Key="SettingsLastExpanderRowStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsLastRowStyle}">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="local:SettingsCardPointerVisual.IsEnabled" Value="False" />
+            </Style>
             <Style x:Key="SettingsSubcardBaseStyle" TargetType="Border">
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="0,1,0,0" />
@@ -1176,42 +1189,80 @@
             </DataTemplate>
             <DataTemplate x:Key="KeyboardBehaviorRowsTemplate" x:DataType="local:MainViewModel">
                 <StackPanel>
-                    <Border Style="{StaticResource SettingsRowStyle}"
-                            Padding="{StaticResource DashboardSingleLineRowPadding}"
+                    <Border x:Name="FunctionKeyBehaviorRow" Style="{StaticResource SettingsExpanderRowStyle}"
                             Visibility="{x:Bind SupportsFunctionKeyPrimary, Mode=OneWay}">
-                        <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
-                              ColumnSpacing="20">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="3" VerticalAlignment="Center">
-                                <TextBlock x:Uid="MainWindow_TextBlockFunctionKeyBehavior" Text="Function key behavior"
-                                           Style="{StaticResource CardTitleStyle}"
-                                           SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <Border x:Name="FunctionKeyFirmwareLoadingSlot"
-                                        Width="16"
-                                        Height="16"
-                                        VerticalAlignment="Center">
-                                    <ProgressRing x:Uid="MainWindow_ProgressRingReadingOrApplyingFunctionKeyBehavior" Style="{StaticResource FirmwareProgressRingStyle}"
-                                                  IsActive="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                  Visibility="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                  AutomationProperties.Name="Reading or applying function key behavior" />
+                        <Expander x:Name="FunctionKeyBehaviorExpander" x:Uid="KeyboardBackend_FunctionBehaviorExpander"
+                                  Style="{StaticResource CardContentExpanderStyle}"
+                                  IsExpanded="False" AutomationProperties.Name="Function key behavior">
+                            <Expander.Resources>
+                                <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                            </Expander.Resources>
+                            <Expander.Header>
+                                <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                          ColumnSpacing="20" Margin="16,14,60,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock x:Uid="MainWindow_TextBlockFunctionKeyBehavior" Text="Function key behavior"
+                                                       Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                            <TextBlock x:Uid="KeyboardBackend_FunctionBehaviorDescription"
+                                                       Text="Choose whether F1–F12 or multimedia keys work without Fn."
+                                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                            <Border x:Name="FunctionKeyFirmwareLoadingSlot"
+                                                    Width="16"
+                                                    Height="16"
+                                                    VerticalAlignment="Center">
+                                                <ProgressRing x:Uid="MainWindow_ProgressRingReadingOrApplyingFunctionKeyBehavior" Style="{StaticResource FirmwareProgressRingStyle}"
+                                                              IsActive="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                              Visibility="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                              AutomationProperties.Name="Reading or applying function key behavior" />
+                                            </Border>
+                                            <local:ResponsiveChoiceSelector x:Uid="MainWindow_FunctionKeyPrimarySelectorText" x:Name="FunctionKeyPrimarySelector"
+                                                                            CompactMinWidth="150"
+                                                                            ExpandedMinWindowWidth="800"
+                                                                            AccessibleName="Set function key behavior"
+                                                                            IsEnabled="{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}"
+                                                                            ItemsSource="{x:Bind AvailableFunctionKeyPrimaryOptions, Mode=OneWay}"
+                                                                            DisplayMemberPath="Label"
+                                                                            PlaceholderText="{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}"
+                                                                            SelectedItem="{x:Bind SelectedFunctionKeyPrimaryOption, Mode=OneWay}"
+                                                                            SelectionChanged="OnFunctionKeyPrimaryChanged" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Border>
-                                <local:ResponsiveChoiceSelector x:Uid="MainWindow_FunctionKeyPrimarySelectorText" x:Name="FunctionKeyPrimarySelector"
-                                                                CompactMinWidth="150"
-                                                                ExpandedMinWindowWidth="800"
-                                                                AccessibleName="Set function key behavior"
-                                                                IsEnabled="{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}"
-                                                                ItemsSource="{x:Bind AvailableFunctionKeyPrimaryOptions, Mode=OneWay}"
-                                                                DisplayMemberPath="Label"
-                                                                PlaceholderText="{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}"
-                                                                SelectedItem="{x:Bind SelectedFunctionKeyPrimaryOption, Mode=OneWay}"
-                                                                SelectionChanged="OnFunctionKeyPrimaryChanged" />
-                            </StackPanel>
-                        </Grid>
+                            </Expander.Header>
+                            <Border x:Name="FunctionRowBackendRow" Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Loaded="OnFunctionRowBackendLoaded" Unloaded="OnFunctionRowBackendUnloaded">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="4" VerticalAlignment="Center">
+                                        <TextBlock x:Uid="KeyboardBackend_FunctionRowTitle" Text="Multimedia key input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                        <TextBlock x:Uid="KeyboardBackend_FunctionRowDescription"
+                                                   Text="Razer driver uses the built-in keyboard. Windows hook uses all keyboards."
+                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="FunctionRowWindowsHookHelp" x:Uid="KeyboardBackend_FunctionRowWindowsHelp"
+                                                   Text="Applies to all keyboards. Some games may also receive the original function key." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                        <TextBlock x:Name="FunctionRowBackendStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
+                                        <Button x:Name="FunctionRowInstallDriverButton" x:Uid="KeyboardBackend_InstallFunctionRowDriver"
+                                                Content="Install driver" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}"
+                                                Click="OnInstallFunctionRowDriver" AutomationProperties.Name="Install the Razer keyboard driver" Visibility="Collapsed" />
+                                    </StackPanel>
+                                    <local:ResponsiveChoiceSelector x:Name="FunctionRowBackendSelector" x:Uid="KeyboardBackend_FunctionRowSelector"
+                                                                    Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                                    AccessibleName="Multimedia key input" DisplayMemberPath="Label"
+                                                                    PlaceholderText="Choose input method" SelectionChanged="OnFunctionRowBackendChanged" />
+                                </Grid>
+                            </Border>
+                        </Expander>
                     </Border>
                     <Border Style="{StaticResource SettingsRowStyle}"
                             Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
@@ -3343,27 +3394,6 @@
                                                     ContentTemplate="{StaticResource KeyboardBehaviorRowsTemplate}"
                                                     HorizontalContentAlignment="Stretch"
                                                     Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
-                                    <Border local:CardReorder.CardId="FunctionRowBackendRow" x:Name="FunctionRowBackendRow" Style="{StaticResource SettingsRowStyle}" Visibility="{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}">
-                                        <Grid ColumnSpacing="20">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Spacing="4" VerticalAlignment="Center">
-                                                <TextBlock x:Uid="KeyboardBackend_FunctionRowTitle" Text="Multimedia key input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
-                                                <TextBlock x:Name="FunctionRowWindowsHookHelp" x:Uid="KeyboardBackend_FunctionRowWindowsHelp"
-                                                           Text="Applies to all keyboards. Some games may also receive the original function key." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
-                                                <TextBlock x:Name="FunctionRowBackendStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
-                                                <Button x:Name="FunctionRowInstallDriverButton" x:Uid="KeyboardBackend_InstallFunctionRowDriver"
-                                                        Content="Install driver" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}"
-                                                        Click="OnInstallFunctionRowDriver" AutomationProperties.Name="Install the Razer keyboard driver" Visibility="Collapsed" />
-                                            </StackPanel>
-                                            <local:ResponsiveChoiceSelector x:Name="FunctionRowBackendSelector" x:Uid="KeyboardBackend_FunctionRowSelector"
-                                                                            Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"
-                                                                            AccessibleName="Multimedia key input" DisplayMemberPath="Label"
-                                                                            PlaceholderText="Choose input method" SelectionChanged="OnFunctionRowBackendChanged" />
-                                        </Grid>
-                                    </Border>
                                     <Border local:CardReorder.CardId="TouchpadRow" x:Name="TouchpadRow" Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>
@@ -3386,74 +3416,89 @@
                                                           Toggled="OnTouchpadToggled" />
                                         </Grid>
                                     </Border>
-                                    <Border local:CardReorder.CardId="SnapTapRow" x:Name="SnapTapRow" Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="20">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Spacing="4">
-                                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                                    <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
-                                                    <Button x:Name="SnapTapInfoButton" x:Uid="SnapTap_InfoButton"
-                                                            Width="20" Height="20" MinWidth="0" MinHeight="0"
-                                                            Padding="0" Background="Transparent" BorderThickness="0"
-                                                            VerticalAlignment="Center"
-                                                            AutomationProperties.Name="About SnapTap"
-                                                            ToolTipService.ToolTip="About SnapTap">
-                                                        <Button.Flyout>
-                                                            <Flyout Placement="BottomEdgeAlignedLeft">
-                                                                <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
-                                                                    <StackPanel MaxWidth="320" Spacing="12">
-                                                                        <TextBlock x:Uid="SnapTap_InfoTitle" Text="About SnapTap" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
-                                                                        <TextBlock x:Uid="SnapTap_InfoInput" Text="Razer driver handles the built-in keyboard. Windows hook applies to all keyboards." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                                                        <TextBlock x:Uid="SnapTap_InfoCompatibility" Text="Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                                                    </StackPanel>
-                                                                </ScrollViewer>
-                                                            </Flyout>
-                                                        </Button.Flyout>
-                                                        <FontIcon Glyph="&#xE946;" FontSize="14" />
-                                                    </Button>
-                                                </StackPanel>
-                                                <TextBlock x:Uid="SnapTap_Description" Text="When A and D overlap, the last pressed key wins." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                                <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                                                <StackPanel x:Name="SnapTapDriverActions" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
-                                                    <Button x:Name="SnapTapInstallDriverButton" x:Uid="SnapTap_InstallDriver"
-                                                            Content="Install driver" HorizontalAlignment="Left"
-                                                            Style="{StaticResource AccentButtonStyle}"
-                                                            Click="OnInstallSnapTapDriver"
-                                                            AutomationProperties.Name="Install the Razer keyboard driver" />
-                                                    <HyperlinkButton x:Name="SnapTapDriverLink" x:Uid="SnapTap_DriverLink"
-                                                                     Style="{StaticResource ExternalLinkButtonStyle}"
-                                                                     Width="32" Height="32" Padding="0"
-                                                                     HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                                                     ToolTipService.ToolTip="Setup guide"
-                                                                      NavigateUri="https://github.com/OpenBladeProject/blade-driver-catalog"
-                                                                     AutomationProperties.Name="Razer keyboard driver setup guide">
-                                                        <FontIcon Glyph="&#xE8A7;" FontSize="14" />
-                                                    </HyperlinkButton>
-                                                </StackPanel>
-                                            </StackPanel>
-                                            <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
-                                        </Grid>
-                                    </Border>
-                                    <Border local:CardReorder.CardId="SnapTapBackendRow" x:Name="SnapTapBackendRow" Style="{StaticResource SettingsLastRowStyle}">
-                                        <Grid ColumnSpacing="20">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Spacing="4" VerticalAlignment="Center">
-                                                <TextBlock x:Uid="KeyboardBackend_SnapTapTitle" Text="SnapTap input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
-                                                <TextBlock x:Name="SnapTapWindowsHookHelp" x:Uid="KeyboardBackend_SnapTapWindowsHelp"
-                                                           Text="Applies to all keyboards. Some games may ignore Windows hook input." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
-                                            </StackPanel>
-                                            <local:ResponsiveChoiceSelector x:Name="SnapTapBackendSelector" x:Uid="KeyboardBackend_SnapTapSelector"
-                                                                            Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"
-                                                                            AccessibleName="SnapTap input" DisplayMemberPath="Label"
-                                                                            PlaceholderText="Choose input method" SelectionChanged="OnSnapTapBackendChanged" />
-                                        </Grid>
+                                    <Border local:CardReorder.CardId="SnapTapRow" x:Name="SnapTapRow" Style="{StaticResource SettingsLastExpanderRowStyle}">
+                                        <Expander x:Name="SnapTapExpander" x:Uid="KeyboardBackend_SnapTapExpander"
+                                                  Style="{StaticResource CardContentExpanderStyle}"
+                                                  IsExpanded="False" AutomationProperties.Name="SnapTap (A/D)">
+                                            <Expander.Resources>
+                                                <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                                <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                            </Expander.Resources>
+                                            <Expander.Header>
+                                                <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                                    <Grid ColumnSpacing="20" Margin="16,14,60,14">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="4">
+                                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                <TextBlock x:Uid="SnapTap_Title" Text="SnapTap (A/D)" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                                                <Button x:Name="SnapTapInfoButton" x:Uid="SnapTap_InfoButton"
+                                                                        Width="20" Height="20" MinWidth="0" MinHeight="0"
+                                                                        Padding="0" Background="Transparent" BorderThickness="0"
+                                                                        VerticalAlignment="Center"
+                                                                        AutomationProperties.Name="About SnapTap"
+                                                                        ToolTipService.ToolTip="About SnapTap">
+                                                                    <Button.Flyout>
+                                                                        <Flyout Placement="BottomEdgeAlignedLeft">
+                                                                            <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
+                                                                                <StackPanel MaxWidth="320" Spacing="12">
+                                                                                    <TextBlock x:Uid="SnapTap_InfoTitle" Text="About SnapTap" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                                                    <TextBlock x:Uid="SnapTap_InfoInput" Text="Razer driver handles the built-in keyboard. Windows hook applies to all keyboards." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                                                    <TextBlock x:Uid="SnapTap_InfoCompatibility" Text="Game compatibility has not been verified." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                                                </StackPanel>
+                                                                            </ScrollViewer>
+                                                                        </Flyout>
+                                                                    </Button.Flyout>
+                                                                    <FontIcon Glyph="&#xE946;" FontSize="14" />
+                                                                </Button>
+                                                            </StackPanel>
+                                                            <TextBlock x:Uid="SnapTap_Description" Text="When A and D overlap, the last pressed key wins." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                            <TextBlock x:Name="SnapTapStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                                            <StackPanel x:Name="SnapTapDriverActions" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                                                                <Button x:Name="SnapTapInstallDriverButton" x:Uid="SnapTap_InstallDriver"
+                                                                        Content="Install driver" HorizontalAlignment="Left"
+                                                                        Style="{StaticResource AccentButtonStyle}"
+                                                                        Click="OnInstallSnapTapDriver"
+                                                                        AutomationProperties.Name="Install the Razer keyboard driver" />
+                                                                <HyperlinkButton x:Name="SnapTapDriverLink" x:Uid="SnapTap_DriverLink"
+                                                                                 Style="{StaticResource ExternalLinkButtonStyle}"
+                                                                                 Width="32" Height="32" Padding="0"
+                                                                                 HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                                                 ToolTipService.ToolTip="Setup guide"
+                                                                                  NavigateUri="https://github.com/OpenBladeProject/blade-driver-catalog"
+                                                                                 AutomationProperties.Name="Razer keyboard driver setup guide">
+                                                                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                                                </HyperlinkButton>
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                        <ToggleSwitch x:Name="SnapTapToggle" x:Uid="SnapTap_Toggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}" Toggled="OnSnapTapToggled" AutomationProperties.Name="SnapTap (A/D)" />
+                                                    </Grid>
+                                                </Border>
+                                            </Expander.Header>
+                                            <Border x:Name="SnapTapBackendRow" Style="{StaticResource SettingsLastNeutralSubcardStyle}">
+                                                <Grid ColumnSpacing="20">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Spacing="4" VerticalAlignment="Center">
+                                                        <TextBlock x:Uid="KeyboardBackend_SnapTapTitle" Text="SnapTap input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                        <TextBlock x:Uid="KeyboardBackend_SnapTapDescription"
+                                                                   Text="Razer driver uses the built-in keyboard. Windows hook uses all keyboards."
+                                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                        <TextBlock x:Name="SnapTapWindowsHookHelp" x:Uid="KeyboardBackend_SnapTapWindowsHelp"
+                                                                   Text="Applies to all keyboards. Some games may ignore Windows hook input." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                                    </StackPanel>
+                                                    <local:ResponsiveChoiceSelector x:Name="SnapTapBackendSelector" x:Uid="KeyboardBackend_SnapTapSelector"
+                                                                                    Grid.Column="1" VerticalAlignment="Center" CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                                                    AccessibleName="SnapTap input" DisplayMemberPath="Label"
+                                                                                    PlaceholderText="Choose input method" SelectionChanged="OnSnapTapBackendChanged" />
+                                                </Grid>
+                                            </Border>
+                                        </Expander>
                                     </Border>
                                 </StackPanel>
                             </Border>

@@ -1,4 +1,6 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using XamlButton = Microsoft.UI.Xaml.Controls.Button;
 
 namespace OpenBlade.Tray;
 
@@ -7,6 +9,12 @@ public sealed partial class MainWindow
     private KeyboardInputBackend snapTapBackend = KeyboardInputBackend.RazerDriver;
     private KeyboardInputBackend functionRowBackend = KeyboardInputBackend.WindowsHook;
     private bool initializingKeyboardBackends;
+    private readonly Dictionary<FrameworkElement, FunctionRowBackendControls> functionRowBackendControls = [];
+    private sealed record FunctionRowBackendControls(
+        ResponsiveChoiceSelector Selector,
+        TextBlock WindowsHelp,
+        TextBlock Status,
+        XamlButton InstallDriver);
     private sealed record KeyboardBackendOption(KeyboardInputBackend Value, string Label);
 
     private void InitializeKeyboardBackendSelectors()
@@ -20,15 +28,35 @@ public sealed partial class MainWindow
                 new(KeyboardInputBackend.RazerDriver, LocalizedResources.Get("KeyboardBackend_RazerDriver", "Razer driver")),
             ];
             SnapTapBackendSelector.ItemsSource = options;
-            FunctionRowBackendSelector.ItemsSource = options;
             SnapTapBackendSelector.SelectedItem = options.FirstOrDefault(option => option.Value == snapTapBackend);
-            FunctionRowBackendSelector.SelectedItem = options.FirstOrDefault(option => option.Value == functionRowBackend);
+            foreach (FunctionRowBackendControls controls in functionRowBackendControls.Values)
+            {
+                controls.Selector.ItemsSource = options;
+                controls.Selector.SelectedItem = options.FirstOrDefault(option => option.Value == functionRowBackend);
+            }
         }
         finally
         {
             initializingKeyboardBackends = false;
         }
     }
+
+    // The shared keyboard template can be loaded on both Laptop and Dashboard.
+    // Track only loaded instances so their selectors share the saved input choice.
+    private void OnFunctionRowBackendLoaded(object sender, RoutedEventArgs args)
+    {
+        var row = (FrameworkElement)sender;
+        functionRowBackendControls[row] = new(
+            (ResponsiveChoiceSelector)row.FindName("FunctionRowBackendSelector"),
+            (TextBlock)row.FindName("FunctionRowWindowsHookHelp"),
+            (TextBlock)row.FindName("FunctionRowBackendStatusText"),
+            (XamlButton)row.FindName("FunctionRowInstallDriverButton"));
+        InitializeKeyboardBackendSelectors();
+        RefreshKeyboardBackendStatus();
+    }
+
+    private void OnFunctionRowBackendUnloaded(object sender, RoutedEventArgs args) =>
+        functionRowBackendControls.Remove((FrameworkElement)sender);
 
     private void OnSnapTapBackendChanged(object? sender, ResponsiveChoiceSelectionChangedEventArgs args)
     {
@@ -51,6 +79,7 @@ public sealed partial class MainWindow
             return;
         }
         functionRowBackend = option.Value;
+        InitializeKeyboardBackendSelectors();
         snapTapDriverInstallOutcome = null;
         QueuePreferenceSave();
         RefreshSnapTapStatus();
@@ -71,6 +100,12 @@ public sealed partial class MainWindow
             functionRowBackend = KeyboardInputBackend.Unknown;
         }
         InitializeKeyboardBackendSelectors();
+        bool expandInputs = Environment.GetEnvironmentVariable("OPENBLADE_LOCALIZATION_SNAPSHOT_KEYBOARD_INPUTS") == "expanded";
+        if (FindDescendant<Expander>(KeyboardBehaviorCard, "FunctionKeyBehaviorExpander") is { } functionKeys)
+        {
+            functionKeys.IsExpanded = expandInputs;
+        }
+        SnapTapExpander.IsExpanded = expandInputs;
     }
 #endif
 
@@ -90,13 +125,10 @@ public sealed partial class MainWindow
     {
         SnapTapWindowsHookHelp.Visibility = snapTapBackend == KeyboardInputBackend.WindowsHook
             ? Visibility.Visible : Visibility.Collapsed;
-        FunctionRowWindowsHookHelp.Visibility = functionRowBackend == KeyboardInputBackend.WindowsHook
-            ? Visibility.Visible : Visibility.Collapsed;
         SnapTapBackendSelector.IsEnabled = !snapTapDriverInstalling;
-        FunctionRowBackendSelector.IsEnabled = !snapTapDriverInstalling;
         SnapTapRuntimeStatus? status = localizationSnapshotMode ? null
             : SelectedBackendStatus(FunctionRowBackendStatusStore.Read(), functionRowBackend);
-        FunctionRowBackendStatusText.Text = snapTapDriverInstalling && functionRowBackend == KeyboardInputBackend.RazerDriver
+        string statusText = snapTapDriverInstalling && functionRowBackend == KeyboardInputBackend.RazerDriver
             ? LocalizedResources.Get("SnapTap_Driver_Installing", "Installing driver…")
             : snapTapDriverInstallOutcome is { } outcome && functionRowBackend == KeyboardInputBackend.RazerDriver
                 ? outcome == RazerDriverInstallOutcome.Installed
@@ -118,12 +150,19 @@ public sealed partial class MainWindow
                 SnapTapRuntimeState.Paused or SnapTapRuntimeState.Failed or SnapTapRuntimeState.Unavailable => LocalizedResources.Get("KeyboardBackend_Paused", "Input handling is paused. Export diagnostics for details."),
                 _ => LocalizedResources.Get("KeyboardBackend_Waiting", "Waiting for the selected input method…"),
             };
-        FunctionRowBackendStatusText.Visibility = string.IsNullOrEmpty(FunctionRowBackendStatusText.Text)
-            ? Visibility.Collapsed : Visibility.Visible;
-        FunctionRowInstallDriverButton.Visibility = functionRowBackend == KeyboardInputBackend.RazerDriver
-            && CanOfferSnapTapDriverSetup(status?.State)
-            && snapTapDriverInstallOutcome is not (RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.RestartRequired or RazerDriverInstallOutcome.RecoveryRequired)
-            ? Visibility.Visible : Visibility.Collapsed;
-        FunctionRowInstallDriverButton.IsEnabled = !snapTapDriverInstalling;
+        foreach (FunctionRowBackendControls controls in functionRowBackendControls.Values)
+        {
+            controls.WindowsHelp.Visibility = functionRowBackend == KeyboardInputBackend.WindowsHook
+                ? Visibility.Visible : Visibility.Collapsed;
+            controls.Selector.IsEnabled = !snapTapDriverInstalling;
+            controls.Status.Text = statusText;
+            controls.Status.Visibility = string.IsNullOrEmpty(statusText)
+                ? Visibility.Collapsed : Visibility.Visible;
+            controls.InstallDriver.Visibility = functionRowBackend == KeyboardInputBackend.RazerDriver
+                && CanOfferSnapTapDriverSetup(status?.State)
+                && snapTapDriverInstallOutcome is not (RazerDriverInstallOutcome.Installed or RazerDriverInstallOutcome.RestartRequired or RazerDriverInstallOutcome.RecoveryRequired)
+                ? Visibility.Visible : Visibility.Collapsed;
+            controls.InstallDriver.IsEnabled = !snapTapDriverInstalling;
+        }
     }
 }
