@@ -429,7 +429,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? throw new ArgumentNullException(nameof(startupRegistration));
         lightingEditor.Changed += OnLightingEditorChanged;
         this.timeProvider = timeProvider ?? TimeProvider.System;
-        externalPowerDischarge = new ExternalPowerDischargeTracker(this.timeProvider);
+        externalPowerDischarge = new ExternalPowerDischargeTracker();
         this.uiVersion = string.IsNullOrWhiteSpace(uiVersion)
             ? OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly)
             : uiVersion.Trim();
