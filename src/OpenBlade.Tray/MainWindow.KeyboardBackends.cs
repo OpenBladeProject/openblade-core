@@ -12,7 +12,6 @@ public sealed partial class MainWindow
     private readonly Dictionary<FrameworkElement, FunctionRowBackendControls> functionRowBackendControls = [];
     private sealed record FunctionRowBackendControls(
         ResponsiveChoiceSelector Selector,
-        TextBlock WindowsHelp,
         TextBlock Status,
         XamlButton InstallDriver);
     private sealed record KeyboardBackendOption(KeyboardInputBackend Value, string Label);
@@ -48,7 +47,6 @@ public sealed partial class MainWindow
         var row = (FrameworkElement)sender;
         functionRowBackendControls[row] = new(
             (ResponsiveChoiceSelector)row.FindName("FunctionRowBackendSelector"),
-            (TextBlock)row.FindName("FunctionRowWindowsHookHelp"),
             (TextBlock)row.FindName("FunctionRowBackendStatusText"),
             (XamlButton)row.FindName("FunctionRowInstallDriverButton"));
         InitializeKeyboardBackendSelectors();
@@ -123,8 +121,6 @@ public sealed partial class MainWindow
 
     private void RefreshKeyboardBackendStatus()
     {
-        SnapTapWindowsHookHelp.Visibility = snapTapBackend == KeyboardInputBackend.WindowsHook
-            ? Visibility.Visible : Visibility.Collapsed;
         SnapTapBackendSelector.IsEnabled = !snapTapDriverInstalling;
         SnapTapRuntimeStatus? status = localizationSnapshotMode ? null
             : SelectedBackendStatus(FunctionRowBackendStatusStore.Read(), functionRowBackend);
@@ -152,8 +148,6 @@ public sealed partial class MainWindow
             };
         foreach (FunctionRowBackendControls controls in functionRowBackendControls.Values)
         {
-            controls.WindowsHelp.Visibility = functionRowBackend == KeyboardInputBackend.WindowsHook
-                ? Visibility.Visible : Visibility.Collapsed;
             controls.Selector.IsEnabled = !snapTapDriverInstalling;
             controls.Status.Text = statusText;
             controls.Status.Visibility = string.IsNullOrEmpty(statusText)

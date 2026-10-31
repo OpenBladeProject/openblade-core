@@ -2800,12 +2800,6 @@ OpenBlade повторно проверит этот список и остан�
   <data name="KeyboardBackend_SnapTapSelector.PlaceholderText" xml:space="preserve">
     <value>Выберите способ ввода</value>
   </data>
-  <data name="KeyboardBackend_FunctionRowWindowsHelp.Text" xml:space="preserve">
-    <value>Действует на все клавиатуры. Некоторые игры могут также получать исходную функциональную клавишу.</value>
-  </data>
-  <data name="KeyboardBackend_SnapTapWindowsHelp.Text" xml:space="preserve">
-    <value>Действует на все клавиатуры. Некоторые игры могут игнорировать ввод через перехват Windows.</value>
-  </data>
   <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
     <value>Установить драйвер</value>
   </data>
@@ -2870,10 +2864,10 @@ OpenBlade повторно проверит этот список и остан�
     <value>Выберите, что работает без Fn: F1–F12 или мультимедийные функции.</value>
   </data>
   <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
-    <value>Драйвер Razer обрабатывает ввод со встроенной клавиатуры, а перехват Windows — со всех клавиатур.</value>
+    <value>Сначала попробуйте драйвер Razer. Если он не работает, переключитесь на перехват Windows (в некоторых играх нажатия функциональных клавиш могут срабатывать дважды).</value>
   </data>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
-    <value>Драйвер Razer обрабатывает ввод со встроенной клавиатуры, а перехват Windows — со всех клавиатур.</value>
+    <value>Сначала попробуйте драйвер Razer. Если он не работает, переключитесь на перехват Windows (в некоторых играх SnapTap может не работать).</value>
   </data>
   <data name="KeyboardBackend_FunctionBehaviorExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Поведение функциональных клавиш</value>

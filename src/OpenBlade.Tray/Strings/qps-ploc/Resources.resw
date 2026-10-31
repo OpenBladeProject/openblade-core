@@ -2788,9 +2788,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
     <value>[!! Múltímédíá kéý ínpút ~~~~~~~ !!]</value>
   </data>
-  <data name="KeyboardBackend_FunctionRowWindowsHelp.Text" xml:space="preserve">
-    <value>[!! Ápplíés tó áll kéýbóárds. Sómé gámés máý álsó récéívé thé órígínál fúnctíón kéý. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
     <value>[!! Ínstáll drívér ~~~~~ !!]</value>
   </data>
@@ -2817,9 +2814,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
     <value>[!! SnápTáp ínpút ~~~~~ !!]</value>
-  </data>
-  <data name="KeyboardBackend_SnapTapWindowsHelp.Text" xml:space="preserve">
-    <value>[!! Ápplíés tó áll kéýbóárds. Sómé gámés máý ígnóré Windows hóók ínpút. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="KeyboardBackend_Unknown" xml:space="preserve">
     <value>[!! Chóósé án ínpút méthód tó résúmé. ~~~~~~~~~~ !!]</value>
@@ -2876,9 +2870,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
   </data>
   <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
-    <value>[!! Razer drívér úsés thé búílt-ín kéýbóárd. Windows hóók úsés áll kéýbóárds. ~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Trý Razer drívér fírst. Íf ít dóésn’t wórk, swítch tó Windows hóók (sómé gámés máý régístér fúnctíón kéýs twícé). ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
-    <value>[!! Razer drívér úsés thé búílt-ín kéýbóárd. Windows hóók úsés áll kéýbóárds. ~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Trý Razer drívér fírst. Íf ít dóésn’t wórk, swítch tó Windows hóók (SnápTáp máý nót wórk ín sómé gámés). ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>
