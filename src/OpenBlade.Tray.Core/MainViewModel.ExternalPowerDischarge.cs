@@ -53,9 +53,7 @@ public sealed partial class MainViewModel
 
         bool wasDischarging = IsExternalPowerDischarging;
         long previousEpisode = ExternalPowerDischargeEpisode;
-        externalPowerDischarge.Observe(
-            status.LiveReadings?.BatteryPowerFlowMilliwatts,
-            TimeSpan.FromSeconds(Math.Max(10, LiveReadingsObservationInterval.TotalSeconds * 3)));
+        externalPowerDischarge.Observe(status.LiveReadings?.BatteryPowerFlowMilliwatts);
         PublishExternalPowerDischarge(wasDischarging, previousEpisode);
     }
 

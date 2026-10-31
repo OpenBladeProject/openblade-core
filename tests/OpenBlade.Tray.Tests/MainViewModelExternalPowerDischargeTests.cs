@@ -26,17 +26,12 @@ public sealed partial class MainViewModelTests
             option.IsEnabled = false;
         }
         Assert.True(viewModel.RequiresExternalPowerDischargeObservation);
+        Assert.False(viewModel.IsExternalPowerDischarging);
+        Assert.Equal(0, viewModel.ExternalPowerDischargeEpisode);
         Drain(notifications);
-        for (int seconds = 0; seconds <= 2; seconds++)
-        {
-            if (seconds > 0)
-            {
-                time.Advance(TimeSpan.FromSeconds(1));
-            }
-            await ObserveAsync(client,
-                () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
-            Assert.Equal(seconds == 2, viewModel.IsExternalPowerDischarging);
-        }
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
+        Assert.True(viewModel.IsExternalPowerDischarging);
         Assert.All(client.RequestedLiveReadings, sensors => Assert.Equal(LiveReadingSensors.BatteryPower, sensors));
         Assert.Equal(baseState, viewModel.TrayIconState);
         Assert.Contains(nameof(MainViewModel.IsExternalPowerDischarging), Drain(notifications));
@@ -98,15 +93,8 @@ public sealed partial class MainViewModelTests
         {
             option.IsEnabled = true;
         }
-        for (int seconds = 0; seconds <= 2; seconds++)
-        {
-            if (seconds > 0)
-            {
-                time.Advance(TimeSpan.FromSeconds(1));
-            }
-            await ObserveAsync(client,
-                () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
-        }
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
         Assert.True(viewModel.IsExternalPowerDischarging);
         Assert.True(viewModel.CanToggleHyperBoost);
         Assert.Equal(TrayIconState.GenericError, viewModel.TrayIconState);
