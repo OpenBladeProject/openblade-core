@@ -20,20 +20,45 @@ public partial class App
         var cards = new ObservableCollection<string> { "Card A", "Card B", "Card C" };
         var pages = new ObservableCollection<string> { "Page A", "Page B", "Page C" };
         var host = new StackPanel { Spacing = 12, Padding = new Thickness(24) };
+        var cardHost = new StackPanel { Spacing = 12 };
+        var header = new TextBlock { Text = "Section A", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] };
+        var otherHeader = new TextBlock { Text = "Section B", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] };
+        var section = new StackPanel { Spacing = 8 };
+        section.Children.Add(header);
+        section.Children.Add(cardHost);
+        var otherSection = new StackPanel { Spacing = 8 };
+        otherSection.Children.Add(otherHeader);
+        var otherCard = new Border
+        {
+            Padding = new Thickness(20),
+            MinHeight = 100,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.LightGray),
+            Child = new TextBlock { Text = "Card D" },
+        };
+        otherSection.Children.Add(otherCard);
+        var sections = new ObservableCollection<StackPanel> { section, otherSection };
+        host.Children.Add(section);
+        host.Children.Add(otherSection);
+        behavior.Register(section, sections, section, origin => ReferenceEquals(origin, header));
+        behavior.Register(otherSection, sections, otherSection, origin => ReferenceEquals(origin, otherHeader));
+        var otherCards = new ObservableCollection<string> { "Card D" };
+        behavior.Register(otherCard, otherCards, otherCards[0]);
         var navigation = new NavigationView
         {
             IsSettingsVisible = false,
             IsPaneOpen = true,
             PaneDisplayMode = NavigationViewPaneDisplayMode.Left,
-            Content = host,
+            Content = new ScrollViewer { Content = host },
         };
         var presentations = new Dictionary<string, Border>();
         var menu = new Dictionary<string, NavigationViewItem>();
         var slider = new Slider { Minimum = 0, Maximum = 100, Value = 50 };
         var button = new Microsoft.UI.Xaml.Controls.Button { Content = "Test button" };
+        var showPreview = new Microsoft.UI.Xaml.Controls.Button { Content = "Show drag preview" };
+        var clearPreview = new Microsoft.UI.Xaml.Controls.Button { Content = "Clear drag preview" };
         int clicks = 0;
         void Report() => File.WriteAllText(reportPath,
-            $"cards={string.Join(',', cards)}; pages={string.Join(',', pages)}; slider={slider.Value}; clicks={clicks}");
+            $"cards={string.Join(',', cards)}; sections={string.Join(',', sections.Select(item => ReferenceEquals(item, section) ? "A" : "B"))}; pages={string.Join(',', pages)}; slider={slider.Value}; clicks={clicks}");
         foreach (string card in cards)
         {
             var content = new StackPanel { Spacing = 8 };
@@ -51,7 +76,7 @@ public partial class App
                 Child = content,
             };
             presentations.Add(card, border);
-            host.Children.Add(border);
+            cardHost.Children.Add(border);
             behavior.Register(border, cards, card);
         }
         foreach (string page in pages)
@@ -65,8 +90,17 @@ public partial class App
         {
             for (int i = 0; i < cards.Count; i++)
             {
-                int index = host.Children.IndexOf(presentations[cards[i]]);
-                host.Children.Move((uint)index, (uint)i);
+                int index = cardHost.Children.IndexOf(presentations[cards[i]]);
+                cardHost.Children.Move((uint)index, (uint)i);
+            }
+            Report();
+        };
+        sections.CollectionChanged += (_, _) =>
+        {
+            for (int index = 0; index < sections.Count; index++)
+            {
+                int current = host.Children.IndexOf(sections[index]);
+                host.Children.Move((uint)current, (uint)index);
             }
             Report();
         };
@@ -81,9 +115,24 @@ public partial class App
         };
         slider.ValueChanged += (_, _) => Report();
         button.Click += (_, _) => { clicks++; Report(); };
-        window.Content = navigation;
+        showPreview.Click += (_, _) =>
+        {
+            behavior.EndDrag();
+            behavior.TryBeginDrag(presentations["Card A"], presentations["Card A"]);
+            var previewRoot = (UIElement)window.Content;
+            Windows.Foundation.Point start = presentations["Card A"].TransformToVisual(previewRoot)
+                .TransformPoint(new Windows.Foundation.Point());
+            behavior.UpdateTarget(new Windows.Foundation.Point(start.X + 32, start.Y + 90));
+            behavior.ShowIndicator(presentations["Card B"], after: true);
+        };
+        clearPreview.Click += (_, _) => behavior.EndDrag();
+        host.Children.Add(showPreview);
+        host.Children.Add(clearPreview);
+        var root = new Grid();
+        root.Children.Add(navigation);
+        window.Content = root;
         window.Closed += (_, _) => { behavior.Dispose(); Environment.Exit(0); };
-        window.AppWindow.Resize(new Windows.Graphics.SizeInt32(900, 650));
+        window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1100, 1250));
         Report();
         window.Activate();
     }
@@ -115,6 +164,9 @@ public partial class App
             window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 900));
             Phase("show reorder window");
             ShowNoninteractiveSnapshotWindow(window);
+            // Exercise XAML hit testing on the private test desktop. Native no-activate
+            // input guards remain in place; ordinary snapshot windows disable this.
+            ((UIElement)window.Content).IsHitTestVisible = true;
             Phase("wait initial layout");
             await WaitForSnapshotLayoutAsync();
             Phase("verify reorder");

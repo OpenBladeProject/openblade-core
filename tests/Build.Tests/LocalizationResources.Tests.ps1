@@ -394,6 +394,13 @@ try {
     if ($updatedXaml -ceq $xaml) {
         throw "Case-only x:Uid fixture could not find '$oldUid'."
     }
+    $boundaryFixture = @'
+    <TextBlock x:Uid="LocalizationAttributeBoundary" Text="Real title" local:CardReorder.IsHeader="True" />
+    <Expander x:Uid="LocalizationNativeHeader" Header="Real section" />
+'@
+    $rootEnd = $updatedXaml.LastIndexOf('</Grid>', [StringComparison]::Ordinal)
+    if ($rootEnd -lt 0) { throw 'Localization attribute fixture could not find the root grid.' }
+    $updatedXaml = $updatedXaml.Insert($rootEnd, $boundaryFixture)
     [IO.File]::WriteAllText(
         $caseRenameXamlPath,
         $updatedXaml,
@@ -411,6 +418,14 @@ try {
         Where-Object { [string]$_.name -ceq $newKey })
     if ($oldEntries.Count -ne 0 -or $newEntries.Count -ne 1) {
         throw 'Case-only x:Uid rename did not replace the preserved resource key casing.'
+    }
+    $boundaryText = @($renamedCatalog.root.data | Where-Object name -eq 'LocalizationAttributeBoundary.Text')
+    $boundaryHeader = @($renamedCatalog.root.data | Where-Object name -eq 'LocalizationAttributeBoundary.Header')
+    $nativeHeader = @($renamedCatalog.root.data | Where-Object name -eq 'LocalizationNativeHeader.Header')
+    if ($boundaryText.Count -ne 1 -or [string]$boundaryText[0].value -cne 'Real title' -or
+        $boundaryHeader.Count -ne 0 -or $nativeHeader.Count -ne 1 -or
+        [string]$nativeHeader[0].value -cne 'Real section') {
+        throw 'Localization must extract real Text/Header attributes without matching the IsHeader suffix.'
     }
 }
 finally {

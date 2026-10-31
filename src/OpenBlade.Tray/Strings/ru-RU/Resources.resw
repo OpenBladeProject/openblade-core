@@ -597,9 +597,6 @@
   <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Содержимое подсказки при наведении на панель задач</value>
   </data>
-  <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
-    <value>False</value>
-  </data>
   <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Порядок меню навигации</value>
   </data>

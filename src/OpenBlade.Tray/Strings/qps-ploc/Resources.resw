@@ -597,9 +597,6 @@ Répórtéd fáílúrés:
   <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Táskbár hóvér lábél cónténts ~~~~~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
-    <value>[!! Fálsé ~~ !!]</value>
-  </data>
   <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Návígátíón ménú órdér ~~~~~~~ !!]</value>
   </data>

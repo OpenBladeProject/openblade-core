@@ -68,7 +68,8 @@ public sealed record UiPreferences(
     IReadOnlyList<TelemetryChartMetricPreference>? TelemetryChartMetrics = null,
     bool TelemetryEnabled = false,
     KeyboardInputBackend SnapTapBackend = KeyboardInputBackend.RazerDriver,
-    KeyboardInputBackend FunctionRowBackend = KeyboardInputBackend.WindowsHook)
+    KeyboardInputBackend FunctionRowBackend = KeyboardInputBackend.WindowsHook,
+    IReadOnlyList<CardOrderPreference>? CardOrders = null)
 {
     [JsonIgnore]
     public KeyboardInputBackend EffectiveSnapTapBackend => SnapTapBackend.Normalize();
