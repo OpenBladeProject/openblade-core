@@ -1247,7 +1247,7 @@
                                     <StackPanel Spacing="4" VerticalAlignment="Center">
                                         <TextBlock x:Uid="KeyboardBackend_FunctionRowTitle" Text="Multimedia key input" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
                                         <TextBlock x:Uid="KeyboardBackend_FunctionRowDescription"
-                                                   Text="Try Razer driver first. If it doesn’t work, switch to Windows hook (some games may register function keys twice)."
+                                                   Text="Try Razer driver first. If it doesn’t work, switch to Windows hook (some games may trigger extra function-key actions)."
                                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         <TextBlock x:Name="FunctionRowBackendStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
                                         <Button x:Name="FunctionRowInstallDriverButton" x:Uid="KeyboardBackend_InstallFunctionRowDriver"

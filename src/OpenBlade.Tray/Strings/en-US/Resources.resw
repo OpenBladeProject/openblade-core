@@ -2870,7 +2870,7 @@ OpenBlade did not retry any stop request.</value>
     <value>SnapTap (A/D)</value>
   </data>
   <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
-    <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (some games may register function keys twice).</value>
+    <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (some games may trigger extra function-key actions).</value>
   </data>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
     <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (SnapTap may not work in some games).</value>

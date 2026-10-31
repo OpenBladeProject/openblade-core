@@ -2864,7 +2864,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Выберите, что работает без Fn: F1–F12 или мультимедийные функции.</value>
   </data>
   <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
-    <value>Сначала попробуйте драйвер Razer. Если он не работает, переключитесь на перехват Windows (в некоторых играх нажатия функциональных клавиш могут срабатывать дважды).</value>
+    <value>Сначала попробуйте драйвер Razer. Если он не работает, переключитесь на перехват Windows (в некоторых играх нажатия функциональных клавиш могут вызывать дополнительные действия).</value>
   </data>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
     <value>Сначала попробуйте драйвер Razer. Если он не работает, переключитесь на перехват Windows (в некоторых играх SnapTap может не работать).</value>

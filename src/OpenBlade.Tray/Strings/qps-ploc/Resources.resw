@@ -2870,7 +2870,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
   </data>
   <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
-    <value>[!! Trý Razer drívér fírst. Íf ít dóésn’t wórk, swítch tó Windows hóók (sómé gámés máý régístér fúnctíón kéýs twícé). ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Trý Razer drívér fírst. Íf ít dóésn’t wórk, swítch tó Windows hóók (sómé gámés máý tríggér éxtrá fúnctíón-kéý áctíóns). ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
     <value>[!! Trý Razer drívér fírst. Íf ít dóésn’t wórk, swítch tó Windows hóók (SnápTáp máý nót wórk ín sómé gámés). ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>

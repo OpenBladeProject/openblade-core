@@ -2847,7 +2847,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>选择无需按 Fn 即可使用 F1–F12 或多媒体功能。</value>
   </data>
   <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
-    <value>先尝试 Razer 驱动。如果无法正常使用，再切换到 Windows 钩子（部分游戏可能会将功能键识别为按下两次）。</value>
+    <value>先尝试 Razer 驱动。如果无法正常使用，再切换到 Windows 钩子（部分游戏可能会额外触发功能键操作）。</value>
   </data>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
     <value>先尝试 Razer 驱动。如果无法正常使用，再切换到 Windows 钩子（部分游戏中的 SnapTap 可能无法正常使用）。</value>
