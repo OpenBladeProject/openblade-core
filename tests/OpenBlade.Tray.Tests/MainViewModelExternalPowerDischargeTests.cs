@@ -27,15 +27,15 @@ public sealed partial class MainViewModelTests
         }
         Assert.True(viewModel.RequiresExternalPowerDischargeObservation);
         Drain(notifications);
-        for (int seconds = 0; seconds <= 10; seconds += 2)
+        for (int seconds = 0; seconds <= 2; seconds++)
         {
             if (seconds > 0)
             {
-                time.Advance(TimeSpan.FromSeconds(2));
+                time.Advance(TimeSpan.FromSeconds(1));
             }
             await ObserveAsync(client,
                 () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
-            Assert.Equal(seconds == 10, viewModel.IsExternalPowerDischarging);
+            Assert.Equal(seconds == 2, viewModel.IsExternalPowerDischarging);
         }
         Assert.All(client.RequestedLiveReadings, sensors => Assert.Equal(LiveReadingSensors.BatteryPower, sensors));
         Assert.Equal(baseState, viewModel.TrayIconState);
@@ -98,11 +98,11 @@ public sealed partial class MainViewModelTests
         {
             option.IsEnabled = true;
         }
-        for (int seconds = 0; seconds <= 10; seconds += 2)
+        for (int seconds = 0; seconds <= 2; seconds++)
         {
             if (seconds > 0)
             {
-                time.Advance(TimeSpan.FromSeconds(2));
+                time.Advance(TimeSpan.FromSeconds(1));
             }
             await ObserveAsync(client,
                 () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);

@@ -5,7 +5,7 @@ namespace OpenBlade.Tray;
 /// <summary>Tracks sustained discharge using fresh, explicitly requested battery readings.</summary>
 internal sealed class ExternalPowerDischargeTracker
 {
-    internal static readonly TimeSpan ConfirmationInterval = TimeSpan.FromSeconds(10);
+    internal static readonly TimeSpan ConfirmationInterval = TimeSpan.FromSeconds(2);
     private readonly TimeProvider timeProvider;
     private long? dischargeStartedAt;
     private long? lastSampleAt;

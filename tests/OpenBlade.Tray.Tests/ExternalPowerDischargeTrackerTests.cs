@@ -13,10 +13,10 @@ public sealed class ExternalPowerDischargeTrackerTests
     {
         var time = new ManualTimeProvider();
         var tracker = new ExternalPowerDischargeTracker(time);
-        for (int seconds = 0; seconds <= 10; seconds += 2)
+        for (int seconds = 0; seconds <= 2; seconds++)
         {
             ObserveAt(tracker, time, seconds, -5000);
-            Assert.Equal(seconds == 10, tracker.IsDischarging);
+            Assert.Equal(seconds == 2, tracker.IsDischarging);
         }
         Assert.Equal(1, tracker.Episode);
         tracker.ObserveSource(PowerSource.Battery, deviceVerified: false);
@@ -29,7 +29,7 @@ public sealed class ExternalPowerDischargeTrackerTests
         Assert.Equal(1, tracker.Episode);
         ObserveAt(tracker, time, 95, 0);
         Assert.False(tracker.IsDischarging);
-        for (int seconds = 100; seconds <= 110; seconds += 2)
+        for (int seconds = 100; seconds <= 102; seconds++)
         {
             ObserveAt(tracker, time, seconds, -5000);
         }
@@ -62,12 +62,33 @@ public sealed class ExternalPowerDischargeTrackerTests
         var tracker = new ExternalPowerDischargeTracker(time);
         ObserveAt(tracker, time, 0, -5000);
 
-        time.UtcNow = Start.AddSeconds(2 + adjustmentSeconds);
-        ObserveAt(tracker, time, 2, -5000);
+        time.UtcNow = Start.AddSeconds(1 + adjustmentSeconds);
+        ObserveAt(tracker, time, 1, -5000);
         Assert.False(tracker.IsDischarging);
 
-        time.UtcNow = time.UtcNow.AddSeconds(8);
-        ObserveAt(tracker, time, 10, -5000);
+        time.UtcNow = time.UtcNow.AddSeconds(1);
+        ObserveAt(tracker, time, 2, -5000);
+        Assert.True(tracker.IsDischarging);
+        Assert.Equal(1, tracker.Episode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(5000)]
+    public void InterruptedDischargeRestartsTwoSecondConfirmation(int? interruption)
+    {
+        var time = new ManualTimeProvider();
+        var tracker = new ExternalPowerDischargeTracker(time);
+        ObserveAt(tracker, time, 0, -5000);
+        ObserveAt(tracker, time, 1, interruption);
+        ObserveAt(tracker, time, 2, -5000);
+        time.Timestamp = TimeSpan.FromMilliseconds(3999).Ticks;
+        tracker.Observe(-5000, MaximumGap);
+        Assert.False(tracker.IsDischarging);
+        Assert.Equal(0, tracker.Episode);
+
+        ObserveAt(tracker, time, 4, -5000);
         Assert.True(tracker.IsDischarging);
         Assert.Equal(1, tracker.Episode);
     }
