@@ -2866,4 +2866,19 @@ OpenBlade did not retry any stop request.</value>
   <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
     <value>Load battery history</value>
   </data>
+  <data name="KeyboardBackend_FunctionBehaviorDescription.Text" xml:space="preserve">
+    <value>Choose whether F1–F12 or multimedia keys work without Fn.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionBehaviorExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Function key behavior</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>SnapTap (A/D)</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
+    <value>Razer driver uses the built-in keyboard. Windows hook uses all keyboards.</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
+    <value>Razer driver uses the built-in keyboard. Windows hook uses all keyboards.</value>
+  </data>
 </root>

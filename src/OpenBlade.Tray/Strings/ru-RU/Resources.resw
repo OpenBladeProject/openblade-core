@@ -2866,4 +2866,19 @@ OpenBlade повторно проверит этот список и остан�
   <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
     <value>Источник питания</value>
   </data>
+  <data name="KeyboardBackend_FunctionBehaviorDescription.Text" xml:space="preserve">
+    <value>Выберите, что работает без Fn: F1–F12 или мультимедийные функции.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
+    <value>Драйвер Razer обрабатывает ввод со встроенной клавиатуры, а перехват Windows — со всех клавиатур.</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
+    <value>Драйвер Razer обрабатывает ввод со встроенной клавиатуры, а перехват Windows — со всех клавиатур.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionBehaviorExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Поведение функциональных клавиш</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>SnapTap (A/D)</value>
+  </data>
 </root>

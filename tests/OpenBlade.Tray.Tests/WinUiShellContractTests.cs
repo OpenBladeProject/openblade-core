@@ -169,10 +169,10 @@ public sealed class WinUiShellContractTests
         Assert.Equal("SnapTap_KeyboardHeader", Attribute(keyboardHeader, "Uid"));
         Assert.Null(Attribute(keyboardHeader, "Visibility"));
         Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
-        Assert.Equal("{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
+        Assert.Equal("{StaticResource SettingsLastExpanderRowStyle}", Attribute(row, "Style"));
         XElement rows = Assert.Single(card.Elements());
         Assert.Equal("StackPanel", rows.Name.LocalName);
-        Assert.Equal([keyboardBehavior, NamedElement(document, "Border", "FunctionRowBackendRow"), NamedElement(document, "Border", "TouchpadRow"), row, NamedElement(document, "Border", "SnapTapBackendRow")], rows.Elements().ToArray());
+        Assert.Equal([keyboardBehavior, NamedElement(document, "Border", "TouchpadRow"), row], rows.Elements().ToArray());
         Assert.Equal([keyboardHeader, card], keyboardSection.Elements().ToArray());
         Assert.Equal(
             "{StaticResource KeyboardBehaviorRowsTemplate}",
@@ -247,14 +247,54 @@ public sealed class WinUiShellContractTests
         foreach (string prefix in new[] { "SnapTap", "FunctionRow" })
         {
             XElement row = NamedElement(document, "Border", prefix + "BackendRow");
-            Assert.Equal(prefix == "SnapTap" ? "{StaticResource SettingsLastRowStyle}" : "{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
+            Assert.Equal("{StaticResource SettingsLastNeutralSubcardStyle}", Attribute(row, "Style"));
+            Assert.Null(Attribute(row, "CardReorder.CardId"));
+            XElement expander = row.Ancestors().First(element => element.Name.LocalName == "Expander");
+            Assert.Equal(prefix == "SnapTap" ? "SnapTapExpander" : "FunctionKeyBehaviorExpander", Attribute(expander, "Name"));
+            Assert.Equal("False", Attribute(expander, "IsExpanded"));
+            Assert.Equal("{StaticResource CardContentExpanderStyle}", Attribute(expander, "Style"));
+            XElement header = Assert.Single(expander.Elements(), element => element.Name.LocalName == "Expander.Header");
+            XElement headerBorder = Assert.Single(header.Elements());
+            Assert.Equal("{StaticResource SettingsExpanderHeaderStyle}", Attribute(headerBorder, "Style"));
+            Assert.DoesNotContain(header.Descendants(), element => element == row);
+            Assert.Contains(header.Descendants(), element => Attribute(element, "Name") ==
+                (prefix == "SnapTap" ? "SnapTapToggle" : "FunctionKeyPrimarySelector"));
+            XElement subtitle = Assert.Single(row.Descendants(), element =>
+                Attribute(element, "Uid") == "KeyboardBackend_" + prefix + "Description");
+            Assert.Equal("{StaticResource SecondaryTextStyle}", Attribute(subtitle, "Style"));
+            Assert.Equal("Wrap", Attribute(subtitle, "TextWrapping"));
+            Assert.False(string.IsNullOrWhiteSpace(Attribute(subtitle, "Text")));
             XElement selector = NamedElement(document, "ResponsiveChoiceSelector", prefix + "BackendSelector");
             Assert.False(string.IsNullOrWhiteSpace(Attribute(selector, "AccessibleName")));
             Assert.Equal("Label", Attribute(selector, "DisplayMemberPath"));
             Assert.DoesNotContain(row.Descendants(), element => Attribute(element, "FontSize") is not null || Attribute(element, "Height") is not null);
             Assert.Equal("Wrap", Attribute(NamedElement(document, "TextBlock", prefix + "WindowsHookHelp"), "TextWrapping"));
         }
-        Assert.Equal("{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}", Attribute(NamedElement(document, "Border", "FunctionRowBackendRow"), "Visibility"));
+        foreach ((string key, string baseKey) in new[]
+                 {
+                     ("SettingsExpanderRowStyle", "SettingsRowStyle"),
+                     ("SettingsLastExpanderRowStyle", "SettingsLastRowStyle"),
+                 })
+        {
+            XElement style = document.Descendants().Single(element => Attribute(element, "Key") == key);
+            Assert.Equal("{StaticResource " + baseKey + "}", Attribute(style, "BasedOn"));
+            Assert.Contains(style.Elements(), setter => Attribute(setter, "Property") == "Padding"
+                && Attribute(setter, "Value") == "0");
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "local:SettingsCardPointerVisual.IsEnabled"
+                && Attribute(setter, "Value") == "False");
+        }
+        Assert.Equal("{StaticResource SettingsExpanderRowStyle}",
+            Attribute(NamedElement(document, "Border", "FunctionKeyBehaviorRow"), "Style"));
+        XElement functionRow = NamedElement(document, "Border", "FunctionRowBackendRow");
+        XElement functionParent = NamedElement(document, "Border", "FunctionKeyBehaviorRow");
+        Assert.Contains(functionRow.Ancestors(), element => element == functionParent);
+        XElement functionTitle = functionParent.Descendants().Single(element =>
+            Attribute(element, "Uid") == "MainWindow_TextBlockFunctionKeyBehavior");
+        Assert.Equal("Wrap", Attribute(functionTitle, "TextWrapping"));
+        Assert.Equal("{x:Bind SupportsFunctionKeyPrimary, Mode=OneWay}", Attribute(functionParent, "Visibility"));
+        Assert.Equal("OnFunctionRowBackendLoaded", Attribute(functionRow, "Loaded"));
+        Assert.Equal("OnFunctionRowBackendUnloaded", Attribute(functionRow, "Unloaded"));
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.KeyboardBackends.cs");
         Assert.Contains("status?.Backend == selected", source, StringComparison.Ordinal);
         Assert.Contains("functionRowBackend == KeyboardInputBackend.RazerDriver", source, StringComparison.Ordinal);
@@ -2153,7 +2193,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
         Assert.Equal(11, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Key=\"SettingsLastSubcardStyle\"", xaml, StringComparison.Ordinal);
