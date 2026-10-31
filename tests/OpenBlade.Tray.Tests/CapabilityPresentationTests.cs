@@ -615,7 +615,9 @@ public sealed class CapabilityPresentationTests
                 Assert.DoesNotContain(style.Elements(), setter => Attribute(setter, "Property") is "Height" or "MinHeight");
                 Assert.All(style.Elements().Where(setter => Attribute(setter, "Property") == "Padding"),
                     setter => Assert.Contains(Attribute(setter, "Value"),
-                        new[] { "16,14", "{StaticResource DashboardSingleLineRowPadding}" }));
+                        Attribute(style, "Key") is "SettingsExpanderRowStyle" or "SettingsLastExpanderRowStyle"
+                            ? new[] { "0" }
+                            : new[] { "16,14", "{StaticResource DashboardSingleLineRowPadding}" }));
             }
         }
         XElement[] rows = document.Descendants().Where(element => element.Name.LocalName == "Border"
@@ -687,7 +689,7 @@ public sealed class CapabilityPresentationTests
                 && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
-        Assert.Equal(15, compactRows.Length);
+        Assert.Equal(14, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -737,7 +739,6 @@ public sealed class CapabilityPresentationTests
                 "Battery protection",
                 "Charge limit",
                 "Temporary full charge",
-                "Function key behavior",
                 "Block the Windows key",
                 "Block Alt+Tab",
                 "Startup animation",
@@ -1223,9 +1224,10 @@ public sealed class CapabilityPresentationTests
             string? name = Attribute(usage, "Name");
             if (name is "SnapTapBackendSelector" or "FunctionRowBackendSelector")
             {
+                string target = name == "SnapTapBackendSelector" ? name : "controls.Selector";
                 string selected = name == "SnapTapBackendSelector" ? "snapTapBackend" : "functionRowBackend";
-                Assert.Contains(name + ".ItemsSource = options;", backendSource, StringComparison.Ordinal);
-                Assert.Contains(name + ".SelectedItem = options.FirstOrDefault(option => option.Value == "
+                Assert.Contains(target + ".ItemsSource = options;", backendSource, StringComparison.Ordinal);
+                Assert.Contains(target + ".SelectedItem = options.FirstOrDefault(option => option.Value == "
                     + selected + ");", backendSource, StringComparison.Ordinal);
             }
             else

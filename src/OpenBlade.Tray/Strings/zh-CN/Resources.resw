@@ -2849,4 +2849,19 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
     <value>供电来源</value>
   </data>
+  <data name="KeyboardBackend_FunctionBehaviorDescription.Text" xml:space="preserve">
+    <value>选择无需按 Fn 即可使用 F1–F12 或多媒体功能。</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
+    <value>Razer 驱动处理内置键盘输入，Windows 钩子处理所有键盘输入。</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
+    <value>Razer 驱动处理内置键盘输入，Windows 钩子处理所有键盘输入。</value>
+  </data>
+  <data name="KeyboardBackend_FunctionBehaviorExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>功能键行为</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>SnapTap（A/D）</value>
+  </data>
 </root>

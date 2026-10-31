@@ -2866,4 +2866,19 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
     <value>[!! Lóád báttérý hístórý ~~~~~~~ !!]</value>
   </data>
+  <data name="KeyboardBackend_FunctionBehaviorDescription.Text" xml:space="preserve">
+    <value>[!! Chóósé whéthér F1–F12 ór múltímédíá kéýs wórk wíthóút Fn. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionBehaviorExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Fúnctíón kéý béhávíór ~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! SnápTáp (Á/D) ~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
+    <value>[!! Razer drívér úsés thé búílt-ín kéýbóárd. Windows hóók úsés áll kéýbóárds. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
+    <value>[!! Razer drívér úsés thé búílt-ín kéýbóárd. Windows hóók úsés áll kéýbóárds. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

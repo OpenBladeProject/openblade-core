@@ -808,6 +808,11 @@ public partial class App
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                     }
+                    if (captureSnapTap && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
+                        "OPENBLADE_LOCALIZATION_SNAPSHOT_KEYBOARD_INPUTS")))
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 1120);
+                    }
                     snapshotMainWindow.AppWindow.Resize(snapshotSize);
                     if (captureDischargeSettings)
                     {
