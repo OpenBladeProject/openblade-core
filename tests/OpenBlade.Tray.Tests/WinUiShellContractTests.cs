@@ -247,7 +247,10 @@ public sealed class WinUiShellContractTests
         foreach (string prefix in new[] { "SnapTap", "FunctionRow" })
         {
             XElement row = NamedElement(document, "Border", prefix + "BackendRow");
-            Assert.Equal("{StaticResource SettingsLastNeutralSubcardStyle}", Attribute(row, "Style"));
+            Assert.Equal(prefix == "SnapTap"
+                ? "{StaticResource SettingsLastNeutralSubcardStyle}"
+                : Attribute(NamedElement(document, "Border", "ThxNormalizationCell"), "Style"),
+                Attribute(row, "Style"));
             Assert.Null(Attribute(row, "CardReorder.CardId"));
             XElement expander = row.Ancestors().First(element => element.Name.LocalName == "Expander");
             Assert.Equal(prefix == "SnapTap" ? "SnapTapExpander" : "FunctionKeyBehaviorExpander", Attribute(expander, "Name"));
@@ -2192,8 +2195,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(11, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
-        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
+        Assert.Equal(12, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Key=\"SettingsLastSubcardStyle\"", xaml, StringComparison.Ordinal);

@@ -374,15 +374,23 @@ public sealed class CapabilityPresentationTests
             && Attribute(setter, "Value")
                 == "{ThemeResource SubtleFillColorSecondaryBrush}");
 
+        XElement reference = NamedElement(document, "Expander", "ThxAudioEnhancements");
+        XElement referenceHeader = reference.Elements().Single(element =>
+            element.Name.LocalName == "Expander.Header").Elements().Single();
+        XElement referenceContent = Assert.Single(referenceHeader.Elements());
+
         foreach (string name in new[]
                  {
                      "NavigationMenuExpander",
                      "TaskbarHoverLabelExpander",
                      "ThxAudioEnhancements",
                      "ThxAudioApplications",
+                     "FunctionKeyBehaviorExpander",
+                     "SnapTapExpander",
                  })
         {
             XElement expander = NamedElement(document, "Expander", name);
+            Assert.Equal(Attribute(reference, "Style"), Attribute(expander, "Style"));
             XElement header = Assert.Single(
                 expander.Elements()
                     .Where(element => element.Name.LocalName == "Expander.Header")
@@ -391,6 +399,8 @@ public sealed class CapabilityPresentationTests
             Assert.Equal(
                 "{StaticResource SettingsExpanderHeaderStyle}",
                 Attribute(header, "Style"));
+            XElement content = Assert.Single(header.Elements());
+            Assert.Equal(Attribute(referenceContent, "Margin"), Attribute(content, "Margin"));
         }
     }
 

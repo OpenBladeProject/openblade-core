@@ -1237,7 +1237,7 @@
                                     </Grid>
                                 </Border>
                             </Expander.Header>
-                            <Border x:Name="FunctionRowBackendRow" Style="{StaticResource SettingsLastNeutralSubcardStyle}"
+                            <Border x:Name="FunctionRowBackendRow" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Loaded="OnFunctionRowBackendLoaded" Unloaded="OnFunctionRowBackendUnloaded">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
