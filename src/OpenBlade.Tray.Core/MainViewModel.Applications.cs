@@ -11,42 +11,59 @@ public sealed partial class MainViewModel
             ?? TrayText.Get("Unknown application")
         : TrayText.Get("Power-source profile");
 
-    public async Task<bool> SaveApplicationProfileAsync(
+    public Task<bool> SaveApplicationProfileAsync(
         ApplicationProfileDefinition profile,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(profile);
-        ApplicationProfileDefinition[] updated = Profiles.ApplicationProfiles
-            .Where(item => item.Id != profile.Id).ToArray();
-        int existingIndex = Profiles.ApplicationProfiles.ToList().FindIndex(item => item.Id == profile.Id);
-        List<ApplicationProfileDefinition> ordered = [.. updated];
-        ordered.Insert(existingIndex < 0 ? ordered.Count : existingIndex, profile);
-        return await SaveApplicationProfilesAsync(ordered, cancellationToken);
+        return SaveApplicationProfilesAsync(profiles =>
+        {
+            ApplicationProfileDefinition[] updated = profiles.ApplicationProfiles
+                .Where(item => item.Id != profile.Id).ToArray();
+            int existingIndex = profiles.ApplicationProfiles.ToList().FindIndex(item => item.Id == profile.Id);
+            List<ApplicationProfileDefinition> ordered = [.. updated];
+            ordered.Insert(existingIndex < 0 ? ordered.Count : existingIndex, profile);
+            return profiles with { ApplicationProfiles = ordered };
+        }, cancellationToken);
     }
 
+    public Task<bool> SetApplicationProfileEnabledAsync(
+        Guid id, bool enabled, CancellationToken cancellationToken) =>
+        SaveApplicationProfilesAsync(profiles => profiles with
+        {
+            ApplicationProfiles = profiles.ApplicationProfiles
+                .Select(profile => profile.Id == id ? profile with { Enabled = enabled } : profile).ToArray(),
+        }, cancellationToken);
+
     public Task<bool> RemoveApplicationProfileAsync(Guid id, CancellationToken cancellationToken) =>
-        SaveApplicationProfilesAsync(Profiles.ApplicationProfiles.Where(item => item.Id != id).ToArray(),
-            cancellationToken);
+        SaveApplicationProfilesAsync(profiles => profiles with
+        {
+            ApplicationProfiles = profiles.ApplicationProfiles.Where(item => item.Id != id).ToArray(),
+        }, cancellationToken);
 
     private async Task<bool> SaveApplicationProfilesAsync(
-        IReadOnlyList<ApplicationProfileDefinition> applicationProfiles,
+        Func<ProfileSet, ProfileSet> update,
         CancellationToken cancellationToken)
     {
-        if (!CanMutate)
+        using var persistenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, lifetime.Token);
+        cancellationToken = persistenceCancellation.Token;
+        if (!await BeginProfilePersistenceAsync(cancellationToken))
         {
             return false;
         }
-        ProfileSet candidate = Profiles with { ApplicationProfiles = applicationProfiles };
-        bool persisted = false;
-        await RunOperationAsync(
-            token => serviceClient.UpdateProfilesAsync(candidate, token),
-            cancellationToken,
-            result => persisted = result.Status is
-                ControlOperationStatus.Stored or ControlOperationStatus.Applied);
-        if (persisted)
+        try
         {
-            Profiles = candidate;
+            if (!CanMutate)
+            {
+                return false;
+            }
+            ProfileSet candidate = update(Profiles);
+            return candidate == Profiles || await PersistProfileSetAsync(candidate, cancellationToken);
         }
-        return persisted;
+        finally
+        {
+            profilePersistenceGate.Release();
+        }
     }
 }

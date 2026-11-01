@@ -1095,7 +1095,10 @@ public static class IpcMessageCodec
         && ValidDisplay(value.Display);
 
     private static bool ValidProfileDisplays(ProfileSet profiles) =>
-        ValidDisplay(profiles.PluggedIn.Display)
+        profiles.PluggedIn is not null
+        && profiles.Battery is not null
+        && profiles.UsbC is not null
+        && ValidDisplay(profiles.PluggedIn.Display)
         && ValidDisplay(profiles.Battery.Display)
         && ValidDisplay(profiles.UsbC.Display);
 

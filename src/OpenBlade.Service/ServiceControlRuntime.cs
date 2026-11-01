@@ -1609,8 +1609,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         token).ConfigureAwait(false);
                     if (restored.Status != ControlOperationStatus.Applied)
                     {
+                        // Saving profiles has already committed. Report that durable
+                        // outcome even when the separate lighting restore is blocked.
                         return restored with
                         {
+                            Status = ControlOperationStatus.Stored,
                             Message = $"Profiles were stored. Lighting restore result: {restored.Message}",
                         };
                     }
@@ -1731,13 +1734,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         long sequence,
         CancellationTokenSource ownedCancellation)
     {
+        // Renewal may dispose the old source while its continuation is queued.
+        // The captured token remains usable after that source is disposed.
+        CancellationToken token = ownedCancellation.Token;
         try
         {
             await Task.Delay(
                 ApplicationContextLeaseDuration,
                 timeProvider,
-                ownedCancellation.Token).ConfigureAwait(false);
-            await operationGate.WaitAsync(ownedCancellation.Token).ConfigureAwait(false);
+                token).ConfigureAwait(false);
+            await operationGate.WaitAsync(token).ConfigureAwait(false);
             try
             {
                 if (!ReferenceEquals(applicationContextLeaseCancellation, ownedCancellation)
@@ -1760,7 +1766,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     await ApplyFullTransitionAsync(
                         current.ActivePowerSource,
-                        ownedCancellation.Token).ConfigureAwait(false);
+                        token).ConfigureAwait(false);
                 }
             }
             finally
@@ -1768,7 +1774,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 operationGate.Release();
             }
         }
-        catch (OperationCanceledException) when (ownedCancellation.IsCancellationRequested)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
         finally

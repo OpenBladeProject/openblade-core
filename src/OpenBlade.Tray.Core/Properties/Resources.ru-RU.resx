@@ -1702,4 +1702,10 @@
   <data name="Plugged in, battery discharging" xml:space="preserve">
     <value>Питание подключено, батарея разряжается</value>
   </data>
+  <data name="The imported profiles include settings that are unavailable on this laptop." xml:space="preserve">
+    <value>Импортированные профили содержат параметры, недоступные на этом ноутбуке.</value>
+  </data>
+  <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
+    <value>Источник питания изменился. Проверьте текущий профиль и повторите попытку.</value>
+  </data>
 </root>

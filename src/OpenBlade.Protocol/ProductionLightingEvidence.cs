@@ -753,9 +753,13 @@ internal static class ProductionLightingEvidenceSource
                 ? informationalVersion[(separator + 1)..]
                 : string.Empty;
         string assemblyPath = assembly.Location;
-        string sha256 = File.Exists(assemblyPath)
-            ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(assemblyPath)))
-            : string.Empty;
+        string sha256 = string.Empty;
+        if (File.Exists(assemblyPath))
+        {
+            using FileStream stream = new(assemblyPath, FileMode.Open, FileAccess.Read,
+                FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
+            sha256 = Convert.ToHexString(SHA256.HashData(stream));
+        }
         return new(informationalVersion, commitHash, sha256);
     }
 }

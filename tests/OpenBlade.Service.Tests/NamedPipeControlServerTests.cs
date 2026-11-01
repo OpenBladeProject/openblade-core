@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
@@ -589,6 +590,39 @@ public sealed class NamedPipeControlServerTests
         Assert.False(response.Success);
         Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
         Assert.NotEqual(Guid.Empty, response.RequestId);
+    }
+
+    [Theory]
+    [InlineData("pluggedIn")]
+    [InlineData("battery")]
+    [InlineData("usbC")]
+    public async Task NullPowerProfile_IsRejectedAndNextConnectionRemainsUsable(string member)
+    {
+        TestServer context = CreateServer();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        byte[] validFrame = await EncodeAsync(new UpdateProfilesRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), ProfileDefaults.CreateSafeDefaults()));
+        JsonObject request = JsonNode.Parse(validFrame.AsSpan(sizeof(int)))!.AsObject();
+        request["profiles"]![member] = null;
+        Task rejected = context.Server.ServeOnceAsync(timeout.Token);
+        await using (NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token))
+        {
+            await client.WriteAsync(Frame(JsonSerializer.SerializeToUtf8Bytes(request)), timeout.Token);
+            ServiceResponse response = Assert.IsType<ServiceResponse>(
+                await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+            Assert.False(response.Success);
+            await rejected;
+        }
+        Assert.Equal(0, context.Runtime.ActivationCalls);
+
+        Task accepted = context.Server.ServeOnceAsync(timeout.Token);
+        await using NamedPipeClientStream next = await ConnectAsync(context.PipeName, timeout.Token);
+        await IpcMessageCodec.WriteRequestAsync(next,
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), timeout.Token);
+        ServiceResponse status = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(next, timeout.Token));
+        Assert.True(status.Success);
+        await accepted;
     }
 
     [Fact]

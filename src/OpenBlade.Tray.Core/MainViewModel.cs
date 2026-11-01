@@ -3511,50 +3511,71 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             return false;
         }
-
         PowerSource source = ActivePowerSource;
-        var policy = new GamingModeKeyPolicy(blockWindowsKey, blockAltTab);
-        PowerProfile savedProfile = GetProfile(source);
-        PowerProfile updatedProfile = savedProfile with
-        {
-            LaptopBehavior = savedProfile.EffectiveLaptopBehavior with
-            {
-                GamingModeKeyPolicy = policy,
-            },
-        };
-        ProfileSet updatedProfiles = source switch
-        {
-            PowerSource.PluggedIn => Profiles with { PluggedIn = updatedProfile },
-            PowerSource.Battery => Profiles with { Battery = updatedProfile },
-            PowerSource.UsbC => Profiles with { UsbC = updatedProfile },
-            _ => throw new ArgumentOutOfRangeException(nameof(source)),
-        };
-        bool accepted = await RunOperationAsync(
-            token => serviceClient.UpdateProfilesAsync(updatedProfiles, token),
-            cancellationToken);
-        if (!accepted)
+        using var persistenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, lifetime.Token);
+        cancellationToken = persistenceCancellation.Token;
+        if (!await BeginProfilePersistenceAsync(cancellationToken))
         {
             return false;
         }
-
-        await dispatcher.InvokeAsync(
-            () =>
+        try
+        {
+            if (ActivePowerSource != source)
             {
-                LaptopBehaviorProfileSettings? rebasedDraft =
-                    activeProfileDraft.Source == source
-                        ? activeProfileDraft.LaptopBehavior
-                        : null;
-                Profiles = updatedProfiles;
-                if (rebasedDraft is not null)
+                await ReportProfilePersistenceBlockedAsync(
+                    TrayText.Get("The power source changed. Review the current profile and try again."), cancellationToken);
+                return false;
+            }
+            if (!CanEditGamingModeKeyPolicy)
+            {
+                return false;
+            }
+
+            var policy = new GamingModeKeyPolicy(blockWindowsKey, blockAltTab);
+            PowerProfile savedProfile = GetProfile(source);
+            PowerProfile updatedProfile = savedProfile with
+            {
+                LaptopBehavior = savedProfile.EffectiveLaptopBehavior with
                 {
-                    rebasedDraft = activeProfileDraft.RebaseGamingModeKeyPolicy(rebasedDraft, policy);
-                    MarkActiveProfileDraft(
-                        source,
-                        laptopBehavior: rebasedDraft);
-                }
-            },
-            cancellationToken).ConfigureAwait(false);
-        return true;
+                    GamingModeKeyPolicy = policy,
+                },
+            };
+            ProfileSet updatedProfiles = source switch
+            {
+                PowerSource.PluggedIn => Profiles with { PluggedIn = updatedProfile },
+                PowerSource.Battery => Profiles with { Battery = updatedProfile },
+                PowerSource.UsbC => Profiles with { UsbC = updatedProfile },
+                _ => throw new ArgumentOutOfRangeException(nameof(source)),
+            };
+            bool accepted = await PersistProfileSetAsync(updatedProfiles, cancellationToken);
+            if (!accepted)
+            {
+                return false;
+            }
+
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    LaptopBehaviorProfileSettings? rebasedDraft =
+                        activeProfileDraft.Source == source
+                            ? activeProfileDraft.LaptopBehavior
+                            : null;
+                    if (rebasedDraft is not null)
+                    {
+                        rebasedDraft = activeProfileDraft.RebaseGamingModeKeyPolicy(rebasedDraft, policy);
+                        MarkActiveProfileDraft(
+                            source,
+                            laptopBehavior: rebasedDraft);
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            profilePersistenceGate.Release();
+        }
     }
 
     private GamingModeKeyPolicy CurrentGamingModeKeyPolicy =>
@@ -5252,6 +5273,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await command.DisposeAsync();
         }
+        // Direct profile actions can outlive their window event handler. Cancel
+        // queued work and drain the active save before releasing its service client.
+        await profilePersistenceGate.WaitAsync();
+        profilePersistenceGate.Release();
         await DisposeTelemetryAsync();
 
         if (activeWatch is not null)
@@ -6046,30 +6071,44 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ProfileSet profiles,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(profiles);
-        if (!TryGetSupportedProfileDraft(profiles, out ProfileSet validated))
+        using var persistenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, lifetime.Token);
+        cancellationToken = persistenceCancellation.Token;
+        if (!await BeginProfilePersistenceAsync(cancellationToken))
         {
             return false;
         }
-
-        bool accepted = await RunOperationAsync(
-            token => serviceClient.UpdateProfilesAsync(validated, token),
-            cancellationToken);
-        if (!accepted)
+        try
         {
-            return false;
-        }
-
-        await dispatcher.InvokeAsync(
-            () =>
+            ArgumentNullException.ThrowIfNull(profiles);
+            if (!TryGetSupportedProfileDraft(profiles, out ProfileSet validated))
             {
-                Profiles = validated;
-                ClearActiveProfileDraft();
-                SetProfileEditorsDirty(false);
-                LoadProfileEditors(validated);
-            },
-            cancellationToken);
-        return true;
+                await ReportProfilePersistenceBlockedAsync(
+                    TrayText.Get("The imported profiles include settings that are unavailable on this laptop."),
+                    cancellationToken);
+                return false;
+            }
+
+            bool accepted = await PersistProfileSetAsync(validated, cancellationToken);
+            if (!accepted)
+            {
+                return false;
+            }
+
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    ClearActiveProfileDraft();
+                    SetProfileEditorsDirty(false);
+                    LoadProfileEditors(validated);
+                },
+                cancellationToken);
+            return true;
+        }
+        finally
+        {
+            profilePersistenceGate.Release();
+        }
     }
 
     public bool CanImportKeyboardLighting(KeyboardLightingPreset preset)
@@ -7207,41 +7246,61 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private async Task SetHostGamingModeAsync(bool enabled, CancellationToken token)
     {
         PowerSource source = ActivePowerSource;
-        PowerProfile savedProfile = GetProfile(source);
-        PowerProfile updatedProfile = savedProfile with
+        using var persistenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            token, lifetime.Token);
+        token = persistenceCancellation.Token;
+        if (!await BeginProfilePersistenceAsync(token))
         {
-            LaptopBehavior = savedProfile.EffectiveLaptopBehavior with
-            {
-                GamingModeEnabled = enabled,
-            },
-        };
-        ProfileSet updatedProfiles = source switch
-        {
-            PowerSource.PluggedIn => Profiles with { PluggedIn = updatedProfile },
-            PowerSource.Battery => Profiles with { Battery = updatedProfile },
-            PowerSource.UsbC => Profiles with { UsbC = updatedProfile },
-            _ => throw new ArgumentOutOfRangeException(nameof(source)),
-        };
-        SetOneShotOperationInProgress(OneShotLaptopControl.GamingMode, true);
+            return;
+        }
         try
         {
-            // This is a durable Session Agent preference, not a firmware setter.
-            // Keep the presented value unchanged if profile persistence fails.
-            bool accepted = await RunOperationAsync(
-                cancellationToken => serviceClient.UpdateProfilesAsync(
-                    updatedProfiles, cancellationToken),
-                token);
-            if (accepted)
+            if (ActivePowerSource != source)
             {
-                Profiles = updatedProfiles;
-                GamingModeEnabled = HasConfirmedPowerSource
-                    ? GetProfile(ActivePowerSource).EffectiveLaptopBehavior.GamingModeEnabled ?? false
-                    : null;
+                await ReportProfilePersistenceBlockedAsync(
+                    TrayText.Get("The power source changed. Review the current profile and try again."), token);
+                return;
+            }
+            if (!CanMutate)
+            {
+                return;
+            }
+            PowerProfile savedProfile = GetProfile(source);
+            PowerProfile updatedProfile = savedProfile with
+            {
+                LaptopBehavior = savedProfile.EffectiveLaptopBehavior with
+                {
+                    GamingModeEnabled = enabled,
+                },
+            };
+            ProfileSet updatedProfiles = source switch
+            {
+                PowerSource.PluggedIn => Profiles with { PluggedIn = updatedProfile },
+                PowerSource.Battery => Profiles with { Battery = updatedProfile },
+                PowerSource.UsbC => Profiles with { UsbC = updatedProfile },
+                _ => throw new ArgumentOutOfRangeException(nameof(source)),
+            };
+            SetOneShotOperationInProgress(OneShotLaptopControl.GamingMode, true);
+            try
+            {
+                // This is a durable Session Agent preference, not a firmware setter.
+                // Keep the presented value unchanged if profile persistence fails.
+                bool accepted = await PersistProfileSetAsync(updatedProfiles, token);
+                if (accepted)
+                {
+                    GamingModeEnabled = HasConfirmedPowerSource
+                        ? GetProfile(ActivePowerSource).EffectiveLaptopBehavior.GamingModeEnabled ?? false
+                        : null;
+                }
+            }
+            finally
+            {
+                SetOneShotOperationInProgress(OneShotLaptopControl.GamingMode, false);
             }
         }
         finally
         {
-            SetOneShotOperationInProgress(OneShotLaptopControl.GamingMode, false);
+            profilePersistenceGate.Release();
         }
     }
 
@@ -7304,52 +7363,62 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private async Task SaveProfilesAsync(object? parameter, CancellationToken token)
     {
-        if (parameter is null
-            && !HasActiveProfileDraft
-            && HasSaveableUnsetLaptopProfileField)
-        {
-            CaptureSaveableUnsetProfileFields(ProfileDraftGroup.Laptop);
-        }
-
-        bool savingDashboardDraft = HasActiveProfileDraft || HasGlobalBatteryPolicyDraft;
-        ProfileSet? candidate = savingDashboardDraft
-            ? CreateProfileSetWithDashboardDraft()
-            : parameter as ProfileSet;
-        if (!TryGetSupportedProfileDraft(candidate, out ProfileSet draft))
+        using var persistenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            token, lifetime.Token);
+        token = persistenceCancellation.Token;
+        if (!await BeginProfilePersistenceAsync(token))
         {
             return;
         }
-
-        bool accepted = await RunOperationAsync(
-            cancellationToken => serviceClient.UpdateProfilesAsync(draft, cancellationToken),
-            token);
-        if (accepted)
+        try
         {
-            if (savingDashboardDraft)
+            if (parameter is null
+                && !HasActiveProfileDraft
+                && HasSaveableUnsetLaptopProfileField)
             {
-                try
+                CaptureSaveableUnsetProfileFields(ProfileDraftGroup.Laptop);
+            }
+
+            bool savingDashboardDraft = HasActiveProfileDraft || HasGlobalBatteryPolicyDraft;
+            ProfileSet? candidate = savingDashboardDraft
+                ? CreateProfileSetWithDashboardDraft()
+                : parameter as ProfileSet;
+            if (!TryGetSupportedProfileDraft(candidate, out ProfileSet draft))
+            {
+                return;
+            }
+
+            bool accepted = await PersistProfileSetAsync(draft, token);
+            if (accepted)
+            {
+                if (savingDashboardDraft)
                 {
-                    if (HasActiveProfileDraft)
+                    try
                     {
-                        await ClearActiveProfileHardwareOverridesAsync(token);
+                        if (HasActiveProfileDraft)
+                        {
+                            await ClearActiveProfileHardwareOverridesAsync(token);
+                        }
+                    }
+                    finally
+                    {
+                        // The profile update is already durable in the service. Keep the
+                        // UI in sync even if clearing an equivalent temporary override
+                        // fails or the operation is canceled afterward.
+                        ClearActiveProfileDraft();
+                        ClearPendingBatteryPolicy();
                     }
                 }
-                finally
+                else
                 {
-                    // The profile update is already durable in the service. Keep the
-                    // UI in sync even if clearing an equivalent temporary override
-                    // fails or the operation is canceled afterward.
-                    Profiles = draft;
-                    ClearActiveProfileDraft();
-                    ClearPendingBatteryPolicy();
+                    SetProfileEditorsDirty(false);
+                    LoadProfileEditors(draft);
                 }
             }
-            else
-            {
-                Profiles = draft;
-                SetProfileEditorsDirty(false);
-                LoadProfileEditors(draft);
-            }
+        }
+        finally
+        {
+            profilePersistenceGate.Release();
         }
     }
 
@@ -7412,33 +7481,44 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ProfileDraftGroup group,
         CancellationToken token)
     {
-        CaptureSaveableUnsetProfileFields(group);
-        if (!CanSaveActiveProfileDraft(group)
-            || !TryGetSupportedProfileDraft(
-                CreateProfileSetWithActiveDraft(group),
-                out ProfileSet draft))
+        using var persistenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            token, lifetime.Token);
+        token = persistenceCancellation.Token;
+        if (!await BeginProfilePersistenceAsync(token))
         {
             return;
         }
-
-        bool accepted = await RunOperationAsync(
-            cancellationToken => serviceClient.UpdateProfilesAsync(draft, cancellationToken),
-            token);
-        if (!accepted)
-        {
-            return;
-        }
-
         try
         {
-            await ClearActiveProfileHardwareOverridesAsync(token, group);
+            CaptureSaveableUnsetProfileFields(group);
+            if (!CanSaveActiveProfileDraft(group)
+                || !TryGetSupportedProfileDraft(
+                    CreateProfileSetWithActiveDraft(group),
+                    out ProfileSet draft))
+            {
+                return;
+            }
+
+            bool accepted = await PersistProfileSetAsync(draft, token);
+            if (!accepted)
+            {
+                return;
+            }
+
+            try
+            {
+                await ClearActiveProfileHardwareOverridesAsync(token, group);
+            }
+            finally
+            {
+                // The profile update is durable even when clearing an equivalent
+                // temporary hardware override fails afterward.
+                ClearActiveProfileDraft(group);
+            }
         }
         finally
         {
-            // The profile update is durable even when clearing an equivalent
-            // temporary hardware override fails afterward.
-            Profiles = draft;
-            ClearActiveProfileDraft(group);
+            profilePersistenceGate.Release();
         }
     }
 
@@ -7792,18 +7872,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         catch (Exception exception)
         {
-            DiagnosticTrace.TraceException(
-                "OpenBlade.Tray.MainViewModel",
-                "RunOperation",
-                exception);
-            string message = TrayText.Format("Operation failed: {0}", exception.Message);
-            await dispatcher.InvokeAsync(
-                () =>
-                {
-                    OperationStatusMessage = message;
-                    TroubleshootingRecentErrorStatus = FormatTroubleshootingValue(message);
-                },
-                token);
+            await ReportOperationFailureAsync(exception, token);
             return false;
         }
     }

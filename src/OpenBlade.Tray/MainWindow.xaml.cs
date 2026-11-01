@@ -5581,10 +5581,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
             if (!await ViewModel.ImportProfilesAsync(profiles, CancellationToken.None))
             {
-                throw new InvalidDataException(
-                    LocalizedResources.Get(
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(ViewModel.OperationStatusMessage)
+                    ? LocalizedResources.Get(
                         "MainWindow_ProfileImport_UnavailableSettings",
-                        "The imported profiles include settings that are unavailable on this laptop."));
+                        "The imported profiles include settings that are unavailable on this laptop.")
+                    : ViewModel.OperationStatusMessage);
             }
         }
         catch (Exception exception)

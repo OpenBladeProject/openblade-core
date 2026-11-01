@@ -1702,4 +1702,10 @@
   <data name="Plugged in, battery discharging" xml:space="preserve">
     <value>已接通电源，电池正在放电</value>
   </data>
+  <data name="The imported profiles include settings that are unavailable on this laptop." xml:space="preserve">
+    <value>导入的配置方案中包含此笔记本电脑不支持的设置。</value>
+  </data>
+  <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
+    <value>电源来源已更改。请检查当前配置方案后重试。</value>
+  </data>
 </root>

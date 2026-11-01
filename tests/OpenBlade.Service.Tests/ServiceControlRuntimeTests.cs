@@ -5301,6 +5301,67 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(writesWhileSuppressed, context.Device.LightingSetCalls);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ProfileEdit_LightingRestoreFailureStillReportsDurableSave(bool unavailable)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(true, null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff, true, CancellationToken.None);
+        int previousWrites = context.Device.LightingSetCalls;
+        context.Provider.Available = !unavailable;
+        if (!unavailable)
+        {
+            context.Device.LightingFailure = new IOException("Lighting restore failed.");
+        }
+        ProfileSet updated = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                LightingPowerPolicy = LightingPowerPolicy.Disabled,
+            },
+        };
+
+        ControlOperationResult result = await context.Runtime.UpdateProfilesAsync(
+            updated, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("Lighting restore result:", result.Message);
+        Assert.Equal(updated, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(updated, (await context.Store.LoadAsync(CancellationToken.None)).Profiles);
+        Assert.Equal(previousWrites + (unavailable ? 0 : 1), context.Device.LightingSetCalls);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+    }
+
+    [Fact]
+    public async Task ProfileEdit_QuarantinedConfigurationDoesNotReportDurableSave()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "profiles.json");
+        byte[] original = "invalid profile document"u8.ToArray();
+        await File.WriteAllBytesAsync(path, original);
+        TestContext context = CreateContext(providerAvailable: true);
+        ProfileSet prior = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult result = await context.Runtime.UpdateProfilesAsync(
+            prior with { BatteryPolicy = BatteryPolicy.Create(75) }, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(prior, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
     [Fact]
     public async Task LightingPowerPolicy_ExternalChangeStagesSuppressionWithoutWrite()
     {

@@ -24,6 +24,7 @@ public sealed partial class MainViewModel
     private TaskCompletionSource? telemetryAppendsDrained;
     private bool telemetryEnabled;
     private long telemetryEnableGeneration;
+    private long telemetrySourceGeneration;
 
     public bool TelemetryEnabled
     {
@@ -300,28 +301,57 @@ public sealed partial class MainViewModel
             throw new InvalidOperationException(TrayText.Get("Telemetry is disabled."));
         }
         long enableGeneration = telemetryEnableGeneration;
-        TelemetrySessionDocument document = await telemetryReplayReader(
-            path,
-            timeProvider,
-            cancellationToken);
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-        TelemetryHistory history = await Task.Run(
-            () => BuildReplayHistory(document, cancellationToken),
-            cancellationToken);
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-        if (!TelemetryEnabled || telemetryEnableGeneration != enableGeneration)
+        long sourceGeneration = Interlocked.Increment(ref telemetrySourceGeneration);
+        try
         {
-            throw new InvalidOperationException(TrayText.Get("Telemetry is disabled."));
+            TelemetrySessionDocument document = await telemetryReplayReader(
+                path,
+                timeProvider,
+                cancellationToken);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            if (!TelemetryEnabled || telemetryEnableGeneration != enableGeneration)
+            {
+                throw new InvalidOperationException(TrayText.Get("Telemetry is disabled."));
+            }
+            if (sourceGeneration != Volatile.Read(ref telemetrySourceGeneration))
+            {
+                return;
+            }
+            TelemetryHistory history = await Task.Run(
+                () => BuildReplayHistory(document, cancellationToken),
+                cancellationToken);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            if (!TelemetryEnabled || telemetryEnableGeneration != enableGeneration)
+            {
+                throw new InvalidOperationException(TrayText.Get("Telemetry is disabled."));
+            }
+            if (sourceGeneration != Volatile.Read(ref telemetrySourceGeneration))
+            {
+                return;
+            }
+            telemetryReplaySession = document;
+            telemetryReplayHistory = history;
+            TelemetryErrorMessage = string.Empty;
+            NotifyTelemetryViewChanged();
+            Notify(nameof(RequiresTelemetryObservation));
         }
-        telemetryReplaySession = document;
-        telemetryReplayHistory = history;
-        TelemetryErrorMessage = string.Empty;
-        NotifyTelemetryViewChanged();
-        Notify(nameof(RequiresTelemetryObservation));
+        catch (Exception exception) when (sourceGeneration != Volatile.Read(ref telemetrySourceGeneration)
+            && Volatile.Read(ref disposed) == 0
+            && TelemetryEnabled && telemetryEnableGeneration == enableGeneration)
+        {
+            // A superseded load must not replace the current source with either
+            // its readings or its delayed failure message. Current errors still surface.
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainViewModel.Telemetry",
+                "ReadSupersededReplay",
+                exception);
+        }
     }
 
     public void CloseTelemetryReplay()
     {
+        // Returning to live also supersedes a replay that is still being read.
+        Interlocked.Increment(ref telemetrySourceGeneration);
         if (telemetryReplaySession is null)
         {
             return;

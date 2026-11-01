@@ -321,7 +321,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
         {
             if (state.SupportedBrightnessLevels.Count == 0)
             {
-                return Failure("Display brightness is unavailable.", state);
+                return Failure("Display brightness is unavailable.", state, submitted);
             }
             byte target = DisplayBrightnessLevels.SelectNearest(
                 settings.BrightnessPercent.Value,
