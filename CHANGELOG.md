@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.50.3] - 2026-11-01
+
 ### Added
 
 - Choose Windows hook or Razer driver separately for SnapTap and multimedia keys. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
@@ -2277,7 +2279,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.44.1-nightly.105...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.50.3...HEAD
 [0.44.1-nightly.105]: https://github.com/OSSBlade/openblade-core/compare/v0.44.0-nightly.104...v0.44.1-nightly.105
 [0.44.0-nightly.104]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...v0.44.0-nightly.104
 [0.43.0-nightly.103]: https://github.com/OSSBlade/openblade-core/compare/v0.42.2-nightly.102...v0.43.0-nightly.103
@@ -2326,3 +2328,5 @@ All notable changes to OpenBlade are documented in this file. The project follow
 [0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.5...v0.1.0-nightly.6
 [0.1.0-nightly.5]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.5
 [0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+
+[0.50.3]: https://github.com/OSSBlade/openblade-core/compare/v0.44.1-nightly.105...v0.50.3
