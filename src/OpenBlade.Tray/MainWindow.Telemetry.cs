@@ -180,7 +180,6 @@ public sealed partial class MainWindow
         {
             return;
         }
-        ViewModel.RefreshTelemetryFreshness();
         // History notifications render accepted samples. A failed/no-sample
         // observation still advances the live time axis, but a newer sample or
         // a replay selected before this dispatcher callback owns its own render.
@@ -188,6 +187,7 @@ public sealed partial class MainWindow
             && ViewModel.TelemetryReplaySession is null
             && ReferenceEquals(sampleBeforeObservation, ViewModel.LatestTelemetrySample))
         {
+            ViewModel.RefreshTelemetryFreshness();
             RefreshTelemetryChartPresentation();
         }
     }
@@ -227,7 +227,6 @@ public sealed partial class MainWindow
             {
                 await ViewModel.StartTelemetryRecordingAsync(result.Path, CancellationToken.None);
                 UpdateActiveObservationLoop();
-                RefreshTelemetryPresentation();
             }
         }, nameof(OnStartTelemetryRecording));
 
@@ -236,7 +235,6 @@ public sealed partial class MainWindow
         {
             _ = await ViewModel.StopTelemetryRecordingAsync(CancellationToken.None);
             UpdateActiveObservationLoop();
-            RefreshTelemetryPresentation();
         }, nameof(OnStopTelemetryRecording));
 
     private async void OnOpenTelemetryReplay(object sender, RoutedEventArgs args) =>
@@ -250,14 +248,12 @@ public sealed partial class MainWindow
             if (await picker.PickSingleFileAsync() is { } result)
             {
                 await ViewModel.OpenTelemetryReplayAsync(result.Path, CancellationToken.None);
-                RefreshTelemetryPresentation();
             }
         }, nameof(OnOpenTelemetryReplay));
 
     private void OnCloseTelemetryReplay(object sender, RoutedEventArgs args)
     {
         ViewModel.CloseTelemetryReplay();
-        RefreshTelemetryPresentation();
     }
 
     private async Task RunTelemetryActionAsync(Func<Task> action, string label)
@@ -285,7 +281,7 @@ public sealed partial class MainWindow
         {
             if (Volatile.Read(ref disposed) == 0)
             {
-                RefreshTelemetryPresentation();
+                RefreshTelemetryCommandPresentation();
             }
         }
     }

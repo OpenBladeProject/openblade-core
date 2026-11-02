@@ -69,6 +69,8 @@ public sealed class TelemetryHistoryTests
             .Series.Single(value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
 
         Assert.Equal(10, cpu.Points.Count);
+        Assert.Equal(new[] { 0, 4, 9, 13, 15, 22, 26, 30, 35, 39 }.Select(second => Start.AddSeconds(second)),
+            cpu.Points.Select(point => point.TimestampUtc));
         Assert.Contains(cpu.Points, point => point.Value is null);
         Assert.Equal(35, cpu.Statistics.Count);
         Assert.Equal(40, cpu.Statistics.Minimum);
@@ -170,6 +172,35 @@ public sealed class TelemetryHistoryTests
         Assert.Equal(new[] { 1, 2, 3 }.Select(second => Start.AddSeconds(second)),
             cpu.Points.Select(point => point.TimestampUtc));
         Assert.Equal(new double?[] { 51, null, 53 }, cpu.Points.Select(point => point.Value));
+    }
+
+    [Theory]
+    [InlineData(299)]
+    [InlineData(300)]
+    [InlineData(301)]
+    [InlineData(597)]
+    public void Downsampling_NearGapBudgetRetainsRepresentativeReadings(int gaps)
+    {
+        const int budget = 600;
+        var history = new TelemetryHistory();
+        // A valid start/end and enough real samples to always require downsampling.
+        for (int index = 0; index < 1400; index++)
+        {
+            history.AddSample(Sample(index, cpu: index % 2 == 1 && index < gaps * 2 ? null : 50));
+        }
+        TelemetryHistorySnapshot snapshot = history.Snapshot(maximumChartPoints: budget);
+        TelemetrySeriesSnapshot cpu = snapshot.Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+        Assert.InRange(cpu.Points.Count, 1, budget);
+        Assert.True(cpu.Points.Count(point => point.Value is not null) >= budget / 2);
+        Assert.Equal(Start, cpu.Points.First(point => point.Value is not null).TimestampUtc);
+        Assert.Equal(Start.AddSeconds(1399), cpu.Points.Last(point => point.Value is not null).TimestampUtc);
+        AssertNoInventedContinuity(cpu, snapshot.RawSamples);
+        Assert.Equal(1400 - gaps, cpu.Statistics.Count);
+        Assert.Equal(gaps, cpu.Statistics.MissingCount);
+        Assert.Equal(50, cpu.Statistics.Average);
+        Assert.Equal(cpu.Points, history.Snapshot(maximumChartPoints: budget).Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius).Points);
     }
 
     [Fact]

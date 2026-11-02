@@ -1154,10 +1154,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         if (args.PropertyName == nameof(MainViewModel.TelemetryHistorySnapshot))
         {
-            if (ViewModel.TelemetryReplaySession is null)
-            {
-                RefreshTelemetryChartPresentation();
-            }
+            RefreshTelemetryChartPresentation();
         }
         if (args.PropertyName == nameof(MainViewModel.LatestTelemetryFreshness))
         {
@@ -1169,12 +1166,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             // Initialization uses the same property without saving partial preferences.
             QueuePreferenceSave();
         }
-        if (args.PropertyName is nameof(MainViewModel.TelemetryReplaySession)
-            or nameof(MainViewModel.TelemetryEnabled))
+        if (args.PropertyName == nameof(MainViewModel.TelemetryEnabled))
         {
             RefreshTelemetryPresentation();
         }
         if (args.PropertyName is nameof(MainViewModel.IsTelemetryRecording)
+            or nameof(MainViewModel.TelemetryReplaySession)
             or nameof(MainViewModel.TelemetryErrorMessage))
         {
             RefreshTelemetryCommandPresentation();

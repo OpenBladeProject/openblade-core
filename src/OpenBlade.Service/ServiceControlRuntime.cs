@@ -494,6 +494,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly LaptopControlExecutor laptopControlExecutor;
     private int laptopRecoveryObservationActive;
+    private int laptopRecoveryPowerDestinationPending;
     private static readonly TimeSpan ApplicationContextLeaseDuration = TimeSpan.FromSeconds(15);
     private CancellationTokenSource? applicationContextLeaseCancellation;
     private Guid applicationContextInstanceId;
@@ -841,7 +842,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new ArgumentNullException(nameof(deviceProvider));
         this.deviceProvider.SetRecoveryWriteAdmission(() =>
             !laptopControlExecutor.RequiresReconciliation
-            && Volatile.Read(ref laptopRecoveryObservationActive) == 0);
+            && Volatile.Read(ref laptopRecoveryObservationActive) == 0
+            && Volatile.Read(ref laptopRecoveryPowerDestinationPending) == 0);
         this.history = history ?? throw new ArgumentNullException(nameof(history));
         this.lowPowerGate = lowPowerGate
             ?? throw new ArgumentNullException(nameof(lowPowerGate));
@@ -4878,6 +4880,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
+            if (laptopControlExecutor.RequiresReconciliation)
+            {
+                return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
+            }
             if (!current.DeviceVerified
                 || current.WritesBlocked
                 || current.Capabilities is null
@@ -9935,6 +9941,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 // A recovery observation is read-only for its entire operation,
                 // even when the fresh laptop-control read resolves uncertainty.
+                if (powerSource != PowerSource.ExternalUnknown)
+                {
+                    // Retained frame writers must not resume the old power
+                    // profile while its freshly observed destination is deferred.
+                    // The shared lighting gate also briefly defers Driver acquisition.
+                    Volatile.Write(ref laptopRecoveryPowerDestinationPending,
+                        Automation.PowerSource != powerSource ? 1 : 0);
+                }
                 Interlocked.Exchange(ref laptopRecoveryObservationActive, 1);
                 try
                 {
@@ -16049,7 +16063,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        bool laptopPendingOnEntry = laptopControlExecutor.RequiresReconciliation;
+        bool laptopRecoveryObservation = reconcileLaptopControls || laptopControlExecutor.RequiresReconciliation;
         if (reconcileLaptopControls)
         {
             await ReconcilePendingLaptopControlsAsync(cancellationToken, device).ConfigureAwait(false);
@@ -16065,10 +16079,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            if (laptopPendingOnEntry)
+            if (laptopRecoveryObservation)
             {
                 PublishVerifiedDeviceObservation(powerSource, powerSourceConfirmed,
-                    includeLiveReadings, batteryPowerFlowMilliwatts, observation, batteryHealth: null);
+                    includeLiveReadings, batteryPowerFlowMilliwatts, observation, batteryHealth: null,
+                    preserveRecoveryState: true);
                 PublishIfChanged(GetStatus() with
                 {
                     Message = laptopControlExecutor.RequiresReconciliation ? laptopControlExecutor.PendingMessage
@@ -16502,9 +16517,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool includeLiveReadings,
         int? batteryPowerFlowMilliwatts,
         FullDeviceObservation observation,
-        BatteryHealthStatus? batteryHealth)
+        BatteryHealthStatus? batteryHealth,
+        bool preserveRecoveryState = false)
     {
         ServiceStatusSnapshot current = GetStatus();
+        // A laptop-control recovery observation must not consume another
+        // recovery owner's provenance before its normal journal reconciliation.
+        bool deferredHyperBoostRecovery = preserveRecoveryState
+            && (ownsHyperBoost || hyperBoostRestorePending
+                || pendingIndeterminateHyperBoostEntryIntent is not null
+                || pendingIndeterminateHyperBoostExitIntent is not null);
         if (observation.Confirmed.HyperBoostActive == true
             && current.ConfirmedState?.HyperBoostActive != true
             && !ownsHyperBoost
@@ -16518,7 +16540,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // their direct journaled restoration path.
             AdvanceFanAuthorityEpoch();
         }
-        if (observation.Confirmed.HyperBoostActive == false)
+        if (!preserveRecoveryState && observation.Confirmed.HyperBoostActive == false)
         {
             if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
             {
@@ -16536,7 +16558,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             DeviceVerified = true,
-            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock,
+            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock || deferredHyperBoostRecovery,
             ObservationReason = !powerSourceConfirmed && powerSource != PowerSource.ExternalUnknown
                 ? DeviceObservationReason.RetainedPowerSource
                 : DeviceObservationReason.None,
@@ -16755,7 +16777,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private bool ChangePowerSourceCore(PowerSource powerSource)
     {
+        if (laptopControlExecutor.RequiresReconciliation)
+        {
+            // Keep the destination unconsumed until the read-only recovery
+            // operation finishes. A later ordinary observation applies that
+            // destination through fresh admission, without replaying the laptop write.
+            return false;
+        }
         bool changed = Automation.ChangePowerSource(powerSource);
+        // Normal fresh destination processing now owns admission, even if the
+        // source reverted while recovery was pending and no transition is needed.
+        Volatile.Write(ref laptopRecoveryPowerDestinationPending, 0);
         if (changed)
         {
             deferredRecoveredHyperBoostEntryIntent = null;
@@ -19457,6 +19489,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings currentSettings = current.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
         return settings.Mode == FanMode.ManualCurve
+            && Automation.PowerSource == current.ActivePowerSource
             && FanControlPowerPolicy.IsAvailable(current.ActivePowerSource, settings.Mode,
                 current.Capabilities?.SupportsManualFansOnLimitedPower == true)
             && currentSettings == settings

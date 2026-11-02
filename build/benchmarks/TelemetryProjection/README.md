@@ -38,7 +38,10 @@ other validation was active. Timing is diagnostic and machine/load dependent;
 neither elapsed time nor allocation size is a CI pass threshold.
 
 The subsequent correctness fix deliberately changes selection when missing/gap
-points fill or exceed the point budget. The previous fallback could discard all
+points exceed half the point budget (or required endpoints and gaps fill it).
+The half-budget boundary also covers near-saturation, where retaining every gap
+previously left only a few real readings. Low-gap and no-downsampling selection
+remain unchanged. The previous fallback could discard all
 real readings while retaining only missing points. The final projector selects
 representative real readings first and inserts an existing gap between samples
 from disconnected segments. It preserves the first and last valid readings when
@@ -63,11 +66,22 @@ the other three viewport digests still match the original baseline. Median times
 were 2.59 / 2.20 / 45.25 / 35.60 milliseconds while other validation was active.
 These timings are not isolated performance comparisons with the earlier runs.
 
+The half-budget follow-up (`final-proportional-gap-fix.json`) retains all four
+digests from `final-gap-fix.json`; the deterministic benchmark streams were
+already either low-gap or fully saturated. Focused tests cover the newly fixed
+299/300/301/597-gap boundary at a 600-point budget. The follow-up's allocation
+medians were 670,025 / 503,689 / 1,788,473 / 1,062,753 bytes; elapsed medians
+were 2.25 / 1.37 / 15.14 / 7.36 milliseconds under concurrent validation.
+
 The separate native WinUI regression
 `TrayXamlStartupSmokeTests.TelemetryNotificationsRenderOnceAndKeepNoSampleTimeProgression`
 launches the developer harness on a private desktop. It asserts chart rebuild
 counts for freshness, history, accepted sample notifications, no-sample
-completion, source changes and disposal. It also captures a real rendered PNG.
+completion, source changes and disposal. It checks exactly one freshness
+notification on no-sample completion and none on completion after a newer sample.
+Actual CSV open/close actions each rebuild once; failed and superseded loads
+preserve the displayed source without rebuilding, including the awaited action
+wrapper and command feedback. It also captures a real rendered PNG.
 That harness measures constructor allocation/time and a three-second idle
 interval using a disconnected window. Those values do not measure installed
 startup, live sensor latency or whole-system idle power.

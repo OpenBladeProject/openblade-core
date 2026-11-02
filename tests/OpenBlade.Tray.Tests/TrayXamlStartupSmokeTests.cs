@@ -199,6 +199,7 @@ public sealed class TrayXamlStartupSmokeTests
                 using var report = System.Text.Json.JsonDocument.Parse(diagnostic);
                 Assert.True(report.RootElement.GetProperty("disconnected").GetBoolean());
                 Assert.True(report.RootElement.GetProperty("observationChecksPassed").GetBoolean());
+                Assert.True(report.RootElement.GetProperty("replayActionChecksPassed").GetBoolean());
                 Assert.True(report.RootElement.GetProperty("gapChartChecksPassed").GetBoolean());
                 Assert.True(new FileInfo(Path.ChangeExtension(reportPath, ".png")).Length > 0);
                 Assert.True(new FileInfo(Path.ChangeExtension(reportPath, ".gaps.png")).Length > 0);
@@ -219,6 +220,7 @@ public sealed class TrayXamlStartupSmokeTests
             if (argument == "--performance-audit")
             {
                 File.Delete(reportPath + ".error.txt");
+                File.Delete(reportPath + ".replay.csv");
                 File.Delete(Path.ChangeExtension(reportPath, ".png"));
                 File.Delete(Path.ChangeExtension(reportPath, ".gaps.png"));
             }

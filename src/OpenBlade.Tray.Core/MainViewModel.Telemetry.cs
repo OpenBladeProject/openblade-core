@@ -396,9 +396,14 @@ public sealed partial class MainViewModel
             IReadOnlyList<TelemetryEvent> markers = telemetryHistory.AddSample(sample);
             lastTelemetryTimestampUtc = timestamp;
             latestLiveTelemetrySample = sample;
-            Notify(nameof(LatestTelemetrySample));
-            Notify(nameof(LatestTelemetryFreshness));
-            Notify(nameof(TelemetryHistorySnapshot));
+            // These properties expose the displayed source. Recording still
+            // accepts live samples during replay, but its displayed data is fixed.
+            if (telemetryReplaySession is null)
+            {
+                Notify(nameof(LatestTelemetrySample));
+                Notify(nameof(LatestTelemetryFreshness));
+                Notify(nameof(TelemetryHistorySnapshot));
+            }
             return new TelemetryRecordBatch(sample, markers, recording);
         }
         catch

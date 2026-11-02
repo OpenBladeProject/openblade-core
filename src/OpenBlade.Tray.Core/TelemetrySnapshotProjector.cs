@@ -119,15 +119,22 @@ internal static class TelemetrySnapshotProjector
             return Materialize(collapsed);
         }
 
-        // Stop collecting indices once gaps fill the budget. Both this list and
+        // Reserve at least half the budget for real readings before gaps can
+        // crowd them out. Keep the ordinary low-gap selection unchanged.
+        // Stop collecting indices early. Both this list and
         // the ordinary path's SortedSet stay bounded by the output point budget.
         var required = new List<int>();
+        int gapCount = 0;
         for (int index = 0; index < collapsed.Length; index++)
         {
+            if (collapsed[index].Value is null)
+            {
+                gapCount++;
+            }
             if (index == 0 || index == collapsed.Length - 1 || collapsed[index].Value is null)
             {
                 required.Add(index);
-                if (required.Count >= maximumPoints)
+                if (required.Count >= maximumPoints || gapCount > maximumPoints / 2)
                 {
                     return SelectAcrossGaps(collapsed, maximumPoints);
                 }
