@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve overlapping profile edits, refresh service state before later saves, and retain drafts when a save is rejected or its result is uncertain. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Reject malformed profile requests safely and preserve invalid saved configuration for recovery. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Keep display automation paused after a partially submitted change, retain the most recently activated app profile, and honor the latest telemetry replay selection. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+
 ## [0.50.3] - 2026-11-01
 
 ### Added
