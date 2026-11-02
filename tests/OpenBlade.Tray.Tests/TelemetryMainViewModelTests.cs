@@ -329,6 +329,34 @@ public sealed class TelemetryMainViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task FreshnessRefreshWithoutASampleUpdatesAgeWithoutObservingOrChangingHistory()
+    {
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(Start);
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
+        await viewModel.StartAsync();
+        client.Publish(Status(1));
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
+        viewModel.SetTelemetryPresentationActive(true);
+        client.Observation = Status(2, withReadings: true);
+        await viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        TelemetrySample? sample = viewModel.LatestTelemetrySample;
+        Assert.Equal(TelemetryFreshness.Fresh, viewModel.LatestTelemetryFreshness);
+        List<string?> changed = [];
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        time.Advance(viewModel.TelemetryExpectedSampleInterval * 3);
+        viewModel.RefreshTelemetryFreshness();
+
+        Assert.Equal(TelemetryFreshness.Stale, viewModel.LatestTelemetryFreshness);
+        Assert.Same(sample, viewModel.LatestTelemetrySample);
+        Assert.Equal(1, viewModel.TelemetryHistorySnapshot.RawSampleCount);
+        Assert.Single(client.Requests);
+        Assert.Equal([nameof(MainViewModel.LatestTelemetryFreshness)], changed);
+    }
+
+    [Fact]
     public async Task UnverifiedObservation_CapturesMissingReadingsInsteadOfStaleValues()
     {
         var client = new FakeServiceClient();

@@ -39,7 +39,7 @@ public static class TelemetryChartViewport
         TelemetryEvent[] events = retainedSnapshot.Events
             .Where(value => value.TimestampUtc >= startUtc && value.TimestampUtc <= endUtc)
             .ToArray();
-        return TelemetryHistory.CreateSnapshot(
+        return TelemetrySnapshotProjector.CreateSnapshot(
             samples,
             events,
             maximumChartPoints,

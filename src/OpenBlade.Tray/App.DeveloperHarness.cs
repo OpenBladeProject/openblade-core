@@ -106,6 +106,12 @@ public partial class App
     /// </summary>
     private bool TryRunDeveloperHarness(string[] commandLineArguments)
     {
+        if (commandLineArguments is [_, "--performance-audit", string performanceReportPath])
+        {
+            _ = RunPerformanceAuditAsync(performanceReportPath);
+            return true;
+        }
+
         bool pseudoLocalizationRequested = string.Equals(
             Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
             "1",

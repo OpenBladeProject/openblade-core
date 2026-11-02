@@ -1152,13 +1152,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             RefreshApplicationProfiles();
         }
 
-        if (args.PropertyName is nameof(MainViewModel.TelemetryHistorySnapshot)
-            or nameof(MainViewModel.LatestTelemetryFreshness))
+        if (args.PropertyName == nameof(MainViewModel.TelemetryHistorySnapshot))
         {
             if (ViewModel.TelemetryReplaySession is null)
             {
-                RefreshTelemetryPresentation();
+                RefreshTelemetryChartPresentation();
             }
+        }
+        if (args.PropertyName == nameof(MainViewModel.LatestTelemetryFreshness))
+        {
+            RefreshTelemetrySourcePresentation();
         }
         if (args.PropertyName == nameof(MainViewModel.TelemetryEnabled) && telemetryToggleInProgress)
         {
@@ -1166,11 +1169,15 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             // Initialization uses the same property without saving partial preferences.
             QueuePreferenceSave();
         }
-        if (args.PropertyName is nameof(MainViewModel.IsTelemetryRecording)
-            or nameof(MainViewModel.TelemetryReplaySession) or nameof(MainViewModel.TelemetryErrorMessage)
+        if (args.PropertyName is nameof(MainViewModel.TelemetryReplaySession)
             or nameof(MainViewModel.TelemetryEnabled))
         {
             RefreshTelemetryPresentation();
+        }
+        if (args.PropertyName is nameof(MainViewModel.IsTelemetryRecording)
+            or nameof(MainViewModel.TelemetryErrorMessage))
+        {
+            RefreshTelemetryCommandPresentation();
         }
         if (args.PropertyName is nameof(MainViewModel.RequiresTelemetryObservation)
             or nameof(MainViewModel.RequiresExternalPowerDischargeObservation))
@@ -3652,6 +3659,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private async Task ObserveVisibleSurfacesAsync(CancellationToken cancellationToken)
     {
         bool dashboardVisible = Volatile.Read(ref trayDashboardVisible);
+        TelemetrySample? sampleBeforeObservation = ViewModel.LatestTelemetrySample;
+        TelemetrySessionDocument? replayBeforeObservation = ViewModel.TelemetryReplaySession;
         try
         {
             if (!Volatile.Read(ref windowVisible) && !dashboardVisible
@@ -3671,13 +3680,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            dispatcherQueue.TryEnqueue(() =>
-            {
-                if (Volatile.Read(ref disposed) == 0)
-                {
-                    ViewModel.RefreshTelemetryFreshness();
-                }
-            });
+            dispatcherQueue.TryEnqueue(() => CompleteTelemetryObservationPresentation(
+                sampleBeforeObservation,
+                replayBeforeObservation));
         }
     }
 

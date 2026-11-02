@@ -90,6 +90,11 @@ public sealed class TrayXamlStartupSmokeTests
     public Task NativeCaptionsFollowResolvedWindowTheme() =>
         RunTraySmokeAsync("--caption-theme-smoke", "OpenBlade-caption-theme-smoke");
 
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task TelemetryNotificationsRenderOnceAndKeepNoSampleTimeProgression() =>
+        RunTraySmokeAsync("--performance-audit", "OpenBlade-telemetry-performance");
+
     private static async Task RunTraySmokeAsync(
         string argument,
         string reportPrefix,
@@ -189,6 +194,15 @@ public sealed class TrayXamlStartupSmokeTests
                 process.ExitCode == 0,
                 $"Tray smoke '{argument}' process {process.Id} exited with "
                     + $"{exitCode}:{Environment.NewLine}{diagnostic}");
+            if (argument == "--performance-audit")
+            {
+                using var report = System.Text.Json.JsonDocument.Parse(diagnostic);
+                Assert.True(report.RootElement.GetProperty("disconnected").GetBoolean());
+                Assert.True(report.RootElement.GetProperty("observationChecksPassed").GetBoolean());
+                Assert.True(report.RootElement.GetProperty("gapChartChecksPassed").GetBoolean());
+                Assert.True(new FileInfo(Path.ChangeExtension(reportPath, ".png")).Length > 0);
+                Assert.True(new FileInfo(Path.ChangeExtension(reportPath, ".gaps.png")).Length > 0);
+            }
         }
         finally
         {
@@ -202,6 +216,12 @@ public sealed class TrayXamlStartupSmokeTests
                 process.Dispose();
             }
             File.Delete(reportPath);
+            if (argument == "--performance-audit")
+            {
+                File.Delete(reportPath + ".error.txt");
+                File.Delete(Path.ChangeExtension(reportPath, ".png"));
+                File.Delete(Path.ChangeExtension(reportPath, ".gaps.png"));
+            }
             if (isolatedPreferenceDirectory is not null
                 && Directory.Exists(isolatedPreferenceDirectory))
             {
@@ -244,7 +264,9 @@ public sealed class TrayXamlStartupSmokeTests
     private static async Task<string> ReadSmokeReportAsync(string reportPath) =>
         File.Exists(reportPath)
             ? await File.ReadAllTextAsync(reportPath)
-            : "<no smoke report was written>";
+            : File.Exists(reportPath + ".error.txt")
+                ? await File.ReadAllTextAsync(reportPath + ".error.txt")
+                : "<no smoke report was written>";
 
     [Theory]
     [InlineData(null, false)]
