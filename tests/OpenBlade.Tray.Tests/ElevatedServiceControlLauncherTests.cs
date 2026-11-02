@@ -169,18 +169,34 @@ public sealed class ElevatedServiceControlLauncherTests
     [Fact]
     public async Task RequestAsyncBoundsRunnerThatDoesNotObserveCancellation()
     {
-        var launcher = new ElevatedServiceControlLauncher(async (_, _) =>
+        var runnerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runnerCompletion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var launcher = new ElevatedServiceControlLauncher((_, _) =>
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-            return 0;
+            runnerEntered.TrySetResult();
+            // Deliberately ignore cancellation and remain pending until cleanup.
+            return runnerCompletion.Task;
         });
-        using var cancellation = new CancellationTokenSource(
-            TimeSpan.FromMilliseconds(10));
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            launcher.RequestAsync(
-                @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
-                ElevatedServiceControlAction.StopRazerServices,
-                cancellation.Token));
+        using var cancellation = new CancellationTokenSource();
+        Task<ElevatedServiceControlOutcome> request = launcher.RequestAsync(
+            @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
+            ElevatedServiceControlAction.StopRazerServices,
+            cancellation.Token);
+        try
+        {
+            await runnerEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            cancellation.Cancel();
+            // The timeout is a deadlock guard, not the ordering mechanism.
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                request.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.False(runnerCompletion.Task.IsCompleted);
+        }
+        finally
+        {
+            runnerCompletion.TrySetResult(0);
+            await runnerCompletion.Task;
+            try { await request; }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        }
     }
 }

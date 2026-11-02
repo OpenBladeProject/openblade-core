@@ -5,36 +5,37 @@ namespace OpenBlade.DeploymentBroker.Tests;
 
 public sealed class WindowsBrokerInstallerProcessRunnerTests
 {
+    private static readonly TimeSpan FixtureWatchdog = TimeSpan.FromMinutes(1);
+
     [Fact]
     public async Task RunAsync_BindingFailureKeepsMonitoringUntilTheChildExits()
     {
-        Process? child = null;
         string releaseEventName = "Local\\OpenBlade.BrokerTest." + Guid.NewGuid().ToString("N");
         using EventWaitHandle release = new(false, EventResetMode.ManualReset, releaseEventName);
+        using Process child = await StartReadyChildAsync(releaseEventName, release);
         WindowsBrokerInstallerProcessRunner runner = new(
-            plan => child = Process.Start(plan), TimeSpan.FromSeconds(30));
+            _ => Process.GetProcessById(child.Id), TimeSpan.FromSeconds(30));
         IOException bindingFailure = new("Injected PID persistence failure.");
         Task<BrokerInstallerExecutionResult> execution = runner.RunAsync(
             CreateSignaledChildPlan(releaseEventName), _ => throw bindingFailure, CancellationToken.None);
 
-        Assert.NotNull(child);
         try
         {
             Assert.False(execution.IsCompleted);
             Assert.False(child.HasExited);
+            release.Set();
+            BrokerInstallerExecutionResult result = await execution.WaitAsync(FixtureWatchdog);
+            Assert.True(result.ExitObserved);
+            Assert.Equal(17, result.ExitCode);
+            Assert.False(result.TimedOut);
+            Assert.Same(bindingFailure, result.ProcessBindingFailure);
         }
         finally
         {
-            // Releasing the child must not access the Process wrapper, which the
-            // runner may dispose as soon as it observes the child's exit.
             release.Set();
+            await JoinFixtureChildAsync(child);
+            await execution.WaitAsync(FixtureWatchdog);
         }
-
-        BrokerInstallerExecutionResult result = await execution.WaitAsync(TimeSpan.FromSeconds(30));
-        Assert.True(result.ExitObserved);
-        Assert.Equal(17, result.ExitCode);
-        Assert.False(result.TimedOut);
-        Assert.Same(bindingFailure, result.ProcessBindingFailure);
     }
 
     [Theory]
@@ -42,27 +43,18 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
     [InlineData(true)]
     public async Task RunAsync_BindingFailureRetainsBoundedWaitWithoutKillingTheChild(bool cancel)
     {
-        Process? child = null;
-        Process? observedChild = null;
         string releaseEventName = "Local\\OpenBlade.BrokerTest." + Guid.NewGuid().ToString("N");
         using EventWaitHandle release = new(false, EventResetMode.ManualReset, releaseEventName);
+        using Process child = await StartReadyChildAsync(releaseEventName, release);
         using CancellationTokenSource cancellation = new();
         WindowsBrokerInstallerProcessRunner runner = new(
-            plan => child = Process.Start(plan),
+            _ => Process.GetProcessById(child.Id),
             cancel ? TimeSpan.FromSeconds(30) : TimeSpan.FromMilliseconds(100));
         IOException bindingFailure = new("Injected PID persistence failure.");
         Task<BrokerInstallerExecutionResult> execution = runner.RunAsync(
             CreateSignaledChildPlan(releaseEventName),
-            processId =>
-            {
-                observedChild = Process.GetProcessById(processId);
-                throw bindingFailure;
-            },
+            _ => throw bindingFailure,
             cancellation.Token);
-        Assert.NotNull(child);
-        // The runner disposes its Process wrapper on timeout. Keep a separate
-        // observation handle solely to observe and join the harmless child.
-        using Process observation = Assert.IsType<Process>(observedChild);
         try
         {
             if (cancel)
@@ -70,17 +62,55 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
                 cancellation.Cancel();
             }
 
-            BrokerInstallerExecutionResult result = await execution.WaitAsync(TimeSpan.FromSeconds(30));
+            BrokerInstallerExecutionResult result = await execution.WaitAsync(FixtureWatchdog);
             Assert.False(result.ExitObserved);
             Assert.Null(result.ExitCode);
             Assert.Equal(!cancel, result.TimedOut);
             Assert.Same(bindingFailure, result.ProcessBindingFailure);
-            Assert.False(observation.HasExited);
+            Assert.False(child.HasExited);
         }
         finally
         {
             release.Set();
-            await observation.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+            await JoinFixtureChildAsync(child);
+            await execution.WaitAsync(FixtureWatchdog);
+        }
+    }
+
+    private static async Task<Process> StartReadyChildAsync(string releaseEventName, EventWaitHandle release)
+    {
+        // Cold PowerShell startup on a loaded CI runner is not installer-monitor
+        // behavior. Establish the child's waiting phase before starting the tested
+        // deadline, and retain a wrapper independent of the runner's disposal.
+        Process child = Process.Start(CreateSignaledChildPlan(releaseEventName))
+            ?? throw new InvalidOperationException("The fixture child did not start.");
+        try
+        {
+            Assert.Equal("ready", await child.StandardOutput.ReadLineAsync().WaitAsync(FixtureWatchdog));
+            return child;
+        }
+        catch
+        {
+            release.Set();
+            try { await JoinFixtureChildAsync(child); }
+            finally { child.Dispose(); }
+            throw;
+        }
+    }
+
+    private static async Task JoinFixtureChildAsync(Process child)
+    {
+        try
+        {
+            await child.WaitForExitAsync().WaitAsync(FixtureWatchdog);
+        }
+        catch (TimeoutException)
+        {
+            // Only this harmless test-owned child may be killed on fixture failure.
+            // The assertions above require the production runner to leave it alive.
+            if (!child.HasExited) { child.Kill(entireProcessTree: true); }
+            await child.WaitForExitAsync().WaitAsync(FixtureWatchdog);
+            throw;
         }
     }
 
@@ -92,13 +122,15 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
         {
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
         plan.ArgumentList.Add("-NoProfile");
         plan.ArgumentList.Add("-NonInteractive");
         plan.ArgumentList.Add("-Command");
         plan.ArgumentList.Add(
             "$event = [System.Threading.EventWaitHandle]::OpenExisting('"
-            + releaseEventName + "'); $null = $event.WaitOne(30000); $event.Dispose(); exit 17");
+            + releaseEventName + "'); [Console]::WriteLine('ready'); $null = $event.WaitOne(); $event.Dispose(); exit 17");
         return plan;
     }
 }
