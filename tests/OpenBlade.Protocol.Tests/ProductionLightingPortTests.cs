@@ -7,7 +7,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class ProductionLightingPortTests
+public sealed partial class ProductionLightingPortTests
 {
     private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
 
@@ -3547,8 +3547,15 @@ public sealed class ProductionLightingPortTests
                     assignTransactionId, exchangeTimeout, cancellationToken);
             }
             _ = assignTransactionId();
-            Commands.Add(command);
             CommandObserved?.Invoke(command);
+            if (command.SubmissionAllowed?.Invoke() == false)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ConflictBlocked)
+                {
+                    Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.ConflictBlocked, null, 0),
+                });
+            }
+            Commands.Add(command);
             if ((command.ClassId, command.CommandId) == (0x00, 0x86)
                 && TransitionFailure is { } transitionFailure)
             {
@@ -3675,6 +3682,8 @@ public sealed class ProductionLightingPortTests
                     null));
         }
 
+        internal Action<int>? BeforeStreamSubmission { get; set; }
+
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitBatchAsync(
             IReadOnlyList<RazerCommandSpec> commands,
             Func<TransactionIdAssignment> assignTransactionId,
@@ -3682,8 +3691,19 @@ public sealed class ProductionLightingPortTests
             CancellationToken cancellationToken)
         {
             SubmittedBatchCount++;
+            int index = 0;
             foreach (RazerCommandSpec command in commands)
             {
+                BeforeStreamSubmission?.Invoke(index);
+                if (command.SubmissionAllowed?.Invoke() == false)
+                {
+                    HidSessionFailureKind failure = index == 0 ? HidSessionFailureKind.ConflictBlocked : HidSessionFailureKind.NativeIoFailure;
+                    return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, failure)
+                    {
+                        Diagnostic = new(index == 0 ? HidSessionFailurePhase.Guard : HidSessionFailurePhase.SetCompletion, failure, null, null),
+                    });
+                }
+                index++;
                 _ = assignTransactionId();
                 SubmittedCommands.Enqueue(command);
             }
@@ -3787,6 +3807,13 @@ public sealed class ProductionLightingPortTests
             CancellationToken cancellationToken)
         {
             WriteObserved?.Invoke();
+            if (report.SubmissionAllowed?.Invoke() == false)
+            {
+                return Task.FromResult(new HidSessionResult<HidUnit>(default, HidSessionFailureKind.ConflictBlocked)
+                {
+                    Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.ConflictBlocked, null, 0),
+                });
+            }
             bool fail;
             lock (sync)
             {

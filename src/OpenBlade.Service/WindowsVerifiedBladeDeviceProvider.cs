@@ -75,6 +75,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
         experimentalFactory = batteryFactory as ExperimentalBladeFactory;
+        LaptopControlRecoveryIdentity = batteryFactory switch
+        {
+            ProductionBatteryFactory production => production.LaptopControlRecoveryIdentity,
+            ExperimentalBladeFactory experimental => experimental.LaptopControlRecoveryIdentity,
+            _ => null,
+        };
         this.compatibilityPolicy = compatibilityPolicy
             ?? new FirmwareCompatibilityPolicy();
         device = new SerializedBladeDevice(
@@ -102,6 +108,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     }
 
     public bool IsExperimentalDevice => experimentalFactory is not null;
+
+    public string? LaptopControlRecoveryIdentity { get; }
+
+    public void SetRecoveryWriteAdmission(Func<bool> admission) =>
+        device.SetRecoveryWriteAdmission(admission);
 
     public string? ExperimentalSupportSource => experimentalFactory?.EvidenceSource;
 
@@ -2299,6 +2310,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             LightingSettings value,
             CancellationToken cancellationToken) =>
             lightingSession.SetLightingAsync(value, cancellationToken);
+
+        internal void SetRecoveryWriteAdmission(Func<bool> admission) =>
+            lightingSession.SetRecoveryWriteAdmission(admission);
 
         internal void SetDesiredLightingRefreshRate(LightingRefreshRate refreshRate) =>
             lightingSession.SetDesiredLightingRefreshRate(refreshRate);

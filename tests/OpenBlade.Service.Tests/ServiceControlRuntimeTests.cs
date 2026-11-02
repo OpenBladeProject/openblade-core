@@ -7,7 +7,7 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class ServiceControlRuntimeTests : IDisposable
+public sealed partial class ServiceControlRuntimeTests : IDisposable
 {
     [Fact]
     public async Task PadlessLifecycle_NormalBuildRejectsRequestWithoutDeviceWrites()
@@ -31140,7 +31140,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             hyperBoostPadDiscoverySource: hyperBoostPadDiscoverySource
                 ?? new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
-            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary);
+            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
+            laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")));
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -31736,6 +31737,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     private sealed class CountingProvider(bool available, IBladeDevice device)
         : IVerifiedBladeDeviceProvider, IGpuClockOffsetConfirmationInvalidator
     {
+        public string? LaptopControlRecoveryIdentity { get; set; } = "RZ09-0581|1532:02E0";
+
+        public Func<bool>? RecoveryWriteAdmission { get; private set; }
+
+        public void SetRecoveryWriteAdmission(Func<bool> admission) => RecoveryWriteAdmission = admission;
+
         public IBladeDevice Device { get; set; } = device;
 
         public bool Available { get; set; } = available;
@@ -32126,6 +32133,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? BeforeLightingRefreshRateSet { get; set; }
 
         public Exception? OneShotFailure { get; set; }
+
+        public Action<ApplyOneShotLaptopControl>? AfterOneShotSet { get; set; }
+
+        public Exception? FunctionKeyReadFailure { get; set; }
+
+        public Action? BeforeFunctionKeyRead { get; set; }
 
         public bool? StartupAnimationEnabled { get; set; }
 
@@ -32917,6 +32930,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             {
                 GamingModeEnabled = gamingModeEnabled;
             }
+            AfterOneShotSet?.Invoke(value);
             return OneShotFailure is null
                 ? Task.CompletedTask
                 : Task.FromException(OneShotFailure);
@@ -32935,6 +32949,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             TotalCalls++;
+            BeforeFunctionKeyRead?.Invoke();
+            if (FunctionKeyReadFailure is { } failure)
+            {
+                return Task.FromException<FunctionKeyPrimaryMode?>(failure);
+            }
             return Task.FromResult(FunctionKeyPrimary);
         }
 
