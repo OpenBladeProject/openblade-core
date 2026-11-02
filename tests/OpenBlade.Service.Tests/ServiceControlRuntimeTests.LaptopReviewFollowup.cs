@@ -52,14 +52,22 @@ public sealed partial class ServiceControlRuntimeTests
         await runtime.SetFullChargeOverrideAsync(enableFullCharge, default);
         Assert.Equal(writes, context.Device.TotalSetterCalls);
         Assert.Equal(PowerSource.PluggedIn, Assert.IsType<ProfileAutomationState>(PrivateField("automation").GetValue(runtime)).PowerSource);
+        await runtime.ObserveAsync(default);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        Assert.Equal(PowerSource.Battery, runtime.GetStatus().ActivePowerSource);
+        Assert.Contains("must read the pending laptop-control state", runtime.GetStatus().Message, StringComparison.Ordinal);
+        Assert.Contains("controls still show the previously active targets", runtime.GetStatus().Message, StringComparison.Ordinal);
         context.Device.AfterOneShotSet = null;
         context.Device.FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys;
 
         await runtime.ObserveAsync(default);
         Assert.Equal(writes, context.Device.TotalSetterCalls);
+        Assert.Contains("reconciled without writes", runtime.GetStatus().Message, StringComparison.Ordinal);
+        Assert.Contains("controls still show the previously active targets", runtime.GetStatus().Message, StringComparison.Ordinal);
         Assert.False(context.Provider.RecoveryWriteAdmission!());
         await runtime.ObserveAsync(default);
         Assert.True(context.Provider.RecoveryWriteAdmission!());
+        Assert.DoesNotContain("previously active targets", runtime.GetStatus().Message ?? string.Empty, StringComparison.Ordinal);
 
         Assert.True(destination == context.Device.ConfirmedState.Lighting, $"{runtime.GetStatus().Message} actual={context.Device.ConfirmedState.Lighting} desired={runtime.GetStatus().DesiredState.Lighting}");
         Assert.Equal(1, context.Device.OneShotSetCalls);

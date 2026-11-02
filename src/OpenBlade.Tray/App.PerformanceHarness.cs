@@ -55,7 +55,7 @@ public partial class App
                         $"{measurement.Scenario}: expected {expected} chart rebuilds, got {measurement.ChartRebuilds}.");
                 }
             }
-            window.VerifyTelemetryObservationPresentation();
+            await window.VerifyTelemetryObservationPresentationAsync();
             await window.VerifyTelemetryReplayActionsAsync(resolvedReportPath + ".replay.csv");
             await SaveSnapshotAsync(window.Content, Path.ChangeExtension(resolvedReportPath, ".png"));
             window.PreparePerformanceGapChart();
@@ -224,32 +224,77 @@ public sealed partial class MainWindow
         }
     }
 
-    internal void VerifyTelemetryObservationPresentation()
+    internal async Task VerifyTelemetryObservationPresentationAsync()
     {
-        TelemetrySample latest = ViewModel.LatestTelemetrySample
-            ?? throw new InvalidOperationException("A live sample is required.");
-        VerifyChartRebuilds("no-sample completion", 1,
-            () => CompleteTelemetryObservationPresentation(latest, null), expectedFreshness: 1);
-        VerifyChartRebuilds("newer-sample completion", 0,
-            () => CompleteTelemetryObservationPresentation(latest with { ServiceRevision = latest.ServiceRevision - 1 }, null), expectedFreshness: 0);
-
-        var replay = new TelemetrySessionDocument(
-            new TelemetrySessionMetadata(Guid.NewGuid(), latest.TimestampUtc, latest.TimestampUtc,
-                TelemetrySource.LocalCsvReplay), [], []);
-        VerifyChartRebuilds("observation began in replay", 0,
-            () => CompleteTelemetryObservationPresentation(latest, replay), expectedFreshness: 0);
+        bool wasActive = ViewModel.IsTelemetryPresentationActive;
+        bool wasEnabled = ViewModel.TelemetryEnabled;
         FieldInfo replayField = typeof(MainViewModel).GetField(
             "telemetryReplaySession", BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Replay fixture hook was not found.");
-        replayField.SetValue(ViewModel, replay);
+        ApplySnapshotStatus(ProfileDefaults.CreateSafeDefaults(), null);
+        FieldInfo statusField = typeof(MainViewModel).GetField(
+            "latestStatus", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status fixture hook was not found.");
+        var status = (ServiceStatusSnapshot)(statusField.GetValue(ViewModel)
+            ?? throw new InvalidOperationException("The disconnected status fixture is unavailable."));
+        MethodInfo capture = typeof(MainViewModel).GetMethod(
+            "CaptureTelemetryObservation", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Telemetry capture fixture hook was not found.");
+        // Snapshot mode has no live subscriptions. Forward presentation only;
+        // changing demand here must never start an observation loop.
+        void OnDisplayedPropertyChanged(object? sender, PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName is not (nameof(MainViewModel.RequiresTelemetryObservation)
+                or nameof(MainViewModel.RequiresExternalPowerDischargeObservation)))
+            {
+                OnViewModelPropertyChanged(sender, args);
+            }
+        }
+        ViewModel.PropertyChanged += OnDisplayedPropertyChanged;
         try
         {
+            ViewModel.SetTelemetryPresentationActive(true);
+            TelemetrySample beforeCapture = ViewModel.LatestTelemetrySample
+                ?? throw new InvalidOperationException("A live sample is required.");
+            VerifyChartRebuilds("accepted capture and completion", 1, () =>
+            {
+                if (capture.Invoke(ViewModel, [status]) is null
+                    || ReferenceEquals(beforeCapture, ViewModel.LatestTelemetrySample))
+                {
+                    throw new InvalidOperationException("The disconnected observation was not captured.");
+                }
+                CompleteTelemetryObservationPresentation(beforeCapture, null);
+            }, expectedFreshness: 1);
+            VerifyChartRebuilds("newer-sample completion", 0,
+                () => CompleteTelemetryObservationPresentation(beforeCapture, null), expectedFreshness: 0);
+            TelemetrySample latest = ViewModel.LatestTelemetrySample!;
+            VerifyChartRebuilds("no-sample completion", 1,
+                () => CompleteTelemetryObservationPresentation(latest, null), expectedFreshness: 1);
+
+            ViewModel.SetTelemetryPresentationActive(false);
+            VerifyChartRebuilds("inactive completion", 0,
+                () => CompleteTelemetryObservationPresentation(latest, null), expectedFreshness: 0);
+            ViewModel.SetTelemetryPresentationActive(true);
+            await ViewModel.SetTelemetryEnabledAsync(false);
+            VerifyChartRebuilds("disabled completion", 0,
+                () => CompleteTelemetryObservationPresentation(latest, null), expectedFreshness: 0);
+            await ViewModel.SetTelemetryEnabledAsync(true);
+
+            var replay = new TelemetrySessionDocument(
+                new TelemetrySessionMetadata(Guid.NewGuid(), latest.TimestampUtc, latest.TimestampUtc,
+                    TelemetrySource.LocalCsvReplay), [], []);
+            VerifyChartRebuilds("observation began in replay", 0,
+                () => CompleteTelemetryObservationPresentation(latest, replay), expectedFreshness: 0);
+            replayField.SetValue(ViewModel, replay);
             VerifyChartRebuilds("replay selected during observation", 0,
                 () => CompleteTelemetryObservationPresentation(latest, null), expectedFreshness: 0);
         }
         finally
         {
+            ViewModel.PropertyChanged -= OnDisplayedPropertyChanged;
             replayField.SetValue(ViewModel, null);
+            ViewModel.SetTelemetryPresentationActive(wasActive);
+            await ViewModel.SetTelemetryEnabledAsync(wasEnabled);
         }
     }
 

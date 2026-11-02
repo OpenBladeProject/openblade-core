@@ -19,6 +19,7 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
         Task<BrokerInstallerExecutionResult> execution = runner.RunAsync(
             CreateSignaledChildPlan(releaseEventName), _ => throw bindingFailure, CancellationToken.None);
 
+        Exception? assertionFailure = null;
         try
         {
             Assert.False(execution.IsCompleted);
@@ -30,11 +31,14 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
             Assert.False(result.TimedOut);
             Assert.Same(bindingFailure, result.ProcessBindingFailure);
         }
+        catch (Exception exception)
+        {
+            assertionFailure = exception;
+            throw;
+        }
         finally
         {
-            release.Set();
-            await JoinFixtureChildAsync(child);
-            await execution.WaitAsync(FixtureWatchdog);
+            await CleanupFixtureAsync(child, release, execution, assertionFailure);
         }
     }
 
@@ -55,6 +59,7 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
             CreateSignaledChildPlan(releaseEventName),
             _ => throw bindingFailure,
             cancellation.Token);
+        Exception? assertionFailure = null;
         try
         {
             if (cancel)
@@ -69,11 +74,14 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
             Assert.Same(bindingFailure, result.ProcessBindingFailure);
             Assert.False(child.HasExited);
         }
+        catch (Exception exception)
+        {
+            assertionFailure = exception;
+            throw;
+        }
         finally
         {
-            release.Set();
-            await JoinFixtureChildAsync(child);
-            await execution.WaitAsync(FixtureWatchdog);
+            await CleanupFixtureAsync(child, release, execution, assertionFailure);
         }
     }
 
@@ -89,12 +97,28 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
             Assert.Equal("ready", await child.StandardOutput.ReadLineAsync().WaitAsync(FixtureWatchdog));
             return child;
         }
-        catch
+        catch (Exception exception)
         {
-            release.Set();
-            try { await JoinFixtureChildAsync(child); }
+            try { await CleanupFixtureAsync(child, release, Task.CompletedTask, exception); }
             finally { child.Dispose(); }
             throw;
+        }
+    }
+
+    private static async Task CleanupFixtureAsync(
+        Process child, EventWaitHandle release, Task execution, Exception? primaryFailure)
+    {
+        List<Exception> cleanupFailures = [];
+        release.Set();
+        try { await JoinFixtureChildAsync(child); }
+        catch (Exception exception) { cleanupFailures.Add(exception); }
+        // A failed child join must not skip observation of the monitor task.
+        try { await execution.WaitAsync(FixtureWatchdog); }
+        catch (Exception exception) { cleanupFailures.Add(exception); }
+        if (cleanupFailures.Count > 0)
+        {
+            if (primaryFailure is not null) { cleanupFailures.Insert(0, primaryFailure); }
+            throw new AggregateException("Process fixture cleanup failed.", cleanupFailures);
         }
     }
 
@@ -123,7 +147,8 @@ public sealed class WindowsBrokerInstallerProcessRunnerTests
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            // Child errors reach the test host rather than an unread pipe.
+            RedirectStandardError = false,
         };
         plan.ArgumentList.Add("-NoProfile");
         plan.ArgumentList.Add("-NonInteractive");

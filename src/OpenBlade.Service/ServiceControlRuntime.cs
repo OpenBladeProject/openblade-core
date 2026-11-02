@@ -16084,10 +16084,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PublishVerifiedDeviceObservation(powerSource, powerSourceConfirmed,
                     includeLiveReadings, batteryPowerFlowMilliwatts, observation, batteryHealth: null,
                     preserveRecoveryState: true);
+                string recoveryMessage = laptopControlExecutor.RequiresReconciliation
+                    ? laptopControlExecutor.PendingMessage
+                    : "Laptop-control recovery was read and reconciled without writes. Unconfirmed intent will not be replayed automatically; use the explicit laptop control to request it again.";
+                if (powerSourceConfirmed && powerSource != Automation.PowerSource)
+                {
+                    recoveryMessage += " The new power profile is waiting to apply; controls still show the previously active targets.";
+                }
                 PublishIfChanged(GetStatus() with
                 {
-                    Message = laptopControlExecutor.RequiresReconciliation ? laptopControlExecutor.PendingMessage
-                        : "Laptop-control recovery was read and reconciled without writes. Unconfirmed intent will not be replayed automatically; use the explicit laptop control to request it again.",
+                    Message = recoveryMessage,
                 });
                 return;
             }

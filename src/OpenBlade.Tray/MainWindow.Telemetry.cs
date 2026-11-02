@@ -176,7 +176,8 @@ public sealed partial class MainWindow
         TelemetrySample? sampleBeforeObservation,
         TelemetrySessionDocument? replayBeforeObservation)
     {
-        if (Volatile.Read(ref disposed) != 0)
+        if (Volatile.Read(ref disposed) != 0
+            || !ViewModel.TelemetryEnabled || !ViewModel.IsTelemetryPresentationActive)
         {
             return;
         }
