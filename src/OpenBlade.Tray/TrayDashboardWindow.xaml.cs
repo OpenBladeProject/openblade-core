@@ -269,6 +269,22 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             return;
         }
 
+        Exception? failure = null;
+        try { DisposeOwnedResources(); }
+        catch (Exception exception) { failure = exception; throw; }
+        finally
+        {
+            WindowTitleBarLifetime.Release(this, usesXamlTitleBar: false);
+            try { Close(); }
+            catch (Exception exception) when (failure is not null)
+            {
+                DiagnosticTrace.TraceException("OpenBlade.Tray.TrayDashboardWindow", "CloseAfterDisposalFailure", exception);
+            }
+        }
+    }
+
+    private void DisposeOwnedResources()
+    {
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         Activated -= OnActivated;
         // WinUI's generated Window x:Bind activation handler otherwise roots the
@@ -287,11 +303,12 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             gpuClockOffsetCommitTimer = null;
         }
         CancelRevealAnimation();
+        HideSurface();
+        WindowsPopupPositioner.TryRestoreForeground(hostWindowHandle, previousForegroundWindow);
         DetachRevealSubclass();
         TrySetEditOwner(0);
         visible = false;
         ReportVisibility(false);
-        Close();
     }
 
     private void TrySetEditOwner(nint owner)

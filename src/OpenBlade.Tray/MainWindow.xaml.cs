@@ -749,11 +749,26 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
+        // Hide before the first await, while the cancel-to-hide handler is
+        // still attached. A retired window must not remain interactive during
+        // slow cleanup, or close its HWND before native chrome is released.
+        Volatile.Write(ref windowVisible, false);
+        try { AppWindow.Hide(); }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.Tray.MainWindow", "HideForDisposal", exception);
+        }
+        try { await DisposeOwnedResourcesAsync(); }
+        finally { WindowTitleBarLifetime.Release(this, usesXamlTitleBar: true); }
+    }
+
+    private async ValueTask DisposeOwnedResourcesAsync()
+    {
         WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking);
 
-        gpuAppCleanupCoordinator.Cancel();
-        CancelApplicationDiscovery();
-        featureLifetime.Cancel();
+        DisposeComponentSafely("GPU app cleanup cancellation", gpuAppCleanupCoordinator.Cancel);
+        DisposeComponentSafely("application discovery cancellation", CancelApplicationDiscovery);
+        DisposeComponentSafely("feature cancellation", featureLifetime.Cancel);
         BatteryHistoryViewModel.PropertyChanged -= OnBatteryHistoryPropertyChanged;
 
         Task? activeInitialization;
@@ -764,7 +779,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         if (activeInitialization is not null)
         {
-            await activeInitialization;
+            await DisposeComponentSafelyAsync("window initialization", () => new ValueTask(activeInitialization));
         }
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
@@ -776,9 +791,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
         trayDashboardEditor.EditAccepted -= OnTrayDashboardEditorEditAccepted;
         trayDashboardEditor.AvailabilityChanged -= UpdateTrayDashboardEditorAvailability;
-        trayDashboardEditor.Dispose();
+        DisposeComponentSafely("dashboard editor", trayDashboardEditor.Dispose);
         cardReorderDisposed = true;
-        liveReorder.Dispose();
+        DisposeComponentSafely("live card reorder", liveReorder.Dispose);
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
         {
@@ -805,19 +820,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         AppWindow.Changed -= OnAppWindowChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
-        chargeLimitCommits.Dispose();
-        DisposeThxEnhancementCommits();
+        DisposeComponentSafely("charge-limit commits", chargeLimitCommits.Dispose);
+        DisposeComponentSafely("THX enhancement commits", DisposeThxEnhancementCommits);
         lightingCommitTimer.Stop();
         lightingCommitTimer.Tick -= OnLightingCommitTimerTick;
-        lightingCommits.Dispose();
+        DisposeComponentSafely("lighting commits", lightingCommits.Dispose);
         gpuClockOffsetCommitTimer.Stop();
         gpuClockOffsetCommitTimer.Tick -= OnGpuClockOffsetCommitTimerTick;
-        gpuClockOffsetCommits.Dispose();
+        DisposeComponentSafely("GPU clock-offset commits", gpuClockOffsetCommits.Dispose);
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
-        micaBackdropHost.Dispose();
+        DisposeComponentSafely("Mica backdrop", micaBackdropHost.Dispose);
         accentColorManager.ColorChanged -= OnAccentColorChanged;
-        accentColorManager.Dispose();
+        DisposeComponentSafely("accent colors", accentColorManager.Dispose);
         await DisposeComponentSafelyAsync(
             "visible observation loop",
             visibleObservationLoop.DisposeAsync);
@@ -846,7 +861,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await DisposeComponentSafelyAsync(
             "main view model",
             ViewModel.DisposeAsync);
-        featureLifetime.Dispose();
+        DisposeComponentSafely("feature lifetime", featureLifetime.Dispose);
+    }
+
+    private static void DisposeComponentSafely(string component, Action dispose)
+    {
+        try { dispose(); }
+        catch (Exception exception)
+        {
+            // Cancellation callbacks and native disposers can throw. Preserve
+            // the failure while letting independent window resources retire.
+            DiagnosticTrace.TraceException("OpenBlade.Tray.MainWindow", "DisposeComponent", exception, component);
+        }
     }
 
     private static async ValueTask DisposeComponentSafelyAsync(

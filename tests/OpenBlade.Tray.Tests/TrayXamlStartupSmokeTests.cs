@@ -252,6 +252,7 @@ public sealed class TrayXamlStartupSmokeTests
                 Assert.False(root.GetProperty("retiredMainContentAliveAfterCollection").GetBoolean());
                 Assert.False(root.GetProperty("retiredMainNativeWindowSurvivedClose").GetBoolean());
                 Assert.True(root.GetProperty("bindingCleanupFailureChecksPassed").GetBoolean());
+                Assert.True(root.GetProperty("nativeTitleBarCleanupChecksPassed").GetBoolean());
                 if (offscreenResourceWindows)
                 {
                     var presentation = root.GetProperty("windowPresentation");

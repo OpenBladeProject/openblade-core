@@ -2887,7 +2887,7 @@ public sealed class WinUiShellContractTests
 
         Assert.DoesNotContain("<Window.SystemBackdrop>", xaml, StringComparison.Ordinal);
         Assert.Contains("new MicaBackdropHost(this, Root)", window, StringComparison.Ordinal);
-        Assert.Contains("micaBackdropHost.Dispose()", window, StringComparison.Ordinal);
+        Assert.Contains("micaBackdropHost.Dispose", window, StringComparison.Ordinal);
         int ensureDispatcher = window.IndexOf(
             "dispatcherQueue.EnsureSystemDispatcherQueue()",
             StringComparison.Ordinal);
@@ -3731,7 +3731,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("gpuAppObservationLoop.Stop()", window, StringComparison.Ordinal);
         Assert.Contains("gpuAppObservationLoop.DisposeAsync", window, StringComparison.Ordinal);
         int gpuActionCancellation = window.IndexOf(
-            "gpuAppCleanupCoordinator.Cancel();",
+            "gpuAppCleanupCoordinator.Cancel",
             StringComparison.Ordinal);
         int gpuObservationDisposal = window.IndexOf(
             "gpuAppObservationLoop.DisposeAsync",
@@ -4319,7 +4319,7 @@ public sealed class WinUiShellContractTests
             window, StringComparison.Ordinal);
         Assert.Contains("trayDashboardEditor.AvailabilityChanged -= UpdateTrayDashboardEditorAvailability;",
             window, StringComparison.Ordinal);
-        Assert.Contains("trayDashboardEditor.Dispose();", window, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardEditor.Dispose", window, StringComparison.Ordinal);
         foreach (string name in new[] { "Controls", "Sliders", "StatusItems" })
         {
             Assert.Contains($"=> trayDashboardEditor.{name};", window, StringComparison.Ordinal);

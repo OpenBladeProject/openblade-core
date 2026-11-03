@@ -9,7 +9,7 @@ using OpenBlade.Testing;
 
 if (args.Length is < 2 or > 9)
 {
-    throw new ArgumentException("Usage: NativeResources <developer-harness-exe> <new-output-directory> [phase-seconds=300] [startup-runs=5] [window-kind=dashboard|empty] [window-dwell-ms=0] [--observe-rendering] [--offscreen] [--input-desktop]");
+    throw new ArgumentException("Usage: NativeResources <developer-harness-exe> <new-output-directory> [phase-seconds=300] [startup-runs=5] [window-kind=dashboard] [window-dwell-ms=0] [--observe-rendering] [--offscreen] [--input-desktop]. See README for diagnostic window kinds.");
 }
 string executable = Path.GetFullPath(args[0]);
 string output = Path.GetFullPath(args[1]);
@@ -34,9 +34,10 @@ if (windowDwellMilliseconds is < 0 or > 1000)
 {
     throw new ArgumentException("Window dwell must be between zero and 1000 milliseconds.");
 }
-if (windowKind is not ("dashboard" or "empty"))
+if (windowKind is not ("dashboard" or "dashboard-empty" or "empty" or "empty-toolwindow" or "empty-toolwindow-titlebar"
+    or "empty-toolwindow-restore" or "empty-toolwindow-reset"))
 {
-    throw new ArgumentException("Window kind must be dashboard or empty.");
+    throw new ArgumentException("Unknown window control kind.");
 }
 if (!File.Exists(executable) || phaseSeconds is < 1 or > 600 || startupRuns is < 1 or > 10)
 {

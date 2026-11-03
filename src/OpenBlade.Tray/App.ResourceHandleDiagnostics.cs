@@ -6,6 +6,22 @@ namespace OpenBlade.Tray;
 
 public partial class App
 {
+    private static ResourceGuiSnapshot CaptureResourceGuiCounts() => new(ReadResourceGuiCount(0), ReadResourceGuiCount(1));
+
+    private static ResourceGuiCount ReadResourceGuiCount(uint resourceKind)
+    {
+        // Current-process pseudo-handle, never a global/user-session query.
+        uint count = QueryResourceGuiResources(new nint(-1), resourceKind);
+        int error = Marshal.GetLastPInvokeError();
+        return count == 0 && error != 0 ? new(null, error) : new(count, null);
+    }
+
+    [DllImport("user32.dll", EntryPoint = "GetGuiResources", ExactSpelling = true, SetLastError = true)]
+    private static extern uint QueryResourceGuiResources(nint process, uint flags);
+
+    private sealed record ResourceGuiCount(uint? Count, int? Error);
+    private sealed record ResourceGuiSnapshot(ResourceGuiCount Gdi, ResourceGuiCount User);
+
     private static ResourceHandleSnapshot CaptureResourceHandleTypes()
     {
         const int informationClass = 51;

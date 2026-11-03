@@ -3526,7 +3526,7 @@ public sealed partial class MainViewModelTests
         var dispatcher = new RecordingDispatcher();
         await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
-        ServiceStatusSnapshot pluggedIn = CreateStatus(verified: true, blocked: false);
+        ServiceStatusSnapshot pluggedIn = CreateStatus(verified: true, blocked: false) with { Message = "AC source applied" };
         await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn);
 
         Assert.Equal(
@@ -3542,12 +3542,14 @@ public sealed partial class MainViewModelTests
         Assert.Equal("AC profile", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to AC profile", viewModel.SaveToActiveProfileLabel);
 
-        client.Publish(pluggedIn with
+        // Wait for the complete dispatcher turn, not the first property changed
+        // inside it; labels and command state are applied later in that turn.
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn with
         {
             Revision = pluggedIn.Revision + 1,
             ActivePowerSource = PowerSource.Battery,
+            Message = "Battery source applied",
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
 
         Assert.Equal(
             [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
@@ -3561,12 +3563,12 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Save to battery profile", viewModel.SaveToActiveProfileLabel);
 
-        client.Publish(pluggedIn with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn with
         {
             Revision = pluggedIn.Revision + 2,
             ActivePowerSource = PowerSource.UsbC,
+            Message = "USB-C source applied",
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
 
         Assert.Equal(
             [PerformancePreset.Balanced],
@@ -3579,13 +3581,12 @@ public sealed partial class MainViewModelTests
         Assert.Equal("Low-power profile", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to low-power profile", viewModel.SaveToActiveProfileLabel);
 
-        client.Publish(pluggedIn with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn with
         {
             Revision = pluggedIn.Revision + 3,
             ActivePowerSource = PowerSource.ExternalUnknown,
+            Message = "Unclassified external source applied",
         });
-        await WaitUntilAsync(() =>
-            viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
 
         Assert.Empty(viewModel.AvailableActivePerformanceOptions);
         Assert.Empty(viewModel.AvailableActiveFanModes);
