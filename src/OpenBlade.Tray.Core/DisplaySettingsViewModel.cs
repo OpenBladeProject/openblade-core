@@ -580,9 +580,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             return Task.CompletedTask;
         }
         PowerSource sourceAtStart = ActivePowerSource;
-        DisplayProfileSettings previous = CurrentProfileSettings;
+        DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(DisplayOperation.BrightnessChange,
-            operationToken => adapter.SetBrightnessAsync(sourceAtStart, target, operationToken), token,
+            operationToken =>
+            {
+                previous = CurrentProfileSettings;
+                return adapter.SetBrightnessAsync(sourceAtStart, target, operationToken);
+            }, token,
             state =>
             {
                 if (state.OperationSucceeded && state.BrightnessPercent == target)
@@ -745,9 +749,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             DisplayOperation.Refresh => "refresh",
             DisplayOperation.RefreshRateChange => "refresh-rate change",
             DisplayOperation.HdrChange => "HDR change",
+            DisplayOperation.BrightnessChange => "brightness change",
             DisplayOperation.ColorProfileChange => "color-profile change",
             DisplayOperation.ProfileApply => "profile apply",
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind)),
+            _ => operationKind.ToString(),
         };
         string message = DiagnosticTrace.FormatException(
             "OpenBlade.Tray.DisplaySettingsViewModel",
