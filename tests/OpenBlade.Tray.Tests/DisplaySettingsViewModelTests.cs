@@ -4,7 +4,7 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.Tray.Tests;
 
-public sealed class DisplaySettingsViewModelTests
+public sealed partial class DisplaySettingsViewModelTests
 {
     private static readonly DisplayRefreshRateOption Fixed60 = new(
         "fixed-60",
@@ -1103,10 +1103,12 @@ public sealed class DisplaySettingsViewModelTests
         public List<string> RefreshRequests { get; } = [];
         public List<PowerSource> RefreshRequestSources { get; } = [];
         public List<bool> HdrRequests { get; } = [];
+        public List<byte> BrightnessRequests { get; } = [];
         public List<PowerSource> HdrRequestSources { get; } = [];
         public List<string> ColorRequests { get; } = [];
         public List<PowerSource> ColorRequestSources { get; } = [];
         public List<(PowerSource Source, DisplayProfileSettings Settings)> ProfileRequests { get; } = [];
+        public string? ProfileColorReadback { get; init; }
         public int MaximumConcurrentOperations { get; private set; }
 
         public void SetExternalState(DisplaySettingsSnapshot value) => state = value;
@@ -1208,6 +1210,7 @@ public sealed class DisplaySettingsViewModelTests
             await EnterAsync(token);
             try
             {
+                BrightnessRequests.Add(percent);
                 if (UnexpectedBrightnessChangeFailure is not null)
                 {
                     throw UnexpectedBrightnessChangeFailure;
@@ -1268,7 +1271,7 @@ public sealed class DisplaySettingsViewModelTests
                 {
                     state = state with
                     {
-                        SelectedColorProfileKey = settings.ColorProfileKey,
+                        SelectedColorProfileKey = ProfileColorReadback ?? settings.ColorProfileKey,
                     };
                 }
 
