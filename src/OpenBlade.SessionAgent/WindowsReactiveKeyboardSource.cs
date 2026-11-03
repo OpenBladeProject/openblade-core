@@ -122,7 +122,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private bool defaultMicrophoneMutePressed;
     private readonly bool[] specialKeyPressed = new bool[5];
     private readonly WindowsKeyboardHookLifetime keyboardHooks;
-    private volatile Exception? messageThreadFailure;
+    private Exception? messageThreadFailure;
     private int disposed;
     private readonly WindowsFunctionRowOwnershipTracker.Registration? functionRowOwnership;
 
