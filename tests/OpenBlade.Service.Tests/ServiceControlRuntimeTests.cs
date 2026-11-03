@@ -31826,6 +31826,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Exception? InvalidationFailure { get; set; }
 
+        public Action? AfterLightingInvalidation { get; set; }
+
         public Exception? RelinquishFailure { get; set; }
 
         public DriverModeRestoreOutcome InvalidationDriverModeRestoreOutcome { get; set; }
@@ -31936,6 +31938,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 counting.ConfirmedState = counting.ConfirmedState with { Lighting = null };
             }
 
+            AfterLightingInvalidation?.Invoke();
             return Task.FromResult(new LightingRendererInvalidationResult(
                 observed,
                 lowPower ? DriverModeRestoreOutcome.NotOwned : InvalidationDriverModeRestoreOutcome));

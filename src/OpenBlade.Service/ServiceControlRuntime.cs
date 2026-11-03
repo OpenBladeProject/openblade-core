@@ -435,7 +435,15 @@ internal sealed record ScopedIntentApplyExecution(
     ScopedApplyOutcome Outcome,
     ThermalTransitionTrace? ThermalTrace = null);
 
-public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
+internal interface IServiceUserAdmission
+{
+    IDisposable BeginUserAdmission(SecurityIdentifier userSid, Func<bool> stillControlsSession);
+
+    bool TryReadCurrentUserStatus(SecurityIdentifier userSid, Func<bool> stillControlsSession,
+        out ServiceStatusSnapshot? snapshot);
+}
+
+public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUserAdmission, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
         "The external power adapter could not be classified; control writes are blocked.";
@@ -609,6 +617,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
     private string? activeUserSid;
     private Func<bool>? activeUserStillControlsSession;
+    private bool activeUserActivationIncomplete;
     private ThermalConvergenceStateStore? thermalConvergenceStore;
     private ThermalConvergenceLedgerState? thermalConvergenceLedger;
     private string? thermalConvergenceLedgerSha256;
@@ -1076,6 +1085,60 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             static () => true,
             cancellationToken).ConfigureAwait(false);
 
+    IDisposable IServiceUserAdmission.BeginUserAdmission(
+        SecurityIdentifier userSid, Func<bool> stillControlsSession)
+    {
+        if (userConfigurationRepository is null)
+        {
+            return EmptyDisposable.Instance;
+        }
+        if (Volatile.Read(ref pendingSessionAdmissions) == 0
+            && !Volatile.Read(ref activeUserActivationIncomplete) && string.Equals(
+                Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase)
+            || !stillControlsSession())
+        {
+            return EmptyDisposable.Instance;
+        }
+        return BeginSessionAdmission();
+    }
+
+    bool IServiceUserAdmission.TryReadCurrentUserStatus(
+        SecurityIdentifier userSid, Func<bool> stillControlsSession, out ServiceStatusSnapshot? snapshot)
+    {
+        snapshot = null;
+        long epoch = Interlocked.Read(ref sessionAdmissionEpoch);
+        if (!CurrentUserStatusReadable(userSid, stillControlsSession))
+        {
+            return false;
+        }
+        ServiceStatusSnapshot current = GetStatus();
+        if (!CurrentUserStatusReadable(userSid, stillControlsSession)
+            || epoch != Interlocked.Read(ref sessionAdmissionEpoch))
+        {
+            return false;
+        }
+        snapshot = current;
+        return true;
+    }
+
+    private bool CurrentUserStatusReadable(SecurityIdentifier userSid, Func<bool> stillControlsSession) =>
+        Volatile.Read(ref pendingSessionAdmissions) == 0
+        && !Volatile.Read(ref activeUserActivationIncomplete)
+        && !unexpectedExitRecoveryDeferredForUserConfiguration
+        && string.Equals(Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase)
+        && activeUserStillControlsSession?.Invoke() == true
+        && stillControlsSession();
+
+    private IDisposable BeginSessionAdmission()
+    {
+        CloseThermalConvergenceAdmission(
+            ThermalConvergenceReason.InactiveSession,
+            thermalConvergenceShutdown: false);
+        Interlocked.Increment(ref sessionAdmissionEpoch);
+        Interlocked.Increment(ref pendingSessionAdmissions);
+        return new ActionDisposable(() => Interlocked.Decrement(ref pendingSessionAdmissions));
+    }
+
     public async Task ActivateUserAsync(
         SecurityIdentifier userSid,
         Func<bool> stillControlsSession,
@@ -1088,57 +1151,45 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        bool alreadyActive = string.Equals(
-            Volatile.Read(ref activeUserSid),
-            userSid.Value,
-            StringComparison.OrdinalIgnoreCase);
-        if (alreadyActive)
+        // A different-user admission must latch its epoch before waiting for
+        // ongoing recovery. Only a potentially completed same-user activation
+        // takes this fast-path gate; identity is checked again once acquired.
+        if (!Volatile.Read(ref activeUserActivationIncomplete) && string.Equals(
+                Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase))
         {
-            activeUserStillControlsSession = stillControlsSession;
-            if (!unexpectedExitRecoveryDeferredForUserConfiguration)
-            {
-                return;
-            }
-
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (string.Equals(
-                        activeUserSid,
-                        userSid.Value,
-                        StringComparison.OrdinalIgnoreCase)
-                    && stillControlsSession())
+                if (!activeUserActivationIncomplete && string.Equals(
+                        activeUserSid, userSid.Value, StringComparison.OrdinalIgnoreCase))
                 {
-                    await TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
-                        stillControlsSession,
-                        cancellationToken).ConfigureAwait(false);
+                    activeUserStillControlsSession = stillControlsSession;
+                    if (unexpectedExitRecoveryDeferredForUserConfiguration
+                        && stillControlsSession())
+                    {
+                        await TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
+                            stillControlsSession,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    return;
                 }
             }
             finally
             {
                 operationGate.Release();
             }
-
-            return;
         }
 
-        CloseThermalConvergenceAdmission(
-            ThermalConvergenceReason.InactiveSession,
-            thermalConvergenceShutdown: false);
-        Interlocked.Increment(ref sessionAdmissionEpoch);
-        Interlocked.Increment(ref pendingSessionAdmissions);
-        bool sessionAdmissionPending = true;
+        IDisposable sessionAdmission = BeginSessionAdmission();
         try
         {
             UserConfigurationContext context = await userConfigurationRepository
                 .LoadAsync(userSid, cancellationToken)
                 .ConfigureAwait(false);
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            Interlocked.Decrement(ref pendingSessionAdmissions);
-            sessionAdmissionPending = false;
             try
             {
-                if (string.Equals(
+                if (!activeUserActivationIncomplete && string.Equals(
                         activeUserSid,
                         userSid.Value,
                         StringComparison.OrdinalIgnoreCase))
@@ -1172,6 +1223,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     suppressInitialUserProfileApplyAfterUnexpectedExit = false;
                 }
                 bool profileApplicationStopped = false;
+                // Old-context teardown can retire a renderer even when its
+                // caller is canceled before the new context is installed.
+                // Keep the prior SID/stores, but make that activation retryable.
+                Volatile.Write(ref activeUserActivationIncomplete, true);
+                sessionAdmission.Dispose();
                 if (!suppressProfileApply)
                 {
                     explicitLightingOwnershipActive = false;
@@ -1208,6 +1264,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveDeferredRecoveryBaseline:
                         unexpectedExitRecoveryDeferredForUserConfiguration);
                 AdvanceFanDesiredRevision();
+                // Bind ownership before replacing any user context. A canceled
+                // or interrupted application must not leave the prior SID
+                // paired with these stores, and the new user must be able to
+                // retry finalization without replaying uncertain hardware work.
+                activeUserStillControlsSession = stillControlsSession;
+                Volatile.Write(ref activeUserSid, userSid.Value);
                 Volatile.Write(
                     ref userStores,
                     new UserConfigurationStores(context.Store, context.OverrideStore));
@@ -1311,8 +1373,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 if (stillControlsSession())
                 {
-                    Volatile.Write(ref activeUserSid, userSid.Value);
-                    activeUserStillControlsSession = stillControlsSession;
                     thermalConvergenceShutdown = false;
                     RefreshThermalConvergenceIntentState(
                         GetStatus().ConfirmedState ?? UnknownConfirmedState);
@@ -1330,6 +1390,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             ThermalConvergenceReason.AwaitingFreshObservation,
                             thermalConvergenceShutdown: false);
                     }
+                    Volatile.Write(ref activeUserActivationIncomplete, false);
                 }
             }
             finally
@@ -1339,10 +1400,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         finally
         {
-            if (sessionAdmissionPending)
-            {
-                Interlocked.Decrement(ref pendingSessionAdmissions);
-            }
+            sessionAdmission.Dispose();
         }
     }
 

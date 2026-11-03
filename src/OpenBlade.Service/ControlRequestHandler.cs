@@ -12,6 +12,10 @@ public sealed class ControlRequestHandler
     private readonly IServiceShutdownSignal shutdownSignal;
     private readonly IInteractiveSessionAuthority sessionAuthority;
     private readonly ServiceSessionPowerTransitionCoordinator? powerTransitions;
+    // The singleton handler owns this managed-only semaphore for the service
+    // lifetime; AvailableWaitHandle is never requested. Keep activation and
+    // finite dispatch together so another client cannot replace their stores.
+    private readonly SemaphoreSlim userRequestGate = new(1, 1);
 
     internal ControlRequestHandler(
         IServiceControlRuntime runtime,
@@ -109,18 +113,18 @@ public sealed class ControlRequestHandler
         {
             return Failure(Guid.Empty, "IPC request ID is missing.");
         }
-
-        ServiceRequestAccessDecision accessDecision = ServiceRequestAccessPolicy.Evaluate(
-            request,
-            client,
-            sessionAuthority);
-        if (accessDecision.Rejection is not null)
-        {
-            return Failure(request.RequestId, accessDecision.Rejection);
-        }
+        Func<bool> stillControlsSession = () =>
+            ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
+                == SessionControlAccess.Active;
 
         if (request is ReportSessionPowerTransitionRequest transition)
         {
+            ServiceRequestAccessDecision transitionAccess = ServiceRequestAccessPolicy.Evaluate(
+                request, client, sessionAuthority);
+            if (transitionAccess.Rejection is not null)
+            {
+                return Failure(request.RequestId, transitionAccess.Rejection);
+            }
             // Lifecycle ingress must latch admission before activation can load
             // a profile and perform unrelated hardware work.
             return powerTransitions is null
@@ -132,6 +136,65 @@ public sealed class ControlRequestHandler
                     cancellationToken).ConfigureAwait(false));
         }
 
+        // The compatibility entry point admits status reads only and never
+        // activates user configuration. Its cached view needs no dispatch gate.
+        if (!activateUserConfiguration)
+        {
+            return await HandleUserRequestAsync(
+                request, client, activateUserConfiguration, stillControlsSession, cancellationToken).ConfigureAwait(false);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // A completed current-user context can return its immutable cached
+        // snapshot while a finite mutation or export is busy. A handoff or
+        // deferred recovery still takes the guarded activation path below.
+        if (request is GetStatusRequest or SubscribeStatusRequest
+            && client.IsInteractive
+            && runtime is IServiceUserAdmission statusAdmission
+            && statusAdmission.TryReadCurrentUserStatus(client.UserSid, stillControlsSession, out ServiceStatusSnapshot? cached))
+        {
+            return Status(request.RequestId, client, cached);
+        }
+
+        // Preserve the runtime's early different-user barrier while another
+        // finite request owns the dispatch gate. Cancellation releases the
+        // pending count but never restores an older thermal authority epoch.
+        using IDisposable? pendingAdmission = activateUserConfiguration
+            && request is not ShutdownOpenBladeRequest
+            && client.IsInteractive
+            && runtime is IServiceUserAdmission userAdmission
+                ? userAdmission.BeginUserAdmission(client.UserSid, stillControlsSession)
+                : null;
+        await userRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // The prior request has finished. Activation below takes its own
+            // admission before its first wait, so its writes do not see this
+            // request's ingress lease as a competing pending user.
+            pendingAdmission?.Dispose();
+            return await HandleUserRequestAsync(
+                request, client, activateUserConfiguration, stillControlsSession, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            userRequestGate.Release();
+        }
+    }
+
+    private async Task<ServiceResponse> HandleUserRequestAsync(
+        ServiceRequest request,
+        ServiceClientContext client,
+        bool activateUserConfiguration,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        ServiceRequestAccessDecision accessDecision = ServiceRequestAccessPolicy.Evaluate(
+            request, client, sessionAuthority);
+        if (accessDecision.Rejection is not null)
+        {
+            return Failure(request.RequestId, accessDecision.Rejection);
+        }
+
         if (activateUserConfiguration
             && request is not ShutdownOpenBladeRequest
             && client.IsInteractive
@@ -141,8 +204,7 @@ public sealed class ControlRequestHandler
             {
                 await runtime.ActivateUserAsync(
                     client.UserSid,
-                    () => ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
-                        == SessionControlAccess.Active,
+                    stillControlsSession,
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -167,9 +229,18 @@ public sealed class ControlRequestHandler
             }
         }
 
-        Func<bool> stillControlsSession = () =>
-            ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
-                == SessionControlAccess.Active;
+        // Loading and applying a user's profile can await device or storage
+        // work. Refuse stale mutations before dispatching through that context.
+        // Status projects access freshly itself, including inactive read-only
+        // views. Mutations need the same check before their runtime dispatch.
+        if (request is not (GetStatusRequest or SubscribeStatusRequest)
+            && ServiceRequestAccessPolicy.Evaluate(request, client, sessionAuthority).Rejection is not null)
+        {
+            return Result(request.RequestId, new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The active Windows session changed before the request could be dispatched."));
+        }
+
         Func<bool> stillControlsActiveLocalSession = () =>
             ServiceRequestAccessPolicy.IsActiveLocalInteractiveClient(
                 client,
@@ -372,12 +443,13 @@ public sealed class ControlRequestHandler
         return Status(requestId, client);
     }
 
-    private ServiceResponse Status(Guid requestId, ServiceClientContext client) => new(
+    private ServiceResponse Status(Guid requestId, ServiceClientContext client,
+        ServiceStatusSnapshot? snapshot = null) => new(
         OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: true,
         Error: null,
-        Status: ProjectStatus(runtime.GetStatus(), client),
+        Status: ProjectStatus(snapshot ?? runtime.GetStatus(), client),
         Result: null,
         Archive: null);
 
