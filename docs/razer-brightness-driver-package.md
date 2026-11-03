@@ -212,8 +212,11 @@ RzCommon, VCon, mouse, keyboard, then DKM. Use
 `pnputil /delete-driver <journal-owned-oem.inf> /uninstall` and stop if Windows
 reports that a package is in use or a reboot is required.
 
-The SnapTap **Install driver** action implements these staging and binding steps
-in a separate elevated helper. It selects a separately pinned installation recipe
+The SnapTap **Install driver** action runs in a separate elevated helper. It
+checks Windows Update first; the staging and binding steps above are its fallback
+only after an initial successful search finds no suitable offers. See
+[Windows Update and setup diagnostics](snap-tap.md#windows-update-and-setup-diagnostics).
+For that fallback it selects a separately pinned installation recipe
 for each of the seven reviewed SnapTap models. RZ09-0581 and RZ09-0528 use their
 complete catalog archives; four more combine selected files from their original Razer carriers with the
 independently reviewed generic RzCommon package. RZ09-0328 uses its separately
@@ -228,11 +231,11 @@ Preserve that journal and inspect the current bindings before manual recovery;
 do not delete it or repeat installation to bypass an uncertain operation.
 Offline tests do not replace the clean-install checks below.
 
-Before publishing a one-click installer, validate two clean RZ09-0581 installs,
+The existing setup action still needs validation of two clean RZ09-0581 installs,
 failure recovery after each package, reverse rollback with the integrated
 keyboard and touchpad restored, idempotent repair, reboot and sleep cycles, and
-the physical brightness hold and release path. Until those checks pass, use the
-native commands only as a controlled validation procedure.
+the physical brightness hold and release path. The native commands above remain
+a controlled validation procedure; they are not the end-user setup flow.
 
 The exported files remain Razer property and are not covered by OpenBlade's GPL
 license. Before attaching the archive to a public release, retain written Razer

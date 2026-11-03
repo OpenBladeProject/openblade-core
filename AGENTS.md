@@ -169,9 +169,11 @@ exact product name in both Windows registry sources; SKU is diagnostic metadata
 and must not reject a variant of an admitted product. Developer validation may
 pin a SKU for reproducibility. Hardware-specific backends retain their own
 device and driver checks.
-Captured BIOS versions are provenance by default; a capability may impose an
-exact firmware restriction only through an explicit reviewed admission rule,
-and no shipped capability imposes one today.
+Captured BIOS versions are provenance by default; a capability may impose a
+firmware restriction only through an explicit reviewed admission rule. No
+shipped capability pins an exact BIOS version. Experimental HyperBoost on
+RZ09-0482 and RZ09-0483 enforces the separately reviewed minimum MCU versions
+listed in [experimental support](docs/experimental-blade-support.md).
 Never copy a command from another model, expose raw firmware commands, or
 weaken exact-device checks to make a feature appear supported.
 

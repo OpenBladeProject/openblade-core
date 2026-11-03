@@ -18,7 +18,7 @@ recovery, which skips ordinary profile application.
 
 Unexpected-exit recovery performs these operations in order:
 
-1. Re-admit the exact model, firmware, USB identity, and command capabilities,
+1. Re-admit the exact product name, USB identity, and command capabilities,
    then establish a read-only confirmed-state baseline.
 2. If retained firmware state is manual on full AC or battery power, establish
    one device-admitted maximum-RPM safety floor without loading or applying a

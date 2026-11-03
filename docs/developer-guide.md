@@ -74,12 +74,13 @@ admitted model to verify, then checks only that model's exact identity. SKU and
 BIOS version are optional diagnostic metadata: configuration variants are not
 rejected by SKU, and a missing, unreadable, or disagreeing BIOS version does not
 block admission. Hardware-specific backends retain their own device and driver
-checks. BIOS, EC, and MCU
-versions remain evidence provenance: no shipped capability is restricted to a
-firmware version, so an untested BIOS is admitted and reported as model-scoped.
-Only an identity that explicitly pins exact versions checks SKU and BIOS
-version. Capture tools are kept outside the installed product, may pin an exact
-BIOS version for reproducibility, and raw captures are never production
+checks. BIOS and EC versions remain evidence provenance; an untested BIOS is
+admitted and reported as model-scoped. Experimental HyperBoost on RZ09-0482 and
+RZ09-0483 additionally checks its reviewed minimum MCU version before entry;
+see [experimental support](experimental-blade-support.md). Only an identity
+that explicitly pins exact versions checks SKU and BIOS version. Capture tools
+are kept outside the installed product, may pin an exact BIOS version for
+reproducibility, and raw captures are never production
 admission artifacts.
 
 Experimental profiles are recognized automatically by `ExperimentalBladeFactory`
@@ -98,9 +99,13 @@ RZ09-0528 have separate, model-specific stacks. WMI remains the fallback. See
 the [Razer driver package notes](razer-brightness-driver-package.md) for the
 validation and redistribution limits.
 
-The [optional THX audio integration](thx-audio.md) uses the separately installed,
-pinned `rznb12` audio stack on RZ09-0581. It is off by default and does not use
-the laptop HID transport. Standalone native and audio validation is pending.
+The [optional THX audio integration](thx-audio.md) uses trusted, model-bound
+`rznb12` APIs on RZ09-0581 and `rznb11` APIs on RZ09-0528/RZ09-0530. The
+[legacy integration](thx-legacy-interface.md) offers a manual spatial toggle on
+RZ09-0482/RZ09-0483/RZ09-0484 with an admitted installed stack. Both are off by
+default and use current-user audio IPC rather than the laptop HID transport.
+RZ09-0581 has physical read/write/readback and restoration evidence; the THX
+guides distinguish that evidence from other models and unvalidated fresh setup.
 
 ## Direct fan-entry validation
 
@@ -307,9 +312,9 @@ entry. `-DotNetRuntimePath` supplies an explicit installer instead of the cache.
 - Quiet installation: setup does not launch OpenBlade; the caller must start
   `OpenBlade.Tray.exe` from its original normal-integrity process and confirm
   that the Tray and Session Agent are running
-- Microsoft Store quiet-install lifecycle remains incomplete until
-  [issue #25](https://github.com/OSSBlade/openblade-core/issues/25) is resolved;
-  see the [submission notes](microsoft-store-submission.md)
+- Microsoft Store quiet installs still lack the caller-owned relaunch above;
+  see the [submission notes](microsoft-store-submission.md) and the original
+  [launch-gap report](https://github.com/OSSBlade/openblade-core/issues/25)
 
 See [build, installation, and Nightly releases](build-install-and-nightly.md)
 for development revisions, recovery commands, signing, Store constraints, and
@@ -470,9 +475,10 @@ restoration after every authorized write.
 Users can write and share data-only `.oblight` presets for effects already
 supported by their laptop. The same importer accepts Razer `.chroma` version 1
 keyboard files. Uniform files convert losslessly; classic Keyboard per-key
-animations use a bounded, exact-model logical-key projection on the verified
-RZ09-0581 and RZ09-0528 layouts. Unsupported colored cells are reported, and
-per-key KeyboardExtended files are rejected instead of cropped. Enable **Lab
+animations use a bounded, exact-model logical-key projection on the validated
+RZ09-0581/RZ09-0528 layouts and the experimental RZ09-0484 layout. Unsupported
+colored cells are reported, and per-key KeyboardExtended files are rejected
+instead of cropped. Enable **Lab
 features** in Settings to show the importer. The versioned format, schema,
 compatibility rules, and example are in
 [`keyboard-lighting-file-format.md`](keyboard-lighting-file-format.md).
@@ -500,4 +506,8 @@ pseudo-localization review workflow are in [localization.md](localization.md).
 
 ## SnapTap input helper
 
-The opt-in A/D priority feature uses the admitted Razer laptop keyboard driver through a supervised current-user worker. See [SnapTap](snap-tap.md) for exact driver admission, hook ownership, failure handling and validation.
+The opt-in A/D priority feature offers Windows-hook and Razer-driver input
+methods. Users choose the method separately for SnapTap and the function row.
+One supervised current-user driver helper owns the selected A/D and F1–F12 hook
+set. See [keyboard input methods](keyboard-input-backends.md) for selection and
+[SnapTap](snap-tap.md) for driver setup, admission, ownership and recovery.

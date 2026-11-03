@@ -101,8 +101,8 @@ are the main compatibility references. They provide useful fixed-grid animation
 frames and per-frame durations, and Razer documents sequential client rendering.
 However, the binary container has no magic signature, embedded grid dimensions,
 layout identifier, metadata envelope, or schema. Its generic keyboard canvas
-also does not establish a reviewed mapping to either OpenBlade model's exact
-protocol order.
+also does not establish a reviewed mapping to any Blade model's exact protocol
+order.
 
 The importer accepts official binary version 1 files with device type `2D` and
 device `Keyboard` (6×22) or `KeyboardExtended` (8×24). It verifies the complete
@@ -122,9 +122,9 @@ frame; a one-frame import holds per-key colors. See
 [named-key grid](https://github.com/razerofficial/CChromaEditor/blob/6ce8b24db8e4e00ddafe027de7589b2a0b4dc618/CChromaEditorLibrary/RzChromaSDKTypes.h#L173-L300),
 then projects only those logical keys whose target slot is already admitted for
 that exact model. It does not compress the generic 22-column canvas into the
-Blade's 17-column protocol frame, and it never borrows one model's slot map for
-the other. This matters for keys such as Right Alt, whose admitted protocol slot
-differs between the two models.
+Blade 16's 17-column protocol frame, and it never borrows one model's slot map
+for another. This matters for keys such as Right Alt, whose admitted protocol
+slot differs between RZ09-0581 and RZ09-0528.
 
 This logical-key conversion is intentionally not advertised as Synapse-perfect.
 If a source colors cells without an admitted laptop binding, the confirmation

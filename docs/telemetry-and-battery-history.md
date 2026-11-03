@@ -47,10 +47,10 @@ laptop and the current control state.
 ## Record and replay
 
 Choose **Record CSV** and select a local destination to start recording. The
-existing observation loop requests the telemetry sensors while the page is open
-or a recording is active. Explicit recording works when the normal live-readings
-preference is off and continues when the window is hidden. Exiting the Tray
-finalizes the recording; closing only its window keeps it running.
+existing observation loop requests the telemetry sensors while the live view is
+open or a recording is active. Explicit recording works when the normal
+live-readings preference is off and continues when the window is hidden. Exiting
+the Tray finalizes the recording; closing only its window keeps it running.
 
 The recording action becomes **Stop recording** while a CSV is active. Choose it
 to drain accepted readings and finalize the CSV.
