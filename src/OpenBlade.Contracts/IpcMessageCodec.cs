@@ -198,7 +198,7 @@ public static class IpcMessageCodec
         await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
         try
         {
-            ValidateNoDuplicateObjectMembers(payload);
+            IpcJsonValidation.ValidateNoDuplicateMembers(payload);
             ValidatePayloadVersion(payload, allowProtocol51);
             T message = JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("IPC message body is invalid.");
@@ -838,36 +838,6 @@ public static class IpcMessageCodec
             }
 
             reader.Skip();
-        }
-    }
-
-    private static void ValidateNoDuplicateObjectMembers(ReadOnlyMemory<byte> payload)
-    {
-        using JsonDocument document = JsonDocument.Parse(payload);
-        ValidateNoDuplicateObjectMembers(document.RootElement);
-    }
-
-    private static void ValidateNoDuplicateObjectMembers(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (JsonProperty property in element.EnumerateObject())
-            {
-                if (!names.Add(property.Name))
-                {
-                    throw new JsonException("IPC message contains a duplicate member.");
-                }
-
-                ValidateNoDuplicateObjectMembers(property.Value);
-            }
-        }
-        else if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (JsonElement item in element.EnumerateArray())
-            {
-                ValidateNoDuplicateObjectMembers(item);
-            }
         }
     }
 
