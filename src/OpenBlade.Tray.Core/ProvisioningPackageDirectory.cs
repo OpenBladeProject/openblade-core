@@ -9,6 +9,8 @@ internal sealed class ProvisioningPackageInUseException(Exception acquisitionFai
     internal Exception AcquisitionFailure { get; } = acquisitionFailure;
 }
 
+// Callers hold an exclusive journal lock and choose a fresh random GUID beneath
+// their protected root. Creation and cleanup share that serialized ownership.
 internal sealed class ProvisioningPackageDirectory : IDisposable
 {
     internal const int MaximumEntries = 4096;
@@ -129,27 +131,35 @@ internal sealed class ProvisioningPackageDirectory : IDisposable
             if (entry.Directory)
             {
                 validateProtectedDirectory(entry.Path);
+                ClearOwnedReadOnlyAttribute(entry.Path, directory: true);
                 Directory.Delete(entry.Path, recursive: false);
             }
             else
             {
-                FileAttributes attributes = getAttributes(entry.Path);
-                if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
-                {
-                    throw new InvalidDataException("The owned cleanup file is no longer a regular file.");
-                }
-                if ((attributes & FileAttributes.ReadOnly) != 0)
-                {
-                    // Cabinet extraction can preserve ReadOnly. Change only that
-                    // bit on this freshly admitted file from this owned attempt.
-                    File.SetAttributes(entry.Path, attributes & ~FileAttributes.ReadOnly);
-                }
+                ClearOwnedReadOnlyAttribute(entry.Path, directory: false);
                 File.Delete(entry.Path);
             }
         }
         RejectReparseAncestors(destination);
         validateProtectedDirectory(destination);
+        ClearOwnedReadOnlyAttribute(destination, directory: true);
         Directory.Delete(destination, recursive: false);
+    }
+
+    private void ClearOwnedReadOnlyAttribute(string path, bool directory)
+    {
+        FileAttributes attributes = getAttributes(path);
+        if ((attributes & FileAttributes.ReparsePoint) != 0
+            || ((attributes & FileAttributes.Directory) != 0) != directory)
+        {
+            throw new InvalidDataException("The owned cleanup entry is no longer the expected regular type.");
+        }
+        if ((attributes & FileAttributes.ReadOnly) != 0)
+        {
+            // Extraction can preserve ReadOnly on files and directories. Clear
+            // only that bit after fresh type, link and applicable ACL admission.
+            File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
+        }
     }
 
     private void ValidateDestination()

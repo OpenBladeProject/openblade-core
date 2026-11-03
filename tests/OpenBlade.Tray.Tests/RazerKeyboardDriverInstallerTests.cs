@@ -367,10 +367,15 @@ public sealed class RazerKeyboardDriverInstallerTests
             {
                 journal.BeginPackageAcquisition();
                 destination = journal.PackageDestination;
+                journal.Begin(new(true, false, [], "isolated") { RecipeId = RazerKeyboardDriverRecipes.Pid02E0.Id });
                 journal.Intent(new("reviewed.inf", false));
                 journal.Complete();
             }
             Assert.True(Directory.Exists(destination));
+            using (var baseline = System.Text.Json.JsonDocument.Parse(File.ReadLines(path).First()))
+            {
+                Assert.Equal(destination, baseline.RootElement.GetProperty("packageDestination").GetString());
+            }
             File.WriteAllText(path, "{\"kind\":\"intent\"}\n");
             using var pendingStream = new IntentFailureStream(path);
             using var pending = IsolatedJournal(parent, pendingStream);

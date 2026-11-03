@@ -203,6 +203,37 @@ public sealed class ProvisioningPackageDirectoryTests
         });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OwnedReadonlyDirectoryDoesNotPreventCleanup(bool readonlyRoot)
+    {
+        WithDirectory(parent =>
+        {
+            string attempt = Path.Combine(parent, Guid.NewGuid().ToString("N"));
+            string child = Path.Combine(attempt, "extracted");
+            try
+            {
+                using (var lifetime = Lifetime(parent, attempt))
+                {
+                    lifetime.BeginAcquisition();
+                    Directory.CreateDirectory(child);
+                    File.WriteAllText(Path.Combine(child, "partial.inf"), "partial extraction");
+                    File.SetAttributes(readonlyRoot ? attempt : child,
+                        FileAttributes.Directory | FileAttributes.ReadOnly | FileAttributes.Hidden);
+                }
+                Assert.False(Directory.Exists(attempt));
+            }
+            finally
+            {
+                foreach (string path in new[] { child, attempt })
+                {
+                    if (Directory.Exists(path)) { File.SetAttributes(path, FileAttributes.Directory); }
+                }
+            }
+        });
+    }
+
     private static ProvisioningPackageDirectory Lifetime(string parent, string attempt) =>
         new(parent, attempt, path => Directory.CreateDirectory(path), ValidateDirectory);
 

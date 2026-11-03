@@ -120,7 +120,7 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
         recipeId = snapshot.RecipeId;
         baseline.Clear();
         baseline.AddRange(snapshot.Inventory);
-        Append(new { kind = "baseline", recipeVersion = 1, recipeId, at = DateTimeOffset.UtcNow, snapshot });
+        Append(new { kind = "baseline", recipeVersion = 1, recipeId, packageDestination = PackageDestination, at = DateTimeOffset.UtcNow, snapshot });
     }
 
     public void Intent(RazerDriverMutation operation)
