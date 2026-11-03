@@ -8,6 +8,7 @@ namespace OpenBlade.Tray;
 internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
 {
     private readonly FileStream stream;
+    private readonly ProvisioningPackageDirectory packageDirectory;
     private readonly List<RazerDriverInventoryEntry> baseline = [];
     private bool hasIntent;
     private string? recipeId;
@@ -19,25 +20,41 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
     internal static string JournalPath => Path.Combine(Root, "installation.jsonl");
 
     internal RazerDriverInstallJournal()
+        : this(Root, OpenJournalStream(), EnsureProtectedDirectory, ValidateProtectedDirectory)
     {
-        EnsureProtectedDirectory(Root);
-        RejectReparse(JournalPath);
-        stream = new FileStream(JournalPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
-            FileShare.None, 4096, FileOptions.WriteThrough);
-        if (stream.Length > 4 * 1024 * 1024)
-        {
-            stream.Dispose();
-            throw new InvalidDataException("Driver installation journal exceeds its size bound.");
-        }
+    }
+
+    internal RazerDriverInstallJournal(string root, FileStream stream,
+        Action<string> createProtectedDirectory, Action<string> validateProtectedDirectory)
+    {
+        this.stream = stream;
         try
         {
+            if (stream.Length > 4 * 1024 * 1024)
+            {
+                throw new InvalidDataException("Driver installation journal exceeds its size bound.");
+            }
             RequiresRecovery = HasUnfinishedTransaction(stream);
             stream.Position = stream.Length;
-            PackageDestination = Path.Combine(Root, Guid.NewGuid().ToString("N"));
-            // Creation is deferred until acquisition, so an existing installation needs no package directory.
+            PackageDestination = Path.Combine(root, Guid.NewGuid().ToString("N"));
+            packageDirectory = new(root, PackageDestination, createProtectedDirectory, validateProtectedDirectory);
+            if (RequiresRecovery)
+            {
+                packageDirectory.Retain();
+            }
         }
         catch { stream.Dispose(); throw; }
     }
+
+    private static FileStream OpenJournalStream()
+    {
+        EnsureProtectedDirectory(Root);
+        RejectReparse(JournalPath);
+        return new FileStream(JournalPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
+            FileShare.None, 4096, FileOptions.WriteThrough);
+    }
+
+    public void BeginPackageAcquisition() => packageDirectory.BeginAcquisition();
 
     internal static bool HasUnfinishedTransaction()
     {
@@ -61,18 +78,39 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
 
         using var reader = new StreamReader(file, Encoding.UTF8, true, 4096, leaveOpen: true);
         bool pending = false;
-        while (reader.ReadLine() is { } line)
+        try
         {
-            using JsonDocument document = JsonDocument.Parse(line);
-            string? kind = document.RootElement.GetProperty("kind").GetString();
-            if (kind == "intent")
+            while (reader.ReadLine() is { } line)
             {
-                pending = true;
+                using JsonDocument document = JsonDocument.Parse(line);
+                if (document.RootElement.ValueKind != JsonValueKind.Object
+                    || !document.RootElement.TryGetProperty("kind", out JsonElement kindElement)
+                    || kindElement.ValueKind != JsonValueKind.String)
+                {
+                    return true;
+                }
+                switch (kindElement.GetString())
+                {
+                    case "intent":
+                        pending = true;
+                        break;
+                    case "complete":
+                        pending = false;
+                        break;
+                    case "baseline":
+                    case "native-result":
+                    case "observed":
+                        break;
+                    default:
+                        return true;
+                }
             }
-            else if (kind == "complete")
-            {
-                pending = false;
-            }
+        }
+        catch (JsonException)
+        {
+            // An interrupted or malformed durable record cannot establish that
+            // installation was never submitted, even if later lines say complete.
+            return true;
         }
         return pending;
     }
@@ -87,6 +125,8 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
 
     public void Intent(RazerDriverMutation operation)
     {
+        // A partial or failed intent append can still leave durable recovery bytes.
+        packageDirectory.Retain();
         Append(new { kind = "intent", recipeId, at = DateTimeOffset.UtcNow, operation });
         hasIntent = true;
         RequiresRecovery = true;
@@ -111,6 +151,7 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
         {
             throw new InvalidDataException("Windows Update intent does not match the journal recipe.");
         }
+        packageDirectory.Retain();
         Append(new
         {
             kind = "intent",
@@ -212,5 +253,9 @@ internal sealed class RazerDriverInstallJournal : IRazerDriverInstallJournal
         }
     }
 
-    public void Dispose() => stream.Dispose();
+    public void Dispose()
+    {
+        try { packageDirectory.Dispose(); }
+        finally { stream.Dispose(); }
+    }
 }
