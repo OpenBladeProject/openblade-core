@@ -11513,9 +11513,11 @@ public sealed partial class MainViewModelTests
 
         private async Task<ControlOperationResult> MutateAsync(CancellationToken token)
         {
+            bool shouldBlock = BlockMutations;
             MutationCalls++;
+            // Readiness means this request's blocking decision is already latched.
             MutationStarted.TrySetResult();
-            if (BlockMutations)
+            if (shouldBlock)
             {
                 try
                 {
