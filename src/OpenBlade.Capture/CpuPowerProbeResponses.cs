@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 
 namespace OpenBlade.Capture;
@@ -13,21 +13,6 @@ internal sealed class CpuPowerProbeResponses
     private Query? activeQuery;
     private int querying;
     private int overflowed;
-
-    internal void Add(string message)
-    {
-        Query? query = Volatile.Read(ref activeQuery);
-        if (query is null || Volatile.Read(ref overflowed) != 0 || string.IsNullOrWhiteSpace(message))
-        {
-            return;
-        }
-        if (Encoding.UTF8.GetByteCount(message) > MaximumMessageBytes)
-        {
-            Overflow(query);
-            return;
-        }
-        Enqueue(query, message);
-    }
 
     internal void AddUtf8(nint pointer)
     {
@@ -98,6 +83,11 @@ internal sealed class CpuPowerProbeResponses
                             ThrowIfOverflowed();
                             return value;
                         }
+                        string? nativeFailure = ReadMatchingNativeFailure(message, expectedFunction);
+                        if (nativeFailure is not null)
+                        {
+                            throw new InvalidDataException(nativeFailure);
+                        }
                     }
                     ThrowIfOverflowed();
                 }
@@ -115,6 +105,52 @@ internal sealed class CpuPowerProbeResponses
             Volatile.Write(ref activeQuery, null);
             Volatile.Write(ref querying, 0);
         }
+    }
+
+    private static string? ReadMatchingNativeFailure(string message, string expectedFunction)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(message);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || ReadString(root, "dllName") != "RzAMDOverClockDLL"
+                || ReadString(root, "dllFunc") != expectedFunction
+                || ReadString(root, "status") is not { } status
+                || ReadString(root, "error") is not { } error
+                || (status == "SUCCESS" && error.Length == 0))
+            {
+                return null;
+            }
+
+            // The pinned RzDLLService envelope uses SUCCESS/FAIL and an error
+            // string. A matching negative reply ends this getter; it is not a
+            // missing response or permission to accept a later callback.
+            return $"{DiagnosticField(expectedFunction, 64)} native failure "
+                + $"(status={DiagnosticField(status, 64)}; error={DiagnosticField(error, 256)}).";
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ReadString(JsonElement root, string name) =>
+        root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static string DiagnosticField(string value, int maximumCharacters)
+    {
+        int length = Math.Min(value.Length, maximumCharacters);
+        string result = string.Create(length, value, static (characters, source) =>
+        {
+            for (int index = 0; index < characters.Length; index++)
+            {
+                characters[index] = char.IsControl(source[index]) ? ' ' : source[index];
+            }
+        });
+        return value.Length > length ? result + "..." : result;
     }
 
     private void Enqueue(Query query, string message)

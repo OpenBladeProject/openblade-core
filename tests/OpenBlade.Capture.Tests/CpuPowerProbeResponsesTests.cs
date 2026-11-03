@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using OpenBlade.Capture;
 
 namespace OpenBlade.Capture.Tests;
@@ -8,6 +9,99 @@ public sealed class CpuPowerProbeResponsesTests
 {
     private const string Response =
         """{"dllFunc":"GetPowerLimitValue","dllName":"RzAMDOverClockDLL","error":"","powerLimit":60,"status":"SUCCESS"}""";
+
+    private static void Publish(CpuPowerProbeResponses responses, string message)
+    {
+        nint pointer = Marshal.StringToCoTaskMemUTF8(message);
+        try
+        {
+            responses.AddUtf8(pointer);
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(pointer);
+        }
+    }
+
+    [Theory]
+    [InlineData("FAIL", "Driver read failed.")]
+    [InlineData("SUCCESS", "Native error despite success status.")]
+    public async Task QueryValueAsync_MatchingNativeFailureTerminatesBeforeALaterSuccess(string status, string error)
+    {
+        var responses = new CpuPowerProbeResponses();
+        string failed = JsonSerializer.Serialize(new
+        {
+            dllName = "RzAMDOverClockDLL",
+            dllFunc = "GetPowerLimitValue",
+            status,
+            error,
+        });
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            responses.QueryValueAsync(() =>
+            {
+                Publish(responses, failed);
+                Publish(responses, Response);
+                return true;
+            }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), CancellationToken.None));
+
+        Assert.Contains(status, failure.Message, StringComparison.Ordinal);
+        Assert.Contains(error, failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task QueryValueAsync_MatchingNativeFailureDoesNotBecomeAMissingReplyTimeout()
+    {
+        var responses = new CpuPowerProbeResponses();
+        const string failed = """{"dllName":"RzAMDOverClockDLL","dllFunc":"GetCurveOptimizerValue","status":"FAIL","error":"Backend unavailable."}""";
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            responses.QueryValueAsync(() =>
+            {
+                Publish(responses, failed);
+                return true;
+            }, "GetCurveOptimizerValue", "curveOptimizer", TimeSpan.FromMilliseconds(20), CancellationToken.None));
+
+        Assert.Contains("Backend unavailable.", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task QueryValueAsync_UnrelatedNativeFailureCannotTerminateTheCurrentGetter()
+    {
+        var responses = new CpuPowerProbeResponses();
+        const string failed = """{"dllName":"RzAMDOverClockDLL","dllFunc":"GetCurveOptimizerValue","status":"FAIL","error":"Unrelated failure."}""";
+
+        Assert.Equal(60, await responses.QueryValueAsync(() =>
+        {
+            Publish(responses, failed);
+            Publish(responses, Response);
+            return true;
+        }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task QueryValueAsync_NativeFailureDetailIsBoundedAndSingleLine()
+    {
+        var responses = new CpuPowerProbeResponses();
+        string failed = JsonSerializer.Serialize(new
+        {
+            dllName = "RzAMDOverClockDLL",
+            dllFunc = "GetPowerLimitValue",
+            status = new string('F', 1000),
+            error = string.Concat(Enumerable.Repeat("driver\nlost\t", 500)),
+        });
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            responses.QueryValueAsync(() =>
+            {
+                Publish(responses, failed);
+                return true;
+            }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromMilliseconds(20), CancellationToken.None));
+
+        Assert.InRange(failure.Message.Length, 1, 512);
+        Assert.DoesNotContain('\n', failure.Message);
+        Assert.DoesNotContain('\t', failure.Message);
+    }
 
     [Fact]
     public async Task QueryValueAsync_FloodFailsExplicitlyBeforeAnotherGetter()
@@ -18,7 +112,7 @@ public sealed class CpuPowerProbeResponsesTests
             {
                 for (int index = 0; index <= CpuPowerProbeResponses.MaximumMessages; index++)
                 {
-                    responses.Add("{}");
+                    Publish(responses, "{}");
                 }
                 return true;
             }, "GetPowerLimitValue", "powerLimit",
@@ -38,8 +132,8 @@ public sealed class CpuPowerProbeResponsesTests
         await Assert.ThrowsAsync<InvalidDataException>(() => responses.QueryValueAsync(
             () =>
             {
-                responses.Add(new string('\u00e9', CpuPowerProbeResponses.MaximumMessageBytes / 2 + 1));
-                responses.Add(Response);
+                Publish(responses, new string('\u00e9', CpuPowerProbeResponses.MaximumMessageBytes / 2 + 1));
+                Publish(responses, Response);
                 return true;
             }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), CancellationToken.None));
     }
@@ -86,8 +180,8 @@ public sealed class CpuPowerProbeResponsesTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => responses.QueryValueAsync(
             () =>
             {
-                responses.Add("{}");
-                responses.Add(Response);
+                Publish(responses, "{}");
+                Publish(responses, Response);
                 cancellation.Cancel();
                 return true;
             }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), cancellation.Token));
@@ -102,9 +196,9 @@ public sealed class CpuPowerProbeResponsesTests
             {
                 for (int index = 1; index < CpuPowerProbeResponses.MaximumMessages; index++)
                 {
-                    responses.Add("{}");
+                    Publish(responses, "{}");
                 }
-                responses.Add(Response.PadRight(CpuPowerProbeResponses.MaximumMessageBytes));
+                Publish(responses, Response.PadRight(CpuPowerProbeResponses.MaximumMessageBytes));
                 return true;
             }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), CancellationToken.None));
     }
@@ -115,13 +209,13 @@ public sealed class CpuPowerProbeResponsesTests
         var responses = new CpuPowerProbeResponses();
         for (int index = 0; index < CpuPowerProbeResponses.MaximumMessages * 4; index++)
         {
-            responses.Add(Response);
+            Publish(responses, Response);
         }
-        responses.Add(new string('x', CpuPowerProbeResponses.MaximumMessageBytes + 1));
+        Publish(responses, new string('x', CpuPowerProbeResponses.MaximumMessageBytes + 1));
 
         Assert.Equal(61, await responses.QueryValueAsync(() =>
         {
-            responses.Add(Response.Replace("\"powerLimit\":60", "\"powerLimit\":61", StringComparison.Ordinal));
+            Publish(responses, Response.Replace("\"powerLimit\":60", "\"powerLimit\":61", StringComparison.Ordinal));
             return true;
         }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), CancellationToken.None));
     }
@@ -133,14 +227,14 @@ public sealed class CpuPowerProbeResponsesTests
         var responses = new CpuPowerProbeResponses();
         Assert.Equal(60, await responses.QueryValueAsync(() =>
         {
-            responses.Add(Response);
-            responses.Add(curve);
+            Publish(responses, Response);
+            Publish(responses, curve);
             return true;
         }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), CancellationToken.None));
 
         Assert.Equal(-2, await responses.QueryValueAsync(() =>
         {
-            responses.Add(curve.Replace(":-1", ":-2", StringComparison.Ordinal));
+            Publish(responses, curve.Replace(":-1", ":-2", StringComparison.Ordinal));
             return true;
         }, "GetCurveOptimizerValue", "curveOptimizer", TimeSpan.FromSeconds(1), CancellationToken.None));
     }
@@ -158,7 +252,7 @@ public sealed class CpuPowerProbeResponsesTests
             TimeSpan.FromSeconds(1), CancellationToken.None));
         Assert.False(overlappingGetter);
 
-        responses.Add(Response);
+        Publish(responses, Response);
         Assert.Equal(60, await pending);
     }
 
@@ -175,8 +269,8 @@ public sealed class CpuPowerProbeResponsesTests
         var responses = new CpuPowerProbeResponses();
         Assert.Equal(60, await responses.QueryValueAsync(() =>
         {
-            responses.Add(malformed);
-            responses.Add(Response);
+            Publish(responses, malformed);
+            Publish(responses, Response);
             return true;
         }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), CancellationToken.None));
     }
@@ -193,7 +287,7 @@ public sealed class CpuPowerProbeResponsesTests
             Assert.Equal(60, await responses.QueryValueAsync(() =>
             {
                 responses.AddUtf8(pointer);
-                responses.Add(Response);
+                Publish(responses, Response);
                 return true;
             }, "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), CancellationToken.None));
         }

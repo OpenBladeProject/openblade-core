@@ -76,7 +76,7 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
                     exception,
                     cancellationToken);
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (Exception exception)
             {
                 check = Failed(operation.Id, operation.Description,
                     $"{exception.GetType().Name}: {exception.Message}; no further restoration was attempted.");
