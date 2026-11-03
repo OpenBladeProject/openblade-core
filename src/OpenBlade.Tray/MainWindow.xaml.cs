@@ -140,8 +140,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         UiPreferenceStore? preferenceStore = null,
         UpdateCheckInterval? initialUpdateCheckConsentOverride = null,
         ITouchpadController? touchpadController = null,
-        bool suppressWhatsNew = false)
+        bool suppressWhatsNew = false,
+        IServiceClient? snapshotServiceClient = null)
     {
+        if (snapshotServiceClient is not null && !localizationSnapshotMode)
+        {
+            throw new ArgumentException("A snapshot service client requires disconnected snapshot mode.", nameof(snapshotServiceClient));
+        }
         this.localizationSnapshotMode = localizationSnapshotMode;
         this.suppressWhatsNew = suppressWhatsNew || localizationSnapshotMode;
         TouchpadViewModel = new(touchpadController ?? new WindowsTouchpadController());
@@ -159,7 +164,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
-        IServiceClient serviceClient = new ServiceClient();
+        IServiceClient serviceClient = snapshotServiceClient ?? new ServiceClient();
         IThxAudioAdapter thxAudioAdapter = CreateThxAudioAdapter(localizationSnapshotMode);
         string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);
         whatsNewRelease = WhatsNewRelease.Load(uiVersion);
@@ -463,12 +468,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     }
 #endif
 
-    internal static MainWindow CreateLocalizationSnapshot() => new(
+    internal static MainWindow CreateLocalizationSnapshot(IServiceClient? serviceClient = null) => new(
         WindowsProcessorEfficiencyPolicy.Discover(),
         new WindowsStartupRegistration(),
         showNotification: null,
         localizationSnapshotMode: true,
-        touchpadController: new SnapshotTouchpadController());
+        touchpadController: new SnapshotTouchpadController(),
+        snapshotServiceClient: serviceClient);
 
     private sealed class SnapshotTouchpadController : ITouchpadController
     {

@@ -9,6 +9,11 @@ public sealed class TrayXamlStartupSmokeTests
 {
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
+    public Task GpuTuningStartupRestoresNonzeroSlidersInMainAndQuickControls() =>
+        RunTraySmokeAsync("--gpu-startup-smoke", "OpenBlade-gpu-startup-smoke");
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
     public Task LiveCardsAndMenuReorderWithoutCustomizationMode() =>
         RunTraySmokeAsync("--live-reorder-smoke", "OpenBlade-live-reorder-smoke");
 

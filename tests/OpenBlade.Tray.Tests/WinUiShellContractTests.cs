@@ -5102,9 +5102,11 @@ public sealed class WinUiShellContractTests
         Assert.Contains("\"disconnected-preview\"", window, StringComparison.Ordinal);
         Assert.Contains("}, () => false, async token =>", window, StringComparison.Ordinal);
         Assert.Contains(
-            "IServiceClient serviceClient = new ServiceClient();",
+            "IServiceClient serviceClient = snapshotServiceClient ?? new ServiceClient();",
             window.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
+        Assert.Contains("snapshotServiceClient is not null && !localizationSnapshotMode", window, StringComparison.Ordinal);
+        Assert.Contains("snapshotServiceClient: serviceClient", window, StringComparison.Ordinal);
         Assert.Contains(
             "string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);",
             window,

@@ -106,6 +106,11 @@ public partial class App
     /// </summary>
     private bool TryRunDeveloperHarness(string[] commandLineArguments)
     {
+        if (commandLineArguments is [_, "--gpu-startup-smoke", string gpuStartupReportPath])
+        {
+            _ = RunGpuStartupSmokeAsync(gpuStartupReportPath);
+            return true;
+        }
         if (commandLineArguments is [_, "--performance-audit", string performanceReportPath])
         {
             _ = RunPerformanceAuditAsync(performanceReportPath);
