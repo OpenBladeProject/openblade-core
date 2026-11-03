@@ -195,7 +195,8 @@ output root.
 Review these tray surfaces at minimum width and at 100, 150, and 200 percent
 text scaling:
 
-- Dashboard, Profiles, Laptop, Lighting, Display, Settings, and About;
+- Dashboard, Profiles, Laptop, Lighting, Display, THX Audio, Telemetry, Settings,
+  and About;
 - the tray dashboard, each detail view, and its customization view;
 - dialogs, InfoBars, picker labels, tooltips, and screen-reader names.
 

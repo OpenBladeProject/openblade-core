@@ -2,9 +2,9 @@
 
 English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
 
-OpenBlade recognizes these laptops automatically. Use a current pre-release to
-try the controls and help test support. Hardware testing in OpenBlade is still
-in progress.
+OpenBlade recognizes these laptops automatically in both stable and pre-release
+builds. Use the current release to try the controls and help test support.
+Hardware testing in OpenBlade is still in progress.
 
 ## Available controls
 
@@ -43,8 +43,10 @@ Battery Saver and Battery Balanced on battery power.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
   offers CPU Boost and High/High. Blade 18 (2023) offers all twelve CPU/GPU
   combinations, including Boost/Medium and High/High, using Synapse's independent
-  level controls. Entering Custom returns fans to Automatic; the saved fan
-  setting remains available when returning to an admitted preset.
+  level controls. On Blade 18, entering Custom returns fans to Automatic; the
+  saved fan setting remains available when returning to an admitted preset.
+  Blade 16 (2023) and Blade 14 (2023) preserve readable fixed fans when entering
+  Custom or changing CPU/GPU levels.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
   supported. The newer models offer brightness, built-in effects, and logo
   lighting. Static RGB on the Blade 16 (2023) and Blade 18 (2023) is one color
@@ -89,9 +91,15 @@ Battery Saver and Battery Balanced on battery power.
 
 ## Send a useful test report
 
-All five models also offer experimental [SnapTap](snap-tap.md#supported-driver-profiles) through their own reviewed Razer keyboard filters and the shared control driver. Install the model's driver through Synapse first. SnapTap's physical validation is separate from these models' firmware controls.
+All five models also offer [SnapTap](snap-tap.md#supported-driver-profiles) through
+the Windows-hook backend or their own reviewed Razer keyboard filters and the
+shared control driver. The Razer backend remains experimental on these models.
+If the Razer stack is missing, use **Install driver**; OpenBlade checks Windows
+Update first and can use the model's pinned package after an initial search finds
+no suitable offers. Synapse is not required. SnapTap's physical validation is
+separate from these models' firmware controls.
 
-1. Install the complete [pre-release](https://github.com/OpenBladeProject/openblade-core/releases).
+1. Install the complete [current release](https://github.com/OpenBladeProject/openblade-core/releases).
    Note the version and detected model in **About**.
 2. Use **About → Export diagnostics** to save a baseline ZIP.
 3. Try one setting. Record the power source, starting setting, requested setting,

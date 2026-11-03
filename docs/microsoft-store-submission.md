@@ -43,9 +43,9 @@ synchronized with the deployed documentation and Partner Center.
 - Partner Center owns that quiet invocation and cannot perform the
   caller-controlled Tray relaunch used by direct automation. A Store install
   or upgrade can therefore leave the Tray and Session Agent stopped in the
-  current sign-in session. The Store-specific recovery remains tracked in
-  [issue #25](https://github.com/OSSBlade/openblade-core/issues/25); the
-  interactive Launch action from #24 does not solve it.
+  current sign-in session. The original
+  [launch-gap report](https://github.com/OSSBlade/openblade-core/issues/25)
+  describes this limitation; the interactive Launch action does not solve it.
 - Windows may show UAC because OpenBlade installs a per-machine LocalSystem
   service. UAC is the only permitted Store-install prompt.
 - Exit code `0` means installation succeeded. Until end-to-end Store lifecycle
@@ -72,10 +72,12 @@ Use the following as the starting point for Notes for certification:
 > controls vary by model; the compatibility page and experimental guide list them. The app installs its own LocalSystem
 > service, which exclusively owns
 > the supported laptop-control HID handle and exposes typed local IPC to the
-> per-user tray and Session Agent. It does not install a kernel driver, require
-> the Synapse application, or download executable content. The optional
-> Windows-native brightness flyout uses only an exact admitted Razer driver
-> stack when already present and otherwise falls back to Windows WMI.
+> per-user tray and Session Agent. The main installer adds no kernel driver,
+> and the Synapse application is not required. Separate, user-initiated setup
+> can acquire and install the exact model's reviewed Razer keyboard or modern
+> THX/base-audio stack. The optional THX integration can also download its
+> verified native client. The Windows-native brightness flyout uses an admitted
+> model-specific Razer driver stack when present and otherwise falls back to WMI.
 > The per-user tray can request
 > public release metadata from GitHub at a user-selected interval; Manual only
 > disables automatic checks. For supported models, the tray can also request
